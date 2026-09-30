@@ -13,10 +13,10 @@
 //    language of the machine running them.
 
 import { spawn, spawnSync } from "node:child_process";
-import { createServer } from "node:net";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { DEV_PORT, listenersOn, portIsFree } from "./lib/dev-server.mjs";
 import { REPO_ROOT } from "./lib/descriptors.mjs";
 
 const DATA_DIR = path.join(REPO_ROOT, "e2e", ".run", "config");
@@ -24,28 +24,16 @@ const DEBUG_PORT = Number(process.env.SEVENSHELL_E2E_PORT ?? 9222);
 const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 
 /**
- * Whether the port the tests need is free.
- *
- * The instance the tests drive is separate from the application somebody may have open, and it needs
- * this port. A second instance fails deep inside the webview with an error that says nothing about
- * the cause, so the port is checked here.
- */
-async function portIsFree(port) {
-  return new Promise((resolve) => {
-    const probe = createServer();
-    probe.once("error", () => resolve(false));
-    probe.once("listening", () => probe.close(() => resolve(true)));
-    probe.listen(port, "127.0.0.1");
-  });
-}
-
-/**
- * Clears a running instance out of the way.
+ * Clears whatever a previous run left behind out of the way.
  *
  * This is a developer tool being asked to test the application, so the application being open is
  * expected rather than an error: it gets closed, the run continues, and the log says what was
  * closed. The alternative — asking whoever is at the keyboard to close a window first — makes a
  * command that could have just worked depend on somebody else.
+ *
+ * What gets closed is the port, not just the application. An interrupted run leaves its dev server
+ * behind, and that server is what makes this run's `tauri dev` die with "Port 1420 is already in
+ * use" while the window it had already opened loads the interface from the stale one.
  */
 async function closeRunningInstance() {
   console.log("e2e: an instance is running; closing it for the test run");
@@ -54,24 +42,18 @@ async function closeRunningInstance() {
     spawnSync("taskkill", ["/F", "/IM", "sevenshell-desktop.exe"], { stdio: "ignore", shell: true });
   }
 
-  const holders = spawnSync("netstat", ["-ano"], { encoding: "utf8", shell: true })
-    .stdout.split("\n")
-    .filter((line) => /:1420\s/.test(line) && line.includes("LISTENING"))
-    .map((line) => line.trim().split(/\s+/).pop())
-    .filter((pid) => pid && /^[0-9]+$/.test(pid));
-
-  for (const pid of new Set(holders)) {
-    spawnSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", shell: true });
+  for (const pid of listenersOn(DEV_PORT)) {
+    spawnSync("taskkill", ["/F", "/T", "/PID", pid], { stdio: "ignore", shell: true });
   }
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (await portIsFree(1420)) {
+    if (await portIsFree(DEV_PORT)) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  console.error("e2e: something still holds port 1420, and it is not the application");
+  console.error(`e2e: something still holds port ${DEV_PORT}, and it is not the application`);
   process.exit(2);
 }
 
@@ -94,15 +76,28 @@ async function waitForCdp(timeoutMs) {
   throw new Error(`${CDP_URL}/json/version never answered within ${timeoutMs / 1000}s`);
 }
 
+/**
+ * Stops the application, its window, and the dev server it was started with.
+ *
+ * Synchronously, because every caller exits immediately afterwards. The tree rather than the process
+ * alone, because what is started here is a shell over `tauri dev` over the dev server: stopping at
+ * the top leaves the dev server holding the port, and the run after this one then loads the
+ * interface from a server its own command never started.
+ */
 function stopApp(app) {
-  app.kill();
-  if (process.platform === "win32") {
-    spawn("taskkill", ["/F", "/IM", "sevenshell-desktop.exe"], { stdio: "ignore", shell: true });
+  if (process.platform !== "win32") {
+    app.kill();
+    return;
   }
+
+  if (app.pid) {
+    spawnSync("taskkill", ["/F", "/T", "/PID", String(app.pid)], { stdio: "ignore", shell: true });
+  }
+  spawnSync("taskkill", ["/F", "/IM", "sevenshell-desktop.exe"], { stdio: "ignore", shell: true });
 }
 
 async function main() {
-  if (!(await portIsFree(1420))) {
+  if (!(await portIsFree(DEV_PORT))) {
     await closeRunningInstance();
   }
 
