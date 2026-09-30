@@ -34,8 +34,23 @@ pub fn config_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<Stri
     }
 }
 
+/// The environment variable that moves the application's data somewhere else.
+///
+/// Two uses, both real: a portable installation that keeps its vault beside the binary, and a test
+/// run that must not touch the person's actual vault, settings or known hosts. Without it, an
+/// end-to-end test of the running application would have to write into the real configuration
+/// directory — which is exactly the kind of thing a test must never do.
+pub const CONFIG_DIR_OVERRIDE: &str = "SEVENSHELL_CONFIG_DIR";
+
 /// The configuration directory of the machine we are running on.
 pub fn config_dir() -> Option<PathBuf> {
+    if let Some(directory) = std::env::var_os(CONFIG_DIR_OVERRIDE) {
+        let directory = PathBuf::from(directory);
+        if !directory.as_os_str().is_empty() {
+            return Some(directory);
+        }
+    }
+
     config_dir_for(std::env::consts::OS, &|key| std::env::var(key).ok())
 }
 
@@ -98,6 +113,29 @@ mod tests {
         assert_eq!(
             config_dir_for("linux", &without_xdg).expect("HOME is set"),
             PathBuf::from("/home/someone/.config").join(APP_IDENTIFIER)
+        );
+    }
+
+    #[test]
+    fn the_override_moves_everything_the_application_writes() {
+        // Safety: this test is the only reader of the variable in this process, and it puts it
+        // back before it finishes.
+        let previous = std::env::var_os(CONFIG_DIR_OVERRIDE);
+        unsafe { std::env::set_var(CONFIG_DIR_OVERRIDE, "/tmp/seven-shell-test") };
+
+        // Read everything the override is supposed to move before putting the variable back.
+        let directory = config_dir().expect("the override is what decides");
+        let settings = settings_file();
+
+        match previous {
+            Some(value) => unsafe { std::env::set_var(CONFIG_DIR_OVERRIDE, value) },
+            None => unsafe { std::env::remove_var(CONFIG_DIR_OVERRIDE) },
+        }
+
+        assert_eq!(directory, PathBuf::from("/tmp/seven-shell-test"));
+        assert_eq!(
+            settings,
+            Some(PathBuf::from("/tmp/seven-shell-test").join(SETTINGS_FILE_NAME))
         );
     }
 

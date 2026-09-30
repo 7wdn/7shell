@@ -49,6 +49,9 @@ fmt-check: ## Check formatting without writing
 rust-lint: ## Lint the Rust workspace (warnings are errors)
 	cargo clippy --workspace --all-targets -- -D warnings
 
+app-e2e: ## Run the end-to-end tests against the real application (Windows; needs the lab for the terminal case)
+	pnpm app:e2e
+
 lab-up: ## Start the SSH test lab (needs Docker)
 	cd deploy/lab/openssh && docker compose up -d
 

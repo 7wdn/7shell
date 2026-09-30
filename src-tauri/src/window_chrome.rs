@@ -48,6 +48,15 @@ pub fn prepare_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
         log::warn!("the window could not be undecorated: {error}");
     }
 
+    // A test run points the application at a temporary data directory, so it starts by offering to
+    // create a vault. Saying so in the title is what keeps that from looking like a wiped vault to
+    // whoever is looking at the screen.
+    if std::env::var_os(sevenshell_platform::paths::CONFIG_DIR_OVERRIDE).is_some()
+        && let Err(error) = window.set_title("7Shell — test data")
+    {
+        log::warn!("the window title could not be changed: {error}");
+    }
+
     if let Err(error) = window.show() {
         log::warn!("the window could not be shown: {error}");
     }
