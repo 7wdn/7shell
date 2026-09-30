@@ -154,6 +154,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(
         &AppSettings {
             theme_mode: ThemeMode::Dark,
+            terminal_theme: ThemeMode::System,
             locale: Some("zh-CN".to_owned()),
         },
         "AppSettings",

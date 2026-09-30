@@ -25,6 +25,8 @@ export type ResolvedTheme = "dark" | "light";
 /** Non-secret preferences, from `sevenshell_types::AppSettings`. */
 export interface AppSettings {
   readonly themeMode: ThemeMode;
+  /** `system` means "follow the interface theme" for the terminal, not the operating system. */
+  readonly terminalTheme: ThemeMode;
   /** Absent means nobody has chosen a language, so the system's applies. */
   readonly locale?: string;
 }

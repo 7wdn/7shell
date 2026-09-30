@@ -32,6 +32,10 @@ struct StoredSettings {
     schema_version: u32,
     #[serde(default)]
     theme_mode: String,
+    /// Absent in a file written before the terminal had a palette of its own, which reads as
+    /// "follow the interface" — the honest answer for somebody who never chose.
+    #[serde(default)]
+    terminal_theme: String,
     #[serde(default)]
     locale: Option<String>,
 }
@@ -41,6 +45,7 @@ impl StoredSettings {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
             theme_mode: settings.theme_mode.as_str().to_owned(),
+            terminal_theme: settings.terminal_theme.as_str().to_owned(),
             locale: settings.locale.clone(),
         }
     }
@@ -48,6 +53,7 @@ impl StoredSettings {
     fn into_settings(self) -> AppSettings {
         AppSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
+            terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
     }
@@ -134,11 +140,29 @@ mod tests {
 
     use super::*;
 
-    fn settings(theme_mode: ThemeMode, locale: Option<&str>) -> AppSettings {
+    fn settings(theme_mode: ThemeMode, terminal_theme: ThemeMode, locale: Option<&str>) -> AppSettings {
         AppSettings {
             theme_mode,
+            terminal_theme,
             locale: locale.map(str::to_owned),
         }
+    }
+
+    #[test]
+    fn a_file_written_before_the_terminal_had_a_palette_still_loads() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(&path, r#"{"schemaVersion":1,"themeMode":"dark","locale":"zh-CN"}"#).expect("write");
+
+        let loaded = load_from(&path).expect("an older file is not an error");
+
+        assert_eq!(loaded.theme_mode, ThemeMode::Dark);
+        assert_eq!(
+            loaded.terminal_theme,
+            ThemeMode::System,
+            "absent means follow the interface"
+        );
+        assert_eq!(loaded.locale.as_deref(), Some("zh-CN"));
     }
 
     #[test]
@@ -154,7 +178,7 @@ mod tests {
     fn settings_survive_a_round_trip() {
         let directory = tempdir().expect("temp dir");
         let path = directory.path().join("settings.json");
-        let written = settings(ThemeMode::Light, Some("zh-CN"));
+        let written = settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"));
 
         save_to(&path, &written).expect("save");
         assert_eq!(load_from(&path).expect("load"), written);

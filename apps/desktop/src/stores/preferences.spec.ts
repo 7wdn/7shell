@@ -48,7 +48,7 @@ describe("preferences store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     system = stubSystemTheme(true);
-    settingsGetMock.mockReset().mockResolvedValue({ themeMode: "system" });
+    settingsGetMock.mockReset().mockResolvedValue({ themeMode: "system", terminalTheme: "system" });
     settingsSetMock.mockReset().mockResolvedValue(undefined);
     document.documentElement.classList.remove("dark");
   });
@@ -77,7 +77,7 @@ describe("preferences store", () => {
   });
 
   it("applies a stored choice instead of the system", async () => {
-    settingsGetMock.mockResolvedValue({ themeMode: "light", locale: "zh-CN" });
+    settingsGetMock.mockResolvedValue({ themeMode: "light", terminalTheme: "system", locale: "zh-CN" });
 
     const store = usePreferencesStore();
     store.initialize();
@@ -108,7 +108,7 @@ describe("preferences store", () => {
 
     await store.setThemeMode("dark");
 
-    expect(settingsSetMock).toHaveBeenCalledWith({ themeMode: "dark", locale: undefined });
+    expect(settingsSetMock).toHaveBeenCalledWith({ themeMode: "dark", terminalTheme: "system", locale: undefined });
   });
 
   it("records the language only once someone chooses one", async () => {
@@ -118,7 +118,7 @@ describe("preferences store", () => {
 
     await store.setLocale("zh-CN");
 
-    expect(settingsSetMock).toHaveBeenCalledWith({ themeMode: "system", locale: "zh-CN" });
+    expect(settingsSetMock).toHaveBeenCalledWith({ themeMode: "system", terminalTheme: "system", locale: "zh-CN" });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
 
@@ -156,5 +156,60 @@ describe("preferences store", () => {
     expect(system.listenerCount()).toBe(1);
     stopFollowing();
     expect(system.listenerCount()).toBe(0);
+  });
+});
+
+describe("the terminal palette", () => {
+  let system: ReturnType<typeof stubSystemTheme>;
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    system = stubSystemTheme(true);
+    settingsGetMock.mockReset().mockResolvedValue({ themeMode: "system", terminalTheme: "system" });
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("follows the interface by default, not the operating system", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // The interface is dark because the system is dark; the terminal follows the interface.
+    expect(store.resolvedTheme).toBe("dark");
+    expect(store.resolvedTerminalTheme).toBe("dark");
+
+    // The system turns light, the interface follows it, and the terminal follows the interface.
+    system.setDark(false);
+    expect(store.resolvedTheme).toBe("light");
+    expect(store.resolvedTerminalTheme).toBe("light");
+
+    // An interface chosen by hand carries the terminal with it too.
+    await store.setThemeMode("dark");
+    expect(store.resolvedTerminalTheme).toBe("dark");
+  });
+
+  it("keeps a palette the person chose, whatever the interface does", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setTerminalTheme("light");
+    expect(store.resolvedTerminalTheme).toBe("light");
+
+    await store.setThemeMode("dark");
+    // The interface is dark again; the terminal keeps the palette it was given.
+    expect(store.resolvedTheme).toBe("dark");
+    expect(store.resolvedTerminalTheme).toBe("light");
+    expect(settingsSetMock).toHaveBeenLastCalledWith({ themeMode: "dark", terminalTheme: "light", locale: undefined });
+  });
+
+  it("remembers the choice across a restart", async () => {
+    settingsGetMock.mockResolvedValue({ themeMode: "light", terminalTheme: "dark" });
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.resolvedTerminalTheme).toBe("dark");
   });
 });

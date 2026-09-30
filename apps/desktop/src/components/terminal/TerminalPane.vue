@@ -15,12 +15,20 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { registerTerminalSink } from "@/lib/terminal/bus";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 
 import "@xterm/xterm/css/xterm.css";
+
+const preferences = usePreferencesStore();
+
+/** Which of the two palettes this pane wears, from the person's choice rather than from the window. */
+const paletteClass = computed(() =>
+  preferences.resolvedTerminalTheme === "dark" ? "terminal-dark" : "terminal-light",
+);
 
 const props = defineProps<{
   handle: string;
@@ -50,8 +58,10 @@ let probe: CanvasRenderingContext2D | null | undefined;
  * xterm parses the strings it is given and does not understand `oklch()`, so each token is handed
  * to the browser first and the value it reports back — an sRGB one — is what xterm receives.
  */
-function token(name: string): string | undefined {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+function token(name: string, element: Element | null): string | undefined {
+  const raw = getComputedStyle(element ?? document.documentElement)
+    .getPropertyValue(name)
+    .trim();
   if (raw === "" || typeof CSS === "undefined" || !CSS.supports("color", raw)) {
     return undefined;
   }
@@ -65,13 +75,41 @@ function token(name: string): string | undefined {
   return probe.fillStyle;
 }
 
+/// The colours the terminal reads. Every one of them is required: an unset colour shows up as
+/// black on black, which reads as a rendering bug rather than a missing token.
+const TERMINAL_TOKENS = [
+  ["background", "--terminal-background"],
+  ["foreground", "--terminal-foreground"],
+  ["cursor", "--terminal-cursor"],
+  ["selectionBackground", "--terminal-selection"],
+  ["black", "--terminal-black"],
+  ["red", "--terminal-red"],
+  ["green", "--terminal-green"],
+  ["yellow", "--terminal-yellow"],
+  ["blue", "--terminal-blue"],
+  ["magenta", "--terminal-magenta"],
+  ["cyan", "--terminal-cyan"],
+  ["white", "--terminal-white"],
+  ["brightBlack", "--terminal-bright-black"],
+  ["brightRed", "--terminal-bright-red"],
+  ["brightGreen", "--terminal-bright-green"],
+  ["brightYellow", "--terminal-bright-yellow"],
+  ["brightBlue", "--terminal-bright-blue"],
+  ["brightMagenta", "--terminal-bright-magenta"],
+  ["brightCyan", "--terminal-bright-cyan"],
+  ["brightWhite", "--terminal-bright-white"],
+] as const;
+
 function terminalTheme(): ITheme {
-  return {
-    background: token("--terminal-background"),
-    foreground: token("--terminal-foreground"),
-    cursor: token("--terminal-cursor"),
-    selectionBackground: token("--terminal-selection"),
-  };
+  const theme: Record<string, string | undefined> = {};
+
+  for (const [name, customProperty] of TERMINAL_TOKENS) {
+    // Read from the pane, not the document: the pane carries the palette class, and a dark
+    // terminal in a light interface is a choice somebody is allowed to make.
+    theme[name] = token(customProperty, container.value);
+  }
+
+  return theme as ITheme;
 }
 
 function monospaceFamily(): string | undefined {
@@ -155,6 +193,19 @@ onMounted(() => {
 });
 
 watch(
+  () => preferences.resolvedTerminalTheme,
+  () => {
+    // The palette lives in the stylesheet, so the tokens have to be read again after the class
+    // has changed — which is why this waits a tick instead of reading them straight away.
+    void nextTick(() => {
+      if (terminal) {
+        terminal.options.theme = terminalTheme();
+      }
+    });
+  },
+);
+
+watch(
   () => props.active,
   (active) => {
     if (!active) {
@@ -179,5 +230,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)]"></div>
+  <div
+    ref="container"
+    class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)]"
+    :class="paletteClass"
+  ></div>
 </template>

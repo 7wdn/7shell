@@ -23,6 +23,8 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 export const usePreferencesStore = defineStore("preferences", () => {
   const themeMode = ref<ThemeMode>("system");
+  /** Which palette the terminal draws in; `system` means "follow the interface theme". */
+  const terminalTheme = ref<ThemeMode>("system");
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -34,6 +36,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
       return systemPrefersDark.value ? "dark" : "light";
     }
     return themeMode.value;
+  });
+
+  /**
+   * Which palette the terminal uses.
+   *
+   * `system` resolves to the interface's own answer, never to the operating system's: a terminal
+   * that followed the system while the window around it did not would be the one thing on screen
+   * that disagrees. Always dark, or always light, are both real choices and both kept.
+   */
+  const resolvedTerminalTheme = computed<ResolvedTheme>(() => {
+    if (terminalTheme.value === "system") {
+      return resolvedTheme.value;
+    }
+    return terminalTheme.value;
   });
 
   function apply(): void {
@@ -64,6 +80,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     try {
       const settings = await backend.settings.get();
       themeMode.value = settings.themeMode;
+      terminalTheme.value = settings.terminalTheme;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -84,6 +101,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     try {
       await backend.settings.set({
         themeMode: themeMode.value,
+        terminalTheme: terminalTheme.value,
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -94,6 +112,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setThemeMode(mode: ThemeMode): Promise<void> {
     themeMode.value = mode;
     apply();
+    await persist();
+  }
+
+  async function setTerminalTheme(mode: ThemeMode): Promise<void> {
+    terminalTheme.value = mode;
     await persist();
   }
 
@@ -113,12 +136,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   return {
     themeMode,
+    terminalTheme,
     resolvedTheme,
+    resolvedTerminalTheme,
     locale,
     problem,
     initialize,
     load,
     setThemeMode,
+    setTerminalTheme,
     setLocale,
   };
 });

@@ -30,11 +30,6 @@
 
   --radius: 0.625rem;
 
-  /* Terminal colours stay dark in both themes: a terminal is always a dark surface. */
-  --terminal-background: oklch(0.19 0.012 264);
-  --terminal-foreground: oklch(0.88 0.012 264);
-  --terminal-cursor: oklch(0.78 0.13 250);
-  --terminal-selection: oklch(0.4 0.06 250);
 }
 
 .dark {
@@ -57,6 +52,61 @@
   --success: oklch(0.75 0.16 150);
   --warning: oklch(0.8 0.15 85);
   --ring: oklch(0.7 0.14 250);
+}
+
+/*
+ * Terminal palettes.
+ *
+ * Not tied to the interface theme on purpose: a light interface with a dark terminal is a common
+ * and deliberate choice (and the reverse happens too), so the pane carries one of these two
+ * classes and reads its colours from it. `apps/desktop/src/lib/terminal/palette.spec.ts` fails when
+ * a palette is missing a colour the terminal reads — an unset one shows up as black on black,
+ * which looks like a rendering bug rather than a missing token.
+ */
+.terminal-dark {
+  --terminal-background: oklch(0.19 0.012 264);
+  --terminal-foreground: oklch(0.88 0.012 264);
+  --terminal-cursor: oklch(0.78 0.13 250);
+  --terminal-selection: oklch(0.4 0.06 250);
+  --terminal-black: oklch(0.32 0.012 264);
+  --terminal-red: oklch(0.68 0.16 22);
+  --terminal-green: oklch(0.78 0.15 142);
+  --terminal-yellow: oklch(0.74 0.13 75);
+  --terminal-blue: oklch(0.72 0.13 250);
+  --terminal-magenta: oklch(0.72 0.16 320);
+  --terminal-cyan: oklch(0.75 0.11 200);
+  --terminal-white: oklch(0.78 0.012 264);
+  --terminal-bright-black: oklch(0.45 0.012 264);
+  --terminal-bright-red: oklch(0.75 0.16 22);
+  --terminal-bright-green: oklch(0.85 0.16 142);
+  --terminal-bright-yellow: oklch(0.83 0.14 85);
+  --terminal-bright-blue: oklch(0.8 0.12 250);
+  --terminal-bright-magenta: oklch(0.8 0.15 320);
+  --terminal-bright-cyan: oklch(0.84 0.11 200);
+  --terminal-bright-white: oklch(0.98 0.004 264);
+}
+
+.terminal-light {
+  --terminal-background: oklch(0.98 0.003 264);
+  --terminal-foreground: oklch(0.26 0.02 264);
+  --terminal-cursor: oklch(0.55 0.17 254);
+  --terminal-selection: oklch(0.87 0.06 254);
+  --terminal-black: oklch(0.28 0.02 264);
+  --terminal-red: oklch(0.5 0.2 25);
+  --terminal-green: oklch(0.45 0.13 145);
+  --terminal-yellow: oklch(0.47 0.11 80);
+  --terminal-blue: oklch(0.52 0.18 254);
+  --terminal-magenta: oklch(0.5 0.2 305);
+  --terminal-cyan: oklch(0.52 0.1 200);
+  --terminal-white: oklch(0.55 0.01 264);
+  --terminal-bright-black: oklch(0.44 0.01 264);
+  --terminal-bright-red: oklch(0.45 0.19 25);
+  --terminal-bright-green: oklch(0.4 0.12 145);
+  --terminal-bright-yellow: oklch(0.42 0.1 80);
+  --terminal-bright-blue: oklch(0.47 0.17 254);
+  --terminal-bright-magenta: oklch(0.45 0.19 305);
+  --terminal-bright-cyan: oklch(0.47 0.09 200);
+  --terminal-bright-white: oklch(0.35 0.01 264);
 }
 
 @theme inline {

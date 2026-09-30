@@ -10,6 +10,13 @@
       "system": "System",
       "dark": "Dark",
       "light": "Light"
+    },
+    "terminal": {
+      "title": "Terminal colours",
+      "follow": "Follow the interface",
+      "dark": "Always dark",
+      "light": "Always light",
+      "hint": "A dark terminal in a light interface is a common choice, so the two are decided separately. Either way the sixteen ANSI colours come from the same palette, tuned to be readable on its own background."
     }
   }
 }

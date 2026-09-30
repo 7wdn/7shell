@@ -49,6 +49,14 @@ impl std::fmt::Display for ThemeMode {
 pub struct AppSettings {
     #[serde(default)]
     pub theme_mode: ThemeMode,
+    /// Which palette the terminal draws in.
+    ///
+    /// The same three values as the interface's theme, with one meaning changed: `system` here is
+    /// "follow the interface", because a terminal that follows the operating system while the
+    /// window around it does not would be the one thing on screen that disagrees. A light
+    /// interface with a dark terminal is a common and deliberate choice, so it is kept.
+    #[serde(default)]
+    pub terminal_theme: ThemeMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
 }
@@ -57,6 +65,6 @@ impl AppSettings {
     /// Whether anything has been chosen yet. Used by the interface to decide whether the
     /// system language and theme still apply.
     pub fn is_untouched(&self) -> bool {
-        self.theme_mode == ThemeMode::System && self.locale.is_none()
+        self.theme_mode == ThemeMode::System && self.terminal_theme == ThemeMode::System && self.locale.is_none()
     }
 }

@@ -40,6 +40,16 @@ const THEMES: readonly { mode: ThemeMode; labelKey: string; icon: Component }[] 
 
 const LANGUAGE_LABELS: Record<SupportedLocale, string> = { en: "English", "zh-CN": "简体中文" };
 
+/**
+ * The terminal's palette. The same three choices as the interface, with `system` reading
+ * "follow the interface" rather than "follow the operating system", so the labels differ.
+ */
+const TERMINAL_THEMES: readonly { mode: ThemeMode; labelKey: string }[] = [
+  { mode: "system", labelKey: "settings.terminal.follow" },
+  { mode: "dark", labelKey: "settings.terminal.dark" },
+  { mode: "light", labelKey: "settings.terminal.light" },
+];
+
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
 }
@@ -89,6 +99,30 @@ const problem = computed(() => (preferences.problem ? describeShellError(transla
               </button>
             </div>
             <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.appearanceHint") }}</p>
+          </section>
+
+          <section>
+            <h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {{ t("settings.terminal.title") }}
+            </h3>
+            <div class="flex gap-1 rounded-md border border-border bg-background p-0.5">
+              <button
+                v-for="theme in TERMINAL_THEMES"
+                :key="theme.mode"
+                type="button"
+                class="flex-1 rounded-sm px-2 py-1.5 text-xs transition-colors"
+                :class="
+                  preferences.terminalTheme === theme.mode
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                "
+                :aria-pressed="preferences.terminalTheme === theme.mode"
+                @click="preferences.setTerminalTheme(theme.mode)"
+              >
+                {{ t(theme.labelKey) }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.terminal.hint") }}</p>
           </section>
 
           <section>

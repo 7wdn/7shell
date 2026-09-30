@@ -64,6 +64,26 @@ trusting is the one the authenticating connection actually received.
 Trusting a key that step 3 reported is a separate call (`known_host_trust`), after which the
 interface asks to open again. Nothing stays half-open while a person thinks about a fingerprint.
 
+## Terminal colours
+
+The terminal does not take its colours from the interface theme. It wears one of two palettes —
+`.terminal-dark` or `.terminal-light` — and which one is a setting: **follow the interface** (the
+default), always dark, or always light.
+
+Both halves of that are deliberate:
+
+- **Always dark is a real choice.** A dark terminal in a light interface is what most people who
+  use light interfaces actually want, so the two decisions are kept apart instead of tied together.
+- **A palette is a set, not a background.** Every ANSI colour differs between the two: bright
+  yellow on white is unreadable, and so is dark blue on black. `lib/terminal/palette.spec.ts` fails
+  when either palette stops defining one of the twenty colours the terminal reads, because xterm
+  silently falls back to its own default and the result looks like a rendering bug rather than a
+  missing token.
+
+The colours themselves stay in the stylesheet like every other colour in the interface. The pane
+carries its palette class, reads the computed values from itself rather than from the document, and
+hands each one to the browser first — xterm does not parse `oklch()`.
+
 ## Routes and forwards
 
 A jump host and a port forward are the same primitive twice: a channel opened on an established
