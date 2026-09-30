@@ -59,6 +59,13 @@ built says so here rather than reading as though it were.
 
 ## Rules the code follows
 
+**A vault from an earlier build still opens.** The cryptography never changed — the same KDF
+parameters, the same associated data strings, the same nonce layout — so an older file differs only
+in where two fields sit. Its salt lived inside the `kdf` record and the algorithm was called
+`algorithm`, and the loader accepts both layouts, rewriting the current one on the next save. The
+alternative would be to tell someone their readable vault is unreadable, with deleting it as the
+only way forward.
+
 **Two kinds of state, two homes.** Secrets go in the vault and nowhere else. The settings file
 holds only what a user would not mind someone reading: theme, language, and later window state.
 Keeping that line sharp is what makes it safe to write the settings file with plain JSON and to

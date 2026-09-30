@@ -53,6 +53,63 @@ struct Envelope {
     payload: String,
 }
 
+/// An envelope as an earlier build of this application wrote it.
+///
+/// The cryptography never changed — the same KDF parameters, the same associated data strings, the
+/// same nonce layout — so the two layouts differ only in where two fields sit: the salt lived
+/// inside the `kdf` object, and the algorithm was called `algorithm`. Reading that file matters,
+/// because the alternative for anyone holding one is to throw it away: a vault that cannot be
+/// opened cannot be created over either.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawEnvelope {
+    #[serde(default)]
+    version: u32,
+    kdf: RawKdf,
+    #[serde(default)]
+    salt: Option<String>,
+    verifier: String,
+    payload: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawKdf {
+    /// `algorithm` is what the earlier layout called it.
+    #[serde(default, alias = "algorithm")]
+    name: String,
+    #[serde(default)]
+    memory_kib: u32,
+    #[serde(default)]
+    iterations: u32,
+    #[serde(default)]
+    parallelism: u32,
+    #[serde(default)]
+    salt: Option<String>,
+}
+
+/// Reads either envelope layout into the current one.
+fn envelope_from(raw: &[u8]) -> Result<Envelope, serde_json::Error> {
+    let raw: RawEnvelope = serde_json::from_slice(raw)?;
+    let salt = raw
+        .salt
+        .or(raw.kdf.salt)
+        .ok_or_else(|| serde::de::Error::missing_field("salt"))?;
+
+    Ok(Envelope {
+        version: raw.version,
+        kdf: KdfParams {
+            name: raw.kdf.name,
+            memory_kib: raw.kdf.memory_kib,
+            iterations: raw.kdf.iterations,
+            parallelism: raw.kdf.parallelism,
+        },
+        salt,
+        verifier: raw.verifier,
+        payload: raw.payload,
+    })
+}
+
 /// Whether a vault can be read right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,7 +273,7 @@ impl Vault {
 
         // A file that is not even an envelope is reported exactly like a wrong password: from
         // the caller's side both mean "this did not open", and that is all they may know.
-        let envelope: Envelope = match serde_json::from_slice(&raw) {
+        let envelope: Envelope = match envelope_from(&raw) {
             Ok(envelope) => envelope,
             Err(_) => return Err(ShellError::vault_unlock_failed()),
         };
@@ -666,6 +723,90 @@ mod tests {
     fn write_envelope(path: &Path, envelope: &Envelope) {
         let bytes = serde_json::to_vec_pretty(envelope).expect("serialize");
         write_atomically(path, &bytes).expect("write");
+    }
+
+    /// Rewrites an envelope in the layout an earlier build of this application used: the salt
+    /// lived inside the `kdf` object, the algorithm was called `algorithm`, and the record carried
+    /// its own version number.
+    fn as_earlier_layout(envelope: &Envelope) -> serde_json::Value {
+        let mut kdf = serde_json::to_value(&envelope.kdf).expect("serialize kdf");
+        let object = kdf.as_object_mut().expect("the kdf record is an object");
+        let name = object.remove("name").expect("name");
+        object.insert("algorithm".to_owned(), name);
+        object.insert("version".to_owned(), serde_json::Value::from(19));
+        object.insert("salt".to_owned(), serde_json::Value::from(envelope.salt.clone()));
+
+        serde_json::json!({
+            "version": envelope.version,
+            "kdf": kdf,
+            "verifier": envelope.verifier,
+            "payload": envelope.payload,
+        })
+    }
+
+    #[test]
+    fn a_vault_written_by_an_earlier_build_still_opens() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+
+        vault.create("master").expect("create");
+        vault
+            .save_session(
+                sample_session("s1", "web-1"),
+                Some(SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+        let secret_before = stored_secret(&vault, "s1");
+
+        // Re-shape the file the way the earlier build wrote it, then reopen from scratch.
+        let earlier = as_earlier_layout(&envelope_at(&std::fs::read(&path).expect("read")));
+        std::fs::write(&path, serde_json::to_vec_pretty(&earlier).expect("serialize")).expect("write an older file");
+
+        let reopened = Vault::open_at(path.clone());
+        reopened
+            .unlock("master")
+            .expect("an earlier vault opens with the same password");
+
+        let sessions = reopened.sessions().expect("sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "web-1");
+        assert_eq!(stored_secret(&reopened, "s1"), secret_before, "its secrets survived");
+
+        // The next write lands in the current layout, so the old shape is left behind rather than
+        // carried forever.
+        reopened
+            .save_group(SessionGroup {
+                id: "g1".to_owned(),
+                name: "work".to_owned(),
+                parent_id: None,
+                order: 1,
+            })
+            .expect("save");
+        let upgraded = std::fs::read_to_string(&path).expect("read");
+        let parsed: serde_json::Value = serde_json::from_str(&upgraded).expect("json");
+        assert!(parsed.get("salt").is_some(), "the salt is back at the top level");
+        assert_eq!(parsed["kdf"]["name"], serde_json::Value::from("argon2id"));
+        assert!(
+            parsed["kdf"].get("salt").is_none(),
+            "and it is no longer inside the kdf record"
+        );
+    }
+
+    #[test]
+    fn a_vault_with_no_salt_anywhere_does_not_open() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+
+        let mut envelope = as_earlier_layout(&envelope_at(&std::fs::read(&path).expect("read")));
+        envelope["kdf"].as_object_mut().expect("kdf").remove("salt");
+        std::fs::write(&path, serde_json::to_vec_pretty(&envelope).expect("serialize")).expect("write");
+
+        let error = Vault::open_at(path).unlock("master").expect_err("no salt, no key");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
     }
 
     /// One character of a base64 blob, changed to another character of the alphabet.
