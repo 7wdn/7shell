@@ -1,0 +1,32 @@
+{
+  "risk": {
+    "level": {
+      "safe": "安全",
+      "caution": "注意",
+      "destructive": "有破坏性",
+      "catastrophic": "极高风险"
+    },
+    "unreadableShell": "以 shell 执行，真正运行的命令在字符串里",
+    "recursiveForceDelete": "递归强制删除",
+    "deleteEverything": "删除根目录或家目录下的全部内容",
+    "filesystemFormat": "格式化文件系统",
+    "writeToDevice": "把原始数据写入块设备",
+    "networkCodeAsRoot": "下载网络脚本后直接交给 shell 执行",
+    "powerState": "关机或重启主机",
+    "firewallFlush": "清空或关闭防火墙",
+    "databaseDrop": "删除数据库或数据表",
+    "deleteByFind": "删除 find 匹配到的文件",
+    "eraseLogs": "清空日志文件",
+    "killEverything": "向所有进程发送信号",
+    "recursivePermissions": "从根路径开始递归修改权限",
+    "permissionsWideOpen": "把路径设为任何人可写",
+    "privilegeElevation": "以提权方式运行",
+    "serviceControl": "停止或禁用服务",
+    "packageRemoval": "卸载已安装的软件包",
+    "userChange": "修改账号或密码",
+    "historyRewrite": "清除 shell 历史记录",
+    "scheduledWorkRemoval": "删除计划任务",
+    "versionControlDestructive": "丢弃版本历史或强制推送覆盖",
+    "overwriteFile": "通过重定向覆盖文件"
+  }
+}

@@ -71,8 +71,8 @@ pub struct SshSession {
     reader: AsyncMutex<Option<JoinHandle<()>>>,
     /// Set by `close`, so the reader can tell a deliberate end from a lost connection.
     closing: Arc<AtomicBool>,
-    host: String,
-    port: u16,
+    pub(crate) host: String,
+    pub(crate) port: u16,
     /// The sessions this one runs over, kept alive for exactly as long as it lives.
     ///
     /// A connection opened over a channel dies with the connection carrying it, so dropping these
@@ -178,6 +178,17 @@ impl SshSession {
         outcome
     }
 
+    /// Opens a session channel with nothing requested on it.
+    ///
+    /// The thing that is asked for next is what makes a channel a terminal, an sftp subsystem or a
+    /// command; the channel itself is the same, so it is opened in one place.
+    pub(crate) async fn open_session_channel_for(&self, what: &str) -> Result<Channel<Msg>, ShellError> {
+        self.handle
+            .channel_open_session()
+            .await
+            .map_err(|error| self.channel_failure(&format!("a channel for {what} could not be opened"), &error))
+    }
+
     /// Opens a subsystem channel — `sftp`, in practice — and hands it over as a byte stream.
     ///
     /// A subsystem is a program the server runs for the life of the channel, so it goes on a
@@ -212,7 +223,7 @@ impl SshSession {
     }
 
     /// The failure shape for everything that happens on an established session.
-    fn channel_failure(&self, what: &str, error: &russh::Error) -> ShellError {
+    pub(crate) fn channel_failure(&self, what: &str, error: &russh::Error) -> ShellError {
         ShellError::ssh_channel_failed(&self.host, self.port, format!("{what}: {error}"))
     }
 }

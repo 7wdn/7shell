@@ -3994,6 +3994,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sevenshell-policy"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sevenshell-error",
+ "sevenshell-types",
+]
+
+[[package]]
 name = "sevenshell-session"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,32 @@
+{
+  "risk": {
+    "level": {
+      "safe": "Safe",
+      "caution": "Caution",
+      "destructive": "Destructive",
+      "catastrophic": "Catastrophic"
+    },
+    "unreadableShell": "Runs a shell, so what actually executes is inside the string",
+    "recursiveForceDelete": "Recursive forced delete",
+    "deleteEverything": "Deletes everything under a root or home path",
+    "filesystemFormat": "Formats a filesystem",
+    "writeToDevice": "Writes raw data to a device",
+    "networkCodeAsRoot": "Downloads code and hands it straight to a shell",
+    "powerState": "Shuts down or restarts the host",
+    "firewallFlush": "Flushes or disables the firewall",
+    "databaseDrop": "Drops a database or a table",
+    "deleteByFind": "Deletes the files find matched",
+    "eraseLogs": "Erases log files",
+    "killEverything": "Signals every process",
+    "recursivePermissions": "Changes permissions recursively from the root",
+    "permissionsWideOpen": "Makes a path writable by anyone",
+    "privilegeElevation": "Runs with elevated privileges",
+    "serviceControl": "Stops or disables a service",
+    "packageRemoval": "Uninstalls packages",
+    "userChange": "Changes accounts or passwords",
+    "historyRewrite": "Erases the shell history",
+    "scheduledWorkRemoval": "Removes scheduled tasks",
+    "versionControlDestructive": "Discards version history or force-pushes over it",
+    "overwriteFile": "Overwrites a file through redirection"
+  }
+}
