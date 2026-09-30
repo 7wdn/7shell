@@ -6,3 +6,4 @@
 //! exercised without a running webview.
 
 pub mod app;
+pub mod settings;

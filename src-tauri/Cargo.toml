@@ -19,5 +19,7 @@ tauri = { workspace = true }
 tauri-plugin-log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+log = { workspace = true }
 sevenshell-error = { workspace = true }
+sevenshell-platform = { workspace = true }
 sevenshell-types = { workspace = true }

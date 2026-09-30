@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { replaceJsonVersion, replaceWorkspaceVersion } from "../lib/versions.mjs";
+import {
+  readJsonVersion,
+  readWorkspaceVersion,
+  replaceJsonVersion,
+  replaceWorkspaceVersion,
+} from "../lib/versions.mjs";
 
 const CARGO_TOML = `[workspace]
 resolver = "3"
@@ -19,6 +24,14 @@ sevenshell-types = { version = "0.1.0", path = "crates/sevenshell-types" }
 
 [profile.release]
 strip = true
+`;
+
+/** A manifest written with an unusual layout, to prove the check reads numbers, not whitespace. */
+const WRAPPED_JSON = `{
+  "name": "sevenshell",
+  "version": "0.1.0",
+  "engines": { "node": ">=22" }
+}
 `;
 
 test("a JSON manifest keeps its other fields and their order", () => {
@@ -53,4 +66,22 @@ test("rewriting to the version already present is a no-op", () => {
 test("a Cargo.toml without the workspace section is an error, not a silent no-op", () => {
   assert.throws(() => replaceWorkspaceVersion('[package]\nname = "x"\n', "1.0.0"), /workspace\.package/);
   assert.throws(() => replaceWorkspaceVersion('[workspace.package]\nedition = "2024"\n', "1.0.0"), /no version/);
+});
+
+test("the version is read back out of every manifest shape", () => {
+  assert.equal(readJsonVersion(WRAPPED_JSON), "0.1.0");
+  assert.equal(readWorkspaceVersion(CARGO_TOML), "0.1.0");
+
+  // A manifest without the section, or without a version in it, reports nothing rather than
+  // guessing — the caller then treats it as drift.
+  assert.equal(readWorkspaceVersion('[package]\nname = "x"\n'), null);
+  assert.equal(readWorkspaceVersion('[workspace.package]\nedition = "2024"\n'), null);
+  assert.equal(readWorkspaceVersion("[workspace.package]\nversion = 1\n"), null);
+});
+
+test("a hand-wrapped manifest is still the right version", () => {
+  // Formatting is not a release problem, so the check must not report one.
+  assert.equal(readJsonVersion(WRAPPED_JSON), "0.1.0");
+  assert.notEqual(replaceJsonVersion(WRAPPED_JSON, "0.1.0"), WRAPPED_JSON, "writing still normalises the layout");
+  assert.equal(readJsonVersion(replaceJsonVersion(WRAPPED_JSON, "1.0.0")), "1.0.0");
 });

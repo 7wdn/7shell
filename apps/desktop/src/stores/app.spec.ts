@@ -5,9 +5,7 @@ vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({ appInfo: vi.fn() }));
 
 import { appInfo } from "@/lib/backend/tauri";
-import { resolveLocale } from "@/i18n";
 import { useAppStore } from "@/stores/app";
-import { usePreferencesStore } from "@/stores/preferences";
 
 const appInfoMock = vi.mocked(appInfo);
 
@@ -68,34 +66,5 @@ describe("app store", () => {
     expect(store.status).toBe("ready");
     expect(store.failure).toBeNull();
     expect(store.platform).toBe("linux x86_64");
-  });
-});
-
-describe("preferences store", () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-  });
-
-  it("applies language and theme to the document", () => {
-    const store = usePreferencesStore();
-
-    store.setLocale("zh-CN");
-    expect(store.locale).toBe("zh-CN");
-    expect(document.documentElement.lang).toBe("zh-CN");
-
-    store.setTheme("light");
-    expect(document.documentElement.classList.contains("dark")).toBe(false);
-
-    store.toggleTheme();
-    expect(store.theme).toBe("dark");
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
-  });
-
-  it("resolves a browser language tag to a supported locale", () => {
-    expect(resolveLocale("zh-Hans-CN")).toBe("zh-CN");
-    expect(resolveLocale("zh-TW")).toBe("zh-CN");
-    expect(resolveLocale("en-GB")).toBe("en");
-    expect(resolveLocale("de-DE")).toBe("en");
-    expect(resolveLocale(undefined)).toBe("en");
   });
 });

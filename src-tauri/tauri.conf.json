@@ -20,7 +20,10 @@
         "minHeight": 600,
         "resizable": true,
         "center": true,
-        "theme": "Dark"
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": { "x": 16, "y": 18 },
+        "hiddenTitle": true,
+        "acceptFirstMouse": true
       }
     ],
     "security": {

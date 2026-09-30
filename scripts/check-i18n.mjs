@@ -68,13 +68,19 @@ async function loadLocaleSources() {
   return locales;
 }
 
-/** Message keys the interface uses, by literal occurrence. */
+/** Message keys the sources use, by literal occurrence, with how much was scanned. */
 async function collectSourceKeys() {
   const required = new Map();
+  let rustFiles = 0;
+  let interfaceFiles = 0;
   const pattern = /"errors\.[A-Za-z0-9_.]+"/g;
+  // Keys the interface asks for by name. A typo here would otherwise show up as a raw key in
+  // the window, which is exactly the kind of thing nobody notices until a user does.
+  const translationCall = /(?:\bt|\$t)\(\s*"([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)"/g;
 
   for (const root of RUST_ROOTS) {
     for (const file of await walk(path.join(REPO_ROOT, root), [".rs"])) {
+      rustFiles += 1;
       const source = await readFile(file, "utf8");
       for (const match of source.match(pattern) ?? []) {
         required.set(match.slice(1, -1), label(file));
@@ -83,19 +89,34 @@ async function collectSourceKeys() {
   }
 
   for (const file of await walk(TS_ROOT, [".ts", ".vue"])) {
+    interfaceFiles += 1;
     const source = await readFile(file, "utf8");
     for (const match of source.match(pattern) ?? []) {
       required.set(match.slice(1, -1), label(file));
     }
+    for (const match of source.matchAll(translationCall)) {
+      required.set(match[1], label(file));
+    }
   }
 
-  return required;
+  return { required, rustFiles, interfaceFiles };
 }
 
 async function main() {
   const { capabilities, protocols, authMethods } = await loadDescriptors();
   const locales = await loadLocaleSources();
-  const sourceKeys = await collectSourceKeys();
+  const { required: sourceKeys, rustFiles, interfaceFiles } = await collectSourceKeys();
+
+  // A scan that finds nothing looks exactly like a repository with nothing to check. This
+  // check already spent one afternoon silently reading no interface file at all, so it now
+  // refuses to report success when it clearly did not search.
+  if (rustFiles === 0 || interfaceFiles === 0) {
+    console.error(
+      `The key scan read ${rustFiles} Rust file(s) and ${interfaceFiles} interface file(s). ` +
+        "A scan that finds nothing is a broken check, not a clean repository.",
+    );
+    process.exit(1);
+  }
 
   const required = new Map(sourceKeys);
   for (const capability of capabilities) {

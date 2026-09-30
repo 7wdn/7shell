@@ -1,7 +1,7 @@
 /**
- * Locale files are JSON, one per domain, nested under the domain key, so a checker
- * script can read them without parsing TypeScript (`scripts/check-i18n.mjs` verifies
- * that every message key used by Rust, the descriptors and the interface exists).
+ * Locale files are JSON, one per domain, nested under the domain key, so a checker script can
+ * read them without parsing TypeScript (`scripts/check-i18n.mjs` verifies that every key used by
+ * Rust, the descriptors and the interface exists in every locale).
  */
 
 import { createI18n } from "vue-i18n";
@@ -11,13 +11,19 @@ import enAuth from "./locales/en/auth.json";
 import enCapability from "./locales/en/capability.json";
 import enCommon from "./locales/en/common.json";
 import enErrors from "./locales/en/errors.json";
+import enHome from "./locales/en/home.json";
 import enProtocol from "./locales/en/protocol.json";
+import enSettings from "./locales/en/settings.json";
+import enShell from "./locales/en/shell.json";
 import zhCnApp from "./locales/zh-CN/app.json";
 import zhCnAuth from "./locales/zh-CN/auth.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
 import zhCnCommon from "./locales/zh-CN/common.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
+import zhCnHome from "./locales/zh-CN/home.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
+import zhCnSettings from "./locales/zh-CN/settings.json";
+import zhCnShell from "./locales/zh-CN/shell.json";
 
 export const SUPPORTED_LOCALES = ["en", "zh-CN"] as const;
 
@@ -52,8 +58,28 @@ export function resolveLocale(tag: string | undefined): SupportedLocale {
 }
 
 const messages = {
-  en: { ...enCommon, ...enApp, ...enErrors, ...enProtocol, ...enAuth, ...enCapability },
-  "zh-CN": { ...zhCnCommon, ...zhCnApp, ...zhCnErrors, ...zhCnProtocol, ...zhCnAuth, ...zhCnCapability },
+  en: {
+    ...enCommon,
+    ...enShell,
+    ...enHome,
+    ...enSettings,
+    ...enApp,
+    ...enErrors,
+    ...enProtocol,
+    ...enAuth,
+    ...enCapability,
+  },
+  "zh-CN": {
+    ...zhCnCommon,
+    ...zhCnShell,
+    ...zhCnHome,
+    ...zhCnSettings,
+    ...zhCnApp,
+    ...zhCnErrors,
+    ...zhCnProtocol,
+    ...zhCnAuth,
+    ...zhCnCapability,
+  },
 };
 
 export const i18n = createI18n({

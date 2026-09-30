@@ -1,0 +1,15 @@
+{
+  "settings": {
+    "title": "Settings",
+    "description": "Appearance, language, and what this build is.",
+    "appearance": "Appearance",
+    "appearanceHint": "Following the system keeps changing with it while the application is open.",
+    "language": "Language",
+    "about": "About",
+    "theme": {
+      "system": "System",
+      "dark": "Dark",
+      "light": "Light"
+    }
+  }
+}

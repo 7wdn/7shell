@@ -1,0 +1,16 @@
+{
+  "shell": {
+    "window": {
+      "minimize": "最小化",
+      "maximize": "最大化",
+      "restore": "还原",
+      "close": "关闭"
+    },
+    "sidebar": {
+      "sessions": "会话",
+      "newSessionPending": "创建会话需要保险库，那是下一个里程碑",
+      "empty": "还没有会话。等凭据有了安全的存放处，它们会出现在这里。",
+      "protocols": "协议"
+    }
+  }
+}

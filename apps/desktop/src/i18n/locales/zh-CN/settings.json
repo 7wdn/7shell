@@ -1,0 +1,15 @@
+{
+  "settings": {
+    "title": "设置",
+    "description": "外观、语言，以及这个版本的构建信息。",
+    "appearance": "外观",
+    "appearanceHint": "选择“跟随系统”时，应用运行期间会一直跟着系统切换。",
+    "language": "语言",
+    "about": "关于",
+    "theme": {
+      "system": "跟随系统",
+      "dark": "深色",
+      "light": "浅色"
+    }
+  }
+}

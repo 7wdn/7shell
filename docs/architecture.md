@@ -79,6 +79,42 @@ version is refused with `STORE-SCHEMA-NEWER` rather than guessed at. The interfa
 tokens for files the user picked through a native dialog, never paths — which is also why the
 Tauri capability file grants no filesystem or dialog permission to the renderer.
 
+## The shell
+
+The window is undecorated on Windows and Linux (`set_decorations(false)` from
+`src-tauri/src/window_chrome.rs`), so the interface draws its own title bar, its own three window
+buttons and its own drag region. macOS keeps its native chrome in the overlay style, because the
+traffic lights and their behaviour are the platform's to own; the title bar insets its content
+instead of imitating them.
+
+Dragging and double-click-to-maximize come from Tauri's built-in `data-tauri-drag-region`
+handling rather than from a listener of ours: the attribute is on the bar and the empty space in
+it, and interactive elements are skipped by the built-in handler, so a button in the drag region
+is still a button. Adding a double-click handler would toggle twice and look like nothing
+happened.
+
+| Piece | Where |
+|---|---|
+| Window chrome, per-platform decision | `src-tauri/src/window_chrome.rs` |
+| Window controls, the composable they use | `apps/desktop/src/components/shell/`, `src/composables/useWindowControls.ts` |
+| The window permissions those need, and nothing else | `src-tauri/capabilities/default.json` |
+
+## Where data lives
+
+Two kinds of state, two homes, decided once:
+
+- **Non-secret preferences** (theme mode, language, and later window state) live in
+  `settings.json` in the platform configuration directory, owned by `sevenshell-platform`. It is
+  versioned, written atomically, refuses a file from a newer version with `STORE-SCHEMA-NEWER`,
+  and is treated as readable by anyone who can read the home directory.
+- **Secrets** will live in the vault, which arrives with the SSH layer. Nothing secret may ever be
+  written to `settings.json`.
+
+Theme is a three-state choice — `system`, `dark`, `light` — with `system` as the default and a
+real mode rather than a placeholder: the interface follows the operating system while it is open
+and keeps following it as it changes. A language is only recorded once someone chooses one, so a
+fresh install follows the system language instead of freezing it.
+
 ## Startup
 
 A command that needs a service that is not ready yet answers `APP-NOT-READY`. The readiness gate

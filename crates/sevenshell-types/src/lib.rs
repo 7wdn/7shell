@@ -6,6 +6,7 @@
 
 mod app_info;
 mod descriptors;
+mod settings;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
@@ -16,3 +17,4 @@ pub use generated::{
     AUTH_METHODS, AuthMethod, AuthMethodSpec, CAPABILITIES, Capability, CapabilityGroup, CapabilitySpec,
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,
 };
+pub use settings::{AppSettings, ThemeMode};

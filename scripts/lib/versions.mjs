@@ -5,6 +5,20 @@
 // by `scripts/tests/versions.test.mjs`. A silent miss here means a release whose version
 // disagrees with itself.
 
+/** Reads the version out of a JSON manifest. */
+export function readJsonVersion(source) {
+  return JSON.parse(source).version;
+}
+
+/** Reads the version out of `[workspace.package]` in Cargo.toml, or `null` when absent. */
+export function readWorkspaceVersion(source) {
+  const start = source.indexOf("[workspace.package]");
+  if (start === -1) {
+    return null;
+  }
+  return /^version = "([^"]*)"/m.exec(source.slice(start))?.[1] ?? null;
+}
+
 /** Sets `version` in a JSON manifest, leaving the other fields and their order alone. */
 export function replaceJsonVersion(source, version) {
   const parsed = JSON.parse(source);

@@ -170,4 +170,14 @@ export function normalizeShellError(raw: unknown, operation: string): ShellError
   });
 }
 
+/**
+ * Coerces anything a caller caught into an envelope, keeping an existing one intact.
+ *
+ * Stores and components use this instead of testing for the class: what matters is that every
+ * failure the interface shows carries a code and a message key.
+ */
+export function asShellError(error: unknown, operation: string): ShellError {
+  return error instanceof ShellError ? error : internalError(describeUnknown(error), operation);
+}
+
 export type { ErrorCode };

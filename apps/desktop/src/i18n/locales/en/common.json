@@ -1,21 +1,13 @@
 {
   "common": {
     "action": {
-      "reload": "Reload",
-      "retry": "Try again"
+      "close": "Close",
+      "retry": "Retry"
     },
     "status": {
       "loading": "Contacting the backend…",
       "ready": "Backend ready",
       "failed": "Backend unavailable"
-    },
-    "preference": {
-      "language": "Language",
-      "theme": "Theme"
-    },
-    "theme": {
-      "dark": "Dark",
-      "light": "Light"
     },
     "notice": {
       "early": "Early development. This build has had no security review and has never been released — do not use it with production credentials yet."

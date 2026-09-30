@@ -1,7 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Core window rights and logging only. The interface is deliberately not granted filesystem or dialog access: files are chosen through native dialogs in Rust and handed to the interface as tokens.",
+  "description": "Core window rights, logging, and the window controls and drag region the interface draws itself (the window is undecorated on Windows and Linux). The interface is deliberately not granted filesystem or dialog access: files are chosen through native dialogs in Rust and handed to the interface as tokens.",
   "windows": ["main"],
-  "permissions": ["core:default", "log:default"]
+  "permissions": [
+    "core:default",
+    "log:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close"
+  ]
 }

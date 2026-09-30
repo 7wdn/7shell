@@ -47,6 +47,12 @@ test rather than ahead of it — a promise with no code is a comment, and commen
 
 ## Rules the code follows
 
+**Two kinds of state, two homes.** Secrets go in the vault and nowhere else. The settings file
+holds only what a user would not mind someone reading: theme, language, and later window state.
+Keeping that line sharp is what makes it safe to write the settings file with plain JSON and to
+read it back without ceremony — and it is why `settings.json` may never grow a field holding a
+password, a key, or a path that names something private.
+
 **Secrets are scrubbed, not merely avoided.** `crates/sevenshell-error/src/redact.rs` removes
 private key blocks, credential assignments and bearer tokens from any string on its way into an
 envelope, masks parameter and diagnostic values whose *key* looks like a secret, and truncates

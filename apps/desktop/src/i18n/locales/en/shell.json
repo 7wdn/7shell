@@ -1,0 +1,16 @@
+{
+  "shell": {
+    "window": {
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "restore": "Restore",
+      "close": "Close"
+    },
+    "sidebar": {
+      "sessions": "Sessions",
+      "newSessionPending": "Creating sessions needs the vault, which is the next milestone",
+      "empty": "No sessions yet. They appear here once credentials have somewhere safe to live.",
+      "protocols": "Protocols"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "home": {
+    "tile": {
+      "protocols": "已声明协议",
+      "capabilities": "已承诺能力",
+      "authMethods": "认证方式"
+    },
+    "start": {
+      "title": "开始使用",
+      "stepSession": "创建会话：地址、认证方式，以及中途要用到的跳板机。",
+      "stepHostKey": "首次连接时确认主机键。主机键发生变化时会直接中止，而不是再问一次。",
+      "stepTerminal": "打开终端，或它旁边的文件工作台。",
+      "pending": "这些步骤需要保险库先落地（下一个里程碑）：目前凭据还没有安全的存放处，所以还不能在这里创建会话。"
+    },
+    "about": {
+      "title": "本次构建",
+      "version": "版本",
+      "platform": "平台",
+      "build": "构建",
+      "debugBuild": "开发版",
+      "releaseBuild": "发布版",
+      "descriptorSchema": "描述符版本"
+    },
+    "status": {
+      "title": "这个版本能做与不能做",
+      "note": "内容读自描述符——也就是 Rust 编译时用的同一张表。只有实现代码存在的功能才会被声明为已承诺。",
+      "claimed": "已被协议声明",
+      "unclaimed": "尚未声明"
+    }
+  }
+}

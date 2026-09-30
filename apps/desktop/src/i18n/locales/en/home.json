@@ -1,0 +1,31 @@
+{
+  "home": {
+    "tile": {
+      "protocols": "Declared protocols",
+      "capabilities": "Committed capabilities",
+      "authMethods": "Authentication methods"
+    },
+    "start": {
+      "title": "Getting started",
+      "stepSession": "Create a session: address, authentication, and any jump hosts on the way.",
+      "stepHostKey": "Confirm the host key on the first connection. A key that has changed stops the connection instead of asking twice.",
+      "stepTerminal": "Open a terminal, or the file workbench beside it.",
+      "pending": "These steps need the vault, which is the next milestone: there is nowhere safe to keep credentials yet, so sessions cannot be created from here."
+    },
+    "about": {
+      "title": "This build",
+      "version": "Version",
+      "platform": "Platform",
+      "build": "Build",
+      "debugBuild": "development",
+      "releaseBuild": "release",
+      "descriptorSchema": "Descriptor schema"
+    },
+    "status": {
+      "title": "What this build can and cannot do",
+      "note": "Read from the descriptors — the same tables Rust compiles. A capability is only claimed once the code behind it exists.",
+      "claimed": "Claimed by a protocol",
+      "unclaimed": "Not claimed yet"
+    }
+  }
+}

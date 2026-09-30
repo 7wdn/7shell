@@ -46,6 +46,18 @@ function rustStructFields(source: string, structName: string): string[] {
   return [...body.matchAll(/^\s{4}(?:pub )?([a-z_][a-z0-9_]*)\s*:/gm)].map((match) => match[1] as string);
 }
 
+/** Variant names of a Rust enum, lower-cased to match how they are serialized. */
+function rustEnumVariants(source: string, enumName: string): string[] {
+  const body = new RegExp(`pub enum ${enumName} \\{([\\s\\S]*?)\\n\\}`).exec(source)?.[1] ?? "";
+  return [...body.matchAll(/^\s{4}([A-Z][A-Za-z0-9]*),/gm)].map((match) => (match[1] as string).toLowerCase());
+}
+
+/** String members of a TypeScript union type. */
+function tsStringUnion(source: string, typeName: string): string[] {
+  const body = new RegExp(`export type ${typeName} =([\\s\\S]*?);`).exec(source)?.[1] ?? "";
+  return [...body.matchAll(/"([^"]+)"/g)].map((match) => match[1] as string);
+}
+
 /** `readonly name` members of a TypeScript interface. */
 function interfaceFields(source: string, interfaceName: string): string[] {
   const body = new RegExp(`export interface ${interfaceName} \\{([\\s\\S]*?)\\n\\}`).exec(source)?.[1] ?? "";
@@ -71,6 +83,26 @@ describe("error catalog", () => {
     for (const code of typescript.keys()) {
       expect(rust.has(code), `unknown to Rust: ${code}`).toBe(true);
     }
+  });
+});
+
+describe("settings types", () => {
+  const rustSettings = read("crates/sevenshell-types/src/settings.rs");
+  const interfaceTypes = read("apps/desktop/src/types/app.ts");
+
+  it("declares the same AppSettings fields on both sides", () => {
+    const rustFields = rustStructFields(rustSettings, "AppSettings").map(camelCase);
+
+    expect(rustFields.length).toBeGreaterThan(0);
+    expect(sorted(rustFields)).toEqual(sorted(interfaceFields(interfaceTypes, "AppSettings")));
+  });
+
+  it("declares the same theme modes on both sides", () => {
+    const rustModes = rustEnumVariants(rustSettings, "ThemeMode");
+    const typescriptModes = tsStringUnion(interfaceTypes, "ThemeMode");
+
+    expect(sorted(rustModes)).toEqual(["dark", "light", "system"]);
+    expect(sorted(typescriptModes)).toEqual(sorted(rustModes));
   });
 });
 
