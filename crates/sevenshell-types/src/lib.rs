@@ -5,7 +5,9 @@
 //! included from `OUT_DIR`, so it always reflects the committed manifest.
 
 mod app_info;
+mod batch;
 mod descriptors;
+mod risk;
 mod session;
 mod settings;
 
@@ -14,10 +16,12 @@ mod generated {
 }
 
 pub use app_info::{AppInfo, PRODUCT_NAME};
+pub use batch::{BatchHostOutcome, BatchHostResult, BatchOutcome, BatchRequest, HostFailure};
 pub use generated::{
     AUTH_METHODS, AuthMethod, AuthMethodSpec, CAPABILITIES, Capability, CapabilityGroup, CapabilitySpec,
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,
 };
+pub use risk::{RiskAssessment, RiskLevel, RiskReason};
 pub use session::{
     EntryKind, KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, SecretInput, Session,
     SessionAuth, SessionGroup, SftpEntry, SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo,

@@ -3941,6 +3941,7 @@ name = "sevenshell-core"
 version = "0.1.0"
 dependencies = [
  "sevenshell-error",
+ "sevenshell-policy",
  "sevenshell-session",
  "sevenshell-sftp",
  "sevenshell-ssh",

@@ -51,7 +51,11 @@ fn every_case_has_the_level_it_records() {
     for case in &corpus.cases {
         let assessment = classify(&case.command);
         if assessment.level != case.level {
-            let fired: Vec<&str> = assessment.reasons.iter().map(|reason| reason.rule_id).collect();
+            let fired: Vec<&str> = assessment
+                .reasons
+                .iter()
+                .map(|reason| reason.rule_id.as_str())
+                .collect();
             wrong.push(format!(
                 "  {:?}\n    expected {:?}, got {:?} (fired: {:?}){}",
                 case.command,
@@ -82,7 +86,11 @@ fn every_case_has_the_reasons_it_records() {
 
     for case in &corpus().cases {
         let assessment = classify(&case.command);
-        let fired: Vec<&str> = assessment.reasons.iter().map(|reason| reason.rule_id).collect();
+        let fired: Vec<&str> = assessment
+            .reasons
+            .iter()
+            .map(|reason| reason.rule_id.as_str())
+            .collect();
         for expected in &case.reasons {
             if !fired.contains(&expected.as_str()) {
                 wrong.push(format!(

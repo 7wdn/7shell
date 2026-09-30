@@ -13,6 +13,7 @@ supportLevel: operate
 # able to answer a local port from the far side.
 capabilities:
   - shell
+  - exec
   - resize
   - keepalive
   - sftp

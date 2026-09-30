@@ -7,8 +7,10 @@
 //! There is no dependency on the desktop shell, on purpose: the same operations have to be
 //! callable from a command line later.
 
+mod batch;
 mod files;
 mod sessions;
 
+pub use batch::{BatchEvent, DEFAULT_PARALLEL, MAX_HOST_TIMEOUT, MAX_PARALLEL, MIN_HOST_TIMEOUT};
 pub use files::FileSession;
 pub use sessions::{Core, CoreEvent, OPEN_TIMEOUT, TransferRecord};

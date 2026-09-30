@@ -404,6 +404,85 @@ impl Core {
         (up, failed)
     }
 
+    /// A connection to this session for something that is not a terminal.
+    ///
+    /// Reuses an open terminal's connection when there is one — one authentication is enough, and
+    /// closing that terminal later does not take this connection down, because the caller holds a
+    /// reference of its own. Otherwise it opens a carrier: the same route, the same probe and the
+    /// same verification a terminal gets, without asking the far side for a shell.
+    pub(crate) async fn open_carrier(&self, session: &Session) -> Result<ConnectionOutcome, ShellError> {
+        let existing = self
+            .registry
+            .open_sessions()
+            .await
+            .into_iter()
+            .find(|open| open.session_id == session.id)
+            .map(|open| open.handle);
+
+        if let Some(handle) = existing {
+            return Ok(ConnectionOutcome::Ready(self.registry.session_of(&handle).await?));
+        }
+
+        let credential = self.credential(session)?;
+        let target = Target {
+            host: session.host.clone(),
+            port: session.port,
+            user: session.user.clone(),
+        };
+
+        let hop = match self.open_route(session).await? {
+            RouteOutcome::Ready(hop) => hop,
+            RouteOutcome::Decision(decision) => return Ok(ConnectionOutcome::Decision(decision)),
+        };
+
+        let presented = match &hop {
+            Some(hop) => sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout).await?,
+            None => sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?,
+        };
+
+        match self.vault.find_known_host(&target.host, target.port)? {
+            None => {
+                return Ok(ConnectionOutcome::Decision(Box::new(HostKeyDecision::Unknown(
+                    presented,
+                ))));
+            }
+            Some(trusted) if trusted.public_key != presented.public_key => {
+                return Ok(ConnectionOutcome::Decision(Box::new(HostKeyDecision::Mismatch {
+                    key: presented,
+                    trusted,
+                })));
+            }
+            Some(_) => {}
+        }
+
+        let route = match hop {
+            Some(hop) => Route::Through {
+                hop,
+                host: target.host.clone(),
+                port: target.port,
+            },
+            None => Route::Direct,
+        };
+
+        let request = OpenRequest {
+            target,
+            credential,
+            terminal_type: String::new(),
+            keepalive_seconds: session.terminal.keepalive_seconds,
+            timeout: self.timeout,
+            expected_host_key: presented,
+            size: INITIAL_SIZE,
+            route,
+            // A carrier: what is coming is a channel, not a shell.
+            purpose: Purpose::Carrier,
+        };
+
+        let (output, _unused) = mpsc::channel(1);
+        Ok(ConnectionOutcome::Ready(Arc::new(
+            SshSession::open(request, output).await?,
+        )))
+    }
+
     /// Collects what a session authenticates with. The material is held only long enough to be
     /// handed to the transport, which zeroizes it when the connection is done with it.
     pub(crate) fn credential(&self, session: &Session) -> Result<Credential, ShellError> {
@@ -448,6 +527,13 @@ impl Core {
 pub(crate) enum RouteOutcome {
     Ready(Option<Arc<SshSession>>),
     /// Boxed because a decision carries keys and fingerprints, and it is the rare answer.
+    Decision(Box<HostKeyDecision>),
+}
+
+/// Either a connection that carries something other than a terminal, or the decision that stands
+/// in the way of opening one.
+pub(crate) enum ConnectionOutcome {
+    Ready(Arc<SshSession>),
     Decision(Box<HostKeyDecision>),
 }
 

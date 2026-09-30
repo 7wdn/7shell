@@ -12,82 +12,7 @@
 //!    `Caution`, never `Safe`: the verdict is a hint for a human, not a security boundary, and
 //!    pretending otherwise would be worse than saying so.
 
-use std::fmt;
-
-use serde::{Deserialize, Serialize};
-
-/// How much damage a command could do.
-///
-/// Ordered: a caller compares levels to decide whether to warn, to require an unlock window, or to
-/// refuse outright.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RiskLevel {
-    /// Nothing here is destructive.
-    Safe,
-    /// Worth a look: it changes something, elevates privileges, or cannot be read confidently.
-    Caution,
-    /// It destroys data or takes a service down, on purpose.
-    Destructive,
-    /// It can destroy a machine or a fleet: a filesystem, a device, or code from the network
-    /// running as root.
-    Catastrophic,
-}
-
-impl RiskLevel {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Safe => "safe",
-            Self::Caution => "caution",
-            Self::Destructive => "destructive",
-            Self::Catastrophic => "catastrophic",
-        }
-    }
-
-    /// Whether this level should stop an unattended action and wait for a person.
-    pub const fn needs_approval(self) -> bool {
-        matches!(self, Self::Destructive | Self::Catastrophic)
-    }
-}
-
-impl fmt::Display for RiskLevel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// One rule that fired, and the message key that explains it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RiskReason {
-    pub rule_id: &'static str,
-    pub label_key: &'static str,
-    pub level: RiskLevel,
-}
-
-/// What the classifier concluded.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RiskAssessment {
-    pub level: RiskLevel,
-    pub reasons: Vec<RiskReason>,
-}
-
-impl RiskAssessment {
-    fn from_reasons(reasons: Vec<RiskReason>) -> Self {
-        let level = reasons
-            .iter()
-            .map(|reason| reason.level)
-            .max()
-            .unwrap_or(RiskLevel::Safe);
-        Self { level, reasons }
-    }
-
-    /// Whether an unattended caller should stop and ask.
-    pub fn needs_approval(&self) -> bool {
-        self.level.needs_approval()
-    }
-}
+use sevenshell_types::{RiskAssessment, RiskLevel, RiskReason};
 
 /// The parts of a command the rules look at.
 struct Parsed {
@@ -128,20 +53,12 @@ pub fn classify(command: &str) -> RiskAssessment {
 }
 
 fn reason(rule: Rule) -> RiskReason {
-    RiskReason {
-        rule_id: rule.id,
-        label_key: rule.label_key,
-        level: rule.level,
-    }
+    RiskReason::new(rule.id, rule.label_key, rule.level)
 }
 
 impl From<&Rule> for RiskReason {
     fn from(rule: &Rule) -> Self {
-        Self {
-            rule_id: rule.id,
-            label_key: rule.label_key,
-            level: rule.level,
-        }
+        Self::new(rule.id, rule.label_key, rule.level)
     }
 }
 
@@ -566,7 +483,11 @@ mod tests {
         let assessment = classify("sudo systemctl stop nginx");
 
         assert_eq!(assessment.level, RiskLevel::Caution);
-        let ids: Vec<&str> = assessment.reasons.iter().map(|reason| reason.rule_id).collect();
+        let ids: Vec<&str> = assessment
+            .reasons
+            .iter()
+            .map(|reason| reason.rule_id.as_str())
+            .collect();
         assert!(ids.contains(&"privilege-elevation"));
         assert!(ids.contains(&"service-control"));
         assert!(

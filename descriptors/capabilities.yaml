@@ -13,7 +13,6 @@ capabilities:
     order: 20
     group: terminal
     labelKey: capability.exec.label
-    planned: true
 
   - key: resize
     order: 30

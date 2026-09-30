@@ -14,7 +14,7 @@
       "order": 20,
       "group": "terminal",
       "labelKey": "capability.exec.label",
-      "planned": true
+      "planned": false
     },
     {
       "key": "resize",
@@ -113,6 +113,7 @@
       "supportLevel": "operate",
       "capabilities": [
         "shell",
+        "exec",
         "resize",
         "keepalive",
         "sftp",

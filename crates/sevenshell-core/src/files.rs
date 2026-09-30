@@ -8,11 +8,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::sessions::{HostKeyDecision, RouteOutcome};
+use crate::sessions::{ConnectionOutcome, HostKeyDecision};
 use crate::{Core, TransferRecord};
 use sevenshell_error::ShellError;
 use sevenshell_sftp::{SftpSession, TransferProgress};
-use sevenshell_ssh::{OpenRequest, Purpose, Route, SshSession};
+use sevenshell_ssh::SshSession;
 use sevenshell_types::{EntryKind, SftpListing, SftpOutcome, TransferDirection, TransferInfo, TransferState};
 
 /// One open file browser: the connection it rides on, and its SFTP channel.
@@ -30,73 +30,10 @@ impl Core {
     /// a second is a second authentication the server did not need to see.
     pub async fn open_files(&self, session_id: &str) -> Result<SftpOutcome, ShellError> {
         let session = self.session(session_id)?;
-        let credential = self.credential(&session)?;
-        let target = sevenshell_ssh::Target {
-            host: session.host.clone(),
-            port: session.port,
-            user: session.user.clone(),
-        };
 
-        // Reuse a connection that is already open for this session, if there is one.
-        let existing = self
-            .registry
-            .open_sessions()
-            .await
-            .into_iter()
-            .find(|open| open.session_id == session_id)
-            .map(|open| open.handle);
-
-        let connection = match existing {
-            Some(handle) => self.registry.session_of(&handle).await?,
-            None => {
-                let hop = match self.open_route(&session).await? {
-                    RouteOutcome::Ready(hop) => hop,
-                    RouteOutcome::Decision(decision) => return Ok(into_files_outcome(*decision)),
-                };
-
-                let presented = match &hop {
-                    Some(hop) => {
-                        sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout).await?
-                    }
-                    None => sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?,
-                };
-
-                match self.vault.find_known_host(&target.host, target.port)? {
-                    None => return Ok(SftpOutcome::HostKeyUnknown { key: presented }),
-                    Some(trusted) if trusted.public_key != presented.public_key => {
-                        return Ok(SftpOutcome::HostKeyMismatch {
-                            key: presented,
-                            trusted,
-                        });
-                    }
-                    Some(_) => {}
-                }
-
-                let route = match hop {
-                    Some(hop) => Route::Through {
-                        hop,
-                        host: target.host.clone(),
-                        port: target.port,
-                    },
-                    None => Route::Direct,
-                };
-
-                let request = OpenRequest {
-                    target,
-                    credential,
-                    terminal_type: String::new(),
-                    keepalive_seconds: session.terminal.keepalive_seconds,
-                    timeout: self.timeout,
-                    expected_host_key: presented,
-                    size: sevenshell_ssh::TerminalSize::default(),
-                    route,
-                    // A carrier: a file browser needs a connection, not a shell on the server.
-                    purpose: Purpose::Carrier,
-                };
-
-                let (output, _unused) = tokio::sync::mpsc::channel(1);
-                Arc::new(SshSession::open(request, output).await?)
-            }
+        let connection = match self.open_carrier(&session).await? {
+            ConnectionOutcome::Ready(connection) => connection,
+            ConnectionOutcome::Decision(decision) => return Ok(into_files_outcome(*decision)),
         };
 
         let stream = connection.open_subsystem_stream("sftp").await?;

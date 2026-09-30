@@ -33,10 +33,11 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert_eq!(ssh.support_level(), SupportLevel::Operate);
     assert_eq!(ssh.runtime(), Runtime::Native);
 
-    // What this build does today: a shell, resized when the window changes, kept alive while
-    // idle, reachable through another saved session, and able to answer a local port from the far
-    // side of the connection.
+    // What this build does today: a shell, a command run without one, resized when the window
+    // changes, kept alive while idle, reachable through another saved session, and able to answer
+    // a local port from the far side of the connection.
     assert!(ssh.supports(Capability::Shell));
+    assert!(ssh.supports(Capability::Exec));
     assert!(ssh.supports(Capability::Resize));
     assert!(ssh.supports(Capability::Keepalive));
     assert!(ssh.supports(Capability::Sftp));
@@ -46,7 +47,6 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     // What it does not do yet. These stay in the vocabulary as `planned`, so they are neither
     // offered by the interface nor quietly forgotten.
     for unclaimed in [
-        Capability::Exec,
         Capability::DynamicForwarding,
         Capability::AgentForwarding,
         Capability::Recording,

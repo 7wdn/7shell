@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 sevenshell-error = { workspace = true }
 sevenshell-types = { workspace = true }
+sevenshell-policy = { workspace = true }
 sevenshell-vault = { workspace = true }
 sevenshell-ssh = { workspace = true }
 sevenshell-session = { workspace = true }
