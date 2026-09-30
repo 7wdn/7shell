@@ -12,7 +12,7 @@
 // 3. The interface is pinned to English first, so the selectors in the tests do not depend on the
 //    language of the machine running them.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -24,13 +24,11 @@ const DEBUG_PORT = Number(process.env.SEVENSHELL_E2E_PORT ?? 9222);
 const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 
 /**
- * Refuses to start when the development port is taken.
+ * Whether the port the tests need is free.
  *
- * The application the tests drive is a separate instance with its own data directory, and it needs
- * that port. If somebody already has the application open — which is normal, it is a desktop
- * application — starting a second one fails deep inside the webview with an error that says nothing
- * about the cause. Saying it here, in one line, is the difference between a puzzle and an
- * instruction.
+ * The instance the tests drive is separate from the application somebody may have open, and it needs
+ * this port. A second instance fails deep inside the webview with an error that says nothing about
+ * the cause, so the port is checked here.
  */
 async function portIsFree(port) {
   return new Promise((resolve) => {
@@ -39,6 +37,42 @@ async function portIsFree(port) {
     probe.once("listening", () => probe.close(() => resolve(true)));
     probe.listen(port, "127.0.0.1");
   });
+}
+
+/**
+ * Clears a running instance out of the way.
+ *
+ * This is a developer tool being asked to test the application, so the application being open is
+ * expected rather than an error: it gets closed, the run continues, and the log says what was
+ * closed. The alternative — asking whoever is at the keyboard to close a window first — makes a
+ * command that could have just worked depend on somebody else.
+ */
+async function closeRunningInstance() {
+  console.log("e2e: an instance is running; closing it for the test run");
+
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/F", "/IM", "sevenshell-desktop.exe"], { stdio: "ignore", shell: true });
+  }
+
+  const holders = spawnSync("netstat", ["-ano"], { encoding: "utf8", shell: true })
+    .stdout.split("\n")
+    .filter((line) => /:1420\s/.test(line) && line.includes("LISTENING"))
+    .map((line) => line.trim().split(/\s+/).pop())
+    .filter((pid) => pid && /^[0-9]+$/.test(pid));
+
+  for (const pid of new Set(holders)) {
+    spawnSync("taskkill", ["/F", "/PID", pid], { stdio: "ignore", shell: true });
+  }
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (await portIsFree(1420)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  console.error("e2e: something still holds port 1420, and it is not the application");
+  process.exit(2);
 }
 
 /** Waits for the debugging endpoint to answer, or gives up saying what it waited for. */
@@ -69,10 +103,7 @@ function stopApp(app) {
 
 async function main() {
   if (!(await portIsFree(1420))) {
-    console.error(
-      "e2e: the development port 1420 is taken — most likely by the application itself. Close it and run this again: the tests need their own instance, with its own data directory.",
-    );
-    process.exit(2);
+    await closeRunningInstance();
   }
 
   // Every run starts from nothing: a previous run's vault would turn "create the vault" into
