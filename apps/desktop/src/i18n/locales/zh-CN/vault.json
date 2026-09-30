@@ -11,14 +11,16 @@
       "confirmPlaceholder": "请再次输入密码",
       "tooShort": "请使用至少 8 个字符。",
       "mismatch": "两次输入的密码不一致。",
-      "submit": "创建保险库"
+      "submit": "创建保险库",
+      "submitBusy": "正在创建…"
     },
     "unlock": {
       "title": "解锁保险库",
       "description": "输入保险库密码以访问已保存的会话及其凭据。",
       "password": "密码",
       "passwordPlaceholder": "保险库密码",
-      "submit": "解锁"
+      "submit": "解锁",
+      "submitBusy": "正在解锁…"
     },
     "setAside": {
       "explanation": "打不开？如果密码确实想不起来了，可以把这份文件改名留在旁边——不会删除任何东西——然后创建一个新的保险库。",

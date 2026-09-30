@@ -38,6 +38,17 @@ const canCreate = computed(
 
 const problem = computed(() => (vault.failure ? describeShellError(translate, vault.failure) : null));
 
+/**
+ * An envelope is shown beside the action that produced it, never in one shared slot at the bottom
+ * of the card: a failed unlock belongs under the password field, a failed set-aside under the
+ * button that tried to rename the file. The store records which operation failed so the two can be
+ * told apart; the message alone cannot say which button was pressed.
+ */
+const asideProblem = computed(() =>
+  problem.value && vault.failedOperation === "vault_set_aside" ? problem.value : null,
+);
+const formProblem = computed(() => (problem.value && !asideProblem.value ? problem.value : null));
+
 const heading = computed(() => {
   switch (vault.state) {
     case "missing":
@@ -93,6 +104,23 @@ watch(
   },
   { immediate: true },
 );
+
+/**
+ * A refused password puts the caret back in the field with everything selected, so retrying is one
+ * keystroke rather than a trip to the mouse. Only an unlock does this: the other failures on this
+ * screen are not about what was typed, and stealing focus for them would be noise.
+ */
+watch(
+  () => vault.failure,
+  async (failure) => {
+    if (!failure || vault.failedOperation !== "vault_unlock") {
+      return;
+    }
+    await nextTick();
+    passwordField.value?.focus();
+    passwordField.value?.select();
+  },
+);
 </script>
 
 <template>
@@ -122,8 +150,11 @@ watch(
               :class="tooShort ? 'border-destructive' : 'border-border'"
               :placeholder="t('vault.create.passwordPlaceholder')"
               :aria-invalid="tooShort"
+              :aria-describedby="tooShort ? 'vault-create-password-error' : undefined"
             />
-            <p v-if="tooShort" class="mt-1 text-[11px] text-destructive">{{ t("vault.create.tooShort") }}</p>
+            <p id="vault-create-password-error" v-if="tooShort" class="mt-1 text-[11px] text-destructive">
+              {{ t("vault.create.tooShort") }}
+            </p>
           </div>
 
           <div>
@@ -137,17 +168,31 @@ watch(
               :class="mismatched ? 'border-destructive' : 'border-border'"
               :placeholder="t('vault.create.confirmPlaceholder')"
               :aria-invalid="mismatched"
+              :aria-describedby="mismatched ? 'vault-create-confirm-error' : undefined"
             />
-            <p v-if="mismatched" class="mt-1 text-[11px] text-destructive">{{ t("vault.create.mismatch") }}</p>
+            <p id="vault-create-confirm-error" v-if="mismatched" class="mt-1 text-[11px] text-destructive">
+              {{ t("vault.create.mismatch") }}
+            </p>
           </div>
 
           <button
             type="submit"
-            class="w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="!canCreate || vault.busy"
           >
-            {{ t("vault.create.submit") }}
+            <LoaderCircle v-if="vault.busy" :size="14" class="animate-spin" />
+            {{ vault.busy ? t("vault.create.submitBusy") : t("vault.create.submit") }}
           </button>
+
+          <p
+            id="vault-create-error"
+            v-if="formProblem"
+            role="alert"
+            class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+          >
+            <span>{{ formProblem.message }}</span>
+            <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ formProblem.code }}</span>
+          </p>
         </form>
       </template>
 
@@ -164,16 +209,35 @@ watch(
               type="password"
               autocomplete="current-password"
               class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
+              :class="formProblem ? 'border-destructive' : 'border-border'"
               :placeholder="t('vault.unlock.passwordPlaceholder')"
+              :aria-invalid="formProblem ? true : undefined"
+              :aria-describedby="formProblem ? 'vault-unlock-error' : undefined"
             />
+
+            <!--
+              The refusal sits under the field it is about. At the bottom of the card it arrived
+              after the fallback block had already offered the next thing to click, which put the
+              destructive action in the path of somebody who had only mistyped.
+            -->
+            <p
+              id="vault-unlock-error"
+              v-if="formProblem"
+              role="alert"
+              class="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+            >
+              <span>{{ formProblem.message }}</span>
+              <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ formProblem.code }}</span>
+            </p>
           </div>
 
           <button
             type="submit"
-            class="w-full rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             :disabled="password.length === 0 || vault.busy"
           >
-            {{ t("vault.unlock.submit") }}
+            <LoaderCircle v-if="vault.busy" :size="14" class="animate-spin" />
+            {{ vault.busy ? t("vault.unlock.submitBusy") : t("vault.unlock.submit") }}
           </button>
         </form>
 
@@ -203,6 +267,16 @@ watch(
           >
             {{ confirmingAside ? t("vault.setAside.confirm") : t("vault.setAside.submit") }}
           </button>
+
+          <p
+            id="vault-aside-error"
+            v-if="asideProblem"
+            role="alert"
+            class="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+          >
+            <span>{{ asideProblem.message }}</span>
+            <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ asideProblem.code }}</span>
+          </p>
         </div>
       </template>
 
@@ -216,16 +290,21 @@ watch(
           <RotateCw :size="12" />
           {{ t("common.action.retry") }}
         </button>
+
+        <p
+          id="vault-state-error"
+          v-if="problem"
+          role="alert"
+          class="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+        >
+          <span>{{ problem.message }}</span>
+          <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
+        </p>
       </template>
 
       <p v-else class="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
         <LoaderCircle :size="14" class="animate-spin" />
         {{ t("vault.checking") }}
-      </p>
-
-      <p v-if="problem" class="mt-5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
-        <span>{{ problem.message }}</span>
-        <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
       </p>
     </div>
   </div>

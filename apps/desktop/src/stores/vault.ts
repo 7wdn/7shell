@@ -11,6 +11,9 @@
  *    than by each screen testing the state.
  * 3. **A rejected password is a failure, not a cleared form.** The envelope is kept so the
  *    screen can show the code that came back; the typed password stays where it was typed.
+ * 4. **A failure names the operation that produced it.** The screen has several actions that can
+ *    fail, and an envelope shown beside the wrong one is worse than no placement at all; the
+ *    operation is recorded here because the message cannot say which button was pressed.
  */
 
 import { defineStore } from "pinia";
@@ -24,20 +27,36 @@ import type { VaultState } from "@/types/session";
 /** `unknown` until the backend has answered; the gate draws nothing else until then. */
 export type GateState = VaultState | "unknown";
 
+/** The operations this store can report a failure for; each one is a button on the gate screen. */
+export type VaultOperation = "vault_state" | "vault_create" | "vault_unlock" | "vault_set_aside" | "vault_lock";
+
 export const useVaultStore = defineStore("vault", () => {
   const state = ref<GateState>("unknown");
   const busy = ref(false);
   const failure = ref<ShellError | null>(null);
+  /** Which operation `failure` came from; `null` whenever there is no failure. */
+  const failedOperation = ref<VaultOperation | null>(null);
+
+  /** Failures are set and cleared together with their operation, so the two can never disagree. */
+  function reportFailure(operation: VaultOperation, error: unknown): void {
+    failedOperation.value = operation;
+    failure.value = asShellError(error, operation);
+  }
+
+  function clearFailure(): void {
+    failedOperation.value = null;
+    failure.value = null;
+  }
 
   const unlocked = computed(() => state.value === "unlocked");
 
   /** Asks the backend where the vault stands, and loads the library when it is already open. */
   async function initialize(): Promise<void> {
-    failure.value = null;
+    clearFailure();
     try {
       state.value = await backend.vault.state();
     } catch (error) {
-      failure.value = asShellError(error, "vault_state");
+      reportFailure("vault_state", error);
       return;
     }
     if (state.value === "unlocked") {
@@ -60,15 +79,15 @@ export const useVaultStore = defineStore("vault", () => {
     return run("vault_unlock", () => backend.vault.unlock(password));
   }
 
-  async function run(operation: string, action: () => Promise<VaultState>): Promise<boolean> {
+  async function run(operation: VaultOperation, action: () => Promise<VaultState>): Promise<boolean> {
     busy.value = true;
-    failure.value = null;
+    clearFailure();
     try {
       state.value = await action();
       await useSessionsStore().load();
       return true;
     } catch (error) {
-      failure.value = asShellError(error, operation);
+      reportFailure(operation, error);
       return false;
     } finally {
       busy.value = false;
@@ -87,13 +106,13 @@ export const useVaultStore = defineStore("vault", () => {
    */
   async function setAside(): Promise<boolean> {
     busy.value = true;
-    failure.value = null;
+    clearFailure();
     try {
       setAsideName.value = await backend.vault.setAside();
       state.value = await backend.vault.state();
       return state.value === "missing";
     } catch (error) {
-      failure.value = asShellError(error, "vault_set_aside");
+      reportFailure("vault_set_aside", error);
       return false;
     } finally {
       busy.value = false;
@@ -102,13 +121,13 @@ export const useVaultStore = defineStore("vault", () => {
 
   /** Locks the vault. Open terminals are deliberately left running: they are already inside. */
   async function lock(): Promise<void> {
-    failure.value = null;
+    clearFailure();
     try {
       state.value = await backend.vault.lock();
     } catch (error) {
-      failure.value = asShellError(error, "vault_lock");
+      reportFailure("vault_lock", error);
     }
   }
 
-  return { state, busy, failure, unlocked, setAsideName, initialize, create, unlock, lock, setAside };
+  return { state, busy, failure, failedOperation, unlocked, setAsideName, initialize, create, unlock, lock, setAside };
 });

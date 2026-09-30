@@ -112,6 +112,23 @@ describe("vault store", () => {
     expect(store.failure?.code).toBe("VAULT-UNLOCK-FAILED");
     expect(store.failure?.messageKey).toBe("errors.vault.unlockFailed");
     expect(store.busy).toBe(false);
+    // The screen shows the envelope beside the action that produced it, so the operation has to
+    // survive alongside the message: two different buttons can fail with unrelated envelopes.
+    expect(store.failedOperation).toBe("vault_unlock");
+  });
+
+  it("drops the failed operation together with the envelope", async () => {
+    const store = useVaultStore();
+    await store.initialize();
+
+    vaultUnlockMock.mockRejectedValueOnce(WRONG_PASSWORD);
+    await store.unlock("not the password");
+    expect(store.failedOperation).toBe("vault_unlock");
+
+    await store.unlock("correct horse battery staple");
+
+    expect(store.failure).toBeNull();
+    expect(store.failedOperation).toBeNull();
   });
 
   it("keeps the gate unknown when the state cannot be read at all", async () => {
@@ -179,6 +196,7 @@ describe("vault that cannot be opened", () => {
 
     expect(freed).toBe(false);
     expect(store.failure?.code).toBe("STORE-IO");
+    expect(store.failedOperation).toBe("vault_set_aside");
     expect(store.state).toBe("locked");
   });
 });

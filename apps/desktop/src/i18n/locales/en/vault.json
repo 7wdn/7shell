@@ -11,14 +11,16 @@
       "confirmPlaceholder": "Type the password again",
       "tooShort": "Use at least 8 characters.",
       "mismatch": "The two passwords do not match.",
-      "submit": "Create vault"
+      "submit": "Create vault",
+      "submitBusy": "Creating…"
     },
     "unlock": {
       "title": "Unlock the vault",
       "description": "Enter the vault password to reach the saved sessions and their credentials.",
       "password": "Password",
       "passwordPlaceholder": "Vault password",
-      "submit": "Unlock"
+      "submit": "Unlock",
+      "submitBusy": "Unlocking…"
     },
     "setAside": {
       "explanation": "Cannot open it? If the password is gone, the file on this device can be renamed and kept — nothing is deleted — and a new vault created in its place.",
