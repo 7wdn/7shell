@@ -22,6 +22,7 @@ import {
   FileSymlink,
   FileText,
   Folder,
+  ClipboardPaste,
   FolderOpen,
   FolderPlus,
   HardDrive,
@@ -31,7 +32,7 @@ import {
   Upload,
   X,
 } from "@lucide/vue";
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
@@ -56,6 +57,43 @@ const preferences = usePreferencesStore();
  * it applies to every browser that is open and survives a restart.
  */
 const twoPanes = computed(() => preferences.filesLayout === "tree");
+
+/**
+ * The paste route, and the keyboard shortcut for it.
+ *
+ * Ctrl+V is the first thing somebody tries with a file on the clipboard, so it does what the button
+ * does. Two things are deliberately left alone: a paste aimed at a text field, which is a text
+ * paste and not an upload, and a platform whose clipboard this build cannot read — there the
+ * backend refuses with a reason and the panel shows it, instead of the shortcut seeming dead.
+ */
+function onPaste(event: KeyboardEvent): void {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "v") {
+    return;
+  }
+
+  const target = event.target as HTMLElement | null;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+    return;
+  }
+
+  const open = files.browser(props.handle);
+  if (!open) {
+    return;
+  }
+
+  event.preventDefault();
+  void files.uploadFromClipboard(props.handle, open.path);
+}
+
+function pasteFiles(): void {
+  const open = files.browser(props.handle);
+  if (open) {
+    void files.uploadFromClipboard(props.handle, open.path);
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onPaste));
+onBeforeUnmount(() => window.removeEventListener("keydown", onPaste));
 
 /** Goes where the tree asked, through the same path the listing uses. */
 function goTo(path: string): void {
@@ -290,6 +328,16 @@ function closeEditor(open: boolean): void {
         >
           <Upload :size="12" />
           {{ t("files.upload") }}
+        </button>
+
+        <button
+          type="button"
+          class="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+          :title="t('files.paste.title')"
+          @click="pasteFiles()"
+        >
+          <ClipboardPaste :size="11" />
+          {{ t("files.paste.label") }}
         </button>
       </div>
 

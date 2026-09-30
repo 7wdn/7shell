@@ -143,6 +143,39 @@ pub async fn files_upload(
     state.core().start_upload(&handle, local, &directory).await.map(Some)
 }
 
+/// Uploads files the operating system handed us — a drop, or a paste — into a directory.
+///
+/// The token stands for paths the interface never saw, and it is good for one upload. One transfer
+/// per file: they are separate files, and a failure in one does not take the others down with it —
+/// the ones already started stay in the transfer list, and the error that stopped the rest is
+/// returned.
+#[tauri::command]
+pub async fn dropped_upload(
+    state: State<'_, ShellState>,
+    handle: String,
+    directory: String,
+    token: String,
+) -> Result<Vec<String>, ShellError> {
+    let paths = state.pending_drops().take(&token).await?;
+
+    let mut started = Vec::with_capacity(paths.len());
+    for path in paths {
+        started.push(state.core().start_upload(&handle, path, &directory).await?);
+    }
+
+    Ok(started)
+}
+
+/// The file list on the clipboard, as a token and the files' names.
+///
+/// Windows is the only platform this build can read that from, and the other ones say so instead
+/// of pretending: `APP-UNSUPPORTED` names what is missing, which is what the interface shows.
+#[tauri::command]
+pub fn clipboard_files(state: State<'_, ShellState>) -> Result<crate::dropped::PendingFiles, ShellError> {
+    let paths = crate::dropped::clipboard_files()?;
+    state.pending_drops().remember(paths)
+}
+
 /// Runs a blocking file dialog off the async runtime's threads.
 ///
 /// The dialog's own API blocks the thread it is called on, and a command may be running on one of

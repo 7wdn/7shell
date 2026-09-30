@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
+  droppedUpload: vi.fn(),
+  clipboardFiles: vi.fn(),
   filesOpen: vi.fn(),
   filesList: vi.fn(),
   filesCreateFolder: vi.fn(),
@@ -26,6 +28,8 @@ import {
   filesUpload,
   transferCancel,
   transfersOpen,
+  droppedUpload,
+  clipboardFiles,
 } from "@/lib/backend/tauri";
 import { TRANSFER_POLL_MS, useFilesStore } from "@/stores/files";
 import type { SftpEntry, SftpListing, SftpOutcome, TransferInfo } from "@/types/session";
@@ -36,6 +40,8 @@ const filesCreateFolderMock = vi.mocked(filesCreateFolder);
 const filesRenameMock = vi.mocked(filesRename);
 const filesDeleteMock = vi.mocked(filesDelete);
 const filesDownloadMock = vi.mocked(filesDownload);
+const filesUploadDroppedMock = vi.mocked(droppedUpload);
+const clipboardFilesMock = vi.mocked(clipboardFiles);
 const filesUploadMock = vi.mocked(filesUpload);
 const filesCloseMock = vi.mocked(filesClose);
 const transfersOpenMock = vi.mocked(transfersOpen);
@@ -356,5 +362,69 @@ describe("the revision the tree watches", () => {
     await store.createFolder("f1", "/home/new");
 
     expect(store.revision).toBe(before);
+  });
+});
+
+describe("files the operating system handed us", () => {
+  const listing = { path: "/home", entries: [] };
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    filesOpenMock.mockReset().mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing });
+    filesListMock.mockReset().mockResolvedValue(listing);
+    filesUploadDroppedMock.mockReset();
+    clipboardFilesMock.mockReset();
+    transfersOpenMock.mockReset().mockResolvedValue([]);
+  });
+
+  it("uploads by token, one transfer per file, without ever seeing a path", async () => {
+    filesUploadDroppedMock.mockResolvedValue(["x1", "x2"]);
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadDropped("f1", "/home", "d1");
+
+    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d1");
+    expect(transfersOpenMock).toHaveBeenCalled();
+    expect(store.browser("f1")?.failure).toBeNull();
+  });
+
+  it("keeps the reason when the drop could not be used", async () => {
+    filesUploadDroppedMock.mockRejectedValue({
+      version: 1,
+      code: "APP-UNSUPPORTED",
+      messageKey: "errors.app.unsupported",
+      messageParams: { what: "dropping something that is not a file" },
+      origin: { subsystem: "app" },
+      outcome: "notSent",
+    });
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadDropped("f1", "/home", "d1");
+
+    expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
+  });
+
+  it("pastes through the same door, and reports a platform that has no file list", async () => {
+    clipboardFilesMock.mockResolvedValue({ token: "d9", names: ["notes.txt"] });
+    filesUploadDroppedMock.mockResolvedValue(["x1"]);
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadFromClipboard("f1", "/home");
+    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d9");
+
+    clipboardFilesMock.mockRejectedValue({
+      version: 1,
+      code: "APP-UNSUPPORTED",
+      messageKey: "errors.app.unsupported",
+      messageParams: { what: "pasting files from the clipboard on this platform" },
+      origin: { subsystem: "app" },
+      outcome: "notSent",
+    });
+    await store.uploadFromClipboard("f1", "/home");
+
+    expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
   });
 });

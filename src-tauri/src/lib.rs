@@ -5,6 +5,7 @@
 //! or an agent without going through a webview.
 
 mod commands;
+mod dropped;
 mod state;
 mod window_chrome;
 
@@ -28,6 +29,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(drag) = event {
+                report_drag(window, drag);
+            }
+
             // On the way out, tell the servers we are leaving rather than letting the sockets time
             // out. Fire and forget: closing the window must not wait for the network.
             if let tauri::WindowEvent::Destroyed = event
@@ -77,9 +82,70 @@ pub fn run() {
             commands::files::files_upload,
             commands::files::transfers_open,
             commands::files::transfer_cancel,
+            commands::files::dropped_upload,
+            commands::files::clipboard_files,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");
+}
+
+/// What a drag over the window means to the interface.
+///
+/// The paths stay here: the interface is told whether a drop is hovering, and when one lands, a
+/// token standing for the files. See `dropped` for why that matters.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DragPayload {
+    hovering: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DropPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pending: Option<dropped::PendingFiles>,
+    /// Why the drop could not be used, when it could not. A drop of something that is not a file
+    /// is worth saying out loud rather than ignoring.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<sevenshell_error::ShellError>,
+}
+
+fn report_drag<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::DragDropEvent) {
+    use tauri::Emitter as _;
+
+    match event {
+        tauri::DragDropEvent::Enter { .. } | tauri::DragDropEvent::Over { .. } => {
+            let _ = window.emit("files:drag", DragPayload { hovering: true });
+        }
+        tauri::DragDropEvent::Leave => {
+            let _ = window.emit("files:drag", DragPayload { hovering: false });
+        }
+        tauri::DragDropEvent::Drop { paths, .. } => {
+            let _ = window.emit("files:drag", DragPayload { hovering: false });
+
+            let payload = match window.try_state::<state::ShellState>() {
+                Some(shell_state) => match shell_state.pending_drops().remember(paths.clone()) {
+                    Ok(pending) => DropPayload {
+                        pending: Some(pending),
+                        error: None,
+                    },
+                    Err(error) => DropPayload {
+                        pending: None,
+                        error: Some(error),
+                    },
+                },
+                None => DropPayload {
+                    pending: None,
+                    error: None,
+                },
+            };
+
+            let _ = window.emit("files:dropped", payload);
+        }
+        // The enum is `#[non_exhaustive]`: a future variant means a gesture this build does not
+        // know about, and doing nothing is the right answer to that.
+        _ => {}
+    }
 }
 
 /// Makes the window start in the theme the user chose last time.

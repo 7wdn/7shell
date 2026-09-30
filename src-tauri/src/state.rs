@@ -9,10 +9,14 @@ use std::sync::Arc;
 use sevenshell_core::Core;
 use sevenshell_vault::Vault;
 
+use crate::dropped::PendingDrops;
+
 /// The application state commands borrow.
 pub struct ShellState {
     vault: Arc<Vault>,
     core: Arc<Core>,
+    /// Files the operating system dropped or the clipboard held, waiting to be uploaded.
+    pending_drops: PendingDrops,
 }
 
 impl ShellState {
@@ -27,7 +31,14 @@ impl ShellState {
 
         let vault = Arc::new(Vault::open_at(path));
         let (core, events) = Core::new(Arc::clone(&vault));
-        (Self { vault, core }, events)
+        (
+            Self {
+                vault,
+                core,
+                pending_drops: PendingDrops::default(),
+            },
+            events,
+        )
     }
 
     pub fn vault(&self) -> &Vault {
@@ -41,5 +52,10 @@ impl ShellState {
     /// A handle to the core that can be moved onto another task, for work that outlives a command.
     pub fn core_arc(&self) -> Arc<Core> {
         Arc::clone(&self.core)
+    }
+
+    /// What a drop or a paste left behind, keyed by the token the interface was given.
+    pub fn pending_drops(&self) -> &PendingDrops {
+        &self.pending_drops
     }
 }

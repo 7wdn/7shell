@@ -66,6 +66,13 @@
       "root": "/",
       "expand": "Expand",
       "collapse": "Collapse"
+    },
+    "drop": {
+      "hint": "Drop to upload into {path}"
+    },
+    "paste": {
+      "label": "Paste",
+      "title": "Upload the files on the clipboard (Ctrl+V)"
     }
   }
 }

@@ -66,6 +66,13 @@
       "root": "/",
       "expand": "展开",
       "collapse": "折叠"
+    },
+    "drop": {
+      "hint": "松开即上传到 {path}"
+    },
+    "paste": {
+      "label": "粘贴",
+      "title": "上传剪贴板中的文件（Ctrl+V）"
     }
   }
 }

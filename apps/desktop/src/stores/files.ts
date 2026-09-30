@@ -107,6 +107,51 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
+  /**
+   * Uploads what a drop or a paste left behind.
+   *
+   * The token stands for paths this side never saw: the operating system handed them to Rust, and
+   * Rust answers with the transfers it started.
+   */
+  async function uploadDropped(handle: string, directory: string, token: string): Promise<void> {
+    const open = browsers.value[handle];
+    if (open) {
+      open.failure = null;
+    }
+
+    try {
+      const ids = await backend.files.uploadDropped(handle, directory, token);
+      if (ids.length > 0) {
+        await refreshTransfers();
+      }
+    } catch (error) {
+      reportFailure(handle, error);
+    }
+  }
+
+  /** Reads the file list off the clipboard and uploads it. A platform that cannot says so. */
+  async function uploadFromClipboard(handle: string, directory: string): Promise<void> {
+    const open = browsers.value[handle];
+    if (open) {
+      open.failure = null;
+    }
+
+    try {
+      const pending = await backend.files.clipboardFiles();
+      await uploadDropped(handle, directory, pending.token);
+    } catch (error) {
+      reportFailure(handle, error);
+    }
+  }
+
+  /** Records a failure in the browser it belongs to, for callers that caught it elsewhere. */
+  function reportFailure(handle: string, error: unknown): void {
+    const open = browsers.value[handle];
+    if (open) {
+      open.failure = asShellError(error, "dropped_upload");
+    }
+  }
+
   async function navigate(handle: string, path: string): Promise<void> {
     const current = browsers.value[handle];
     if (current) {
@@ -334,6 +379,9 @@ export const useFilesStore = defineStore("files", () => {
     open,
     browser,
     directories,
+    uploadDropped,
+    uploadFromClipboard,
+    reportFailure,
     navigate,
     createFolder,
     rename,

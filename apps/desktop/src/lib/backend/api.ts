@@ -29,7 +29,7 @@ import type {
 
 import { ShellError, normalizeShellError, noTransportError } from "./errors";
 import * as desktop from "./tauri";
-import type { Unlisten } from "./tauri";
+import type { DragPayload, DropPayload, PendingFiles, Unlisten } from "./tauri";
 
 async function forward<T>(operation: string, run: () => Promise<T>): Promise<T> {
   if (!isDesktopRuntime()) {
@@ -111,6 +111,11 @@ export const backend = {
     writeText: (handle: string, path: string, text: string): Promise<void> =>
       forward("files_write_text", () => desktop.filesWriteText(handle, path, text)),
     close: (handle: string): Promise<void> => forward("files_close", () => desktop.filesClose(handle)),
+    /** Uploads what a drop or a paste left behind. The interface never sees a path. */
+    uploadDropped: (handle: string, directory: string, token: string): Promise<string[]> =>
+      forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token)),
+    /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it. */
+    clipboardFiles: (): Promise<PendingFiles> => forward("clipboard_files", () => desktop.clipboardFiles()),
     /** Asks where to put it, in Rust; `undefined` means the dialog was dismissed. */
     download: (handle: string, path: string, title: string, suggestedName: string): Promise<string | undefined> =>
       forward("files_download", () => desktop.filesDownload(handle, path, title, suggestedName)),
@@ -172,6 +177,11 @@ export const backend = {
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalClosed, listener),
+    /** Whether a drag is over the window, for the drop hint. */
+    onFilesDrag: (listener: (payload: DragPayload) => void): Promise<Unlisten> =>
+      subscribe(desktop.onFilesDrag, listener),
+    onFilesDropped: (listener: (payload: DropPayload) => void): Promise<Unlisten> =>
+      subscribe(desktop.onFilesDropped, listener),
   },
 };
 

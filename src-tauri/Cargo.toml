@@ -30,3 +30,9 @@ sevenshell-types = { workspace = true }
 sevenshell-vault = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[target."cfg(windows)".dependencies]
+clipboard-win = { workspace = true }

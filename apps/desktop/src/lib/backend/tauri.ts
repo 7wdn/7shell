@@ -34,6 +34,23 @@ import type {
 /** Removes a subscription made by one of the `on…` functions below. */
 export type Unlisten = () => void;
 
+/** What a drop or a paste left waiting, as the interface is told about it. */
+export interface PendingFiles {
+  readonly token: string;
+  readonly names: readonly string[];
+}
+
+/** Whether a drag is hovering over the window. */
+export interface DragPayload {
+  readonly hovering: boolean;
+}
+
+/** A drop that landed: either files to upload, or why they cannot be. */
+export interface DropPayload {
+  readonly pending?: PendingFiles;
+  readonly error?: unknown;
+}
+
 // -- Application -------------------------------------------------------------
 
 export function appInfo(): Promise<AppInfo> {
@@ -242,6 +259,16 @@ export function transfersOpen(): Promise<TransferInfo[]> {
   return invoke<TransferInfo[]>("transfers_open");
 }
 
+/** Uploads the files a drop or a paste left behind, by token. Answers with the transfer ids. */
+export function droppedUpload(handle: string, directory: string, token: string): Promise<string[]> {
+  return invoke<string[]>("dropped_upload", { handle, directory, token });
+}
+
+/** The file list on the clipboard, as a token and names. Refused on platforms that cannot read it. */
+export function clipboardFiles(): Promise<PendingFiles> {
+  return invoke<PendingFiles>("clipboard_files");
+}
+
 export function transferCancel(id: string): Promise<void> {
   return invoke<void>("transfer_cancel", { id });
 }
@@ -254,4 +281,12 @@ export async function onTerminalData(listener: (payload: TerminalData) => void):
 
 export async function onTerminalClosed(listener: (payload: TerminalClosed) => void): Promise<Unlisten> {
   return listen<TerminalClosed>("terminal:closed", (event) => listener(event.payload));
+}
+
+export async function onFilesDrag(listener: (payload: DragPayload) => void): Promise<Unlisten> {
+  return listen<DragPayload>("files:drag", (event) => listener(event.payload));
+}
+
+export async function onFilesDropped(listener: (payload: DropPayload) => void): Promise<Unlisten> {
+  return listen<DropPayload>("files:dropped", (event) => listener(event.payload));
 }

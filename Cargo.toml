@@ -17,6 +17,9 @@ thiserror = "2"
 
 log = "0.4"
 base64 = "0.23"
+# Reading the file list off the clipboard is a Windows API rather than a portable one; the
+# alternative is telling Windows users that pasting files is not supported.
+clipboard-win = { version = "5.4", features = ["std"] }
 argon2 = "0.6"
 chacha20poly1305 = "0.11"
 getrandom = "0.3"
