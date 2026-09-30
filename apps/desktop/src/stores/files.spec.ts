@@ -212,6 +212,36 @@ describe("files store", () => {
     expect(store.transfers[0]?.state).toEqual({ kind: "failed", detail: "the local file could not be written" });
   });
 
+  it("holds a failure nobody has attended to, and never records it twice", async () => {
+    const failed: TransferInfo = {
+      ...download,
+      state: { kind: "failed", detail: "the connection dropped" },
+    };
+    transfersOpenMock.mockResolvedValue([failed]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    await store.refreshTransfers();
+
+    expect(store.unattendedFailures).toEqual([{ id: download.id, direction: "download", name: "notes.txt" }]);
+
+    store.attendFailures([download.id]);
+    expect(store.unattendedFailures).toEqual([]);
+  });
+
+  it("tells a failure that has just happened from one already known", async () => {
+    const failed: TransferInfo = { ...download, state: { kind: "failed", detail: "gone" } };
+    transfersOpenMock.mockResolvedValueOnce([download]).mockResolvedValueOnce([failed]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    // The first read saw it moving; only the change to `failed` is news.
+    expect(store.unattendedFailures).toEqual([]);
+
+    await store.refreshTransfers();
+    expect(store.unattendedFailures).toHaveLength(1);
+  });
+
   it("stops a transfer through the backend and drops the row", async () => {
     transfersOpenMock.mockResolvedValueOnce([download]).mockResolvedValueOnce([]);
 

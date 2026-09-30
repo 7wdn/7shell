@@ -4,7 +4,8 @@
  *
  * The shell decides nothing about what a feature looks like; it owns the frame around them and
  * the one place a backend failure is shown, so a failure is visible wherever the user happens
- * to be.
+ * to be. It also owns the transient surface — the toast viewport — because a message about an
+ * action belongs to no single feature, and every feature has to be able to raise one.
  *
  * The gate sits below the title bar and above everything else, including the sidebar: nothing
  * that reads a saved credential is drawn before the vault is open. The subscription to terminal
@@ -18,10 +19,12 @@ import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
+import ToastViewport from "@/components/shell/ToastViewport.vue";
 import UnlockScreen from "@/components/vault/UnlockScreen.vue";
 import HomeView from "@/components/views/HomeView.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { describeShellError } from "@/i18n/errors";
+import { useTransferNotices } from "@/composables/useTransferNotices";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useFilesStore } from "@/stores/files";
@@ -35,6 +38,10 @@ const app = useAppStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
 const vault = useVaultStore();
+
+// Watches for transfers that failed while their list was not on screen. Registered here because the
+// question it answers — what is on screen — is one only the shell can answer.
+useTransferNotices();
 
 const settingsOpen = ref(false);
 let stopFollowingSystem: (() => void) | undefined;
@@ -182,5 +189,12 @@ onBeforeUnmount(() => {
     </div>
 
     <SettingsDialog :open="settingsOpen" @update:open="settingsOpen = $event" />
+
+    <!--
+      Outside every feature and outside the gate: a toast is about something that already
+      happened, and it has to be drawable wherever the person is when it does — including
+      while they are still on the gate screen, which is why it is not inside the branch below.
+    -->
+    <ToastViewport />
   </div>
 </template>

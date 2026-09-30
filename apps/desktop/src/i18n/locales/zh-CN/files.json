@@ -59,7 +59,10 @@
       "progress": "{transferred} / {size}",
       "unknownSize": "未知",
       "cancel": "取消",
-      "dismiss": "关闭"
+      "dismiss": "关闭",
+      "failedAway": "{direction}失败：{name}",
+      "failedAwayCount": "{count} 个传输失败",
+      "showList": "查看传输"
     },
     "tree": {
       "title": "目录",

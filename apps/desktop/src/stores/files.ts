@@ -20,10 +20,26 @@ import { ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { parentPath } from "@/lib/files/format";
-import type { EntryKind, SftpEntry, SftpListing, SftpOutcome, TransferInfo, TransferState } from "@/types/session";
+import type {
+  EntryKind,
+  SftpEntry,
+  SftpListing,
+  SftpOutcome,
+  TransferDirection,
+  TransferInfo,
+  TransferState,
+} from "@/types/session";
 
 /** How often the transfer list is read while something is still moving. */
 export const TRANSFER_POLL_MS = 500;
+
+/** A transfer that stopped because it failed, and that nobody has been told about yet. */
+export interface UnattendedTransferFailure {
+  readonly id: string;
+  readonly direction: TransferDirection;
+  /** The file's own name, not a path on either side: enough to say which transfer it was. */
+  readonly name: string;
+}
 
 /** One open browser: the directory it is looking at, and the failure it has to show, if any. */
 export interface FileBrowser {
@@ -44,6 +60,26 @@ export const useFilesStore = defineStore("files", () => {
   const transfers = ref<TransferInfo[]>([]);
   /** A failure from reading the transfer list or stopping one. Shown next to the transfers. */
   const transferFailure = ref<ShellError | null>(null);
+  /**
+   * Transfers that failed and that nobody has been told about yet.
+   *
+   * A failed row lives in the transfer list, and the list lives inside a file browser — so when the
+   * failure arrives while the person is in a terminal, there is nowhere on screen for it to appear.
+   * It waits here until the announcement that watches this list takes it, which is also what keeps
+   * one failure from being announced twice: a notice is consumed rather than remembered.
+   */
+  const unattendedFailures = ref<readonly UnattendedTransferFailure[]>([]);
+
+  /**
+   * Takes failures that have now been accounted for out of the waiting list.
+   *
+   * Called whether or not a toast was raised: a failure the person could see on the list has been
+   * accounted for by being visible, and must not be announced later, when they switch tabs.
+   */
+  function attendFailures(ids: readonly string[]): void {
+    const taken = new Set(ids);
+    unattendedFailures.value = unattendedFailures.value.filter((entry) => !taken.has(entry.id));
+  }
   /**
    * Bumped by anything that changes the shape of a directory.
    *
@@ -250,6 +286,7 @@ export const useFilesStore = defineStore("files", () => {
    */
   async function settle(): Promise<void> {
     const landed: string[] = [];
+    const stopped: UnattendedTransferFailure[] = [];
     for (const transfer of transfers.value) {
       const previous = lastStates.get(transfer.id);
       lastStates.set(transfer.id, transfer.state.kind);
@@ -260,6 +297,15 @@ export const useFilesStore = defineStore("files", () => {
           landed.push(directory);
         }
       }
+      // A transfer moves into `failed` once. This is the read that sees the change, including the
+      // case where it failed before any read ever saw it moving.
+      if (previous !== "failed" && transfer.state.kind === "failed") {
+        stopped.push({ id: transfer.id, direction: transfer.direction, name: transfer.name });
+      }
+    }
+
+    if (stopped.length > 0) {
+      unattendedFailures.value = [...unattendedFailures.value, ...stopped];
     }
 
     for (const open of Object.values(browsers.value)) {
@@ -376,6 +422,8 @@ export const useFilesStore = defineStore("files", () => {
     revision,
     transfers,
     transferFailure,
+    unattendedFailures,
+    attendFailures,
     open,
     browser,
     directories,

@@ -59,7 +59,10 @@
       "progress": "{transferred} / {size}",
       "unknownSize": "unknown",
       "cancel": "Cancel",
-      "dismiss": "Close"
+      "dismiss": "Close",
+      "failedAway": "{direction} failed: {name}",
+      "failedAwayCount": "{count} transfers failed",
+      "showList": "Show transfers"
     },
     "tree": {
       "title": "Directories",
