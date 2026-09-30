@@ -67,6 +67,7 @@ pnpm icons             # redraw and regenerate the application icons
 
 make lab-up            # a real sshd to connect to, in Docker (127.0.0.1:2222)
 make lab-verify        # the live tests: connect, verify a host key, run a command, read the output
+make app-e2e           # drive the real window over the DevTools protocol (Windows; see e2e/)
 make lab-down          # stop it
 ```
 

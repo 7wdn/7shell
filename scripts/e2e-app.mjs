@@ -13,7 +13,8 @@
 //    language of the machine running them.
 
 import { spawn } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { REPO_ROOT } from "./lib/descriptors.mjs";
@@ -21,6 +22,24 @@ import { REPO_ROOT } from "./lib/descriptors.mjs";
 const DATA_DIR = path.join(REPO_ROOT, "e2e", ".run", "config");
 const DEBUG_PORT = Number(process.env.SEVENSHELL_E2E_PORT ?? 9222);
 const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
+
+/**
+ * Refuses to start when the development port is taken.
+ *
+ * The application the tests drive is a separate instance with its own data directory, and it needs
+ * that port. If somebody already has the application open — which is normal, it is a desktop
+ * application — starting a second one fails deep inside the webview with an error that says nothing
+ * about the cause. Saying it here, in one line, is the difference between a puzzle and an
+ * instruction.
+ */
+async function portIsFree(port) {
+  return new Promise((resolve) => {
+    const probe = createServer();
+    probe.once("error", () => resolve(false));
+    probe.once("listening", () => probe.close(() => resolve(true)));
+    probe.listen(port, "127.0.0.1");
+  });
+}
 
 /** Waits for the debugging endpoint to answer, or gives up saying what it waited for. */
 async function waitForCdp(timeoutMs) {
@@ -49,6 +68,16 @@ function stopApp(app) {
 }
 
 async function main() {
+  if (!(await portIsFree(1420))) {
+    console.error(
+      "e2e: the development port 1420 is taken — most likely by the application itself. Close it and run this again: the tests need their own instance, with its own data directory.",
+    );
+    process.exit(2);
+  }
+
+  // Every run starts from nothing: a previous run's vault would turn "create the vault" into
+  // "unlock the vault", and the tests would be describing a different application each time.
+  await rm(path.dirname(DATA_DIR), { recursive: true, force: true });
   await mkdir(DATA_DIR, { recursive: true });
   console.log(`e2e: data directory ${DATA_DIR}`);
   await writeFile(

@@ -10,6 +10,10 @@ make lab-verify    # run the live tests against it
 make lab-down      # stop it
 ```
 
+The same thing runs in CI (`.github/workflows/lab.yml`): nightly, on demand, and on any pull request
+that touches the crates the live tests cover. Locally is for writing them; CI is for noticing when
+they stop passing.
+
 The server listens on **127.0.0.1:2222** only — a loopback binding, so nothing on the network can
 reach it — and its credentials are deliberately trivial (`labuser` / `labpassword`). It is a test
 fixture, not something to expose.

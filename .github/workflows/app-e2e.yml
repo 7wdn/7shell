@@ -1,0 +1,50 @@
+name: Application end-to-end
+
+# Drives the real window, which is a web page inside a webview: on Windows that is WebView2, so
+# Playwright attaches to it over the DevTools protocol. This is the only job that exercises the
+# interface as a person meets it — the window, the vault gate, the shell around everything else.
+#
+# It runs on Windows because WebView2 is what makes the debugging port reachable; the same test on
+# Linux would be driving WebKitGTK, which has no equivalent. Cases that need a server are not here:
+# they belong to the Lab workflow, where a container provides one.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "e2e/**"
+      - "src-tauri/**"
+      - ".github/workflows/app-e2e.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  window:
+    name: The real window
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - run: pnpm install --frozen-lockfile
+
+      # The launcher starts the application itself, against a throwaway data directory.
+      - name: Drive the application
+        run: pnpm app:e2e
+
+      - name: Screenshots and page text, when something failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: e2e/artifacts
+          if-no-files-found: ignore

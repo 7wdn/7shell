@@ -63,3 +63,30 @@ test("the window says what it is", async () => {
     await close();
   }
 });
+
+/**
+ * Creating a vault, and the shell it opens onto.
+ *
+ * The first thing anybody does with this application, driven the way they do it: two passwords and
+ * a button. It uses the throwaway data directory the launcher set up, so it starts from nothing
+ * every run — which is also why it is a real test of the first-run path rather than of whatever
+ * happened to be left behind.
+ */
+test("a vault can be created and the shell opens", async () => {
+  const { page, close } = await openApp();
+  try {
+    await page.getByPlaceholder("At least 8 characters").fill("seven-shell-e2e");
+    await page.getByPlaceholder("Type the password again").fill("seven-shell-e2e");
+    await page.getByRole("button", { name: "Create vault" }).click();
+
+    // The shell is up when the session list and the protocol list are on screen.
+    await expect(page.getByText("Sessions", { exact: true })).toBeVisible();
+    await expect(page.getByText("Protocols", { exact: true })).toBeVisible();
+    await expect(page.getByText("SSH", { exact: true })).toBeVisible();
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "shell.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});

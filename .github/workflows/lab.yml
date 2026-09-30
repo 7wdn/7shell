@@ -1,0 +1,68 @@
+name: Lab
+
+# The live tests need a real server, so they are not part of the offline check suite. They run
+# here instead: on a schedule, on demand, and on any pull request that touches the code they
+# exercise. Without this job the four riskiest areas — the handshake and host key verification,
+# jump hosts, tunnels and SFTP — would only ever be tested on the machine of whoever remembered to
+# run `make lab-verify`.
+
+on:
+  schedule:
+    # Nightly, so a dependency update or a quiet regression is noticed within a day.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "src-tauri/**"
+      - "deploy/lab/**"
+      - ".github/workflows/lab.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # What the live tests read. They match deploy/lab/openssh/compose.yaml, which is the only place
+  # these values are meaningful: trivial credentials on a loopback port, in a container.
+  SEVENSHELL_TEST_HOST: 127.0.0.1
+  SEVENSHELL_TEST_PORT: "2222"
+  SEVENSHELL_TEST_USER: labuser
+  SEVENSHELL_TEST_PASSWORD: labpassword
+
+jobs:
+  live:
+    name: Live tests against a real sshd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Start the SSH lab
+        run: docker compose -f deploy/lab/openssh/compose.yaml up -d
+
+      - name: Wait for sshd to answer
+        run: |
+          for attempt in $(seq 1 60); do
+            if (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
+              echo "sshd is listening after $((attempt * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "sshd never came up"
+          docker compose -f deploy/lab/openssh/compose.yaml logs
+          exit 1
+
+      - name: Live tests
+        run: cargo test -p sevenshell-ssh -p sevenshell-core -- --ignored --test-threads=1
+
+      - name: The server's own log, when something failed
+        if: failure()
+        run: docker compose -f deploy/lab/openssh/compose.yaml logs
+
+      - name: Stop the lab
+        if: always()
+        run: docker compose -f deploy/lab/openssh/compose.yaml down -v
