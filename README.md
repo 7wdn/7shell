@@ -41,7 +41,7 @@
 | Jump hosts: routes through other saved sessions, each hop verified | Working, tested against a real sshd |
 | Terminal palettes: follow the interface, or always dark or light | Working |
 | Local port forwarding, brought up with its session | Working, tested against a real sshd |
-| Remote files: browse, create, rename, delete, edit text, upload and download | Working, tested against a real sshd |
+| Remote files: browse (tree or list), create, rename, delete, edit text, upload and download | Working, tested against a real sshd |
 | Dynamic and remote forwarding, an agent interface, batch execution | Not implemented |
 
 The application states the same thing on its own first screen: the capability list is read from the

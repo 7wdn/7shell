@@ -34,15 +34,33 @@ import {
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import TransferList from "@/components/files/TransferList.vue";
 import { describeShellError } from "@/i18n/errors";
 import { formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
 import { cn } from "@/lib/utils";
 import { useFilesStore } from "@/stores/files";
+import { usePreferencesStore } from "@/stores/preferences";
 import type { SftpEntry } from "@/types/session";
 
 const props = defineProps<{ handle: string }>();
+
+const preferences = usePreferencesStore();
+
+/**
+ * Whether the tree is shown beside the listing.
+ *
+ * The default is the tree, because a remote file system is easiest to move around in when you can
+ * see where you are; the single list is there for a narrow window. The choice is a preference, so
+ * it applies to every browser that is open and survives a restart.
+ */
+const twoPanes = computed(() => preferences.filesLayout === "tree");
+
+/** Goes where the tree asked, through the same path the listing uses. */
+function goTo(path: string): void {
+  void files.navigate(props.handle, path);
+}
 
 const { t } = useI18n();
 const files = useFilesStore();
@@ -388,107 +406,113 @@ function closeEditor(open: boolean): void {
       </p>
     </header>
 
-    <div class="flex min-h-0 flex-1 flex-col overflow-auto">
-      <div
-        class="sticky top-0 flex items-center gap-2 border-b border-border bg-card/30 px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
-      >
-        <span class="min-w-0 flex-1">{{ t("files.name") }}</span>
-        <span class="w-20 shrink-0 text-right">{{ t("files.size") }}</span>
-        <span class="w-40 shrink-0 text-right">{{ t("files.modified") }}</span>
-        <span class="w-28 shrink-0"></span>
-      </div>
+    <div class="flex min-h-0 flex-1">
+      <DirectoryTree v-if="twoPanes" :handle="props.handle" :current-path="browser.path" @navigate="goTo" />
 
-      <p
-        v-if="!browser.loading && browser.entries.length === 0"
-        class="px-3 py-6 text-center text-xs text-muted-foreground"
-      >
-        {{ t("files.empty") }}
-      </p>
-
-      <ul class="p-1.5">
-        <li v-for="entry in browser.entries" :key="entry.path">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div class="flex min-h-0 flex-1 flex-col overflow-auto">
           <div
-            :class="
-              cn(
-                'flex items-center gap-2 rounded-md px-1.5 py-1',
-                selected === entry.path ? 'bg-accent' : 'hover:bg-accent/50',
-              )
-            "
+            class="sticky top-0 flex items-center gap-2 border-b border-border bg-card/30 px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
           >
-            <button
-              type="button"
-              class="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left"
-              :title="entry.name"
-              @click="selected = entry.path"
-              @dblclick="enter(entry)"
-            >
-              <component :is="entryIcon(entry)" :size="13" class="shrink-0 text-muted-foreground" />
-              <span class="truncate text-xs">{{ entry.name }}</span>
-            </button>
-
-            <span class="w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
-              sizeOf(entry)
-            }}</span>
-            <span class="w-40 shrink-0 text-right text-[10px] text-muted-foreground">{{ modifiedOf(entry) }}</span>
-
-            <span class="flex w-28 shrink-0 items-center justify-end gap-0.5">
-              <button
-                v-if="entry.kind === 'directory'"
-                type="button"
-                class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                :title="t('files.action.open')"
-                :aria-label="t('files.action.open')"
-                @click="enter(entry)"
-              >
-                <FolderOpen :size="12" />
-              </button>
-              <template v-else>
-                <button
-                  v-if="isReadable(entry)"
-                  type="button"
-                  class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('files.action.download')"
-                  :aria-label="t('files.action.download')"
-                  @click="download(entry)"
-                >
-                  <Download :size="12" />
-                </button>
-                <button
-                  v-if="isReadable(entry)"
-                  type="button"
-                  class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('files.action.edit')"
-                  :aria-label="t('files.action.edit')"
-                  @click="editing = entry"
-                >
-                  <FileText :size="12" />
-                </button>
-              </template>
-              <button
-                type="button"
-                class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                :title="t('files.action.rename')"
-                :aria-label="t('files.action.rename')"
-                @click="startRename(entry)"
-              >
-                <Pencil :size="12" />
-              </button>
-              <button
-                type="button"
-                class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                :title="t('files.action.remove')"
-                :aria-label="t('files.action.remove')"
-                @click="startRemove(entry)"
-              >
-                <Trash2 :size="12" />
-              </button>
-            </span>
+            <span class="min-w-0 flex-1">{{ t("files.name") }}</span>
+            <span class="w-20 shrink-0 text-right">{{ t("files.size") }}</span>
+            <span class="w-40 shrink-0 text-right">{{ t("files.modified") }}</span>
+            <span class="w-28 shrink-0"></span>
           </div>
-        </li>
-      </ul>
-    </div>
 
-    <TransferList />
+          <p
+            v-if="!browser.loading && browser.entries.length === 0"
+            class="px-3 py-6 text-center text-xs text-muted-foreground"
+          >
+            {{ t("files.empty") }}
+          </p>
+
+          <ul class="p-1.5">
+            <li v-for="entry in browser.entries" :key="entry.path">
+              <div
+                :class="
+                  cn(
+                    'flex items-center gap-2 rounded-md px-1.5 py-1',
+                    selected === entry.path ? 'bg-accent' : 'hover:bg-accent/50',
+                  )
+                "
+              >
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left"
+                  :title="entry.name"
+                  @click="selected = entry.path"
+                  @dblclick="enter(entry)"
+                >
+                  <component :is="entryIcon(entry)" :size="13" class="shrink-0 text-muted-foreground" />
+                  <span class="truncate text-xs">{{ entry.name }}</span>
+                </button>
+
+                <span class="w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
+                  sizeOf(entry)
+                }}</span>
+                <span class="w-40 shrink-0 text-right text-[10px] text-muted-foreground">{{ modifiedOf(entry) }}</span>
+
+                <span class="flex w-28 shrink-0 items-center justify-end gap-0.5">
+                  <button
+                    v-if="entry.kind === 'directory'"
+                    type="button"
+                    class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                    :title="t('files.action.open')"
+                    :aria-label="t('files.action.open')"
+                    @click="enter(entry)"
+                  >
+                    <FolderOpen :size="12" />
+                  </button>
+                  <template v-else>
+                    <button
+                      v-if="isReadable(entry)"
+                      type="button"
+                      class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                      :title="t('files.action.download')"
+                      :aria-label="t('files.action.download')"
+                      @click="download(entry)"
+                    >
+                      <Download :size="12" />
+                    </button>
+                    <button
+                      v-if="isReadable(entry)"
+                      type="button"
+                      class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                      :title="t('files.action.edit')"
+                      :aria-label="t('files.action.edit')"
+                      @click="editing = entry"
+                    >
+                      <FileText :size="12" />
+                    </button>
+                  </template>
+                  <button
+                    type="button"
+                    class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                    :title="t('files.action.rename')"
+                    :aria-label="t('files.action.rename')"
+                    @click="startRename(entry)"
+                  >
+                    <Pencil :size="12" />
+                  </button>
+                  <button
+                    type="button"
+                    class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    :title="t('files.action.remove')"
+                    :aria-label="t('files.action.remove')"
+                    @click="startRemove(entry)"
+                  >
+                    <Trash2 :size="12" />
+                  </button>
+                </span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <TransferList />
+      </div>
+    </div>
 
     <FileEditor
       :open="editing !== null"

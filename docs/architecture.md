@@ -139,6 +139,22 @@ Two rules the interface depends on:
 A download writes a fresh local file rather than resuming over an older one: a half-resumed file
 that mixes two versions is worse than starting again, and the person would have no way to tell.
 
+### Two panes
+
+The browser shows a directory tree beside the listing, and the tree **follows** the listing rather
+than driving it: wherever the right side navigates, `ancestorsOf` opens exactly the branches that
+make that place visible. That is what keeps the two panes from disagreeing about where you are, and
+it is why the tree has no opinion of its own about the current directory.
+
+Two consequences worth knowing:
+
+- **Branches are read lazily and cached.** Collapsing and reopening a branch costs nothing.
+- **A change anywhere drops the whole cache.** A folder created in one place changes what a folder
+  elsewhere holds, so the revision counter invalidates every cached branch and the open ones re-read
+  — one round trip each, which is the price of never showing a stale tree.
+
+The layout is a preference (`tree` or `list`), because a narrow window wants the listing alone.
+
 ## Terminal events
 
 The core hands bytes to the shell, which turns them into two window events. The payloads are the

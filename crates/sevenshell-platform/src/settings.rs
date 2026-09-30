@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{AppSettings, ThemeMode};
+use sevenshell_types::{AppSettings, FilesLayout, ThemeMode};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -37,6 +37,8 @@ struct StoredSettings {
     #[serde(default)]
     terminal_theme: String,
     #[serde(default)]
+    files_layout: String,
+    #[serde(default)]
     locale: Option<String>,
 }
 
@@ -46,6 +48,7 @@ impl StoredSettings {
             schema_version: SETTINGS_SCHEMA_VERSION,
             theme_mode: settings.theme_mode.as_str().to_owned(),
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
+            files_layout: settings.files_layout.as_str().to_owned(),
             locale: settings.locale.clone(),
         }
     }
@@ -54,6 +57,7 @@ impl StoredSettings {
         AppSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
+            files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
     }
@@ -144,6 +148,7 @@ mod tests {
         AppSettings {
             theme_mode,
             terminal_theme,
+            files_layout: FilesLayout::default(),
             locale: locale.map(str::to_owned),
         }
     }

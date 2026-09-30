@@ -17,7 +17,7 @@ import { computed, ref } from "vue";
 import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveLocale } from "@/i18n";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
-import type { ResolvedTheme, ThemeMode } from "@/types/app";
+import type { FilesLayout, ResolvedTheme, ThemeMode } from "@/types/app";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -25,6 +25,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const themeMode = ref<ThemeMode>("system");
   /** Which palette the terminal draws in; `system` means "follow the interface theme". */
   const terminalTheme = ref<ThemeMode>("system");
+  /** Two panes or one, in the file browser. */
+  const filesLayout = ref<FilesLayout>("tree");
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -81,6 +83,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       const settings = await backend.settings.get();
       themeMode.value = settings.themeMode;
       terminalTheme.value = settings.terminalTheme;
+      filesLayout.value = settings.filesLayout;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -102,6 +105,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       await backend.settings.set({
         themeMode: themeMode.value,
         terminalTheme: terminalTheme.value,
+        filesLayout: filesLayout.value,
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -117,6 +121,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   async function setTerminalTheme(mode: ThemeMode): Promise<void> {
     terminalTheme.value = mode;
+    await persist();
+  }
+
+  async function setFilesLayout(layout: FilesLayout): Promise<void> {
+    filesLayout.value = layout;
     await persist();
   }
 
@@ -137,6 +146,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   return {
     themeMode,
     terminalTheme,
+    filesLayout,
     resolvedTheme,
     resolvedTerminalTheme,
     locale,
@@ -145,6 +155,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     load,
     setThemeMode,
     setTerminalTheme,
+    setFilesLayout,
     setLocale,
   };
 });

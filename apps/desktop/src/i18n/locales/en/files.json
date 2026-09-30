@@ -60,6 +60,12 @@
       "unknownSize": "unknown",
       "cancel": "Cancel",
       "dismiss": "Close"
+    },
+    "tree": {
+      "title": "Directories",
+      "root": "/",
+      "expand": "Expand",
+      "collapse": "Collapse"
     }
   }
 }

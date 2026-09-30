@@ -48,7 +48,9 @@ describe("preferences store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     system = stubSystemTheme(true);
-    settingsGetMock.mockReset().mockResolvedValue({ themeMode: "system", terminalTheme: "system" });
+    settingsGetMock
+      .mockReset()
+      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
     settingsSetMock.mockReset().mockResolvedValue(undefined);
     document.documentElement.classList.remove("dark");
   });
@@ -77,7 +79,12 @@ describe("preferences store", () => {
   });
 
   it("applies a stored choice instead of the system", async () => {
-    settingsGetMock.mockResolvedValue({ themeMode: "light", terminalTheme: "system", locale: "zh-CN" });
+    settingsGetMock.mockResolvedValue({
+      themeMode: "light",
+      terminalTheme: "system",
+      filesLayout: "tree",
+      locale: "zh-CN",
+    });
 
     const store = usePreferencesStore();
     store.initialize();
@@ -108,7 +115,12 @@ describe("preferences store", () => {
 
     await store.setThemeMode("dark");
 
-    expect(settingsSetMock).toHaveBeenCalledWith({ themeMode: "dark", terminalTheme: "system", locale: undefined });
+    expect(settingsSetMock).toHaveBeenCalledWith({
+      themeMode: "dark",
+      terminalTheme: "system",
+      filesLayout: "tree",
+      locale: undefined,
+    });
   });
 
   it("records the language only once someone chooses one", async () => {
@@ -118,7 +130,12 @@ describe("preferences store", () => {
 
     await store.setLocale("zh-CN");
 
-    expect(settingsSetMock).toHaveBeenCalledWith({ themeMode: "system", terminalTheme: "system", locale: "zh-CN" });
+    expect(settingsSetMock).toHaveBeenCalledWith({
+      themeMode: "system",
+      terminalTheme: "system",
+      filesLayout: "tree",
+      locale: "zh-CN",
+    });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
 
@@ -165,7 +182,9 @@ describe("the terminal palette", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     system = stubSystemTheme(true);
-    settingsGetMock.mockReset().mockResolvedValue({ themeMode: "system", terminalTheme: "system" });
+    settingsGetMock
+      .mockReset()
+      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
     settingsSetMock.mockReset().mockResolvedValue(undefined);
   });
 
@@ -200,16 +219,60 @@ describe("the terminal palette", () => {
     // The interface is dark again; the terminal keeps the palette it was given.
     expect(store.resolvedTheme).toBe("dark");
     expect(store.resolvedTerminalTheme).toBe("light");
-    expect(settingsSetMock).toHaveBeenLastCalledWith({ themeMode: "dark", terminalTheme: "light", locale: undefined });
+    expect(settingsSetMock).toHaveBeenLastCalledWith({
+      themeMode: "dark",
+      terminalTheme: "light",
+      filesLayout: "tree",
+      locale: undefined,
+    });
   });
 
   it("remembers the choice across a restart", async () => {
-    settingsGetMock.mockResolvedValue({ themeMode: "light", terminalTheme: "dark" });
+    settingsGetMock.mockResolvedValue({ themeMode: "light", terminalTheme: "dark", filesLayout: "tree" });
 
     const store = usePreferencesStore();
     store.initialize();
     await store.load();
 
     expect(store.resolvedTerminalTheme).toBe("dark");
+  });
+});
+
+describe("the file layout", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock
+      .mockReset()
+      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("starts on the tree, because that is what a remote file system is easiest to move around in", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.filesLayout).toBe("tree");
+  });
+
+  it("remembers a choice of the single list", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setFilesLayout("list");
+
+    expect(store.filesLayout).toBe("list");
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ filesLayout: "list" }));
+  });
+
+  it("reads the choice back on the next start", async () => {
+    settingsGetMock.mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "list" });
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.filesLayout).toBe("list");
   });
 });

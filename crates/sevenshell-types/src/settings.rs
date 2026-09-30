@@ -6,6 +6,33 @@
 
 use serde::{Deserialize, Serialize};
 
+/// How the file browser is laid out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FilesLayout {
+    /// A directory tree beside the listing: the shape a remote file system is easiest to move
+    /// around in, and what somebody who works with servers expects.
+    #[default]
+    Tree,
+    /// The listing alone, for a narrow window or a directory that is already where you want to be.
+    List,
+}
+
+impl FilesLayout {
+    pub const ALL: &'static [FilesLayout] = &[FilesLayout::Tree, FilesLayout::List];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Tree => "tree",
+            Self::List => "list",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|layout| layout.as_str() == id)
+    }
+}
+
 /// How the interface picks its colours.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -57,6 +84,9 @@ pub struct AppSettings {
     /// interface with a dark terminal is a common and deliberate choice, so it is kept.
     #[serde(default)]
     pub terminal_theme: ThemeMode,
+    /// How the file browser is laid out.
+    #[serde(default)]
+    pub files_layout: FilesLayout,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
 }
@@ -65,6 +95,9 @@ impl AppSettings {
     /// Whether anything has been chosen yet. Used by the interface to decide whether the
     /// system language and theme still apply.
     pub fn is_untouched(&self) -> bool {
-        self.theme_mode == ThemeMode::System && self.terminal_theme == ThemeMode::System && self.locale.is_none()
+        self.theme_mode == ThemeMode::System
+            && self.terminal_theme == ThemeMode::System
+            && self.files_layout == FilesLayout::Tree
+            && self.locale.is_none()
     }
 }

@@ -44,6 +44,15 @@ export const useFilesStore = defineStore("files", () => {
   const transfers = ref<TransferInfo[]>([]);
   /** A failure from reading the transfer list or stopping one. Shown next to the transfers. */
   const transferFailure = ref<ShellError | null>(null);
+  /**
+   * Bumped by anything that changes the shape of a directory.
+   *
+   * The directory tree caches what it has listed, and a folder created, renamed or deleted
+   * anywhere makes every cached listing suspect — including branches that look untouched. A
+   * counter is the cheapest way to say "everything you remember may be stale", and it costs one
+   * round trip per *open* branch to recover.
+   */
+  const revision = ref(0);
 
   /** The interval handle, while there is something worth polling for. */
   let polling: ReturnType<typeof setInterval> | null = null;
@@ -81,6 +90,23 @@ export const useFilesStore = defineStore("files", () => {
   }
 
   /** Goes to a path somebody chose. The failure from the last attempt goes with the old path. */
+  /**
+   * The directories inside a path, for the tree.
+   *
+   * Deliberately not `read`: the tree lists branches the listing is not in, and pointing the
+   * listing at each of them on the way past would move the pane somebody is working in. A branch
+   * that cannot be read comes back empty — the listing is where errors are reported, and saying it
+   * twice helps nobody.
+   */
+  async function directories(handle: string, path: string): Promise<SftpEntry[]> {
+    try {
+      const listing = await backend.files.list(handle, path);
+      return listing.entries.filter((entry) => entry.kind === "directory");
+    } catch {
+      return [];
+    }
+  }
+
   async function navigate(handle: string, path: string): Promise<void> {
     const current = browsers.value[handle];
     if (current) {
@@ -194,6 +220,7 @@ export const useFilesStore = defineStore("files", () => {
     for (const open of Object.values(browsers.value)) {
       if (landed.includes(open.path)) {
         await read(open.handle, open.path);
+        revision.value += 1;
       }
     }
   }
@@ -265,6 +292,10 @@ export const useFilesStore = defineStore("files", () => {
     const path = browsers.value[handle]?.path;
     if (path !== undefined) {
       await read(handle, path);
+      // Only a change that happened: a refused one left the directory as it was.
+      if (worked) {
+        revision.value += 1;
+      }
     }
     return worked;
   }
@@ -297,10 +328,12 @@ export const useFilesStore = defineStore("files", () => {
 
   return {
     browsers,
+    revision,
     transfers,
     transferFailure,
     open,
     browser,
+    directories,
     navigate,
     createFolder,
     rename,

@@ -23,7 +23,7 @@ import { SUPPORTED_LOCALES, type SupportedLocale } from "@/i18n";
 import { describeShellError } from "@/i18n/errors";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
-import type { ThemeMode } from "@/types/app";
+import type { FilesLayout, ThemeMode } from "@/types/app";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
@@ -44,6 +44,11 @@ const LANGUAGE_LABELS: Record<SupportedLocale, string> = { en: "English", "zh-CN
  * The terminal's palette. The same three choices as the interface, with `system` reading
  * "follow the interface" rather than "follow the operating system", so the labels differ.
  */
+const FILES_LAYOUTS: readonly { mode: FilesLayout; labelKey: string }[] = [
+  { mode: "tree", labelKey: "settings.files.tree" },
+  { mode: "list", labelKey: "settings.files.list" },
+];
+
 const TERMINAL_THEMES: readonly { mode: ThemeMode; labelKey: string }[] = [
   { mode: "system", labelKey: "settings.terminal.follow" },
   { mode: "dark", labelKey: "settings.terminal.dark" },
@@ -123,6 +128,30 @@ const problem = computed(() => (preferences.problem ? describeShellError(transla
               </button>
             </div>
             <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.terminal.hint") }}</p>
+          </section>
+
+          <section>
+            <h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {{ t("settings.files.title") }}
+            </h3>
+            <div class="flex gap-1 rounded-md border border-border bg-background p-0.5">
+              <button
+                v-for="layout in FILES_LAYOUTS"
+                :key="layout.mode"
+                type="button"
+                class="flex-1 rounded-sm px-2 py-1.5 text-xs transition-colors"
+                :class="
+                  preferences.filesLayout === layout.mode
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                "
+                :aria-pressed="preferences.filesLayout === layout.mode"
+                @click="preferences.setFilesLayout(layout.mode)"
+              >
+                {{ t(layout.labelKey) }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.files.hint") }}</p>
           </section>
 
           <section>

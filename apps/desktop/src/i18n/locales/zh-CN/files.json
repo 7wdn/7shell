@@ -60,6 +60,12 @@
       "unknownSize": "未知",
       "cancel": "取消",
       "dismiss": "关闭"
+    },
+    "tree": {
+      "title": "目录",
+      "root": "/",
+      "expand": "展开",
+      "collapse": "折叠"
     }
   }
 }

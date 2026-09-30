@@ -46,3 +46,24 @@ export function parentPath(path: string): string | null {
 export function joinPath(directory: string, name: string): string {
   return directory.endsWith("/") ? `${directory}${name}` : `${directory}/${name}`;
 }
+
+/**
+ * Every directory from the root down to the parent of `path`.
+ *
+ * This is what has to be open for a path to be visible in the tree, so it is the whole reason the
+ * tree and the listing do not drift apart: navigate anywhere on the right, and the left opens
+ * exactly the ancestors that make that place reachable.
+ */
+export function ancestorsOf(path: string): string[] {
+  const segments = path.split("/").filter(Boolean);
+  const trail = ["/"];
+  let current = "";
+
+  // The last segment is the entry itself; its ancestors are everything before it.
+  for (const segment of segments.slice(0, -1)) {
+    current += `/${segment}`;
+    trail.push(current);
+  }
+
+  return trail;
+}

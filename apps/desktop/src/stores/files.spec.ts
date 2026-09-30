@@ -274,3 +274,87 @@ describe("files store", () => {
     expect(transfersOpenMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("the directory tree's own listing", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    filesListMock.mockReset();
+  });
+
+  it("keeps only directories, because nothing else can be walked into", async () => {
+    filesListMock.mockResolvedValue({
+      path: "/home",
+      entries: [
+        { name: "var", path: "/home/var", kind: "directory", size: 0 },
+        { name: "notes.txt", path: "/home/notes.txt", kind: "file", size: 12 },
+        { name: "link", path: "/home/link", kind: "symlink", size: 0 },
+      ],
+    });
+
+    const store = useFilesStore();
+    const directories = await store.directories("f1", "/home");
+
+    expect(directories.map((entry) => entry.name)).toEqual(["var"]);
+  });
+
+  it("answers with nothing when a branch cannot be read, leaving the listing to report it", async () => {
+    filesListMock.mockRejectedValue({
+      version: 1,
+      code: "SFTP-PERMISSION-DENIED",
+      messageKey: "errors.sftp.permissionDenied",
+      messageParams: { path: "/root" },
+      origin: { subsystem: "sftp" },
+      outcome: "notSent",
+    });
+
+    const store = useFilesStore();
+
+    await expect(store.directories("f1", "/root")).resolves.toEqual([]);
+  });
+});
+
+describe("the revision the tree watches", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    filesOpenMock.mockReset();
+    filesListMock.mockReset();
+    filesCreateFolderMock.mockReset();
+  });
+
+  it("moves when a change happened", async () => {
+    const listing = { path: "/home", entries: [] };
+    filesOpenMock.mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing });
+    filesListMock.mockResolvedValue(listing);
+    filesCreateFolderMock.mockResolvedValue(undefined);
+
+    const store = useFilesStore();
+    await store.open("s1");
+    const before = store.revision;
+
+    await store.createFolder("f1", "/home/new");
+
+    expect(store.revision).toBeGreaterThan(before);
+  });
+
+  it("stays where it is when the change was refused", async () => {
+    const listing = { path: "/home", entries: [] };
+    filesOpenMock.mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing });
+    filesListMock.mockResolvedValue(listing);
+    filesCreateFolderMock.mockRejectedValue({
+      version: 1,
+      code: "SFTP-PERMISSION-DENIED",
+      messageKey: "errors.sftp.permissionDenied",
+      messageParams: { path: "/home/new" },
+      origin: { subsystem: "sftp" },
+      outcome: "notSent",
+    });
+
+    const store = useFilesStore();
+    await store.open("s1");
+    const before = store.revision;
+
+    await store.createFolder("f1", "/home/new");
+
+    expect(store.revision).toBe(before);
+  });
+});
