@@ -237,6 +237,15 @@ buttons and its own drag region. macOS keeps its native chrome in the overlay st
 traffic lights and their behaviour are the platform's to own; the title bar insets its content
 instead of imitating them.
 
+The window is also created hidden and revealed only once the interface reports a drawn frame
+(`app_ready`, called from the shell component after the theme and the language are settled). An
+un-painted webview is an opaque white rectangle — the browser control's own default background,
+which no stylesheet can reach, because the stylesheet arrives with the document that has not been
+painted — so a window shown at creation spends its first few hundred milliseconds looking like a
+broken application. `src-tauri/src/window_chrome.rs` holds a three-second deadline as the way out:
+a frontend that never gets that far still ends up as a window somebody can look at and close, and
+`tauri.conf.json` gives that path the dark palette's background colour rather than white.
+
 Dragging and double-click-to-maximize come from Tauri's built-in `data-tauri-drag-region`
 handling rather than from a listener of ours: the attribute is on the bar and the empty space in
 it, and interactive elements are skipped by the built-in handler, so a button in the drag region
@@ -246,6 +255,7 @@ happened.
 | Piece | Where |
 |---|---|
 | Window chrome, per-platform decision | `src-tauri/src/window_chrome.rs` |
+| The frame the window is revealed on, and the deadline | `apps/desktop/src/App.vue`, `src-tauri/src/window_chrome.rs` |
 | Window controls, the composable they use | `apps/desktop/src/components/shell/`, `src/composables/useWindowControls.ts` |
 | The window permissions those need, and nothing else | `src-tauri/capabilities/default.json` |
 

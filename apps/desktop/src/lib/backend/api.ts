@@ -60,6 +60,14 @@ export const backend = {
   /** Name, version, platform and descriptor counts of the running application. */
   appInfo: (): Promise<AppInfo> => forward("app_info", () => desktop.appInfo()),
 
+  /**
+   * Reports that the interface has drawn its first frame, which is when the shell shows the window.
+   * The shell shows it on its own deadline when this never arrives, so it is not a precondition for
+   * the window existing — only for its first appearance being the interface rather than an empty
+   * webview.
+   */
+  appReady: (): Promise<void> => forward("app_ready", () => desktop.appReady()),
+
   /** Language and theme: the only things kept between runs so far, and never secrets. */
   settings: {
     get: (): Promise<AppSettings> => forward("settings_get", () => desktop.settingsGet()),

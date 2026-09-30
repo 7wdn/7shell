@@ -57,6 +57,11 @@ export function appInfo(): Promise<AppInfo> {
   return invoke<AppInfo>("app_info");
 }
 
+/** Tells the shell there is a frame on screen. The window is hidden until it hears this. */
+export function appReady(): Promise<void> {
+  return invoke<void>("app_ready");
+}
+
 // -- Settings ----------------------------------------------------------------
 
 export function settingsGet(): Promise<AppSettings> {

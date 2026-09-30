@@ -4,10 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>7Shell</title>
-    <!-- Painted before the stylesheet loads, so the window never flashes white. -->
+    <!--
+      The dark palette's background, taken from styles/globals.css. It colours the document before
+      the stylesheet loads, and it is what the shell's fallback deadline opens the window on when
+      the interface never reports a frame (see src-tauri/src/window_chrome.rs).
+    -->
     <style>
       html {
-        background: #0b0d12;
+        background: #0d0f15;
       }
     </style>
   </head>

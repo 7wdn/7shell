@@ -11,7 +11,7 @@
  * events is made here, once, before the first terminal can exist.
  */
 import { RotateCw } from "@lucide/vue";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
@@ -83,6 +83,32 @@ async function dropped(payload: { pending?: { token: string }; error?: unknown }
   }
 }
 
+/**
+ * Tells the shell there is a frame on screen, which is when it shows the window.
+ *
+ * The window is created hidden, so this is what puts it on screen, and it is deliberately late in
+ * the startup: the theme, the language and the platform facts are settled by the time it runs, so
+ * the first thing a person sees is the interface it is going to keep, not a frame of one that is
+ * about to change. The two animation frames are what make "drawn" true rather than "almost drawn" —
+ * the class that carries the theme is only on screen once a frame has been painted with it.
+ *
+ * Nothing depends on this succeeding. A shell that never hears it shows the window on its own
+ * deadline instead, which is also the only thing that happens in a browser, where there is no
+ * window to show.
+ */
+async function reportFirstFrame(): Promise<void> {
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+
+  try {
+    await backend.appReady();
+  } catch (error) {
+    console.warn("the shell was not told the first frame is drawn", error);
+  }
+}
+
 onMounted(async () => {
   stopFollowingSystem = preferences.initialize();
   stopDragEvents = await backend.events.onFilesDrag((payload) => {
@@ -92,6 +118,7 @@ onMounted(async () => {
   stopTerminalEvents = terminals.initialize();
   await preferences.load();
   await app.load();
+  await reportFirstFrame();
   await vault.initialize();
 });
 

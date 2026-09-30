@@ -44,6 +44,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
+            commands::app::app_ready,
             commands::settings::settings_get,
             commands::settings::settings_set,
             commands::vault::vault_state,
