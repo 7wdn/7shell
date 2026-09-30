@@ -1,0 +1,46 @@
+{
+  "capability": {
+    "shell": {
+      "label": "Interactive shell"
+    },
+    "exec": {
+      "label": "Run a single command"
+    },
+    "resize": {
+      "label": "Terminal resizing"
+    },
+    "keepalive": {
+      "label": "Keep-alive"
+    },
+    "sftp": {
+      "label": "File transfer (SFTP)"
+    },
+    "forwarding": {
+      "label": "Port forwarding"
+    },
+    "dynamicForwarding": {
+      "label": "Dynamic forwarding (SOCKS)"
+    },
+    "agentForwarding": {
+      "label": "Agent forwarding"
+    },
+    "jumpHost": {
+      "label": "Use as a jump host"
+    },
+    "recording": {
+      "label": "Session recording"
+    },
+    "secret": {
+      "label": "Stores a secret"
+    },
+    "interactive": {
+      "label": "Asks follow-up questions"
+    },
+    "keyMaterial": {
+      "label": "Uses a key file"
+    },
+    "platformAgent": {
+      "label": "Uses the platform key agent"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "capability": {
+    "shell": {
+      "label": "交互式 shell"
+    },
+    "exec": {
+      "label": "执行单条命令"
+    },
+    "resize": {
+      "label": "终端窗口调整"
+    },
+    "keepalive": {
+      "label": "链路保活"
+    },
+    "sftp": {
+      "label": "文件传输（SFTP）"
+    },
+    "forwarding": {
+      "label": "端口转发"
+    },
+    "dynamicForwarding": {
+      "label": "动态转发（SOCKS）"
+    },
+    "agentForwarding": {
+      "label": "代理转发"
+    },
+    "jumpHost": {
+      "label": "可作为跳板机"
+    },
+    "recording": {
+      "label": "会话录制"
+    },
+    "secret": {
+      "label": "需要保存机密"
+    },
+    "interactive": {
+      "label": "需要多轮交互"
+    },
+    "keyMaterial": {
+      "label": "使用密钥文件"
+    },
+    "platformAgent": {
+      "label": "使用系统密钥代理"
+    }
+  }
+}

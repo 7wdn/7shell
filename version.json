@@ -1,0 +1,4 @@
+{
+  "$comment": "Single source of truth for released version numbers. Run `pnpm sync:versions` after editing; `pnpm verify:versions` (CI) fails when a manifest drifts.",
+  "app": "0.1.0"
+}

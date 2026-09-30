@@ -1,0 +1,10 @@
+{
+  "ignorePatterns": ["apps/desktop/src/types/generated/**", "dist/**", "src-tauri/**", "vendor/**"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  }
+}

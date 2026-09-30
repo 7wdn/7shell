@@ -1,0 +1,8 @@
+schemaVersion: 1
+order: 30
+id: keyboardInteractive
+rustVariant: KeyboardInteractive
+labelKey: auth.keyboardInteractive.label
+capabilities:
+  - secret
+  - interactive

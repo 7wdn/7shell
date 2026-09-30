@@ -1,0 +1,8 @@
+schemaVersion: 1
+order: 20
+id: publicKey
+rustVariant: PublicKey
+labelKey: auth.publicKey.label
+capabilities:
+  - keyMaterial
+  - secret

@@ -1,0 +1,66 @@
+{
+  "name": "sevenshell",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "7Shell - an open-source SSH and operations console.",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "vite --config apps/desktop/vite.config.ts",
+    "dev:tauri": "tauri dev",
+    "build": "vite build --config apps/desktop/vite.config.ts",
+    "preview": "vite preview --config apps/desktop/vite.config.ts",
+    "pretypecheck": "pnpm generate:descriptors",
+    "typecheck": "vue-tsc --noEmit --project apps/desktop/tsconfig.json",
+    "generate:descriptors": "node scripts/sync-descriptors.mjs",
+    "check:descriptors": "node scripts/sync-descriptors.mjs --check",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:provenance": "node scripts/check-provenance.mjs",
+    "sync:versions": "node scripts/reconcile-versions.mjs",
+    "verify:versions": "node scripts/reconcile-versions.mjs --check",
+    "test:guards": "node --test \"scripts/tests/*.test.mjs\"",
+    "test:scripts": "node --test scripts/",
+    "lint": "oxlint apps/desktop/src",
+    "fmt": "oxfmt \"apps/desktop/src/**/*.{ts,vue}\" \"scripts/**/*.mjs\"",
+    "fmt:check": "oxfmt --check \"apps/desktop/src/**/*.{ts,vue}\" \"scripts/**/*.mjs\"",
+    "pretest": "pnpm generate:descriptors",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "node scripts/run-check.mjs",
+    "icons": "node scripts/generate-icon.mjs && tauri icon art/icon.png",
+    "tauri": "tauri",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@vueuse/core": "^14.2.1",
+    "pinia": "^3.0.0",
+    "vue": "^3.5.35",
+    "vue-i18n": "^11.4.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^25.9.1",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "happy-dom": "^20.10.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "oxfmt": "0.53.0",
+    "oxlint": "^1.68.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.8",
+    "vue-tsc": "^3.3.3",
+    "yaml": "2.8.4"
+  },
+  "lint-staged": {
+    "apps/desktop/src/**/*.{ts,vue}": "oxfmt",
+    "scripts/**/*.mjs": "oxfmt"
+  }
+}

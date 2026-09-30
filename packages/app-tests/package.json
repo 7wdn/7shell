@@ -1,0 +1,8 @@
+{
+  "name": "@sevenshell/app-tests",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Cross-layer tests: contracts between the Rust backend, the descriptors and the interface.",
+  "type": "module"
+}

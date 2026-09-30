@@ -1,0 +1,20 @@
+{
+  "app": {
+    "title": "7Shell",
+    "subtitle": "SSH 与运维控制台",
+    "field": {
+      "version": "版本",
+      "platform": "平台",
+      "protocols": "已声明协议",
+      "descriptorSchema": "描述符版本"
+    },
+    "section": {
+      "backend": "后端",
+      "capabilities": "{protocol} 已承诺的能力"
+    },
+    "state": {
+      "supported": "已支持",
+      "planned": "尚未实现"
+    }
+  }
+}

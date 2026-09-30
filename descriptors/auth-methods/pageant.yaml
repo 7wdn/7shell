@@ -1,0 +1,9 @@
+schemaVersion: 1
+order: 50
+id: pageant
+rustVariant: Pageant
+labelKey: auth.pageant.label
+platforms:
+  - windows
+capabilities:
+  - platformAgent

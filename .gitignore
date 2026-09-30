@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# Dependencies and build output
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+coverage/
+*.tsbuildinfo
+
+# Rust
+/target/
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+*.pdb
+
+# ---------------------------------------------------------------------------
+# Local scratch (never published)
+# ---------------------------------------------------------------------------
+# Local planning notes and drafts. Kept out of version control on purpose.
+/.planning/
+/.scratch/
+
+# Local-only configuration and rules files. Never commit these.
+*.local.json
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Editors and operating systems
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo

@@ -1,0 +1,3 @@
+# Generated from descriptors/**/*.yaml and verified byte-for-byte by
+# `pnpm check:descriptors`, so it must not be reformatted.
+apps/desktop/src/types/generated/

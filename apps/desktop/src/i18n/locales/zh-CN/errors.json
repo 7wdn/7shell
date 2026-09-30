@@ -1,0 +1,43 @@
+{
+  "errors": {
+    "vault": {
+      "notFound": "此设备上还没有保险库。",
+      "locked": "保险库已锁定。",
+      "kdfFailed": "无法派生保险库密钥。",
+      "corrupt": "保险库文件无法读取。"
+    },
+    "ssh": {
+      "hostKeyUnknown": "{host}:{port} 提供的主机键此前从未见过。",
+      "hostKeyMismatch": "{host}:{port} 提供的主机键与已信任的主机键不一致。未向该服务器发送任何内容。",
+      "authFailed": "{host}:{port} 拒绝了这个凭据。",
+      "unreachable": "无法连接到 {host}:{port}。",
+      "timeout": "{host}:{port} 在 {seconds} 秒内没有响应。",
+      "channelFailed": "无法在 {host}:{port} 上打开会话。"
+    },
+    "sftp": {
+      "notFound": "服务器上不存在 {path}。",
+      "permissionDenied": "服务器拒绝访问 {path}。",
+      "transferFailed": "{path} 的传输失败。"
+    },
+    "fs": {
+      "grantUnknown": "该文件不是通过文件对话框选择的，因此无法读取。",
+      "grantExpired": "保险库锁定后，该文件的访问权限已失效。"
+    },
+    "store": {
+      "io": "无法写入应用状态。",
+      "schemaNewer": "这份数据由更新的版本写入（格式 {found}；当前版本最高支持 {supported}）。"
+    },
+    "policy": {
+      "denied": "当前策略不允许 {action}。",
+      "approvalRequired": "{action} 需要你先确认。"
+    },
+    "net": {
+      "proxyFailed": "无法连接到代理。"
+    },
+    "app": {
+      "notReady": "应用仍在启动中。",
+      "noTransport": "{operation} 需要在桌面应用中使用。",
+      "internal": "应用内部出现了错误。"
+    }
+  }
+}

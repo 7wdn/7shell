@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+
+# Dependency install scripts that are allowed to run. Everything else stays blocked.
+onlyBuiltDependencies:
+  - "@tailwindcss/oxide"
+  - esbuild
+  - vue-demi

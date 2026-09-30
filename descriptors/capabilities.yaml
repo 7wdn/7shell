@@ -1,0 +1,78 @@
+schemaVersion: 1
+
+# The vocabulary shared by protocols and auth methods. Adding a capability here is
+# only half the work: it must also be claimed by at least one descriptor before it
+# means anything, and its labelKey must exist in every locale.
+capabilities:
+  - key: shell
+    order: 10
+    group: terminal
+    labelKey: capability.shell.label
+
+  - key: exec
+    order: 20
+    group: terminal
+    labelKey: capability.exec.label
+
+  - key: resize
+    order: 30
+    group: terminal
+    labelKey: capability.resize.label
+
+  - key: keepalive
+    order: 40
+    group: session
+    labelKey: capability.keepalive.label
+
+  - key: sftp
+    order: 50
+    group: transfer
+    labelKey: capability.sftp.label
+
+  - key: forwarding
+    order: 60
+    group: network
+    labelKey: capability.forwarding.label
+
+  - key: dynamicForwarding
+    order: 70
+    group: network
+    labelKey: capability.dynamicForwarding.label
+
+  - key: agentForwarding
+    order: 80
+    group: network
+    labelKey: capability.agentForwarding.label
+
+  - key: jumpHost
+    order: 90
+    group: network
+    labelKey: capability.jumpHost.label
+
+  - key: recording
+    order: 100
+    group: session
+    labelKey: capability.recording.label
+    # In the vocabulary, but nothing claims it yet: session recording is not
+    # implemented, and declaring it on a protocol would let the interface offer it.
+    planned: true
+
+  - key: secret
+    order: 110
+    group: auth
+    labelKey: capability.secret.label
+
+  - key: interactive
+    order: 120
+    group: auth
+    labelKey: capability.interactive.label
+
+  - key: keyMaterial
+    order: 130
+    group: auth
+    labelKey: capability.keyMaterial.label
+
+  - key: platformAgent
+    order: 140
+    group: auth
+    labelKey: capability.platformAgent.label

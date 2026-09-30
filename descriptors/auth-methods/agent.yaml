@@ -1,0 +1,7 @@
+schemaVersion: 1
+order: 40
+id: agent
+rustVariant: Agent
+labelKey: auth.agent.label
+capabilities:
+  - platformAgent

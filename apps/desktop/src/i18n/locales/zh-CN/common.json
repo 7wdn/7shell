@@ -1,0 +1,24 @@
+{
+  "common": {
+    "action": {
+      "reload": "重新加载",
+      "retry": "重试"
+    },
+    "status": {
+      "loading": "正在连接后端…",
+      "ready": "后端就绪",
+      "failed": "后端不可用"
+    },
+    "preference": {
+      "language": "语言",
+      "theme": "主题"
+    },
+    "theme": {
+      "dark": "深色",
+      "light": "浅色"
+    },
+    "notice": {
+      "early": "早期开发阶段。此版本尚未经过安全审计，也从未发布过——请勿用它保存生产环境凭据。"
+    }
+  }
+}

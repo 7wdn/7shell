@@ -1,0 +1,7 @@
+{
+  "protocol": {
+    "ssh": {
+      "label": "SSH"
+    }
+  }
+}

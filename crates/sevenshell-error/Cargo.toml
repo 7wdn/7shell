@@ -1,0 +1,14 @@
+[package]
+name = "sevenshell-error"
+description = "Error envelope, code catalog and redaction shared by every layer of 7Shell."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

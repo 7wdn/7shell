@@ -1,0 +1,21 @@
+schemaVersion: 1
+order: 10
+id: ssh
+rustVariant: Ssh
+labelKey: protocol.ssh.label
+defaultPort: 22
+runtime: native
+transport: tcp
+supportLevel: operate
+# The committed capability set for SSH. Entries are added with the change that
+# implements and tests them; `docs/architecture.md` tracks what is in place today.
+capabilities:
+  - shell
+  - exec
+  - resize
+  - keepalive
+  - jumpHost
+  - sftp
+  - forwarding
+  - dynamicForwarding
+  - agentForwarding

@@ -1,0 +1,20 @@
+{
+  "app": {
+    "title": "7Shell",
+    "subtitle": "SSH and operations console",
+    "field": {
+      "version": "Version",
+      "platform": "Platform",
+      "protocols": "Protocols declared",
+      "descriptorSchema": "Descriptor schema"
+    },
+    "section": {
+      "backend": "Backend",
+      "capabilities": "Capabilities committed for {protocol}"
+    },
+    "state": {
+      "supported": "Supported",
+      "planned": "Not implemented yet"
+    }
+  }
+}
