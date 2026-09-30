@@ -32,11 +32,16 @@
 | Workspace, build, test and check tooling | In place |
 | Error contract (stable codes, message keys, secret scrubbing) | In place, with tests |
 | Descriptor pipeline (one YAML source → Rust enums + TypeScript types) | In place, drift-checked in CI |
-| Interface shell (Vue 3, design tokens, English + Chinese, backend facade) | In place |
-| Vault, SSH, terminal, SFTP, tunnels | Not implemented yet |
+| Encrypted vault (Argon2id + XChaCha20-Poly1305, atomic writes, one unlock failure) | Working, with tests |
+| Sessions and groups, saved in the vault, with no secret in any wire type | Working |
+| Host key verification: trust a new key, stop on a changed one | Working, tested against a real sshd |
+| Terminal: multi-tab, resize, keep-alive, reconnect after a disconnect | Working |
+| Password and private key authentication (passphrase supported) | Working |
+| Keyboard-interactive authentication | Working (answered with the session's password) |
+| SFTP, port forwarding, jump hosts, an agent interface | Not implemented |
 
-The interfaces in the running application state the same thing: the capability list on the
-first screen is read from the descriptors and marks everything that is not implemented yet.
+The application states the same thing on its own first screen: the capability list is read from the
+descriptors, which only claim what is implemented.
 
 ## Building it
 
@@ -55,6 +60,10 @@ pnpm test             # interface tests
 cargo test --workspace # Rust tests
 pnpm build             # the interface bundle
 pnpm icons             # redraw and regenerate the application icons
+
+make lab-up            # a real sshd to connect to, in Docker (127.0.0.1:2222)
+make lab-verify        # the live tests: connect, verify a host key, run a command, read the output
+make lab-down          # stop it
 ```
 
 `make` targets are thin wrappers around these commands for people who prefer them.

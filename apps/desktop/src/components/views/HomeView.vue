@@ -2,23 +2,31 @@
 /**
  * The home view.
  *
- * Every number here comes from somewhere real: the protocol and capability counts are the
- * descriptor tables, the version and platform are what the backend reported, and the lists of
- * what is and is not claimed are the descriptor vocabulary itself. Nothing on this screen
- * pretends a feature exists — the honest answer to "can I connect yet?" is on it.
+ * Every number here comes from somewhere real: the saved and open counts are the stores the
+ * sidebar and the tabs read, the protocol and capability counts are the descriptor tables, the
+ * version and platform are what the backend reported, and the lists of what is and is not claimed
+ * are the descriptor vocabulary itself. Nothing on this screen pretends a feature exists — the
+ * honest answer to "can I connect yet?" is on it.
  */
 import { Check, CircleDashed, KeyRound, ShieldCheck, Terminal } from "@lucide/vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { useAppStore } from "@/stores/app";
+import { useSessionsStore } from "@/stores/sessions";
+import { useTerminalsStore } from "@/stores/terminals";
 import { AUTH_METHODS, CAPABILITIES, PROTOCOLS, protocolSupports } from "@/types/generated/protocols";
 
 const { t } = useI18n();
 const app = useAppStore();
+const library = useSessionsStore();
+const terminals = useTerminalsStore();
 
 const protocols = computed(() => PROTOCOLS);
 const authMethods = computed(() => AUTH_METHODS);
+
+/** A terminal that ended is not open, and a tab whose open failed never held one. */
+const openTerminals = computed(() => terminals.tabs.filter((tab) => tab.status === "open").length);
 
 /** The capabilities SSH declares, and the ones still sitting in the catalog unclaimed. */
 const claimedCapabilities = computed(() =>
@@ -33,6 +41,8 @@ const unclaimedCapabilities = computed(() =>
 );
 
 const tiles = computed(() => [
+  { key: "sessions", label: t("home.tile.sessions"), value: library.sessions.length },
+  { key: "terminals", label: t("home.tile.terminals"), value: openTerminals.value },
   { key: "protocols", label: t("home.tile.protocols"), value: app.info?.protocolCount ?? 0 },
   { key: "capabilities", label: t("home.tile.capabilities"), value: claimedCapabilities.value.length },
   { key: "authMethods", label: t("home.tile.authMethods"), value: authMethods.value.length },
@@ -48,7 +58,7 @@ const buildKind = computed(() => {
 
 <template>
   <div class="mx-auto flex max-w-5xl flex-col gap-4 p-5">
-    <section class="grid gap-3 sm:grid-cols-3">
+    <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <div v-for="tile in tiles" :key="tile.key" class="rounded-lg border border-border bg-card px-4 py-3">
         <p class="text-xs text-muted-foreground">{{ tile.label }}</p>
         <p class="mt-1 font-mono text-2xl leading-tight">{{ tile.value }}</p>

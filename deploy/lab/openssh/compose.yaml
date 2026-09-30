@@ -1,0 +1,22 @@
+# The baseline SSH lab: one server, password authentication, an ed25519 host key.
+#
+# Bound to loopback only. The credentials are deliberately trivial and are the ones the live tests
+# expect; this is a fixture, not a deployment.
+services:
+  sshd:
+    # The same image as `lscr.io/linuxserver/openssh-server`, taken from Docker Hub because the
+    # lscr.io registry is not reachable from every network. Pin the digest when the lab has to be
+    # byte-for-byte reproducible.
+    image: linuxserver/openssh-server:latest
+    container_name: sevenshell-lab-sshd
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      USER_NAME: labuser
+      USER_PASSWORD: labpassword
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+    ports:
+      - "127.0.0.1:2222:2222"
+    # Keep it around between test runs; `make lab-down` removes it when it is not wanted.
+    restart: unless-stopped

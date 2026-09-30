@@ -1,0 +1,24 @@
+{
+  "vault": {
+    "checking": "Looking for the vault…",
+    "unavailable": "The vault could not be read, so it is not known whether one exists on this device.",
+    "create": {
+      "title": "Create the vault",
+      "description": "The vault password protects every credential saved on this device. It is not stored anywhere and cannot be recovered: if it is lost, the saved sessions and keys are lost with it.",
+      "password": "Password",
+      "passwordPlaceholder": "At least 8 characters",
+      "confirm": "Confirm password",
+      "confirmPlaceholder": "Type the password again",
+      "tooShort": "Use at least 8 characters.",
+      "mismatch": "The two passwords do not match.",
+      "submit": "Create vault"
+    },
+    "unlock": {
+      "title": "Unlock the vault",
+      "description": "Enter the vault password to reach the saved sessions and their credentials.",
+      "password": "Password",
+      "passwordPlaceholder": "Vault password",
+      "submit": "Unlock"
+    }
+  }
+}

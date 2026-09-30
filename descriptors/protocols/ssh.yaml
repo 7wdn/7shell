@@ -7,15 +7,10 @@ defaultPort: 22
 runtime: native
 transport: tcp
 supportLevel: operate
-# The committed capability set for SSH. Entries are added with the change that
-# implements and tests them; `docs/architecture.md` tracks what is in place today.
+# Only what this build actually does. A capability is added by the change that implements and
+# tests it, so this list is the honest answer to "what can 7Shell do over SSH today?" — a shell,
+# resized when the window changes, kept alive while it is idle.
 capabilities:
   - shell
-  - exec
   - resize
   - keepalive
-  - jumpHost
-  - sftp
-  - forwarding
-  - dynamicForwarding
-  - agentForwarding

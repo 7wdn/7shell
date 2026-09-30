@@ -1,0 +1,21 @@
+[package]
+name = "sevenshell-session"
+description = "Live sessions: opening a terminal, moving bytes, keeping it alive, and closing it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+sevenshell-ssh = { workspace = true }
+sevenshell-vault = { workspace = true }
+base64 = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

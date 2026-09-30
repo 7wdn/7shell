@@ -42,6 +42,8 @@ error_catalog! {
     VaultLocked => "VAULT-LOCKED", "errors.vault.locked";
     #[doc = "The key derivation could not be completed."]
     VaultKdfFailed => "VAULT-KDF-FAILED", "errors.vault.kdfFailed";
+    #[doc = "The vault did not open. Deliberately one code for a wrong password and for a file that has been changed."]
+    VaultUnlockFailed => "VAULT-UNLOCK-FAILED", "errors.vault.unlockFailed";
     #[doc = "The vault file exists but cannot be decrypted or parsed."]
     VaultCorrupt => "VAULT-CORRUPT", "errors.vault.corrupt";
 
@@ -58,6 +60,10 @@ error_catalog! {
     SshTimeout => "SSH-TIMEOUT", "errors.ssh.timeout";
     #[doc = "A channel, pty request or subsystem request failed."]
     SshChannelFailed => "SSH-CHANNEL-FAILED", "errors.ssh.channelFailed";
+    #[doc = "The key file could not be read, or its passphrase was wrong."]
+    SshKeyInvalid => "SSH-KEY-INVALID", "errors.ssh.keyInvalid";
+    #[doc = "The key is of a kind this build cannot use."]
+    SshKeyUnsupported => "SSH-KEY-UNSUPPORTED", "errors.ssh.keyUnsupported";
 
     // -- SFTP --------------------------------------------------------------
     #[doc = "The remote path does not exist."]
@@ -78,6 +84,8 @@ error_catalog! {
     StoreIo => "STORE-IO", "errors.store.io";
     #[doc = "The stored data was written by a newer version of the application."]
     StoreSchemaNewer => "STORE-SCHEMA-NEWER", "errors.store.schemaNewer";
+    #[doc = "The session being opened is no longer saved."]
+    SessionNotFound => "SESSION-NOT-FOUND", "errors.session.notFound";
 
     // -- Policy ------------------------------------------------------------
     #[doc = "The active policy forbids this action."]
@@ -94,6 +102,8 @@ error_catalog! {
     AppNotReady => "APP-NOT-READY", "errors.app.notReady";
     #[doc = "No backend transport is available, for example a browser without the desktop shell."]
     AppNoTransport => "APP-NO-TRANSPORT", "errors.app.noTransport";
+    #[doc = "The requested capability is declared but not implemented in this build."]
+    AppUnsupported => "APP-UNSUPPORTED", "errors.app.unsupported";
     #[doc = "An unexpected internal failure."]
     AppInternal => "APP-INTERNAL", "errors.app.internal";
 }

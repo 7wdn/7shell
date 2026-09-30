@@ -1,0 +1,24 @@
+{
+  "vault": {
+    "checking": "正在查找保险库…",
+    "unavailable": "无法读取保险库，因此无法确定本机是否已创建。",
+    "create": {
+      "title": "创建保险库",
+      "description": "保险库密码用于保护保存在本机的全部凭据。它不会以任何形式留存，也无法找回：一旦遗失，已保存的会话与密钥将一并丢失。",
+      "password": "密码",
+      "passwordPlaceholder": "至少 8 个字符",
+      "confirm": "确认密码",
+      "confirmPlaceholder": "请再次输入密码",
+      "tooShort": "请使用至少 8 个字符。",
+      "mismatch": "两次输入的密码不一致。",
+      "submit": "创建保险库"
+    },
+    "unlock": {
+      "title": "解锁保险库",
+      "description": "输入保险库密码以访问已保存的会话及其凭据。",
+      "password": "密码",
+      "passwordPlaceholder": "保险库密码",
+      "submit": "解锁"
+    }
+  }
+}

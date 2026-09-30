@@ -13,6 +13,7 @@ capabilities:
     order: 20
     group: terminal
     labelKey: capability.exec.label
+    planned: true
 
   - key: resize
     order: 30
@@ -28,26 +29,31 @@ capabilities:
     order: 50
     group: transfer
     labelKey: capability.sftp.label
+    planned: true
 
   - key: forwarding
     order: 60
     group: network
     labelKey: capability.forwarding.label
+    planned: true
 
   - key: dynamicForwarding
     order: 70
     group: network
     labelKey: capability.dynamicForwarding.label
+    planned: true
 
   - key: agentForwarding
     order: 80
     group: network
     labelKey: capability.agentForwarding.label
+    planned: true
 
   - key: jumpHost
     order: 90
     group: network
     labelKey: capability.jumpHost.label
+    planned: true
 
   - key: recording
     order: 100
@@ -76,3 +82,4 @@ capabilities:
     order: 140
     group: auth
     labelKey: capability.platformAgent.label
+    planned: true

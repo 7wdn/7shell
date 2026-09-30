@@ -6,6 +6,7 @@
 
 mod app_info;
 mod descriptors;
+mod session;
 mod settings;
 
 mod generated {
@@ -16,5 +17,9 @@ pub use app_info::{AppInfo, PRODUCT_NAME};
 pub use generated::{
     AUTH_METHODS, AuthMethod, AuthMethodSpec, CAPABILITIES, Capability, CapabilityGroup, CapabilitySpec,
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,
+};
+pub use session::{
+    KeyInfo, KnownHostEntry, OpenOutcome, PresentedHostKey, SecretInput, Session, SessionAuth, SessionGroup,
+    TerminalSettings, VaultState,
 };
 pub use settings::{AppSettings, ThemeMode};

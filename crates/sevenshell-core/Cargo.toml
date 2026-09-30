@@ -1,0 +1,19 @@
+[package]
+name = "sevenshell-core"
+description = "Orchestration: the order in which the vault, the transport and the registry are used."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+sevenshell-vault = { workspace = true }
+sevenshell-ssh = { workspace = true }
+sevenshell-session = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

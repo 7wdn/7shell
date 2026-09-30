@@ -1,0 +1,24 @@
+[package]
+name = "sevenshell-vault"
+description = "The encrypted store: sessions, groups, imported keys and trusted host keys."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-platform = { workspace = true }
+sevenshell-types = { workspace = true }
+argon2 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+getrandom = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

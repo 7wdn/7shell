@@ -4,7 +4,8 @@
       "notFound": "There is no vault on this device yet.",
       "locked": "The vault is locked.",
       "kdfFailed": "The vault key could not be derived.",
-      "corrupt": "The vault file could not be read."
+      "corrupt": "The vault file could not be read.",
+      "unlockFailed": "The vault did not open. The password is wrong, or the file is not the one that was saved."
     },
     "ssh": {
       "hostKeyUnknown": "The server at {host}:{port} presented a host key that has not been seen before.",
@@ -12,7 +13,9 @@
       "authFailed": "The server at {host}:{port} rejected these credentials.",
       "unreachable": "Could not reach {host}:{port}.",
       "timeout": "{host}:{port} did not respond within {seconds} seconds.",
-      "channelFailed": "A session on {host}:{port} could not be opened."
+      "channelFailed": "A session on {host}:{port} could not be opened.",
+      "keyInvalid": "The key could not be read. If it has a passphrase, check that too.",
+      "keyUnsupported": "This build cannot use that kind of key."
     },
     "sftp": {
       "notFound": "{path} does not exist on the server.",
@@ -27,6 +30,9 @@
       "io": "Application state could not be written.",
       "schemaNewer": "This data was written by a newer version (format {found}; this build understands up to {supported})."
     },
+    "session": {
+      "notFound": "That session is no longer saved."
+    },
     "policy": {
       "denied": "The active policy does not allow {action}.",
       "approvalRequired": "{action} needs your approval first."
@@ -37,6 +43,7 @@
     "app": {
       "notReady": "The application is still starting up.",
       "noTransport": "{operation} needs the desktop application.",
+      "unsupported": "{what} is not implemented in this build yet.",
       "internal": "Something went wrong inside the application."
     }
   }

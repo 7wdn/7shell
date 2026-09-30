@@ -13,8 +13,11 @@ import enCommon from "./locales/en/common.json";
 import enErrors from "./locales/en/errors.json";
 import enHome from "./locales/en/home.json";
 import enProtocol from "./locales/en/protocol.json";
+import enSessions from "./locales/en/sessions.json";
 import enSettings from "./locales/en/settings.json";
 import enShell from "./locales/en/shell.json";
+import enTerminal from "./locales/en/terminal.json";
+import enVault from "./locales/en/vault.json";
 import zhCnApp from "./locales/zh-CN/app.json";
 import zhCnAuth from "./locales/zh-CN/auth.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
@@ -22,8 +25,11 @@ import zhCnCommon from "./locales/zh-CN/common.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
 import zhCnHome from "./locales/zh-CN/home.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
+import zhCnSessions from "./locales/zh-CN/sessions.json";
 import zhCnSettings from "./locales/zh-CN/settings.json";
 import zhCnShell from "./locales/zh-CN/shell.json";
+import zhCnTerminal from "./locales/zh-CN/terminal.json";
+import zhCnVault from "./locales/zh-CN/vault.json";
 
 export const SUPPORTED_LOCALES = ["en", "zh-CN"] as const;
 
@@ -68,6 +74,9 @@ const messages = {
     ...enProtocol,
     ...enAuth,
     ...enCapability,
+    ...enVault,
+    ...enSessions,
+    ...enTerminal,
   },
   "zh-CN": {
     ...zhCnCommon,
@@ -79,6 +88,9 @@ const messages = {
     ...zhCnProtocol,
     ...zhCnAuth,
     ...zhCnCapability,
+    ...zhCnVault,
+    ...zhCnSessions,
+    ...zhCnTerminal,
   },
 };
 

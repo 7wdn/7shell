@@ -5,22 +5,63 @@
 //! or an agent without going through a webview.
 
 mod commands;
+mod state;
 mod window_chrome;
 
+use std::sync::Arc;
+
+use sevenshell_core::Core;
 use tauri::Manager as _;
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             window_chrome::prepare_main_window(app.handle());
             apply_startup_window_theme(app.handle());
+
+            let (shell_state, events) = state::ShellState::new();
+            commands::terminal::pump_events(app.handle().clone(), events);
+            app.manage(shell_state);
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // On the way out, tell the servers we are leaving rather than letting the sockets time
+            // out. Fire and forget: closing the window must not wait for the network.
+            if let tauri::WindowEvent::Destroyed = event
+                && let Some(shell_state) = window.try_state::<state::ShellState>()
+            {
+                let core: Arc<Core> = shell_state.core_arc();
+                tauri::async_runtime::spawn(async move { core.close_all().await });
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
             commands::settings::settings_get,
-            commands::settings::settings_set
+            commands::settings::settings_set,
+            commands::vault::vault_state,
+            commands::vault::vault_create,
+            commands::vault::vault_unlock,
+            commands::vault::vault_lock,
+            commands::vault::vault_change_password,
+            commands::sessions::sessions_list,
+            commands::sessions::session_save,
+            commands::sessions::session_delete,
+            commands::sessions::groups_list,
+            commands::sessions::group_save,
+            commands::sessions::group_delete,
+            commands::keys::key_import,
+            commands::keys::key_forget,
+            commands::known_hosts::known_hosts_list,
+            commands::known_hosts::known_host_trust,
+            commands::known_hosts::known_host_forget,
+            commands::terminal::session_open,
+            commands::terminal::terminal_write,
+            commands::terminal::terminal_resize,
+            commands::terminal::terminal_close,
+            commands::terminal::terminals_open,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");

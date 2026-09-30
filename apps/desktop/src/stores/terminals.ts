@@ -1,0 +1,246 @@
+/**
+ * The terminals that are open, and the host key decisions that stand in front of them.
+ *
+ * The order `session_open` enforces is visible here rather than smoothed over: a terminal tab is
+ * only created once the backend has actually opened something. A host key that has to be decided
+ * first produces no tab at all — there is no terminal to draw, and drawing an empty one would
+ * suggest a connection that does not exist. A *failed* open does produce a tab, because that is
+ * where the person who asked for it is looking.
+ *
+ * A terminal that ends keeps its tab: the reason the server gave and a way to connect again are
+ * both things only that tab can offer.
+ */
+
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
+
+import { backend } from "@/lib/backend/api";
+import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
+import type { KnownHostEntry, OpenOutcome, PresentedHostKey, Session } from "@/types/session";
+
+export type TerminalTabStatus = "open" | "ended" | "failed";
+
+export interface TerminalTab {
+  id: string;
+  readonly session: Session;
+  /** The handle the backend knows this terminal by, once there is one. */
+  handle: string | null;
+  status: TerminalTabStatus;
+  /** What the server said when the terminal ended, when it said anything. */
+  reason?: string;
+  /** The envelope of the last failure this tab is responsible for showing. */
+  failure: ShellError | null;
+}
+
+/** A host key the backend is waiting on before it will send anything at all. */
+export type HostKeyDecision =
+  | { readonly kind: "hostKeyUnknown"; readonly session: Session; readonly key: PresentedHostKey }
+  | {
+      readonly kind: "hostKeyMismatch";
+      readonly session: Session;
+      readonly key: PresentedHostKey;
+      readonly trusted: KnownHostEntry;
+    };
+
+export const useTerminalsStore = defineStore("terminals", () => {
+  const tabs = ref<TerminalTab[]>([]);
+  const activeTabId = ref<string | null>(null);
+  /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
+  const connectingSessionIds = ref<string[]>([]);
+  const decision = ref<HostKeyDecision | null>(null);
+
+  /** Subscribes to terminal events. Call once, from the shell. Returns the unsubscribe. */
+  function initialize(): () => void {
+    void startTerminalBus();
+    return onTerminalEnded(markEnded);
+  }
+
+  function markEnded(handle: string, reason?: string): void {
+    const tab = tabs.value.find((entry) => entry.handle === handle);
+    if (!tab) {
+      // No tab draws this handle. Anything that creates one later asks the bus what happened,
+      // which is why the reason is remembered rather than dropped here.
+      return;
+    }
+    tab.status = "ended";
+    tab.reason = reason;
+  }
+
+  /** Opens a terminal for a saved session, or raises the decision that has to come first. */
+  async function open(session: Session): Promise<void> {
+    if (connectingSessionIds.value.includes(session.id)) {
+      return;
+    }
+    connectingSessionIds.value.push(session.id);
+    try {
+      accept(session, await backend.terminal.open(session.id));
+    } catch (error) {
+      add(session, { handle: null, status: "failed", failure: asShellError(error, "session_open") });
+    } finally {
+      connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
+    }
+  }
+
+  function accept(session: Session, outcome: OpenOutcome): void {
+    if (outcome.kind === "opened") {
+      // A terminal that died before its tab existed is shown as ended, with the reason it gave.
+      const ended = endedTerminal(outcome.handle);
+      add(session, {
+        handle: outcome.handle,
+        status: ended ? "ended" : "open",
+        reason: ended?.reason,
+        failure: null,
+      });
+      return;
+    }
+
+    decision.value =
+      outcome.kind === "hostKeyMismatch"
+        ? { kind: "hostKeyMismatch", session, key: outcome.key, trusted: outcome.trusted }
+        : { kind: "hostKeyUnknown", session, key: outcome.key };
+  }
+
+  function add(
+    session: Session,
+    fields: { handle: string | null; status: TerminalTabStatus; reason?: string; failure: ShellError | null },
+  ): void {
+    const tab: TerminalTab = {
+      id: crypto.randomUUID(),
+      session,
+      handle: fields.handle,
+      status: fields.status,
+      reason: fields.reason,
+      failure: fields.failure,
+    };
+    tabs.value.push(tab);
+    activeTabId.value = tab.id;
+  }
+
+  /** Records the key, then asks to open again — the decision itself opens nothing. */
+  async function confirmTrust(): Promise<void> {
+    const pending = decision.value;
+    if (!pending || pending.kind !== "hostKeyUnknown") {
+      return;
+    }
+    decision.value = null;
+    await trustThenOpen(pending.session, pending.key);
+  }
+
+  /** The mismatch path: forget the trusted key, record the new one, then open. */
+  async function confirmReplace(): Promise<void> {
+    const pending = decision.value;
+    if (!pending || pending.kind !== "hostKeyMismatch") {
+      return;
+    }
+    decision.value = null;
+    try {
+      await backend.knownHosts.forget(pending.key.host, pending.key.port);
+    } catch (error) {
+      add(pending.session, { handle: null, status: "failed", failure: asShellError(error, "known_host_forget") });
+      return;
+    }
+    await trustThenOpen(pending.session, pending.key);
+  }
+
+  async function trustThenOpen(session: Session, key: PresentedHostKey): Promise<void> {
+    try {
+      await backend.knownHosts.trust(key);
+    } catch (error) {
+      add(session, { handle: null, status: "failed", failure: asShellError(error, "known_host_trust") });
+      return;
+    }
+    await open(session);
+  }
+
+  /** Answers "cancel": nothing was sent, and nothing is left pending. */
+  function dismiss(): void {
+    decision.value = null;
+  }
+
+  async function closeTab(id: string): Promise<void> {
+    const tab = tabs.value.find((entry) => entry.id === id);
+    if (!tab) {
+      return;
+    }
+    // A tab whose terminal already ended, or whose close already failed, has nothing left to
+    // close: removing it locally is the whole operation.
+    if (!tab.handle || tab.status !== "open") {
+      forget(id);
+      return;
+    }
+    try {
+      await backend.terminal.close(tab.handle);
+      forget(id);
+    } catch (error) {
+      tab.status = "failed";
+      tab.failure = asShellError(error, "terminal_close");
+    }
+  }
+
+  async function reconnect(id: string): Promise<void> {
+    const tab = tabs.value.find((entry) => entry.id === id);
+    if (!tab) {
+      return;
+    }
+    const { session } = tab;
+    forget(id);
+    await open(session);
+  }
+
+  function forget(id: string): void {
+    tabs.value = tabs.value.filter((entry) => entry.id !== id);
+    if (activeTabId.value === id) {
+      activeTabId.value = tabs.value[tabs.value.length - 1]?.id ?? null;
+    }
+  }
+
+  function activate(id: string): void {
+    activeTabId.value = id;
+  }
+
+  /** Keystrokes and pastes, in the bytes the terminal produced. */
+  async function send(handle: string, bytes: Uint8Array): Promise<void> {
+    const tab = tabs.value.find((entry) => entry.handle === handle);
+    if (!tab || tab.status !== "open") {
+      return;
+    }
+    try {
+      await backend.terminal.write(handle, encodeBase64(bytes));
+    } catch (error) {
+      tab.failure = asShellError(error, "terminal_write");
+    }
+  }
+
+  async function resize(handle: string, columns: number, rows: number): Promise<void> {
+    const tab = tabs.value.find((entry) => entry.handle === handle);
+    if (!tab || tab.status !== "open") {
+      return;
+    }
+    try {
+      await backend.terminal.resize(handle, columns, rows);
+    } catch (error) {
+      tab.failure = asShellError(error, "terminal_resize");
+    }
+  }
+
+  const activeTab = computed(() => tabs.value.find((entry) => entry.id === activeTabId.value) ?? null);
+
+  return {
+    tabs,
+    activeTab,
+    activeTabId,
+    connectingSessionIds,
+    decision,
+    initialize,
+    open,
+    confirmTrust,
+    confirmReplace,
+    dismiss,
+    closeTab,
+    reconnect,
+    activate,
+    send,
+    resize,
+  };
+});

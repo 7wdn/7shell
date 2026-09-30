@@ -4,12 +4,16 @@
 export type ProtocolId =
   | "ssh";
 
+export type Protocol = ProtocolId;
+
 export type AuthMethodId =
   | "password"
   | "publicKey"
   | "keyboardInteractive"
   | "agent"
   | "pageant";
+
+export type AuthMethod = AuthMethodId;
 
 export type CapabilityKey =
   | "shell"
@@ -65,7 +69,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "tcp",
     supportLevel: "operate",
-    capabilities: ["shell", "exec", "resize", "keepalive", "jumpHost", "sftp", "forwarding", "dynamicForwarding", "agentForwarding"],
+    capabilities: ["shell", "resize", "keepalive"],
   },
 ];
 
@@ -91,13 +95,13 @@ export const AUTH_METHODS: readonly AuthMethodDescriptor[] = [
   {
     id: "agent",
     labelKey: "auth.agent.label",
-    capabilities: ["platformAgent"],
+    capabilities: [],
     platforms: [],
   },
   {
     id: "pageant",
     labelKey: "auth.pageant.label",
-    capabilities: ["platformAgent"],
+    capabilities: [],
     platforms: ["windows"],
   },
 ];

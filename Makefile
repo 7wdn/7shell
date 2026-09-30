@@ -2,7 +2,7 @@
 # The scripts in package.json are the authority; if the two ever disagree, the scripts win.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev dev-web build icons check check-guards test test-rust lint types fmt fmt-check rust-test rust-lint clean
+.PHONY: help install dev dev-web build icons check check-guards test test-rust lint types fmt fmt-check rust-test rust-lint lab-up lab-down lab-verify clean
 
 help: ## Show the available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +48,15 @@ fmt-check: ## Check formatting without writing
 
 rust-lint: ## Lint the Rust workspace (warnings are errors)
 	cargo clippy --workspace --all-targets -- -D warnings
+
+lab-up: ## Start the SSH test lab (needs Docker)
+	cd deploy/lab/openssh && docker compose up -d
+
+lab-down: ## Stop and remove the SSH test lab
+	cd deploy/lab/openssh && docker compose down
+
+lab-verify: ## Run the live tests against the lab (make lab-up first)
+	SEVENSHELL_TEST_HOST=127.0.0.1 SEVENSHELL_TEST_PORT=2222 SEVENSHELL_TEST_USER=labuser SEVENSHELL_TEST_PASSWORD=labpassword cargo test -p sevenshell-ssh -p sevenshell-core -- --ignored --test-threads=1
 
 clean: ## Remove build output
 	rm -rf apps/desktop/dist target

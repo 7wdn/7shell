@@ -1,0 +1,79 @@
+{
+  "sessions": {
+    "list": {
+      "empty": "还没有会话。新建一个即可把地址、用户与凭据放在一起。",
+      "ungrouped": "未分组",
+      "add": "新建会话",
+      "open": "为 {name} 打开终端",
+      "connecting": "正在连接 {name}…",
+      "edit": "编辑会话",
+      "remove": "删除会话",
+      "confirmRemove": "删除“{name}”？",
+      "confirmRemoveNote": "已保存的密码或密钥引用会一并删除。",
+      "confirm": "删除",
+      "cancel": "取消"
+    },
+    "editor": {
+      "titleNew": "新建会话",
+      "titleEdit": "编辑会话",
+      "description": "目标机器的位置、登录用户，以及此版本支持的认证方式。",
+      "name": "名称",
+      "namePlaceholder": "生产环境 Web 服务器",
+      "host": "主机",
+      "hostPlaceholder": "example.com",
+      "port": "端口",
+      "user": "用户",
+      "userPlaceholder": "root",
+      "group": "分组",
+      "groupNone": "不分组",
+      "method": "认证方式",
+      "methodUnsupported": "此版本尚未实现 SSH agent 与 Pageant，因此这两项无法选择。",
+      "secret": {
+        "label": "密码",
+        "placeholder": "密码",
+        "storedPlaceholder": "已保存密码——留空则保持不变",
+        "stored": "已保存密码。此处不输入新密码就会继续沿用原有密码。",
+        "notStored": "此会话尚未保存密码，保存一个之前无法连接。"
+      },
+      "key": {
+        "dialogTitle": "选择私钥文件",
+        "hasPassphrase": "该密钥文件带有口令",
+        "passphrasePlaceholder": "密钥口令",
+        "passphraseHint": "口令与密钥一起读取，并随密钥一并保存；它会在打开文件之前使用。",
+        "choose": "选择密钥文件…",
+        "attached": "已附加密钥",
+        "name": "文件",
+        "algorithm": "算法",
+        "fingerprint": "指纹",
+        "passphraseStored": "该密钥已存有口令。",
+        "noPassphraseStored": "该密钥未存有口令。",
+        "forget": "移除密钥",
+        "none": "尚未附加密钥。"
+      },
+      "validation": {
+        "name": "请为该会话填写名称。",
+        "host": "请填写主机名或地址。",
+        "user": "请填写登录用户。",
+        "port": "端口必须是 1 到 65535 之间的数字。",
+        "key": "公钥认证需要先附加一个密钥文件。"
+      },
+      "save": "保存",
+      "cancel": "取消"
+    },
+    "hostKey": {
+      "opening": "正在打开 {name}",
+      "unknownTitle": "这是一个从未见过的主机键",
+      "unknownBody": "目前尚未向该服务器发送任何内容——没有用户名、没有密码、没有密钥。信任该键会将其记录并建立连接；如果这不是你预期的键，请取消。",
+      "mismatchTitle": "服务器正在提供不同的主机键",
+      "mismatchBody": "该地址此前记录的键与当前提供的键不一致。这可能意味着有人正在中间拦截，也可能意味着机器被重装过。未向该服务器发送任何内容。",
+      "host": "主机",
+      "keyType": "密钥类型",
+      "fingerprintPresented": "当前提供的指纹",
+      "fingerprintTrusted": "此前信任的指纹",
+      "trust": "信任该键并连接",
+      "replace": "忘却旧键并信任此键",
+      "replaceWarning": "这会移除你此前信任的键，且无法撤销；这正是攻击者希望你做的选择。",
+      "cancel": "取消"
+    }
+  }
+}

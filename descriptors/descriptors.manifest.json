@@ -14,7 +14,7 @@
       "order": 20,
       "group": "terminal",
       "labelKey": "capability.exec.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "resize",
@@ -35,35 +35,35 @@
       "order": 50,
       "group": "transfer",
       "labelKey": "capability.sftp.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "forwarding",
       "order": 60,
       "group": "network",
       "labelKey": "capability.forwarding.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "dynamicForwarding",
       "order": 70,
       "group": "network",
       "labelKey": "capability.dynamicForwarding.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "agentForwarding",
       "order": 80,
       "group": "network",
       "labelKey": "capability.agentForwarding.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "jumpHost",
       "order": 90,
       "group": "network",
       "labelKey": "capability.jumpHost.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "recording",
@@ -98,7 +98,7 @@
       "order": 140,
       "group": "auth",
       "labelKey": "capability.platformAgent.label",
-      "planned": false
+      "planned": true
     }
   ],
   "protocols": [
@@ -113,14 +113,8 @@
       "supportLevel": "operate",
       "capabilities": [
         "shell",
-        "exec",
         "resize",
-        "keepalive",
-        "jumpHost",
-        "sftp",
-        "forwarding",
-        "dynamicForwarding",
-        "agentForwarding"
+        "keepalive"
       ]
     }
   ],
@@ -162,9 +156,7 @@
       "rustVariant": "Agent",
       "order": 40,
       "labelKey": "auth.agent.label",
-      "capabilities": [
-        "platformAgent"
-      ],
+      "capabilities": [],
       "platforms": []
     },
     {
@@ -172,9 +164,7 @@
       "rustVariant": "Pageant",
       "order": 50,
       "labelKey": "auth.pageant.label",
-      "capabilities": [
-        "platformAgent"
-      ],
+      "capabilities": [],
       "platforms": [
         "windows"
       ]

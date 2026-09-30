@@ -5,5 +5,4 @@ rustVariant: Pageant
 labelKey: auth.pageant.label
 platforms:
   - windows
-capabilities:
-  - platformAgent
+capabilities: []

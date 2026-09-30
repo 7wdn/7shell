@@ -1,0 +1,17 @@
+[package]
+name = "sevenshell-ssh"
+description = "Talking to a server: host key verification, authentication, and a terminal channel."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+base64 = { workspace = true }
+russh = { workspace = true }
+tokio = { workspace = true }
+zeroize = { workspace = true }

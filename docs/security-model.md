@@ -41,9 +41,21 @@ in the same commit — a rule whose test no longer exists is a rule that will be
 | 6 | **The interface never names a local path.** Native dialogs open in Rust; the interface receives an opaque token that dies when the vault locks. | `sevenshell-policy` local grants (planned), and the capability file, which grants the renderer no filesystem or dialog rights | Grant lifetime tests, and `src-tauri/capabilities/default.json` reviewed in the same pull request |
 | 7 | **Every privileged or destructive action has a policy decision and an audit event.** | `sevenshell-policy` (planned) | A policy matrix test: global, group, host and directory layers, most restrictive wins |
 
-**Status honesty.** Only invariant 1 has code behind it today, because only the error contract
-and the wire types exist. Invariants 2–7 arrive with their features, and each one lands with its
-test rather than ahead of it — a promise with no code is a comment, and comments do not fail CI.
+**Where each invariant stands.** Ones and twos and threes below are not aspirations; the right-hand
+column names something that runs in CI or against the lab.
+
+| # | Status |
+|---|---|
+| 1 | **Holding.** No wire type has a field for a secret, and the contract test fails if one appears. The scrubbing tests cover private key blocks, credential assignments, bearer tokens, and secret-looking parameter keys. |
+| 2 | **Holding.** Opening a session resolves the credential locally, probes the host key with a connection that sends nothing, and only then authenticates. `live_connection.rs` asserts the first attempt ends in a decision, and the SSH lab's server log confirms no authentication attempt. |
+| 3 | **Holding.** A key that has changed produces a stop, not a prompt: the outcome carries both fingerprints for a person to compare, and a trusted key that no longer matches ends the attempt. Covered by a live test against a lab server whose key is deliberately wrong. |
+| 4 | **Holding for the vault.** A wrong password, a truncated file, a flipped byte in the payload and a mismatched verifier produce byte-identical error envelopes — asserted directly in `sevenshell-vault`'s tests. |
+| 5 | **Holding.** Both the vault and the settings file are written through a temporary file, flushed and renamed, and both have a test that a blocked write leaves the previous file readable. |
+| 6 | **Holding.** The renderer cannot name a path: choosing a key file opens a native dialog in Rust, and the interface receives a reference, a file name, an algorithm and a fingerprint. The capability file grants no filesystem and no dialog right to the renderer, and a guard test keeps it that way. |
+| 7 | **Not yet built.** There is no policy layer and no audit event, so anything destructive is still only as safe as the person typing it. The command risk classifier is the piece that will back this invariant. |
+
+A promise with no code is a comment, and comments do not fail CI: an invariant that is not yet
+built says so here rather than reading as though it were.
 
 ## Rules the code follows
 

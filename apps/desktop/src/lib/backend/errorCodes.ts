@@ -11,6 +11,7 @@ export const ERROR_CATALOG = {
   "VAULT-LOCKED": "errors.vault.locked",
   "VAULT-KDF-FAILED": "errors.vault.kdfFailed",
   "VAULT-CORRUPT": "errors.vault.corrupt",
+  "VAULT-UNLOCK-FAILED": "errors.vault.unlockFailed",
   // SSH
   "SSH-HOSTKEY-UNKNOWN": "errors.ssh.hostKeyUnknown",
   "SSH-HOSTKEY-MISMATCH": "errors.ssh.hostKeyMismatch",
@@ -18,6 +19,8 @@ export const ERROR_CATALOG = {
   "SSH-UNREACHABLE": "errors.ssh.unreachable",
   "SSH-TIMEOUT": "errors.ssh.timeout",
   "SSH-CHANNEL-FAILED": "errors.ssh.channelFailed",
+  "SSH-KEY-INVALID": "errors.ssh.keyInvalid",
+  "SSH-KEY-UNSUPPORTED": "errors.ssh.keyUnsupported",
   // SFTP
   "SFTP-NOT-FOUND": "errors.sftp.notFound",
   "SFTP-PERMISSION-DENIED": "errors.sftp.permissionDenied",
@@ -28,6 +31,7 @@ export const ERROR_CATALOG = {
   // Persistence
   "STORE-IO": "errors.store.io",
   "STORE-SCHEMA-NEWER": "errors.store.schemaNewer",
+  "SESSION-NOT-FOUND": "errors.session.notFound",
   // Policy
   "POLICY-DENIED": "errors.policy.denied",
   "POLICY-APPROVAL-REQUIRED": "errors.policy.approvalRequired",
@@ -36,6 +40,7 @@ export const ERROR_CATALOG = {
   // Application
   "APP-NOT-READY": "errors.app.notReady",
   "APP-NO-TRANSPORT": "errors.app.noTransport",
+  "APP-UNSUPPORTED": "errors.app.unsupported",
   "APP-INTERNAL": "errors.app.internal",
 } as const satisfies Record<string, string>;
 

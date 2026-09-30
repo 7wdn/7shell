@@ -4,7 +4,8 @@
       "notFound": "此设备上还没有保险库。",
       "locked": "保险库已锁定。",
       "kdfFailed": "无法派生保险库密钥。",
-      "corrupt": "保险库文件无法读取。"
+      "corrupt": "保险库文件无法读取。",
+      "unlockFailed": "保险库没有打开。密码不正确，或者文件已经不是当初保存的那一份。"
     },
     "ssh": {
       "hostKeyUnknown": "{host}:{port} 提供的主机键此前从未见过。",
@@ -12,7 +13,9 @@
       "authFailed": "{host}:{port} 拒绝了这个凭据。",
       "unreachable": "无法连接到 {host}:{port}。",
       "timeout": "{host}:{port} 在 {seconds} 秒内没有响应。",
-      "channelFailed": "无法在 {host}:{port} 上打开会话。"
+      "channelFailed": "无法在 {host}:{port} 上打开会话。",
+      "keyInvalid": "无法读取该密钥。如果它带口令，口令也需要检查。",
+      "keyUnsupported": "当前版本无法使用这种类型的密钥。"
     },
     "sftp": {
       "notFound": "服务器上不存在 {path}。",
@@ -27,6 +30,9 @@
       "io": "无法写入应用状态。",
       "schemaNewer": "这份数据由更新的版本写入（格式 {found}；当前版本最高支持 {supported}）。"
     },
+    "session": {
+      "notFound": "这个会话已经不存在了。"
+    },
     "policy": {
       "denied": "当前策略不允许 {action}。",
       "approvalRequired": "{action} 需要你先确认。"
@@ -37,6 +43,7 @@
     "app": {
       "notReady": "应用仍在启动中。",
       "noTransport": "{operation} 需要在桌面应用中使用。",
+      "unsupported": "{what} 在当前版本中还没有实现。",
       "internal": "应用内部出现了错误。"
     }
   }

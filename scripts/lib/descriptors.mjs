@@ -331,10 +331,17 @@ export function renderGeneratedTs({ capabilities, protocols, authMethods }) {
     push(`  | "${protocol.id}"${index === protocols.length - 1 ? ";" : ""}`);
   });
   push("");
+  // The descriptor tables call these `…Id`; the wire types that mirror the Rust structs call them
+  // `Protocol` and `AuthMethod`, because that is what the Rust enums are named. Both names mean
+  // the same union, so the mirror does not have to translate between them.
+  push("export type Protocol = ProtocolId;");
+  push("");
   push("export type AuthMethodId =");
   authMethods.forEach((method, index) => {
     push(`  | "${method.id}"${index === authMethods.length - 1 ? ";" : ""}`);
   });
+  push("");
+  push("export type AuthMethod = AuthMethodId;");
   push("");
   push("export type CapabilityKey =");
   capabilities.forEach((capability, index) => {

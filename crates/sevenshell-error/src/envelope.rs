@@ -250,6 +250,14 @@ impl ShellError {
         Self::new(ErrorCode::VaultKdfFailed, Origin::new(Subsystem::Vault)).with_outcome(OperationOutcome::Rejected)
     }
 
+    /// The vault did not open: the password is wrong, or the file is not the file it was.
+    ///
+    /// One code and one message for both, on purpose: telling them apart would turn this into an
+    /// oracle for anyone who has a copy of the file.
+    pub fn vault_unlock_failed() -> Self {
+        Self::new(ErrorCode::VaultUnlockFailed, Origin::new(Subsystem::Vault)).with_outcome(OperationOutcome::Rejected)
+    }
+
     pub fn vault_corrupt(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::VaultCorrupt, Origin::new(Subsystem::Vault)).with_detail(detail)
     }
@@ -303,6 +311,18 @@ impl ShellError {
             .with_detail(detail)
     }
 
+    pub fn ssh_key_invalid(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SshKeyInvalid, Origin::new(Subsystem::Ssh))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn ssh_key_unsupported(key_type: &str) -> Self {
+        Self::new(ErrorCode::SshKeyUnsupported, Origin::new(Subsystem::Ssh))
+            .with_diagnostic("keyType", key_type)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     // -- SFTP --------------------------------------------------------------
 
     pub fn sftp_not_found(remote_path: &str) -> Self {
@@ -334,6 +354,12 @@ impl ShellError {
     }
 
     // -- Persistence -------------------------------------------------------
+
+    pub fn session_not_found(id: &str) -> Self {
+        Self::new(ErrorCode::SessionNotFound, Origin::new(Subsystem::Store))
+            .with_diagnostic("sessionId", id)
+            .with_outcome(OperationOutcome::NotSent)
+    }
 
     pub fn store_io(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::StoreIo, Origin::new(Subsystem::Store)).with_detail(detail)
@@ -378,6 +404,14 @@ impl ShellError {
         Self::new(ErrorCode::AppNoTransport, Origin::new(Subsystem::App))
             .with_param("operation", operation)
             .with_outcome(OperationOutcome::Rejected)
+    }
+
+    /// Something the descriptors declare but this build has not implemented. Saying so beats
+    /// failing mysteriously, and the message names what is missing.
+    pub fn app_unsupported(what: &str) -> Self {
+        Self::new(ErrorCode::AppUnsupported, Origin::new(Subsystem::App))
+            .with_param("what", what)
+            .with_outcome(OperationOutcome::NotSent)
     }
 
     pub fn app_internal(detail: impl AsRef<str>) -> Self {

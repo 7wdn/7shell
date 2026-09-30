@@ -3,5 +3,6 @@ order: 40
 id: agent
 rustVariant: Agent
 labelKey: auth.agent.label
-capabilities:
-  - platformAgent
+# Declared because the method exists and is offered in the editor (disabled), but nothing claims
+# `platformAgent` yet: the transport answers a request to use it with "not implemented".
+capabilities: []

@@ -114,6 +114,57 @@ describe("wire types", () => {
     expect(sorted(rustFields)).toEqual(sorted(interfaceFields(read("apps/desktop/src/types/app.ts"), "AppInfo")));
   });
 
+  it("declares the same session fields on both sides", () => {
+    const rust = read("crates/sevenshell-types/src/session.rs");
+    const typescript = read("apps/desktop/src/types/session.ts");
+
+    for (const name of [
+      "Session",
+      "SessionAuth",
+      "KeyInfo",
+      "TerminalSettings",
+      "SessionGroup",
+      "KnownHostEntry",
+      "PresentedHostKey",
+    ]) {
+      const rustFields = rustStructFields(rust, name).map(camelCase);
+
+      expect(rustFields.length, `${name} has no fields, so the comparison proves nothing`).toBeGreaterThan(0);
+      expect(sorted(rustFields), `${name} differs between Rust and the interface`).toEqual(
+        sorted(interfaceFields(typescript, name)),
+      );
+    }
+  });
+
+  it("has no field a secret could travel out in", () => {
+    // Invariant 1: a password travels inwards only. What the DTOs carry is a boolean saying one
+    // is stored — so a field named like a secret, other than those two booleans, is a bug.
+    const rust = read("crates/sevenshell-types/src/session.rs");
+    const fields = [
+      "Session",
+      "SessionAuth",
+      "KeyInfo",
+      "TerminalSettings",
+      "SessionGroup",
+      "KnownHostEntry",
+      "PresentedHostKey",
+    ].flatMap((name) => rustStructFields(rust, name).map(camelCase));
+
+    expect(fields.length).toBeGreaterThan(0);
+    expect(fields.filter((field) => /secret|password|passphrase|material/i.test(field) && !field.startsWith("has"))).toEqual(
+      [],
+    );
+    // The one thing that travels inwards is named for what it is, and has no way back.
+    expect(sorted(rustStructFields(rust, "SecretInput"))).toEqual(["value"]);
+  });
+
+  it("declares the same vault states on both sides", () => {
+    const rustStates = rustEnumVariants(read("crates/sevenshell-types/src/session.rs"), "VaultState");
+
+    expect(sorted(rustStates)).toEqual(["locked", "missing", "unlocked"]);
+    expect(sorted(tsStringUnion(read("apps/desktop/src/types/session.ts"), "VaultState"))).toEqual(sorted(rustStates));
+  });
+
   it("declares the same envelope fields on both sides", () => {
     // The envelope is a newtype over `ShellErrorFields` so the error stays small; the JSON
     // shape is still flat, which `crates/sevenshell-error/tests/wire_format.rs` pins.

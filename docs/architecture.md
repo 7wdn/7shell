@@ -31,8 +31,52 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 4. Each concern has exactly one home. A new crate is a decision, not a default: rank it in the
    guard test and say why in the pull request.
 
-**Current state:** `sevenshell-error`, `sevenshell-types` and `sevenshell-desktop` exist. The
-other crates arrive with the features that need them, so that nothing exists without a test.
+**Current state:** the crates that exist are `sevenshell-error`, `sevenshell-types`,
+`sevenshell-platform` (where data lives, including the settings file), `sevenshell-vault` (the
+encrypted store), `sevenshell-ssh` (host key verification, authentication, a terminal channel),
+`sevenshell-session` (the registry of open terminals), `sevenshell-core` (the order of operations)
+and `sevenshell-desktop` (the window and the command surface). `sevenshell-policy` and the host
+crates for a command line and an agent interface arrive with the features that need them, so that
+nothing exists without a test.
+
+## Opening a session
+
+The order is the security property, so it is worth reading once:
+
+```
+session_open(id)
+   │
+   ├─ 1. read the session and its credential from the vault     ← local only; a session with no
+   │                                                              stored secret fails here
+   ├─ 2. probe the host key, on a connection that sends nothing  ← no username, no credential
+   │
+   ├─ 3. compare with what is trusted for that host and port
+   │       unknown  → answer `hostKeyUnknown` and stop
+   │       changed  → answer `hostKeyMismatch` and stop           ← a stop, not a warning
+   │
+   └─ 4. open the real connection, which verifies the key again  ← a key that changes between
+          inside itself, then authenticates                        the probe and here is refused
+```
+
+Step 4 re-verifying is not redundancy: the probe is a separate connection, and the only key worth
+trusting is the one the authenticating connection actually received.
+
+Trusting a key that step 3 reported is a separate call (`known_host_trust`), after which the
+interface asks to open again. Nothing stays half-open while a person thinks about a fingerprint.
+
+## Terminal events
+
+The core hands bytes to the shell, which turns them into two window events. The payloads are the
+shell's own contract, and the interface's mirror of them lives in `types/session.ts`:
+
+| Event | Payload |
+|---|---|
+| `terminal:data` | `{ handle, base64 }` — bytes, not text: a UTF-8 character that arrives in two chunks must survive |
+| `terminal:closed` | `{ handle, reason? }` — the server's own reason, sanitized and capped |
+
+One subscription serves every pane: `lib/terminal/bus.ts` receives both events for the whole
+application and fans them out by handle. A terminal that ends is kept in the interface with its
+scrollback and a reconnect action, rather than disappearing.
 
 ## The four patterns worth knowing
 
@@ -114,6 +158,21 @@ Theme is a three-state choice — `system`, `dark`, `light` — with `system` as
 real mode rather than a placeholder: the interface follows the operating system while it is open
 and keeps following it as it changes. A language is only recorded once someone chooses one, so a
 fresh install follows the system language instead of freezing it.
+
+## Doctests on Windows
+
+Doctests are an illustration in this workspace rather than a compiled check, and the reason is
+worth knowing before adding one:
+
+`tauri-build`, which the desktop crate has to run, writes a stub `msvcrt.lib` into its build output
+directory, puts that directory on the link search path, and passes `/NODEFAULTLIB:msvcrt.lib` for
+its own binary. Rustdoc merges the workspace's link search paths into the doctest binary, so a
+doctest ends up resolving `msvcrt` to the 82-byte stub and fails with `LNK2001: unresolved external
+symbol __CxxFrameHandler3` — a link error that says nothing about the code being tested.
+
+So: examples in documentation are marked ` ```text ` on purpose, and the same behaviour is covered
+by an ordinary test beside the code. If a compiled example is genuinely needed, it belongs in
+`tests/`, where it links normally.
 
 ## Startup
 

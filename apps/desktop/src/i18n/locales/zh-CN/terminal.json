@@ -1,0 +1,12 @@
+{
+  "terminal": {
+    "tab": {
+      "close": "关闭终端",
+      "reconnect": "重新连接",
+      "ended": "该终端已结束。",
+      "endedReason": "服务器返回：{reason}",
+      "endedNoReason": "连接已结束，服务器未给出原因。",
+      "failedTitle": "该终端无法打开。"
+    }
+  }
+}

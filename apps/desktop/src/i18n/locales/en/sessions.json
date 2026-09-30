@@ -1,0 +1,79 @@
+{
+  "sessions": {
+    "list": {
+      "empty": "No sessions yet. Add one to keep an address, a user and the credentials for it together.",
+      "ungrouped": "Ungrouped",
+      "add": "New session",
+      "open": "Open a terminal for {name}",
+      "connecting": "Connecting to {name}…",
+      "edit": "Edit session",
+      "remove": "Delete session",
+      "confirmRemove": "Delete “{name}”?",
+      "confirmRemoveNote": "The stored password or key reference goes with it.",
+      "confirm": "Delete",
+      "cancel": "Cancel"
+    },
+    "editor": {
+      "titleNew": "New session",
+      "titleEdit": "Edit session",
+      "description": "Where the machine is, who to log in as, and how this build authenticates.",
+      "name": "Name",
+      "namePlaceholder": "Production web server",
+      "host": "Host",
+      "hostPlaceholder": "example.com",
+      "port": "Port",
+      "user": "User",
+      "userPlaceholder": "root",
+      "group": "Group",
+      "groupNone": "No group",
+      "method": "Authentication",
+      "methodUnsupported": "This build does not implement the SSH agent or Pageant yet, so those two are not selectable.",
+      "secret": {
+        "label": "Password",
+        "placeholder": "Password",
+        "storedPlaceholder": "Saved password — leave empty to keep it",
+        "stored": "A password is already stored. It is kept unless a new one is typed here.",
+        "notStored": "No password is stored for this session yet, so it cannot connect until one is saved."
+      },
+      "key": {
+        "dialogTitle": "Choose a private key",
+        "hasPassphrase": "The key file has a passphrase",
+        "passphrasePlaceholder": "Key passphrase",
+        "passphraseHint": "The passphrase is read together with the key and stored with it; it is asked for before the file is opened.",
+        "choose": "Choose a key file…",
+        "attached": "Attached key",
+        "name": "File",
+        "algorithm": "Algorithm",
+        "fingerprint": "Fingerprint",
+        "passphraseStored": "A passphrase is stored with this key.",
+        "noPassphraseStored": "No passphrase is stored with this key.",
+        "forget": "Forget key",
+        "none": "No key attached yet."
+      },
+      "validation": {
+        "name": "Give this session a name.",
+        "host": "Enter the host name or address.",
+        "user": "Enter the user to log in as.",
+        "port": "The port must be a number between 1 and 65535.",
+        "key": "Attach a key file for public-key authentication."
+      },
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "hostKey": {
+      "opening": "Opening {name}",
+      "unknownTitle": "A host key that has not been seen before",
+      "unknownBody": "Nothing has been sent to this server yet — no user name, no password, no key. Trusting the key records it and connects; if it is not the key you expect, cancel.",
+      "mismatchTitle": "The server is presenting a different host key",
+      "mismatchBody": "The key recorded for this address is not the one being presented now. Someone may be intercepting the connection, or the machine may have been rebuilt. Nothing was sent to that server.",
+      "host": "Host",
+      "keyType": "Key type",
+      "fingerprintPresented": "Fingerprint presented now",
+      "fingerprintTrusted": "Fingerprint trusted before",
+      "trust": "Trust this key and connect",
+      "replace": "Forget the old key and trust this one",
+      "replaceWarning": "This removes the key you trusted before. It cannot be undone, and it is the choice an attacker would like you to make.",
+      "cancel": "Cancel"
+    }
+  }
+}
