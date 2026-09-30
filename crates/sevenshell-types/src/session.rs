@@ -168,7 +168,10 @@ pub struct PresentedHostKey {
 /// it does not. Keeping the connection half-open while a person thinks would mean holding a
 /// verified socket and a credential in memory for no reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+// `rename_all` renames the *variants*; `rename_all_fields` is what renames the fields inside
+// them. Without it this enum grew `session_id` and `tunnel_failures` while every struct around it
+// spoke camelCase, and the interface read `undefined` for both without complaining.
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum OpenOutcome {
     /// The host key has never been seen. Nothing has been sent to the server.
     HostKeyUnknown { key: PresentedHostKey },

@@ -127,6 +127,21 @@ The interface mirrors it in `apps/desktop/src/lib/backend/errors.ts`, and
 `packages/app-tests/contracts.test.ts` fails when the two sides disagree — in both directions.
 `crates/sevenshell-error/tests/wire_format.rs` pins the JSON shape.
 
+### Wire shapes have their own guard
+
+Every type that crosses to the interface is serialized in a test and checked two ways: that it
+serializes at all, and that every field name is camelCase at every depth
+(`crates/sevenshell-types/tests/wire.rs`). Both have gone wrong:
+
+`#[serde(rename_all = "camelCase")]` on an **enum** renames its *variants*, not the fields inside
+them. `OpenOutcome::Opened { session_id, tunnel_failures }` therefore went out as `session_id` and
+`tunnel_failures` while every struct around it spoke camelCase. The interface read `undefined`,
+iterated nothing, and reported "something went wrong inside the application" — a failure that says
+nothing about its cause, which is the worst kind to receive from a test suite that was green.
+
+`rename_all_fields = "camelCase"` is the attribute that fixes it, and the guard is what notices
+when somebody forgets it on the next enum with fields in it.
+
 ### 2. Descriptors are the single source of truth
 
 `descriptors/**/*.yaml` declares protocols, authentication methods and the capability
