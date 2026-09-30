@@ -241,12 +241,23 @@ onBeforeUnmount(() => {
 /*
  * Breathing room around the text.
  *
- * The padding belongs on the terminal element rather than on the container: FitAddon subtracts the
- * padding of the element it drew into and reads the container's width as a border-box value, so
- * padding on the container would be counted as columns that do not exist and the last one would
- * sit off the edge.
+ * Two things are load-bearing here.
+ *
+ * 1. **The padding goes on the terminal element, not on the container.** FitAddon subtracts the
+ *    padding of the element it drew into, so this keeps the column count right; padding on the
+ *    container would be counted as columns that do not exist.
+ * 2. **Every layer of the terminal is given the palette's background.** `.xterm-viewport` is
+ *    absolutely positioned and therefore covers the padding box — absolute positioning ignores an
+ *    ancestor's padding — and its own default background is black. Without this the padding shows
+ *    up as a black frame around a light terminal.
  */
 .terminal-surface :deep(.xterm) {
   padding: 10px 12px;
+}
+
+.terminal-surface :deep(.xterm),
+.terminal-surface :deep(.xterm-viewport),
+.terminal-surface :deep(.xterm-screen) {
+  background-color: var(--terminal-background);
 }
 </style>
