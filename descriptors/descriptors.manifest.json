@@ -42,7 +42,7 @@
       "order": 60,
       "group": "network",
       "labelKey": "capability.forwarding.label",
-      "planned": true
+      "planned": false
     },
     {
       "key": "dynamicForwarding",
@@ -63,7 +63,7 @@
       "order": 90,
       "group": "network",
       "labelKey": "capability.jumpHost.label",
-      "planned": true
+      "planned": false
     },
     {
       "key": "recording",
@@ -114,7 +114,9 @@
       "capabilities": [
         "shell",
         "resize",
-        "keepalive"
+        "keepalive",
+        "forwarding",
+        "jumpHost"
       ]
     }
   ],

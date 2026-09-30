@@ -126,6 +126,11 @@ impl SessionRegistry {
         self.sessions.lock().await.is_empty()
     }
 
+    /// The connection behind a handle, for a caller that needs to open channels on it.
+    pub async fn session_of(&self, handle: &str) -> Result<Arc<SshSession>, ShellError> {
+        self.session(handle).await
+    }
+
     async fn session(&self, handle: &str) -> Result<Arc<SshSession>, ShellError> {
         self.sessions
             .lock()

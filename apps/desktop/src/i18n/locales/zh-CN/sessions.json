@@ -50,6 +50,38 @@
         "forget": "移除密钥",
         "none": "尚未附加密钥。"
       },
+      "jumps": {
+        "title": "跳板机",
+        "note": "按此顺序连接，先于本会话：第一个直连，其后每一个都经由前一个。每个跳板机的密钥都会在通过它发送任何内容之前验证。",
+        "empty": "无。此会话直接连接。",
+        "missing": "会话已不存在",
+        "missingTip": "该跳板机指向的已保存会话已被删除。保留在这里是为了让你主动移除它。",
+        "choose": "添加跳板机…",
+        "add": "添加",
+        "up": "上移",
+        "down": "下移",
+        "remove": "移除该跳板机"
+      },
+      "forwards": {
+        "title": "端口转发",
+        "hint": "左侧是本机监听的端口，右侧是远端要到达的位置。绑定端口填 0 表示由系统分配一个空闲端口。",
+        "empty": "无。此会话不监听任何本机端口。",
+        "add": "添加转发",
+        "remove": "移除该转发",
+        "bindHost": "绑定地址",
+        "bindPort": "绑定端口",
+        "targetHost": "目标主机",
+        "targetPort": "目标端口",
+        "bindHostPlaceholder": "127.0.0.1",
+        "targetHostPlaceholder": "db.internal",
+        "targetPortPlaceholder": "5432",
+        "validation": {
+          "bindHost": "请填写要监听的地址。",
+          "bindPort": "绑定端口必须是 0 到 65535 之间的数字；0 表示由系统分配空闲端口。",
+          "targetHost": "请填写转发要到达的主机。",
+          "targetPort": "目标端口必须是 1 到 65535 之间的数字。"
+        }
+      },
       "validation": {
         "name": "请为该会话填写名称。",
         "host": "请填写主机名或地址。",

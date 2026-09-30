@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Serialize;
 use sevenshell_error::ShellError;
 use sevenshell_session::OpenTerminal;
-use sevenshell_types::OpenOutcome;
+use sevenshell_types::{OpenOutcome, OpenTunnel};
 use tauri::{AppHandle, Emitter as _, State};
 
 use crate::state::ShellState;
@@ -69,6 +69,18 @@ pub async fn terminal_close(state: State<'_, ShellState>, handle: String) -> Res
 #[tauri::command]
 pub async fn terminals_open(state: State<'_, ShellState>) -> Result<Vec<OpenTerminal>, ShellError> {
     Ok(state.core().open_terminals().await)
+}
+
+/// The forwards that are up, with how much each has carried.
+#[tauri::command]
+pub async fn tunnels_open(state: State<'_, ShellState>) -> Result<Vec<OpenTunnel>, ShellError> {
+    Ok(state.core().tunnels().await)
+}
+
+/// Stops one forward. Asking to stop something that is already stopped is not a failure.
+#[tauri::command]
+pub async fn tunnel_close(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().close_tunnel(&id).await
 }
 
 /// Turns the core's output stream into window events.

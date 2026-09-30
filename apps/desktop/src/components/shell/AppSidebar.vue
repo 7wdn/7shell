@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * The session list, and the protocols this build speaks.
+ * The session list, the forwards that are up, and the protocols this build speaks.
  *
  * The list is what is saved, grouped by the groups that are saved. Nothing here invents a row: a
  * session whose group no longer exists still appears, under the ungrouped heading, rather than
@@ -8,8 +8,12 @@
  *
  * Opening a terminal hangs off the row itself; editing and deleting are separate buttons, and
  * deleting always asks first, in the row, before anything is removed.
+ *
+ * The tunnels section draws what the terminals store was told by the backend, and only then: an
+ * empty section is not shown at all. A forward that failed to come up is shown next to the ones
+ * that are, because "the tunnel is not there" is the answer somebody staring at a port needs.
  */
-import { LoaderCircle, Pencil, Plus, Server, Terminal, Trash2 } from "@lucide/vue";
+import { LoaderCircle, Network, Pencil, Plus, Server, Terminal, Trash2, TriangleAlert, X } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -17,7 +21,7 @@ import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import { describeShellError } from "@/i18n/errors";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
-import { useTerminalsStore } from "@/stores/terminals";
+import { tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
 import { PROTOCOLS } from "@/types/generated/protocols";
 
@@ -33,6 +37,12 @@ const editing = ref<Session | null>(null);
 const confirming = ref<string | null>(null);
 
 const problem = computed(() => (library.failure ? describeShellError(translate, library.failure) : null));
+const tunnelProblem = computed(() =>
+  terminals.tunnelProblem ? describeShellError(translate, terminals.tunnelProblem) : null,
+);
+const hasTunnels = computed(
+  () => terminals.tunnels.length > 0 || terminals.tunnelFailures.length > 0 || tunnelProblem.value !== null,
+);
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -198,6 +208,80 @@ const statusDot = computed(() => {
           </section>
         </template>
       </div>
+    </section>
+
+    <section v-if="hasTunnels" class="mt-4 shrink-0 px-3">
+      <h2 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {{ t("terminal.tunnels.title") }}
+      </h2>
+
+      <p v-if="tunnelProblem" class="mb-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
+        <span class="block text-[11px]">{{ tunnelProblem.message }}</span>
+        <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ tunnelProblem.code }}</span>
+        <button
+          type="button"
+          class="mt-1 rounded-sm text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+          @click="terminals.dismissTunnelProblem()"
+        >
+          {{ t("terminal.tunnels.dismiss") }}
+        </button>
+      </p>
+
+      <ul v-if="terminals.tunnels.length > 0" class="max-h-44 space-y-0.5 overflow-y-auto">
+        <li
+          v-for="tunnel in terminals.tunnels"
+          :key="tunnel.id"
+          class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/60"
+        >
+          <Network :size="13" class="shrink-0 text-muted-foreground" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate font-mono text-[11px]">
+              {{ tunnel.bindHost }}:{{ tunnel.bindPort }} → {{ tunnel.targetHost }}:{{ tunnel.targetPort }}
+            </span>
+            <span class="block text-[10px] text-muted-foreground">
+              {{ t("terminal.tunnels.connections", { count: tunnel.connections }, tunnel.connections) }}
+            </span>
+          </span>
+          <button
+            type="button"
+            class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+            :title="t('terminal.tunnels.stop')"
+            :aria-label="t('terminal.tunnels.stop')"
+            @click="terminals.stopTunnel(tunnel.id)"
+          >
+            <X :size="12" />
+          </button>
+        </li>
+      </ul>
+
+      <ul v-if="terminals.tunnelFailures.length > 0" class="mt-1 max-h-44 space-y-1 overflow-y-auto">
+        <li
+          v-for="failure in terminals.tunnelFailures"
+          :key="tunnelFailureKey(failure)"
+          class="rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5"
+        >
+          <div class="flex items-start gap-1.5">
+            <TriangleAlert :size="12" class="mt-0.5 shrink-0 text-warning" />
+            <span class="min-w-0 flex-1">
+              <span class="block text-[11px]">
+                {{ t("terminal.tunnels.failure", { bind: `${failure.bindHost}:${failure.bindPort}` }) }}
+              </span>
+              <span class="mt-0.5 block font-mono text-[10px] break-all text-muted-foreground">{{
+                failure.detail
+              }}</span>
+            </span>
+            <button
+              type="button"
+              class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('terminal.tunnels.dismiss')"
+              :aria-label="t('terminal.tunnels.dismiss')"
+              @click="terminals.dismissTunnelFailure(tunnelFailureKey(failure))"
+            >
+              <X :size="11" />
+            </button>
+          </div>
+        </li>
+      </ul>
     </section>
 
     <section class="mt-4 shrink-0 px-3">

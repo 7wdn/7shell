@@ -7,6 +7,13 @@
       "endedReason": "The server said: {reason}",
       "endedNoReason": "The connection ended without a reason.",
       "failedTitle": "This terminal could not be opened."
+    },
+    "tunnels": {
+      "title": "Tunnels",
+      "stop": "Stop this forward",
+      "dismiss": "Dismiss",
+      "connections": "{count} connection carried | {count} connections carried",
+      "failure": "The forward on {bind} did not come up."
     }
   }
 }

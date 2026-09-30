@@ -18,7 +18,7 @@ use std::time::Duration;
 use sevenshell_core::Core;
 use sevenshell_error::{ErrorCode, ShellError};
 use sevenshell_session::TerminalEvent;
-use sevenshell_types::{AuthMethod, KnownHostEntry, OpenOutcome, Session, SessionAuth, TerminalSettings};
+use sevenshell_types::{AuthMethod, KnownHostEntry, LocalForward, OpenOutcome, Session, SessionAuth, TerminalSettings};
 use sevenshell_vault::{SessionSecret, Vault};
 use tempfile::{TempDir, tempdir};
 use tokio::sync::mpsc;
@@ -31,6 +31,21 @@ struct Lab {
     core: Arc<Core>,
     session_id: String,
     events: mpsc::Receiver<sevenshell_core::CoreEvent>,
+}
+
+impl Lab {
+    /// Opens the session, trusting whatever host key it is asked about, the way a person who has
+    /// compared the fingerprint would.
+    async fn open_trusting_everything(&self) -> String {
+        for _ in 0..4 {
+            match self.core.open_terminal(&self.session_id).await.expect("open") {
+                OpenOutcome::Opened { handle, .. } => return handle,
+                OpenOutcome::HostKeyUnknown { key } => self.core.trust_host_key(&key).expect("trust"),
+                other => panic!("expected the session to open, got {other:?}"),
+            }
+        }
+        panic!("the route never finished asking");
+    }
 }
 
 fn environment(name: &str) -> Option<String> {
@@ -77,16 +92,27 @@ fn lab_with_session(password_override: Option<&str>) -> Option<Lab> {
         name: "lab".to_owned(),
         group_id: None,
         protocol: sevenshell_types::Protocol::Ssh,
-        host,
+        host: host.clone(),
         port,
-        user,
+        user: user.clone(),
         auth: SessionAuth::with_password(AuthMethod::Password),
         terminal: TerminalSettings::default(),
+        jump: Vec::new(),
+        forwards: Vec::new(),
         updated_at: 0,
     };
+    // A second saved session pointing at the same server, which is what a jump host is: the lab
+    // container is both ends of the chain, and the plumbing is the same either way.
+    let mut hop = session.clone();
+    hop.id = "lab-hop".to_owned();
+    hop.name = "lab (hop)".to_owned();
+
     vault
-        .save_session(session, Some(SessionSecret::Password(password)))
+        .save_session(session, Some(SessionSecret::Password(password.clone())))
         .expect("save session");
+    vault
+        .save_session(hop, Some(SessionSecret::Password(password)))
+        .expect("save hop");
 
     let (core, events) = Core::new(Arc::clone(&vault));
     Some(Lab {
@@ -249,5 +275,129 @@ async fn a_rejected_password_says_so_and_admits_that_it_was_sent() {
     assert!(
         !error.to_string().contains("this is not the lab password"),
         "the password is not in the error"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_terminal_works_through_a_jump_host() {
+    let Some(mut lab) = lab_with_session(None) else {
+        return;
+    };
+
+    let mut through = lab.vault.sessions().expect("sessions")[0].clone();
+    through.id = "lab-through".to_owned();
+    through.name = "lab (through the hop)".to_owned();
+    through.jump = vec!["lab-hop".to_owned()];
+    lab.vault
+        .save_session(
+            through,
+            Some(SessionSecret::Password(
+                environment("SEVENSHELL_TEST_PASSWORD").unwrap_or_default(),
+            )),
+        )
+        .expect("save");
+
+    lab.session_id = "lab-through".to_owned();
+    let handle = lab.open_trusting_everything().await;
+
+    let marker = "7shell-jump-marker";
+    lab.core
+        .write(
+            &handle,
+            format!(
+                "echo {marker}
+"
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("write");
+
+    let output = collect_until(&mut lab.events, &handle, marker).await;
+    assert!(
+        output.contains(marker),
+        "the command ran through the hop; collected: {output}"
+    );
+
+    lab.core.close_terminal(&handle).await.expect("close");
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_saved_forward_answers_a_local_port_from_the_far_side() {
+    let Some(mut lab) = lab_with_session(None) else {
+        return;
+    };
+
+    let mut forwarding = lab.vault.sessions().expect("sessions")[0].clone();
+    forwarding.id = "lab-forwarding".to_owned();
+    forwarding.forwards = vec![LocalForward {
+        id: "f1".to_owned(),
+        // Port zero: the system picks one, and the outcome says which.
+        bind_host: "127.0.0.1".to_owned(),
+        bind_port: 0,
+        target_host: "127.0.0.1".to_owned(),
+        target_port: lab.vault.sessions().expect("sessions")[0].port,
+    }];
+    lab.vault
+        .save_session(
+            forwarding,
+            Some(SessionSecret::Password(
+                environment("SEVENSHELL_TEST_PASSWORD").unwrap_or_default(),
+            )),
+        )
+        .expect("save");
+
+    lab.session_id = "lab-forwarding".to_owned();
+
+    let mut bound = None;
+    for _ in 0..4 {
+        match lab.core.open_terminal(&lab.session_id).await.expect("open") {
+            OpenOutcome::Opened {
+                handle,
+                tunnels,
+                tunnel_failures,
+                ..
+            } => {
+                assert!(tunnel_failures.is_empty(), "the forward came up: {tunnel_failures:?}");
+                assert_eq!(tunnels.len(), 1);
+                bound = Some((handle, tunnels[0].bind_port));
+                break;
+            }
+            OpenOutcome::HostKeyUnknown { key } => lab.core.trust_host_key(&key).expect("trust"),
+            other => panic!("expected the session to open, got {other:?}"),
+        }
+    }
+
+    let (handle, port) = bound.expect("the forward is up");
+
+    // The forwarded port answers with the far side's SSH banner, which is the proof that bytes
+    // went out through the connection and came back.
+    let banner = tokio::time::timeout(Duration::from_secs(10), async {
+        use tokio::io::AsyncReadExt as _;
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connect to the tunnel");
+        let mut buffer = [0_u8; 64];
+        let read = stream.read(&mut buffer).await.expect("read the banner");
+        String::from_utf8_lossy(&buffer[..read]).into_owned()
+    })
+    .await
+    .expect("the tunnel answered in time");
+
+    assert!(
+        banner.starts_with("SSH-"),
+        "the tunnel carried an SSH banner, got: {banner:?}"
+    );
+
+    let tunnels = lab.core.tunnels().await;
+    assert_eq!(tunnels.len(), 1);
+    assert!(tunnels[0].connections >= 1, "the connection was counted");
+
+    lab.core.close_terminal(&handle).await.expect("close");
+    assert!(
+        lab.core.tunnels().await.is_empty(),
+        "closing the terminal closes its forwards"
     );
 }

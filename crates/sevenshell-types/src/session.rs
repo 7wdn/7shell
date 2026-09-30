@@ -23,8 +23,51 @@ pub struct Session {
     pub user: String,
     pub auth: SessionAuth,
     pub terminal: TerminalSettings,
+    /// Saved sessions to reach this one through, in order: the first is connected to directly.
+    ///
+    /// References rather than copies, because a hop is a session like any other: editing it once
+    /// should change every route that goes through it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jump: Vec<String>,
+    /// Ports to forward while this session is open.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forwards: Vec<LocalForward>,
     /// Seconds since the Unix epoch, for ordering by recency.
     pub updated_at: u64,
+}
+
+/// A local port answered from the far side of a connection.
+///
+/// The name is the `ssh -L` shape: a listener on this machine, and whatever it should reach on
+/// the remote side. Only local forwarding exists so far; remote and dynamic forwarding are
+/// declared in the descriptors as planned and are refused with `APP-UNSUPPORTED`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalForward {
+    pub id: String,
+    /// The address to listen on. `127.0.0.1` unless somebody deliberately says otherwise.
+    pub bind_host: String,
+    /// The port to listen on. Zero asks the system for a free one.
+    pub bind_port: u16,
+    pub target_host: String,
+    pub target_port: u16,
+}
+
+/// A forward that is up right now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenTunnel {
+    pub id: String,
+    /// The terminal this tunnel belongs to; closing the terminal closes the tunnel.
+    pub handle: String,
+    pub session_id: String,
+    /// What is actually listening, which is worth knowing when the port was chosen for us.
+    pub bind_host: String,
+    pub bind_port: u16,
+    pub target_host: String,
+    pub target_port: u16,
+    /// How many connections it has carried since it came up.
+    pub connections: u64,
 }
 
 /// How a session authenticates, without the material that does it.
@@ -135,7 +178,26 @@ pub enum OpenOutcome {
         trusted: KnownHostEntry,
     },
     /// The session is open and its terminal is producing output.
-    Opened { handle: String, session_id: String },
+    Opened {
+        handle: String,
+        session_id: String,
+        /// The forwards this session brought up, so the interface can show them immediately.
+        tunnels: Vec<OpenTunnel>,
+        /// The forwards that did not come up, each with its reason. A port already in use is
+        /// worth saying out loud; it is not worth losing the terminal over.
+        tunnel_failures: Vec<TunnelFailure>,
+    },
+}
+
+/// A forward that was asked for and could not be opened.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelFailure {
+    pub forward_id: String,
+    pub bind_host: String,
+    pub bind_port: u16,
+    /// What went wrong, already scrubbed of anything sensitive.
+    pub detail: String,
 }
 
 /// Whether the vault exists and whether it is open, as the interface sees it.

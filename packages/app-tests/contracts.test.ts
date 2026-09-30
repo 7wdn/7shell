@@ -126,6 +126,9 @@ describe("wire types", () => {
       "SessionGroup",
       "KnownHostEntry",
       "PresentedHostKey",
+      "LocalForward",
+      "OpenTunnel",
+      "TunnelFailure",
     ]) {
       const rustFields = rustStructFields(rust, name).map(camelCase);
 

@@ -9,6 +9,10 @@
  *
  * A terminal that ends keeps its tab: the reason the server gave and a way to connect again are
  * both things only that tab can offer.
+ *
+ * The forwards live here too, for the same reason the tabs do: `session_open` answers with them,
+ * so this is the store that already holds the answer. Keeping them in one place is what lets the
+ * sidebar draw them and stops the same failed forward from being reported once per component.
  */
 
 import { defineStore } from "pinia";
@@ -17,7 +21,14 @@ import { computed, ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
-import type { KnownHostEntry, OpenOutcome, PresentedHostKey, Session } from "@/types/session";
+import type {
+  KnownHostEntry,
+  OpenOutcome,
+  OpenTunnel,
+  PresentedHostKey,
+  Session,
+  TunnelFailure,
+} from "@/types/session";
 
 export type TerminalTabStatus = "open" | "ended" | "failed";
 
@@ -43,20 +54,43 @@ export type HostKeyDecision =
       readonly trusted: KnownHostEntry;
     };
 
+/**
+ * What tells one failed forward from another when it is dismissed. The same saved forward failing
+ * twice replaces its old reason instead of adding a second line.
+ */
+export function tunnelFailureKey(failure: TunnelFailure): string {
+  return `${failure.forwardId}@${failure.bindHost}:${failure.bindPort}`;
+}
+
 export const useTerminalsStore = defineStore("terminals", () => {
   const tabs = ref<TerminalTab[]>([]);
   const activeTabId = ref<string | null>(null);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
   const connectingSessionIds = ref<string[]>([]);
   const decision = ref<HostKeyDecision | null>(null);
+  /** The forwards that are up, as the backend last described them. */
+  const tunnels = ref<OpenTunnel[]>([]);
+  /**
+   * Forwards that were asked for and did not come up. The open outcome carries them, and they stay
+   * until dismissed: "the tunnel is not there" is exactly what answers "the tunnel is up but
+   * nothing works", so throwing them away with the answer would lose the useful half.
+   */
+  const tunnelFailures = ref<TunnelFailure[]>([]);
+  /** A stop, or a re-read of the forward list, that failed. Shown where the forwards are. */
+  const tunnelProblem = ref<ShellError | null>(null);
 
   /** Subscribes to terminal events. Call once, from the shell. Returns the unsubscribe. */
   function initialize(): () => void {
     void startTerminalBus();
+    // Forwards can already be up by the time this store exists, and the sidebar draws what the
+    // backend says rather than what this store happens to have seen.
+    void refreshTunnels();
     return onTerminalEnded(markEnded);
   }
 
   function markEnded(handle: string, reason?: string): void {
+    // A terminal takes its forwards with it, whether or not a tab is drawing the handle.
+    void refreshTunnels();
     const tab = tabs.value.find((entry) => entry.handle === handle);
     if (!tab) {
       // No tab draws this handle. Anything that creates one later asks the bus what happened,
@@ -84,6 +118,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   function accept(session: Session, outcome: OpenOutcome): void {
     if (outcome.kind === "opened") {
+      rememberTunnels(outcome.tunnels);
+      rememberTunnelFailures(outcome.tunnelFailures);
       // A terminal that died before its tab existed is shown as ended, with the reason it gave.
       const ended = endedTerminal(outcome.handle);
       add(session, {
@@ -167,15 +203,70 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // close: removing it locally is the whole operation.
     if (!tab.handle || tab.status !== "open") {
       forget(id);
+      await refreshTunnels();
       return;
     }
     try {
       await backend.terminal.close(tab.handle);
       forget(id);
+      // Closing a terminal closes the forwards that were carrying its traffic.
+      await refreshTunnels();
     } catch (error) {
       tab.status = "failed";
       tab.failure = asShellError(error, "terminal_close");
     }
+  }
+
+  /**
+   * Re-reads the forwards that are up. Called when the answer could have changed behind this
+   * store: a terminal was opened, a forward was stopped, a terminal ended.
+   */
+  async function refreshTunnels(): Promise<void> {
+    try {
+      tunnels.value = await backend.terminal.tunnels();
+    } catch (error) {
+      tunnelProblem.value = asShellError(error, "tunnels_open");
+    }
+  }
+
+  /** Stops one forward. The backend answers only after the listener is gone, so the row goes too. */
+  async function stopTunnel(id: string): Promise<void> {
+    tunnelProblem.value = null;
+    try {
+      await backend.terminal.closeTunnel(id);
+      tunnels.value = tunnels.value.filter((entry) => entry.id !== id);
+    } catch (error) {
+      tunnelProblem.value = asShellError(error, "tunnel_close");
+    }
+  }
+
+  /** The open answer is the freshest word on what came up, but other terminals' forwards are
+   *  still up and still theirs to show: merging is what keeps both. */
+  function rememberTunnels(open: readonly OpenTunnel[]): void {
+    const byId = new Map(tunnels.value.map((entry) => [entry.id, entry]));
+    for (const tunnel of open) {
+      byId.set(tunnel.id, tunnel);
+    }
+    tunnels.value = [...byId.values()];
+  }
+
+  function rememberTunnelFailures(failures: readonly TunnelFailure[]): void {
+    if (failures.length === 0) {
+      return;
+    }
+    const answering = new Set(failures.map(tunnelFailureKey));
+    tunnelFailures.value = [
+      ...tunnelFailures.value.filter((entry) => !answering.has(tunnelFailureKey(entry))),
+      ...failures,
+    ];
+  }
+
+  function dismissTunnelFailure(key: string): void {
+    tunnelFailures.value = tunnelFailures.value.filter((entry) => tunnelFailureKey(entry) !== key);
+  }
+
+  function dismissTunnelProblem(): void {
+    tunnelProblem.value = null;
   }
 
   async function reconnect(id: string): Promise<void> {
@@ -232,6 +323,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     activeTabId,
     connectingSessionIds,
     decision,
+    tunnels,
+    tunnelFailures,
+    tunnelProblem,
     initialize,
     open,
     confirmTrust,
@@ -242,5 +336,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     activate,
     send,
     resize,
+    refreshTunnels,
+    stopTunnel,
+    dismissTunnelFailure,
+    dismissTunnelProblem,
   };
 });

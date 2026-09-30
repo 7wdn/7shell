@@ -7,6 +7,13 @@
       "endedReason": "服务器返回：{reason}",
       "endedNoReason": "连接已结束，服务器未给出原因。",
       "failedTitle": "该终端无法打开。"
+    },
+    "tunnels": {
+      "title": "隧道",
+      "stop": "停止此转发",
+      "dismiss": "忽略",
+      "connections": "已承载 {count} 个连接 | 已承载 {count} 个连接",
+      "failure": "{bind} 上的转发未能建立。"
     }
   }
 }

@@ -20,12 +20,15 @@ mod credential;
 mod hostkey;
 mod session;
 
+mod route;
+
 use std::time::Duration;
 
 use sevenshell_types::PresentedHostKey;
 
 pub use credential::{Credential, KeyDescription, describe_key};
-pub use hostkey::{fingerprint, probe_host_key};
+pub use hostkey::{fingerprint, probe_host_key, probe_host_key_via};
+pub use route::{BoxedStream, LocalForward, Route, TunnelHandle, TunnelStream};
 pub use session::SshSession;
 
 /// Where to connect and who to be.
@@ -75,6 +78,25 @@ pub struct OpenRequest {
     pub expected_host_key: PresentedHostKey,
     /// The size the pty is created with, before anyone resizes it.
     pub size: TerminalSize,
+    /// How the connection reaches its target: directly, or through a session that is already open.
+    ///
+    /// A decision rather than a default, because "straight to the server" and "through a jump
+    /// host" are different promises to whoever is reading the logs at the other end.
+    pub route: Route,
+    /// What the connection is for.
+    pub purpose: Purpose,
+}
+
+/// What a connection is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Purpose {
+    /// A terminal: a session channel is opened, a pty is asked for, and its output is streamed.
+    Terminal,
+    /// A carrier for something else — the next hop of a route, or the far side of a forward.
+    ///
+    /// No session channel and no pty: asking a jump host for a shell would leave a process running
+    /// on it that nobody asked for and nobody would think to look for.
+    Carrier,
 }
 
 /// What comes out of a channel.
@@ -121,6 +143,8 @@ mod tests {
             timeout: Duration::from_secs(15),
             expected_host_key: presented(),
             size: TerminalSize::default(),
+            route: Route::Direct,
+            purpose: Purpose::Terminal,
         };
         // The credential must not be printable, so this is the one thing about it a test can
         // safely assert without reaching into the value.

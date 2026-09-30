@@ -35,7 +35,6 @@ capabilities:
     order: 60
     group: network
     labelKey: capability.forwarding.label
-    planned: true
 
   - key: dynamicForwarding
     order: 70
@@ -53,7 +52,6 @@ capabilities:
     order: 90
     group: network
     labelKey: capability.jumpHost.label
-    planned: true
 
   - key: recording
     order: 100

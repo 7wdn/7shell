@@ -63,6 +63,8 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminals_open,
+            commands::terminal::tunnels_open,
+            commands::terminal::tunnel_close,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");

@@ -38,7 +38,9 @@
 | Terminal: multi-tab, resize, keep-alive, reconnect after a disconnect | Working |
 | Password and private key authentication (passphrase supported) | Working |
 | Keyboard-interactive authentication | Working (answered with the session's password) |
-| SFTP, port forwarding, jump hosts, an agent interface | Not implemented |
+| Jump hosts: routes through other saved sessions, each hop verified | Working, tested against a real sshd |
+| Local port forwarding, brought up with its session | Working, tested against a real sshd |
+| SFTP, dynamic and remote forwarding, an agent interface | Not implemented |
 
 The application states the same thing on its own first screen: the capability list is read from the
 descriptors, which only claim what is implemented.

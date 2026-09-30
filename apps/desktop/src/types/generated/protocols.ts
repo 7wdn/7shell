@@ -69,7 +69,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "tcp",
     supportLevel: "operate",
-    capabilities: ["shell", "resize", "keepalive"],
+    capabilities: ["shell", "resize", "keepalive", "forwarding", "jumpHost"],
   },
 ];
 

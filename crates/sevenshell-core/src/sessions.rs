@@ -1,14 +1,19 @@
-//! Opening, driving and closing terminals.
+//! Opening, driving and closing terminals, the routes they take, and the forwards they bring up.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
 use sevenshell_session::{OpenTerminal, SessionRegistry};
-use sevenshell_ssh::{Credential, OpenRequest, Target, TerminalSize};
-use sevenshell_types::{AuthMethod, KnownHostEntry, OpenOutcome, PresentedHostKey, Session};
+use sevenshell_ssh::{
+    Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
+};
+use sevenshell_types::{
+    AuthMethod, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Session, TunnelFailure,
+};
 use sevenshell_vault::Vault;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 
 /// One event from an open terminal, on its way to the host.
 pub use sevenshell_session::SessionEvent as CoreEvent;
@@ -19,10 +24,20 @@ pub const OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 /// The size a terminal starts at, until the interface says otherwise.
 const INITIAL_SIZE: TerminalSize = TerminalSize { columns: 80, rows: 24 };
 
+/// A forward that is up, and what it belongs to.
+struct TunnelRecord {
+    id: String,
+    handle: String,
+    session_id: String,
+    spec: LocalForward,
+    tunnel: TunnelHandle,
+}
+
 /// The operations that need the vault, the transport and the registry in a particular order.
 pub struct Core {
     vault: Arc<Vault>,
     registry: Arc<SessionRegistry>,
+    tunnels: Mutex<HashMap<String, TunnelRecord>>,
     timeout: Duration,
 }
 
@@ -34,6 +49,7 @@ impl Core {
             Arc::new(Self {
                 vault,
                 registry,
+                tunnels: Mutex::new(HashMap::new()),
                 timeout: OPEN_TIMEOUT,
             }),
             events,
@@ -51,11 +67,16 @@ impl Core {
     ///
     /// 1. The session and its credential are resolved locally, so a session that cannot possibly
     ///    authenticate fails without opening a socket.
-    /// 2. The host key is read with a probe that sends nothing — no credential, no username.
-    /// 3. If the key has never been seen, or has changed, the caller is told and nothing more
+    /// 2. Every jump host in the route is connected in turn, and each one's key is verified before
+    ///    anything is sent through it.
+    /// 3. The target's host key is read with a probe over the last hop — a connection that sends
+    ///    nothing — so the answer is the key the real connection will see.
+    /// 4. If a key has never been seen, or has changed, the caller is told and nothing more
     ///    happens. Changing a key is a stop, not a warning.
-    /// 4. Only then is the real connection opened, and it verifies the key again inside itself:
-    ///    a key that changes between the probe and the connection is refused there.
+    /// 5. Only then is the real connection opened, and it verifies the key again inside itself.
+    ///
+    /// A decision names the host it is about, which is what makes a route of any length work with
+    /// one prompt: trust that host, ask again, and the next unknown one asks in its turn.
     pub async fn open_terminal(&self, session_id: &str) -> Result<OpenOutcome, ShellError> {
         let session = self.session(session_id)?;
         let credential = self.credential(&session)?;
@@ -65,7 +86,15 @@ impl Core {
             user: session.user.clone(),
         };
 
-        let presented = sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?;
+        let hop = match self.open_route(&session).await? {
+            RouteOutcome::Ready(hop) => hop,
+            RouteOutcome::Decision(decision) => return Ok(*decision),
+        };
+
+        let presented = match &hop {
+            Some(hop) => sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout).await?,
+            None => sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?,
+        };
 
         match self.vault.find_known_host(&target.host, target.port)? {
             None => return Ok(OpenOutcome::HostKeyUnknown { key: presented }),
@@ -78,6 +107,15 @@ impl Core {
             Some(_) => {}
         }
 
+        let route = match hop {
+            Some(hop) => Route::Through {
+                hop,
+                host: target.host.clone(),
+                port: target.port,
+            },
+            None => Route::Direct,
+        };
+
         let request = OpenRequest {
             target,
             credential,
@@ -86,12 +124,18 @@ impl Core {
             timeout: self.timeout,
             expected_host_key: presented,
             size: INITIAL_SIZE,
+            route,
+            purpose: Purpose::Terminal,
         };
 
         let handle = self.registry.open(session_id, request).await?;
+        let (tunnels, tunnel_failures) = self.bring_up_forwards(&handle, &session).await;
+
         Ok(OpenOutcome::Opened {
             handle,
             session_id: session_id.to_owned(),
+            tunnels,
+            tunnel_failures,
         })
     }
 
@@ -105,8 +149,9 @@ impl Core {
         self.registry.resize(handle, columns, rows).await
     }
 
-    /// Closes one terminal.
+    /// Closes one terminal, and the forwards that were carrying its traffic.
     pub async fn close_terminal(&self, handle: &str) -> Result<(), ShellError> {
+        self.close_tunnels_for(handle).await;
         self.registry.close(handle).await
     }
 
@@ -115,8 +160,58 @@ impl Core {
         self.registry.open_sessions().await
     }
 
-    /// Closes every terminal, for when the interface goes away.
+    /// The forwards that are up, with how much they have carried.
+    pub async fn tunnels(&self) -> Vec<OpenTunnel> {
+        let tunnels = self.tunnels.lock().await;
+        let mut open: Vec<OpenTunnel> = tunnels
+            .values()
+            .map(|record| OpenTunnel {
+                id: record.id.clone(),
+                handle: record.handle.clone(),
+                session_id: record.session_id.clone(),
+                bind_host: record.tunnel.listener.ip().to_string(),
+                bind_port: record.tunnel.listener.port(),
+                target_host: record.spec.target_host.clone(),
+                target_port: record.spec.target_port,
+                connections: record.tunnel.connections(),
+            })
+            .collect();
+        open.sort_by(|left, right| left.id.cmp(&right.id));
+        open
+    }
+
+    /// Stops one forward. A forward that is already gone is not an error: the caller asked for it
+    /// to not be there, and it is not.
+    pub async fn close_tunnel(&self, id: &str) -> Result<(), ShellError> {
+        let Some(record) = self.tunnels.lock().await.remove(id) else {
+            return Ok(());
+        };
+        record.tunnel.stop().await;
+        Ok(())
+    }
+
+    /// Stops every forward belonging to one terminal.
+    pub async fn close_tunnels_for(&self, handle: &str) {
+        let ids: Vec<String> = {
+            let tunnels = self.tunnels.lock().await;
+            tunnels
+                .values()
+                .filter(|record| record.handle == handle)
+                .map(|record| record.id.clone())
+                .collect()
+        };
+
+        for id in ids {
+            let _ = self.close_tunnel(&id).await;
+        }
+    }
+
+    /// Closes every terminal and every forward, for when the interface goes away.
     pub async fn close_all(&self) {
+        let ids: Vec<String> = self.tunnels.lock().await.keys().cloned().collect();
+        for id in ids {
+            let _ = self.close_tunnel(&id).await;
+        }
         self.registry.close_all().await;
     }
 
@@ -138,6 +233,148 @@ impl Core {
             .into_iter()
             .find(|session| session.id == id)
             .ok_or_else(|| ShellError::session_not_found(id))
+    }
+
+    /// Connects every jump host in order, and answers with the last one.
+    ///
+    /// Each hop is a connection of its own, on the same terms as the final one: verified before
+    /// anything is sent through it, and authenticated with its own saved credential. A hop whose
+    /// key is unknown ends the attempt with a decision about *that* host, so asking again after
+    /// trusting it moves the chain forward one link at a time.
+    async fn open_route(&self, session: &Session) -> Result<RouteOutcome, ShellError> {
+        let mut current: Option<Arc<SshSession>> = None;
+
+        for hop_id in &session.jump {
+            if hop_id == &session.id {
+                return Err(ShellError::app_unsupported("a session that is its own jump host"));
+            }
+
+            let hop_session = self.session(hop_id)?;
+            let credential = self.credential(&hop_session)?;
+            let target = Target {
+                host: hop_session.host.clone(),
+                port: hop_session.port,
+                user: hop_session.user.clone(),
+            };
+
+            let presented = match &current {
+                Some(hop) => sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout).await?,
+                None => sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?,
+            };
+
+            match self.vault.find_known_host(&target.host, target.port)? {
+                None => {
+                    return Ok(RouteOutcome::Decision(Box::new(OpenOutcome::HostKeyUnknown {
+                        key: presented,
+                    })));
+                }
+                Some(trusted) if trusted.public_key != presented.public_key => {
+                    return Ok(RouteOutcome::Decision(Box::new(OpenOutcome::HostKeyMismatch {
+                        key: presented,
+                        trusted,
+                    })));
+                }
+                Some(_) => {}
+            }
+
+            let route = match current {
+                Some(hop) => Route::Through {
+                    hop,
+                    host: target.host.clone(),
+                    port: target.port,
+                },
+                None => Route::Direct,
+            };
+
+            let request = OpenRequest {
+                target,
+                credential,
+                // A hop carries a connection; it is not a terminal, and asking it for a shell
+                // would leave a process running on the jump host for no reason.
+                terminal_type: String::new(),
+                keepalive_seconds: hop_session.terminal.keepalive_seconds,
+                timeout: self.timeout,
+                expected_host_key: presented,
+                size: INITIAL_SIZE,
+                route,
+                purpose: Purpose::Carrier,
+            };
+
+            // A hop has no terminal, so its output has nowhere to go: the sender is dropped as
+            // soon as the connection is open, which is correct — nothing reads it.
+            let (output, _unused) = mpsc::channel(1);
+            current = Some(Arc::new(sevenshell_ssh::SshSession::open(request, output).await?));
+        }
+
+        Ok(RouteOutcome::Ready(current))
+    }
+
+    /// Starts the forwards a session saves, and reports what happened to each.
+    ///
+    /// A forward that cannot come up does not fail the terminal: losing a shell because a local
+    /// port happened to be taken would be a strange trade. The reason travels back instead.
+    async fn bring_up_forwards(&self, handle: &str, session: &Session) -> (Vec<OpenTunnel>, Vec<TunnelFailure>) {
+        let mut up = Vec::new();
+        let mut failed = Vec::new();
+
+        if session.forwards.is_empty() {
+            return (up, failed);
+        }
+
+        let Ok(connection) = self.registry.session_of(handle).await else {
+            return (up, failed);
+        };
+
+        for (index, spec) in session.forwards.iter().enumerate() {
+            let forward_id = if spec.id.is_empty() {
+                format!("f{}", index + 1)
+            } else {
+                spec.id.clone()
+            };
+
+            let requested = HopForward {
+                bind_host: spec.bind_host.clone(),
+                bind_port: spec.bind_port,
+                target_host: spec.target_host.clone(),
+                target_port: spec.target_port,
+            };
+
+            match Arc::clone(&connection).forward_local(requested).await {
+                Ok(tunnel) => {
+                    let id = format!("{handle}-{forward_id}");
+                    let open = OpenTunnel {
+                        id: id.clone(),
+                        handle: handle.to_owned(),
+                        session_id: session.id.clone(),
+                        bind_host: tunnel.listener.ip().to_string(),
+                        bind_port: tunnel.listener.port(),
+                        target_host: spec.target_host.clone(),
+                        target_port: spec.target_port,
+                        connections: tunnel.connections(),
+                    };
+
+                    self.tunnels.lock().await.insert(
+                        id.clone(),
+                        TunnelRecord {
+                            id,
+                            handle: handle.to_owned(),
+                            session_id: session.id.clone(),
+                            spec: spec.clone(),
+                            tunnel,
+                        },
+                    );
+                    up.push(open);
+                }
+                Err(error) => failed.push(TunnelFailure {
+                    forward_id,
+                    bind_host: spec.bind_host.clone(),
+                    bind_port: spec.bind_port,
+                    detail: error.detail().map(str::to_owned).unwrap_or_else(|| error.to_string()),
+                }),
+            }
+        }
+
+        (up, failed)
     }
 
     /// Collects what a session authenticates with. The material is held only long enough to be
@@ -180,6 +417,13 @@ impl Core {
     }
 }
 
+/// Either the end of a route, or the decision that has to be made before it can be finished.
+enum RouteOutcome {
+    Ready(Option<Arc<SshSession>>),
+    /// Boxed because a decision carries keys and fingerprints, and it is the rare answer.
+    Decision(Box<OpenOutcome>),
+}
+
 fn now_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -189,7 +433,7 @@ fn now_seconds() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use sevenshell_types::{SessionAuth, TerminalSettings};
+    use sevenshell_types::{AuthMethod, SessionAuth, TerminalSettings};
     use tempfile::{TempDir, tempdir};
 
     use super::*;
@@ -200,9 +444,15 @@ mod tests {
         let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
         vault.create("correct horse battery staple").expect("create");
 
-        let session = Session {
-            id: "session-1".to_owned(),
-            name: "example".to_owned(),
+        vault.save_session(sample("session-1", "example"), None).expect("save");
+
+        (directory, vault, "session-1".to_owned())
+    }
+
+    fn sample(id: &str, name: &str) -> Session {
+        Session {
+            id: id.to_owned(),
+            name: name.to_owned(),
             group_id: None,
             protocol: sevenshell_types::Protocol::Ssh,
             host: "127.0.0.1".to_owned(),
@@ -210,11 +460,10 @@ mod tests {
             user: "someone".to_owned(),
             auth: SessionAuth::with_password(AuthMethod::Password),
             terminal: TerminalSettings::default(),
+            jump: Vec::new(),
+            forwards: Vec::new(),
             updated_at: 0,
-        };
-        vault.save_session(session, None).expect("save");
-
-        (directory, vault, "session-1".to_owned())
+        }
     }
 
     #[tokio::test]
@@ -252,6 +501,64 @@ mod tests {
         let error = core.open_terminal(&id).await.expect_err("locked");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultLocked);
+    }
+
+    #[tokio::test]
+    async fn a_hop_that_is_not_saved_is_named_in_the_failure() {
+        let (_directory, vault, id) = vault_with_a_session();
+        let mut session = sample("session-2", "behind-a-ghost");
+        session.jump = vec!["session-that-never-existed".to_owned()];
+        vault
+            .save_session(
+                session,
+                Some(sevenshell_vault::SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+
+        let (core, _events) = Core::new(vault);
+        let error = core.open_terminal("session-2").await.expect_err("the hop is gone");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionNotFound);
+        assert_eq!(
+            error.diagnostics().get("sessionId").map(String::as_str),
+            Some("session-that-never-existed")
+        );
+        assert_ne!(
+            error.diagnostics().get("sessionId").map(String::as_str),
+            Some(id.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_session_that_is_its_own_jump_host_is_refused() {
+        let (_directory, vault, id) = vault_with_a_session();
+        let mut session = sample("session-3", "loop");
+        session.jump = vec!["session-3".to_owned()];
+        vault
+            .save_session(
+                session,
+                Some(sevenshell_vault::SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+
+        let (core, _events) = Core::new(vault);
+        let error = core
+            .open_terminal("session-3")
+            .await
+            .expect_err("a loop is not a route");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::AppUnsupported);
+        assert!(id != "session-3");
+    }
+
+    #[tokio::test]
+    async fn stopping_a_tunnel_that_is_not_there_is_not_an_error() {
+        let (_directory, vault, _) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+
+        assert!(core.close_tunnel("never-existed").await.is_ok());
+        assert!(core.tunnels().await.is_empty());
+        assert!(core.open_terminals().await.is_empty());
     }
 
     #[test]

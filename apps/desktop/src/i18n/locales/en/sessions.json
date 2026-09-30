@@ -50,6 +50,38 @@
         "forget": "Forget key",
         "none": "No key attached yet."
       },
+      "jumps": {
+        "title": "Jump hosts",
+        "note": "Connected in this order, before this session: the first directly, and each next one through the one before it. Every hop's key is verified before anything is sent through it.",
+        "empty": "None. This session is reached directly.",
+        "missing": "Missing session",
+        "missingTip": "This hop names a saved session that has since been deleted. It is kept here so it is removed on purpose.",
+        "choose": "Add a jump host…",
+        "add": "Add",
+        "up": "Move up",
+        "down": "Move down",
+        "remove": "Remove this hop"
+      },
+      "forwards": {
+        "title": "Port forwards",
+        "hint": "The left side is a port on this machine; the right side is where it leads on the far side. A bind port of 0 asks the system for a free one.",
+        "empty": "None. This session opens no local ports.",
+        "add": "Add forward",
+        "remove": "Remove this forward",
+        "bindHost": "Bind address",
+        "bindPort": "Bind port",
+        "targetHost": "Target host",
+        "targetPort": "Target port",
+        "bindHostPlaceholder": "127.0.0.1",
+        "targetHostPlaceholder": "db.internal",
+        "targetPortPlaceholder": "5432",
+        "validation": {
+          "bindHost": "Enter the address to listen on.",
+          "bindPort": "The bind port must be a number between 0 and 65535; 0 asks the system for a free one.",
+          "targetHost": "Enter the host the forward leads to.",
+          "targetPort": "The target port must be a number between 1 and 65535."
+        }
+      },
       "validation": {
         "name": "Give this session a name.",
         "host": "Enter the host name or address.",

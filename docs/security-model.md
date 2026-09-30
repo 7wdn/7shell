@@ -66,6 +66,16 @@ in where two fields sit. Its salt lived inside the `kdf` record and the algorith
 alternative would be to tell someone their readable vault is unreadable, with deleting it as the
 only way forward.
 
+**A route is verified link by link.** A jump host is a machine in the middle by design, so it is
+verified and authenticated exactly like the destination: its key is compared before anything is
+sent through it, and it is opened as a carrier rather than as a terminal, so no shell is left
+running on it. A hop that has been rebuilt is a stop, the same as a destination that has been.
+
+**A forward listens only where it was told to.** The listening address is part of the session's
+saved configuration and defaults to `127.0.0.1`; nothing in the interface offers a shortcut to
+`0.0.0.0`. A forward carries bytes and nothing else: it cannot be used to run a command, and it
+stops with the terminal it belongs to.
+
 **A vault nobody can open is not a dead end.** If the password is gone, the interface offers to
 rename the file beside itself — `vault.json.old`, then `.2.old`, and so on — and create a new vault
 in its place. Nothing is deleted, the way back is a rename, and the interface is told the file's

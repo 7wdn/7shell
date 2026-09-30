@@ -64,6 +64,41 @@ trusting is the one the authenticating connection actually received.
 Trusting a key that step 3 reported is a separate call (`known_host_trust`), after which the
 interface asks to open again. Nothing stays half-open while a person thinks about a fingerprint.
 
+## Routes and forwards
+
+A jump host and a port forward are the same primitive twice: a channel opened on an established
+session behaves like a socket, so a second SSH connection can run over it and a listener on this
+machine can feed bytes into it.
+
+```
+session with jump = [A, B]
+   │
+   ├─ connect to A directly, verify A's key, authenticate as A
+   ├─ open a direct-tcpip channel on A to B, run the SSH handshake to B over it,
+   │  verify B's key, authenticate as B
+   ├─ probe the target through B (sending nothing), compare with what is trusted
+   └─ open the real connection to the target over B, which verifies the target's key again
+```
+
+Three things about that are deliberate:
+
+**Every hop is verified, not just the last one.** A route is only as trustworthy as its weakest
+link, and a hop that is not checked is a machine that can read everything passing through it.
+
+**A hop is opened as a carrier, not as a terminal.** Asking a jump host for a shell would leave a
+process running on it that nobody asked for and nobody would think to look for. `Purpose::Carrier`
+is what keeps a jump host's logs clean.
+
+**One decision at a time.** A hop whose key has never been seen ends the attempt with a decision
+naming *that host*, so the same prompt covers a route of any length: trust it, ask again, and the
+next unknown host asks in its turn. Nothing stays half-open while somebody reads a fingerprint.
+
+Forwards belong to a session and come up with its terminal. A forward that cannot listen — a port
+already taken, most often — does not fail the terminal: the reason travels back in the open outcome
+and is shown next to the forwards that did come up. Each forward counts the connections it carried
+and the ones it could not, because "the tunnel is up but nothing works" is exactly the state that
+needs explaining, and a library has no business writing to somebody's log.
+
 ## Terminal events
 
 The core hands bytes to the shell, which turns them into two window events. The payloads are the

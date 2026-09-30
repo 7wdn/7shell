@@ -14,6 +14,7 @@ import type {
   KnownHostEntry,
   OpenOutcome,
   OpenTerminal,
+  OpenTunnel,
   PresentedHostKey,
   SecretInput,
   Session,
@@ -128,6 +129,10 @@ export const backend = {
       forward("terminal_resize", () => desktop.terminalResize(handle, columns, rows)),
     close: (handle: string): Promise<void> => forward("terminal_close", () => desktop.terminalClose(handle)),
     openTerminals: (): Promise<OpenTerminal[]> => forward("terminals_open", () => desktop.terminalsOpen()),
+
+    /** The forwards that are up, and how much they have carried. */
+    tunnels: (): Promise<OpenTunnel[]> => forward("tunnels_open", () => desktop.tunnelsOpen()),
+    closeTunnel: (id: string): Promise<void> => forward("tunnel_close", () => desktop.tunnelClose(id)),
   },
 
   events: {

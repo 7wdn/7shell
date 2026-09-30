@@ -20,6 +20,7 @@ import type {
   OpenTerminal,
   PresentedHostKey,
   SecretInput,
+  OpenTunnel,
   Session,
   SessionGroup,
   TerminalClosed,
@@ -172,6 +173,14 @@ export function terminalClose(handle: string): Promise<void> {
 
 export function terminalsOpen(): Promise<OpenTerminal[]> {
   return invoke<OpenTerminal[]>("terminals_open");
+}
+
+export function tunnelsOpen(): Promise<OpenTunnel[]> {
+  return invoke<OpenTunnel[]>("tunnels_open");
+}
+
+export function tunnelClose(id: string): Promise<void> {
+  return invoke<void>("tunnel_close", { id });
 }
 
 // -- Events ------------------------------------------------------------------

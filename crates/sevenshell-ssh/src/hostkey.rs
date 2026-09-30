@@ -12,7 +12,8 @@ use russh::keys::{HashAlg, PublicKey, PublicKeyBase64, PublicKeyOrCertificate};
 use sevenshell_error::ShellError;
 use sevenshell_types::PresentedHostKey;
 
-use crate::session::{Failure, client_config, failure_envelope, whole_seconds};
+use crate::route::BoxedStream;
+use crate::session::{Failure, SshSession, client_config, failure_envelope, whole_seconds};
 
 /// The key a caller has accepted, in the form the server's key is compared against.
 ///
@@ -66,6 +67,30 @@ pub(crate) fn presented(host: &str, port: u16, key: &PublicKey) -> PresentedHost
 /// receives with the accepted one again, so trusting this answer cannot be replayed onto a
 /// different server.
 pub async fn probe_host_key(host: &str, port: u16, timeout: Duration) -> Result<PresentedHostKey, ShellError> {
+    probe_over(None, host, port, timeout).await
+}
+
+/// The same probe, sent through an established session instead of straight to the host.
+///
+/// A route is only as trustworthy as the key at the end of it, and the key that matters is the one
+/// the *carrying* connection sees. Probing through the same hop is what makes the answer match the
+/// connection that follows.
+pub async fn probe_host_key_via(
+    hop: &Arc<SshSession>,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> Result<PresentedHostKey, ShellError> {
+    let stream = hop.open_tunnel_stream(host, port).await?;
+    probe_over(Some(stream), host, port, timeout).await
+}
+
+async fn probe_over(
+    stream: Option<BoxedStream>,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> Result<PresentedHostKey, ShellError> {
     let seen: Arc<Mutex<Option<PresentedHostKey>>> = Arc::new(Mutex::new(None));
     let handler = Probe {
         host: host.to_owned(),
@@ -74,7 +99,12 @@ pub async fn probe_host_key(host: &str, port: u16, timeout: Duration) -> Result<
     };
 
     // Keep-alives are off: this connection has no life to keep.
-    let attempt = client::connect(client_config(0), (host, port), handler);
+    let attempt = async {
+        match stream {
+            Some(stream) => client::connect_stream(client_config(0), stream, handler).await,
+            None => client::connect(client_config(0), (host, port), handler).await,
+        }
+    };
     match tokio::time::timeout(timeout, attempt).await {
         Err(_) => Err(ShellError::ssh_timeout(host, port, whole_seconds(timeout))),
         Ok(Err(failure)) => match recorded(&seen) {

@@ -15,6 +15,9 @@ use russh::client::{self, Config, DisconnectReason, Handle, KeyboardInteractiveA
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect, SshId};
 use sevenshell_error::ShellError;
+
+use crate::Purpose;
+use crate::route::Route;
 use sevenshell_types::PRODUCT_NAME;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::mpsc::Sender;
@@ -60,13 +63,21 @@ pub struct SshSession {
     /// Keeps the connection's task running, and is the only way to send a disconnect.
     handle: Handle<KeyCheck>,
     /// Everything the terminal sends. Writing does not need the read half or a lock.
-    channel: ChannelWriteHalf<Msg>,
+    ///
+    /// Absent on a carrier: a connection opened only to carry another one has no terminal, and
+    /// pretending otherwise would mean a `write` that goes nowhere.
+    channel: Option<ChannelWriteHalf<Msg>>,
     /// The task forwarding the terminal's output. `close` waits for it to finish.
     reader: AsyncMutex<Option<JoinHandle<()>>>,
     /// Set by `close`, so the reader can tell a deliberate end from a lost connection.
     closing: Arc<AtomicBool>,
     host: String,
     port: u16,
+    /// The sessions this one runs over, kept alive for exactly as long as it lives.
+    ///
+    /// A connection opened over a channel dies with the connection carrying it, so dropping these
+    /// would quietly kill this session. They are held rather than read.
+    pub(crate) upstream: Vec<Arc<SshSession>>,
 }
 
 impl SshSession {
@@ -97,17 +108,27 @@ impl SshSession {
         if data.is_empty() {
             return Ok(());
         }
-        self.channel
+        self.terminal()?
             .data_bytes(data.to_vec())
             .await
             .map_err(|error| self.channel_failure("the terminal could not be written to", &error))
+    }
+
+    /// The terminal channel, or an explanation that this connection is carrying something else.
+    fn terminal(&self) -> Result<&ChannelWriteHalf<Msg>, ShellError> {
+        self.channel.as_ref().ok_or_else(|| {
+            ShellError::app_internal(format!(
+                "{}:{} was opened as a carrier, not a terminal",
+                self.host, self.port
+            ))
+        })
     }
 
     /// Tells the server the terminal changed size, so the programs inside it redraw.
     pub async fn resize(&self, columns: u32, rows: u32) -> Result<(), ShellError> {
         // The pixel fields stay zero: they are for graphics terminals, and a character
         // terminal has no pixels to report.
-        self.channel
+        self.terminal()?
             .window_change(columns, rows, 0, 0)
             .await
             .map_err(|error| self.channel_failure("the terminal could not be resized", &error))
@@ -122,20 +143,22 @@ impl SshSession {
         self.closing.store(true, Ordering::Relaxed);
 
         let mut outcome = Ok(());
-        keep_first(
-            &mut outcome,
-            self.channel
-                .eof()
-                .await
-                .map_err(|error| self.channel_failure("the terminal could not be ended", &error)),
-        );
-        keep_first(
-            &mut outcome,
-            self.channel
-                .close()
-                .await
-                .map_err(|error| self.channel_failure("the channel could not be closed", &error)),
-        );
+        if let Some(channel) = &self.channel {
+            keep_first(
+                &mut outcome,
+                channel
+                    .eof()
+                    .await
+                    .map_err(|error| self.channel_failure("the terminal could not be ended", &error)),
+            );
+            keep_first(
+                &mut outcome,
+                channel
+                    .close()
+                    .await
+                    .map_err(|error| self.channel_failure("the channel could not be closed", &error)),
+            );
+        }
         keep_first(
             &mut outcome,
             self.handle
@@ -155,6 +178,17 @@ impl SshSession {
         outcome
     }
 
+    /// Opens a channel to a host as it is seen from the far side of this connection.
+    ///
+    /// This is the primitive a jump host and a forward are both built from, so it lives here
+    /// rather than in the module that uses it, next to the handle it needs.
+    pub(crate) async fn open_direct_tcpip_channel(&self, host: &str, port: u16) -> Result<Channel<Msg>, ShellError> {
+        self.handle
+            .channel_open_direct_tcpip(host.to_owned(), u32::from(port), "127.0.0.1".to_owned(), 0)
+            .await
+            .map_err(|error| self.channel_failure(&format!("a channel to {host}:{port} could not be opened"), &error))
+    }
+
     /// The failure shape for everything that happens on an established session.
     fn channel_failure(&self, what: &str, error: &russh::Error) -> ShellError {
         ShellError::ssh_channel_failed(&self.host, self.port, format!("{what}: {error}"))
@@ -171,7 +205,12 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
         timeout,
         expected_host_key,
         size,
+        route,
+        purpose,
     } = request;
+
+    // The hops have to be held by the session this opens: it dies when they do.
+    let upstream = route.upstream();
 
     // The one credential this build has no path for. Naming it here is the point: a caller
     // that was asked for an agent gets an answer, not a connection that fails for reasons of
@@ -189,13 +228,18 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
         ending: Arc::clone(&ending),
     };
 
-    let mut handle = match client::connect(
-        client_config(keepalive_seconds),
-        (target.host.as_str(), target.port),
-        check,
-    )
-    .await
-    {
+    // A route through a hop is the same handshake on a different stream: the channel behaves like
+    // a socket, so nothing below this point knows the difference.
+    let config = client_config(keepalive_seconds);
+    let attempt = match &route {
+        Route::Direct => client::connect(config, (target.host.as_str(), target.port), check).await,
+        Route::Through { hop, host, port } => match hop.open_tunnel_stream(host, *port).await {
+            Ok(stream) => client::connect_stream(config, stream, check).await,
+            Err(error) => return Err(error),
+        },
+    };
+
+    let mut handle = match attempt {
         Ok(handle) => handle,
         Err(failure) => return Err(failure_envelope(&target.host, target.port, timeout, failure)),
     };
@@ -204,23 +248,30 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
     // The secret has done its work. Nothing past this point is worth a copy of it.
     drop(credential);
 
-    let mut channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|error| channel_failure(&target, "a session channel could not be opened", &error))?;
-    request_terminal(&mut channel, &target, &terminal_type, size, &events).await?;
-
-    let (reading, writing) = channel.split();
     let closing = Arc::new(AtomicBool::new(false));
-    let reader = spawn_reader(reading, events, Arc::clone(&ending), Arc::clone(&closing));
+    let (channel, reader) = match purpose {
+        Purpose::Carrier => (None, None),
+        Purpose::Terminal => {
+            let mut channel = handle
+                .channel_open_session()
+                .await
+                .map_err(|error| channel_failure(&target, "a session channel could not be opened", &error))?;
+            request_terminal(&mut channel, &target, &terminal_type, size, &events).await?;
+
+            let (reading, writing) = channel.split();
+            let reader = spawn_reader(reading, events, Arc::clone(&ending), Arc::clone(&closing));
+            (Some(writing), Some(reader))
+        }
+    };
 
     Ok(SshSession {
         handle,
-        channel: writing,
-        reader: AsyncMutex::new(Some(reader)),
+        channel,
+        reader: AsyncMutex::new(reader),
         closing,
         host: target.host,
         port: target.port,
+        upstream,
     })
 }
 
@@ -680,6 +731,8 @@ mod tests {
                 fingerprint: "SHA256:AAAA".to_owned(),
             },
             size: TerminalSize::default(),
+            route: Route::Direct,
+            purpose: Purpose::Terminal,
         }
     }
 
@@ -865,6 +918,8 @@ mod live_tests {
             timeout: Duration::from_secs(20),
             expected_host_key,
             size: TerminalSize::default(),
+            route: Route::Direct,
+            purpose: Purpose::Terminal,
         }
     }
 

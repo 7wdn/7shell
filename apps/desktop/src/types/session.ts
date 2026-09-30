@@ -29,6 +29,17 @@ export interface TerminalSettings {
   readonly keepaliveSeconds: number;
 }
 
+/** A local port answered from the far side of a connection: the `ssh -L` shape. */
+export interface LocalForward {
+  readonly id: string;
+  /** The address to listen on, `127.0.0.1` unless somebody deliberately says otherwise. */
+  readonly bindHost: string;
+  /** Zero asks the system for a free port, and the open outcome says which one it got. */
+  readonly bindPort: number;
+  readonly targetHost: string;
+  readonly targetPort: number;
+}
+
 /** A saved way to reach a machine. */
 export interface Session {
   readonly id: string;
@@ -40,7 +51,32 @@ export interface Session {
   readonly user: string;
   readonly auth: SessionAuth;
   readonly terminal: TerminalSettings;
+  /** Saved sessions to reach this one through, in order: the first is connected to directly. */
+  readonly jump?: readonly string[];
+  /** Ports to forward while this session is open. */
+  readonly forwards?: readonly LocalForward[];
   readonly updatedAt: number;
+}
+
+/** A forward that is up right now. */
+export interface OpenTunnel {
+  readonly id: string;
+  /** The terminal it belongs to; closing the terminal closes the forward. */
+  readonly handle: string;
+  readonly sessionId: string;
+  readonly bindHost: string;
+  readonly bindPort: number;
+  readonly targetHost: string;
+  readonly targetPort: number;
+  readonly connections: number;
+}
+
+/** A forward that was asked for and could not be opened. */
+export interface TunnelFailure {
+  readonly forwardId: string;
+  readonly bindHost: string;
+  readonly bindPort: number;
+  readonly detail: string;
 }
 
 export interface SessionGroup {
@@ -72,7 +108,15 @@ export interface PresentedHostKey {
 export type OpenOutcome =
   | { readonly kind: "hostKeyUnknown"; readonly key: PresentedHostKey }
   | { readonly kind: "hostKeyMismatch"; readonly key: PresentedHostKey; readonly trusted: KnownHostEntry }
-  | { readonly kind: "opened"; readonly handle: string; readonly sessionId: string };
+  | {
+      readonly kind: "opened";
+      readonly handle: string;
+      readonly sessionId: string;
+      /** The forwards this session brought up. */
+      readonly tunnels: readonly OpenTunnel[];
+      /** The ones that did not come up, each with its reason. */
+      readonly tunnelFailures: readonly TunnelFailure[];
+    };
 
 export type VaultState = "missing" | "locked" | "unlocked";
 

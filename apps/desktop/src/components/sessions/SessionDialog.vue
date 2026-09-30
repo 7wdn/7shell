@@ -12,8 +12,12 @@
  * the backend actually implements. The two the build does not implement are shown disabled rather
  * than hidden: the difference between "missing here" and "not offered" matters when a session is
  * imported from somewhere else later.
+ *
+ * The draft itself — including the route and the forwards — lives in `stores/sessionEditor`, which
+ * owns the rules those have to satisfy. This component binds the fields and turns the store's
+ * problem codes back into sentences, because that is the only place a translation exists.
  */
-import { KeyRound, LoaderCircle, Trash2, X } from "@lucide/vue";
+import { ArrowRight, ChevronDown, ChevronUp, KeyRound, LoaderCircle, Plus, Trash2, X } from "@lucide/vue";
 import {
   DialogClose,
   DialogContent,
@@ -29,35 +33,29 @@ import { useI18n } from "vue-i18n";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import {
+  useSessionEditorStore,
+  type ForwardDraft,
+  type ForwardProblem,
+  type SessionFieldProblem,
+} from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
-import type { KeyInfo, Session, SecretInput } from "@/types/session";
-import { AUTH_METHODS, PROTOCOLS, type AuthMethodId } from "@/types/generated/protocols";
+import type { Session } from "@/types/session";
+import { AUTH_METHODS, type AuthMethodId } from "@/types/generated/protocols";
 
 const props = defineProps<{ open: boolean; session: Session | null }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
 
 const { t } = useI18n();
 const library = useSessionsStore();
+const editor = useSessionEditorStore();
 
 /** Methods the transport refuses; the descriptors list them, this build does not implement them. */
 const UNSUPPORTED_METHODS: readonly AuthMethodId[] = ["agent", "pageant"];
 
-/** The protocol table holds one entry in this build; a new session starts on it. */
-const DEFAULT_PROTOCOL = PROTOCOLS[0]?.id ?? "ssh";
+/** The hop the select is pointing at, until it is added and the select goes back to its prompt. */
+const hopToAdd = ref("");
 
-/** What `TerminalSettings::default()` uses in Rust: the wire type has no "not set" for these. */
-const DEFAULT_TERMINAL = { terminalType: "xterm-256color", keepaliveSeconds: 30 };
-
-const name = ref("");
-const host = ref("");
-const port = ref("");
-const user = ref("");
-const groupId = ref("");
-const method = ref<AuthMethodId>("password");
-const secret = ref("");
-const attachedKey = ref<KeyInfo | null>(null);
-const keyHasPassphrase = ref(false);
-const passphrase = ref("");
 const submitted = ref(false);
 const busy = ref(false);
 const keyBusy = ref(false);
@@ -65,25 +63,24 @@ const problem = ref<ShellError | null>(null);
 
 const title = computed(() => (props.session ? t("sessions.editor.titleEdit") : t("sessions.editor.titleNew")));
 const storedSecret = computed(() => props.session?.auth.hasSecret ?? false);
-
-const portNumber = computed(() => Number(port.value.trim()));
+const canAddHop = computed(() => hopToAdd.value !== "");
 
 /** Every rule is reported next to the field it belongs to, which is why they are collected here. */
-const errors = computed<Record<string, string>>(() => {
-  const found: Record<string, string> = {};
-  if (name.value.trim() === "") {
+const errors = computed<Partial<Record<SessionFieldProblem, string>>>(() => {
+  const found: Partial<Record<SessionFieldProblem, string>> = {};
+  if (editor.sessionProblems.name) {
     found.name = t("sessions.editor.validation.name");
   }
-  if (host.value.trim() === "") {
+  if (editor.sessionProblems.host) {
     found.host = t("sessions.editor.validation.host");
   }
-  if (user.value.trim() === "") {
+  if (editor.sessionProblems.user) {
     found.user = t("sessions.editor.validation.user");
   }
-  if (!Number.isInteger(portNumber.value) || portNumber.value < 1 || portNumber.value > 65535) {
+  if (editor.sessionProblems.port) {
     found.port = t("sessions.editor.validation.port");
   }
-  if (method.value === "publicKey" && !attachedKey.value?.keyRef) {
+  if (editor.sessionProblems.key) {
     found.key = t("sessions.editor.validation.key");
   }
   return found;
@@ -95,72 +92,63 @@ function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
 }
 
+function hopEndpoint(session: Session): string {
+  return `${session.user}@${session.host}:${session.port}`;
+}
+
+function forwardMessage(problem: ForwardProblem): string {
+  switch (problem) {
+    case "bindHost":
+      return t("sessions.editor.forwards.validation.bindHost");
+    case "bindPort":
+      return t("sessions.editor.forwards.validation.bindPort");
+    case "targetHost":
+      return t("sessions.editor.forwards.validation.targetHost");
+    case "targetPort":
+      return t("sessions.editor.forwards.validation.targetPort");
+  }
+}
+
+/** One line per rule a row breaks, so a row with two bad ports says so twice rather than once. */
+function forwardMessages(row: ForwardDraft): string[] {
+  return (editor.forwardProblems[row.id] ?? []).map(forwardMessage);
+}
+
+function forwardProblem(row: ForwardDraft, field: ForwardProblem): boolean {
+  return (editor.forwardProblems[row.id] ?? []).includes(field);
+}
+
 watch(
   () => [props.open, props.session] as const,
   ([open]) => {
-    if (open) {
-      fill();
+    if (!open) {
+      return;
     }
+    editor.fill(props.session);
+    hopToAdd.value = "";
+    submitted.value = false;
+    busy.value = false;
+    keyBusy.value = false;
+    problem.value = null;
   },
   { immediate: true },
 );
 
-function fill(): void {
-  const session = props.session;
-  name.value = session?.name ?? "";
-  host.value = session?.host ?? "";
-  port.value = String(session?.port ?? PROTOCOLS[0]?.defaultPort ?? "");
-  user.value = session?.user ?? "";
-  groupId.value = session?.groupId ?? "";
-  method.value = session?.auth.method ?? "password";
-  attachedKey.value = session?.auth.key ?? null;
-  secret.value = "";
-  passphrase.value = "";
-  keyHasPassphrase.value = false;
-  submitted.value = false;
-  busy.value = false;
-  keyBusy.value = false;
-  problem.value = null;
-}
-
-/**
- * A secret travels only when one was typed: an empty field means "keep the stored one", which is
- * not the same as blank, and there is deliberately no way to say "remove it".
- */
-function secretInput(): SecretInput | undefined {
-  return secret.value === "" ? undefined : { value: secret.value };
-}
-
-function draft(): Session {
-  const existing = props.session;
-  return {
-    id: existing?.id ?? crypto.randomUUID(),
-    name: name.value.trim(),
-    groupId: groupId.value === "" ? undefined : groupId.value,
-    protocol: existing?.protocol ?? DEFAULT_PROTOCOL,
-    host: host.value.trim(),
-    port: portNumber.value,
-    user: user.value.trim(),
-    auth: {
-      method: method.value,
-      key: attachedKey.value ?? undefined,
-      hasSecret: existing?.auth.hasSecret ?? false,
-    },
-    terminal: existing?.terminal ?? DEFAULT_TERMINAL,
-    updatedAt: Math.floor(Date.now() / 1000),
-  };
+function addSelectedHop(): void {
+  editor.addHop(hopToAdd.value);
+  hopToAdd.value = "";
 }
 
 async function save(): Promise<void> {
   submitted.value = true;
   problem.value = null;
-  if (Object.keys(errors.value).length > 0) {
+  if (editor.hasProblems) {
     return;
   }
 
   busy.value = true;
   try {
-    await library.save(draft(), secretInput());
+    await library.save(editor.draft(), editor.secretInput());
     emit("update:open", false);
   } catch (error) {
     problem.value = asShellError(error, "session_save");
@@ -176,12 +164,12 @@ async function chooseKey(): Promise<void> {
   try {
     const info = await backend.keys.import(
       t("sessions.editor.key.dialogTitle"),
-      passphrase.value === "" ? undefined : passphrase.value,
+      editor.passphrase === "" ? undefined : editor.passphrase,
     );
     if (info) {
-      attachedKey.value = info;
+      editor.attachedKey = info;
     }
-    passphrase.value = "";
+    editor.passphrase = "";
   } catch (error) {
     problem.value = asShellError(error, "key_import");
   } finally {
@@ -190,15 +178,15 @@ async function chooseKey(): Promise<void> {
 }
 
 async function forgetKey(): Promise<void> {
-  const info = attachedKey.value;
+  const info = editor.attachedKey;
   problem.value = null;
   if (!info?.keyRef) {
-    attachedKey.value = null;
+    editor.attachedKey = null;
     return;
   }
   try {
     await backend.keys.forget(info.keyRef);
-    attachedKey.value = null;
+    editor.attachedKey = null;
   } catch (error) {
     problem.value = asShellError(error, "key_forget");
   }
@@ -229,7 +217,7 @@ async function forgetKey(): Promise<void> {
               <label class="block text-xs font-medium" for="session-name">{{ t("sessions.editor.name") }}</label>
               <input
                 id="session-name"
-                v-model="name"
+                v-model="editor.name"
                 type="text"
                 class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
                 :class="submitted && errors.name ? 'border-destructive' : 'border-border'"
@@ -242,7 +230,7 @@ async function forgetKey(): Promise<void> {
               <label class="block text-xs font-medium" for="session-group">{{ t("sessions.editor.group") }}</label>
               <select
                 id="session-group"
-                v-model="groupId"
+                v-model="editor.groupId"
                 class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
               >
                 <option value="">{{ t("sessions.editor.groupNone") }}</option>
@@ -254,7 +242,7 @@ async function forgetKey(): Promise<void> {
               <label class="block text-xs font-medium" for="session-host">{{ t("sessions.editor.host") }}</label>
               <input
                 id="session-host"
-                v-model="host"
+                v-model="editor.host"
                 type="text"
                 class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
                 :class="submitted && errors.host ? 'border-destructive' : 'border-border'"
@@ -267,7 +255,7 @@ async function forgetKey(): Promise<void> {
               <label class="block text-xs font-medium" for="session-port">{{ t("sessions.editor.port") }}</label>
               <input
                 id="session-port"
-                v-model="port"
+                v-model="editor.port"
                 type="text"
                 inputmode="numeric"
                 class="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
@@ -280,7 +268,7 @@ async function forgetKey(): Promise<void> {
               <label class="block text-xs font-medium" for="session-user">{{ t("sessions.editor.user") }}</label>
               <input
                 id="session-user"
-                v-model="user"
+                v-model="editor.user"
                 type="text"
                 class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
                 :class="submitted && errors.user ? 'border-destructive' : 'border-border'"
@@ -294,7 +282,7 @@ async function forgetKey(): Promise<void> {
             <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
             <select
               id="session-method"
-              v-model="method"
+              v-model="editor.method"
               class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
             >
               <option
@@ -308,13 +296,13 @@ async function forgetKey(): Promise<void> {
             </select>
             <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
 
-            <div v-if="method === 'password' || method === 'keyboardInteractive'" class="mt-3">
+            <div v-if="editor.method === 'password' || editor.method === 'keyboardInteractive'" class="mt-3">
               <label class="block text-xs font-medium" for="session-secret">{{
                 t("sessions.editor.secret.label")
               }}</label>
               <input
                 id="session-secret"
-                v-model="secret"
+                v-model="editor.secret"
                 type="password"
                 autocomplete="off"
                 class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
@@ -327,23 +315,23 @@ async function forgetKey(): Promise<void> {
               </p>
             </div>
 
-            <div v-else-if="method === 'publicKey'" class="mt-3 space-y-3">
-              <div v-if="attachedKey" class="rounded-md border border-border bg-background px-3 py-3">
+            <div v-else-if="editor.method === 'publicKey'" class="mt-3 space-y-3">
+              <div v-if="editor.attachedKey" class="rounded-md border border-border bg-background px-3 py-3">
                 <p class="flex items-center gap-2 text-xs font-medium">
                   <KeyRound :size="13" class="text-muted-foreground" />
                   {{ t("sessions.editor.key.attached") }}
                 </p>
                 <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
                   <dt class="text-muted-foreground">{{ t("sessions.editor.key.name") }}</dt>
-                  <dd class="font-mono break-all">{{ attachedKey.displayName }}</dd>
+                  <dd class="font-mono break-all">{{ editor.attachedKey.displayName }}</dd>
                   <dt class="text-muted-foreground">{{ t("sessions.editor.key.algorithm") }}</dt>
-                  <dd class="font-mono">{{ attachedKey.algorithm }}</dd>
+                  <dd class="font-mono">{{ editor.attachedKey.algorithm }}</dd>
                   <dt class="text-muted-foreground">{{ t("sessions.editor.key.fingerprint") }}</dt>
-                  <dd class="font-mono break-all">{{ attachedKey.fingerprint }}</dd>
+                  <dd class="font-mono break-all">{{ editor.attachedKey.fingerprint }}</dd>
                 </dl>
                 <p class="mt-2 text-[11px] text-muted-foreground">
                   {{
-                    attachedKey.hasPassphrase
+                    editor.attachedKey.hasPassphrase
                       ? t("sessions.editor.key.passphraseStored")
                       : t("sessions.editor.key.noPassphraseStored")
                   }}
@@ -360,13 +348,13 @@ async function forgetKey(): Promise<void> {
               <p v-else class="text-[11px] text-muted-foreground">{{ t("sessions.editor.key.none") }}</p>
 
               <label class="flex items-center gap-2 text-xs">
-                <input v-model="keyHasPassphrase" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                <input v-model="editor.keyHasPassphrase" type="checkbox" class="size-3.5 rounded-sm border-border" />
                 {{ t("sessions.editor.key.hasPassphrase") }}
               </label>
 
-              <div v-if="keyHasPassphrase">
+              <div v-if="editor.keyHasPassphrase">
                 <input
-                  v-model="passphrase"
+                  v-model="editor.passphrase"
                   type="password"
                   autocomplete="off"
                   class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
@@ -387,6 +375,175 @@ async function forgetKey(): Promise<void> {
               </button>
               <p v-if="submitted && errors.key" class="text-[11px] text-destructive">{{ errors.key }}</p>
             </div>
+          </section>
+
+          <section>
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.jumps.title") }}</h3>
+            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.jumps.note") }}</p>
+
+            <p v-if="editor.hops.length === 0" class="mt-2 text-[11px] text-muted-foreground">
+              {{ t("sessions.editor.jumps.empty") }}
+            </p>
+
+            <ul v-else class="mt-2 space-y-1">
+              <li
+                v-for="(hop, index) in editor.hops"
+                :key="hop.id + ':' + index"
+                class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
+              >
+                <span
+                  class="grid size-4 shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] text-muted-foreground"
+                >
+                  {{ index + 1 }}
+                </span>
+                <span class="min-w-0 flex-1">
+                  <template v-if="hop.session">
+                    <span class="block truncate text-xs">{{ hop.session.name }}</span>
+                    <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
+                      hopEndpoint(hop.session)
+                    }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="block truncate text-xs text-warning">{{ t("sessions.editor.jumps.missing") }}</span>
+                    <span
+                      class="block truncate font-mono text-[10px] text-muted-foreground"
+                      :title="t('sessions.editor.jumps.missingTip')"
+                      >{{ hop.id }}</span
+                    >
+                  </template>
+                </span>
+                <span class="flex shrink-0 items-center gap-0.5">
+                  <button
+                    type="button"
+                    class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="index === 0"
+                    :title="t('sessions.editor.jumps.up')"
+                    :aria-label="t('sessions.editor.jumps.up')"
+                    @click="editor.moveHop(index, -1)"
+                  >
+                    <ChevronUp :size="12" />
+                  </button>
+                  <button
+                    type="button"
+                    class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="index === editor.hops.length - 1"
+                    :title="t('sessions.editor.jumps.down')"
+                    :aria-label="t('sessions.editor.jumps.down')"
+                    @click="editor.moveHop(index, 1)"
+                  >
+                    <ChevronDown :size="12" />
+                  </button>
+                  <button
+                    type="button"
+                    class="grid size-5 place-items-center rounded-sm text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    :title="t('sessions.editor.jumps.remove')"
+                    :aria-label="t('sessions.editor.jumps.remove')"
+                    @click="editor.removeHopAt(index)"
+                  >
+                    <X :size="12" />
+                  </button>
+                </span>
+              </li>
+            </ul>
+
+            <div class="mt-2 flex gap-1.5">
+              <select
+                v-model="hopToAdd"
+                class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="editor.hopChoices.length === 0"
+                :aria-label="t('sessions.editor.jumps.choose')"
+              >
+                <option value="">{{ t("sessions.editor.jumps.choose") }}</option>
+                <option v-for="session in editor.hopChoices" :key="session.id" :value="session.id">
+                  {{ session.name }} — {{ hopEndpoint(session) }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="!canAddHop"
+                @click="addSelectedHop()"
+              >
+                <Plus :size="12" />
+                {{ t("sessions.editor.jumps.add") }}
+              </button>
+            </div>
+          </section>
+
+          <section>
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.forwards.title") }}</h3>
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+                @click="editor.addForward()"
+              >
+                <Plus :size="12" />
+                {{ t("sessions.editor.forwards.add") }}
+              </button>
+            </div>
+            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.forwards.hint") }}</p>
+
+            <p v-if="editor.forwards.length === 0" class="mt-2 text-[11px] text-muted-foreground">
+              {{ t("sessions.editor.forwards.empty") }}
+            </p>
+
+            <ul v-else class="mt-2 space-y-2">
+              <li v-for="row in editor.forwards" :key="row.id">
+                <div class="flex items-center gap-1">
+                  <input
+                    v-model="row.bindHost"
+                    type="text"
+                    class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                    :class="submitted && forwardProblem(row, 'bindHost') ? 'border-destructive' : 'border-border'"
+                    :placeholder="t('sessions.editor.forwards.bindHostPlaceholder')"
+                    :aria-label="t('sessions.editor.forwards.bindHost')"
+                  />
+                  <span class="text-muted-foreground">:</span>
+                  <input
+                    v-model="row.bindPort"
+                    type="text"
+                    inputmode="numeric"
+                    class="w-14 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                    :class="submitted && forwardProblem(row, 'bindPort') ? 'border-destructive' : 'border-border'"
+                    :aria-label="t('sessions.editor.forwards.bindPort')"
+                  />
+                  <ArrowRight :size="12" class="shrink-0 text-muted-foreground" />
+                  <input
+                    v-model="row.targetHost"
+                    type="text"
+                    class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                    :class="submitted && forwardProblem(row, 'targetHost') ? 'border-destructive' : 'border-border'"
+                    :placeholder="t('sessions.editor.forwards.targetHostPlaceholder')"
+                    :aria-label="t('sessions.editor.forwards.targetHost')"
+                  />
+                  <span class="text-muted-foreground">:</span>
+                  <input
+                    v-model="row.targetPort"
+                    type="text"
+                    inputmode="numeric"
+                    class="w-14 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                    :class="submitted && forwardProblem(row, 'targetPort') ? 'border-destructive' : 'border-border'"
+                    :placeholder="t('sessions.editor.forwards.targetPortPlaceholder')"
+                    :aria-label="t('sessions.editor.forwards.targetPort')"
+                  />
+                  <button
+                    type="button"
+                    class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                    :title="t('sessions.editor.forwards.remove')"
+                    :aria-label="t('sessions.editor.forwards.remove')"
+                    @click="editor.removeForward(row.id)"
+                  >
+                    <Trash2 :size="12" />
+                  </button>
+                </div>
+                <template v-if="submitted">
+                  <p v-for="message in forwardMessages(row)" :key="message" class="mt-0.5 text-[11px] text-destructive">
+                    {{ message }}
+                  </p>
+                </template>
+              </li>
+            </ul>
           </section>
 
           <p v-if="problemText" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
