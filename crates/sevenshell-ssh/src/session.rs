@@ -17,7 +17,7 @@ use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect, 
 use sevenshell_error::ShellError;
 
 use crate::Purpose;
-use crate::route::Route;
+use crate::route::{BoxedStream, Route};
 use sevenshell_types::PRODUCT_NAME;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::mpsc::Sender;
@@ -176,6 +176,28 @@ impl SshSession {
             }
         }
         outcome
+    }
+
+    /// Opens a subsystem channel — `sftp`, in practice — and hands it over as a byte stream.
+    ///
+    /// A subsystem is a program the server runs for the life of the channel, so it goes on a
+    /// channel of its own: a file browser and a terminal can share one connection without either
+    /// seeing the other's traffic.
+    pub async fn open_subsystem_stream(&self, name: &str) -> Result<BoxedStream, ShellError> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|error| self.channel_failure(&format!("a channel for {name} could not be opened"), &error))?;
+
+        // A reply is asked for so a server without the subsystem says so, instead of the caller
+        // waiting for output that will never come.
+        channel
+            .request_subsystem(true, name.to_owned())
+            .await
+            .map_err(|error| self.channel_failure(&format!("the server refused the {name} subsystem"), &error))?;
+
+        Ok(Box::new(channel.into_stream()))
     }
 
     /// Opens a channel to a host as it is seen from the far side of this connection.

@@ -1,0 +1,65 @@
+{
+  "files": {
+    "open": "为 {name} 打开文件",
+    "tab": {
+      "close": "关闭文件浏览器",
+      "failedTitle": "该文件浏览器无法打开。",
+      "retry": "重试"
+    },
+    "up": "返回上一级目录",
+    "path": "路径",
+    "go": "前往",
+    "newFolder": "新建文件夹",
+    "newFolderName": "文件夹名称",
+    "create": "创建",
+    "upload": "上传",
+    "uploadTitle": "选择要上传的文件",
+    "downloadTitle": "选择此文件的保存位置",
+    "empty": "该目录为空。",
+    "name": "名称",
+    "size": "大小",
+    "modified": "修改时间",
+    "action": {
+      "open": "打开",
+      "download": "下载",
+      "edit": "编辑",
+      "rename": "重命名",
+      "remove": "删除"
+    },
+    "rename": {
+      "name": "新名称",
+      "submit": "重命名"
+    },
+    "delete": {
+      "confirmFile": "删除“{name}”？",
+      "confirmDirectory": "删除“{name}”及其下的全部内容？",
+      "note": "此操作无法撤销。",
+      "submit": "删除"
+    },
+    "cancel": "取消",
+    "editor": {
+      "title": "编辑 {name}",
+      "description": "远程文本文件",
+      "note": "纯文本编辑器：暂不支持语法高亮。",
+      "loading": "正在读取文件…",
+      "save": "保存"
+    },
+    "transfer": {
+      "title": "传输",
+      "direction": {
+        "download": "下载",
+        "upload": "上传"
+      },
+      "state": {
+        "running": "进行中",
+        "done": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      },
+      "progress": "{transferred} / {size}",
+      "unknownSize": "未知",
+      "cancel": "取消",
+      "dismiss": "关闭"
+    }
+  }
+}

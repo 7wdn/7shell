@@ -11,6 +11,7 @@ import enAuth from "./locales/en/auth.json";
 import enCapability from "./locales/en/capability.json";
 import enCommon from "./locales/en/common.json";
 import enErrors from "./locales/en/errors.json";
+import enFiles from "./locales/en/files.json";
 import enHome from "./locales/en/home.json";
 import enProtocol from "./locales/en/protocol.json";
 import enSessions from "./locales/en/sessions.json";
@@ -23,6 +24,7 @@ import zhCnAuth from "./locales/zh-CN/auth.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
 import zhCnCommon from "./locales/zh-CN/common.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
+import zhCnFiles from "./locales/zh-CN/files.json";
 import zhCnHome from "./locales/zh-CN/home.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
 import zhCnSessions from "./locales/zh-CN/sessions.json";
@@ -77,6 +79,7 @@ const messages = {
     ...enVault,
     ...enSessions,
     ...enTerminal,
+    ...enFiles,
   },
   "zh-CN": {
     ...zhCnCommon,
@@ -91,6 +94,7 @@ const messages = {
     ...zhCnVault,
     ...zhCnSessions,
     ...zhCnTerminal,
+    ...zhCnFiles,
   },
 };
 

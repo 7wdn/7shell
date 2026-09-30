@@ -15,5 +15,6 @@ capabilities:
   - shell
   - resize
   - keepalive
+  - sftp
   - forwarding
   - jumpHost

@@ -25,8 +25,13 @@ const terminals = useTerminalsStore();
 const protocols = computed(() => PROTOCOLS);
 const authMethods = computed(() => AUTH_METHODS);
 
-/** A terminal that ended is not open, and a tab whose open failed never held one. */
-const openTerminals = computed(() => terminals.tabs.filter((tab) => tab.status === "open").length);
+/**
+ * A terminal that ended is not open, a tab whose open failed never held one, and a file browser tab
+ * is not a terminal at all.
+ */
+const openTerminals = computed(
+  () => terminals.tabs.filter((tab) => tab.kind === "terminal" && tab.status === "open").length,
+);
 
 /** The capabilities SSH declares, and the ones still sitting in the catalog unclaimed. */
 const claimedCapabilities = computed(() =>

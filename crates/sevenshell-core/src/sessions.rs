@@ -10,7 +10,8 @@ use sevenshell_ssh::{
     Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
 };
 use sevenshell_types::{
-    AuthMethod, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Session, TunnelFailure,
+    AuthMethod, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Session, TransferInfo,
+    TunnelFailure,
 };
 use sevenshell_vault::Vault;
 use tokio::sync::{Mutex, mpsc};
@@ -24,6 +25,26 @@ pub const OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 /// The size a terminal starts at, until the interface says otherwise.
 const INITIAL_SIZE: TerminalSize = TerminalSize { columns: 80, rows: 24 };
 
+/// A decision a host key needs before anything can be sent.
+///
+/// Shared by both kinds of session — a terminal and a file browser — because the decision is the
+/// same one, and answering it in two places is how the two answers drift apart.
+pub(crate) enum HostKeyDecision {
+    Unknown(PresentedHostKey),
+    Mismatch {
+        key: PresentedHostKey,
+        trusted: KnownHostEntry,
+    },
+}
+
+/// A transfer that is running, or has finished running.
+pub struct TransferRecord {
+    pub(crate) info: TransferInfo,
+    pub(crate) progress: Arc<sevenshell_sftp::TransferProgress>,
+    /// The task driving it, so a cancellation can wait for the file handles to be released.
+    pub(crate) task: tokio::task::JoinHandle<()>,
+}
+
 /// A forward that is up, and what it belongs to.
 struct TunnelRecord {
     id: String,
@@ -35,10 +56,16 @@ struct TunnelRecord {
 
 /// The operations that need the vault, the transport and the registry in a particular order.
 pub struct Core {
-    vault: Arc<Vault>,
-    registry: Arc<SessionRegistry>,
+    pub(crate) vault: Arc<Vault>,
+    pub(crate) registry: Arc<SessionRegistry>,
+    pub(crate) files: Mutex<HashMap<String, Arc<crate::FileSession>>>,
+    /// Behind an `Arc` as well as a mutex: the task driving a transfer updates its own state
+    /// long after the call that started it has returned.
+    pub(crate) transfers: Arc<Mutex<HashMap<String, crate::TransferRecord>>>,
+    pub(crate) next_file: std::sync::atomic::AtomicU64,
+    pub(crate) next_transfer: std::sync::atomic::AtomicU64,
     tunnels: Mutex<HashMap<String, TunnelRecord>>,
-    timeout: Duration,
+    pub(crate) timeout: Duration,
 }
 
 impl Core {
@@ -49,6 +76,10 @@ impl Core {
             Arc::new(Self {
                 vault,
                 registry,
+                files: Mutex::new(HashMap::new()),
+                transfers: Arc::new(Mutex::new(HashMap::new())),
+                next_file: std::sync::atomic::AtomicU64::new(1),
+                next_transfer: std::sync::atomic::AtomicU64::new(1),
                 tunnels: Mutex::new(HashMap::new()),
                 timeout: OPEN_TIMEOUT,
             }),
@@ -88,7 +119,7 @@ impl Core {
 
         let hop = match self.open_route(&session).await? {
             RouteOutcome::Ready(hop) => hop,
-            RouteOutcome::Decision(decision) => return Ok(*decision),
+            RouteOutcome::Decision(decision) => return Ok(terminal_decision(*decision)),
         };
 
         let presented = match &hop {
@@ -227,7 +258,7 @@ impl Core {
         })
     }
 
-    fn session(&self, id: &str) -> Result<Session, ShellError> {
+    pub(crate) fn session(&self, id: &str) -> Result<Session, ShellError> {
         self.vault
             .sessions()?
             .into_iter()
@@ -241,7 +272,7 @@ impl Core {
     /// anything is sent through it, and authenticated with its own saved credential. A hop whose
     /// key is unknown ends the attempt with a decision about *that* host, so asking again after
     /// trusting it moves the chain forward one link at a time.
-    async fn open_route(&self, session: &Session) -> Result<RouteOutcome, ShellError> {
+    pub(crate) async fn open_route(&self, session: &Session) -> Result<RouteOutcome, ShellError> {
         let mut current: Option<Arc<SshSession>> = None;
 
         for hop_id in &session.jump {
@@ -263,13 +294,9 @@ impl Core {
             };
 
             match self.vault.find_known_host(&target.host, target.port)? {
-                None => {
-                    return Ok(RouteOutcome::Decision(Box::new(OpenOutcome::HostKeyUnknown {
-                        key: presented,
-                    })));
-                }
+                None => return Ok(RouteOutcome::Decision(Box::new(HostKeyDecision::Unknown(presented)))),
                 Some(trusted) if trusted.public_key != presented.public_key => {
-                    return Ok(RouteOutcome::Decision(Box::new(OpenOutcome::HostKeyMismatch {
+                    return Ok(RouteOutcome::Decision(Box::new(HostKeyDecision::Mismatch {
                         key: presented,
                         trusted,
                     })));
@@ -379,7 +406,7 @@ impl Core {
 
     /// Collects what a session authenticates with. The material is held only long enough to be
     /// handed to the transport, which zeroizes it when the connection is done with it.
-    fn credential(&self, session: &Session) -> Result<Credential, ShellError> {
+    pub(crate) fn credential(&self, session: &Session) -> Result<Credential, ShellError> {
         let method = session.auth.method;
 
         match method {
@@ -418,10 +445,18 @@ impl Core {
 }
 
 /// Either the end of a route, or the decision that has to be made before it can be finished.
-enum RouteOutcome {
+pub(crate) enum RouteOutcome {
     Ready(Option<Arc<SshSession>>),
     /// Boxed because a decision carries keys and fingerprints, and it is the rare answer.
-    Decision(Box<OpenOutcome>),
+    Decision(Box<HostKeyDecision>),
+}
+
+/// The terminal's answer to a decision the route could not make on its own.
+fn terminal_decision(decision: HostKeyDecision) -> OpenOutcome {
+    match decision {
+        HostKeyDecision::Unknown(key) => OpenOutcome::HostKeyUnknown { key },
+        HostKeyDecision::Mismatch { key, trusted } => OpenOutcome::HostKeyMismatch { key, trusted },
+    }
 }
 
 fn now_seconds() -> u64 {

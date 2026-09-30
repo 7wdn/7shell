@@ -1,0 +1,65 @@
+{
+  "files": {
+    "open": "Open files for {name}",
+    "tab": {
+      "close": "Close file browser",
+      "failedTitle": "This file browser could not be opened.",
+      "retry": "Try again"
+    },
+    "up": "Go up one directory",
+    "path": "Path",
+    "go": "Go",
+    "newFolder": "New folder",
+    "newFolderName": "Folder name",
+    "create": "Create",
+    "upload": "Upload",
+    "uploadTitle": "Choose a file to upload",
+    "downloadTitle": "Choose where to save this file",
+    "empty": "This directory is empty.",
+    "name": "Name",
+    "size": "Size",
+    "modified": "Modified",
+    "action": {
+      "open": "Open",
+      "download": "Download",
+      "edit": "Edit",
+      "rename": "Rename",
+      "remove": "Delete"
+    },
+    "rename": {
+      "name": "New name",
+      "submit": "Rename"
+    },
+    "delete": {
+      "confirmFile": "Delete “{name}”?",
+      "confirmDirectory": "Delete “{name}” and everything under it?",
+      "note": "This cannot be undone.",
+      "submit": "Delete"
+    },
+    "cancel": "Cancel",
+    "editor": {
+      "title": "Edit {name}",
+      "description": "Remote text file",
+      "note": "A plain text editor: no syntax highlighting yet.",
+      "loading": "Reading the file…",
+      "save": "Save"
+    },
+    "transfer": {
+      "title": "Transfers",
+      "direction": {
+        "download": "Download",
+        "upload": "Upload"
+      },
+      "state": {
+        "running": "Running",
+        "done": "Finished",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "progress": "{transferred} / {size}",
+      "unknownSize": "unknown",
+      "cancel": "Cancel",
+      "dismiss": "Close"
+    }
+  }
+}

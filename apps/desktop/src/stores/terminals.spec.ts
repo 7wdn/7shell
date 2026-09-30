@@ -11,6 +11,9 @@ vi.mock("@/lib/backend/tauri", () => ({
   knownHostForget: vi.fn(),
   tunnelsOpen: vi.fn(),
   tunnelClose: vi.fn(),
+  filesOpen: vi.fn(),
+  filesClose: vi.fn(),
+  transfersOpen: vi.fn(),
 }));
 // The bus is mocked rather than run: these tests are about what the store does with an event,
 // and the bus already has its own suite for delivering one.
@@ -25,15 +28,18 @@ vi.mock("@/lib/terminal/bus", async (importOriginal) => {
 });
 
 import {
+  filesClose,
+  filesOpen,
   knownHostForget,
   knownHostTrust,
   sessionOpen,
   terminalClose,
+  transfersOpen,
   tunnelClose,
   tunnelsOpen,
 } from "@/lib/backend/tauri";
 import { endedTerminal, onTerminalEnded } from "@/lib/terminal/bus";
-import { tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
+import { type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { OpenTunnel, PresentedHostKey, Session, TunnelFailure } from "@/types/session";
 
 const sessionOpenMock = vi.mocked(sessionOpen);
@@ -42,6 +48,9 @@ const knownHostTrustMock = vi.mocked(knownHostTrust);
 const knownHostForgetMock = vi.mocked(knownHostForget);
 const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const tunnelCloseMock = vi.mocked(tunnelClose);
+const filesOpenMock = vi.mocked(filesOpen);
+const filesCloseMock = vi.mocked(filesClose);
+const transfersOpenMock = vi.mocked(transfersOpen);
 const onTerminalEndedMock = vi.mocked(onTerminalEnded);
 const endedTerminalMock = vi.mocked(endedTerminal);
 
@@ -94,11 +103,26 @@ function opened(tunnels: OpenTunnel[] = [], tunnelFailures: TunnelFailure[] = []
   return { kind: "opened", handle: "handle-1", sessionId: session.id, tunnels, tunnelFailures } as const;
 }
 
+/** A file browser that opened: the browser's own first listing comes with the answer. */
+function filesOpened() {
+  return {
+    kind: "opened",
+    handle: "f1",
+    sessionId: session.id,
+    listing: { path: "/home/user", entries: [] },
+  } as const;
+}
+
 /** The listener the store registered, so a test can end a terminal the way the bus would. */
 const endedListeners: ((handle: string, reason?: string) => void)[] = [];
 
 function open(): void {
   useTerminalsStore().initialize();
+}
+
+/** The terminal tab in the workspace, for assertions that are about a terminal rather than a tab. */
+function terminalTab(store: ReturnType<typeof useTerminalsStore>): TerminalTab | undefined {
+  return store.tabs.find((tab): tab is TerminalTab => tab.kind === "terminal");
 }
 
 describe("terminals store", () => {
@@ -111,6 +135,9 @@ describe("terminals store", () => {
     knownHostForgetMock.mockReset().mockResolvedValue(undefined);
     tunnelsOpenMock.mockReset().mockResolvedValue([]);
     tunnelCloseMock.mockReset().mockResolvedValue(undefined);
+    filesOpenMock.mockReset();
+    filesCloseMock.mockReset().mockResolvedValue(undefined);
+    transfersOpenMock.mockReset().mockResolvedValue([]);
     onTerminalEndedMock.mockReset().mockImplementation((listener: (handle: string, reason?: string) => void) => {
       endedListeners.push(listener);
       return () => {};
@@ -127,7 +154,7 @@ describe("terminals store", () => {
 
     // Nothing was opened, so there is no terminal to draw — only a question to answer.
     expect(store.tabs).toHaveLength(0);
-    expect(store.decision).toEqual({ kind: "hostKeyUnknown", session, key: presented });
+    expect(store.decision).toEqual({ kind: "hostKeyUnknown", session, purpose: "terminal", key: presented });
   });
 
   it("trusts the key and opens again, with the tab appearing after the second answer", async () => {
@@ -194,7 +221,7 @@ describe("terminals store", () => {
 
     expect(store.tabs).toHaveLength(1);
     expect(store.tabs[0]?.status).toBe("ended");
-    expect(store.tabs[0]?.reason).toBe("connection closed by remote host");
+    expect(terminalTab(store)?.reason).toBe("connection closed by remote host");
   });
 
   it("shows a terminal that died before its tab existed as already ended", async () => {
@@ -206,7 +233,7 @@ describe("terminals store", () => {
     await store.open(session);
 
     expect(store.tabs[0]?.status).toBe("ended");
-    expect(store.tabs[0]?.reason).toBe("the server refused the channel");
+    expect(terminalTab(store)?.reason).toBe("the server refused the channel");
   });
 
   it("gives a failed open a tab, because that is where the person is looking", async () => {
@@ -310,5 +337,95 @@ describe("terminals store", () => {
 
     expect(tunnelsOpenMock).toHaveBeenCalled();
     expect(store.tunnels).toEqual([]);
+  });
+
+  it("keeps a terminal and a file browser open at once", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+
+    expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal", "files"]);
+    expect(store.tabs[1]?.handle).toBe("f1");
+    expect(store.activeTabId).toBe(store.tabs[1]?.id);
+  });
+
+  it("closes the browser through the backend when its tab is closed", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+    await store.closeTab(store.tabs[1]?.id ?? "");
+
+    expect(filesCloseMock).toHaveBeenCalledWith("f1");
+    expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal"]);
+  });
+
+  it("keeps the browser tab and says why when the backend refuses to close it", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+    filesCloseMock.mockRejectedValue({
+      version: 1,
+      code: "APP-INTERNAL",
+      messageKey: "errors.app.internal",
+      messageParams: { operation: "files_close" },
+      origin: { subsystem: "app" },
+      outcome: "unknown",
+    });
+
+    const store = useTerminalsStore();
+    open();
+    await store.openFiles(session);
+    await store.closeTab(store.tabs[0]?.id ?? "");
+
+    // The browser is still open on the far side, so the tab that draws it stays.
+    expect(store.tabs).toHaveLength(1);
+    expect(store.tabs[0]?.status).toBe("failed");
+  });
+
+  it("focuses the browser it already has instead of opening a second one", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+    const filesTab = store.tabs[1]?.id ?? "";
+    store.activate(store.tabs[0]?.id ?? "");
+
+    await store.openFiles(session);
+
+    expect(filesOpenMock).toHaveBeenCalledTimes(1);
+    expect(store.tabs).toHaveLength(2);
+    expect(store.activeTabId).toBe(filesTab);
+  });
+
+  it("raises the same host key decision for a file browser, and opens it once answered", async () => {
+    filesOpenMock
+      .mockResolvedValueOnce({ kind: "hostKeyUnknown", key: presented })
+      .mockResolvedValueOnce(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.openFiles(session);
+
+    // A decision is not a browser: there is nothing to draw until it is answered.
+    expect(store.tabs).toHaveLength(0);
+    expect(store.decision?.kind).toBe("hostKeyUnknown");
+    expect(store.decision?.purpose).toBe("files");
+
+    await store.confirmTrust();
+
+    expect(knownHostTrustMock).toHaveBeenCalledWith(presented);
+    expect(filesOpenMock).toHaveBeenCalledTimes(2);
+    expect(store.tabs[0]?.kind).toBe("files");
+    expect(store.decision).toBeNull();
   });
 });

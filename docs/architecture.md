@@ -119,6 +119,26 @@ and is shown next to the forwards that did come up. Each forward counts the conn
 and the ones it could not, because "the tunnel is up but nothing works" is exactly the state that
 needs explaining, and a library has no business writing to somebody's log.
 
+## Remote files
+
+A file browser rides on a connection of its own — or on a terminal's, when one is already open for
+that session, because one connection carries both and a second authentication is a second thing for
+the server to log for no reason. Its traffic goes through a channel opened as the `sftp` subsystem
+on a session that was opened as a *carrier*: a jump host or a destination that nobody logs into does
+not get a shell for the privilege of listing a directory.
+
+Two rules the interface depends on:
+
+- **Local paths are chosen in Rust.** A download opens a save dialog and an upload opens a file
+  picker, both in the shell, and the interface receives the id of the transfer that does the work.
+  It never names a path (invariant 6).
+- **A transfer outlives the command that started it.** The record keeps its progress, its state and
+  its task; the interface polls the list while something is running, which costs a read of a few
+  counters and saves a second event channel whose only job would be to move a number.
+
+A download writes a fresh local file rather than resuming over an older one: a half-resumed file
+that mixes two versions is worse than starting again, and the person would have no way to tell.
+
 ## Terminal events
 
 The core hands bytes to the shell, which turns them into two window events. The payloads are the

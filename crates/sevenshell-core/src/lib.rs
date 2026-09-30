@@ -7,6 +7,8 @@
 //! There is no dependency on the desktop shell, on purpose: the same operations have to be
 //! callable from a command line later.
 
+mod files;
 mod sessions;
 
-pub use sessions::{Core, CoreEvent, OPEN_TIMEOUT};
+pub use files::FileSession;
+pub use sessions::{Core, CoreEvent, OPEN_TIMEOUT, TransferRecord};

@@ -1,14 +1,20 @@
 /**
- * The terminals that are open, and the host key decisions that stand in front of them.
+ * The tabs that are open — a terminal or a file browser each — and the host key decisions that
+ * stand in front of them.
  *
- * The order `session_open` enforces is visible here rather than smoothed over: a terminal tab is
+ * The order `session_open`/`files_open` enforce is visible here rather than smoothed over: a tab is
  * only created once the backend has actually opened something. A host key that has to be decided
- * first produces no tab at all — there is no terminal to draw, and drawing an empty one would
- * suggest a connection that does not exist. A *failed* open does produce a tab, because that is
- * where the person who asked for it is looking.
+ * first produces no tab at all — there is nothing to draw, and drawing an empty one would suggest a
+ * connection that does not exist. A *failed* open does produce a tab, because that is where the
+ * person who asked for it is looking.
  *
  * A terminal that ends keeps its tab: the reason the server gave and a way to connect again are
- * both things only that tab can offer.
+ * both things only that tab can offer. A file browser has no output stream to end, so its tab is
+ * either open or failed — and closing it goes through the backend, because that is what cancels
+ * whatever the browser was still moving.
+ *
+ * There is one prompt for a host key, not one per feature: a decision does not care what was being
+ * opened, so it only carries which open to repeat once it is answered.
  *
  * The forwards live here too, for the same reason the tabs do: `session_open` answers with them,
  * so this is the store that already holds the answer. Keeping them in one place is what lets the
@@ -21,18 +27,30 @@ import { computed, ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
+import { useFilesStore } from "@/stores/files";
 import type {
   KnownHostEntry,
   OpenOutcome,
   OpenTunnel,
   PresentedHostKey,
   Session,
+  SftpOutcome,
   TunnelFailure,
 } from "@/types/session";
 
 export type TerminalTabStatus = "open" | "ended" | "failed";
 
+/** A file browser has no stream that can end: it opened, or it did not. */
+export type FilesTabStatus = "open" | "failed";
+
+/** What was being opened when a host key decision interrupted it. */
+export type OpenPurpose = "terminal" | "files";
+
+/** The half of an open answer that is not an open: the decision that has to come first. */
+type DecisionOutcome = Exclude<OpenOutcome | SftpOutcome, { kind: "opened" }>;
+
 export interface TerminalTab {
+  readonly kind: "terminal";
   id: string;
   readonly session: Session;
   /** The handle the backend knows this terminal by, once there is one. */
@@ -44,12 +62,31 @@ export interface TerminalTab {
   failure: ShellError | null;
 }
 
+/** A file browser, drawn as a tab. The session names it; the handle says which browser it is. */
+export interface FilesTab {
+  readonly kind: "files";
+  id: string;
+  readonly session: Session;
+  handle: string | null;
+  status: FilesTabStatus;
+  failure: ShellError | null;
+}
+
+export type WorkspaceTab = TerminalTab | FilesTab;
+
 /** A host key the backend is waiting on before it will send anything at all. */
 export type HostKeyDecision =
-  | { readonly kind: "hostKeyUnknown"; readonly session: Session; readonly key: PresentedHostKey }
+  | {
+      readonly kind: "hostKeyUnknown";
+      readonly session: Session;
+      /** Which open to repeat once this is answered. */
+      readonly purpose: OpenPurpose;
+      readonly key: PresentedHostKey;
+    }
   | {
       readonly kind: "hostKeyMismatch";
       readonly session: Session;
+      readonly purpose: OpenPurpose;
       readonly key: PresentedHostKey;
       readonly trusted: KnownHostEntry;
     };
@@ -63,7 +100,8 @@ export function tunnelFailureKey(failure: TunnelFailure): string {
 }
 
 export const useTerminalsStore = defineStore("terminals", () => {
-  const tabs = ref<TerminalTab[]>([]);
+  const files = useFilesStore();
+  const tabs = ref<WorkspaceTab[]>([]);
   const activeTabId = ref<string | null>(null);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
   const connectingSessionIds = ref<string[]>([]);
@@ -91,7 +129,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   function markEnded(handle: string, reason?: string): void {
     // A terminal takes its forwards with it, whether or not a tab is drawing the handle.
     void refreshTunnels();
-    const tab = tabs.value.find((entry) => entry.handle === handle);
+    const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
     if (!tab) {
       // No tab draws this handle. Anything that creates one later asks the bus what happened,
       // which is why the reason is remembered rather than dropped here.
@@ -108,21 +146,57 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
     connectingSessionIds.value.push(session.id);
     try {
-      accept(session, await backend.terminal.open(session.id));
+      acceptTerminal(session, await backend.terminal.open(session.id));
     } catch (error) {
-      add(session, { handle: null, status: "failed", failure: asShellError(error, "session_open") });
+      addTerminal(session, { handle: null, status: "failed", failure: asShellError(error, "session_open") });
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
   }
 
-  function accept(session: Session, outcome: OpenOutcome): void {
+  /**
+   * Opens the file browser for a saved session.
+   *
+   * One browser per session: the backend would happily open a second one over the same connection,
+   * and two tabs showing the same directory would then drift apart with no way to tell which is
+   * which. A second ask focuses the tab that exists.
+   */
+  async function openFiles(session: Session): Promise<void> {
+    const existing = tabs.value.find(
+      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === session.id,
+    );
+    if (existing && existing.status === "open") {
+      activeTabId.value = existing.id;
+      return;
+    }
+    if (connectingSessionIds.value.includes(session.id)) {
+      return;
+    }
+    // A tab whose open failed holds no browser at all: asking again is a retry, not a second view.
+    if (existing) {
+      forget(existing.id);
+    }
+
+    connectingSessionIds.value.push(session.id);
+    try {
+      acceptFiles(session, await files.open(session.id));
+    } catch (error) {
+      addFiles(session, { handle: null, status: "failed", failure: asShellError(error, "files_open") });
+    } finally {
+      connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
+    }
+  }
+
+  function acceptTerminal(session: Session, outcome: OpenOutcome): void {
     if (outcome.kind === "opened") {
       rememberTunnels(outcome.tunnels);
       rememberTunnelFailures(outcome.tunnelFailures);
       // A terminal that died before its tab existed is shown as ended, with the reason it gave.
       const ended = endedTerminal(outcome.handle);
-      add(session, {
+      addTab({
+        kind: "terminal",
+        id: crypto.randomUUID(),
+        session,
         handle: outcome.handle,
         status: ended ? "ended" : "open",
         reason: ended?.reason,
@@ -131,26 +205,50 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
 
-    decision.value =
-      outcome.kind === "hostKeyMismatch"
-        ? { kind: "hostKeyMismatch", session, key: outcome.key, trusted: outcome.trusted }
-        : { kind: "hostKeyUnknown", session, key: outcome.key };
+    raiseDecision(session, "terminal", outcome);
   }
 
-  function add(
+  function acceptFiles(session: Session, outcome: SftpOutcome): void {
+    if (outcome.kind === "opened") {
+      addTab({
+        kind: "files",
+        id: crypto.randomUUID(),
+        session,
+        handle: outcome.handle,
+        status: "open",
+        failure: null,
+      });
+      return;
+    }
+
+    raiseDecision(session, "files", outcome);
+  }
+
+  /** The one place a decision is raised, whatever was being opened when it came up. */
+  function raiseDecision(session: Session, purpose: OpenPurpose, outcome: DecisionOutcome): void {
+    decision.value =
+      outcome.kind === "hostKeyMismatch"
+        ? { kind: "hostKeyMismatch", session, purpose, key: outcome.key, trusted: outcome.trusted }
+        : { kind: "hostKeyUnknown", session, purpose, key: outcome.key };
+  }
+
+  function addTab(tab: WorkspaceTab): void {
+    tabs.value.push(tab);
+    activeTabId.value = tab.id;
+  }
+
+  function addTerminal(
     session: Session,
     fields: { handle: string | null; status: TerminalTabStatus; reason?: string; failure: ShellError | null },
   ): void {
-    const tab: TerminalTab = {
-      id: crypto.randomUUID(),
-      session,
-      handle: fields.handle,
-      status: fields.status,
-      reason: fields.reason,
-      failure: fields.failure,
-    };
-    tabs.value.push(tab);
-    activeTabId.value = tab.id;
+    addTab({ kind: "terminal", id: crypto.randomUUID(), session, ...fields });
+  }
+
+  function addFiles(
+    session: Session,
+    fields: { handle: string | null; status: FilesTabStatus; failure: ShellError | null },
+  ): void {
+    addTab({ kind: "files", id: crypto.randomUUID(), session, ...fields });
   }
 
   /** Records the key, then asks to open again — the decision itself opens nothing. */
@@ -160,7 +258,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
     decision.value = null;
-    await trustThenOpen(pending.session, pending.key);
+    await trustThenOpen(pending.session, pending.key, pending.purpose);
   }
 
   /** The mismatch path: forget the trusted key, record the new one, then open. */
@@ -173,20 +271,33 @@ export const useTerminalsStore = defineStore("terminals", () => {
     try {
       await backend.knownHosts.forget(pending.key.host, pending.key.port);
     } catch (error) {
-      add(pending.session, { handle: null, status: "failed", failure: asShellError(error, "known_host_forget") });
+      failedOpen(pending.session, pending.purpose, asShellError(error, "known_host_forget"));
       return;
     }
-    await trustThenOpen(pending.session, pending.key);
+    await trustThenOpen(pending.session, pending.key, pending.purpose);
   }
 
-  async function trustThenOpen(session: Session, key: PresentedHostKey): Promise<void> {
+  async function trustThenOpen(session: Session, key: PresentedHostKey, purpose: OpenPurpose): Promise<void> {
     try {
       await backend.knownHosts.trust(key);
     } catch (error) {
-      add(session, { handle: null, status: "failed", failure: asShellError(error, "known_host_trust") });
+      failedOpen(session, purpose, asShellError(error, "known_host_trust"));
+      return;
+    }
+    if (purpose === "files") {
+      await openFiles(session);
       return;
     }
     await open(session);
+  }
+
+  /** A failure before a tab existed still gets a tab: that is where the person is looking. */
+  function failedOpen(session: Session, purpose: OpenPurpose, failure: ShellError): void {
+    if (purpose === "files") {
+      addFiles(session, { handle: null, status: "failed", failure });
+      return;
+    }
+    addTerminal(session, { handle: null, status: "failed", failure });
   }
 
   /** Answers "cancel": nothing was sent, and nothing is left pending. */
@@ -199,6 +310,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (!tab) {
       return;
     }
+    if (tab.kind === "files") {
+      await closeFilesTab(tab);
+      return;
+    }
+
     // A tab whose terminal already ended, or whose close already failed, has nothing left to
     // close: removing it locally is the whole operation.
     if (!tab.handle || tab.status !== "open") {
@@ -215,6 +331,25 @@ export const useTerminalsStore = defineStore("terminals", () => {
       tab.status = "failed";
       tab.failure = asShellError(error, "terminal_close");
     }
+  }
+
+  /**
+   * Closes a file browser: the backend first, because closing is what cancels the transfers the
+   * browser still had running, and the tab only afterwards. A browser the backend refused to close
+   * is still open, so its tab stays and says why.
+   */
+  async function closeFilesTab(tab: FilesTab): Promise<void> {
+    if (!tab.handle || tab.status !== "open") {
+      forget(tab.id);
+      return;
+    }
+    const failure = await files.close(tab.handle);
+    if (failure) {
+      tab.status = "failed";
+      tab.failure = failure;
+      return;
+    }
+    forget(tab.id);
   }
 
   /**
@@ -275,7 +410,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
     const { session } = tab;
+    const purpose: OpenPurpose = tab.kind === "files" ? "files" : "terminal";
     forget(id);
+    if (purpose === "files") {
+      await openFiles(session);
+      return;
+    }
     await open(session);
   }
 
@@ -292,7 +432,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   /** Keystrokes and pastes, in the bytes the terminal produced. */
   async function send(handle: string, bytes: Uint8Array): Promise<void> {
-    const tab = tabs.value.find((entry) => entry.handle === handle);
+    const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
     if (!tab || tab.status !== "open") {
       return;
     }
@@ -304,7 +444,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   async function resize(handle: string, columns: number, rows: number): Promise<void> {
-    const tab = tabs.value.find((entry) => entry.handle === handle);
+    const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
     if (!tab || tab.status !== "open") {
       return;
     }
@@ -328,6 +468,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tunnelProblem,
     initialize,
     open,
+    openFiles,
     confirmTrust,
     confirmReplace,
     dismiss,

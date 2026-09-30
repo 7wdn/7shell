@@ -13,6 +13,7 @@ sevenshell-types = { workspace = true }
 sevenshell-vault = { workspace = true }
 sevenshell-ssh = { workspace = true }
 sevenshell-session = { workspace = true }
+sevenshell-sftp = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

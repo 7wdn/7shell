@@ -16,6 +16,9 @@ import type {
   OpenTerminal,
   OpenTunnel,
   PresentedHostKey,
+  SftpListing,
+  SftpOutcome,
+  TransferInfo,
   SecretInput,
   Session,
   SessionGroup,
@@ -90,6 +93,35 @@ export const backend = {
      * the name the old file now has, which is the only thing a person needs to find it again.
      */
     setAside: (): Promise<string> => forward("vault_set_aside", () => desktop.vaultSetAside()),
+  },
+
+  /** Remote files, and the transfers that move them. */
+  files: {
+    open: (sessionId: string): Promise<SftpOutcome> => forward("files_open", () => desktop.filesOpen(sessionId)),
+    list: (handle: string, path: string): Promise<SftpListing> =>
+      forward("files_list", () => desktop.filesList(handle, path)),
+    createFolder: (handle: string, path: string): Promise<void> =>
+      forward("files_create_folder", () => desktop.filesCreateFolder(handle, path)),
+    rename: (handle: string, from: string, to: string): Promise<void> =>
+      forward("files_rename", () => desktop.filesRename(handle, from, to)),
+    remove: (handle: string, path: string, kind: string): Promise<void> =>
+      forward("files_delete", () => desktop.filesDelete(handle, path, kind)),
+    readText: (handle: string, path: string): Promise<string> =>
+      forward("files_read_text", () => desktop.filesReadText(handle, path)),
+    writeText: (handle: string, path: string, text: string): Promise<void> =>
+      forward("files_write_text", () => desktop.filesWriteText(handle, path, text)),
+    close: (handle: string): Promise<void> => forward("files_close", () => desktop.filesClose(handle)),
+    /** Asks where to put it, in Rust; `undefined` means the dialog was dismissed. */
+    download: (handle: string, path: string, title: string, suggestedName: string): Promise<string | undefined> =>
+      forward("files_download", () => desktop.filesDownload(handle, path, title, suggestedName)),
+    /** Asks which file to send, in Rust; `undefined` means the picker was dismissed. */
+    upload: (handle: string, directory: string, title: string): Promise<string | undefined> =>
+      forward("files_upload", () => desktop.filesUpload(handle, directory, title)),
+  },
+
+  transfers: {
+    list: (): Promise<TransferInfo[]> => forward("transfers_open", () => desktop.transfersOpen()),
+    cancel: (id: string): Promise<void> => forward("transfer_cancel", () => desktop.transferCancel(id)),
   },
 
   sessions: {

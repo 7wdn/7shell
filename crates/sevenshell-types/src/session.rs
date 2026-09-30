@@ -192,6 +192,100 @@ pub enum OpenOutcome {
     },
 }
 
+/// What an entry in a directory is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EntryKind {
+    Directory,
+    File,
+    /// A link, which is shown as one and never followed automatically: following one by accident
+    /// is how a file browser reads something outside the directory it is looking at.
+    Symlink,
+    /// A socket, fifo or device: visible, not something to download.
+    Other,
+}
+
+/// One entry in a remote directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpEntry {
+    pub name: String,
+    /// The full path, so the interface never has to join strings and get it wrong.
+    pub path: String,
+    pub kind: EntryKind,
+    /// Bytes, for a file. Zero for anything else.
+    pub size: u64,
+    /// Seconds since the Unix epoch, when the server said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<u64>,
+    /// The permission bits (for example `0o644`), when the server sent them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<u32>,
+    /// Resolved link target, for a symlink the server told us about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_target: Option<String>,
+}
+
+/// A directory as it was read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpListing {
+    /// The canonical path the server resolved, which is what the breadcrumbs should show.
+    pub path: String,
+    pub entries: Vec<SftpEntry>,
+}
+
+/// What opening a file session answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SftpOutcome {
+    /// The host key has never been seen. Nothing has been sent to the server.
+    HostKeyUnknown { key: PresentedHostKey },
+    /// The presented key differs from the trusted one. A hard stop, not a prompt.
+    HostKeyMismatch {
+        key: PresentedHostKey,
+        trusted: KnownHostEntry,
+    },
+    /// The file session is open, and this is where it starts.
+    Opened {
+        handle: String,
+        session_id: String,
+        listing: SftpListing,
+    },
+}
+
+/// Which way a transfer is going, from this machine's point of view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TransferDirection {
+    Download,
+    Upload,
+}
+
+/// A transfer that is running, or has stopped.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferInfo {
+    pub id: String,
+    pub direction: TransferDirection,
+    /// The name shown to a person: the file's own name, not a path on either side.
+    pub name: String,
+    pub remote_path: String,
+    pub size: u64,
+    pub transferred: u64,
+    /// `cancelled` only ever comes from the person who asked for it.
+    pub state: TransferState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum TransferState {
+    Running,
+    Done,
+    Failed { detail: String },
+    Cancelled,
+}
+
 /// A forward that was asked for and could not be opened.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

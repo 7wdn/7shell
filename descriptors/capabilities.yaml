@@ -29,7 +29,6 @@ capabilities:
     order: 50
     group: transfer
     labelKey: capability.sftp.label
-    planned: true
 
   - key: forwarding
     order: 60

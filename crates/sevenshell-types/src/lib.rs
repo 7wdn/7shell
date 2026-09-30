@@ -19,7 +19,8 @@ pub use generated::{
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,
 };
 pub use session::{
-    KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, SecretInput, Session,
-    SessionAuth, SessionGroup, TerminalSettings, TunnelFailure, VaultState,
+    EntryKind, KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, SecretInput, Session,
+    SessionAuth, SessionGroup, SftpEntry, SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo,
+    TransferState, TunnelFailure, VaultState,
 };
 pub use settings::{AppSettings, ThemeMode};

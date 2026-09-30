@@ -39,6 +39,7 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert!(ssh.supports(Capability::Shell));
     assert!(ssh.supports(Capability::Resize));
     assert!(ssh.supports(Capability::Keepalive));
+    assert!(ssh.supports(Capability::Sftp));
     assert!(ssh.supports(Capability::Forwarding));
     assert!(ssh.supports(Capability::JumpHost));
 
@@ -46,7 +47,6 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     // offered by the interface nor quietly forgotten.
     for unclaimed in [
         Capability::Exec,
-        Capability::Sftp,
         Capability::DynamicForwarding,
         Capability::AgentForwarding,
         Capability::Recording,

@@ -23,8 +23,11 @@ import type {
   OpenTunnel,
   Session,
   SessionGroup,
+  SftpListing,
+  SftpOutcome,
   TerminalClosed,
   TerminalData,
+  TransferInfo,
   VaultState,
 } from "@/types/session";
 
@@ -181,6 +184,66 @@ export function tunnelsOpen(): Promise<OpenTunnel[]> {
 
 export function tunnelClose(id: string): Promise<void> {
   return invoke<void>("tunnel_close", { id });
+}
+
+// -- Remote files ------------------------------------------------------------
+//
+// A download and an upload ask for a local path through a dialog that runs in Rust: the interface
+// names neither, and receives the id of the transfer that does the work.
+
+export function filesOpen(sessionId: string): Promise<SftpOutcome> {
+  return invoke<SftpOutcome>("files_open", { sessionId });
+}
+
+export function filesList(handle: string, path: string): Promise<SftpListing> {
+  return invoke<SftpListing>("files_list", { handle, path });
+}
+
+export function filesCreateFolder(handle: string, path: string): Promise<void> {
+  return invoke<void>("files_create_folder", { handle, path });
+}
+
+export function filesRename(handle: string, from: string, to: string): Promise<void> {
+  return invoke<void>("files_rename", { handle, from, to });
+}
+
+export function filesDelete(handle: string, path: string, kind: string): Promise<void> {
+  return invoke<void>("files_delete", { handle, path, kind });
+}
+
+export function filesReadText(handle: string, path: string): Promise<string> {
+  return invoke<string>("files_read_text", { handle, path });
+}
+
+export function filesWriteText(handle: string, path: string, text: string): Promise<void> {
+  return invoke<void>("files_write_text", { handle, path, text });
+}
+
+export function filesClose(handle: string): Promise<void> {
+  return invoke<void>("files_close", { handle });
+}
+
+/** Resolves to the transfer's id, or `undefined` when the save dialog was dismissed. */
+export function filesDownload(
+  handle: string,
+  path: string,
+  title: string,
+  suggestedName: string,
+): Promise<string | undefined> {
+  return invoke<string | null>("files_download", { handle, path, title, suggestedName }).then((id) => id ?? undefined);
+}
+
+/** Resolves to the transfer's id, or `undefined` when the file picker was dismissed. */
+export function filesUpload(handle: string, directory: string, title: string): Promise<string | undefined> {
+  return invoke<string | null>("files_upload", { handle, directory, title }).then((id) => id ?? undefined);
+}
+
+export function transfersOpen(): Promise<TransferInfo[]> {
+  return invoke<TransferInfo[]>("transfers_open");
+}
+
+export function transferCancel(id: string): Promise<void> {
+  return invoke<void>("transfer_cancel", { id });
 }
 
 // -- Events ------------------------------------------------------------------

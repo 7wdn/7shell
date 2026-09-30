@@ -141,3 +141,48 @@ export interface TerminalClosed {
   readonly handle: string;
   readonly reason?: string;
 }
+
+/** What an entry in a remote directory is. */
+export type EntryKind = "directory" | "file" | "symlink" | "other";
+
+export interface SftpEntry {
+  readonly name: string;
+  /** The full path, so the interface never joins strings and gets it wrong. */
+  readonly path: string;
+  readonly kind: EntryKind;
+  readonly size: number;
+  readonly modifiedAt?: number;
+  readonly mode?: number;
+  readonly linkTarget?: string;
+}
+
+export interface SftpListing {
+  /** The path the server resolved, which is what the breadcrumbs show. */
+  readonly path: string;
+  readonly entries: readonly SftpEntry[];
+}
+
+/** What opening a file browser answered. */
+export type SftpOutcome =
+  | { readonly kind: "hostKeyUnknown"; readonly key: PresentedHostKey }
+  | { readonly kind: "hostKeyMismatch"; readonly key: PresentedHostKey; readonly trusted: KnownHostEntry }
+  | { readonly kind: "opened"; readonly handle: string; readonly sessionId: string; readonly listing: SftpListing };
+
+export type TransferDirection = "download" | "upload";
+
+export type TransferState =
+  | { readonly kind: "running" }
+  | { readonly kind: "done" }
+  | { readonly kind: "failed"; readonly detail: string }
+  | { readonly kind: "cancelled" };
+
+export interface TransferInfo {
+  readonly id: string;
+  readonly direction: TransferDirection;
+  /** The file's own name, not a path on either side. */
+  readonly name: string;
+  readonly remotePath: string;
+  readonly size: number;
+  readonly transferred: number;
+  readonly state: TransferState;
+}

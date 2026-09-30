@@ -35,7 +35,7 @@
       "order": 50,
       "group": "transfer",
       "labelKey": "capability.sftp.label",
-      "planned": true
+      "planned": false
     },
     {
       "key": "forwarding",
@@ -115,6 +115,7 @@
         "shell",
         "resize",
         "keepalive",
+        "sftp",
         "forwarding",
         "jumpHost"
       ]

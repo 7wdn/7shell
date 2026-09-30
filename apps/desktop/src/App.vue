@@ -18,9 +18,9 @@ import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
-import TerminalTabs from "@/components/terminal/TerminalTabs.vue";
 import UnlockScreen from "@/components/vault/UnlockScreen.vue";
 import HomeView from "@/components/views/HomeView.vue";
+import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { describeShellError } from "@/i18n/errors";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
     <div v-else class="flex min-h-0 flex-1">
       <AppSidebar />
       <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <TerminalTabs v-if="terminals.tabs.length > 0" />
+        <WorkspaceTabs v-if="terminals.tabs.length > 0" />
         <div v-else class="min-h-0 flex-1 overflow-auto">
           <HomeView />
         </div>

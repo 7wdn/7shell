@@ -129,6 +129,9 @@ describe("wire types", () => {
       "LocalForward",
       "OpenTunnel",
       "TunnelFailure",
+      "SftpEntry",
+      "SftpListing",
+      "TransferInfo",
     ]) {
       const rustFields = rustStructFields(rust, name).map(camelCase);
 

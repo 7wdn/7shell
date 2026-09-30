@@ -9,6 +9,7 @@
 //! error detail.
 
 pub mod app;
+pub mod files;
 pub mod keys;
 pub mod known_hosts;
 pub mod sessions;

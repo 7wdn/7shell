@@ -65,6 +65,18 @@ pub fn run() {
             commands::terminal::terminals_open,
             commands::terminal::tunnels_open,
             commands::terminal::tunnel_close,
+            commands::files::files_open,
+            commands::files::files_list,
+            commands::files::files_create_folder,
+            commands::files::files_rename,
+            commands::files::files_delete,
+            commands::files::files_read_text,
+            commands::files::files_write_text,
+            commands::files::files_close,
+            commands::files::files_download,
+            commands::files::files_upload,
+            commands::files::transfers_open,
+            commands::files::transfer_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");
