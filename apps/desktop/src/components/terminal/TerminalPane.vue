@@ -232,7 +232,21 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="container"
-    class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)]"
+    class="terminal-surface min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)]"
     :class="paletteClass"
   ></div>
 </template>
+
+<style scoped>
+/*
+ * Breathing room around the text.
+ *
+ * The padding belongs on the terminal element rather than on the container: FitAddon subtracts the
+ * padding of the element it drew into and reads the container's width as a border-box value, so
+ * padding on the container would be counted as columns that do not exist and the last one would
+ * sit off the edge.
+ */
+.terminal-surface :deep(.xterm) {
+  padding: 10px 12px;
+}
+</style>
