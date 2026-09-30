@@ -46,6 +46,7 @@ pub fn run() {
             commands::vault::vault_unlock,
             commands::vault::vault_lock,
             commands::vault::vault_change_password,
+            commands::vault::vault_set_aside,
             commands::sessions::sessions_list,
             commands::sessions::session_save,
             commands::sessions::session_delete,

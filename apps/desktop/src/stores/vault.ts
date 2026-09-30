@@ -75,6 +75,31 @@ export const useVaultStore = defineStore("vault", () => {
     }
   }
 
+  /** The name an unopenable vault file was given, once it has been moved aside. */
+  const setAsideName = ref<string | null>(null);
+
+  /**
+   * Moves a vault that cannot be opened out of the way, freeing the screen to create a new one.
+   *
+   * The reason this exists is that "nobody remembers the password" must not be a dead end: the
+   * file is renamed beside itself rather than deleted, and its new name is reported so the screen
+   * can tell the person where their data went and how to bring it back.
+   */
+  async function setAside(): Promise<boolean> {
+    busy.value = true;
+    failure.value = null;
+    try {
+      setAsideName.value = await backend.vault.setAside();
+      state.value = await backend.vault.state();
+      return state.value === "missing";
+    } catch (error) {
+      failure.value = asShellError(error, "vault_set_aside");
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   /** Locks the vault. Open terminals are deliberately left running: they are already inside. */
   async function lock(): Promise<void> {
     failure.value = null;
@@ -85,5 +110,5 @@ export const useVaultStore = defineStore("vault", () => {
     }
   }
 
-  return { state, busy, failure, unlocked, initialize, create, unlock, lock };
+  return { state, busy, failure, unlocked, setAsideName, initialize, create, unlock, lock, setAside };
 });

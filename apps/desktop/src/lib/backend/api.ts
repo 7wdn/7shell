@@ -84,6 +84,11 @@ export const backend = {
     lock: (): Promise<VaultState> => forward("vault_lock", () => desktop.vaultLock()),
     changePassword: (current: string, next: string): Promise<void> =>
       forward("vault_change_password", () => desktop.vaultChangePassword(current, next)),
+    /**
+     * Moves a vault nobody can open beside itself, freeing the way to create a new one. Returns
+     * the name the old file now has, which is the only thing a person needs to find it again.
+     */
+    setAside: (): Promise<string> => forward("vault_set_aside", () => desktop.vaultSetAside()),
   },
 
   sessions: {

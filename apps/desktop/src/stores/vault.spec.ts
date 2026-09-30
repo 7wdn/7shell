@@ -7,11 +7,20 @@ vi.mock("@/lib/backend/tauri", () => ({
   vaultCreate: vi.fn(),
   vaultUnlock: vi.fn(),
   vaultLock: vi.fn(),
+  vaultSetAside: vi.fn(),
   sessionsList: vi.fn(),
   groupsList: vi.fn(),
 }));
 
-import { groupsList, sessionsList, vaultCreate, vaultLock, vaultState, vaultUnlock } from "@/lib/backend/tauri";
+import {
+  groupsList,
+  sessionsList,
+  vaultCreate,
+  vaultLock,
+  vaultSetAside,
+  vaultState,
+  vaultUnlock,
+} from "@/lib/backend/tauri";
 import { useSessionsStore } from "@/stores/sessions";
 import { useVaultStore } from "@/stores/vault";
 
@@ -19,6 +28,7 @@ const vaultStateMock = vi.mocked(vaultState);
 const vaultCreateMock = vi.mocked(vaultCreate);
 const vaultUnlockMock = vi.mocked(vaultUnlock);
 const vaultLockMock = vi.mocked(vaultLock);
+const vaultSetAsideMock = vi.mocked(vaultSetAside);
 const sessionsListMock = vi.mocked(sessionsList);
 const groupsListMock = vi.mocked(groupsList);
 
@@ -124,5 +134,51 @@ describe("vault store", () => {
 
     expect(store.state).toBe("locked");
     expect(store.unlocked).toBe(false);
+  });
+});
+
+describe("vault that cannot be opened", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vaultSetAsideMock.mockReset();
+    vaultLockMock.mockReset().mockResolvedValue("locked");
+  });
+
+  it("moves the file aside, names it, and frees the screen to create a new one", async () => {
+    vaultStateMock.mockResolvedValue("locked");
+    const store = useVaultStore();
+    await store.initialize();
+    expect(store.state).toBe("locked");
+
+    vaultSetAsideMock.mockResolvedValue("vault.json.old");
+    vaultStateMock.mockResolvedValue("missing");
+
+    const freed = await store.setAside();
+
+    expect(freed).toBe(true);
+    expect(store.setAsideName).toBe("vault.json.old");
+    expect(store.state).toBe("missing");
+    expect(store.failure).toBeNull();
+  });
+
+  it("keeps the envelope when the file cannot be moved", async () => {
+    vaultStateMock.mockResolvedValue("locked");
+    const store = useVaultStore();
+    await store.initialize();
+
+    vaultSetAsideMock.mockRejectedValue({
+      version: 1,
+      code: "STORE-IO",
+      messageKey: "errors.store.io",
+      messageParams: {},
+      origin: { subsystem: "store" },
+      outcome: "unknown",
+    });
+
+    const freed = await store.setAside();
+
+    expect(freed).toBe(false);
+    expect(store.failure?.code).toBe("STORE-IO");
+    expect(store.state).toBe("locked");
   });
 });

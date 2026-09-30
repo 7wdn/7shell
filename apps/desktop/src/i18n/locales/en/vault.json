@@ -19,6 +19,12 @@
       "password": "Password",
       "passwordPlaceholder": "Vault password",
       "submit": "Unlock"
+    },
+    "setAside": {
+      "explanation": "Cannot open it? If the password is gone, the file on this device can be renamed and kept — nothing is deleted — and a new vault created in its place.",
+      "submit": "Move the unopenable vault aside",
+      "confirm": "Click again to confirm: rename it and create a new vault",
+      "moved": "Kept as {name}. Rename it back to restore it."
     }
   }
 }

@@ -93,6 +93,11 @@ export function vaultChangePassword(current: string, next: string): Promise<void
   return invoke<void>("vault_change_password", { current, next });
 }
 
+/** Resolves to the name the unopenable vault file was given. */
+export function vaultSetAside(): Promise<string> {
+  return invoke<string>("vault_set_aside");
+}
+
 // -- Sessions and groups -----------------------------------------------------
 
 export function sessionsList(): Promise<Session[]> {

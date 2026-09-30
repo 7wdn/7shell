@@ -66,6 +66,12 @@ in where two fields sit. Its salt lived inside the `kdf` record and the algorith
 alternative would be to tell someone their readable vault is unreadable, with deleting it as the
 only way forward.
 
+**A vault nobody can open is not a dead end.** If the password is gone, the interface offers to
+rename the file beside itself — `vault.json.old`, then `.2.old`, and so on — and create a new vault
+in its place. Nothing is deleted, the way back is a rename, and the interface is told the file's
+*name* rather than where it lives. The alternative was a person staring at an unlock screen with no
+way forward, which is how someone concludes that a tool has lost their data.
+
 **Two kinds of state, two homes.** Secrets go in the vault and nowhere else. The settings file
 holds only what a user would not mind someone reading: theme, language, and later window state.
 Keeping that line sharp is what makes it safe to write the settings file with plain JSON and to

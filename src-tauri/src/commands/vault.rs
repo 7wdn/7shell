@@ -48,3 +48,12 @@ pub fn vault_lock(state: State<'_, ShellState>) -> VaultState {
 pub fn vault_change_password(state: State<'_, ShellState>, current: String, next: String) -> Result<(), ShellError> {
     state.vault().change_password(&current, &next)
 }
+
+/// Moves a vault that cannot be opened beside itself, so a new one can be created.
+///
+/// Answers with the file's new *name* only. The interface is never told where a file lives, and
+/// nothing is deleted: the way back is a rename the person can do themselves.
+#[tauri::command]
+pub fn vault_set_aside(state: State<'_, ShellState>) -> Result<String, ShellError> {
+    state.vault().set_aside()
+}

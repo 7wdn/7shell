@@ -313,6 +313,44 @@ impl Vault {
         *self.slot() = Slot::Locked;
     }
 
+    /// Moves the vault file aside and reports the name it was given.
+    ///
+    /// This exists for one situation, and it is a real one: a vault exists, nobody remembers its
+    /// password, and the alternative is a person staring at an unlock screen with no way forward.
+    /// Nothing is deleted — the file is renamed beside itself — so the way back is a rename, and
+    /// the answer is the file's *name*, never the directory it lives in.
+    ///
+    /// Afterwards the vault is [`VaultStatus::Missing`], so the caller can offer to create one.
+    pub fn set_aside(&self) -> Result<String, ShellError> {
+        if matches!(&*self.slot(), Slot::Unlocked(_)) {
+            return Err(ShellError::store_io("lock the vault before setting it aside"));
+        }
+
+        let Some(file_name) = self.path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+            return Err(ShellError::store_io("the vault file has no name to rename"));
+        };
+
+        for attempt in 1..=99 {
+            let candidate = if attempt == 1 {
+                format!("{file_name}.old")
+            } else {
+                format!("{file_name}.{attempt}.old")
+            };
+            let target = self.path.with_file_name(&candidate);
+            if target.exists() {
+                continue;
+            }
+
+            std::fs::rename(&self.path, &target)
+                .map_err(|error| ShellError::store_io(format!("the vault file could not be moved aside: {error}")))?;
+            return Ok(candidate);
+        }
+
+        Err(ShellError::store_io(
+            "there are already too many previous vault files beside this one",
+        ))
+    }
+
     /// Re-encrypts the document under a new password.
     ///
     /// The current password has to be given again even though the vault is unlocked: an
@@ -807,6 +845,48 @@ mod tests {
         let error = Vault::open_at(path).unlock("master").expect_err("no salt, no key");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
+    }
+
+    #[test]
+    fn setting_a_vault_aside_keeps_it_and_frees_the_way_forward() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+        vault.save_session(sample_session("s1", "web-1"), None).expect("save");
+        vault.lock();
+
+        let name = vault.set_aside().expect("set aside");
+
+        assert_eq!(name, "vault.json.old");
+        assert!(!path.exists(), "the place is free for a new vault");
+        assert_eq!(vault.status(), VaultStatus::Missing);
+        assert!(
+            directory.path().join(&name).exists(),
+            "the old file is still there, under its new name"
+        );
+
+        // Creating again works, and a second set-aside does not overwrite the first.
+        vault.create("a new master").expect("create again");
+        vault.lock();
+        assert_eq!(vault.set_aside().expect("set aside again"), "vault.json.2.old");
+        assert!(
+            directory.path().join("vault.json.old").exists(),
+            "the first one is untouched"
+        );
+    }
+
+    #[test]
+    fn an_open_vault_refuses_to_be_set_aside() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let error = vault
+            .set_aside()
+            .expect_err("an open vault is not moved out from under its commands");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::StoreIo);
     }
 
     /// One character of a base64 blob, changed to another character of the alphabet.

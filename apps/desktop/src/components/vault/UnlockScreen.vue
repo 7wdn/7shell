@@ -26,6 +26,9 @@ const password = ref("");
 const confirmation = ref("");
 const passwordField = ref<HTMLInputElement | null>(null);
 
+/** The set-aside action asks twice: it is the only thing here that changes what is on disk. */
+const confirmingAside = ref(false);
+
 /** Both are shown while typing rather than on submit, so the rule is visible as it is broken. */
 const tooShort = computed(() => password.value.length > 0 && password.value.length < MINIMUM_PASSWORD_LENGTH);
 const mismatched = computed(() => confirmation.value.length > 0 && confirmation.value !== password.value);
@@ -48,6 +51,20 @@ const heading = computed(() => {
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
+}
+
+/**
+ * Moves an unopenable vault aside on the second click. The first click only arms the button, so a
+ * stray Enter key cannot rename somebody's file.
+ */
+async function setAside(): Promise<void> {
+  if (!confirmingAside.value) {
+    confirmingAside.value = true;
+    return;
+  }
+
+  await vault.setAside();
+  confirmingAside.value = false;
 }
 
 async function create(): Promise<void> {
@@ -159,6 +176,34 @@ watch(
             {{ t("vault.unlock.submit") }}
           </button>
         </form>
+
+        <!--
+          A password nobody remembers must not be a dead end. This renames the file beside itself
+          rather than deleting anything, and asks twice, because it is the one action here that
+          changes what is on disk.
+        -->
+        <div class="mt-5 rounded-md border border-dashed border-border px-3 py-3">
+          <p class="text-xs leading-relaxed text-muted-foreground">{{ t("vault.setAside.explanation") }}</p>
+
+          <p v-if="vault.setAsideName" class="mt-2 text-xs">
+            {{ t("vault.setAside.moved", { name: vault.setAsideName }) }}
+          </p>
+
+          <button
+            v-else
+            type="button"
+            class="mt-2 w-full rounded-md border px-3 py-1.5 text-xs transition-colors disabled:opacity-50"
+            :class="
+              confirmingAside
+                ? 'border-destructive/50 bg-destructive/10 text-destructive'
+                : 'border-border hover:bg-accent'
+            "
+            :disabled="vault.busy"
+            @click="setAside()"
+          >
+            {{ confirmingAside ? t("vault.setAside.confirm") : t("vault.setAside.submit") }}
+          </button>
+        </div>
       </template>
 
       <template v-else-if="problem">
