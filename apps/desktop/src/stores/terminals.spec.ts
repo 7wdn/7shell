@@ -12,6 +12,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   tunnelsOpen: vi.fn(),
   tunnelClose: vi.fn(),
   filesOpen: vi.fn(),
+  filesList: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
 }));
@@ -29,6 +30,7 @@ vi.mock("@/lib/terminal/bus", async (importOriginal) => {
 
 import {
   filesClose,
+  filesList,
   filesOpen,
   knownHostForget,
   knownHostTrust,
@@ -39,6 +41,7 @@ import {
   tunnelsOpen,
 } from "@/lib/backend/tauri";
 import { endedTerminal, onTerminalEnded } from "@/lib/terminal/bus";
+import { useFilesStore } from "@/stores/files";
 import { type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { OpenTunnel, PresentedHostKey, Session, TunnelFailure } from "@/types/session";
 
@@ -49,6 +52,7 @@ const knownHostForgetMock = vi.mocked(knownHostForget);
 const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const tunnelCloseMock = vi.mocked(tunnelClose);
 const filesOpenMock = vi.mocked(filesOpen);
+const filesListMock = vi.mocked(filesList);
 const filesCloseMock = vi.mocked(filesClose);
 const transfersOpenMock = vi.mocked(transfersOpen);
 const onTerminalEndedMock = vi.mocked(onTerminalEnded);
@@ -155,6 +159,7 @@ describe("terminals store", () => {
     tunnelsOpenMock.mockReset().mockResolvedValue([]);
     tunnelCloseMock.mockReset().mockResolvedValue(undefined);
     filesOpenMock.mockReset();
+    filesListMock.mockReset().mockResolvedValue({ path: "/home/user", entries: [] });
     filesCloseMock.mockReset().mockResolvedValue(undefined);
     transfersOpenMock.mockReset().mockResolvedValue([]);
     onTerminalEndedMock.mockReset().mockImplementation((listener: (handle: string, reason?: string) => void) => {
@@ -608,5 +613,42 @@ describe("terminals store", () => {
     // connection, and the panel is still the way to them until it is closed.
     expect(terminalTabOrFail(store).status).toBe("ended");
     expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
+  });
+
+  it("takes the file panel with the shell when the shell changes directory", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+    filesListMock.mockResolvedValue({ path: "/data", entries: [] });
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.togglePanel(terminalTabOrFail(store));
+    await store.followDirectory("handle-1", "/data");
+
+    expect(filesListMock).toHaveBeenLastCalledWith("f1", "/data");
+    expect(useFilesStore().browser("f1")?.path).toBe("/data");
+  });
+
+  it("moves nothing when the browser for that session is a tab, not a panel", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+    await store.followDirectory("handle-1", "/data");
+
+    // A file tab is somebody browsing, and their shell moving is not their browsing moving.
+    expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("moves nothing when the handle belongs to no terminal on screen", async () => {
+    const store = useTerminalsStore();
+    open();
+    await store.followDirectory("handle-gone", "/data");
+
+    expect(filesListMock).not.toHaveBeenCalled();
   });
 });

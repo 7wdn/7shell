@@ -12,6 +12,11 @@
  *    dismissed dialog is somebody changing their mind, so nothing at all is recorded for it.
  * 2. **Closing a browser cancels whatever it was still moving**, which is why closing re-reads the
  *    transfer list rather than leaving rows behind that are already gone.
+ *
+ * A browser can also be moved by the thing it belongs to. A terminal's file panel follows the shell
+ * under it — `cd /data` in the terminal takes the panel to /data — and that arrives here as
+ * `follow`: a directory name, resolved against where the shell is rather than where the panel is
+ * showing, and listed before it is gone to.
  */
 
 import { defineStore } from "pinia";
@@ -20,6 +25,7 @@ import { ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { parentPath } from "@/lib/files/format";
+import { resolveDirectory } from "@/lib/terminal/follow";
 import type {
   EntryKind,
   SftpEntry,
@@ -47,6 +53,19 @@ export interface FileBrowser {
   readonly sessionId: string;
   /** The path the server resolved for the last listing: what the breadcrumbs show. */
   path: string;
+  /**
+   * Where the browser opened, which is where the shell on the other end opened too: an SFTP session
+   * starts in the user's home, and so does a login shell. It is what `~` means.
+   */
+  home: string;
+  /**
+   * Where the shell is, as far as this side knows — deliberately not the same as `path`.
+   *
+   * The browser can be browsed by hand while the shell stays put, and `cd logs` has to be resolved
+   * against the shell's directory rather than against whatever is on screen. It starts at `home`,
+   * which is where a shell that has not moved yet is.
+   */
+  shellPath: string;
   entries: readonly SftpEntry[];
   /** True while a listing is being read. The entries from the last read stay on screen. */
   loading: boolean;
@@ -113,6 +132,8 @@ export const useFilesStore = defineStore("files", () => {
         handle: outcome.handle,
         sessionId,
         path: outcome.listing.path,
+        home: outcome.listing.path,
+        shellPath: outcome.listing.path,
         entries: [...outcome.listing.entries],
         loading: false,
         failure: null,
@@ -392,7 +413,7 @@ export const useFilesStore = defineStore("files", () => {
   }
 
   /** Reads a directory into a browser's state. A failure is recorded and the old list stays. */
-  async function read(handle: string, path: string): Promise<void> {
+  async function read(handle: string, path: string, options: { quiet?: boolean } = {}): Promise<boolean> {
     const current = browsers.value[handle];
     if (current) {
       current.loading = true;
@@ -403,18 +424,63 @@ export const useFilesStore = defineStore("files", () => {
       // The browser can be closed while the read is in flight: then there is nothing to fill.
       const open = browsers.value[handle];
       if (!open) {
-        return;
+        return false;
       }
       open.path = listing.path;
       open.entries = [...listing.entries];
       open.loading = false;
+      return true;
     } catch (error) {
       const open = browsers.value[handle];
       if (open) {
         open.loading = false;
-        open.failure = asShellError(error, "files_list");
+        // Quiet is for a read nobody asked for: the shell was already told the directory is not
+        // there, and the panel repeating it would be the same complaint twice.
+        if (options.quiet !== true) {
+          open.failure = asShellError(error, "files_list");
+        }
       }
+      return false;
     }
+  }
+
+  /**
+   * Takes a browser to where the shell says it is.
+   *
+   * Only the shell can say where the shell is, and it does not always say: what arrives here is
+   * either a directory the shell reported outright or one read off a `cd` somebody typed. Neither
+   * is taken on faith — the directory is listed first, and a directory that cannot be listed is
+   * not gone to. The browser stays where it is and nothing is said, because the shell has already
+   * refused the `cd` in the terminal, in its own words, and this would be the same complaint twice.
+   *
+   * The shell's directory is remembered on the way past even when the browser does not move: it is
+   * what the next relative `cd` is resolved against.
+   */
+  async function followDirectory(handle: string, directory: string): Promise<void> {
+    const open = browsers.value[handle];
+    if (!open) {
+      return;
+    }
+    const target = resolveDirectory(open.shellPath, open.home, directory);
+    if (target === null) {
+      return;
+    }
+    if (target === open.shellPath && target === open.path) {
+      return;
+    }
+
+    // The read is quiet: a directory that cannot be listed has already been refused by the shell,
+    // in the terminal, and this would be the same complaint twice. Nothing moves when it fails.
+    const arrived = await read(handle, target, { quiet: true });
+    const current = browsers.value[handle];
+    if (!current || !arrived) {
+      return;
+    }
+    // The shell is where it asked to go even when the server names that place differently — the
+    // path from the listing is what the breadcrumbs show, and this is what a relative path is
+    // resolved against next.
+    current.failure = null;
+    current.shellPath = target;
   }
 
   return {
@@ -431,6 +497,7 @@ export const useFilesStore = defineStore("files", () => {
     uploadFromClipboard,
     reportFailure,
     navigate,
+    followDirectory,
     createFolder,
     rename,
     remove,

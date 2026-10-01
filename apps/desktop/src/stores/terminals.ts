@@ -525,6 +525,23 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
+   * The shell in a terminal is somewhere else now: take the file panel under it along.
+   *
+   * Only the panel. A file tab is somebody browsing — they may well be looking somewhere other than
+   * where their shell is, on purpose — while the panel is attached to the terminal, and following
+   * is what attached means. A terminal with no panel has nothing to take along, and nothing to
+   * report: this is a convenience for a mode that is on screen, not a record of where shells are.
+   */
+  async function followDirectory(handle: string, directory: string): Promise<void> {
+    const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
+    const panel = tab?.panel?.handle;
+    if (!panel) {
+      return;
+    }
+    await files.followDirectory(panel, directory);
+  }
+
+  /**
    * Closes a file browser: the backend first, because closing is what cancels the transfers the
    * browser still had running, and the tab only afterwards. A browser the backend refused to close
    * is still open, so its tab stays and says why.
@@ -676,6 +693,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     closePanel,
     togglePanel,
     browserHandleOf,
+    followDirectory,
     confirmTrust,
     confirmReplace,
     dismiss,

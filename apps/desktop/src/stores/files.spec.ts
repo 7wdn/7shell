@@ -458,3 +458,98 @@ describe("files the operating system handed us", () => {
     expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
   });
 });
+
+describe("following the shell", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    filesOpenMock.mockReset();
+    filesListMock.mockReset().mockResolvedValue(listing("/home/user"));
+    transfersOpenMock.mockReset().mockResolvedValue([]);
+  });
+
+  /** The backend answering every listing with the path it was asked for. */
+  function listingEveryDirectory(): void {
+    filesListMock.mockImplementation(async (_handle: string, path: string) => listing(path));
+  }
+
+  it("goes where the shell went, once the directory answers for itself", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+    filesListMock.mockResolvedValue(listing("/data"));
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.followDirectory(handle, "/data");
+
+    expect(filesListMock).toHaveBeenLastCalledWith(handle, "/data");
+    expect(store.browser(handle)?.path).toBe("/data");
+  });
+
+  it("stays where it is, without a word, when the directory cannot be read", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+    filesListMock.mockRejectedValue(denied());
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.followDirectory(handle, "/nope");
+
+    // The shell has already refused the `cd`, in the terminal, in its own words.
+    expect(store.browser(handle)?.path).toBe("/home/user");
+    expect(store.browser(handle)?.failure).toBeNull();
+  });
+
+  it("resolves a relative path against where the shell is, not against what is on screen", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+    listingEveryDirectory();
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    // The panel is browsed somewhere else while the shell stays where it was.
+    await store.navigate(handle, "/etc");
+    await store.followDirectory(handle, "logs");
+
+    expect(filesListMock).toHaveBeenLastCalledWith(handle, "/home/user/logs");
+    expect(store.browser(handle)?.path).toBe("/home/user/logs");
+  });
+
+  it("keeps resolving from where the shell was last seen, not from where it started", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+    listingEveryDirectory();
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.followDirectory(handle, "/data");
+    await store.navigate(handle, "/etc");
+    await store.followDirectory(handle, "src");
+
+    expect(filesListMock).toHaveBeenLastCalledWith(handle, "/data/src");
+  });
+
+  it("takes a bare cd to where the browser opened, which is where a login shell started", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+    listingEveryDirectory();
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.navigate(handle, "/etc");
+    await store.followDirectory(handle, "~");
+
+    expect(filesListMock).toHaveBeenLastCalledWith(handle, "/home/user");
+  });
+
+  it("reads nothing again when the shell is already where the browser is showing", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.followDirectory(handle, "/home/user");
+
+    expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when there is no browser left to move", async () => {
+    const store = useFilesStore();
+    await store.followDirectory("gone", "/data");
+
+    expect(filesListMock).not.toHaveBeenCalled();
+  });
+});

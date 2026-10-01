@@ -11,6 +11,11 @@
  * The size follows the container. A terminal whose size disagrees with the channel's wraps in the
  * wrong place, so the first fit after mounting is sent unconditionally; later ones are debounced,
  * because a window drag produces a resize storm and each one is a network round trip.
+ *
+ * Input is read on the way past for one purpose: a `cd` is the only thing that says where the shell
+ * is on a host that does not report it, and the file panel under this terminal follows it. The line
+ * is read and never held — dropped at every Enter — and a shell that reports its own directory
+ * (OSC 7) is followed exactly instead of by reading anything.
  */
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -18,6 +23,7 @@ import { type ITheme, Terminal } from "@xterm/xterm";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { registerTerminalSink } from "@/lib/terminal/bus";
+import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 
@@ -41,12 +47,16 @@ const props = defineProps<{
 const terminals = useTerminalsStore();
 const container = ref<HTMLDivElement | null>(null);
 
+/** What has been typed since the last Enter, so a `cd` in it can be read for the file panel. */
+const typed = new TypedCommands();
+
 const encoder = new TextEncoder();
 const FIT_DEBOUNCE_MS = 60;
 
 let terminal: Terminal | undefined;
 let fitAddon: FitAddon | undefined;
 let unregister: (() => void) | undefined;
+let osc7: { dispose: () => void } | undefined;
 let observer: ResizeObserver | undefined;
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The last size the backend was told, so a debounced fit that changed nothing says nothing. */
@@ -180,7 +190,22 @@ onMounted(() => {
     if (!props.interactive) {
       return;
     }
+    // Read before it leaves: a `cd` typed here is the one thing that says where the shell is on a
+    // host that does not report it, and the file panel under this terminal follows it.
+    const directory = typed.feed(data);
+    if (directory !== null) {
+      void terminals.followDirectory(props.handle, directory);
+    }
     void terminals.send(props.handle, encoder.encode(data));
+  });
+  // And the exact report, where the far side is configured to give one. It says nothing about the
+  // terminal, so it is passed on either way.
+  osc7 = instance.parser.registerOscHandler(7, (data) => {
+    const directory = directoryFromOsc7(data);
+    if (directory !== null) {
+      void terminals.followDirectory(props.handle, directory);
+    }
+    return false;
   });
 
   observer = new ResizeObserver(() => scheduleFit());
@@ -225,6 +250,7 @@ onBeforeUnmount(() => {
   }
   observer?.disconnect();
   unregister?.();
+  osc7?.dispose();
   terminal?.dispose();
 });
 </script>
