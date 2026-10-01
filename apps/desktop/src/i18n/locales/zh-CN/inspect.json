@@ -1,0 +1,93 @@
+{
+  "inspect": {
+    "reading": "实时",
+    "tab": {
+      "close": "关闭此页"
+    },
+    "disconnected": {
+      "title": "未连接",
+      "hint": "这个页面通过 {name} 已打开的终端读取数据；打开终端后会自动开始。"
+    },
+    "system": {
+      "title": "系统信息",
+      "group": "操作系统",
+      "arch": "硬件架构"
+    },
+    "cpu": {
+      "name": "名称",
+      "cores": "核心数",
+      "frequency": "频率",
+      "cache": "缓存",
+      "bogomips": "BogoMips",
+      "megahertz": "{value} MHz",
+      "kilobytes": "{value} KB",
+      "shareHint": "两次采样之间，CPU 时间的去向：",
+      "noShare": "CPU 占用",
+      "state": {
+        "user": "用户",
+        "nice": "Nice",
+        "system": "系统",
+        "interrupt": "硬件中断",
+        "softInterrupt": "软件中断",
+        "ioWait": "IO 等待",
+        "steal": "被抢占",
+        "idle": "空闲"
+      }
+    },
+    "memory": {
+      "total": "总计",
+      "used": "已用",
+      "percent": "使用率",
+      "available": "可用"
+    },
+    "network": {
+      "title": "网络",
+      "group": "网络接口",
+      "listeners": "监听端口",
+      "connections": "连接",
+      "connectionsEmpty": "当前没有连接到该端口。",
+      "close": "关闭连接列表",
+      "name": "名称",
+      "protocol": "协议",
+      "address": "监听IP",
+      "port": "端口",
+      "peers": "IP 数",
+      "count": "连接数",
+      "state": "状态",
+      "peer": "IP",
+      "sent": "发送",
+      "received": "接收",
+      "sentRate": "发送速度",
+      "receivedRate": "接收速度",
+      "empty": "该主机没有返回监听端口。",
+      "pick": "选择要显示哪块网卡",
+      "automatic": "最繁忙的",
+      "sortBy": "按{column}排序"
+    },
+    "disk": {
+      "name": "名称",
+      "size": "大小",
+      "used": "已用",
+      "percent": "使用率",
+      "available": "可用",
+      "mount": "挂载点"
+    },
+    "processes": {
+      "title": "进程"
+    },
+    "process": {
+      "user": "用户",
+      "name": "名称",
+      "command": "命令行",
+      "executable": "位置",
+      "workingDirectory": "工作目录",
+      "environment": "环境变量",
+      "environmentEmpty": "该进程没有返回环境变量。",
+      "close": "关闭该进程",
+      "refresh": "重新读取",
+      "cpuSinceRead": "上次读取以来占用的 CPU 时间",
+      "sortBy": "按{column}排序",
+      "empty": "该主机没有返回进程列表。"
+    }
+  }
+}

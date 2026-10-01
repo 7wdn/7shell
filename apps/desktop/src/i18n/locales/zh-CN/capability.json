@@ -12,6 +12,9 @@
     "keepalive": {
       "label": "链路保活"
     },
+    "hostMetrics": {
+      "label": "主机监控"
+    },
     "sftp": {
       "label": "文件传输（SFTP）"
     },

@@ -14,7 +14,19 @@
  * empty section is not shown at all. A forward that failed to come up is shown next to the ones
  * that are, because "the tunnel is not there" is the answer somebody staring at a port needs.
  */
-import { Folder, LoaderCircle, Network, Pencil, Plus, Server, Terminal, Trash2, TriangleAlert, X } from "@lucide/vue";
+import {
+  ArrowRight,
+  Folder,
+  LoaderCircle,
+  Network,
+  Pencil,
+  Plus,
+  Server,
+  Terminal,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -245,8 +257,15 @@ const statusDot = computed(() => {
         >
           <Network :size="13" class="shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1">
-            <span class="block truncate font-mono text-[11px]">
-              {{ tunnel.bindHost }}:{{ tunnel.bindPort }} → {{ tunnel.targetHost }}:{{ tunnel.targetPort }}
+            <span class="flex items-center gap-1 font-mono text-[11px]">
+              <span class="min-w-0 truncate">{{ tunnel.bindHost }}:{{ tunnel.bindPort }}</span>
+              <ArrowRight
+                :size="11"
+                class="shrink-0 text-muted-foreground"
+                role="img"
+                :aria-label="t('terminal.tunnels.direction')"
+              />
+              <span class="min-w-0 truncate">{{ tunnel.targetHost }}:{{ tunnel.targetPort }}</span>
             </span>
             <span class="block text-[10px] text-muted-foreground">
               {{ t("terminal.tunnels.connections", { count: tunnel.connections }, tunnel.connections) }}

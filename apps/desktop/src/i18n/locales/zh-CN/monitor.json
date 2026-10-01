@@ -1,0 +1,57 @@
+{
+  "monitor": {
+    "title": "主机监控",
+    "close": "隐藏监控面板",
+    "address": "IP",
+    "copy": "复制主机地址",
+    "copied": "已复制",
+    "idle": {
+      "title": "未连接",
+      "hint": "打开一个终端后，这里会显示对端主机正在做什么。"
+    },
+    "waiting": "正在采集第一次样本…",
+    "sample": {
+      "roundTrip": "往返耗时",
+      "milliseconds": "{value} 毫秒",
+      "hint": "采集一次样本的耗时：网络往返，加上读取主机状态的命令。",
+      "at": "采样于 {time}"
+    },
+    "system": {
+      "title": "系统信息",
+      "hostname": "主机名",
+      "os": "系统",
+      "kernel": "内核",
+      "cores": "CPU 核数"
+    },
+    "uptime": {
+      "label": "运行",
+      "days": "{days}天 {hours}:{minutes}",
+      "hours": "{hours}:{minutes}"
+    },
+    "load": "负载",
+    "loadHint": "1、5、15 分钟的平均负载",
+    "cpu": "CPU",
+    "cpuHint": "两次采样之间全部 CPU 的繁忙比例",
+    "memory": "内存",
+    "swap": "交换",
+    "processes": {
+      "title": "进程",
+      "memory": "内存",
+      "cpu": "CPU",
+      "command": "命令",
+      "empty": "该主机没有返回进程列表。",
+      "cpuSinceStart": "各进程自启动以来的 CPU 占用（由主机统计）"
+    },
+    "network": {
+      "title": "网络",
+      "empty": "该主机没有返回网卡信息。",
+      "rateHint": "按两次采样之间的差值计算"
+    },
+    "disks": {
+      "title": "文件系统",
+      "path": "路径",
+      "usage": "可用/大小",
+      "empty": "该主机没有返回文件系统信息。"
+    }
+  }
+}

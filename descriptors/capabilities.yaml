@@ -24,6 +24,15 @@ capabilities:
     group: session
     labelKey: capability.keepalive.label
 
+  # What the host monitor reads: a sample of the far side's load, memory, interfaces and mounts,
+  # taken by running commands over the connection. A capability rather than a separate feature
+  # because it is exactly the question this vocabulary asks — can this protocol, over this build,
+  # tell the interface what the machine is doing?
+  - key: hostMetrics
+    order: 45
+    group: session
+    labelKey: capability.hostMetrics.label
+
   - key: sftp
     order: 50
     group: transfer

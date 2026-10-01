@@ -90,3 +90,49 @@ test("a vault can be created and the shell opens", async () => {
     await close();
   }
 });
+
+/**
+ * The host monitor, and the switch that turns it off.
+ *
+ * What an end-to-end run can see of it: the panel is where it belongs, it says it is not connected
+ * rather than drawing zeroes, and hiding it from the panel and hiding it from the settings are the
+ * same switch — which is the part that would break silently if the two ever stopped sharing one
+ * preference. The sampling itself needs a real server and is proved against the lab
+ * (`crates/sevenshell-core/tests/live_monitor.rs`).
+ */
+test("the host monitor is on, and hiding it is one setting", async () => {
+  const { page, close } = await openApp();
+  try {
+    const panel = page.getByRole("complementary", { name: "Host monitor" });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByText("No connection", { exact: false })).toBeVisible();
+    // The rows are drawn with dashes rather than with zeroes — an empty column is not a reading —
+    // and with no host known there is nothing to copy either.
+    await expect(panel.getByRole("button", { name: "Copy the host name" })).toBeDisabled();
+
+    // The three cards are the way in to the host's pages. With nothing connected there is no host
+    // to open a page about, so they are drawn and refuse to be used rather than opening an empty
+    // page — which is the state a person meets them in the first time they see the panel.
+    for (const name of ["System info", "Processes", "Network"]) {
+      await expect(panel.getByRole("button", { name, exact: true })).toBeDisabled();
+    }
+
+    // The panel's own button writes the preference, which is what makes the next assertion true.
+    await panel.getByRole("button", { name: "Hide the monitor" }).click();
+    await expect(panel).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("dialog");
+    await expect(settings.getByRole("button", { name: "Hidden" })).toHaveAttribute("aria-pressed", "true");
+
+    await settings.getByRole("button", { name: "Shown" }).click();
+
+    // The dialog hides the rest of the window from assistive technology while it is up, so the
+    // panel is asked for once it is closed: it is one preference, and both ends write it.
+    await page.keyboard.press("Escape");
+    await expect(settings).toHaveCount(0);
+    await expect(panel).toBeVisible();
+  } finally {
+    await close();
+  }
+});

@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{AppSettings, FilesLayout, SessionLayout, ThemeMode};
+use sevenshell_types::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -46,6 +46,10 @@ struct StoredSettings {
     /// has never been moved".
     #[serde(default)]
     terminal_panel_height: Option<u32>,
+    /// Absent in a file written before there was a monitor, which reads as the default the feature
+    /// ships with — on — rather than as a monitor somebody switched off before it existed.
+    #[serde(default = "monitor_on")]
+    monitor_enabled: bool,
     #[serde(default)]
     locale: Option<String>,
 }
@@ -59,6 +63,7 @@ impl StoredSettings {
             files_layout: settings.files_layout.as_str().to_owned(),
             session_layout: settings.session_layout.as_str().to_owned(),
             terminal_panel_height: settings.terminal_panel_height,
+            monitor_enabled: settings.monitor_enabled,
             locale: settings.locale.clone(),
         }
     }
@@ -70,6 +75,7 @@ impl StoredSettings {
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             terminal_panel_height: self.terminal_panel_height,
+            monitor_enabled: self.monitor_enabled,
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
     }
@@ -163,6 +169,7 @@ mod tests {
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
+            monitor_enabled: monitor_on(),
             locale: locale.map(str::to_owned),
         }
     }
@@ -190,6 +197,10 @@ mod tests {
             loaded.terminal_panel_height, None,
             "absent means the divider has never been moved"
         );
+        assert!(
+            loaded.monitor_enabled,
+            "a file written before the monitor existed is not a person asking for it to be off"
+        );
         assert_eq!(loaded.locale.as_deref(), Some("zh-CN"));
     }
 
@@ -209,6 +220,8 @@ mod tests {
         let written = AppSettings {
             session_layout: SessionLayout::Terminal,
             terminal_panel_height: Some(320),
+            // Off, so the round trip proves a choice survives rather than the default coming back.
+            monitor_enabled: false,
             ..settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"))
         };
 

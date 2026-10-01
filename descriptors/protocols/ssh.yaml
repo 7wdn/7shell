@@ -9,13 +9,14 @@ transport: tcp
 supportLevel: operate
 # Only what this build actually does. A capability is added by the change that implements and
 # tests it, so this list is the honest answer to "what can 7Shell do over SSH today?": a shell,
-# resized when the window changes, kept alive while idle, reachable through another session, and
-# able to answer a local port from the far side.
+# resized when the window changes, kept alive while idle, reachable through another session, able
+# to answer a local port from the far side, and able to report what the host is doing.
 capabilities:
   - shell
   - exec
   - resize
   - keepalive
+  - hostMetrics
   - sftp
   - forwarding
   - jumpHost

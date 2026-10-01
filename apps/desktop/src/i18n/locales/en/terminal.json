@@ -11,6 +11,7 @@
     "tunnels": {
       "title": "Tunnels",
       "stop": "Stop this forward",
+      "direction": "Forwarded to",
       "dismiss": "Dismiss",
       "connections": "{count} connection carried | {count} connections carried",
       "failure": "The forward on {bind} did not come up."

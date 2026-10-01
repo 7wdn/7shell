@@ -9,6 +9,7 @@
 
 import { isDesktopRuntime } from "@/lib/runtime";
 import type { AppInfo, AppSettings } from "@/types/app";
+import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
   KeyInfo,
   KnownHostEntry,
@@ -178,6 +179,25 @@ export const backend = {
     /** The forwards that are up, and how much they have carried. */
     tunnels: (): Promise<OpenTunnel[]> => forward("tunnels_open", () => desktop.tunnelsOpen()),
     closeTunnel: (id: string): Promise<void> => forward("tunnel_close", () => desktop.tunnelClose(id)),
+  },
+
+  /**
+   * What the host behind a terminal is doing. Asked for by handle, because a sample rides the
+   * connection the terminal already has: there is nothing to sample without one.
+   */
+  monitor: {
+    sample: (handle: string): Promise<HostMetrics> => forward("monitor_sample", () => desktop.monitorSample(handle)),
+    /** The process table, cut on the far side to what was asked for. The page orders what it gets. */
+    processes: (handle: string, limit: number): Promise<ProcessPage> =>
+      forward("monitor_processes", () => desktop.monitorProcesses(handle, limit)),
+    /**
+     * One process in full, read when somebody opens it. The only read in this build that returns an
+     * environment, which can hold credentials — which is why it is never part of a poll.
+     */
+    processDetail: (handle: string, pid: number): Promise<ProcessDetail> =>
+      forward("monitor_process_detail", () => desktop.monitorProcessDetail(handle, pid)),
+    /** The host's sockets, for the network page: ports that are waiting, and who is connected. */
+    sockets: (handle: string): Promise<SocketRow[]> => forward("monitor_sockets", () => desktop.monitorSockets(handle)),
   },
 
   events: {

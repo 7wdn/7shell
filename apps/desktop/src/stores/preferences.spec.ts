@@ -25,6 +25,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     terminalTheme: "system",
     filesLayout: "tree",
     sessionLayout: "split",
+    monitorEnabled: true,
     ...overrides,
   };
 }
@@ -131,6 +132,7 @@ describe("preferences store", () => {
       terminalTheme: "system",
       filesLayout: "tree",
       sessionLayout: "split",
+      monitorEnabled: true,
       locale: undefined,
     });
   });
@@ -147,6 +149,7 @@ describe("preferences store", () => {
       terminalTheme: "system",
       filesLayout: "tree",
       sessionLayout: "split",
+      monitorEnabled: true,
       locale: "zh-CN",
     });
     expect(document.documentElement.lang).toBe("zh-CN");
@@ -235,6 +238,7 @@ describe("the terminal palette", () => {
       terminalTheme: "light",
       filesLayout: "tree",
       sessionLayout: "split",
+      monitorEnabled: true,
       locale: undefined,
     });
   });
@@ -321,6 +325,43 @@ describe("how a session opens", () => {
     await store.load();
 
     expect(store.sessionLayout).toBe("terminal");
+  });
+});
+
+describe("the host monitor", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("is on until somebody turns it off", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.monitorEnabled).toBe(true);
+  });
+
+  it("remembers being hidden, because hiding it is also what stops the sampling", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setMonitorEnabled(false);
+
+    expect(store.monitorEnabled).toBe(false);
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ monitorEnabled: false }));
+  });
+
+  it("reads the choice back on the next start", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ monitorEnabled: false }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.monitorEnabled).toBe(false);
   });
 });
 

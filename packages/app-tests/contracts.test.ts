@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { ERROR_CATALOG } from "@/lib/backend/errorCodes";
 import type { ErrorEnvelope, ErrorOrigin } from "@/lib/backend/errors";
 import type { AppInfo } from "@/types/app";
+import type { HostMetrics } from "@/types/monitor";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -114,6 +115,31 @@ describe("wire types", () => {
     expect(sorted(rustFields)).toEqual(sorted(interfaceFields(read("apps/desktop/src/types/app.ts"), "AppInfo")));
   });
 
+  it("declares the same host-sample fields on both sides", () => {
+    const rust = read("crates/sevenshell-types/src/monitor.rs");
+    const typescript = read("apps/desktop/src/types/monitor.ts");
+
+    for (const name of [
+      "HostMetrics",
+      "CpuModel",
+      "CpuCounters",
+      "CpuStates",
+      "LoadAverage",
+      "MemoryUsage",
+      "NetworkCounters",
+      "DiskUsage",
+      "ProcessSample",
+      "SocketRow",
+    ]) {
+      const rustFields = rustStructFields(rust, name).map(camelCase);
+
+      expect(rustFields.length, `${name} has no fields, so the comparison proves nothing`).toBeGreaterThan(0);
+      expect(sorted(rustFields), `${name} differs between Rust and the interface`).toEqual(
+        sorted(interfaceFields(typescript, name)),
+      );
+    }
+  });
+
   it("declares the same session fields on both sides", () => {
     const rust = read("crates/sevenshell-types/src/session.rs");
     const typescript = read("apps/desktop/src/types/session.ts");
@@ -206,9 +232,28 @@ describe("wire types", () => {
       protocolCount: 1,
       descriptorSchemaVersion: 1,
     };
+    // A sample with every section unread, which is the shape a host that answers nothing produces.
+    const sample: HostMetrics = {
+      sampledAt: 1,
+      roundTripMs: 2,
+      hostname: null,
+      os: null,
+      kernel: null,
+      arch: null,
+      cores: null,
+      cpuModel: null,
+      uptimeSeconds: null,
+      load: null,
+      cpu: null,
+      memory: null,
+      network: [],
+      disks: [],
+      processes: [],
+    };
 
     expect(envelope.outcome).toBe("unknown");
     expect(origin.subsystem).toBe("ssh");
     expect(info.name).toBe("7Shell");
+    expect(sample.memory).toBeNull();
   });
 });

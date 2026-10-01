@@ -20,6 +20,7 @@ export type CapabilityKey =
   | "exec"
   | "resize"
   | "keepalive"
+  | "hostMetrics"
   | "sftp"
   | "forwarding"
   | "dynamicForwarding"
@@ -69,7 +70,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "tcp",
     supportLevel: "operate",
-    capabilities: ["shell", "exec", "resize", "keepalive", "sftp", "forwarding", "jumpHost"],
+    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "forwarding", "jumpHost"],
   },
 ];
 
@@ -111,6 +112,7 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "exec", group: "terminal", labelKey: "capability.exec.label" },
   { key: "resize", group: "terminal", labelKey: "capability.resize.label" },
   { key: "keepalive", group: "session", labelKey: "capability.keepalive.label" },
+  { key: "hostMetrics", group: "session", labelKey: "capability.hostMetrics.label" },
   { key: "sftp", group: "transfer", labelKey: "capability.sftp.label" },
   { key: "forwarding", group: "network", labelKey: "capability.forwarding.label" },
   { key: "dynamicForwarding", group: "network", labelKey: "capability.dynamicForwarding.label" },

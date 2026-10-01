@@ -31,6 +31,13 @@
       "planned": false
     },
     {
+      "key": "hostMetrics",
+      "order": 45,
+      "group": "session",
+      "labelKey": "capability.hostMetrics.label",
+      "planned": false
+    },
+    {
       "key": "sftp",
       "order": 50,
       "group": "transfer",
@@ -116,6 +123,7 @@
         "exec",
         "resize",
         "keepalive",
+        "hostMetrics",
         "sftp",
         "forwarding",
         "jumpHost"

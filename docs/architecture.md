@@ -169,6 +169,57 @@ One subscription serves every pane: `lib/terminal/bus.ts` receives both events f
 application and fans them out by handle. A terminal that ends is kept in the interface with its
 scrollback and a reconnect action, rather than disappearing.
 
+## The host monitor
+
+The panel to the right of the workspace is a live reading of whichever connection is on screen, and
+four decisions shape it:
+
+1. **A sample rides a connection that is already open.** `monitor_sample` takes a *terminal's*
+   handle, not a session id, and `Core::sample_host` runs one command on the connection the
+   registry already holds. A session with no terminal open has nothing to sample, and the panel
+   says so rather than opening a connection of its own — a monitor that authenticated every couple
+   of seconds would be a worse neighbour than one that shows nothing.
+2. **One command per sample.** `SNAPSHOT_COMMAND` in `crates/sevenshell-core/src/monitor.rs` is a
+   fixed, read-only `/bin/sh` script that reads `/proc`, `uname`, `/etc/os-release`, `ps` and
+   `df`, with each group introduced by a `@@name` marker line. A round trip costs more than the
+   readings do.
+3. **Counters travel; rates do not.** `HostMetrics` carries cumulative values — CPU ticks, bytes
+   through an interface — and the difference between two samples is computed in the interface
+   (`lib/monitor/rates.ts`). A single counter cannot be a rate, and "the average since boot"
+   presented as the current load is the one answer that is always wrong and always plausible.
+4. **A section the host did not answer is `null`, never zero.** `/proc` is Linux; another system
+   answers some of these questions and not others. The panel draws a dash where a number would be,
+   which is visibly different from a measurement.
+
+**The panel is the glance; the pages are the read.** Each card opens a tab about the same host —
+system, processes, network — and a page is a *view*, not a connection: it holds a session, resolves
+a terminal for it at read time, and is drawn as "not connected" when the session has none. That is
+what lets a page be left open across a reconnect instead of pointing at a dead handle.
+
+Two of the pages ask questions of their own, on their own slower clocks, and only while they are
+the tab on screen: the process page reads the table with command lines, processor time and program
+paths (`Core::list_processes`), and the network page reads the host's sockets (`Core::list_sockets` —
+listening and connected together, since that is what the host's `ss` or `netstat` answers and the
+page shows them as two views of one list). The process page also reads one process in full when
+somebody opens it — command line, directory, environment — which is the only read in this build that
+can return a credential, and the reason it happens on a click rather than on a clock.
+
+The process table's CPU column is the interval between two reads, taken from the kernel's own
+counters, because `ps`'s own column is an average over each process's whole life: a service that has
+been up for a week reads the same number every time it is asked, and a page that refreshes and never
+changes is a page nobody believes. That is the same rule the host's CPU and the interface rates
+follow, and the reason the panel beside it says which reading it is showing.
+
+Everything else on a page comes from the same sample the panel reads, so a number in the panel and
+the same number on a page are one reading rather than two that agree.
+
+Sampling runs while something is asking for it, and stops when the last of them has gone: the panel
+asks while it is mounted, a page asks while it is the tab on screen, and one poll serves them both.
+
+The commands are the only place in this build where something runs on a remote host without somebody
+typing it, so they are held to their own rule — see "Commands nobody typed are a constant, not a
+string" in `docs/security-model.md`.
+
 ## The four patterns worth knowing
 
 ### 1. One error contract, everywhere

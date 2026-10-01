@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppInfo, AppSettings } from "@/types/app";
+import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
   KeyInfo,
   KnownHostEntry,
@@ -206,6 +207,30 @@ export function tunnelsOpen(): Promise<OpenTunnel[]> {
 
 export function tunnelClose(id: string): Promise<void> {
   return invoke<void>("tunnel_close", { id });
+}
+
+// -- Host monitor ------------------------------------------------------------
+//
+// A sample rides a terminal's connection, so it is asked for by handle and not by session: there
+// is nothing to sample for a session that has no terminal open.
+
+export function monitorSample(handle: string): Promise<HostMetrics> {
+  return invoke<HostMetrics>("monitor_sample", { handle });
+}
+
+/** The process table, cut on the far side to what was asked for. The page orders what it gets. */
+export function monitorProcesses(handle: string, limit: number): Promise<ProcessPage> {
+  return invoke<ProcessPage>("monitor_processes", { handle, limit });
+}
+
+/** One process in full — its command line, its directory and its environment. */
+export function monitorProcessDetail(handle: string, pid: number): Promise<ProcessDetail> {
+  return invoke<ProcessDetail>("monitor_process_detail", { handle, pid });
+}
+
+/** The host's sockets, for the network page: what is waiting on a port and who is on it. */
+export function monitorSockets(handle: string): Promise<SocketRow[]> {
+  return invoke<SocketRow[]>("monitor_sockets", { handle });
 }
 
 // -- Remote files ------------------------------------------------------------

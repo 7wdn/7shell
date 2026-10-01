@@ -29,6 +29,12 @@
       "tree": "Tree and list",
       "list": "List only",
       "hint": "The tree opens the branches leading to where you are, so the two panes never disagree about where that is."
+    },
+    "monitor": {
+      "title": "Host monitor",
+      "shown": "Shown",
+      "hidden": "Hidden",
+      "hint": "The monitor sits to the right of the workspace and reports the host of the terminal on screen: load, memory, network and file systems. It samples about every two seconds, by running a group of read-only commands over the connection that is already open — and it samples nothing at all while it is hidden."
     }
   }
 }

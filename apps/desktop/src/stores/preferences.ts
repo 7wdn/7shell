@@ -51,6 +51,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * that can absorb whatever the window does.
    */
   const terminalPanelHeight = ref<number | null>(null);
+  /**
+   * Whether the host monitor is drawn beside the workspace.
+   *
+   * On unless somebody turns it off, which is not how the fields above behave: those describe a
+   * choice the interface would otherwise guess at, while this one is a feature being there or not.
+   * The panel is mounted only while this is true, and mounting it is what starts the sampling —
+   * so "hidden" means the commands on the far side stop as well as the drawing.
+   */
+  const monitorEnabled = ref(true);
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -113,6 +122,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       filesLayout.value = settings.filesLayout;
       sessionLayout.value = settings.sessionLayout;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
+      monitorEnabled.value = settings.monitorEnabled;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -137,6 +147,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         filesLayout: filesLayout.value,
         sessionLayout: sessionLayout.value,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
+        monitorEnabled: monitorEnabled.value,
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -162,6 +173,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   async function setSessionLayout(layout: SessionLayout): Promise<void> {
     sessionLayout.value = layout;
+    await persist();
+  }
+
+  /**
+   * Shows or hides the host monitor.
+   *
+   * A setting rather than something to ask for on the panel itself, because the answer is the same
+   * every time for the same person — and hiding it is what stops the sampling, so it is written
+   * down rather than forgotten at the end of a run.
+   */
+  async function setMonitorEnabled(enabled: boolean): Promise<void> {
+    monitorEnabled.value = enabled;
     await persist();
   }
 
@@ -207,6 +230,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     filesLayout,
     sessionLayout,
     terminalPanelHeight,
+    monitorEnabled,
     resolvedTheme,
     resolvedTerminalTheme,
     resolvedPanelHeight,
@@ -218,6 +242,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setTerminalTheme,
     setFilesLayout,
     setSessionLayout,
+    setMonitorEnabled,
     setPanelHeight,
     rememberPanelHeight,
     resetPanelHeight,

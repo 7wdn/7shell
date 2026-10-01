@@ -43,7 +43,7 @@ import {
 import { endedTerminal, onTerminalEnded } from "@/lib/terminal/bus";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
-import { type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
+import { type FilesTab, type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { OpenTunnel, PresentedHostKey, Session, TunnelFailure } from "@/types/session";
 
 const sessionOpenMock = vi.mocked(sessionOpen);
@@ -139,6 +139,11 @@ function terminalTabOrFail(store: ReturnType<typeof useTerminalsStore>): Termina
   return tab;
 }
 
+/** The file browser tab, for the assertions that are about a browser rather than a tab. */
+function filesTab(store: ReturnType<typeof useTerminalsStore>): FilesTab | undefined {
+  return store.tabs.find((tab): tab is FilesTab => tab.kind === "files");
+}
+
 /** The envelope a refused backend call answers with, for the paths that only need a code. */
 const refused = {
   version: 1,
@@ -204,8 +209,8 @@ describe("terminals store", () => {
     expect(sessionOpenMock).toHaveBeenCalledTimes(2);
     expect(store.decision).toBeNull();
     expect(store.tabs).toHaveLength(1);
-    expect(store.tabs[0]?.handle).toBe("handle-1");
-    expect(store.tabs[0]?.status).toBe("open");
+    expect(terminalTab(store)?.handle).toBe("handle-1");
+    expect(terminalTab(store)?.status).toBe("open");
   });
 
   it("forgets the old key before trusting the new one on a mismatch", async () => {
@@ -253,7 +258,7 @@ describe("terminals store", () => {
     }
 
     expect(store.tabs).toHaveLength(1);
-    expect(store.tabs[0]?.status).toBe("ended");
+    expect(terminalTab(store)?.status).toBe("ended");
     expect(terminalTab(store)?.reason).toBe("connection closed by remote host");
   });
 
@@ -265,7 +270,7 @@ describe("terminals store", () => {
     open();
     await store.open(session);
 
-    expect(store.tabs[0]?.status).toBe("ended");
+    expect(terminalTab(store)?.status).toBe("ended");
     expect(terminalTab(store)?.reason).toBe("the server refused the channel");
   });
 
@@ -284,10 +289,10 @@ describe("terminals store", () => {
     await store.open(session);
 
     expect(store.tabs).toHaveLength(1);
-    expect(store.tabs[0]?.status).toBe("failed");
-    expect(store.tabs[0]?.failure?.code).toBe("SSH-AUTH-FAILED");
+    expect(terminalTab(store)?.status).toBe("failed");
+    expect(terminalTab(store)?.failure?.code).toBe("SSH-AUTH-FAILED");
     // Nothing was opened, so there is no handle to close later.
-    expect(store.tabs[0]?.handle).toBeNull();
+    expect(terminalTab(store)?.handle).toBeNull();
   });
 
   it("removes a tab whose terminal is closed", async () => {
@@ -382,7 +387,7 @@ describe("terminals store", () => {
     await store.openFiles(session);
 
     expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal", "files"]);
-    expect(store.tabs[1]?.handle).toBe("f1");
+    expect(filesTab(store)?.handle).toBe("f1");
     expect(store.activeTabId).toBe(store.tabs[1]?.id);
   });
 
@@ -412,7 +417,7 @@ describe("terminals store", () => {
 
     // The browser is still open on the far side, so the tab that draws it stays.
     expect(store.tabs).toHaveLength(1);
-    expect(store.tabs[0]?.status).toBe("failed");
+    expect(filesTab(store)?.status).toBe("failed");
   });
 
   it("focuses the browser it already has instead of opening a second one", async () => {
@@ -680,5 +685,77 @@ describe("terminals store", () => {
     await store.followDirectory("handle-gone", "/data");
 
     expect(filesListMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("pages about a host", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    usePreferencesStore().sessionLayout = "terminal";
+    tunnelsOpenMock.mockReset().mockResolvedValue([]);
+  });
+
+  it("opens a page for a session, and only one page per view of it", () => {
+    const store = useTerminalsStore();
+    open();
+
+    store.openInspect("system", session);
+    store.openInspect("system", session);
+
+    expect(store.tabs).toHaveLength(1);
+    expect(store.tabs[0]?.kind).toBe("inspect");
+    expect(store.activeTabId).toBe(store.tabs[0]?.id);
+  });
+
+  it("gives every view and every host a page of its own", () => {
+    const store = useTerminalsStore();
+    open();
+    const other: Session = { ...session, id: "session-2", name: "db", host: "db.example.test" };
+
+    store.openInspect("system", session);
+    store.openInspect("processes", session);
+    store.openInspect("system", other);
+
+    expect(store.tabs).toHaveLength(3);
+    expect(store.tabs.map((tab) => (tab.kind === "inspect" ? tab.view : tab.kind))).toEqual([
+      "system",
+      "processes",
+      "system",
+    ]);
+  });
+
+  it("takes somebody to the page they already have rather than opening a second one", () => {
+    const store = useTerminalsStore();
+    open();
+    store.openInspect("system", session);
+    store.openInspect("network", session);
+    const first = store.tabs[0]?.id ?? "";
+
+    store.openInspect("system", session);
+
+    expect(store.tabs).toHaveLength(2);
+    expect(store.activeTabId).toBe(first);
+  });
+
+  /** A page holds nothing on the far side, so closing it asks the backend for nothing. */
+  it("closes a page without closing anything on the host", async () => {
+    const store = useTerminalsStore();
+    open();
+    store.openInspect("network", session);
+
+    await store.closeTab(store.tabs[0]?.id ?? "");
+
+    expect(store.tabs).toEqual([]);
+    expect(terminalCloseMock).not.toHaveBeenCalled();
+    expect(filesCloseMock).not.toHaveBeenCalled();
+  });
+
+  it("draws no browser for a page, so a dropped file has nowhere to land", () => {
+    const store = useTerminalsStore();
+    open();
+    store.openInspect("processes", session);
+
+    const tab = store.tabs[0];
+    expect(tab && store.browserHandleOf(tab)).toBeNull();
   });
 });

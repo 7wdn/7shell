@@ -12,6 +12,7 @@ pub mod app;
 pub mod files;
 pub mod keys;
 pub mod known_hosts;
+pub mod monitor;
 pub mod sessions;
 pub mod settings;
 pub mod terminal;

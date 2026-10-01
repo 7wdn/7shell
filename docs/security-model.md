@@ -76,6 +76,27 @@ saved configuration and defaults to `127.0.0.1`; nothing in the interface offers
 `0.0.0.0`. A forward carries bytes and nothing else: it cannot be used to run a command, and it
 stops with the terminal it belongs to.
 
+**Commands nobody typed are a constant, not a string.** The host monitor runs commands on the far
+side without anyone typing them, which is the one place in this build where that is true, so it is
+held to a narrower rule than the terminal is: there are exactly four of them — the sample, the
+process list, the socket list and the look at one process — all constants in
+`crates/sevenshell-core/src/monitor.rs`, none containing a redirection that writes or anything that
+changes the far side's state, and all riding a connection a person already opened. The pid that
+last command takes is a number, formatted as one, so nothing a person types reaches a shell. The monitor cannot connect to anything by itself, because it is
+given a terminal's handle and nothing else. Each runs only while something that shows it is on
+screen — the panel while it is mounted, a page while it is the tab on screen — and hiding the panel
+stops its sampling rather than only its drawing. It is deliberately *not* behind the risk
+classifier: that gate exists to catch a command line nobody has read, and these can be read in the
+repository. A change to any of those constants is therefore a change to what the product runs on
+somebody's server unattended, and belongs in a pull request on its own.
+
+**One read can return a credential, and only when asked.** `/proc/<pid>/environ` holds whatever a
+process was started with, which on a server is routinely a token, a key or a database URL. It is read
+for one process at a time, when somebody opens that process, and never as part of a sample or a poll:
+the poll runs every two seconds forever, and gathering every process's environment on a timer would
+be collecting secrets nobody asked to see. What comes back stays in the interface — it is not logged,
+it is not in an error detail, and it is dropped when the tab closes.
+
 **A vault nobody can open is not a dead end.** If the password is gone, the interface offers to
 rename the file beside itself — `vault.json.old`, then `.2.old`, and so on — and create a new vault
 in its place. Nothing is deleted, the way back is a rename, and the interface is told the file's

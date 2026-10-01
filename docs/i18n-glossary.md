@@ -20,6 +20,10 @@ next reads as two different features.
 | **proxy** | SOCKS5 or HTTP CONNECT used to reach the jump host or the target. | jump host |
 | **port forwarding / tunnel** | A local or remote port mapped over a connection. | proxy |
 | **capability** | Something the product can do with a protocol. | feature, ability |
+| **host monitor** | The panel reporting the connected host's load, memory, network and file systems. | dashboard, metrics |
+| **sample** | One reading of a host, taken by running commands over an open connection. | poll, probe |
+| **load average** | The 1, 5 and 15 minute run-queue averages. | CPU usage (a different figure) |
+| **swap** | Disk space used as memory when there is not enough of the latter. | virtual memory, page file |
 | **descriptor** | The YAML declaration a capability or protocol comes from. | config, manifest (the manifest is generated) |
 | **policy** | The rules deciding whether an action is allowed. | permission (that is one input to a decision) |
 | **approval** | A person saying yes to a specific action. | confirmation, consent |
@@ -42,6 +46,10 @@ next reads as two different features.
 | proxy | 代理 | 跳板机 |
 | port forwarding / tunnel | 端口转发／隧道 | 代理 |
 | capability | 能力 | 功能、特性 |
+| host monitor | 主机监控 | 仪表盘、监控台 |
+| sample | 采样 | 轮询、探测 |
+| load average | 负载 | CPU 占用（那是另一个数） |
+| swap | 交换 | 虚拟内存、页面文件 |
 | descriptor | 描述符 | 配置、清单 |
 | policy | 策略 | 权限 |
 | approval | 审批 | 确认、同意 |

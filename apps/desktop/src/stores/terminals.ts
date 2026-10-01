@@ -29,6 +29,11 @@
  * Whether a session opens as one half or two is a setting rather than something to ask for each
  * time — that is how somebody's work looks, not a decision per connection. Nothing here is fixed by
  * it: the panel is a toggle away on the terminal's own strip, and closing it costs one click.
+ *
+ * A third kind of tab is neither a terminal nor a browser: the monitor's pages, which are about a
+ * host rather than connected to it. They are opened from the monitor and hold a session rather than
+ * a handle, so they survive a reconnect and are drawn as "not connected" when the session has no
+ * terminal at all — see [`InspectTab`].
  */
 
 import { defineStore } from "pinia";
@@ -107,7 +112,25 @@ export interface FilesTab {
   failure: ShellError | null;
 }
 
-export type WorkspaceTab = TerminalTab | FilesTab;
+/** The host pages the monitor opens: a closer look at one machine, in a tab of its own. */
+export type InspectView = "system" | "processes" | "network";
+
+/**
+ * A page about a host rather than a thing connected to it: the system, the processes, the network.
+ *
+ * It holds no handle on purpose. A page is about a *session*, and reads through whatever terminal
+ * that session has open at the moment — so a terminal that reconnects does not leave the page
+ * pointing at a connection that no longer exists, and a session with no terminal open is drawn as
+ * "not connected" rather than as a dead page.
+ */
+export interface InspectTab {
+  readonly kind: "inspect";
+  readonly view: InspectView;
+  id: string;
+  readonly session: Session;
+}
+
+export type WorkspaceTab = TerminalTab | FilesTab | InspectTab;
 
 /** A host key the backend is waiting on before it will send anything at all. */
 export type HostKeyDecision =
@@ -285,6 +308,27 @@ export const useTerminalsStore = defineStore("terminals", () => {
     raiseDecision(session, { to: "files" }, outcome);
   }
 
+  /**
+   * Opens one of the monitor's pages for a session, or goes to the one that is already open.
+   *
+   * One page per view per host: asking for the system page of a machine twice should take somebody
+   * to the page they have, not stack a second copy that shows the same numbers a moment apart. The
+   * page reads through whichever terminal the session has open, so the same page keeps working
+   * across a reconnect — which is also why nothing here waits for a connection to exist.
+   */
+  function openInspect(view: InspectView, session: Session): void {
+    const showing = tabs.value.find(
+      (entry): entry is InspectTab =>
+        entry.kind === "inspect" && entry.view === view && entry.session.id === session.id,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({ kind: "inspect", view, id: crypto.randomUUID(), session });
+  }
+
   /** The panel's answer to an open: a browser, or the decision that has to come first. */
   function acceptPanel(tab: TerminalTab, outcome: SftpOutcome): void {
     if (outcome.kind === "opened") {
@@ -418,6 +462,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
       await closeFilesTab(tab);
       return;
     }
+    // A page holds nothing to close: what it was reading belongs to a terminal, and that terminal
+    // decides for itself how long it lives.
+    if (tab.kind === "inspect") {
+      forget(id);
+      return;
+    }
 
     // A tab whose terminal already ended, or whose close already failed, has nothing left to
     // close: removing it locally is the whole operation.
@@ -529,6 +579,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (tab.kind === "files") {
       return tab.handle;
     }
+    // A page about a host draws no browser, so there is nowhere for a dropped file to land.
+    if (tab.kind === "inspect") {
+      return null;
+    }
     return tab.panel?.handle ?? null;
   }
 
@@ -638,6 +692,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
       await openFiles(session);
       return;
     }
+    // A page has nothing to reconnect. It reads through whatever terminal the session has, and
+    // starts reading again by itself the moment one is there — which is why it offers no button.
+    if (tab.kind === "inspect") {
+      return;
+    }
 
     // The button only appears on a terminal that is not open, so there is nothing here to close
     // through the backend: the panel's browser is told to stop and the tab goes regardless.
@@ -696,6 +755,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     initialize,
     open,
     openFiles,
+    openInspect,
     openPanel,
     closePanel,
     togglePanel,

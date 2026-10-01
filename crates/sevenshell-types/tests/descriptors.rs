@@ -34,12 +34,13 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert_eq!(ssh.runtime(), Runtime::Native);
 
     // What this build does today: a shell, a command run without one, resized when the window
-    // changes, kept alive while idle, reachable through another saved session, and able to answer
-    // a local port from the far side of the connection.
+    // changes, kept alive while idle, reachable through another saved session, able to answer a
+    // local port from the far side of the connection, and able to say what the host is doing.
     assert!(ssh.supports(Capability::Shell));
     assert!(ssh.supports(Capability::Exec));
     assert!(ssh.supports(Capability::Resize));
     assert!(ssh.supports(Capability::Keepalive));
+    assert!(ssh.supports(Capability::HostMetrics));
     assert!(ssh.supports(Capability::Sftp));
     assert!(ssh.supports(Capability::Forwarding));
     assert!(ssh.supports(Capability::JumpHost));

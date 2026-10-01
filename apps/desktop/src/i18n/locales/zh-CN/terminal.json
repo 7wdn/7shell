@@ -11,6 +11,7 @@
     "tunnels": {
       "title": "隧道",
       "stop": "停止此转发",
+      "direction": "转发到",
       "dismiss": "忽略",
       "connections": "已承载 {count} 个连接 | 已承载 {count} 个连接",
       "failure": "{bind} 上的转发未能建立。"

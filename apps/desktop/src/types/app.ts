@@ -38,6 +38,11 @@ export interface AppSettings {
   readonly sessionLayout: SessionLayout;
   /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */
   readonly terminalPanelHeight?: number;
+  /**
+   * Whether the host monitor runs beside the workspace. On unless somebody turns it off: hidden
+   * means nothing is sampled either, not merely that nothing is drawn.
+   */
+  readonly monitorEnabled: boolean;
   /** Absent means nobody has chosen a language, so the system's applies. */
   readonly locale?: string;
 }

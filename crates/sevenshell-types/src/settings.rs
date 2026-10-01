@@ -101,7 +101,7 @@ impl std::fmt::Display for ThemeMode {
 /// Both fields are optional in effect: absent means "not chosen yet", which is different
 /// from "chosen to be the default". The interface follows the system until someone says
 /// otherwise, so a fresh install needs no first-run dialog.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -126,8 +126,39 @@ pub struct AppSettings {
     /// height that no longer fits is honoured as far as it can be rather than refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_panel_height: Option<u32>,
+    /// Whether the host monitor runs beside the workspace.
+    ///
+    /// On unless somebody says otherwise, unlike the fields above: those describe a choice the
+    /// interface would otherwise have to guess at, while this one is a feature that is either
+    /// there or gone. Turning it off stops the sampling as well as the drawing — a hidden panel
+    /// that went on running commands on the far side would be worse than one that is on screen.
+    #[serde(default = "monitor_on")]
+    pub monitor_enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+}
+
+/// The monitor's default, which is "on".
+///
+/// A named function rather than a constant because `serde` wants a path. It is public because
+/// there are two readers of it — this type's own default and the settings file's — and a default
+/// written down twice is a default that drifts.
+pub fn monitor_on() -> bool {
+    true
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme_mode: ThemeMode::default(),
+            terminal_theme: ThemeMode::default(),
+            files_layout: FilesLayout::default(),
+            session_layout: SessionLayout::default(),
+            terminal_panel_height: None,
+            monitor_enabled: monitor_on(),
+            locale: None,
+        }
+    }
 }
 
 impl AppSettings {
@@ -139,6 +170,7 @@ impl AppSettings {
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
             && self.terminal_panel_height.is_none()
+            && self.monitor_enabled
             && self.locale.is_none()
     }
 }

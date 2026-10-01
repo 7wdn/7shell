@@ -18,11 +18,20 @@
  * owns — its status strip and its endings — stays above that line, so what is below it is only ever
  * the panel; the drag measures from the bottom of the tab, and that has to keep meaning "the
  * bottom of the panel".
+ *
+ * The third kind is a page about a host rather than a thing connected to one — the monitor's
+ * system, process and network pages. It draws a host's own shape in the strip (its title and the
+ * machine it is about) instead of a session name, and it has no status dot: whether it is being
+ * read is a question about a terminal it does not own.
  */
-import { CircleAlert, Folder, LoaderCircle, PanelBottom, RotateCw, Terminal, X } from "@lucide/vue";
+import { CircleAlert, Cpu, Folder, List, LoaderCircle, Network, PanelBottom, RotateCw, Terminal, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 
 import FileBrowser from "@/components/files/FileBrowser.vue";
+import HostPage from "@/components/inspect/HostPage.vue";
+import NetworkReport from "@/components/inspect/NetworkReport.vue";
+import ProcessTable from "@/components/inspect/ProcessTable.vue";
+import SystemReport from "@/components/inspect/SystemReport.vue";
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import SplitDivider from "@/components/workspace/SplitDivider.vue";
 import { describeShellError } from "@/i18n/errors";
@@ -50,6 +59,11 @@ function translateStatus(tab: TerminalTab): string | null {
 function dotClass(tab: WorkspaceTab): string | null {
   if (tab.kind === "files") {
     return tab.status === "failed" ? "bg-destructive" : null;
+  }
+  // A page about a host has no status of its own: whether it is being read is the page's own
+  // business, and a dot would be reporting a connection that belongs to a terminal somewhere else.
+  if (tab.kind === "inspect") {
+    return null;
   }
   switch (tab.status) {
     case "failed":
@@ -84,14 +98,43 @@ function dotClass(tab: WorkspaceTab): string | null {
         >
           <span v-if="dotClass(tab)" class="size-1.5 shrink-0 rounded-full" :class="dotClass(tab)"></span>
           <Terminal v-if="tab.kind === 'terminal'" :size="12" class="shrink-0" />
-          <Folder v-else :size="12" class="shrink-0" />
-          <span class="truncate">{{ tab.session.name }}</span>
+          <Folder v-else-if="tab.kind === 'files'" :size="12" class="shrink-0" />
+          <Cpu v-else-if="tab.view === 'system'" :size="12" class="shrink-0" />
+          <List v-else-if="tab.view === 'processes'" :size="12" class="shrink-0" />
+          <Network v-else :size="12" class="shrink-0" />
+          <!--
+            A page names the machine it is about rather than only its kind: two hosts' system pages
+            look identical in a tab strip otherwise, and which machine a tab is showing is exactly
+            what somebody reads a strip for.
+          -->
+          <span v-if="tab.kind === 'inspect' && tab.view === 'system'" class="truncate">
+            {{ t("inspect.system.title") }} · {{ tab.session.host }}
+          </span>
+          <span v-else-if="tab.kind === 'inspect' && tab.view === 'processes'" class="truncate">
+            {{ t("inspect.processes.title") }} · {{ tab.session.host }}
+          </span>
+          <span v-else-if="tab.kind === 'inspect'" class="truncate">
+            {{ t("inspect.network.title") }} · {{ tab.session.host }}
+          </span>
+          <span v-else class="truncate">{{ tab.session.name }}</span>
         </button>
         <button
           type="button"
           class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="tab.kind === 'files' ? t('files.tab.close') : t('terminal.tab.close')"
-          :aria-label="tab.kind === 'files' ? t('files.tab.close') : t('terminal.tab.close')"
+          :title="
+            tab.kind === 'files'
+              ? t('files.tab.close')
+              : tab.kind === 'inspect'
+                ? t('inspect.tab.close')
+                : t('terminal.tab.close')
+          "
+          :aria-label="
+            tab.kind === 'files'
+              ? t('files.tab.close')
+              : tab.kind === 'inspect'
+                ? t('inspect.tab.close')
+                : t('terminal.tab.close')
+          "
           @click="terminals.closeTab(tab.id)"
         >
           <X :size="11" />
@@ -243,7 +286,7 @@ function dotClass(tab: WorkspaceTab): string | null {
         </template>
       </template>
 
-      <template v-else>
+      <template v-else-if="tab.kind === 'files'">
         <FileBrowser v-if="tab.handle" :handle="tab.handle" class="min-h-0 flex-1" />
 
         <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
@@ -275,6 +318,23 @@ function dotClass(tab: WorkspaceTab): string | null {
             </button>
           </div>
         </footer>
+      </template>
+
+      <!--
+        A page about the host. It is handed the session rather than a handle, and the frame decides
+        whether there is a connection to read through — which is why a page can be left open across
+        a reconnect and why one whose host is not connected is a page waiting rather than a failure.
+        The process page is handed whether it is the tab on screen as well, because it reads a list
+        of its own and should do that only while somebody is looking at it.
+      -->
+      <template v-else>
+        <HostPage :session="tab.session" :view="tab.view" :active="tab.id === terminals.activeTabId">
+          <template #default="{ live }">
+            <SystemReport v-if="tab.view === 'system'" :live="live" />
+            <ProcessTable v-else-if="tab.view === 'processes'" :active="tab.id === terminals.activeTabId" />
+            <NetworkReport v-else :live="live" :active="tab.id === terminals.activeTabId" />
+          </template>
+        </HostPage>
       </template>
     </div>
   </section>

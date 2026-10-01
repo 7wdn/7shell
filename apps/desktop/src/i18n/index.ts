@@ -13,6 +13,8 @@ import enCommon from "./locales/en/common.json";
 import enErrors from "./locales/en/errors.json";
 import enFiles from "./locales/en/files.json";
 import enHome from "./locales/en/home.json";
+import enInspect from "./locales/en/inspect.json";
+import enMonitor from "./locales/en/monitor.json";
 import enProtocol from "./locales/en/protocol.json";
 import enSessions from "./locales/en/sessions.json";
 import enSettings from "./locales/en/settings.json";
@@ -26,6 +28,8 @@ import zhCnCommon from "./locales/zh-CN/common.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
 import zhCnFiles from "./locales/zh-CN/files.json";
 import zhCnHome from "./locales/zh-CN/home.json";
+import zhCnInspect from "./locales/zh-CN/inspect.json";
+import zhCnMonitor from "./locales/zh-CN/monitor.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
 import zhCnSessions from "./locales/zh-CN/sessions.json";
 import zhCnSettings from "./locales/zh-CN/settings.json";
@@ -80,6 +84,8 @@ const messages = {
     ...enSessions,
     ...enTerminal,
     ...enFiles,
+    ...enMonitor,
+    ...enInspect,
   },
   "zh-CN": {
     ...zhCnCommon,
@@ -95,6 +101,8 @@ const messages = {
     ...zhCnSessions,
     ...zhCnTerminal,
     ...zhCnFiles,
+    ...zhCnMonitor,
+    ...zhCnInspect,
   },
 };
 

@@ -9,8 +9,10 @@
 
 mod batch;
 mod files;
+mod monitor;
 mod sessions;
 
 pub use batch::{BatchEvent, DEFAULT_PARALLEL, MAX_HOST_TIMEOUT, MAX_PARALLEL, MIN_HOST_TIMEOUT};
 pub use files::FileSession;
+pub use monitor::SAMPLE_TIMEOUT;
 pub use sessions::{Core, CoreEvent, OPEN_TIMEOUT, TransferRecord};

@@ -1,0 +1,93 @@
+{
+  "inspect": {
+    "reading": "Live",
+    "tab": {
+      "close": "Close this page"
+    },
+    "disconnected": {
+      "title": "Not connected",
+      "hint": "This page reads through the terminal {name} has open. Open one and it starts by itself."
+    },
+    "system": {
+      "title": "System info",
+      "group": "Operating system",
+      "arch": "Architecture"
+    },
+    "cpu": {
+      "name": "Name",
+      "cores": "Cores",
+      "frequency": "Frequency",
+      "cache": "Cache",
+      "bogomips": "BogoMips",
+      "megahertz": "{value} MHz",
+      "kilobytes": "{value} KB",
+      "shareHint": "Where the processors spent the last interval, between two samples:",
+      "noShare": "CPU usage",
+      "state": {
+        "user": "User",
+        "nice": "Nice",
+        "system": "System",
+        "interrupt": "Hardware IRQ",
+        "softInterrupt": "Software IRQ",
+        "ioWait": "I/O wait",
+        "steal": "Steal",
+        "idle": "Idle"
+      }
+    },
+    "memory": {
+      "total": "Total",
+      "used": "Used",
+      "percent": "Used %",
+      "available": "Available"
+    },
+    "network": {
+      "title": "Network",
+      "group": "Interfaces",
+      "listeners": "Listening ports",
+      "connections": "Connections",
+      "connectionsEmpty": "Nothing is connected to this port.",
+      "close": "Close these connections",
+      "name": "Name",
+      "protocol": "Protocol",
+      "address": "Listen IP",
+      "port": "Port",
+      "peers": "IPs",
+      "count": "Connections",
+      "state": "State",
+      "peer": "IP",
+      "sent": "Sent",
+      "received": "Received",
+      "sentRate": "Send rate",
+      "receivedRate": "Receive rate",
+      "empty": "This host reported no listening ports.",
+      "pick": "Which interface the figures are about",
+      "automatic": "Busiest",
+      "sortBy": "Sort by {column}"
+    },
+    "disk": {
+      "name": "Name",
+      "size": "Size",
+      "used": "Used",
+      "percent": "Used %",
+      "available": "Available",
+      "mount": "Mounted on"
+    },
+    "processes": {
+      "title": "Processes"
+    },
+    "process": {
+      "user": "User",
+      "name": "Name",
+      "command": "Command line",
+      "executable": "Path",
+      "workingDirectory": "Working directory",
+      "environment": "Environment",
+      "environmentEmpty": "This process reports no environment.",
+      "close": "Close this process",
+      "refresh": "Read again",
+      "cpuSinceRead": "Processor time used since the last read",
+      "sortBy": "Sort by {column}",
+      "empty": "This host did not report its processes."
+    }
+  }
+}

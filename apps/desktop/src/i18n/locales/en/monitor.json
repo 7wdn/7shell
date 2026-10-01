@@ -1,0 +1,57 @@
+{
+  "monitor": {
+    "title": "Host monitor",
+    "close": "Hide the monitor",
+    "address": "IP",
+    "copy": "Copy the host name",
+    "copied": "Copied",
+    "idle": {
+      "title": "No connection",
+      "hint": "Open a terminal and this panel reports what the host on the other end is doing."
+    },
+    "waiting": "Taking the first sample…",
+    "sample": {
+      "roundTrip": "Round trip",
+      "milliseconds": "{value} ms",
+      "hint": "How long one sample takes: the network, plus the commands that read the host.",
+      "at": "Sampled at {time}"
+    },
+    "system": {
+      "title": "System",
+      "hostname": "Host name",
+      "os": "System",
+      "kernel": "Kernel",
+      "cores": "CPUs"
+    },
+    "uptime": {
+      "label": "Up",
+      "days": "{days}d {hours}:{minutes}",
+      "hours": "{hours}:{minutes}"
+    },
+    "load": "Load",
+    "loadHint": "Average load over 1, 5 and 15 minutes",
+    "cpu": "CPU",
+    "cpuHint": "Busy time across every CPU, measured between two samples",
+    "memory": "Memory",
+    "swap": "Swap",
+    "processes": {
+      "title": "Processes",
+      "memory": "Memory",
+      "cpu": "CPU",
+      "command": "Command",
+      "empty": "This host did not report its processes.",
+      "cpuSinceStart": "Processor time since each process started, as the host measures it"
+    },
+    "network": {
+      "title": "Network",
+      "empty": "This host did not report its interfaces.",
+      "rateHint": "Measured between two samples"
+    },
+    "disks": {
+      "title": "File systems",
+      "path": "Path",
+      "usage": "Available / size",
+      "empty": "This host did not report its file systems."
+    }
+  }
+}

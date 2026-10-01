@@ -64,6 +64,17 @@ const TERMINAL_THEMES: readonly { mode: ThemeMode; labelKey: string }[] = [
   { mode: "light", labelKey: "settings.terminal.light" },
 ];
 
+/**
+ * Whether the host monitor is there.
+ *
+ * Two choices rather than a switch, like everything else in this dialog — and "hidden" is a real
+ * answer rather than a folded-away panel: nothing is sampled while it is off.
+ */
+const MONITOR_OPTIONS: readonly { enabled: boolean; labelKey: string }[] = [
+  { enabled: true, labelKey: "settings.monitor.shown" },
+  { enabled: false, labelKey: "settings.monitor.hidden" },
+];
+
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
 }
@@ -185,6 +196,30 @@ const problem = computed(() => (preferences.problem ? describeShellError(transla
               </button>
             </div>
             <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.files.hint") }}</p>
+          </section>
+
+          <section>
+            <h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {{ t("settings.monitor.title") }}
+            </h3>
+            <div class="flex gap-1 rounded-md border border-border bg-background p-0.5">
+              <button
+                v-for="option in MONITOR_OPTIONS"
+                :key="String(option.enabled)"
+                type="button"
+                class="flex-1 rounded-sm px-2 py-1.5 text-xs transition-colors"
+                :class="
+                  preferences.monitorEnabled === option.enabled
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                "
+                :aria-pressed="preferences.monitorEnabled === option.enabled"
+                @click="preferences.setMonitorEnabled(option.enabled)"
+              >
+                {{ t(option.labelKey) }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.monitor.hint") }}</p>
           </section>
 
           <section>

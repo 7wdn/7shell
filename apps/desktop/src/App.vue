@@ -12,6 +12,10 @@
  * the shell can answer, because the panes behind other tabs are mounted too and would each answer
  * "me".
  *
+ * The host monitor is mounted here too, in the same branch as the workspace and on the far side of
+ * it: it describes whichever connection is on screen rather than belonging to a tab, and mounting
+ * it is what starts the sampling — so a hidden monitor runs nothing at all.
+ *
  * The gate sits below the title bar and above everything else, including the sidebar: nothing
  * that reads a saved credential is drawn before the vault is open. The subscription to terminal
  * events is made here, once, before the first terminal can exist.
@@ -20,6 +24,7 @@ import { RotateCw } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
@@ -213,6 +218,14 @@ onBeforeUnmount(() => {
           <HomeView />
         </div>
       </main>
+
+      <!--
+        The monitor belongs to the frame rather than to a tab: it describes whichever connection is
+        on screen, and it is mounted here — below the gate, first in the branch above — so that the
+        panel appearing and disappearing is also what starts and stops the sampling. Nothing is
+        asked of a host while the setting is off.
+      -->
+      <MonitorPanel v-if="preferences.monitorEnabled" />
     </div>
 
     <HostKeyPrompt

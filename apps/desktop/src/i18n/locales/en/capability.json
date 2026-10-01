@@ -12,6 +12,9 @@
     "keepalive": {
       "label": "Keep-alive"
     },
+    "hostMetrics": {
+      "label": "Host monitor"
+    },
     "sftp": {
       "label": "File transfer (SFTP)"
     },
