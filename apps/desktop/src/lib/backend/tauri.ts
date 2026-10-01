@@ -275,17 +275,15 @@ export function filesClose(handle: string): Promise<void> {
   return invoke<void>("files_close", { handle });
 }
 
-/** Resolves to the transfer's id, or `undefined` when the save dialog was dismissed. */
+/** The transfer ids, or none at all when the dialog was dismissed. */
 export function filesDownload(
   handle: string,
-  path: string,
+  paths: readonly string[],
   title: string,
   suggestedName: string,
   packed: boolean,
-): Promise<string | undefined> {
-  return invoke<string | null>("files_download", { handle, path, title, suggestedName, packed }).then(
-    (id) => id ?? undefined,
-  );
+): Promise<string[]> {
+  return invoke<string[]>("files_download", { handle, paths, title, suggestedName, packed });
 }
 
 /** Resolves to the transfer's id, or `undefined` when the file picker was dismissed. */

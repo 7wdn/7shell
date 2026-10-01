@@ -9,6 +9,8 @@
 export const MENU_TITLES = {
   terminal: "menu.terminal",
   file: "menu.file",
+  /** For a menu over several selected rows, which has no single name to be about. */
+  files: "menu.files",
   directory: "menu.directory",
   transfer: "menu.transfer",
   tab: "menu.tab",

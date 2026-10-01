@@ -282,7 +282,7 @@ async fn a_folder_comes_down_and_is_opened_where_it_was_asked_for() {
 
     let id = lab
         .core
-        .start_packed_download(&handle, &inner, into.clone())
+        .start_packed_download(&handle, std::slice::from_ref(&inner), into.clone())
         .await
         .expect("start the packed download");
     let state = lab.settle(&id).await;
@@ -429,7 +429,7 @@ async fn a_folder_survives_the_whole_way_round() {
     std::fs::create_dir(&into).expect("a folder to land in");
     let down = lab
         .core
-        .start_packed_download(&handle, &inner, into.clone())
+        .start_packed_download(&handle, std::slice::from_ref(&inner), into.clone())
         .await
         .expect("start the packed download");
     assert_eq!(
@@ -467,6 +467,83 @@ async fn a_folder_survives_the_whole_way_round() {
             .await
             .expect("read the second file back"),
         "second\n"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn several_chosen_entries_come_down_as_one_archive() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, inner) = packed_workspace(&lab, &handle).await;
+
+    // A file beside the awkwardly named folder, so what was chosen is a mixture: that is the shape a
+    // selection usually has, and the shape one `tar` command has to take in its stride.
+    let loose = format!("{workspace}/loose.txt");
+    lab.core
+        .write_text_file(&handle, &loose, "loose\n")
+        .await
+        .expect("write the loose file");
+
+    let scratch = tempdir().expect("temp dir");
+    let into = scratch.path().join("selection");
+    std::fs::create_dir(&into).expect("a folder to land in");
+
+    let id = lab
+        .core
+        .start_packed_download(&handle, &[loose.clone(), inner.clone()], into.clone())
+        .await
+        .expect("start the packed download");
+    assert_eq!(
+        lab.settle(&id).await,
+        TransferState::Done,
+        "the packed download finished"
+    );
+
+    // Each of them landed under its own name: the file where it was, the folder with its contents.
+    assert_eq!(
+        std::fs::read_to_string(into.join("loose.txt")).expect("read the loose file"),
+        "loose\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(into.join(AWKWARD).join("one.txt")).expect("read the first file"),
+        "first\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(into.join(AWKWARD).join("two.txt")).expect("read the second file"),
+        "second\n"
+    );
+
+    // One row for the whole selection, named for what it was rather than for one of the things in it.
+    let transfer = lab
+        .core
+        .transfers()
+        .await
+        .into_iter()
+        .find(|transfer| transfer.id == id)
+        .expect("the transfer is remembered");
+    assert_eq!(transfer.name, "download_pack_2_items.tar.gz");
+    assert!(transfer.packed);
+    assert_eq!(transfer.remote_path, workspace, "it says where they came from");
+
+    // And neither archive is left behind.
+    assert!(
+        !std::env::temp_dir().join(format!("7shell-{id}.tar.gz")).exists(),
+        "the archive this machine downloaded through is gone"
+    );
+    let home = lab
+        .core
+        .list_files(&handle, ".")
+        .await
+        .expect("list the home directory");
+    assert!(
+        !home.entries.iter().any(|entry| entry.name.starts_with(".7shell-")),
+        "the staging file on the far side is gone: {:?}",
+        home.entries.iter().map(|entry| &entry.name).collect::<Vec<_>>()
     );
 
     clear_workspace(&lab, &handle, &workspace).await;

@@ -128,15 +128,21 @@ export const backend = {
       forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token, packed)),
     /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it. */
     clipboardFiles: (): Promise<PendingFiles> => forward("clipboard_files", () => desktop.clipboardFiles()),
-    /** Asks where to put it, in Rust; `undefined` means the dialog was dismissed. */
+    /**
+     * Asks where to put it, in Rust. An empty answer means a dialog was dismissed.
+     *
+     * Which dialog that is depends on what was asked for: one file is asked for by name, several
+     * rows are asked for as a folder to put them in, and a packed selection as a folder to open the
+     * archive into. The question belongs on the side that can ask it.
+     */
     download: (
       handle: string,
-      path: string,
+      paths: readonly string[],
       title: string,
       suggestedName: string,
       packed: boolean,
-    ): Promise<string | undefined> =>
-      forward("files_download", () => desktop.filesDownload(handle, path, title, suggestedName, packed)),
+    ): Promise<string[]> =>
+      forward("files_download", () => desktop.filesDownload(handle, paths, title, suggestedName, packed)),
     /** Asks which file to send, in Rust; `undefined` means the picker was dismissed. */
     upload: (handle: string, directory: string, title: string, packed: boolean): Promise<string | undefined> =>
       forward("files_upload", () => desktop.filesUpload(handle, directory, title, packed)),

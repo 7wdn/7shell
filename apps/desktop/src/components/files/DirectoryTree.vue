@@ -136,7 +136,14 @@ function onTheWay(path: string): boolean {
 </script>
 
 <template>
-  <nav class="w-56 shrink-0 overflow-auto border-r border-border py-1" :aria-label="t('files.tree.title')">
+  <!--
+    The tree is a list of places to click, not text to select: without this the pointer turns into an
+    I-beam over every name, and a drag picks up letters instead of rows.
+  -->
+  <nav
+    class="w-56 shrink-0 cursor-default overflow-auto border-r border-border py-1 select-none"
+    :aria-label="t('files.tree.title')"
+  >
     <ul>
       <li v-for="row in rows" :key="row.path">
         <div

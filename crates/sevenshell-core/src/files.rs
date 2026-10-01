@@ -156,12 +156,12 @@ impl Core {
     }
 
     /**
-     * Starts packing a remote directory and putting it on this machine.
+     * Starts packing the remote entries somebody selected and putting them on this machine.
      *
-     * What lands is the directory itself, inside the folder somebody chose. The archive is a vehicle
-     * that exists on three sides in turn — the far side's temporary directory, the wire, and this
-     * machine's — and it is deleted from all three. A download that left a `.tar.gz` behind would be
-     * handing somebody the second half of the job.
+     * What lands is those entries themselves — a folder, a file, or a mixture — inside the folder that
+     * was chosen. The archive is a vehicle that exists on three sides in turn, the far side's
+     * temporary directory, the wire, and this machine's, and it is deleted from all three: a download
+     * that left a `.tar.gz` behind would be handing somebody the second half of the job.
      *
      * How large the archive is is nobody's business until the far side has finished making it, so the
      * transfer starts with a total of zero — which the list already draws as "still counting" — and
@@ -170,7 +170,7 @@ impl Core {
     pub async fn start_packed_download(
         &self,
         handle: &str,
-        remote_dir: &str,
+        entries: &[String],
         into: PathBuf,
     ) -> Result<String, ShellError> {
         let session = self.file_session(handle).await?;
@@ -178,19 +178,30 @@ impl Core {
         let connection = session.connection();
         let id = self.reserve_transfer_id();
 
-        let (parent, name) = split_remote(remote_dir);
+        let (parent, names) = common_parent(entries)?;
         let staging = archive::staging_path(&files.resolve(".").await, &id);
-        // Named for the person rather than for the far side: what they asked for is `logs`, and what
-        // appears is a folder called `logs`.
-        let held = archive::archive_name(&name);
+        // Named for the person rather than for the far side: one folder keeps its own name, and a
+        // selection gets one that says what it was.
+        let held = match names.as_slice() {
+            [only] => archive::archive_name(only),
+            several => archive::downloaded_name(several.len()),
+        };
+        // What a failure is reported against: the thing itself when there is one, and the directory
+        // they all came from when there are several.
+        let label = match entries {
+            [only] => only.clone(),
+            _ => parent.clone(),
+        };
         let archive_here = archive::local_staging_path(&id);
-        let directory = remote_dir.to_owned();
+        // Where they came from, which is what the row is about. A packed download does not read the
+        // listing again when it finishes — nothing on the far side changed.
+        let origin = parent.clone();
 
         self.spawn_transfer(
             id,
             TransferDirection::Download,
             held,
-            directory.clone(),
+            origin,
             0,
             true,
             move |progress| async move {
@@ -198,9 +209,9 @@ impl Core {
                     &files,
                     &connection,
                     &staging,
-                    &directory,
+                    &label,
                     &parent,
-                    &name,
+                    &names,
                     &archive_here,
                     &progress,
                 )
@@ -210,14 +221,25 @@ impl Core {
                     Err(error) => Err(error),
                 };
 
-                // Whether it worked or not, neither archive is left behind: one is as large as the
-                // directory and the other is ours, and nobody else knows what either of them is.
+                // Whether it worked or not, neither archive is left behind: one is as large as what
+                // was selected and the other is ours, and nobody else knows what either of them is.
                 let _ = files.remove_file(&staging).await;
                 let _ = std::fs::remove_file(&archive_here);
                 outcome
             },
         )
         .await
+    }
+
+    /**
+     * Starts copying one remote file into a local directory, under the name it has on the far side.
+     *
+     * The plain download asks where to put *this* file. This is the other case: several files were
+     * chosen and the folder was asked for once, so each of them keeps its own name inside it.
+     */
+    pub async fn start_download_into(&self, handle: &str, remote: &str, into: &Path) -> Result<String, ShellError> {
+        self.start_download(handle, remote, into.join(file_name_of(remote)))
+            .await
     }
 
     /**
@@ -409,9 +431,9 @@ fn file_name_of(path: &str) -> String {
 
 /// A remote path split into the directory that holds it and its own name.
 ///
-/// `tar` is run from the parent, because the entry it stores is the directory itself: unpacking what
-/// it produces gives back `logs/` rather than the contents of `logs/` strewn into wherever somebody
-/// happened to be standing.
+/// `tar` is run from the parent, because the entries it stores are the names themselves: unpacking
+/// what it produces gives back `logs/` rather than the contents of `logs/` strewn into wherever
+/// somebody happened to be standing.
 fn split_remote(path: &str) -> (String, String) {
     let trimmed = path.trim_end_matches('/');
 
@@ -423,25 +445,55 @@ fn split_remote(path: &str) -> (String, String) {
     }
 }
 
-/// Packs one entry on the far side and brings the archive down.
+/// The directory a selection lives in, and the names of the entries inside it.
+///
+/// A selection comes from one listing, so this cannot fail in the interface — but `-C <one directory>
+/// <names…>` is the shape the far side's `tar` needs, and a caller that handed over paths from two
+/// directories has to be told rather than quietly packed from one of them.
+fn common_parent(entries: &[String]) -> Result<(String, Vec<String>), ShellError> {
+    let mut parent: Option<String> = None;
+    let mut names: Vec<String> = Vec::with_capacity(entries.len());
+
+    for entry in entries {
+        let (holder, name) = split_remote(entry);
+        match &parent {
+            Some(known) if *known != holder => {
+                return Err(ShellError::sftp_archive_failed(
+                    entry,
+                    "these entries are not all in one directory, so they cannot be packed together",
+                ));
+            }
+            Some(_) => {}
+            None => parent = Some(holder),
+        }
+        names.push(name);
+    }
+
+    parent
+        .map(|parent| (parent, names))
+        .ok_or_else(|| ShellError::sftp_archive_failed("(nothing)", "there is nothing to pack"))
+}
+
+/// Packs the selected entries on the far side and brings the archive down.
 ///
 /// The cancellation check between the two steps is not decoration: a `tar` that has already finished
 /// cannot be stopped, but a download that has not begun can — and somebody who asked to stop should
 /// not have a file appear on their disk afterwards.
+#[allow(clippy::too_many_arguments)]
 async fn take_archive(
     files: &Arc<SftpSession>,
     connection: &SshSession,
     staging: &str,
-    directory: &str,
+    label: &str,
     parent: &str,
-    name: &str,
+    names: &[String],
     local: &Path,
     progress: &Arc<TransferProgress>,
 ) -> Result<(), ShellError> {
-    archive::run(&archive::pack_command(staging, parent, name), connection, directory).await?;
+    archive::run(&archive::pack_command(staging, parent, names), connection, label).await?;
 
     if progress.is_cancelled() {
-        return Err(cancelled(directory));
+        return Err(cancelled(label));
     }
     // Only now is there a number to count towards.
     progress.set_total(files.size_of(staging).await?);
@@ -523,5 +575,41 @@ mod tests {
     #[test]
     fn a_relative_path_is_taken_as_seen_from_where_the_session_is() {
         assert_eq!(split_remote("logs"), (".".to_owned(), "logs".to_owned()));
+    }
+
+    #[test]
+    fn a_selection_shares_the_directory_it_was_listed_in() {
+        let entries = vec![
+            "/var/log/nginx".to_owned(),
+            "/var/log/syslog".to_owned(),
+            "/var/log/journal".to_owned(),
+        ];
+
+        let (parent, names) = common_parent(&entries).expect("one directory");
+
+        assert_eq!(parent, "/var/log");
+        assert_eq!(
+            names,
+            vec!["nginx".to_owned(), "syslog".to_owned(), "journal".to_owned()]
+        );
+    }
+
+    #[test]
+    fn entries_from_two_directories_are_refused_rather_than_packed_from_one() {
+        let entries = vec!["/var/log/nginx".to_owned(), "/etc/hosts".to_owned()];
+
+        let error = common_parent(&entries).expect_err("two directories");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SftpArchiveFailed);
+        assert_eq!(
+            error.message_params().get("path").map(String::as_str),
+            Some("/etc/hosts"),
+            "the refusal names the entry that is not where the others are"
+        );
+    }
+
+    #[test]
+    fn there_is_nothing_to_pack_in_an_empty_selection() {
+        assert!(common_parent(&[]).is_err());
     }
 }

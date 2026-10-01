@@ -27,7 +27,6 @@ import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { parentPath } from "@/lib/files/format";
 import { resolveDirectory } from "@/lib/terminal/follow";
 import type {
-  EntryKind,
   SftpEntry,
   SftpListing,
   SftpOutcome,
@@ -233,32 +232,48 @@ export const useFilesStore = defineStore("files", () => {
     return run(handle, "files_rename", () => backend.files.rename(handle, from, to));
   }
 
-  /** Deletes a file, or a directory and everything under it: the kind says which this is. */
-  function remove(handle: string, path: string, kind: EntryKind): Promise<boolean> {
-    return run(handle, "files_delete", () => backend.files.remove(handle, path, kind));
+  /**
+   * Deletes every entry in the list, one ask per entry and one read of the directory at the end.
+   *
+   * One `run` rather than one per entry, and that is not tidiness: `run` is what re-reads the
+   * directory, bumps the tree's revision and holds the failure for the panel to show — so a loop of
+   * separate calls would read the directory N times and keep only the last failure, which is the one
+   * least likely to be the one that mattered.
+   *
+   * A refusal stops the rest. What was already deleted stays deleted, which is the honest outcome of
+   * a batch that failed part-way, and the re-read shows exactly what is left.
+   */
+  function removeMany(handle: string, entries: readonly SftpEntry[]): Promise<boolean> {
+    return run(handle, "files_delete", async () => {
+      for (const entry of entries) {
+        await backend.files.remove(handle, entry.path, entry.kind);
+      }
+    });
   }
 
   /**
-   * Asks Rust where to put a file, then starts moving it.
+   * Asks Rust where to put things, then starts moving them.
    *
-   * An `undefined` answer means the save dialog was dismissed, which is not a failure and not a
-   * transfer: nothing is recorded, and the list is not even read.
+   * One door for every case the switch can be in: a single file is asked for by name, several rows
+   * are asked for as a folder to put them in, and a packed selection is asked for as a folder to open
+   * the archive into. Which dialog that is, is decided where the dialogs are — this side only knows
+   * which rows somebody picked.
    *
-   * `packed` is passed rather than read from the settings here: the switch belongs to the person, and
-   * what it means at this moment is the answer the interface already has.
+   * An empty answer means a dialog was dismissed, which is not a failure and not a transfer: nothing
+   * is recorded, and the list is not even read.
    */
   async function download(
     handle: string,
-    path: string,
+    paths: readonly string[],
     title: string,
     suggestedName: string,
     packed: boolean,
   ): Promise<void> {
     transferFailure.value = null;
     try {
-      const id = await backend.files.download(handle, path, title, suggestedName, packed);
-      if (id !== undefined) {
-        // The backend inserted the record before it answered, so the row is there to read.
+      const ids = await backend.files.download(handle, paths, title, suggestedName, packed);
+      if (ids.length > 0) {
+        // The backend inserted the records before it answered, so the rows are there to read.
         await refreshTransfers();
       }
     } catch (error) {
@@ -521,7 +536,7 @@ export const useFilesStore = defineStore("files", () => {
     createFolder,
     createFile,
     rename,
-    remove,
+    removeMany,
     download,
     upload,
     close,

@@ -20,9 +20,13 @@
     "downloadTitle": "选择此文件的保存位置",
     "downloadPackedTitle": "选择下载到的文件夹",
     "empty": "该目录为空。",
+    "listing": "文件列表",
     "name": "名称",
     "size": "大小",
     "modified": "修改时间",
+    "selection": {
+      "count": "已选中 {count} 项"
+    },
     "action": {
       "open": "打开",
       "download": "下载",
@@ -37,6 +41,7 @@
     "delete": {
       "confirmFile": "删除“{name}”？",
       "confirmDirectory": "删除“{name}”及其下的全部内容？",
+      "confirmItems": "删除选中的这 {count} 项？",
       "note": "此操作无法撤销。",
       "submit": "删除"
     },

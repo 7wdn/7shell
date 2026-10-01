@@ -109,16 +109,16 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
     {
       title: MENU_TITLES.file,
       entries: fileEntryMenu(
-        file,
-        { open: nothing, download: nothing, downloadArchive: nothing, edit: nothing, rename: nothing, remove: nothing },
+        [file],
+        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
         { packed: false },
       ),
     },
     {
       title: MENU_TITLES.file,
       entries: fileEntryMenu(
-        directory,
-        { open: nothing, download: nothing, downloadArchive: nothing, edit: nothing, rename: nothing, remove: nothing },
+        [directory],
+        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
         // Packed, so the one entry a directory gains is in the list below rather than only in the
         // locale files: a key nothing asks for is a key nothing checks.
         { packed: true },
@@ -127,9 +127,18 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
     {
       title: MENU_TITLES.file,
       entries: fileEntryMenu(
-        link,
-        { open: nothing, download: nothing, downloadArchive: nothing, edit: nothing, rename: nothing, remove: nothing },
+        [link],
+        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
         { packed: false },
+      ),
+    },
+    {
+      // Several rows at once, which is the only shape the counted labels exist in.
+      title: MENU_TITLES.files,
+      entries: fileEntryMenu(
+        [file, directory, link],
+        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
+        { packed: true },
       ),
     },
     {

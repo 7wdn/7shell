@@ -20,9 +20,13 @@
     "downloadTitle": "Choose where to save this file",
     "downloadPackedTitle": "Choose the folder to download into",
     "empty": "This directory is empty.",
+    "listing": "Files",
     "name": "Name",
     "size": "Size",
     "modified": "Modified",
+    "selection": {
+      "count": "{count} selected"
+    },
     "action": {
       "open": "Open",
       "download": "Download",
@@ -37,6 +41,7 @@
     "delete": {
       "confirmFile": "Delete “{name}”?",
       "confirmDirectory": "Delete “{name}” and everything under it?",
+      "confirmItems": "Delete these {count} items?",
       "note": "This cannot be undone.",
       "submit": "Delete"
     },

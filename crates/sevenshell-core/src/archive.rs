@@ -54,17 +54,21 @@ pub fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-/// The command that packs one entry, as seen from the directory that holds it.
+/// The command that packs entries, as seen from the directory that holds them.
 ///
-/// `-C` into the parent and the entry's own name afterwards, so what the archive stores is the
-/// directory itself: unpacking it somewhere gives back `logs/` rather than the contents of `logs/`
-/// strewn into wherever somebody happened to be standing.
-pub fn pack_command(archive: &str, parent: &str, name: &str) -> String {
+/// `-C` into the parent and the entries' own names afterwards, so what the archive stores is those
+/// names: unpacking it somewhere gives back `logs/` and `notes.txt` rather than a path trailing down
+/// from wherever the far side happens to keep its files.
+///
+/// Every name is quoted on its own. The shell is what joins them into a command line, and one of them
+/// is allowed to contain a space, a quote or a semicolon.
+pub fn pack_command(archive: &str, parent: &str, names: &[String]) -> String {
+    let entries: Vec<String> = names.iter().map(|name| shell_quote(name)).collect();
     format!(
         "tar czf {} -C {} {}",
         shell_quote(archive),
         shell_quote(parent),
-        shell_quote(name)
+        entries.join(" ")
     )
 }
 
@@ -87,6 +91,14 @@ pub fn archive_name(directory: &str) -> String {
 pub fn uploaded_name(files: usize) -> String {
     let noun = if files == 1 { "file" } else { "files" };
     format!("upload_pack_{files}_{noun}.tar.gz")
+}
+
+/// What a packed download of several entries is called in the transfer list.
+///
+/// The same shape as [`uploaded_name`] from the other end: a selection has no name of its own, so the
+/// name says what happened instead of pretending to be one of the things in it.
+pub fn downloaded_name(items: usize) -> String {
+    format!("download_pack_{items}_items.tar.gz")
 }
 
 /// Where an archive waits on this machine while a packed transfer is using it.
@@ -267,17 +279,33 @@ mod tests {
     }
 
     #[test]
-    fn packing_names_the_parent_and_the_entry() {
+    fn packing_names_the_parent_and_what_is_being_packed() {
         assert_eq!(
-            pack_command("/home/u/.7shell-x1.tar.gz", "/var/log", "nginx"),
+            pack_command("/home/u/.7shell-x1.tar.gz", "/var/log", &["nginx".to_owned()]),
             "tar czf '/home/u/.7shell-x1.tar.gz' -C '/var/log' 'nginx'"
+        );
+    }
+
+    #[test]
+    fn packing_several_things_quotes_each_of_them_on_its_own() {
+        assert_eq!(
+            pack_command(
+                "/tmp/a.tar.gz",
+                "/home/u",
+                &[
+                    "notes.txt".to_owned(),
+                    "it's a report.txt".to_owned(),
+                    "logs".to_owned()
+                ]
+            ),
+            r"tar czf '/tmp/a.tar.gz' -C '/home/u' 'notes.txt' 'it'\''s a report.txt' 'logs'"
         );
     }
 
     #[test]
     fn a_name_that_needs_quoting_is_quoted_in_the_command_too() {
         assert_eq!(
-            pack_command("/tmp/a.tar.gz", "/home/u", "it's here"),
+            pack_command("/tmp/a.tar.gz", "/home/u", &["it's here".to_owned()]),
             r"tar czf '/tmp/a.tar.gz' -C '/home/u' 'it'\''s here'"
         );
     }
@@ -468,6 +496,12 @@ mod tests {
     fn a_packed_upload_says_in_its_name_what_went_into_it() {
         assert_eq!(uploaded_name(1), "upload_pack_1_file.tar.gz");
         assert_eq!(uploaded_name(4), "upload_pack_4_files.tar.gz");
+    }
+
+    #[test]
+    fn a_packed_download_of_a_selection_says_the_same_thing() {
+        assert_eq!(downloaded_name(2), "download_pack_2_items.tar.gz");
+        assert_eq!(downloaded_name(11), "download_pack_11_items.tar.gz");
     }
 
     #[test]

@@ -94,34 +94,55 @@ pub async fn transfer_cancel(state: State<'_, ShellState>, id: String) -> Result
     state.core().cancel_transfer(&id).await
 }
 
-/// Asks where to put a remote file, then copies it there.
+/// Asks where to put the chosen remote entries, then copies them there.
 ///
-/// Answers with the transfer's id, or `None` when the dialog was dismissed — which is a person
+/// Answers with the transfer ids, or none at all when a dialog was dismissed — which is a person
 /// changing their mind, not a failure.
 ///
-/// `packed` is the parked-transfer switch, and it changes the question as well as the answer: a
-/// directory that travels as one archive is put *into* a folder rather than *as* a file, so the
-/// dialog asks which folder. `suggested_name` is what that folder picker has no use for.
+/// The question follows from what was chosen, and that is why it is asked here rather than in the
+/// interface: one file is asked for by name (a save dialog), several rows are asked for as a folder
+/// to put them in, and a packed selection is asked for as a folder to open the archive into. A host
+/// cannot be asked any of those, so this is the side that can.
 #[tauri::command]
 pub async fn files_download(
     app: AppHandle,
     state: State<'_, ShellState>,
     handle: String,
-    path: String,
+    paths: Vec<String>,
     title: String,
     suggested_name: String,
     packed: bool,
-) -> Result<Option<String>, ShellError> {
-    if packed {
+) -> Result<Vec<String>, ShellError> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // One archive, opened where somebody says: directories, files, or a mixture of the two.
+    if packed || paths.len() > 1 {
         let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_folder()).await?;
         let Some(chosen) = chosen else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         let into: PathBuf = chosen.into_path().map_err(|error| {
-            ShellError::sftp_transfer_failed(&path, format!("that folder cannot be written to: {error}"))
+            ShellError::sftp_transfer_failed(&paths[0], format!("that folder cannot be written to: {error}"))
         })?;
 
-        return state.core().start_packed_download(&handle, &path, into).await.map(Some);
+        if packed {
+            return state
+                .core()
+                .start_packed_download(&handle, &paths, into)
+                .await
+                .map(|id| vec![id]);
+        }
+
+        // Several files, unpacked: one folder, one transfer each. A directory is not among them —
+        // the interface only offers this when everything chosen is a file, because a directory has no
+        // unpacked way down.
+        let mut started = Vec::with_capacity(paths.len());
+        for path in &paths {
+            started.push(state.core().start_download_into(&handle, path, &into).await?);
+        }
+        return Ok(started);
     }
 
     let destination = spawn_dialog(move || {
@@ -134,14 +155,18 @@ pub async fn files_download(
     .await?;
 
     let Some(destination) = destination else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
 
     let local: PathBuf = destination.into_path().map_err(|error| {
-        ShellError::sftp_transfer_failed(&path, format!("that location cannot be written: {error}"))
+        ShellError::sftp_transfer_failed(&paths[0], format!("that location cannot be written: {error}"))
     })?;
 
-    state.core().start_download(&handle, &path, local).await.map(Some)
+    state
+        .core()
+        .start_download(&handle, &paths[0], local)
+        .await
+        .map(|id| vec![id])
 }
 
 /// Asks which local files to send, then copies them into a remote directory.

@@ -104,7 +104,7 @@ describe("files store", () => {
     filesCreateFolderMock.mockReset().mockResolvedValue(undefined);
     filesRenameMock.mockReset().mockResolvedValue(undefined);
     filesDeleteMock.mockReset().mockResolvedValue(undefined);
-    filesDownloadMock.mockReset().mockResolvedValue(undefined);
+    filesDownloadMock.mockReset().mockResolvedValue([]);
     filesUploadMock.mockReset().mockResolvedValue(undefined);
     filesCloseMock.mockReset().mockResolvedValue(undefined);
     transfersOpenMock.mockReset().mockResolvedValue([]);
@@ -158,7 +158,7 @@ describe("files store", () => {
     expect(filesRenameMock).toHaveBeenCalledWith(handle, "/home/user/made", "/home/user/renamed");
     expect(filesListMock).toHaveBeenCalledTimes(2);
 
-    await store.remove(handle, "/home/user/renamed", "directory");
+    await store.removeMany(handle, [entry("renamed", "directory")]);
     expect(filesDeleteMock).toHaveBeenCalledWith(handle, "/home/user/renamed", "directory");
     expect(filesListMock).toHaveBeenCalledTimes(3);
   });
@@ -170,7 +170,7 @@ describe("files store", () => {
 
     const store = useFilesStore();
     await store.open(sessionId);
-    const worked = await store.remove(handle, "/home/user/notes.txt", "file");
+    const worked = await store.removeMany(handle, [entry("notes.txt")]);
 
     expect(worked).toBe(false);
     expect(store.browser(handle)?.failure?.code).toBe("SFTP-PERMISSION-DENIED");
@@ -179,10 +179,10 @@ describe("files store", () => {
   });
 
   it("records nothing when the save dialog is dismissed", async () => {
-    filesDownloadMock.mockResolvedValue(undefined);
+    filesDownloadMock.mockResolvedValue([]);
 
     const store = useFilesStore();
-    await store.download(handle, "/home/user/notes.txt", "Save", "notes.txt", false);
+    await store.download(handle, ["/home/user/notes.txt"], "Save", "notes.txt", false);
 
     expect(store.transfers).toEqual([]);
     expect(store.transferFailure).toBeNull();
@@ -191,25 +191,48 @@ describe("files store", () => {
   });
 
   it("reads a started download back into the transfer list", async () => {
-    filesDownloadMock.mockResolvedValue(download.id);
+    filesDownloadMock.mockResolvedValue([download.id]);
     transfersOpenMock.mockResolvedValue([download]);
 
     const store = useFilesStore();
-    await store.download(handle, "/home/user/notes.txt", "Save", "notes.txt", false);
+    await store.download(handle, ["/home/user/notes.txt"], "Save", "notes.txt", false);
 
     expect(store.transfers).toEqual([download]);
   });
 
-  it("hands the packing switch to the backend rather than deciding it here", async () => {
-    filesDownloadMock.mockResolvedValue(download.id);
+  it("hands the packing switch, and every chosen path, to the backend", async () => {
+    filesDownloadMock.mockResolvedValue([download.id]);
     filesUploadMock.mockResolvedValue(upload.id);
 
     const store = useFilesStore();
-    await store.download(handle, "/home/user/logs", "Save", "logs.tar.gz", true);
-    await store.upload(handle, "/home/user", "Choose an archive to unpack", true);
+    await store.download(handle, ["/home/user/logs"], "Save", "", true);
+    await store.download(handle, ["/home/a.txt", "/home/b.txt"], "Save", "", false);
+    await store.upload(handle, "/home/user", "Choose files to pack", true);
 
-    expect(filesDownloadMock).toHaveBeenCalledWith(handle, "/home/user/logs", "Save", "logs.tar.gz", true);
-    expect(filesUploadMock).toHaveBeenCalledWith(handle, "/home/user", "Choose an archive to unpack", true);
+    expect(filesDownloadMock).toHaveBeenCalledWith(handle, ["/home/user/logs"], "Save", "", true);
+    expect(filesDownloadMock).toHaveBeenCalledWith(handle, ["/home/a.txt", "/home/b.txt"], "Save", "", false);
+    expect(filesUploadMock).toHaveBeenCalledWith(handle, "/home/user", "Choose files to pack", true);
+  });
+
+  /**
+   * One `run` for a batch, so the directory is read once and the failure of the first refusal is what
+   * the panel shows — a loop of separate calls would read it N times and keep only the last failure.
+   */
+  it("deletes a selection with one read of the directory, and stops at the first refusal", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user", ["a.txt", "b.txt", "c.txt"])));
+    filesDeleteMock.mockResolvedValueOnce(undefined).mockRejectedValueOnce(denied()).mockResolvedValue(undefined);
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    const reads = filesListMock.mock.calls.length;
+
+    const worked = await store.removeMany(handle, [entry("a.txt"), entry("b.txt"), entry("c.txt")]);
+
+    expect(worked).toBe(false);
+    // Two attempts and no third: what stopped it is reported, and what was deleted stays deleted.
+    expect(filesDeleteMock).toHaveBeenCalledTimes(2);
+    expect(filesListMock.mock.calls.length).toBe(reads + 1);
+    expect(store.browser(handle)?.failure?.code).toBe("SFTP-PERMISSION-DENIED");
   });
 
   it("keeps a failed transfer and its reason", async () => {

@@ -28,8 +28,9 @@ vi.mock("@/lib/backend/tauri", () => ({
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
-import { filesCreateFile, filesDownload } from "@/lib/backend/tauri";
+import { filesCreateFile, filesDownload, filesList } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry } from "@/lib/menu/types";
+import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import type { SftpEntry } from "@/types/session";
@@ -98,6 +99,47 @@ function ids(entries: readonly MenuEntry[]): string[] {
   return entries.map((entry) => entry.id);
 }
 
+/** The rows of the listing, which is what the selection is made of. */
+function rows(): HTMLElement[] {
+  return [...(listing()?.querySelectorAll<HTMLElement>("li > div") ?? [])];
+}
+
+/** The rows that are drawn as selected. */
+function selectedRows(): number[] {
+  return rows()
+    .map((row, index) => (row.getAttribute("aria-selected") === "true" ? index : -1))
+    .filter((index) => index >= 0);
+}
+
+/** Clicks a row, with whichever modifiers the gesture calls for. */
+async function clickRow(index: number, ...modifiers: ("ctrl" | "shift" | "meta")[]): Promise<void> {
+  const row = rows()[index];
+  row?.dispatchEvent(
+    new MouseEvent("click", {
+      bubbles: true,
+      ctrlKey: modifiers.includes("ctrl"),
+      shiftKey: modifiers.includes("shift"),
+      metaKey: modifiers.includes("meta"),
+    }),
+  );
+  await nextTick();
+}
+
+/** Presses a key on the listing, which is where the keyboard for the rows lives. */
+async function press(key: string, ...modifiers: ("ctrl" | "shift" | "meta")[]): Promise<void> {
+  listing()?.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: modifiers.includes("ctrl"),
+      shiftKey: modifiers.includes("shift"),
+      metaKey: modifiers.includes("meta"),
+    }),
+  );
+  await nextTick();
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
   host = document.createElement("div");
@@ -134,11 +176,10 @@ describe("a directory in the listing", () => {
 
     pick(entries, "download-archive").run();
     await nextTick();
-    // What the dialog asks for is a folder rather than a file name, and the switch travels with the
-    // call: the archive is a vehicle that never reaches this side.
+    // The whole selection travels as one archive, and the dialog behind it asks for a folder.
     expect(vi.mocked(filesDownload)).toHaveBeenCalledWith(
       HANDLE,
-      "/home/user/logs",
+      ["/home/user/logs"],
       "Choose the folder to download into",
       "",
       true,
@@ -155,7 +196,7 @@ describe("a directory in the listing", () => {
 
     expect(vi.mocked(filesDownload)).toHaveBeenCalledWith(
       HANDLE,
-      "/home/user/notes.txt",
+      ["/home/user/notes.txt"],
       "Choose where to save this file",
       "notes.txt",
       false,
@@ -203,5 +244,249 @@ describe("the directory's own menu", () => {
     await vi.waitFor(() => expect(vi.mocked(filesCreateFile)).toHaveBeenCalled());
 
     expect(vi.mocked(filesCreateFile)).toHaveBeenCalledWith(HANDLE, "/home/user/notes.txt");
+  });
+});
+
+/**
+ * Selecting rows, in the shapes the platforms agree on.
+ *
+ * Ctrl and shift are the whole of it — with one exception that is not a detail: on a Mac the modifier
+ * is Command, because **Ctrl+click is the secondary click there** and taking it would take the context
+ * menu away from every macOS user.
+ */
+describe("selecting rows", () => {
+  const many: SftpEntry[] = [
+    { name: "a.txt", path: "/home/user/a.txt", kind: "file", size: 1 },
+    { name: "b.txt", path: "/home/user/b.txt", kind: "file", size: 2 },
+    { name: "c.txt", path: "/home/user/c.txt", kind: "file", size: 3 },
+    { name: "logs", path: "/home/user/logs", kind: "directory", size: 0 },
+  ];
+
+  it("takes one row on a plain click, and only that one", async () => {
+    await render(many);
+
+    await clickRow(1);
+
+    expect(selectedRows()).toEqual([1]);
+  });
+
+  it("adds and removes a row with the platform's modifier", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    expect(selectedRows()).toEqual([0, 2]);
+
+    await clickRow(0, "ctrl");
+    expect(selectedRows()).toEqual([2]);
+  });
+
+  it("takes the range between the last plain click and a shift-click", async () => {
+    await render(many);
+
+    await clickRow(1);
+    await clickRow(3, "shift");
+
+    expect(selectedRows()).toEqual([1, 2, 3]);
+  });
+
+  it("takes every row on the modifier and A", async () => {
+    await render(many);
+
+    await clickRow(2);
+    await press("a", "ctrl");
+
+    expect(selectedRows()).toEqual([0, 1, 2, 3]);
+  });
+
+  it("walks the rows with the arrow keys, carrying the selection along", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await press("ArrowDown");
+    expect(selectedRows()).toEqual([1]);
+
+    await press("ArrowDown", "shift");
+    expect(selectedRows()).toEqual([1, 2]);
+
+    await press("End");
+    expect(selectedRows()).toEqual([3]);
+  });
+
+  it("lets go of everything when the empty space is clicked", async () => {
+    await render(many);
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    expect(selectedRows()).toEqual([0, 2]);
+
+    listing()?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    await nextTick();
+
+    expect(selectedRows()).toEqual([]);
+  });
+
+  it("asks about every selected row when Delete is pressed, in one question", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    await press("Delete");
+
+    expect(host.textContent).toContain("Delete these 2 items?");
+  });
+
+  it("renames the one row, and only when there is one", async () => {
+    await render(many);
+
+    await clickRow(1);
+    await press("F2");
+    expect(host.querySelector('input[aria-label="New name"]')).not.toBeNull();
+
+    // Closed the way the panel closes it, rather than by submitting it: this case is about what F2
+    // offers, not about what renaming does.
+    host.querySelector<HTMLButtonElement>("form button[type='button']")?.click();
+    await nextTick();
+    expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+
+    await clickRow(1);
+    await clickRow(2, "ctrl");
+    await press("F2");
+
+    expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+  });
+
+  it("opens the one selected row on Enter, and nothing when several are chosen", async () => {
+    await render(many);
+
+    await clickRow(3);
+    await press("Enter");
+    await vi.waitFor(() => expect(vi.mocked(filesList)).toHaveBeenCalledWith(HANDLE, "/home/user/logs"));
+
+    vi.mocked(filesList).mockClear();
+    await clickRow(1);
+    await clickRow(2, "ctrl");
+    await press("Enter");
+
+    expect(vi.mocked(filesList)).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The listing is a list of rows, and the browser has to be told that.
+   *
+   * Left to itself it treats every name and date as text: a shift-click then extends the *text*
+   * selection from wherever the last click landed — which looked like the shift-selection had smeared
+   * itself across the timestamps — and the pointer becomes an I-beam over every row. Both are the
+   * browser's default for selectable content, and both are switched off by the container saying it is
+   * not selectable: the class is the mechanism, and this is the case that would have caught it.
+   */
+  it("tells the browser the rows are not text to be selected", async () => {
+    await render(many);
+
+    const container = listing();
+    expect(container?.classList.contains("select-none")).toBe(true);
+    expect(container?.classList.contains("cursor-default")).toBe(true);
+  });
+
+  it("takes the rows a rectangle is dragged over", async () => {
+    await render(many);
+    const container = listing();
+    if (!container) {
+      throw new Error("the listing is not there");
+    }
+    // Laid out by hand: a test document gives every element a size of nothing, and a rectangle over
+    // rows that are all zero tall would cover either all of them or none.
+    container.getBoundingClientRect = () => ({ left: 0, top: 0, width: 600, height: 400 }) as DOMRect;
+    for (const [index, row] of [...container.querySelectorAll<HTMLElement>("li[data-path]")].entries()) {
+      Object.defineProperty(row, "offsetTop", { value: index * 30, configurable: true });
+      Object.defineProperty(row, "offsetHeight", { value: 30, configurable: true });
+    }
+
+    container.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientY: 10 }));
+    window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientY: 50 }));
+    await nextTick();
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    await nextTick();
+
+    expect(selectedRows()).toEqual([0, 1]);
+  });
+
+  it("lets go of a row that is gone when the directory is read again", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await clickRow(1, "ctrl");
+    expect(selectedRows()).toEqual([0, 1]);
+
+    // What a delete or somebody else's change leaves behind: the listing reads itself again.
+    const files = useFilesStore();
+    const open = files.browsers[HANDLE];
+    if (!open) {
+      throw new Error("the browser is not there");
+    }
+    open.entries = many.slice(1);
+    await nextTick();
+
+    expect(selectedRows()).toEqual([0]);
+  });
+
+  it("counts what is selected where the column headings are", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    await nextTick();
+
+    expect(host.textContent).toContain("2 selected");
+  });
+
+  it("counts it in the menu's own words when several rows are chosen", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    const entries = await rightClickRow(2);
+
+    expect(useContextMenu().title.value).toEqual({ key: "menu.files", params: { count: "2" } });
+    expect(ids(entries)).toEqual(["download", "sep-manage", "remove", "sep-copy", "copy-name", "copy-path"]);
+    expect(pick(entries, "remove").labelKey).toBe("menu.deleteItems");
+    expect(ids(entries)).not.toContain("rename");
+  });
+
+  it("keeps the whole selection when a row inside it is right-clicked", async () => {
+    await render(many);
+
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    await rightClickRow(0);
+    expect(selectedRows()).toEqual([0, 2]);
+
+    // And a row outside it becomes the selection, because the menu is about what was pointed at.
+    await rightClickRow(3);
+    expect(selectedRows()).toEqual([3]);
+  });
+
+  it("uses Command rather than Control on a Mac, where Control is the secondary click", async () => {
+    await render(many);
+    const app = useAppStore();
+    // The store reads this from the backend on start; this case is about what the panel does with it.
+    app.info = {
+      name: "7Shell",
+      version: "0.1.0",
+      os: "macos",
+      arch: "aarch64",
+      debugBuild: true,
+      protocolCount: 1,
+      descriptorSchemaVersion: 1,
+    };
+    await nextTick();
+
+    await clickRow(0);
+    await clickRow(2, "ctrl");
+    expect(selectedRows(), "control is the secondary click on a Mac").toEqual([2]);
+
+    await clickRow(0);
+    await clickRow(2, "meta");
+    expect(selectedRows()).toEqual([0, 2]);
   });
 });
