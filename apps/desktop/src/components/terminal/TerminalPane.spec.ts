@@ -73,6 +73,7 @@ import { createPinia, setActivePinia } from "pinia";
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import { filesList, filesOpen, sessionOpen, transfersOpen, tunnelsOpen } from "@/lib/backend/tauri";
 import { useFilesStore } from "@/stores/files";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
 
@@ -147,6 +148,9 @@ async function mountPane(): Promise<void> {
 describe("a terminal carrying a file panel", () => {
   beforeEach(async () => {
     setActivePinia(createPinia());
+    // The panel is opened here by hand rather than by the setting, so that what is being tested is
+    // the pane and not the default.
+    usePreferencesStore().sessionLayout = "terminal";
     onData = undefined;
     oscHandlers = new Map();
     vi.stubGlobal(

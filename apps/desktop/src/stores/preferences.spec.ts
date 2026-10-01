@@ -7,9 +7,27 @@ vi.mock("@/lib/backend/tauri", () => ({ appInfo: vi.fn(), settingsGet: vi.fn(), 
 import { i18n } from "@/i18n";
 import { settingsGet, settingsSet } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
+import type { AppSettings } from "@/types/app";
 
 const settingsGetMock = vi.mocked(settingsGet);
 const settingsSetMock = vi.mocked(settingsSet);
+
+/**
+ * What the backend answers when nothing has been chosen.
+ *
+ * Every field, because the wire type has them all: the settings file may leave one out, but what
+ * the interface is handed is always a whole `AppSettings`. A mock that leaves a field out is a
+ * mock that disagrees with the type, and the store would read the disagreement as a choice.
+ */
+function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
+  return {
+    themeMode: "system",
+    terminalTheme: "system",
+    filesLayout: "tree",
+    sessionLayout: "split",
+    ...overrides,
+  };
+}
 
 const NEWER_SCHEMA = {
   version: 1,
@@ -48,9 +66,7 @@ describe("preferences store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     system = stubSystemTheme(true);
-    settingsGetMock
-      .mockReset()
-      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
     settingsSetMock.mockReset().mockResolvedValue(undefined);
     document.documentElement.classList.remove("dark");
   });
@@ -79,12 +95,7 @@ describe("preferences store", () => {
   });
 
   it("applies a stored choice instead of the system", async () => {
-    settingsGetMock.mockResolvedValue({
-      themeMode: "light",
-      terminalTheme: "system",
-      filesLayout: "tree",
-      locale: "zh-CN",
-    });
+    settingsGetMock.mockResolvedValue(defaults({ themeMode: "light", locale: "zh-CN" }));
 
     const store = usePreferencesStore();
     store.initialize();
@@ -119,6 +130,7 @@ describe("preferences store", () => {
       themeMode: "dark",
       terminalTheme: "system",
       filesLayout: "tree",
+      sessionLayout: "split",
       locale: undefined,
     });
   });
@@ -134,6 +146,7 @@ describe("preferences store", () => {
       themeMode: "system",
       terminalTheme: "system",
       filesLayout: "tree",
+      sessionLayout: "split",
       locale: "zh-CN",
     });
     expect(document.documentElement.lang).toBe("zh-CN");
@@ -182,9 +195,7 @@ describe("the terminal palette", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     system = stubSystemTheme(true);
-    settingsGetMock
-      .mockReset()
-      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
     settingsSetMock.mockReset().mockResolvedValue(undefined);
   });
 
@@ -223,12 +234,13 @@ describe("the terminal palette", () => {
       themeMode: "dark",
       terminalTheme: "light",
       filesLayout: "tree",
+      sessionLayout: "split",
       locale: undefined,
     });
   });
 
   it("remembers the choice across a restart", async () => {
-    settingsGetMock.mockResolvedValue({ themeMode: "light", terminalTheme: "dark", filesLayout: "tree" });
+    settingsGetMock.mockResolvedValue(defaults({ themeMode: "light", terminalTheme: "dark" }));
 
     const store = usePreferencesStore();
     store.initialize();
@@ -241,9 +253,7 @@ describe("the terminal palette", () => {
 describe("the file layout", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    settingsGetMock
-      .mockReset()
-      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
     settingsSetMock.mockReset().mockResolvedValue(undefined);
   });
 
@@ -267,7 +277,7 @@ describe("the file layout", () => {
   });
 
   it("reads the choice back on the next start", async () => {
-    settingsGetMock.mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "list" });
+    settingsGetMock.mockResolvedValue(defaults({ filesLayout: "list" }));
 
     const store = usePreferencesStore();
     store.initialize();
@@ -277,12 +287,47 @@ describe("the file layout", () => {
   });
 });
 
+describe("how a session opens", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("opens both halves by default, so the files are there without asking", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.sessionLayout).toBe("split");
+  });
+
+  it("remembers a choice of the terminal alone", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setSessionLayout("terminal");
+
+    expect(store.sessionLayout).toBe("terminal");
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ sessionLayout: "terminal" }));
+  });
+
+  it("reads the choice back on the next start", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ sessionLayout: "terminal" }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.sessionLayout).toBe("terminal");
+  });
+});
+
 describe("the file panel under a terminal", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
-    settingsGetMock
-      .mockReset()
-      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
     settingsSetMock.mockReset().mockResolvedValue(undefined);
   });
 
@@ -319,12 +364,7 @@ describe("the file panel under a terminal", () => {
   });
 
   it("reads the height back on the next start", async () => {
-    settingsGetMock.mockResolvedValue({
-      themeMode: "system",
-      terminalTheme: "system",
-      filesLayout: "tree",
-      terminalPanelHeight: 360,
-    });
+    settingsGetMock.mockResolvedValue(defaults({ terminalPanelHeight: 360 }));
 
     const store = usePreferencesStore();
     store.initialize();

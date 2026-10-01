@@ -25,12 +25,17 @@ export type ResolvedTheme = "dark" | "light";
 /** How the file browser is laid out, from `sevenshell_types::FilesLayout`. */
 export type FilesLayout = "tree" | "list";
 
+/** How a session opens, from `sevenshell_types::SessionLayout`. */
+export type SessionLayout = "terminal" | "split";
+
 /** Non-secret preferences, from `sevenshell_types::AppSettings`. */
 export interface AppSettings {
   readonly themeMode: ThemeMode;
   /** `system` means "follow the interface theme" for the terminal, not the operating system. */
   readonly terminalTheme: ThemeMode;
   readonly filesLayout: FilesLayout;
+  /** Whether opening a session opens a terminal on its own, or one with its file panel. */
+  readonly sessionLayout: SessionLayout;
   /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */
   readonly terminalPanelHeight?: number;
   /** Absent means nobody has chosen a language, so the system's applies. */

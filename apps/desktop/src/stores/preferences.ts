@@ -17,7 +17,7 @@ import { computed, ref } from "vue";
 import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveLocale } from "@/i18n";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
-import type { FilesLayout, ResolvedTheme, ThemeMode } from "@/types/app";
+import type { FilesLayout, ResolvedTheme, SessionLayout, ThemeMode } from "@/types/app";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -35,6 +35,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const terminalTheme = ref<ThemeMode>("system");
   /** Two panes or one, in the file browser. */
   const filesLayout = ref<FilesLayout>("tree");
+  /**
+   * How a session opens: a terminal on its own, or a terminal with its file panel under it.
+   *
+   * The default is the split, so the files for a host are there from the first moment without
+   * anybody having to ask for them. It is a default rather than a rule: the panel can be closed
+   * per tab, on the strip under the terminal.
+   */
+  const sessionLayout = ref<SessionLayout>("split");
   /**
    * How tall the file panel under a terminal is, in pixels; null until somebody moves the divider.
    *
@@ -103,6 +111,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       themeMode.value = settings.themeMode;
       terminalTheme.value = settings.terminalTheme;
       filesLayout.value = settings.filesLayout;
+      sessionLayout.value = settings.sessionLayout;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
@@ -126,6 +135,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         themeMode: themeMode.value,
         terminalTheme: terminalTheme.value,
         filesLayout: filesLayout.value,
+        sessionLayout: sessionLayout.value,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         locale: localeChosen.value ? locale.value : undefined,
       });
@@ -147,6 +157,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   async function setFilesLayout(layout: FilesLayout): Promise<void> {
     filesLayout.value = layout;
+    await persist();
+  }
+
+  async function setSessionLayout(layout: SessionLayout): Promise<void> {
+    sessionLayout.value = layout;
     await persist();
   }
 
@@ -190,6 +205,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     themeMode,
     terminalTheme,
     filesLayout,
+    sessionLayout,
     terminalPanelHeight,
     resolvedTheme,
     resolvedTerminalTheme,
@@ -201,6 +217,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setThemeMode,
     setTerminalTheme,
     setFilesLayout,
+    setSessionLayout,
     setPanelHeight,
     rememberPanelHeight,
     resetPanelHeight,

@@ -33,6 +33,36 @@ impl FilesLayout {
     }
 }
 
+/// How a session opens: a terminal on its own, or a terminal with its file panel under it.
+///
+/// The two are one tab either way — the panel draws the same file browser a file tab would, so
+/// nothing about the session differs but its shape on screen.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionLayout {
+    /// The terminal alone. The file panel is one toggle away, on the terminal's own strip.
+    Terminal,
+    /// The terminal and the files for the same host, one above the other, in one tab. The panel
+    /// follows the shell's directory, so a `cd` in the terminal takes it along.
+    #[default]
+    Split,
+}
+
+impl SessionLayout {
+    pub const ALL: &'static [SessionLayout] = &[SessionLayout::Terminal, SessionLayout::Split];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Terminal => "terminal",
+            Self::Split => "split",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|layout| layout.as_str() == id)
+    }
+}
+
 /// How the interface picks its colours.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -87,6 +117,9 @@ pub struct AppSettings {
     /// How the file browser is laid out.
     #[serde(default)]
     pub files_layout: FilesLayout,
+    /// How a session opens: the terminal on its own, or the terminal with its file panel under it.
+    #[serde(default)]
+    pub session_layout: SessionLayout,
     /// How tall the file panel under a terminal is, in pixels.
     ///
     /// A wish rather than a measurement: the interface clamps it against the window it has, so a
@@ -104,6 +137,7 @@ impl AppSettings {
         self.theme_mode == ThemeMode::System
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
+            && self.session_layout == SessionLayout::Split
             && self.terminal_panel_height.is_none()
             && self.locale.is_none()
     }

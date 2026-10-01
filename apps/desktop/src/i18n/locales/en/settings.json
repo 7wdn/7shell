@@ -18,6 +18,12 @@
       "light": "Always light",
       "hint": "A dark terminal in a light interface is a common choice, so the two are decided separately. Either way the sixteen ANSI colours come from the same palette, tuned to be readable on its own background."
     },
+    "session": {
+      "title": "Opening a session",
+      "split": "Terminal and files",
+      "terminal": "Terminal only",
+      "hint": "The split opens the files for the same host under the terminal, in one tab, and follows the shell's directory — a cd in the terminal takes the panel with it. Either way it can be closed or opened per tab, on the strip under the terminal."
+    },
     "files": {
       "title": "File browser",
       "tree": "Tree and list",

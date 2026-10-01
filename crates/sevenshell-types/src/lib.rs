@@ -27,4 +27,4 @@ pub use session::{
     SessionAuth, SessionGroup, SftpEntry, SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo,
     TransferState, TunnelFailure, VaultState,
 };
-pub use settings::{AppSettings, FilesLayout, ThemeMode};
+pub use settings::{AppSettings, FilesLayout, SessionLayout, ThemeMode};

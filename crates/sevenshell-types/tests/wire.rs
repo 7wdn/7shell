@@ -15,7 +15,8 @@ use serde::Serialize;
 use sevenshell_types::{
     AppSettings, AuthMethod, BatchHostOutcome, BatchHostResult, BatchOutcome, BatchRequest, FilesLayout, HostFailure,
     KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Protocol, RiskAssessment,
-    RiskLevel, RiskReason, Session, SessionAuth, SessionGroup, TerminalSettings, ThemeMode, TunnelFailure, VaultState,
+    RiskLevel, RiskReason, Session, SessionAuth, SessionGroup, SessionLayout, TerminalSettings, ThemeMode,
+    TunnelFailure, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -159,6 +160,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             theme_mode: ThemeMode::Dark,
             terminal_theme: ThemeMode::System,
             files_layout: FilesLayout::List,
+            session_layout: SessionLayout::Terminal,
             terminal_panel_height: Some(320),
             locale: Some("zh-CN".to_owned()),
         },

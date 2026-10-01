@@ -42,6 +42,7 @@ import {
 } from "@/lib/backend/tauri";
 import { endedTerminal, onTerminalEnded } from "@/lib/terminal/bus";
 import { useFilesStore } from "@/stores/files";
+import { usePreferencesStore } from "@/stores/preferences";
 import { type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { OpenTunnel, PresentedHostKey, Session, TunnelFailure } from "@/types/session";
 
@@ -151,6 +152,9 @@ const refused = {
 describe("terminals store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    // How a session opens is a setting, and the default is the split. Most of these cases are about
+    // the terminal half alone, so they say which shape they are testing instead of inheriting it.
+    usePreferencesStore().sessionLayout = "terminal";
     endedListeners.length = 0;
     sessionOpenMock.mockReset();
     terminalCloseMock.mockReset().mockResolvedValue(undefined);
@@ -578,24 +582,50 @@ describe("terminals store", () => {
     expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
   });
 
-  it("opens a terminal and its panel in one action, and no panel when the terminal fails", async () => {
-    sessionOpenMock.mockResolvedValueOnce(opened()).mockRejectedValueOnce(refused);
+  it("opens both halves when the settings say a session opens as two", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+    usePreferencesStore().sessionLayout = "split";
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    expect(store.tabs).toHaveLength(1);
+    expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
+  });
+
+  it("opens no panel when the terminal never came up, whatever the settings say", async () => {
+    sessionOpenMock.mockRejectedValue(refused);
+    usePreferencesStore().sessionLayout = "split";
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    // The panel is opened onto the tab that exists afterwards, and a terminal that never opened is
+    // not a place for a file browser.
+    expect(filesOpenMock).not.toHaveBeenCalled();
+    expect(terminalTabOrFail(store).status).toBe("failed");
+    expect(terminalTabOrFail(store).panel).toBeNull();
+  });
+
+  it("reconnects in the shape the settings name, not the shape the tab happened to have", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
     filesOpenMock.mockResolvedValue(filesOpened());
 
     const store = useTerminalsStore();
     open();
-    await store.openWithFiles(session);
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    await store.togglePanel(tab);
+    expect(tab.panel?.handle).toBe("f1");
 
-    expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
+    endedListeners.forEach((listener) => listener("handle-1", "the shell exited"));
+    await store.reconnect(tab.id);
 
-    // A terminal that never opened has no place for a file browser: the panel is opened onto the
-    // tab that exists afterwards, not onto the request.
-    store.activate(store.tabs[0]?.id ?? "");
-    await store.openWithFiles(session);
-
-    expect(filesOpenMock).toHaveBeenCalledTimes(1);
-    expect(store.tabs[1]?.status).toBe("failed");
-    expect(store.tabs[1]?.kind === "terminal" && store.tabs[1].panel).toBeNull();
+    // A reconnect asks for the same thing again, and the settings are what say what that is.
+    expect(terminalTabOrFail(store).panel).toBeNull();
   });
 
   it("leaves the panel standing when the terminal under it ends", async () => {

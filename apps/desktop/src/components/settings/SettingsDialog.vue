@@ -23,7 +23,7 @@ import { SUPPORTED_LOCALES, type SupportedLocale } from "@/i18n";
 import { describeShellError } from "@/i18n/errors";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
-import type { FilesLayout, ThemeMode } from "@/types/app";
+import type { FilesLayout, SessionLayout, ThemeMode } from "@/types/app";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
@@ -47,6 +47,15 @@ const LANGUAGE_LABELS: Record<SupportedLocale, string> = { en: "English", "zh-CN
 const FILES_LAYOUTS: readonly { mode: FilesLayout; labelKey: string }[] = [
   { mode: "tree", labelKey: "settings.files.tree" },
   { mode: "list", labelKey: "settings.files.list" },
+];
+
+/**
+ * How a session opens. Not a per-session choice: it is what somebody's work looks like, and the
+ * panel can still be closed or opened per tab afterwards.
+ */
+const SESSION_LAYOUTS: readonly { mode: SessionLayout; labelKey: string }[] = [
+  { mode: "split", labelKey: "settings.session.split" },
+  { mode: "terminal", labelKey: "settings.session.terminal" },
 ];
 
 const TERMINAL_THEMES: readonly { mode: ThemeMode; labelKey: string }[] = [
@@ -128,6 +137,30 @@ const problem = computed(() => (preferences.problem ? describeShellError(transla
               </button>
             </div>
             <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.terminal.hint") }}</p>
+          </section>
+
+          <section>
+            <h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {{ t("settings.session.title") }}
+            </h3>
+            <div class="flex gap-1 rounded-md border border-border bg-background p-0.5">
+              <button
+                v-for="layout in SESSION_LAYOUTS"
+                :key="layout.mode"
+                type="button"
+                class="flex-1 rounded-sm px-2 py-1.5 text-xs transition-colors"
+                :class="
+                  preferences.sessionLayout === layout.mode
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                "
+                :aria-pressed="preferences.sessionLayout === layout.mode"
+                @click="preferences.setSessionLayout(layout.mode)"
+              >
+                {{ t(layout.labelKey) }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.session.hint") }}</p>
           </section>
 
           <section>

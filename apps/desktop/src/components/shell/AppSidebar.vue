@@ -6,27 +6,15 @@
  * session whose group no longer exists still appears, under the ungrouped heading, rather than
  * disappearing because its heading did.
  *
- * Opening a terminal hangs off the row itself, with the file browser beside it and the two of them
- * together under a third button; editing and deleting are separate buttons, and deleting always
- * asks first, in the row, before anything is removed.
+ * Opening a terminal hangs off the row itself, with the file browser beside it; whether a terminal
+ * comes up with its file panel is the settings' answer, not this row's. Editing and deleting are
+ * separate buttons, and deleting always asks first, in the row, before anything is removed.
  *
  * The tunnels section draws what the terminals store was told by the backend, and only then: an
  * empty section is not shown at all. A forward that failed to come up is shown next to the ones
  * that are, because "the tunnel is not there" is the answer somebody staring at a port needs.
  */
-import {
-  Folder,
-  LoaderCircle,
-  Network,
-  PanelBottom,
-  Pencil,
-  Plus,
-  Server,
-  Terminal,
-  Trash2,
-  TriangleAlert,
-  X,
-} from "@lucide/vue";
+import { Folder, LoaderCircle, Network, Pencil, Plus, Server, Terminal, Trash2, TriangleAlert, X } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -179,15 +167,6 @@ const statusDot = computed(() => {
                     @click="terminals.openFiles(session)"
                   >
                     <Folder :size="12" />
-                  </button>
-                  <button
-                    type="button"
-                    class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                    :title="t('sessions.list.openWithFiles', { name: session.name })"
-                    :aria-label="t('sessions.list.openWithFiles', { name: session.name })"
-                    @click="terminals.openWithFiles(session)"
-                  >
-                    <PanelBottom :size="12" />
                   </button>
                   <button
                     type="button"

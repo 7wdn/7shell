@@ -5,7 +5,6 @@
       "ungrouped": "未分组",
       "add": "新建会话",
       "open": "为 {name} 打开终端",
-      "openWithFiles": "为 {name} 打开终端与文件面板",
       "connecting": "正在连接 {name}…",
       "edit": "编辑会话",
       "remove": "删除会话",

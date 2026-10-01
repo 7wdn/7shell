@@ -25,6 +25,10 @@
  * of one directory have no way to tell which of them is right. The panel also shares the tab's
  * fate: its SFTP channel rides on the connection the terminal opened, so the browser is closed
  * before the terminal is, and the other order would cut the channel out from under it.
+ *
+ * Whether a session opens as one half or two is a setting rather than something to ask for each
+ * time — that is how somebody's work looks, not a decision per connection. Nothing here is fixed by
+ * it: the panel is a toggle away on the terminal's own strip, and closing it costs one click.
  */
 
 import { defineStore } from "pinia";
@@ -34,6 +38,7 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
 import { useFilesStore } from "@/stores/files";
+import { usePreferencesStore } from "@/stores/preferences";
 import type {
   KnownHostEntry,
   OpenOutcome,
@@ -131,6 +136,7 @@ export function tunnelFailureKey(failure: TunnelFailure): string {
 
 export const useTerminalsStore = defineStore("terminals", () => {
   const files = useFilesStore();
+  const preferences = usePreferencesStore();
   const tabs = ref<WorkspaceTab[]>([]);
   const activeTabId = ref<string | null>(null);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
@@ -169,7 +175,14 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tab.reason = reason;
   }
 
-  /** Opens a terminal for a saved session, or raises the decision that has to come first. */
+  /**
+   * Opens a terminal for a saved session, in the shape the settings ask for, or raises the decision
+   * that has to come first.
+   *
+   * The file panel is opened onto the tab that exists once the connection is up, rather than onto
+   * the request: a refused connection, a host key decision still to be answered and a terminal that
+   * died on arrival all end with a tab that is not open, and none of those is a place for a browser.
+   */
   async function open(session: Session): Promise<void> {
     if (connectingSessionIds.value.includes(session.id)) {
       return;
@@ -182,17 +195,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
-  }
 
-  /**
-   * Opens a terminal with its file panel already open: the one action that asks for both halves.
-   *
-   * The panel is opened onto the tab that exists once the connection is up, rather than onto the
-   * request: a refused connection, an answered host key decision and a terminal that died on
-   * arrival all end with a tab that is not open, and none of those is a place for a file browser.
-   */
-  async function openWithFiles(session: Session): Promise<void> {
-    await open(session);
+    if (preferences.sessionLayout !== "split") {
+      return;
+    }
+    // The tab that was just asked for, in case this session already had one: the newest is the one
+    // the person is looking at.
     const tab = [...tabs.value]
       .reverse()
       .find(
@@ -612,8 +620,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tunnelProblem.value = null;
   }
 
-  /** Reconnects a tab by asking for the same thing again: a browser as a file tab, a terminal
-   *  otherwise — and the panel, if that is how the terminal was being used. */
+  /**
+   * Reconnects a tab by asking for the same thing again.
+   *
+   * The shape comes from the settings, like the first open did: a reconnect is "that again", and
+   * what the person had on screen at the moment it died — a panel they had closed, or opened — is
+   * not a better answer than the one they chose in the settings.
+   */
   async function reconnect(id: string): Promise<void> {
     const tab = tabs.value.find((entry) => entry.id === id);
     if (!tab) {
@@ -626,15 +639,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
 
-    const withPanel = tab.panel !== null;
     // The button only appears on a terminal that is not open, so there is nothing here to close
     // through the backend: the panel's browser is told to stop and the tab goes regardless.
     releasePanel(tab);
     forget(id);
-    if (withPanel) {
-      await openWithFiles(session);
-      return;
-    }
     await open(session);
   }
 
@@ -687,7 +695,6 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tunnelProblem,
     initialize,
     open,
-    openWithFiles,
     openFiles,
     openPanel,
     closePanel,

@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{AppSettings, FilesLayout, ThemeMode};
+use sevenshell_types::{AppSettings, FilesLayout, SessionLayout, ThemeMode};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -38,6 +38,10 @@ struct StoredSettings {
     terminal_theme: String,
     #[serde(default)]
     files_layout: String,
+    /// Absent in a file written before a session could open as two halves, which reads as the
+    /// default — the split — rather than as the terminal alone.
+    #[serde(default)]
+    session_layout: String,
     /// Absent in a file written before the terminal had a file panel, which reads as "the divider
     /// has never been moved".
     #[serde(default)]
@@ -53,6 +57,7 @@ impl StoredSettings {
             theme_mode: settings.theme_mode.as_str().to_owned(),
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
             files_layout: settings.files_layout.as_str().to_owned(),
+            session_layout: settings.session_layout.as_str().to_owned(),
             terminal_panel_height: settings.terminal_panel_height,
             locale: settings.locale.clone(),
         }
@@ -63,6 +68,7 @@ impl StoredSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
+            session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             terminal_panel_height: self.terminal_panel_height,
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
@@ -155,6 +161,7 @@ mod tests {
             theme_mode,
             terminal_theme,
             files_layout: FilesLayout::default(),
+            session_layout: SessionLayout::default(),
             terminal_panel_height: None,
             locale: locale.map(str::to_owned),
         }
@@ -173,6 +180,11 @@ mod tests {
             loaded.terminal_theme,
             ThemeMode::System,
             "absent means follow the interface"
+        );
+        assert_eq!(
+            loaded.session_layout,
+            SessionLayout::Split,
+            "absent means the default, and the default opens both halves"
         );
         assert_eq!(
             loaded.terminal_panel_height, None,
@@ -195,6 +207,7 @@ mod tests {
         let directory = tempdir().expect("temp dir");
         let path = directory.path().join("settings.json");
         let written = AppSettings {
+            session_layout: SessionLayout::Terminal,
             terminal_panel_height: Some(320),
             ..settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"))
         };

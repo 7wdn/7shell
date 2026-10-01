@@ -5,7 +5,6 @@
       "ungrouped": "Ungrouped",
       "add": "New session",
       "open": "Open a terminal for {name}",
-      "openWithFiles": "Open a terminal and the file panel for {name}",
       "connecting": "Connecting to {name}…",
       "edit": "Edit session",
       "remove": "Delete session",
