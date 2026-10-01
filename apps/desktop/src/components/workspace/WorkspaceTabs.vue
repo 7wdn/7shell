@@ -12,17 +12,27 @@
  *
  * The tab itself is one union with two shapes, so the bar draws both from one list: the icon says
  * which kind it is, and only the tabs with a stream that can end carry a status dot.
+ *
+ * A terminal tab can also carry the file panel, which is the second half of the mode: the terminal
+ * above, the browser below, and a line between them that can be dragged. Everything the terminal
+ * owns — its status strip and its endings — stays above that line, so what is below it is only ever
+ * the panel; the drag measures from the bottom of the tab, and that has to keep meaning "the
+ * bottom of the panel".
  */
-import { CircleAlert, Folder, RotateCw, Terminal, X } from "@lucide/vue";
+import { CircleAlert, Folder, LoaderCircle, PanelBottom, RotateCw, Terminal, X } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
+import SplitDivider from "@/components/workspace/SplitDivider.vue";
 import { describeShellError } from "@/i18n/errors";
+import { MIN_PANE_PX } from "@/lib/workspace/split";
 import { cn } from "@/lib/utils";
+import { usePreferencesStore } from "@/stores/preferences";
 import { type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores/terminals";
 
 const { t } = useI18n();
+const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
 
 function translate(key: string, params?: Record<string, string>): string {
@@ -96,6 +106,13 @@ function dotClass(tab: WorkspaceTab): string | null {
       class="flex min-h-0 flex-1 flex-col"
     >
       <template v-if="tab.kind === 'terminal'">
+        <!--
+          The terminal carries the same floor as the panel while a panel is under it. Without it,
+          the height somebody chose in a large window would eat the whole terminal in a small one:
+          the panel shrinks first, and it shrinks past the point where the terminal is still there.
+          With no panel open the floor is left off, because then the terminal is the only thing
+          asking for room and squeezing it is exactly what the window shrinking means.
+        -->
         <TerminalPane
           v-if="tab.handle"
           :key="`${tab.id}:${tab.handle}`"
@@ -103,12 +120,41 @@ function dotClass(tab: WorkspaceTab): string | null {
           :active="tab.id === terminals.activeTabId"
           :interactive="tab.status === 'open'"
           class="min-h-0 flex-1"
+          :style="tab.panel ? { minHeight: `${MIN_PANE_PX}px` } : undefined"
         />
 
         <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <CircleAlert :size="18" class="text-destructive" />
           <p class="text-xs text-muted-foreground">{{ t("terminal.tab.failedTitle") }}</p>
         </div>
+
+        <!--
+          The terminal's own strip: where it is, and the way into the file panel. It stays when the
+          panel is open — it is where the toggle that closes it lives — and it sits above the
+          divider rather than below it, because what is under the line is the panel and nothing else.
+        -->
+        <footer class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1">
+          <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
+            {{ tab.session.user }}@{{ tab.session.host }}:{{ tab.session.port }}
+          </span>
+          <button
+            type="button"
+            :class="
+              cn(
+                'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
+                tab.panel ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
+              )
+            "
+            :disabled="tab.panel === null && tab.status !== 'open'"
+            :aria-pressed="tab.panel !== null"
+            :title="tab.panel ? t('terminal.panel.close') : t('terminal.panel.open')"
+            @click="terminals.togglePanel(tab)"
+          >
+            <PanelBottom :size="11" />
+            {{ t("terminal.panel.label") }}
+          </button>
+        </footer>
 
         <footer
           v-if="tab.status === 'ended' || tab.failure"
@@ -139,6 +185,62 @@ function dotClass(tab: WorkspaceTab): string | null {
             </button>
           </div>
         </footer>
+
+        <template v-if="tab.panel">
+          <SplitDivider
+            :height="preferences.resolvedPanelHeight"
+            @move="preferences.setPanelHeight($event)"
+            @settle="preferences.rememberPanelHeight()"
+            @reset="preferences.resetPanelHeight()"
+          />
+
+          <!--
+            The panel is the only thing below the line, and the floor is a minimum height rather
+            than a clamp computed here: a window too short for the height somebody chose shrinks
+            the panel, because the half that has to stay usable is the terminal.
+          -->
+          <div
+            class="flex shrink flex-col overflow-hidden"
+            :style="{ height: `${preferences.resolvedPanelHeight}px`, minHeight: `${MIN_PANE_PX}px` }"
+          >
+            <FileBrowser v-if="tab.panel.handle" :handle="tab.panel.handle" class="min-h-0 flex-1" />
+
+            <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
+              <CircleAlert v-if="tab.panel.status === 'failed'" :size="18" class="text-destructive" />
+              <LoaderCircle v-else :size="18" class="animate-spin text-muted-foreground" />
+              <p v-if="tab.panel.failure" class="text-xs">
+                {{ describeShellError(translate, tab.panel.failure).message }}
+              </p>
+              <p v-if="tab.panel.failure" class="font-mono text-[10px] text-muted-foreground">
+                {{ describeShellError(translate, tab.panel.failure).code }}
+              </p>
+              <p v-else class="text-xs text-muted-foreground">{{ t("terminal.panel.opening") }}</p>
+              <button
+                v-if="tab.panel.status === 'failed'"
+                type="button"
+                class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
+                @click="terminals.openPanel(tab)"
+              >
+                <RotateCw :size="12" />
+                {{ t("terminal.panel.retry") }}
+              </button>
+            </div>
+
+            <!--
+              A browser that refused to close is still open, so it is still drawn — with the reason
+              underneath it, because this is the one failure that leaves the panel working.
+            -->
+            <footer
+              v-if="tab.panel.handle && tab.panel.failure"
+              class="shrink-0 border-t border-destructive/40 bg-destructive/10 px-3 py-1.5"
+            >
+              <p class="text-[11px]">{{ describeShellError(translate, tab.panel.failure).message }}</p>
+              <p class="font-mono text-[10px] text-muted-foreground">
+                {{ describeShellError(translate, tab.panel.failure).code }}
+              </p>
+            </footer>
+          </div>
+        </template>
       </template>
 
       <template v-else>

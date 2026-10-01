@@ -6,7 +6,7 @@ vi.mock("@/lib/backend/tauri", () => ({ appInfo: vi.fn(), settingsGet: vi.fn(), 
 
 import { i18n } from "@/i18n";
 import { settingsGet, settingsSet } from "@/lib/backend/tauri";
-import { usePreferencesStore } from "@/stores/preferences";
+import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
 
 const settingsGetMock = vi.mocked(settingsGet);
 const settingsSetMock = vi.mocked(settingsSet);
@@ -274,5 +274,74 @@ describe("the file layout", () => {
     await store.load();
 
     expect(store.filesLayout).toBe("list");
+  });
+});
+
+describe("the file panel under a terminal", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock
+      .mockReset()
+      .mockResolvedValue({ themeMode: "system", terminalTheme: "system", filesLayout: "tree" });
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("starts at a height that leaves the terminal the larger half", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.resolvedPanelHeight).toBe(DEFAULT_TERMINAL_PANEL_HEIGHT);
+  });
+
+  it("draws the height being dragged to before it writes anything down", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // A pointer lands on fractions; a pane is drawn at whole pixels.
+    store.setPanelHeight(412.4);
+
+    expect(store.resolvedPanelHeight).toBe(412);
+    // A drag is dozens of moves and every write is a synced file, so nothing is written yet.
+    expect(settingsSetMock).not.toHaveBeenCalled();
+  });
+
+  it("writes the height down when the drag is let go", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setPanelHeight(412);
+    await store.rememberPanelHeight();
+
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ terminalPanelHeight: 412 }));
+  });
+
+  it("reads the height back on the next start", async () => {
+    settingsGetMock.mockResolvedValue({
+      themeMode: "system",
+      terminalTheme: "system",
+      filesLayout: "tree",
+      terminalPanelHeight: 360,
+    });
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.resolvedPanelHeight).toBe(360);
+  });
+
+  it("leaves nothing behind in the file when the divider is put back where it started", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setPanelHeight(500);
+    await store.resetPanelHeight();
+
+    expect(store.resolvedPanelHeight).toBe(DEFAULT_TERMINAL_PANEL_HEIGHT);
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ terminalPanelHeight: undefined }));
   });
 });

@@ -125,6 +125,25 @@ function terminalTab(store: ReturnType<typeof useTerminalsStore>): TerminalTab |
   return store.tabs.find((tab): tab is TerminalTab => tab.kind === "terminal");
 }
 
+/** The terminal tab, or a failure: a test with no terminal tab has nothing to assert about one. */
+function terminalTabOrFail(store: ReturnType<typeof useTerminalsStore>): TerminalTab {
+  const tab = terminalTab(store);
+  if (!tab) {
+    throw new Error("the workspace has no terminal tab");
+  }
+  return tab;
+}
+
+/** The envelope a refused backend call answers with, for the paths that only need a code. */
+const refused = {
+  version: 1,
+  code: "APP-INTERNAL",
+  messageKey: "errors.app.internal",
+  messageParams: { operation: "files_close" },
+  origin: { subsystem: "app" },
+  outcome: "unknown",
+} as const;
+
 describe("terminals store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -154,7 +173,12 @@ describe("terminals store", () => {
 
     // Nothing was opened, so there is no terminal to draw — only a question to answer.
     expect(store.tabs).toHaveLength(0);
-    expect(store.decision).toEqual({ kind: "hostKeyUnknown", session, purpose: "terminal", key: presented });
+    expect(store.decision).toEqual({
+      kind: "hostKeyUnknown",
+      session,
+      target: { to: "terminal" },
+      key: presented,
+    });
   });
 
   it("trusts the key and opens again, with the tab appearing after the second answer", async () => {
@@ -370,14 +394,7 @@ describe("terminals store", () => {
   it("keeps the browser tab and says why when the backend refuses to close it", async () => {
     sessionOpenMock.mockResolvedValue(opened());
     filesOpenMock.mockResolvedValue(filesOpened());
-    filesCloseMock.mockRejectedValue({
-      version: 1,
-      code: "APP-INTERNAL",
-      messageKey: "errors.app.internal",
-      messageParams: { operation: "files_close" },
-      origin: { subsystem: "app" },
-      outcome: "unknown",
-    });
+    filesCloseMock.mockRejectedValue(refused);
 
     const store = useTerminalsStore();
     open();
@@ -419,7 +436,7 @@ describe("terminals store", () => {
     // A decision is not a browser: there is nothing to draw until it is answered.
     expect(store.tabs).toHaveLength(0);
     expect(store.decision?.kind).toBe("hostKeyUnknown");
-    expect(store.decision?.purpose).toBe("files");
+    expect(store.decision?.target).toEqual({ to: "files" });
 
     await store.confirmTrust();
 
@@ -427,5 +444,169 @@ describe("terminals store", () => {
     expect(filesOpenMock).toHaveBeenCalledTimes(2);
     expect(store.tabs[0]?.kind).toBe("files");
     expect(store.decision).toBeNull();
+  });
+
+  it("hangs the file browser under the terminal, in the tab that asked for it", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    await store.togglePanel(tab);
+
+    expect(store.tabs).toHaveLength(1);
+    expect(tab.panel).toEqual({ handle: "f1", status: "open", failure: null });
+  });
+
+  it("moves the browser a file tab is already drawing into the panel", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+    const tab = terminalTabOrFail(store);
+    await store.togglePanel(tab);
+
+    // One browser, drawn in one place: two listings of a directory have no way to say which is
+    // right, so the one that exists moves rather than a second one being opened beside it.
+    expect(filesOpenMock).toHaveBeenCalledTimes(1);
+    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal"]);
+    expect(tab.panel?.handle).toBe("f1");
+  });
+
+  it("opens no second browser when the panel is the thing already drawing one", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.togglePanel(terminalTabOrFail(store));
+    await store.openFiles(session);
+
+    expect(filesOpenMock).toHaveBeenCalledTimes(1);
+    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal"]);
+  });
+
+  it("closes the browser before the terminal whose connection carries it", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.togglePanel(terminalTabOrFail(store));
+    await store.closeTab(store.tabs[0]?.id ?? "");
+
+    expect(filesCloseMock).toHaveBeenCalledWith("f1");
+    expect(terminalCloseMock).toHaveBeenCalledWith("handle-1");
+    // The SFTP channel rides on that terminal's connection, so the other order would cut it out
+    // from under a browser that is still moving files.
+    const closedBrowser = filesCloseMock.mock.invocationCallOrder.at(0) ?? 0;
+    const closedTerminal = terminalCloseMock.mock.invocationCallOrder.at(0) ?? 0;
+    expect(closedBrowser).toBeGreaterThan(0);
+    expect(closedBrowser).toBeLessThan(closedTerminal);
+    expect(store.tabs).toHaveLength(0);
+  });
+
+  it("keeps the tab and says why when the browser in the panel refuses to close", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+    filesCloseMock.mockRejectedValue(refused);
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.togglePanel(terminalTabOrFail(store));
+    await store.closeTab(store.tabs[0]?.id ?? "");
+
+    // The browser is still open on the far side, so the terminal that carries it is not closed.
+    expect(terminalCloseMock).not.toHaveBeenCalled();
+    expect(store.tabs).toHaveLength(1);
+    const tab = terminalTabOrFail(store);
+    expect(tab.panel?.status).toBe("failed");
+    expect(tab.panel?.handle).toBe("f1");
+    expect(tab.panel?.failure?.code).toBe("APP-INTERNAL");
+  });
+
+  it("puts a panel that could not be opened in the panel, not in a new tab", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockRejectedValue(refused);
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    await store.togglePanel(tab);
+
+    expect(store.tabs).toHaveLength(1);
+    expect(tab.panel?.status).toBe("failed");
+    expect(tab.panel?.failure?.code).toBe("APP-INTERNAL");
+  });
+
+  it("raises the host key decision for a panel and opens it into that tab once answered", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock
+      .mockResolvedValueOnce({ kind: "hostKeyUnknown", key: presented })
+      .mockResolvedValueOnce(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    await store.togglePanel(tab);
+
+    // A decision is not a browser, and a panel left spinning while it is up would go on spinning
+    // if it were cancelled.
+    expect(tab.panel).toBeNull();
+    expect(store.decision?.target).toEqual({ to: "panel", tabId: tab.id });
+
+    await store.confirmTrust();
+
+    expect(knownHostTrustMock).toHaveBeenCalledWith(presented);
+    expect(filesOpenMock).toHaveBeenCalledTimes(2);
+    expect(store.tabs).toHaveLength(1);
+    expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
+  });
+
+  it("opens a terminal and its panel in one action, and no panel when the terminal fails", async () => {
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockRejectedValueOnce(refused);
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.openWithFiles(session);
+
+    expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
+
+    // A terminal that never opened has no place for a file browser: the panel is opened onto the
+    // tab that exists afterwards, not onto the request.
+    store.activate(store.tabs[0]?.id ?? "");
+    await store.openWithFiles(session);
+
+    expect(filesOpenMock).toHaveBeenCalledTimes(1);
+    expect(store.tabs[1]?.status).toBe("failed");
+    expect(store.tabs[1]?.kind === "terminal" && store.tabs[1].panel).toBeNull();
+  });
+
+  it("leaves the panel standing when the terminal under it ends", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.togglePanel(terminalTabOrFail(store));
+
+    endedListeners.forEach((listener) => listener("handle-1", "the shell exited"));
+
+    // A shell that exited does not take the files with it: what the browser rides on is the
+    // connection, and the panel is still the way to them until it is closed.
+    expect(terminalTabOrFail(store).status).toBe("ended");
+    expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
   });
 });

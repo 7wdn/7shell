@@ -32,7 +32,7 @@ import {
   Upload,
   X,
 } from "@lucide/vue";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
@@ -59,41 +59,19 @@ const preferences = usePreferencesStore();
 const twoPanes = computed(() => preferences.filesLayout === "tree");
 
 /**
- * The paste route, and the keyboard shortcut for it.
+ * The paste route, as a button.
  *
- * Ctrl+V is the first thing somebody tries with a file on the clipboard, so it does what the button
- * does. Two things are deliberately left alone: a paste aimed at a text field, which is a text
- * paste and not an upload, and a platform whose clipboard this build cannot read — there the
- * backend refuses with a reason and the panel shows it, instead of the shortcut seeming dead.
+ * It uploads into the directory on screen. The Ctrl+V shortcut that goes with it is registered by
+ * the shell rather than here, because "which directory is on screen" is a question a browser
+ * cannot answer about itself: every open browser is mounted, including the ones behind other tabs,
+ * and a shortcut registered by each of them would upload one clipboard into all of them at once.
  */
-function onPaste(event: KeyboardEvent): void {
-  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "v") {
-    return;
-  }
-
-  const target = event.target as HTMLElement | null;
-  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
-    return;
-  }
-
-  const open = files.browser(props.handle);
-  if (!open) {
-    return;
-  }
-
-  event.preventDefault();
-  void files.uploadFromClipboard(props.handle, open.path);
-}
-
 function pasteFiles(): void {
   const open = files.browser(props.handle);
   if (open) {
     void files.uploadFromClipboard(props.handle, open.path);
   }
 }
-
-onMounted(() => window.addEventListener("keydown", onPaste));
-onBeforeUnmount(() => window.removeEventListener("keydown", onPaste));
 
 /** Goes where the tree asked, through the same path the listing uses. */
 function goTo(path: string): void {

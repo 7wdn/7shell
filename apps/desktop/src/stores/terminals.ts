@@ -19,6 +19,12 @@
  * The forwards live here too, for the same reason the tabs do: `session_open` answers with them,
  * so this is the store that already holds the answer. Keeping them in one place is what lets the
  * sidebar draw them and stops the same failed forward from being reported once per component.
+ *
+ * A terminal tab can carry a file panel below it. That panel draws the *same* browser a file tab
+ * would have drawn — one browser per session, moved rather than duplicated, because two listings
+ * of one directory have no way to tell which of them is right. The panel also shares the tab's
+ * fate: its SFTP channel rides on the connection the terminal opened, so the browser is closed
+ * before the terminal is, and the other order would cut the channel out from under it.
  */
 
 import { defineStore } from "pinia";
@@ -43,11 +49,33 @@ export type TerminalTabStatus = "open" | "ended" | "failed";
 /** A file browser has no stream that can end: it opened, or it did not. */
 export type FilesTabStatus = "open" | "failed";
 
-/** What was being opened when a host key decision interrupted it. */
-export type OpenPurpose = "terminal" | "files";
+/**
+ * What is to be opened once a host key decision has been answered.
+ *
+ * A decision does not care what it interrupted, but the answer has to go back where the question
+ * came from. A panel is the one case that cannot be found again from its session — a session has
+ * at most one, and the terminal tab it hangs under is the only thing that says which.
+ */
+export type OpenTarget =
+  | { readonly to: "terminal" }
+  | { readonly to: "files" }
+  | { readonly to: "panel"; readonly tabId: string };
 
 /** The half of an open answer that is not an open: the decision that has to come first. */
 type DecisionOutcome = Exclude<OpenOutcome | SftpOutcome, { kind: "opened" }>;
+
+/**
+ * The file panel under a terminal.
+ *
+ * A `handle` is a browser — there is one, or there is not — and the status says how it is doing:
+ * opening, open, or failed with the envelope that says why. A panel that failed to *close* keeps
+ * its browser and its handle, and shows the reason in the footer under it.
+ */
+export interface TerminalPanel {
+  handle: string | null;
+  status: "opening" | "open" | "failed";
+  failure: ShellError | null;
+}
 
 export interface TerminalTab {
   readonly kind: "terminal";
@@ -60,6 +88,8 @@ export interface TerminalTab {
   reason?: string;
   /** The envelope of the last failure this tab is responsible for showing. */
   failure: ShellError | null;
+  /** The file panel below this terminal, or null when it is not shown. */
+  panel: TerminalPanel | null;
 }
 
 /** A file browser, drawn as a tab. The session names it; the handle says which browser it is. */
@@ -80,13 +110,13 @@ export type HostKeyDecision =
       readonly kind: "hostKeyUnknown";
       readonly session: Session;
       /** Which open to repeat once this is answered. */
-      readonly purpose: OpenPurpose;
+      readonly target: OpenTarget;
       readonly key: PresentedHostKey;
     }
   | {
       readonly kind: "hostKeyMismatch";
       readonly session: Session;
-      readonly purpose: OpenPurpose;
+      readonly target: OpenTarget;
       readonly key: PresentedHostKey;
       readonly trusted: KnownHostEntry;
     };
@@ -155,26 +185,48 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
+   * Opens a terminal with its file panel already open: the one action that asks for both halves.
+   *
+   * The panel is opened onto the tab that exists once the connection is up, rather than onto the
+   * request: a refused connection, an answered host key decision and a terminal that died on
+   * arrival all end with a tab that is not open, and none of those is a place for a file browser.
+   */
+  async function openWithFiles(session: Session): Promise<void> {
+    await open(session);
+    const tab = [...tabs.value]
+      .reverse()
+      .find(
+        (entry): entry is TerminalTab =>
+          entry.kind === "terminal" && entry.session.id === session.id && entry.status === "open",
+      );
+    if (tab) {
+      await openPanel(tab);
+    }
+  }
+
+  /**
    * Opens the file browser for a saved session.
    *
    * One browser per session: the backend would happily open a second one over the same connection,
-   * and two tabs showing the same directory would then drift apart with no way to tell which is
-   * which. A second ask focuses the tab that exists.
+   * and two listings of the same directory would then drift apart with no way to tell which is
+   * which. A second ask goes to whatever is drawing the browser that exists — a file tab, or the
+   * panel of the terminal that is carrying it.
    */
   async function openFiles(session: Session): Promise<void> {
-    const existing = tabs.value.find(
-      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === session.id,
-    );
-    if (existing && existing.status === "open") {
-      activeTabId.value = existing.id;
+    const showing = tabs.value.find((entry) => entry.session.id === session.id && browserHandleOf(entry) !== null);
+    if (showing) {
+      activeTabId.value = showing.id;
       return;
     }
     if (connectingSessionIds.value.includes(session.id)) {
       return;
     }
     // A tab whose open failed holds no browser at all: asking again is a retry, not a second view.
-    if (existing) {
-      forget(existing.id);
+    const failed = tabs.value.find(
+      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === session.id,
+    );
+    if (failed) {
+      forget(failed.id);
     }
 
     connectingSessionIds.value.push(session.id);
@@ -201,11 +253,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
         status: ended ? "ended" : "open",
         reason: ended?.reason,
         failure: null,
+        panel: null,
       });
       return;
     }
 
-    raiseDecision(session, "terminal", outcome);
+    raiseDecision(session, { to: "terminal" }, outcome);
   }
 
   function acceptFiles(session: Session, outcome: SftpOutcome): void {
@@ -221,15 +274,28 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
 
-    raiseDecision(session, "files", outcome);
+    raiseDecision(session, { to: "files" }, outcome);
+  }
+
+  /** The panel's answer to an open: a browser, or the decision that has to come first. */
+  function acceptPanel(tab: TerminalTab, outcome: SftpOutcome): void {
+    if (outcome.kind === "opened") {
+      tab.panel = { handle: outcome.handle, status: "open", failure: null };
+      return;
+    }
+
+    // A decision is not a browser, so there is nothing to draw while it is up — and a panel left
+    // spinning would go on spinning if it were cancelled. Answering it asks for the panel again.
+    tab.panel = null;
+    raiseDecision(tab.session, { to: "panel", tabId: tab.id }, outcome);
   }
 
   /** The one place a decision is raised, whatever was being opened when it came up. */
-  function raiseDecision(session: Session, purpose: OpenPurpose, outcome: DecisionOutcome): void {
+  function raiseDecision(session: Session, target: OpenTarget, outcome: DecisionOutcome): void {
     decision.value =
       outcome.kind === "hostKeyMismatch"
-        ? { kind: "hostKeyMismatch", session, purpose, key: outcome.key, trusted: outcome.trusted }
-        : { kind: "hostKeyUnknown", session, purpose, key: outcome.key };
+        ? { kind: "hostKeyMismatch", session, target, key: outcome.key, trusted: outcome.trusted }
+        : { kind: "hostKeyUnknown", session, target, key: outcome.key };
   }
 
   function addTab(tab: WorkspaceTab): void {
@@ -241,7 +307,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     session: Session,
     fields: { handle: string | null; status: TerminalTabStatus; reason?: string; failure: ShellError | null },
   ): void {
-    addTab({ kind: "terminal", id: crypto.randomUUID(), session, ...fields });
+    addTab({ kind: "terminal", id: crypto.randomUUID(), session, panel: null, ...fields });
   }
 
   function addFiles(
@@ -258,7 +324,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
     decision.value = null;
-    await trustThenOpen(pending.session, pending.key, pending.purpose);
+    await trustThenOpen(pending.session, pending.key, pending.target);
   }
 
   /** The mismatch path: forget the trusted key, record the new one, then open. */
@@ -271,33 +337,63 @@ export const useTerminalsStore = defineStore("terminals", () => {
     try {
       await backend.knownHosts.forget(pending.key.host, pending.key.port);
     } catch (error) {
-      failedOpen(pending.session, pending.purpose, asShellError(error, "known_host_forget"));
+      failedOpen(pending.session, pending.target, asShellError(error, "known_host_forget"));
       return;
     }
-    await trustThenOpen(pending.session, pending.key, pending.purpose);
+    await trustThenOpen(pending.session, pending.key, pending.target);
   }
 
-  async function trustThenOpen(session: Session, key: PresentedHostKey, purpose: OpenPurpose): Promise<void> {
+  async function trustThenOpen(session: Session, key: PresentedHostKey, target: OpenTarget): Promise<void> {
     try {
       await backend.knownHosts.trust(key);
     } catch (error) {
-      failedOpen(session, purpose, asShellError(error, "known_host_trust"));
+      failedOpen(session, target, asShellError(error, "known_host_trust"));
       return;
     }
-    if (purpose === "files") {
+    await openFor(session, target);
+  }
+
+  /** Opens whatever a host key decision was standing in front of. */
+  async function openFor(session: Session, target: OpenTarget): Promise<void> {
+    if (target.to === "files") {
       await openFiles(session);
+      return;
+    }
+    if (target.to === "panel") {
+      // The tab may be gone: a decision does not hold a tab open, and the person may have closed
+      // it rather than answer.
+      const tab = terminalTab(target.tabId);
+      if (tab) {
+        await openPanel(tab);
+      }
       return;
     }
     await open(session);
   }
 
-  /** A failure before a tab existed still gets a tab: that is where the person is looking. */
-  function failedOpen(session: Session, purpose: OpenPurpose, failure: ShellError): void {
-    if (purpose === "files") {
+  /**
+   * A failure before a tab existed still gets a tab: that is where the person is looking.
+   *
+   * A panel is the exception, because it never had a tab of its own: it belongs to a terminal that
+   * already exists, and if that tab is gone there is nowhere left for the reason to be true.
+   */
+  function failedOpen(session: Session, target: OpenTarget, failure: ShellError): void {
+    if (target.to === "files") {
       addFiles(session, { handle: null, status: "failed", failure });
       return;
     }
+    if (target.to === "panel") {
+      const tab = terminalTab(target.tabId);
+      if (tab) {
+        tab.panel = { handle: null, status: "failed", failure };
+      }
+      return;
+    }
     addTerminal(session, { handle: null, status: "failed", failure });
+  }
+
+  function terminalTab(id: string): TerminalTab | undefined {
+    return tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.id === id);
   }
 
   /** Answers "cancel": nothing was sent, and nothing is left pending. */
@@ -318,8 +414,16 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // A tab whose terminal already ended, or whose close already failed, has nothing left to
     // close: removing it locally is the whole operation.
     if (!tab.handle || tab.status !== "open") {
+      releasePanel(tab);
       forget(id);
       await refreshTunnels();
+      return;
+    }
+
+    // The panel goes first, and not only as tidiness: its SFTP channel rides on this terminal's
+    // connection, so closing the terminal first would cut the channel out from under a browser
+    // that is still moving files.
+    if (!(await closePanel(tab))) {
       return;
     }
     try {
@@ -331,6 +435,93 @@ export const useTerminalsStore = defineStore("terminals", () => {
       tab.status = "failed";
       tab.failure = asShellError(error, "terminal_close");
     }
+  }
+
+  /**
+   * Opens the file panel under a terminal.
+   *
+   * A session has one browser, so if a file tab is already drawing it, that browser moves here and
+   * the tab goes. What the person asked for is the files *under this terminal*, not a second copy
+   * of the same directory somewhere else.
+   */
+  async function openPanel(tab: TerminalTab): Promise<void> {
+    // Nothing to open when the panel is already there, is on its way, or is holding a browser that
+    // nobody has closed yet — the last of those is a failed *close*, which the toggle retries.
+    if (tab.panel && (tab.panel.status !== "failed" || tab.panel.handle !== null)) {
+      return;
+    }
+    tab.panel = { handle: null, status: "opening", failure: null };
+
+    const holder = tabs.value.find((entry) => entry.session.id === tab.session.id && browserHandleOf(entry) !== null);
+    const adopted = holder ? browserHandleOf(holder) : null;
+    if (holder && adopted !== null) {
+      tab.panel = { handle: adopted, status: "open", failure: null };
+      forget(holder.id);
+      return;
+    }
+
+    try {
+      acceptPanel(tab, await files.open(tab.session.id));
+    } catch (error) {
+      tab.panel = { handle: null, status: "failed", failure: asShellError(error, "files_open") };
+    }
+  }
+
+  /**
+   * Closes the panel and the browser in it.
+   *
+   * The browser goes through the backend first, and a refusal keeps both: a browser the backend
+   * would not close is still open on the far side, so a panel that vanished would leave a
+   * directory nobody can see and a session nobody can close.
+   */
+  async function closePanel(tab: TerminalTab): Promise<boolean> {
+    const panel = tab.panel;
+    if (!panel) {
+      return true;
+    }
+    if (!panel.handle) {
+      tab.panel = null;
+      return true;
+    }
+    const failure = await files.close(panel.handle);
+    if (failure) {
+      tab.panel = { ...panel, status: "failed", failure };
+      return false;
+    }
+    tab.panel = null;
+    return true;
+  }
+
+  /** The toggle: what is there goes, and what is not comes. */
+  async function togglePanel(tab: TerminalTab): Promise<void> {
+    if (tab.panel) {
+      await closePanel(tab);
+      return;
+    }
+    await openPanel(tab);
+  }
+
+  /**
+   * Takes the panel off a tab that is being dropped rather than closed.
+   *
+   * Not awaited and not shown, and here is why: the tab is going, so there is nothing left on
+   * screen that could hold a refusal. The call is still made, because what is behind the panel is
+   * a live SFTP session that has to be told to stop rather than one that will be missed.
+   */
+  function releasePanel(tab: TerminalTab): void {
+    const handle = tab.panel?.handle;
+    tab.panel = null;
+    if (handle) {
+      void files.close(handle);
+    }
+  }
+
+  /** The handles through which a tab is drawing a file browser, whichever half of the mode it is. */
+  function browserHandleOf(tab: WorkspaceTab): string | null {
+    if (tab.kind === "files") {
+      return tab.handle;
+    }
+    return tab.panel?.handle ?? null;
   }
 
   /**
@@ -404,16 +595,27 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tunnelProblem.value = null;
   }
 
+  /** Reconnects a tab by asking for the same thing again: a browser as a file tab, a terminal
+   *  otherwise — and the panel, if that is how the terminal was being used. */
   async function reconnect(id: string): Promise<void> {
     const tab = tabs.value.find((entry) => entry.id === id);
     if (!tab) {
       return;
     }
     const { session } = tab;
-    const purpose: OpenPurpose = tab.kind === "files" ? "files" : "terminal";
-    forget(id);
-    if (purpose === "files") {
+    if (tab.kind === "files") {
+      forget(id);
       await openFiles(session);
+      return;
+    }
+
+    const withPanel = tab.panel !== null;
+    // The button only appears on a terminal that is not open, so there is nothing here to close
+    // through the backend: the panel's browser is told to stop and the tab goes regardless.
+    releasePanel(tab);
+    forget(id);
+    if (withPanel) {
+      await openWithFiles(session);
       return;
     }
     await open(session);
@@ -468,7 +670,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tunnelProblem,
     initialize,
     open,
+    openWithFiles,
     openFiles,
+    openPanel,
+    closePanel,
+    togglePanel,
+    browserHandleOf,
     confirmTrust,
     confirmReplace,
     dismiss,

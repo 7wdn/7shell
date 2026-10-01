@@ -14,6 +14,14 @@
       "dismiss": "Dismiss",
       "connections": "{count} connection carried | {count} connections carried",
       "failure": "The forward on {bind} did not come up."
+    },
+    "panel": {
+      "label": "Files",
+      "open": "Open the file panel under this terminal",
+      "close": "Close the file panel",
+      "divider": "Resize the file panel",
+      "opening": "Opening the file panel…",
+      "retry": "Try again"
     }
   }
 }

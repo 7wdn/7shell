@@ -7,6 +7,11 @@
  * to be. It also owns the transient surface — the toast viewport — because a message about an
  * action belongs to no single feature, and every feature has to be able to raise one.
  *
+ * It also owns where a file coming from outside the window lands: the drop overlay and the paste
+ * shortcut both ask the same question — which browser is on screen — and that is a question only
+ * the shell can answer, because the panes behind other tabs are mounted too and would each answer
+ * "me".
+ *
  * The gate sits below the title bar and above everything else, including the sidebar: nothing
  * that reads a saved credential is drawn before the vault is open. The subscription to terminal
  * events is made here, once, before the first terminal can exist.
@@ -48,6 +53,7 @@ let stopFollowingSystem: (() => void) | undefined;
 let stopTerminalEvents: (() => void) | undefined;
 let stopDragEvents: (() => void) | undefined;
 let stopDropEvents: (() => void) | undefined;
+let stopPaste: (() => void) | undefined;
 
 const backendFailure = computed(() => (app.failure ? describeShellError(translate, app.failure) : null));
 
@@ -58,14 +64,17 @@ function translate(key: string, params?: Record<string, string>): string {
 /** True while a drag is over the window, so the hint can say where the files would land. */
 const dragging = ref(false);
 
-/** The browser on screen, if one is: a drop has nowhere to land if the answer is no. */
+/**
+ * The browser on screen, if one is: a drop has nowhere to land if the answer is no.
+ *
+ * Which browser that is — a file tab's own, or the one in the panel under a terminal — is the
+ * workspace store's answer, because it is the store that knows a panel is drawing a browser at all.
+ */
 const dropTarget = computed(() => {
-  const tab = terminals.tabs.find((entry) => entry.id === terminals.activeTabId);
-  if (!tab || tab.kind !== "files" || !tab.handle) {
-    return null;
-  }
-  const browser = files.browser(tab.handle);
-  return browser ? { handle: tab.handle, path: browser.path } : null;
+  const tab = terminals.activeTab;
+  const handle = tab ? terminals.browserHandleOf(tab) : null;
+  const browser = handle === null ? null : files.browser(handle);
+  return handle === null || !browser ? null : { handle, path: browser.path };
 });
 
 /**
@@ -88,6 +97,38 @@ async function dropped(payload: { pending?: { token: string }; error?: unknown }
   if (payload.error !== undefined) {
     files.reportFailure(target.handle, payload.error);
   }
+}
+
+/**
+ * The same upload, from the keyboard.
+ *
+ * Ctrl+V is the first thing somebody tries with a file on the clipboard, and it aims at the same
+ * directory a drop would. It is registered here rather than in the browser panel for the reason
+ * this file exists at all: a panel cannot answer "am I the one on screen" — every browser is
+ * mounted, including the ones behind other tabs — and a shortcut each of them registered would
+ * upload one clipboard into all of them at once.
+ *
+ * Two things are deliberately left alone: a paste aimed at a text field, which is a text paste and
+ * not an upload, and a platform whose clipboard this build cannot read — there the backend refuses
+ * with a reason and the panel shows it, instead of the shortcut seeming dead.
+ */
+function pasteInto(event: KeyboardEvent): void {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "v") {
+    return;
+  }
+
+  const focused = event.target as HTMLElement | null;
+  if (focused && (focused.tagName === "INPUT" || focused.tagName === "TEXTAREA")) {
+    return;
+  }
+
+  const target = dropTarget.value;
+  if (!target) {
+    return;
+  }
+
+  event.preventDefault();
+  void files.uploadFromClipboard(target.handle, target.path);
 }
 
 /**
@@ -122,6 +163,8 @@ onMounted(async () => {
     dragging.value = payload.hovering;
   });
   stopDropEvents = await backend.events.onFilesDropped((payload) => void dropped(payload));
+  window.addEventListener("keydown", pasteInto);
+  stopPaste = () => window.removeEventListener("keydown", pasteInto);
   stopTerminalEvents = terminals.initialize();
   await preferences.load();
   await app.load();
@@ -134,6 +177,7 @@ onBeforeUnmount(() => {
   stopTerminalEvents?.();
   stopDragEvents?.();
   stopDropEvents?.();
+  stopPaste?.();
 });
 </script>
 

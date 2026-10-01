@@ -31,6 +31,8 @@ export interface AppSettings {
   /** `system` means "follow the interface theme" for the terminal, not the operating system. */
   readonly terminalTheme: ThemeMode;
   readonly filesLayout: FilesLayout;
+  /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */
+  readonly terminalPanelHeight?: number;
   /** Absent means nobody has chosen a language, so the system's applies. */
   readonly locale?: string;
 }

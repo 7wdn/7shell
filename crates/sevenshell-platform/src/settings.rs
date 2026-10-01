@@ -38,6 +38,10 @@ struct StoredSettings {
     terminal_theme: String,
     #[serde(default)]
     files_layout: String,
+    /// Absent in a file written before the terminal had a file panel, which reads as "the divider
+    /// has never been moved".
+    #[serde(default)]
+    terminal_panel_height: Option<u32>,
     #[serde(default)]
     locale: Option<String>,
 }
@@ -49,6 +53,7 @@ impl StoredSettings {
             theme_mode: settings.theme_mode.as_str().to_owned(),
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
             files_layout: settings.files_layout.as_str().to_owned(),
+            terminal_panel_height: settings.terminal_panel_height,
             locale: settings.locale.clone(),
         }
     }
@@ -58,6 +63,7 @@ impl StoredSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
+            terminal_panel_height: self.terminal_panel_height,
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
     }
@@ -149,6 +155,7 @@ mod tests {
             theme_mode,
             terminal_theme,
             files_layout: FilesLayout::default(),
+            terminal_panel_height: None,
             locale: locale.map(str::to_owned),
         }
     }
@@ -167,6 +174,10 @@ mod tests {
             ThemeMode::System,
             "absent means follow the interface"
         );
+        assert_eq!(
+            loaded.terminal_panel_height, None,
+            "absent means the divider has never been moved"
+        );
         assert_eq!(loaded.locale.as_deref(), Some("zh-CN"));
     }
 
@@ -183,7 +194,10 @@ mod tests {
     fn settings_survive_a_round_trip() {
         let directory = tempdir().expect("temp dir");
         let path = directory.path().join("settings.json");
-        let written = settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"));
+        let written = AppSettings {
+            terminal_panel_height: Some(320),
+            ..settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"))
+        };
 
         save_to(&path, &written).expect("save");
         assert_eq!(load_from(&path).expect("load"), written);

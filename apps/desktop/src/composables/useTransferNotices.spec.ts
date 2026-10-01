@@ -17,6 +17,13 @@ interface FailedTransfer {
 interface WorkspaceTab {
   id: string;
   kind: "terminal" | "files";
+  /**
+   * The browser this tab is drawing, if it is drawing one.
+   *
+   * The real store answers this from a file tab's own handle or from the panel under a terminal;
+   * what the policy asks is only ever "is there a list here", so the fake says it directly.
+   */
+  browser?: string;
 }
 
 /**
@@ -32,6 +39,7 @@ const terminals = reactive({
   tabs: [] as ReadonlyArray<WorkspaceTab>,
   activeTab: null as WorkspaceTab | null,
   activate: vi.fn<(id: string) => void>(),
+  browserHandleOf: (tab: WorkspaceTab): string | null => tab.browser ?? null,
 });
 
 vi.mock("@/stores/files", () => ({ useFilesStore: () => files }));
@@ -68,8 +76,10 @@ function mount(): void {
   };
 }
 
-const FILE_TAB = { id: "tab-files", kind: "files" } as const;
+const FILE_TAB = { id: "tab-files", kind: "files", browser: "f1" } as const;
 const TERMINAL_TAB = { id: "tab-terminal", kind: "terminal" } as const;
+/** A terminal with its file panel open: the second place a browser can be drawn. */
+const PANEL_TAB = { id: "tab-panel", kind: "terminal", browser: "f2" } as const;
 
 const DOWNLOAD_FAILED = { id: "x1", direction: "download", name: "notes.txt" } as const;
 
@@ -126,6 +136,31 @@ describe("what a failed transfer says", () => {
 
     expect(visible.value).toBe(false);
     expect(attendFailures).toHaveBeenCalledWith([DOWNLOAD_FAILED.id]);
+  });
+
+  it("counts the file panel under a terminal as the list being on screen", async () => {
+    mount();
+    terminals.tabs = [PANEL_TAB];
+    terminals.activeTab = PANEL_TAB;
+
+    files.unattendedFailures = [DOWNLOAD_FAILED];
+    await nextTick();
+
+    expect(visible.value).toBe(false);
+    expect(attendFailures).toHaveBeenCalledWith([DOWNLOAD_FAILED.id]);
+  });
+
+  it("offers the panel under a terminal as the way back to the list", async () => {
+    mount();
+    terminals.tabs = [TERMINAL_TAB, PANEL_TAB];
+    terminals.activeTab = TERMINAL_TAB;
+
+    files.unattendedFailures = [DOWNLOAD_FAILED];
+    await nextTick();
+
+    expect(action.value?.label).toBe("Show transfers");
+    action.value?.onClick();
+    expect(activate).toHaveBeenCalledWith(PANEL_TAB.id);
   });
 
   it("counts them when several arrive in the same read", async () => {

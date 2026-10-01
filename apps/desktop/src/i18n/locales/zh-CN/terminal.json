@@ -14,6 +14,14 @@
       "dismiss": "忽略",
       "connections": "已承载 {count} 个连接 | 已承载 {count} 个连接",
       "failure": "{bind} 上的转发未能建立。"
+    },
+    "panel": {
+      "label": "文件",
+      "open": "在终端下方打开文件面板",
+      "close": "关闭文件面板",
+      "divider": "调整文件面板高度",
+      "opening": "正在打开文件面板…",
+      "retry": "重试"
     }
   }
 }

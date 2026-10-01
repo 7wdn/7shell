@@ -8,8 +8,9 @@
  * case the toast exists for.
  *
  * When a file browser *is* on screen, nothing is said: the list is already the notice, a failed row
- * that stays until it is dismissed, and one message must not have two homes. Either way the failure
- * is consumed here — whether it was visible was a fact about that moment, not about the failure.
+ * that stays until it is dismissed, and one message must not have two homes — and a browser in the
+ * file panel under a terminal counts as on screen, because it is. Either way the failure is consumed
+ * here — whether it was visible was a fact about that moment, not about the failure.
  */
 import { watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -29,9 +30,12 @@ export function useTransferNotices(): void {
     return direction === "upload" ? t("files.transfer.direction.upload") : t("files.transfer.direction.download");
   }
 
-  /** Every file browser shows the same list, so any of them can serve as the way back to it. */
+  /**
+   * Every file browser shows the same list, so any of them can serve as the way back to it — a file
+   * tab, or the panel under a terminal, which is likewise a browser someone can be sent to.
+   */
   function showTransfers(): void {
-    const target = [...terminals.tabs].reverse().find((entry) => entry.kind === "files");
+    const target = [...terminals.tabs].reverse().find((entry) => terminals.browserHandleOf(entry) !== null);
     if (target) {
       terminals.activate(target.id);
     }
@@ -45,7 +49,8 @@ export function useTransferNotices(): void {
       }
       files.attendFailures(waiting.map((entry) => entry.id));
 
-      const listIsOnScreen = terminals.activeTab?.kind === "files";
+      const active = terminals.activeTab;
+      const listIsOnScreen = active !== null && terminals.browserHandleOf(active) !== null;
       if (listIsOnScreen) {
         return;
       }
@@ -55,7 +60,7 @@ export function useTransferNotices(): void {
         ? t("files.transfer.failedAway", { direction: directionLabel(only.direction), name: only.name })
         : t("files.transfer.failedAwayCount", { count: waiting.length });
 
-      const reachable = terminals.tabs.some((entry) => entry.kind === "files");
+      const reachable = terminals.tabs.some((entry) => terminals.browserHandleOf(entry) !== null);
       toast(
         message,
         "unseenFailure",

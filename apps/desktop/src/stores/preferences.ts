@@ -21,12 +21,28 @@ import type { FilesLayout, ResolvedTheme, ThemeMode } from "@/types/app";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
+/**
+ * How tall the file panel under a terminal starts out, until somebody moves the divider.
+ *
+ * About a dozen rows of a directory listing: enough to see where you are and pick a file out of it,
+ * small enough that the terminal above it is still the larger half.
+ */
+export const DEFAULT_TERMINAL_PANEL_HEIGHT = 280;
+
 export const usePreferencesStore = defineStore("preferences", () => {
   const themeMode = ref<ThemeMode>("system");
   /** Which palette the terminal draws in; `system` means "follow the interface theme". */
   const terminalTheme = ref<ThemeMode>("system");
   /** Two panes or one, in the file browser. */
   const filesLayout = ref<FilesLayout>("tree");
+  /**
+   * How tall the file panel under a terminal is, in pixels; null until somebody moves the divider.
+   *
+   * A pixel height rather than a fraction of the window: the panel is a fixed-purpose thing — a
+   * list of files, wanting a predictable number of rows — and the terminal above it is the half
+   * that can absorb whatever the window does.
+   */
+  const terminalPanelHeight = ref<number | null>(null);
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -53,6 +69,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     }
     return terminalTheme.value;
   });
+
+  /** What the divider is drawn at: the height somebody chose, or the starting one. */
+  const resolvedPanelHeight = computed(() => terminalPanelHeight.value ?? DEFAULT_TERMINAL_PANEL_HEIGHT);
 
   function apply(): void {
     document.documentElement.classList.toggle("dark", resolvedTheme.value === "dark");
@@ -84,6 +103,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       themeMode.value = settings.themeMode;
       terminalTheme.value = settings.terminalTheme;
       filesLayout.value = settings.filesLayout;
+      terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -106,6 +126,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         themeMode: themeMode.value,
         terminalTheme: terminalTheme.value,
         filesLayout: filesLayout.value,
+        terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -129,6 +150,28 @@ export const usePreferencesStore = defineStore("preferences", () => {
     await persist();
   }
 
+  /**
+   * Moves the divider.
+   *
+   * Applied at once and written down separately: a drag is dozens of moves, and every write is a
+   * synced file. Nothing is lost by waiting — the height is a convenience, not a setting anyone
+   * depends on being durable to the second.
+   */
+  function setPanelHeight(height: number): void {
+    terminalPanelHeight.value = Math.round(height);
+  }
+
+  /** Writes down the height the divider was left at. */
+  async function rememberPanelHeight(): Promise<void> {
+    await persist();
+  }
+
+  /** Puts the divider back where it started, and forgets the height: nothing has been chosen. */
+  async function resetPanelHeight(): Promise<void> {
+    terminalPanelHeight.value = null;
+    await persist();
+  }
+
   async function setLocale(next: SupportedLocale): Promise<void> {
     localeChosen.value = true;
     locale.value = next;
@@ -147,8 +190,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     themeMode,
     terminalTheme,
     filesLayout,
+    terminalPanelHeight,
     resolvedTheme,
     resolvedTerminalTheme,
+    resolvedPanelHeight,
     locale,
     problem,
     initialize,
@@ -156,6 +201,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setThemeMode,
     setTerminalTheme,
     setFilesLayout,
+    setPanelHeight,
+    rememberPanelHeight,
+    resetPanelHeight,
     setLocale,
   };
 });

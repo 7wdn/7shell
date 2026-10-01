@@ -87,6 +87,12 @@ pub struct AppSettings {
     /// How the file browser is laid out.
     #[serde(default)]
     pub files_layout: FilesLayout,
+    /// How tall the file panel under a terminal is, in pixels.
+    ///
+    /// A wish rather than a measurement: the interface clamps it against the window it has, so a
+    /// height that no longer fits is honoured as far as it can be rather than refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_panel_height: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
 }
@@ -98,6 +104,7 @@ impl AppSettings {
         self.theme_mode == ThemeMode::System
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
+            && self.terminal_panel_height.is_none()
             && self.locale.is_none()
     }
 }
