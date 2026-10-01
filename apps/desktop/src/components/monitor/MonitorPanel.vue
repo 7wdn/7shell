@@ -26,13 +26,17 @@ import { useI18n } from "vue-i18n";
 
 import InterfacePicker from "@/components/inspect/InterfacePicker.vue";
 import MonitorSpark from "@/components/monitor/MonitorSpark.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatSize } from "@/lib/files/format";
+import { diskMenu, monitorProcessMenu } from "@/lib/menu/monitor";
+import { MENU_TITLES } from "@/lib/menu/titles";
 import { perSecond, uptime } from "@/lib/monitor/format";
 import { memoryUsed, share, swapUsed } from "@/lib/monitor/rates";
 import { useMonitorStore } from "@/stores/monitor";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore, type InspectView } from "@/stores/terminals";
+import type { DiskUsage, ProcessSample } from "@/types/monitor";
 
 /** How long the copy button says it copied something. */
 const COPIED_MS = 1500;
@@ -41,6 +45,7 @@ const { t } = useI18n();
 const monitor = useMonitorStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
+const { openMenu } = useContextMenu();
 
 // The panel is mounted exactly while the monitor is on, so being on screen is what starts the
 // sampling and leaving the screen is what stops it. Nothing runs behind a hidden panel.
@@ -151,6 +156,21 @@ async function copyHost(): Promise<void> {
     // A webview that refuses the clipboard is not worth an error banner over a copy button: the
     // button stays as it was, and nothing claims to have been copied.
   }
+}
+
+/**
+ * The small tables' menus.
+ *
+ * A row's way out is the page that shows the same subject in full, and `open` is the same call the
+ * section heading makes — so a row and its heading lead to the same place, which is the only reason
+ * both exist.
+ */
+function openProcessMenu(event: MouseEvent, process: ProcessSample): void {
+  openMenu(event, { key: MENU_TITLES.process }, monitorProcessMenu(process, { openPage: () => open("processes") }));
+}
+
+function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
+  openMenu(event, { key: MENU_TITLES.disk }, diskMenu(disk, { openPage: () => open("system") }));
 }
 </script>
 
@@ -316,7 +336,11 @@ async function copyHost(): Promise<void> {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="process in sample?.processes ?? []" :key="process.pid">
+            <tr
+              v-for="process in sample?.processes ?? []"
+              :key="process.pid"
+              @contextmenu="openProcessMenu($event, process)"
+            >
               <td class="truncate px-1 py-0.5 text-right font-mono">{{ formatSize(process.residentBytes) }}</td>
               <td class="px-1 py-0.5 text-right font-mono">{{ process.cpuPercent.toFixed(1) }}</td>
               <td class="truncate px-1 py-0.5 font-mono">{{ process.name }}</td>
@@ -388,7 +412,11 @@ async function copyHost(): Promise<void> {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="disk in sample?.disks ?? []" :key="`${disk.filesystem}:${disk.mountPoint}`">
+            <tr
+              v-for="disk in sample?.disks ?? []"
+              :key="`${disk.filesystem}:${disk.mountPoint}`"
+              @contextmenu="openDiskMenu($event, disk)"
+            >
               <td class="truncate px-1 py-0.5 font-mono" :title="disk.filesystem">{{ disk.mountPoint }}</td>
               <td class="truncate px-1 py-0.5 text-right font-mono">
                 {{ formatSize(disk.availableBytes) }}/{{ formatSize(disk.sizeBytes) }}

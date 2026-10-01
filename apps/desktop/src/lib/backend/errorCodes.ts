@@ -24,6 +24,8 @@ export const ERROR_CATALOG = {
   // SFTP
   "SFTP-NOT-FOUND": "errors.sftp.notFound",
   "SFTP-PERMISSION-DENIED": "errors.sftp.permissionDenied",
+  "SFTP-EXISTS": "errors.sftp.exists",
+  "SFTP-ARCHIVE-FAILED": "errors.sftp.archiveFailed",
   "SFTP-TRANSFER-FAILED": "errors.sftp.transferFailed",
   // Local file grants
   "FS-GRANT-UNKNOWN": "errors.fs.grantUnknown",

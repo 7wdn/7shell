@@ -38,6 +38,7 @@ vi.mock("@/lib/terminal/bus", async (importOriginal) => {
 });
 
 import ProcessTable from "@/components/inspect/ProcessTable.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
 import { monitorProcesses } from "@/lib/backend/tauri";
 import { PROCESS_POLL_MS, PROCESS_PAGE_LIMIT } from "@/stores/monitor";
@@ -146,5 +147,33 @@ describe("the process table", () => {
 
     // Three intervals, three reads — not five, and not none.
     expect(vi.mocked(monitorProcesses).mock.calls.length).toBe(after + 3);
+  });
+
+  /**
+   * The row's right-click, which is what turns a table nobody can copy out of into one somebody can.
+   *
+   * What is asserted is the hand-over: the row builds its own list and the shell's layer is what
+   * would draw it. Whether the entries are the right ones is the builder's own suite.
+   */
+  it("offers a row its own menu when it is right-clicked", async () => {
+    vi.mocked(monitorProcesses).mockResolvedValue(page([process({ name: "systemd" })]));
+    await render();
+
+    const row = host.querySelectorAll("tbody tr")[0];
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
+    row?.dispatchEvent(event);
+    await nextTick();
+
+    const { visible, entries } = useContextMenu();
+    expect(visible.value).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+    expect(entries.value.map((entry) => entry.id)).toEqual([
+      "open-detail",
+      "sep-copy",
+      "copy-pid",
+      "copy-name",
+      "copy-command",
+      "copy-executable",
+    ]);
   });
 });

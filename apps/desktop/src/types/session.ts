@@ -185,4 +185,12 @@ export interface TransferInfo {
   readonly size: number;
   readonly transferred: number;
   readonly state: TransferState;
+  /**
+   * Whether the files travelled as one archive, packed on the side they came from.
+   *
+   * Told apart from the name because the two answer different questions — the name says what moved,
+   * this says what the transfer did — and because it decides which directory is read again after an
+   * upload: a packed one lands its files *in* the directory it was aimed at.
+   */
+  readonly packed: boolean;
 }

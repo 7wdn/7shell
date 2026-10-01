@@ -70,6 +70,7 @@ const download: TransferInfo = {
   size: 100,
   transferred: 40,
   state: { kind: "running" },
+  packed: false,
 };
 
 const upload: TransferInfo = {
@@ -80,6 +81,7 @@ const upload: TransferInfo = {
   size: 10,
   transferred: 0,
   state: { kind: "running" },
+  packed: false,
 };
 
 /** An SFTP refusal, in the envelope shape the backend rejects with. */
@@ -180,7 +182,7 @@ describe("files store", () => {
     filesDownloadMock.mockResolvedValue(undefined);
 
     const store = useFilesStore();
-    await store.download(handle, "/home/user/notes.txt", "Save", "notes.txt");
+    await store.download(handle, "/home/user/notes.txt", "Save", "notes.txt", false);
 
     expect(store.transfers).toEqual([]);
     expect(store.transferFailure).toBeNull();
@@ -193,9 +195,21 @@ describe("files store", () => {
     transfersOpenMock.mockResolvedValue([download]);
 
     const store = useFilesStore();
-    await store.download(handle, "/home/user/notes.txt", "Save", "notes.txt");
+    await store.download(handle, "/home/user/notes.txt", "Save", "notes.txt", false);
 
     expect(store.transfers).toEqual([download]);
+  });
+
+  it("hands the packing switch to the backend rather than deciding it here", async () => {
+    filesDownloadMock.mockResolvedValue(download.id);
+    filesUploadMock.mockResolvedValue(upload.id);
+
+    const store = useFilesStore();
+    await store.download(handle, "/home/user/logs", "Save", "logs.tar.gz", true);
+    await store.upload(handle, "/home/user", "Choose an archive to unpack", true);
+
+    expect(filesDownloadMock).toHaveBeenCalledWith(handle, "/home/user/logs", "Save", "logs.tar.gz", true);
+    expect(filesUploadMock).toHaveBeenCalledWith(handle, "/home/user", "Choose an archive to unpack", true);
   });
 
   it("keeps a failed transfer and its reason", async () => {
@@ -287,10 +301,39 @@ describe("files store", () => {
     transfersOpenMock.mockResolvedValue([upload]);
 
     const store = useFilesStore();
-    await store.upload(handle, "/home/user", "Choose a file to upload");
+    await store.upload(handle, "/home/user", "Choose a file to upload", false);
 
-    expect(filesUploadMock).toHaveBeenCalledWith(handle, "/home/user", "Choose a file to upload");
+    expect(filesUploadMock).toHaveBeenCalledWith(handle, "/home/user", "Choose a file to upload", false);
     expect(store.transfers).toEqual([upload]);
+  });
+
+  /**
+   * A packed upload puts its files *in* the directory it was aimed at rather than a file inside it, so
+   * the directory to read again is the one on the row rather than its parent. Reading the parent would
+   * leave the panel showing a directory the transfer never touched — which is exactly when somebody
+   * would decide the feature did nothing.
+   */
+  it("re-reads the directory itself when a packed upload lands", async () => {
+    const packed: TransferInfo = {
+      ...upload,
+      name: "upload_pack_2_files.tar.gz",
+      remotePath: "/home/user",
+      packed: true,
+    };
+    vi.useFakeTimers();
+    transfersOpenMock
+      .mockResolvedValueOnce([packed])
+      .mockResolvedValueOnce([{ ...packed, transferred: packed.size, state: { kind: "done" } }]);
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
+    filesListMock.mockResolvedValue(listing("/home/user", ["notes.txt", "report.pdf"]));
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.refreshTransfers();
+    await store.refreshTransfers();
+
+    expect(filesListMock).toHaveBeenCalledWith(handle, "/home/user");
+    expect(store.browser(handle)?.entries.map((item) => item.name)).toEqual(["notes.txt", "report.pdf"]);
   });
 
   it("polls while a transfer is running and stops when none is", async () => {
@@ -412,11 +455,27 @@ describe("files the operating system handed us", () => {
 
     const store = useFilesStore();
     await store.open("s1");
-    await store.uploadDropped("f1", "/home", "d1");
+    await store.uploadDropped("f1", "/home", "d1", false);
 
-    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d1");
+    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d1", false);
     expect(transfersOpenMock).toHaveBeenCalled();
     expect(store.browser("f1")?.failure).toBeNull();
+  });
+
+  /**
+   * A batch dropped from the desktop is a batch like any other, so the switch means the same thing at
+   * that door too: one archive, one transfer, rather than one per file.
+   */
+  it("packs a drop when the switch is on, and says one transfer came back", async () => {
+    filesUploadDroppedMock.mockResolvedValue(["x1"]);
+    transfersOpenMock.mockResolvedValue([download]);
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadDropped("f1", "/home", "d1", true);
+
+    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d1", true);
+    expect(store.transfers).toEqual([download]);
   });
 
   it("keeps the reason when the drop could not be used", async () => {
@@ -431,7 +490,7 @@ describe("files the operating system handed us", () => {
 
     const store = useFilesStore();
     await store.open("s1");
-    await store.uploadDropped("f1", "/home", "d1");
+    await store.uploadDropped("f1", "/home", "d1", false);
 
     expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
   });
@@ -442,8 +501,8 @@ describe("files the operating system handed us", () => {
 
     const store = useFilesStore();
     await store.open("s1");
-    await store.uploadFromClipboard("f1", "/home");
-    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d9");
+    await store.uploadFromClipboard("f1", "/home", false);
+    expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d9", false);
 
     clipboardFilesMock.mockRejectedValue({
       version: 1,
@@ -453,7 +512,7 @@ describe("files the operating system handed us", () => {
       origin: { subsystem: "app" },
       outcome: "notSent",
     });
-    await store.uploadFromClipboard("f1", "/home");
+    await store.uploadFromClipboard("f1", "/home", false);
 
     expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
   });

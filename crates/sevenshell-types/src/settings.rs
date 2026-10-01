@@ -134,6 +134,13 @@ pub struct AppSettings {
     /// that went on running commands on the far side would be worse than one that is on screen.
     #[serde(default = "monitor_on")]
     pub monitor_enabled: bool,
+    /// Whether a directory travels as one archive instead of file by file.
+    ///
+    /// Off unless somebody turns it on, unlike the monitor above: this one changes what a transfer
+    /// *is* — a `.tar.gz` on disk rather than the files themselves — and a build that started packing
+    /// by itself would surprise somebody who only wanted their folder.
+    #[serde(default)]
+    pub packed_transfer: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
 }
@@ -156,6 +163,7 @@ impl Default for AppSettings {
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
             monitor_enabled: monitor_on(),
+            packed_transfer: false,
             locale: None,
         }
     }
@@ -171,6 +179,7 @@ impl AppSettings {
             && self.session_layout == SessionLayout::Split
             && self.terminal_panel_height.is_none()
             && self.monitor_enabled
+            && !self.packed_transfer
             && self.locale.is_none()
     }
 }

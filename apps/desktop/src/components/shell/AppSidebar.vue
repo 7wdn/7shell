@@ -31,17 +31,21 @@ import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
+import { sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
+import { MENU_TITLES } from "@/lib/menu/titles";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
 import { tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
-import type { Session } from "@/types/session";
+import type { OpenTunnel, Session } from "@/types/session";
 import { PROTOCOLS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
 const app = useAppStore();
 const library = useSessionsStore();
 const terminals = useTerminalsStore();
+const { openMenu } = useContextMenu();
 
 const protocols = computed(() => PROTOCOLS);
 const editorOpen = ref(false);
@@ -78,6 +82,31 @@ function startEdit(session: Session): void {
 async function remove(session: Session): Promise<void> {
   confirming.value = null;
   await library.remove(session.id);
+}
+
+/**
+ * The two menus this sidebar offers: one for a saved session and one for a forward that is up.
+ *
+ * Deleting from the menu opens the row's own confirmation rather than doing it — the question is
+ * asked in the place the name is written, and there is one place that asks it.
+ */
+function openSessionMenu(event: MouseEvent, session: Session): void {
+  openMenu(
+    event,
+    { key: MENU_TITLES.session },
+    sessionMenu(session, {
+      openTerminal: (target) => void terminals.open(target),
+      openFiles: (target) => void terminals.openFiles(target),
+      edit: startEdit,
+      remove: (target) => {
+        confirming.value = target.id;
+      },
+    }),
+  );
+}
+
+function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
+  openMenu(event, { key: MENU_TITLES.tunnel }, tunnelMenu(tunnel, { stop: (id) => void terminals.stopTunnel(id) }));
 }
 
 const statusLabel = computed(() => {
@@ -149,7 +178,10 @@ const statusDot = computed(() => {
 
             <ul class="space-y-0.5">
               <li v-for="session in section.sessions" :key="session.id">
-                <div class="group flex items-center gap-0.5 rounded-md hover:bg-accent/60">
+                <div
+                  class="group flex items-center gap-0.5 rounded-md hover:bg-accent/60"
+                  @contextmenu="openSessionMenu($event, session)"
+                >
                   <button
                     type="button"
                     class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left"
@@ -254,6 +286,7 @@ const statusDot = computed(() => {
           v-for="tunnel in terminals.tunnels"
           :key="tunnel.id"
           class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/60"
+          @contextmenu="openTunnelMenu($event, tunnel)"
         >
           <Network :size="13" class="shrink-0 text-muted-foreground" />
           <span class="min-w-0 flex-1">

@@ -164,6 +164,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             session_layout: SessionLayout::Terminal,
             terminal_panel_height: Some(320),
             monitor_enabled: true,
+            packed_transfer: true,
             locale: Some("zh-CN".to_owned()),
         },
         "AppSettings",

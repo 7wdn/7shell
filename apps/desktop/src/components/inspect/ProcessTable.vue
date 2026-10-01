@@ -23,17 +23,22 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SortHeader from "@/components/inspect/SortHeader.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatSize } from "@/lib/files/format";
+import { environmentMenu, processDetailMenu, processRowMenu } from "@/lib/menu/inspect";
+import { MENU_TITLES } from "@/lib/menu/titles";
 import { UNKNOWN } from "@/lib/monitor/format";
 import type { ProcessSortKey } from "@/lib/monitor/processes";
 import { type SortDirection, startsDescending } from "@/lib/monitor/sort";
 import { useMonitorStore } from "@/stores/monitor";
+import type { EnvironmentEntry, ProcessSample } from "@/types/monitor";
 
 const props = defineProps<{ active: boolean }>();
 
 const { t } = useI18n();
 const monitor = useMonitorStore();
+const { openMenu } = useContextMenu();
 
 /** One process somebody opened, with the name it had when they opened it. */
 interface OpenProcess {
@@ -83,6 +88,34 @@ const opening = computed(() => selected.value !== null && monitor.readingDetail 
 /** A percentage, or a dash for a process that was not in the previous read to compare with. */
 function cpu(row: (typeof rows.value)[number]): string {
   return row.cpuPercent === null ? UNKNOWN : row.cpuPercent.toFixed(1);
+}
+
+/**
+ * The page's menus: the row's, the open process's, and one variable's.
+ *
+ * The row's menu offers the same thing clicking it does, and then the fields somebody came here for.
+ * The variables are inside the detail panel, and their menu stops the event on the way up — otherwise
+ * a variable would offer the process's own entries, and "Copy command line" under a right-clicked
+ * `PATH=` would be answering a question nobody asked.
+ */
+function openRowMenu(event: MouseEvent, process: ProcessSample): void {
+  openMenu(event, { key: MENU_TITLES.process }, processRowMenu(process, { open }));
+}
+
+function openDetailMenu(event: MouseEvent): void {
+  const current = detail.value;
+  if (!current) {
+    return;
+  }
+  openMenu(
+    event,
+    { key: MENU_TITLES.detail },
+    processDetailMenu(current, { refresh: () => void monitor.readProcessDetail(current.pid) }),
+  );
+}
+
+function openEnvironmentMenu(event: MouseEvent, entry: EnvironmentEntry): void {
+  openMenu(event, { key: MENU_TITLES.environment }, environmentMenu(entry));
 }
 
 // The list is read while this page is the tab on screen, and not otherwise.
@@ -186,6 +219,7 @@ watch(rows, (current) => {
             tabindex="0"
             :aria-selected="selected === row.sample.pid"
             @click="open(row.sample.pid, row.sample.name)"
+            @contextmenu="openRowMenu($event, row.sample)"
             @keydown.enter.prevent="open(row.sample.pid, row.sample.name)"
             @keydown.space.prevent="open(row.sample.pid, row.sample.name)"
           >
@@ -259,7 +293,7 @@ watch(rows, (current) => {
 
         <p v-else-if="opening || !detail" class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
 
-        <div v-else class="flex flex-col gap-4 lg:flex-row">
+        <div v-else class="flex flex-col gap-4 lg:flex-row" @contextmenu="openDetailMenu">
           <dl class="grid min-w-0 flex-1 grid-cols-[7rem_1fr] gap-x-4 gap-y-1 text-xs">
             <dt class="text-muted-foreground">PID</dt>
             <dd class="font-mono">{{ detail.pid }}</dd>
@@ -287,7 +321,12 @@ watch(rows, (current) => {
             </h3>
             <table v-if="detail.environment.length > 0" class="w-full border-collapse text-[11px]">
               <tbody>
-                <tr v-for="entry in detail.environment" :key="entry.name" class="border-b border-border/50">
+                <tr
+                  v-for="entry in detail.environment"
+                  :key="entry.name"
+                  class="border-b border-border/50"
+                  @contextmenu="openEnvironmentMenu($event, entry)"
+                >
                   <td
                     class="max-w-48 truncate py-0.5 pr-3 align-top font-mono text-muted-foreground"
                     :title="entry.name"

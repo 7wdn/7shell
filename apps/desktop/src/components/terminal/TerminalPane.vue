@@ -16,12 +16,20 @@
  * is on a host that does not report it, and the file panel under this terminal follows it. The line
  * is read and never held — dropped at every Enter — and a shell that reports its own directory
  * (OSC 7) is followed exactly instead of by reading anything.
+ *
+ * The right-click belongs to the shell's menu rather than to xterm. It is taken in the capture phase,
+ * which is the only way to get there first: xterm listens for the same event on the element it draws
+ * into, and on a Mac it uses it to select the word under the pointer — which would throw away the
+ * selection somebody had already made, immediately before copying it.
  */
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import { useContextMenu } from "@/composables/useContextMenu";
+import { terminalMenu } from "@/lib/menu/terminal";
+import { MENU_TITLES } from "@/lib/menu/titles";
 import { registerTerminalSink } from "@/lib/terminal/bus";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -45,6 +53,7 @@ const props = defineProps<{
 }>();
 
 const terminals = useTerminalsStore();
+const { openMenu } = useContextMenu();
 const container = ref<HTMLDivElement | null>(null);
 
 /** What has been typed since the last Enter, so a `cd` in it can be read for the file panel. */
@@ -165,6 +174,33 @@ function scheduleFit(): void {
   }, FIT_DEBOUNCE_MS);
 }
 
+/**
+ * The terminal's own right-click menu.
+ *
+ * The selection is read here rather than inside the menu, because it is a property of the moment the
+ * menu was opened: what Copy offers is what was highlighted when somebody right-clicked.
+ */
+function onContextMenu(event: MouseEvent): void {
+  const instance = terminal;
+  if (!instance) {
+    return;
+  }
+  openMenu(
+    event,
+    { key: MENU_TITLES.terminal },
+    terminalMenu(
+      { selection: instance.getSelection(), interactive: props.interactive },
+      {
+        // Through the terminal rather than around it: `paste` is the same path a real paste takes,
+        // which is what makes a bracketed paste and a multi-line paste behave the way they should.
+        paste: (text) => instance.paste(text),
+        selectAll: () => instance.selectAll(),
+        clear: () => instance.clear(),
+      },
+    ),
+  );
+}
+
 onMounted(() => {
   const element = container.value;
   if (!element) {
@@ -177,6 +213,9 @@ onMounted(() => {
     fontSize: 13,
     scrollback: 5000,
     theme: terminalTheme(),
+    // The menu that opens on a right-click works on the selection somebody made before opening it,
+    // and this would replace that selection with one word.
+    rightClickSelectsWord: false,
   });
   const fit = new FitAddon();
   instance.loadAddon(fit);
@@ -260,6 +299,7 @@ onBeforeUnmount(() => {
     ref="container"
     class="terminal-surface min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)]"
     :class="paletteClass"
+    @contextmenu.capture="onContextMenu"
   ></div>
 </template>
 

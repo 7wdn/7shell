@@ -405,6 +405,55 @@ describe("terminals store", () => {
     expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal"]);
   });
 
+  /**
+   * The strip's two ways of closing several tabs: every one but this, and every one after this.
+   *
+   * A page is thrown in because it closes without the backend — a tab holding nothing is still a tab
+   * as far as the workspace is concerned, which is exactly the case a loop that only understood
+   * terminals would leave behind.
+   */
+  it("closes every tab but the one it was asked about", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+    const terminal = terminalTabOrFail(store);
+    store.openInspect("system", session);
+
+    await store.closeOthers(terminal.id);
+
+    expect(filesCloseMock).toHaveBeenCalledWith("f1");
+    expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal"]);
+    // The tab that was kept is the one left on screen: the menu was opened on it, so that is where
+    // somebody was looking.
+    expect(store.activeTabId).toBe(terminal.id);
+  });
+
+  it("closes the tabs after one, and leaves the ones before it", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+    store.openInspect("system", session);
+
+    await store.closeToTheRight(store.tabs[0]?.id ?? "");
+
+    expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal"]);
+
+    // And from the middle: what is after it goes, what is before it stays.
+    await store.openFiles(session);
+    store.openInspect("network", session);
+    await store.closeToTheRight(store.tabs[1]?.id ?? "");
+
+    expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal", "files"]);
+  });
+
   it("keeps the browser tab and says why when the backend refuses to close it", async () => {
     sessionOpenMock.mockResolvedValue(opened());
     filesOpenMock.mockResolvedValue(filesOpened());

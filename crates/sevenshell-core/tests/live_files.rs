@@ -236,6 +236,299 @@ async fn clear_workspace(lab: &Lab, handle: &str, workspace: &str) {
     }
 }
 
+/// A folder named to be awkward, which is the point: it holds a space and an apostrophe, and it is
+/// the name that gets interpolated into the `tar` command line.
+const AWKWARD: &str = "it's a folder";
+
+/// Creates a workspace with one awkwardly named folder holding two files, and returns both paths.
+async fn packed_workspace(lab: &Lab, handle: &str) -> (String, String) {
+    let home = lab.core.list_files(handle, ".").await.expect("list the home directory");
+    let workspace = format!("{}/7shell-live-packed", home.path.trim_end_matches('/'));
+    clear_workspace(lab, handle, &workspace).await;
+
+    let inner = format!("{workspace}/{AWKWARD}");
+    lab.core
+        .create_folder(handle, &workspace)
+        .await
+        .expect("create the workspace");
+    lab.core
+        .create_folder(handle, &inner)
+        .await
+        .expect("create the folder being packed");
+    lab.core
+        .write_text_file(handle, &format!("{inner}/one.txt"), "first\n")
+        .await
+        .expect("write the first file");
+    lab.core
+        .write_text_file(handle, &format!("{inner}/two.txt"), "second\n")
+        .await
+        .expect("write the second file");
+
+    (workspace, inner)
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_folder_comes_down_and_is_opened_where_it_was_asked_for() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, inner) = packed_workspace(&lab, &handle).await;
+
+    let scratch = tempdir().expect("temp dir");
+    let into = scratch.path().join("somewhere");
+    std::fs::create_dir(&into).expect("a folder to land in");
+
+    let id = lab
+        .core
+        .start_packed_download(&handle, &inner, into.clone())
+        .await
+        .expect("start the packed download");
+    let state = lab.settle(&id).await;
+    assert_eq!(state, TransferState::Done, "the packed download finished: {state:?}");
+
+    // What arrived is the folder itself, named and filled as it was on the far side. The archive was
+    // a vehicle and is gone from this side — which is the whole of what "both ends unpack" means.
+    let landed = into.join(AWKWARD);
+    assert_eq!(
+        std::fs::read_to_string(landed.join("one.txt")).expect("read the first file"),
+        "first\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(landed.join("two.txt")).expect("read the second file"),
+        "second\n"
+    );
+    assert!(
+        !std::env::temp_dir().join(format!("7shell-{id}.tar.gz")).exists(),
+        "the archive this machine downloaded through is not left behind"
+    );
+
+    // The size was unknown when the transfer was asked for — nothing had been packed yet — and by the
+    // end it is the archive's own, which is what the progress bar counted against.
+    let transfer = lab
+        .core
+        .transfers()
+        .await
+        .into_iter()
+        .find(|transfer| transfer.id == id)
+        .expect("the transfer is remembered");
+    assert!(transfer.size > 0, "the row knows how much crossed");
+    assert!(transfer.packed, "and that it crossed packed");
+
+    // Neither is the archive that was made on the far side left lying in the home directory.
+    let home = lab
+        .core
+        .list_files(&handle, ".")
+        .await
+        .expect("list the home directory");
+    assert!(
+        !home.entries.iter().any(|entry| entry.name.starts_with(".7shell-")),
+        "the staging file was cleaned up: {:?}",
+        home.entries.iter().map(|entry| &entry.name).collect::<Vec<_>>()
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn files_chosen_here_are_packed_and_land_there() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // Two ordinary local files, one of them named awkwardly: this is what somebody chooses in the
+    // dialog, and packing them is this side's job rather than theirs.
+    let scratch = tempdir().expect("temp dir");
+    let first = scratch.path().join("notes.txt");
+    let second = scratch.path().join("it's a report.txt");
+    std::fs::write(&first, "chosen here\n").expect("write");
+    std::fs::write(&second, "also chosen here\n").expect("write");
+
+    let target = format!("{workspace}/landed");
+    lab.core
+        .create_folder(&handle, &target)
+        .await
+        .expect("create the folder to land in");
+
+    let id = lab
+        .core
+        .start_packed_upload(&handle, vec![first, second], &target)
+        .await
+        .expect("start the packed upload");
+    assert_eq!(lab.settle(&id).await, TransferState::Done, "the packed upload finished");
+
+    // Each file is there under its own name, with its own contents: what crossed the wire was one
+    // archive, and what the far side ended up with is the files themselves.
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{target}/notes.txt"))
+            .await
+            .expect("read the first file back"),
+        "chosen here\n"
+    );
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{target}/it's a report.txt"))
+            .await
+            .expect("read the second file back"),
+        "also chosen here\n"
+    );
+
+    // The row says what happened, which is the half of this feature somebody has to be able to see:
+    // a batch that was packed, and how much went into it.
+    let transfer = lab
+        .core
+        .transfers()
+        .await
+        .into_iter()
+        .find(|transfer| transfer.id == id)
+        .expect("the transfer is remembered");
+    assert_eq!(transfer.name, "upload_pack_2_files.tar.gz");
+    assert!(transfer.packed, "the row says it travelled packed");
+    assert_eq!(
+        transfer.remote_path, target,
+        "and it names the directory the files landed in, which is what the panel reads again"
+    );
+    assert!(transfer.size > 0, "the row knows how much crossed");
+
+    // Neither archive is left behind: not the one made here, and not the one that was unpacked there.
+    assert!(
+        !std::env::temp_dir().join(format!("7shell-{id}.tar.gz")).exists(),
+        "the archive this machine made is gone"
+    );
+    let home = lab
+        .core
+        .list_files(&handle, ".")
+        .await
+        .expect("list the home directory");
+    assert!(
+        !home.entries.iter().any(|entry| entry.name.starts_with(".7shell-")),
+        "the staging file on the far side is gone: {:?}",
+        home.entries.iter().map(|entry| &entry.name).collect::<Vec<_>>()
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_folder_survives_the_whole_way_round() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, inner) = packed_workspace(&lab, &handle).await;
+
+    // Down: the far side packs the folder, this side opens it into a folder somebody picked.
+    let scratch = tempdir().expect("temp dir");
+    let into = scratch.path().join("downloaded");
+    std::fs::create_dir(&into).expect("a folder to land in");
+    let down = lab
+        .core
+        .start_packed_download(&handle, &inner, into.clone())
+        .await
+        .expect("start the packed download");
+    assert_eq!(
+        lab.settle(&down).await,
+        TransferState::Done,
+        "the packed download finished"
+    );
+
+    // Up: the files that just arrived are chosen and packed again, into a different remote folder.
+    let landed = into.join(AWKWARD);
+    let target = format!("{workspace}/back-again");
+    lab.core
+        .create_folder(&handle, &target)
+        .await
+        .expect("create the folder to land in");
+    let up = lab
+        .core
+        .start_packed_upload(&handle, vec![landed.join("one.txt"), landed.join("two.txt")], &target)
+        .await
+        .expect("start the packed upload");
+    assert_eq!(lab.settle(&up).await, TransferState::Done, "the packed upload finished");
+
+    // Round the whole circle, the bytes are the ones the far side started with — which is the only
+    // thing a transfer promises, whichever way it went.
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{target}/one.txt"))
+            .await
+            .expect("read the first file back"),
+        "first\n"
+    );
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{target}/two.txt"))
+            .await
+            .expect("read the second file back"),
+        "second\n"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn creating_a_name_that_is_taken_is_refused_rather_than_emptied() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    // The awkward folder this makes is not what this test is about; it is only the workspace's shape.
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    let created = format!("{workspace}/new.txt");
+    lab.core
+        .create_file(&handle, &created)
+        .await
+        .expect("create an empty file");
+    let entry = lab
+        .core
+        .list_files(&handle, &workspace)
+        .await
+        .expect("list the workspace")
+        .entries
+        .into_iter()
+        .find(|entry| entry.name == "new.txt")
+        .expect("the new file is listed");
+    assert_eq!(entry.kind, EntryKind::File);
+    assert_eq!(entry.size, 0, "an empty file, which is what was asked for");
+
+    // What matters about the second attempt is not the error but what it did *not* do: SFTP's plain
+    // create opens with truncate, so a refusal is the only thing standing between a name somebody
+    // mistyped and a file that quietly lost its contents.
+    lab.core
+        .write_text_file(&handle, &created, "keep me\n")
+        .await
+        .expect("write something into it");
+    let error = lab
+        .core
+        .create_file(&handle, &created)
+        .await
+        .expect_err("the name is taken");
+    assert_eq!(error.code(), sevenshell_error::ErrorCode::SftpExists);
+    assert_eq!(
+        lab.core.read_text_file(&handle, &created).await.expect("read it back"),
+        "keep me\n"
+    );
+
+    let folder = format!("{workspace}/taken");
+    lab.core.create_folder(&handle, &folder).await.expect("create a folder");
+    let error = lab
+        .core
+        .create_folder(&handle, &folder)
+        .await
+        .expect_err("the folder name is taken too");
+    assert_eq!(error.code(), sevenshell_error::ErrorCode::SftpExists);
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
 #[tokio::test]
 #[ignore = "needs the SSH lab: see deploy/lab/README.md"]
 async fn a_missing_file_says_what_is_missing() {

@@ -43,6 +43,11 @@ export interface AppSettings {
    * means nothing is sampled either, not merely that nothing is drawn.
    */
   readonly monitorEnabled: boolean;
+  /**
+   * Whether a directory travels as one archive instead of file by file. Off unless somebody turns
+   * it on: this changes what a transfer leaves on disk, so it is never decided for them.
+   */
+  readonly packedTransfer: boolean;
   /** Absent means nobody has chosen a language, so the system's applies. */
   readonly locale?: string;
 }

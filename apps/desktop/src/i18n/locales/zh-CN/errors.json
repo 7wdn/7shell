@@ -20,6 +20,8 @@
     "sftp": {
       "notFound": "服务器上不存在 {path}。",
       "permissionDenied": "服务器拒绝访问 {path}。",
+      "exists": "该位置已存在同名文件或目录：{path}。",
+      "archiveFailed": "打包或解压 {path} 失败。",
       "transferFailed": "{path} 的传输失败。"
     },
     "fs": {

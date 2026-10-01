@@ -705,6 +705,36 @@ export const useTerminalsStore = defineStore("terminals", () => {
     await open(session);
   }
 
+  /**
+   * Closing every tab but one, and every tab after one.
+   *
+   * One at a time rather than all at once: closing a tab is a conversation with the backend — a panel
+   * and a channel to let go of, and a refusal to show if either will not go — and five of those
+   * interleaved would leave five answers arriving at once about five different tabs.
+   *
+   * A tab that refuses to close stays, which is the same rule the single close follows: a browser the
+   * backend would not close is still open on the far side.
+   */
+  async function closeOthers(id: string): Promise<void> {
+    // Iterating the value the loop started with is safe: closing a tab assigns a new array rather
+    // than removing from this one.
+    for (const tab of tabs.value) {
+      if (tab.id !== id) {
+        await closeTab(tab.id);
+      }
+    }
+  }
+
+  async function closeToTheRight(id: string): Promise<void> {
+    const index = tabs.value.findIndex((entry) => entry.id === id);
+    if (index < 0) {
+      return;
+    }
+    for (const tab of tabs.value.slice(index + 1)) {
+      await closeTab(tab.id);
+    }
+  }
+
   function forget(id: string): void {
     tabs.value = tabs.value.filter((entry) => entry.id !== id);
     if (activeTabId.value === id) {
@@ -765,6 +795,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     confirmReplace,
     dismiss,
     closeTab,
+    closeOthers,
+    closeToTheRight,
     reconnect,
     activate,
     send,

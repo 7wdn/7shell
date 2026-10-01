@@ -26,6 +26,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     filesLayout: "tree",
     sessionLayout: "split",
     monitorEnabled: true,
+    packedTransfer: false,
     ...overrides,
   };
 }
@@ -133,6 +134,7 @@ describe("preferences store", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       monitorEnabled: true,
+      packedTransfer: false,
       locale: undefined,
     });
   });
@@ -150,6 +152,7 @@ describe("preferences store", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       monitorEnabled: true,
+      packedTransfer: false,
       locale: "zh-CN",
     });
     expect(document.documentElement.lang).toBe("zh-CN");
@@ -239,6 +242,7 @@ describe("the terminal palette", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       monitorEnabled: true,
+      packedTransfer: false,
       locale: undefined,
     });
   });
@@ -362,6 +366,42 @@ describe("the host monitor", () => {
     await store.load();
 
     expect(store.monitorEnabled).toBe(false);
+  });
+});
+
+describe("the packed-transfer switch", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("is off until somebody turns it on, because it changes what lands on the disk", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.packedTransfer).toBe(false);
+  });
+
+  it("writes the choice down, so the menu and the dialog cannot disagree", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setPackedTransfer(true);
+
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ packedTransfer: true }));
+  });
+
+  it("reads the choice back on the next start", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ packedTransfer: true }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.packedTransfer).toBe(true);
   });
 });
 

@@ -169,15 +169,18 @@ export const useFilesStore = defineStore("files", () => {
    *
    * The token stands for paths this side never saw: the operating system handed them to Rust, and
    * Rust answers with the transfers it started.
+   *
+   * `packed` travels with it because the switch means the same thing at every door: a batch dropped
+   * from the desktop is a batch, and packing it is one transfer instead of twenty.
    */
-  async function uploadDropped(handle: string, directory: string, token: string): Promise<void> {
+  async function uploadDropped(handle: string, directory: string, token: string, packed: boolean): Promise<void> {
     const open = browsers.value[handle];
     if (open) {
       open.failure = null;
     }
 
     try {
-      const ids = await backend.files.uploadDropped(handle, directory, token);
+      const ids = await backend.files.uploadDropped(handle, directory, token, packed);
       if (ids.length > 0) {
         await refreshTransfers();
       }
@@ -187,7 +190,7 @@ export const useFilesStore = defineStore("files", () => {
   }
 
   /** Reads the file list off the clipboard and uploads it. A platform that cannot says so. */
-  async function uploadFromClipboard(handle: string, directory: string): Promise<void> {
+  async function uploadFromClipboard(handle: string, directory: string, packed: boolean): Promise<void> {
     const open = browsers.value[handle];
     if (open) {
       open.failure = null;
@@ -195,7 +198,7 @@ export const useFilesStore = defineStore("files", () => {
 
     try {
       const pending = await backend.files.clipboardFiles();
-      await uploadDropped(handle, directory, pending.token);
+      await uploadDropped(handle, directory, pending.token, packed);
     } catch (error) {
       reportFailure(handle, error);
     }
@@ -221,6 +224,11 @@ export const useFilesStore = defineStore("files", () => {
     return run(handle, "files_create_folder", () => backend.files.createFolder(handle, path));
   }
 
+  /** Creates an empty file, refused by the server when something with that name is already there. */
+  function createFile(handle: string, path: string): Promise<boolean> {
+    return run(handle, "files_create_file", () => backend.files.createFile(handle, path));
+  }
+
   function rename(handle: string, from: string, to: string): Promise<boolean> {
     return run(handle, "files_rename", () => backend.files.rename(handle, from, to));
   }
@@ -235,11 +243,20 @@ export const useFilesStore = defineStore("files", () => {
    *
    * An `undefined` answer means the save dialog was dismissed, which is not a failure and not a
    * transfer: nothing is recorded, and the list is not even read.
+   *
+   * `packed` is passed rather than read from the settings here: the switch belongs to the person, and
+   * what it means at this moment is the answer the interface already has.
    */
-  async function download(handle: string, path: string, title: string, suggestedName: string): Promise<void> {
+  async function download(
+    handle: string,
+    path: string,
+    title: string,
+    suggestedName: string,
+    packed: boolean,
+  ): Promise<void> {
     transferFailure.value = null;
     try {
-      const id = await backend.files.download(handle, path, title, suggestedName);
+      const id = await backend.files.download(handle, path, title, suggestedName, packed);
       if (id !== undefined) {
         // The backend inserted the record before it answered, so the row is there to read.
         await refreshTransfers();
@@ -250,10 +267,10 @@ export const useFilesStore = defineStore("files", () => {
   }
 
   /** Asks Rust which file to send, then starts copying it into the directory on screen. */
-  async function upload(handle: string, directory: string, title: string): Promise<void> {
+  async function upload(handle: string, directory: string, title: string, packed: boolean): Promise<void> {
     transferFailure.value = null;
     try {
-      const id = await backend.files.upload(handle, directory, title);
+      const id = await backend.files.upload(handle, directory, title, packed);
       if (id !== undefined) {
         await refreshTransfers();
       }
@@ -313,7 +330,10 @@ export const useFilesStore = defineStore("files", () => {
       lastStates.set(transfer.id, transfer.state.kind);
       const arrived = previous !== "done" && transfer.state.kind === "done";
       if (arrived && transfer.direction === "upload") {
-        const directory = parentPath(transfer.remotePath);
+        // A packed upload lands the files *in* the directory it was aimed at; an ordinary one lands a
+        // file inside it. Reading the wrong one leaves the panel showing a directory the transfer
+        // never touched — which is exactly the case where somebody would think nothing happened.
+        const directory = transfer.packed ? transfer.remotePath : parentPath(transfer.remotePath);
         if (directory !== null) {
           landed.push(directory);
         }
@@ -499,6 +519,7 @@ export const useFilesStore = defineStore("files", () => {
     navigate,
     followDirectory,
     createFolder,
+    createFile,
     rename,
     remove,
     download,

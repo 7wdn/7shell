@@ -16,13 +16,17 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { describeShellError } from "@/i18n/errors";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { formatSize } from "@/lib/files/format";
+import { MENU_TITLES } from "@/lib/menu/titles";
+import { transferMenu } from "@/lib/menu/transfers";
 import { cn } from "@/lib/utils";
 import { useFilesStore } from "@/stores/files";
 import type { TransferInfo, TransferState } from "@/types/session";
 
 const { t } = useI18n();
 const files = useFilesStore();
+const { openMenu } = useContextMenu();
 
 const problem = computed(() => (files.transferFailure ? describeShellError(translate, files.transferFailure) : null));
 
@@ -78,6 +82,11 @@ function sizeText(info: TransferInfo): string {
 function indeterminate(info: TransferInfo): boolean {
   return info.state.kind === "running" && info.size === 0;
 }
+
+/** The row's menu, which is the same call the row's own button makes. */
+function openTransferMenu(event: MouseEvent, info: TransferInfo): void {
+  openMenu(event, { key: MENU_TITLES.transfer }, transferMenu(info, { cancel: (id) => void files.cancelTransfer(id) }));
+}
 </script>
 
 <template>
@@ -108,6 +117,7 @@ function indeterminate(info: TransferInfo): boolean {
         v-for="info in files.transfers"
         :key="info.id"
         class="rounded-md border border-border bg-background px-2 py-1.5"
+        @contextmenu="openTransferMenu($event, info)"
       >
         <div class="flex items-center gap-2">
           <ArrowDownToLine v-if="info.direction === 'download'" :size="12" class="shrink-0 text-muted-foreground" />

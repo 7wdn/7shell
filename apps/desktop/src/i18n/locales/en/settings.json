@@ -35,6 +35,12 @@
       "shown": "Shown",
       "hidden": "Hidden",
       "hint": "The monitor sits to the right of the workspace and reports the host of the terminal on screen: load, memory, network and file systems. It samples about every two seconds, by running a group of read-only commands over the connection that is already open — and it samples nothing at all while it is hidden."
+    },
+    "packed": {
+      "title": "Packed transfer",
+      "on": "One archive",
+      "off": "File by file",
+      "hint": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
     }
   }
 }

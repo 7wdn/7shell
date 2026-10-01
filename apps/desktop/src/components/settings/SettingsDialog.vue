@@ -75,6 +75,12 @@ const MONITOR_OPTIONS: readonly { enabled: boolean; labelKey: string }[] = [
   { enabled: false, labelKey: "settings.monitor.hidden" },
 ];
 
+/** The same two states, for the switch that decides what a transfer leaves on the disk. */
+const PACKED_OPTIONS: readonly { enabled: boolean; labelKey: string }[] = [
+  { enabled: true, labelKey: "settings.packed.on" },
+  { enabled: false, labelKey: "settings.packed.off" },
+];
+
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
 }
@@ -220,6 +226,30 @@ const problem = computed(() => (preferences.problem ? describeShellError(transla
               </button>
             </div>
             <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.monitor.hint") }}</p>
+          </section>
+
+          <section>
+            <h3 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              {{ t("settings.packed.title") }}
+            </h3>
+            <div class="flex gap-1 rounded-md border border-border bg-background p-0.5">
+              <button
+                v-for="option in PACKED_OPTIONS"
+                :key="String(option.enabled)"
+                type="button"
+                class="flex-1 rounded-sm px-2 py-1.5 text-xs transition-colors"
+                :class="
+                  preferences.packedTransfer === option.enabled
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50'
+                "
+                :aria-pressed="preferences.packedTransfer === option.enabled"
+                @click="preferences.setPackedTransfer(option.enabled)"
+              >
+                {{ t(option.labelKey) }}
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-muted-foreground">{{ t("settings.packed.hint") }}</p>
           </section>
 
           <section>

@@ -31,6 +31,12 @@ pub async fn files_create_folder(state: State<'_, ShellState>, handle: String, p
     state.core().create_folder(&handle, &path).await
 }
 
+/// Creates an empty file, refused with `SFTP-EXISTS` when the name is already taken.
+#[tauri::command]
+pub async fn files_create_file(state: State<'_, ShellState>, handle: String, path: String) -> Result<(), ShellError> {
+    state.core().create_file(&handle, &path).await
+}
+
 #[tauri::command]
 pub async fn files_rename(
     state: State<'_, ShellState>,
@@ -92,6 +98,10 @@ pub async fn transfer_cancel(state: State<'_, ShellState>, id: String) -> Result
 ///
 /// Answers with the transfer's id, or `None` when the dialog was dismissed — which is a person
 /// changing their mind, not a failure.
+///
+/// `packed` is the parked-transfer switch, and it changes the question as well as the answer: a
+/// directory that travels as one archive is put *into* a folder rather than *as* a file, so the
+/// dialog asks which folder. `suggested_name` is what that folder picker has no use for.
 #[tauri::command]
 pub async fn files_download(
     app: AppHandle,
@@ -100,7 +110,20 @@ pub async fn files_download(
     path: String,
     title: String,
     suggested_name: String,
+    packed: bool,
 ) -> Result<Option<String>, ShellError> {
+    if packed {
+        let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_folder()).await?;
+        let Some(chosen) = chosen else {
+            return Ok(None);
+        };
+        let into: PathBuf = chosen.into_path().map_err(|error| {
+            ShellError::sftp_transfer_failed(&path, format!("that folder cannot be written to: {error}"))
+        })?;
+
+        return state.core().start_packed_download(&handle, &path, into).await.map(Some);
+    }
+
     let destination = spawn_dialog(move || {
         app.dialog()
             .file()
@@ -121,7 +144,11 @@ pub async fn files_download(
     state.core().start_download(&handle, &path, local).await.map(Some)
 }
 
-/// Asks which local file to send, then copies it into a remote directory.
+/// Asks which local files to send, then copies them into a remote directory.
+///
+/// With `packed` set the dialog offers *several* files and what crosses the wire is one archive made
+/// from them on this side — which is the whole point of the mode, and the reason the question it asks
+/// is a different one. The far side unpacks it, so what lands there is the files themselves.
 #[tauri::command]
 pub async fn files_upload(
     app: AppHandle,
@@ -129,7 +156,28 @@ pub async fn files_upload(
     handle: String,
     directory: String,
     title: String,
+    packed: bool,
 ) -> Result<Option<String>, ShellError> {
+    if packed {
+        let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_files()).await?;
+        let Some(chosen) = chosen else {
+            return Ok(None);
+        };
+
+        let mut sources: Vec<PathBuf> = Vec::with_capacity(chosen.len());
+        for entry in chosen {
+            sources.push(entry.into_path().map_err(|error| {
+                ShellError::sftp_transfer_failed(&directory, format!("that file cannot be read: {error}"))
+            })?);
+        }
+
+        return state
+            .core()
+            .start_packed_upload(&handle, sources, &directory)
+            .await
+            .map(Some);
+    }
+
     let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_file()).await?;
 
     let Some(chosen) = chosen else {
@@ -149,14 +197,27 @@ pub async fn files_upload(
 /// per file: they are separate files, and a failure in one does not take the others down with it —
 /// the ones already started stay in the transfer list, and the error that stopped the rest is
 /// returned.
+///
+/// With `packed` set they go as one archive instead, made here: a folder dragged in from the desktop
+/// is a batch like any other, and the switch means the same thing at every door. One transfer comes
+/// back rather than one per file — which is the whole reason a batch is packed.
 #[tauri::command]
 pub async fn dropped_upload(
     state: State<'_, ShellState>,
     handle: String,
     directory: String,
     token: String,
+    packed: bool,
 ) -> Result<Vec<String>, ShellError> {
     let paths = state.pending_drops().take(&token).await?;
+
+    if packed {
+        return state
+            .core()
+            .start_packed_upload(&handle, paths, &directory)
+            .await
+            .map(|id| vec![id]);
+    }
 
     let mut started = Vec::with_capacity(paths.len());
     for path in paths {

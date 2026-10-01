@@ -70,6 +70,10 @@ error_catalog! {
     SftpNotFound => "SFTP-NOT-FOUND", "errors.sftp.notFound";
     #[doc = "The server refused the operation for permission reasons."]
     SftpPermissionDenied => "SFTP-PERMISSION-DENIED", "errors.sftp.permissionDenied";
+    #[doc = "Something with that name is already there."]
+    SftpExists => "SFTP-EXISTS", "errors.sftp.exists";
+    #[doc = "The far side could not pack or unpack an archive."]
+    SftpArchiveFailed => "SFTP-ARCHIVE-FAILED", "errors.sftp.archiveFailed";
     #[doc = "A transfer failed part-way through."]
     SftpTransferFailed => "SFTP-TRANSFER-FAILED", "errors.sftp.transferFailed";
 

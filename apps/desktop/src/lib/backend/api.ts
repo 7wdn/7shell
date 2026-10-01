@@ -111,6 +111,9 @@ export const backend = {
       forward("files_list", () => desktop.filesList(handle, path)),
     createFolder: (handle: string, path: string): Promise<void> =>
       forward("files_create_folder", () => desktop.filesCreateFolder(handle, path)),
+    /** An empty file, and a name that is already taken is refused rather than emptied. */
+    createFile: (handle: string, path: string): Promise<void> =>
+      forward("files_create_file", () => desktop.filesCreateFile(handle, path)),
     rename: (handle: string, from: string, to: string): Promise<void> =>
       forward("files_rename", () => desktop.filesRename(handle, from, to)),
     remove: (handle: string, path: string, kind: string): Promise<void> =>
@@ -121,16 +124,22 @@ export const backend = {
       forward("files_write_text", () => desktop.filesWriteText(handle, path, text)),
     close: (handle: string): Promise<void> => forward("files_close", () => desktop.filesClose(handle)),
     /** Uploads what a drop or a paste left behind. The interface never sees a path. */
-    uploadDropped: (handle: string, directory: string, token: string): Promise<string[]> =>
-      forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token)),
+    uploadDropped: (handle: string, directory: string, token: string, packed: boolean): Promise<string[]> =>
+      forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token, packed)),
     /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it. */
     clipboardFiles: (): Promise<PendingFiles> => forward("clipboard_files", () => desktop.clipboardFiles()),
     /** Asks where to put it, in Rust; `undefined` means the dialog was dismissed. */
-    download: (handle: string, path: string, title: string, suggestedName: string): Promise<string | undefined> =>
-      forward("files_download", () => desktop.filesDownload(handle, path, title, suggestedName)),
+    download: (
+      handle: string,
+      path: string,
+      title: string,
+      suggestedName: string,
+      packed: boolean,
+    ): Promise<string | undefined> =>
+      forward("files_download", () => desktop.filesDownload(handle, path, title, suggestedName, packed)),
     /** Asks which file to send, in Rust; `undefined` means the picker was dismissed. */
-    upload: (handle: string, directory: string, title: string): Promise<string | undefined> =>
-      forward("files_upload", () => desktop.filesUpload(handle, directory, title)),
+    upload: (handle: string, directory: string, title: string, packed: boolean): Promise<string | undefined> =>
+      forward("files_upload", () => desktop.filesUpload(handle, directory, title, packed)),
   },
 
   transfers: {
@@ -198,6 +207,17 @@ export const backend = {
       forward("monitor_process_detail", () => desktop.monitorProcessDetail(handle, pid)),
     /** The host's sockets, for the network page: ports that are waiting, and who is connected. */
     sockets: (handle: string): Promise<SocketRow[]> => forward("monitor_sockets", () => desktop.monitorSockets(handle)),
+  },
+
+  /**
+   * What the operating system has on its clipboard, read where the webview cannot reach it.
+   *
+   * Only text, and only outwards: nothing here writes a clipboard, and what it reads is the person's
+   * own — a path never passes through it, which is why it needs no token the way a file list does.
+   */
+  clipboard: {
+    /** Empty when the clipboard holds no text. `APP-UNSUPPORTED` where the platform cannot read one. */
+    text: (): Promise<string> => forward("clipboard_text", () => desktop.clipboardText()),
   },
 
   events: {

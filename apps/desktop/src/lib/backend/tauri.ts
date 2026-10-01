@@ -250,6 +250,11 @@ export function filesCreateFolder(handle: string, path: string): Promise<void> {
   return invoke<void>("files_create_folder", { handle, path });
 }
 
+/** Creates an empty file. Refused with `SFTP-EXISTS` when something with that name is already there. */
+export function filesCreateFile(handle: string, path: string): Promise<void> {
+  return invoke<void>("files_create_file", { handle, path });
+}
+
 export function filesRename(handle: string, from: string, to: string): Promise<void> {
   return invoke<void>("files_rename", { handle, from, to });
 }
@@ -276,13 +281,21 @@ export function filesDownload(
   path: string,
   title: string,
   suggestedName: string,
+  packed: boolean,
 ): Promise<string | undefined> {
-  return invoke<string | null>("files_download", { handle, path, title, suggestedName }).then((id) => id ?? undefined);
+  return invoke<string | null>("files_download", { handle, path, title, suggestedName, packed }).then(
+    (id) => id ?? undefined,
+  );
 }
 
 /** Resolves to the transfer's id, or `undefined` when the file picker was dismissed. */
-export function filesUpload(handle: string, directory: string, title: string): Promise<string | undefined> {
-  return invoke<string | null>("files_upload", { handle, directory, title }).then((id) => id ?? undefined);
+export function filesUpload(
+  handle: string,
+  directory: string,
+  title: string,
+  packed: boolean,
+): Promise<string | undefined> {
+  return invoke<string | null>("files_upload", { handle, directory, title, packed }).then((id) => id ?? undefined);
 }
 
 export function transfersOpen(): Promise<TransferInfo[]> {
@@ -290,8 +303,8 @@ export function transfersOpen(): Promise<TransferInfo[]> {
 }
 
 /** Uploads the files a drop or a paste left behind, by token. Answers with the transfer ids. */
-export function droppedUpload(handle: string, directory: string, token: string): Promise<string[]> {
-  return invoke<string[]>("dropped_upload", { handle, directory, token });
+export function droppedUpload(handle: string, directory: string, token: string, packed: boolean): Promise<string[]> {
+  return invoke<string[]>("dropped_upload", { handle, directory, token, packed });
 }
 
 /** The file list on the clipboard, as a token and names. Refused on platforms that cannot read it. */
@@ -301,6 +314,20 @@ export function clipboardFiles(): Promise<PendingFiles> {
 
 export function transferCancel(id: string): Promise<void> {
   return invoke<void>("transfer_cancel", { id });
+}
+
+// -- Clipboard ---------------------------------------------------------------
+
+/**
+ * The text on the clipboard, or an empty string when it holds none.
+ *
+ * Read in Rust rather than through `navigator.clipboard`: WebView2 answers a script's read with a
+ * permission request that nothing is waiting to answer, and the promise never settles — a paste that
+ * went that way would hang with nothing to show. `APP-UNSUPPORTED` means the platform cannot read
+ * one at all.
+ */
+export function clipboardText(): Promise<string> {
+  return invoke<string>("clipboard_text");
 }
 
 // -- Events ------------------------------------------------------------------

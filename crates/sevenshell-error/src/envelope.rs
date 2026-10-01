@@ -343,6 +343,28 @@ impl ShellError {
             .with_detail(detail)
     }
 
+    /// Something is already at this path, so the name cannot be created.
+    ///
+    /// Its own code rather than a transfer failure with a detail, because the panel shows the
+    /// sentence a code names and not the detail: "that name is taken" is the whole message, and it
+    /// deserves to be readable where the person is typing.
+    pub fn sftp_exists(remote_path: &str) -> Self {
+        Self::new(ErrorCode::SftpExists, Origin::new(Subsystem::Sftp))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// The far side's `tar` refused, or there is no `tar` there to run.
+    ///
+    /// Its own code because it is the one failure a packed transfer has that a plain one cannot: the
+    /// detail carries what `tar` itself said, which is where "no such file" and "not a gzip file" are
+    /// told apart.
+    pub fn sftp_archive_failed(remote_path: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SftpArchiveFailed, Origin::new(Subsystem::Sftp))
+            .with_param("path", remote_path)
+            .with_detail(detail)
+    }
+
     // -- Local file grants -------------------------------------------------
 
     pub fn fs_grant_unknown() -> Self {

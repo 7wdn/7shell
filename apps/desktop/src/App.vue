@@ -28,6 +28,7 @@ import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
+import ContextMenu from "@/components/shell/ContextMenu.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
 import ToastViewport from "@/components/shell/ToastViewport.vue";
 import UnlockScreen from "@/components/vault/UnlockScreen.vue";
@@ -35,6 +36,7 @@ import HomeView from "@/components/views/HomeView.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { describeShellError } from "@/i18n/errors";
 import { useTransferNotices } from "@/composables/useTransferNotices";
+import { isTextEntry } from "@/lib/menu/editable";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useFilesStore } from "@/stores/files";
@@ -59,6 +61,7 @@ let stopTerminalEvents: (() => void) | undefined;
 let stopDragEvents: (() => void) | undefined;
 let stopDropEvents: (() => void) | undefined;
 let stopPaste: (() => void) | undefined;
+let stopContextMenu: (() => void) | undefined;
 
 const backendFailure = computed(() => (app.failure ? describeShellError(translate, app.failure) : null));
 
@@ -95,7 +98,7 @@ async function dropped(payload: { pending?: { token: string }; error?: unknown }
   }
 
   if (payload.pending) {
-    await files.uploadDropped(target.handle, target.path, payload.pending.token);
+    await files.uploadDropped(target.handle, target.path, payload.pending.token, preferences.packedTransfer);
     return;
   }
 
@@ -133,7 +136,27 @@ function pasteInto(event: KeyboardEvent): void {
   }
 
   event.preventDefault();
-  void files.uploadFromClipboard(target.handle, target.path);
+  void files.uploadFromClipboard(target.handle, target.path, preferences.packedTransfer);
+}
+
+/**
+ * The right-click that has no menu of its own.
+ *
+ * The browser's menu is a browser's menu — "Back", "Reload", "Save page as" — and this is not a
+ * browser, so it is cancelled everywhere. The regions that do have something to offer cancel it
+ * themselves, in the same gesture that opens their menu, which is why this only has to be a backstop.
+ *
+ * Text fields are left alone. There the platform's own menu is cut, copy, paste and the IME, already
+ * in the person's language, and nothing this application could draw would be better than it.
+ *
+ * Captured rather than bubbled: the decision is the shell's, and it is made before anything the
+ * event passes through on the way down gets to act on it.
+ */
+function suppressDefaultMenu(event: MouseEvent): void {
+  if (isTextEntry(event.target)) {
+    return;
+  }
+  event.preventDefault();
 }
 
 /**
@@ -170,6 +193,8 @@ onMounted(async () => {
   stopDropEvents = await backend.events.onFilesDropped((payload) => void dropped(payload));
   window.addEventListener("keydown", pasteInto);
   stopPaste = () => window.removeEventListener("keydown", pasteInto);
+  window.addEventListener("contextmenu", suppressDefaultMenu, { capture: true });
+  stopContextMenu = () => window.removeEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopTerminalEvents = terminals.initialize();
   await preferences.load();
   await app.load();
@@ -183,6 +208,7 @@ onBeforeUnmount(() => {
   stopDragEvents?.();
   stopDropEvents?.();
   stopPaste?.();
+  stopContextMenu?.();
 });
 </script>
 
@@ -246,6 +272,13 @@ onBeforeUnmount(() => {
     </div>
 
     <SettingsDialog :open="settingsOpen" @update:open="settingsOpen = $event" />
+
+    <!--
+      The context menu, like the toast, belongs to the frame rather than to any feature: it is opened
+      from wherever somebody right-clicked, and it has to be drawable there whatever else is on
+      screen. The features contribute its contents and nothing else.
+    -->
+    <ContextMenu />
 
     <!--
       Outside every feature and outside the gate: a toast is about something that already

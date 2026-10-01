@@ -275,6 +275,13 @@ pub struct TransferInfo {
     pub transferred: u64,
     /// `cancelled` only ever comes from the person who asked for it.
     pub state: TransferState,
+    /// Whether the files travelled as one archive, packed on the side they came from.
+    ///
+    /// It is separate from the name because the two answer different questions — the name says what
+    /// moved, this says what the transfer *did* — and because the interface needs it for the one
+    /// thing it cannot otherwise work out: which directory to read again afterwards. A packed upload
+    /// lands its files in the directory it was aimed at; an ordinary one lands a file inside it.
+    pub packed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

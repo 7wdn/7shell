@@ -34,7 +34,10 @@ import ProcessTable from "@/components/inspect/ProcessTable.vue";
 import SystemReport from "@/components/inspect/SystemReport.vue";
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import SplitDivider from "@/components/workspace/SplitDivider.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
+import { MENU_TITLES } from "@/lib/menu/titles";
+import { tabMenu } from "@/lib/menu/workspace";
 import { MIN_PANE_PX } from "@/lib/workspace/split";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -43,6 +46,44 @@ import { type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores
 const { t } = useI18n();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
+const { openMenu } = useContextMenu();
+
+/** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
+function hasHandle(tab: WorkspaceTab): boolean {
+  if (tab.kind === "inspect") {
+    return false;
+  }
+  return tab.handle !== null;
+}
+
+/**
+ * The strip's menu, which is about the tab under the pointer.
+ *
+ * Closing the others and the ones to the right go through the store rather than through this
+ * component, because a tab being closed can take a browser and a channel with it and only the store
+ * knows how that conversation is had — and how a refusal leaves things.
+ */
+function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void {
+  openMenu(
+    event,
+    { key: MENU_TITLES.tab },
+    tabMenu(
+      {
+        kind: tab.kind,
+        status: tab.kind === "inspect" ? null : tab.status,
+        hasHandle: hasHandle(tab),
+        index,
+        total: terminals.tabs.length,
+      },
+      {
+        close: () => void terminals.closeTab(tab.id),
+        closeOthers: () => void terminals.closeOthers(tab.id),
+        closeToTheRight: () => void terminals.closeToTheRight(tab.id),
+        reconnect: () => void terminals.reconnect(tab.id),
+      },
+    ),
+  );
+}
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -80,7 +121,7 @@ function dotClass(tab: WorkspaceTab): string | null {
   <section class="flex min-h-0 flex-1 flex-col">
     <div class="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-border bg-card/30 px-2 pt-1.5">
       <div
-        v-for="tab in terminals.tabs"
+        v-for="(tab, index) in terminals.tabs"
         :key="tab.id"
         :class="
           cn(
@@ -90,6 +131,7 @@ function dotClass(tab: WorkspaceTab): string | null {
               : 'border-transparent text-muted-foreground hover:bg-accent/60',
           )
         "
+        @contextmenu="openTabMenu($event, tab, index)"
       >
         <button
           type="button"

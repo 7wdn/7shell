@@ -20,6 +20,8 @@
     "sftp": {
       "notFound": "{path} does not exist on the server.",
       "permissionDenied": "The server refused access to {path}.",
+      "exists": "Something with that name is already there: {path}.",
+      "archiveFailed": "Packing or unpacking {path} failed.",
       "transferFailed": "The transfer of {path} failed."
     },
     "fs": {

@@ -50,6 +50,11 @@ struct StoredSettings {
     /// ships with — on — rather than as a monitor somebody switched off before it existed.
     #[serde(default = "monitor_on")]
     monitor_enabled: bool,
+    /// Absent in a file written before there was a packed transfer, which reads as off — the default
+    /// the feature ships with. A file written by a build that has it cannot be read back by one that
+    /// does not, but that is what the schema version is for.
+    #[serde(default)]
+    packed_transfer: bool,
     #[serde(default)]
     locale: Option<String>,
 }
@@ -64,6 +69,7 @@ impl StoredSettings {
             session_layout: settings.session_layout.as_str().to_owned(),
             terminal_panel_height: settings.terminal_panel_height,
             monitor_enabled: settings.monitor_enabled,
+            packed_transfer: settings.packed_transfer,
             locale: settings.locale.clone(),
         }
     }
@@ -76,6 +82,7 @@ impl StoredSettings {
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             terminal_panel_height: self.terminal_panel_height,
             monitor_enabled: self.monitor_enabled,
+            packed_transfer: self.packed_transfer,
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
     }
@@ -170,6 +177,7 @@ mod tests {
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
             monitor_enabled: monitor_on(),
+            packed_transfer: false,
             locale: locale.map(str::to_owned),
         }
     }
@@ -201,6 +209,10 @@ mod tests {
             loaded.monitor_enabled,
             "a file written before the monitor existed is not a person asking for it to be off"
         );
+        assert!(
+            !loaded.packed_transfer,
+            "a file written before packed transfers existed is not a person asking for one"
+        );
         assert_eq!(loaded.locale.as_deref(), Some("zh-CN"));
     }
 
@@ -222,6 +234,8 @@ mod tests {
             terminal_panel_height: Some(320),
             // Off, so the round trip proves a choice survives rather than the default coming back.
             monitor_enabled: false,
+            // On, for the same reason in the other direction: the default is off.
+            packed_transfer: true,
             ..settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"))
         };
 

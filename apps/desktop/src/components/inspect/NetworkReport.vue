@@ -22,8 +22,11 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SortHeader from "@/components/inspect/SortHeader.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatSize } from "@/lib/files/format";
+import { connectionMenu, listenerMenu } from "@/lib/menu/inspect";
+import { MENU_TITLES } from "@/lib/menu/titles";
 import { UNKNOWN } from "@/lib/monitor/format";
 import { type SortDirection, startsDescending } from "@/lib/monitor/sort";
 import { type ListenerSort, connectionsFor, listenerRows, sortListeners } from "@/lib/monitor/sockets";
@@ -39,6 +42,7 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const monitor = useMonitorStore();
+const { openMenu } = useContextMenu();
 
 /** Which socket the table underneath is about. Held here: it is a view of this page, not state. */
 const picked = ref<SocketRow | null>(null);
@@ -74,6 +78,22 @@ function sameSocket(left: SocketRow | null, right: SocketRow): boolean {
 /** Picking a row again puts the table underneath away, which is what clicking a selected tab means. */
 function pick(row: SocketRow): void {
   picked.value = sameSocket(picked.value, row) ? null : row;
+}
+
+/**
+ * The two tables' menus.
+ *
+ * A listener's first entry is exactly what clicking its row does, so the menu is also the way to that
+ * answer for somebody who reached for the right button first. The connections below have a menu of
+ * their own: they are readings rather than controls, and copying the peer out of one is the whole
+ * reason to have it on screen.
+ */
+function openListenerMenu(event: MouseEvent, socket: SocketRow): void {
+  openMenu(event, { key: MENU_TITLES.socket }, listenerMenu(socket, { showConnections: pick }));
+}
+
+function openConnectionMenu(event: MouseEvent, connection: SocketRow): void {
+  openMenu(event, { key: MENU_TITLES.connection }, connectionMenu(connection));
 }
 
 /**
@@ -172,6 +192,7 @@ watch(rows, (current) => {
             tabindex="0"
             :aria-selected="sameSocket(picked, row.socket)"
             @click="pick(row.socket)"
+            @contextmenu="openListenerMenu($event, row.socket)"
             @keydown.enter.prevent="pick(row.socket)"
             @keydown.space.prevent="pick(row.socket)"
           >
@@ -236,6 +257,7 @@ watch(rows, (current) => {
               v-for="connection in connections"
               :key="`${connection.peerAddress}:${connection.peerPort}`"
               class="border-b border-border/50"
+              @contextmenu="openConnectionMenu($event, connection)"
             >
               <td class="truncate py-1 pr-2 font-mono">{{ connection.peerAddress }}</td>
               <td class="py-1 pr-2 text-right font-mono">{{ connection.peerPort }}</td>

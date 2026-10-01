@@ -25,6 +25,12 @@ chacha20poly1305 = "0.11"
 getrandom = "0.3"
 russh = { version = "0.63", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "3.0"
+# Packing and unpacking on *this* side of a packed transfer. The far side's own `tar` makes the
+# archive that crosses the wire; these make or open the one this machine has to deal with, which is
+# what lets a packed upload start from ordinary files rather than from an archive somebody made by
+# hand. `flate2` is already in the tree through russh's compression feature.
+tar = "0.4"
+flate2 = "1"
 tokio = { version = "1.53", features = [
   "rt-multi-thread",
   "macros",

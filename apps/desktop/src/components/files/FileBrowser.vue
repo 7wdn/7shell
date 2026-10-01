@@ -19,6 +19,7 @@ import {
   ChevronRight,
   Download,
   File,
+  FilePlus,
   FileSymlink,
   FileText,
   Folder,
@@ -38,8 +39,11 @@ import { useI18n } from "vue-i18n";
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import TransferList from "@/components/files/TransferList.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
+import { fileAreaMenu, fileEntryMenu } from "@/lib/menu/files";
+import { MENU_TITLES } from "@/lib/menu/titles";
 import { cn } from "@/lib/utils";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -69,7 +73,7 @@ const twoPanes = computed(() => preferences.filesLayout === "tree");
 function pasteFiles(): void {
   const open = files.browser(props.handle);
   if (open) {
-    void files.uploadFromClipboard(props.handle, open.path);
+    void files.uploadFromClipboard(props.handle, open.path, preferences.packedTransfer);
   }
 }
 
@@ -80,6 +84,7 @@ function goTo(path: string): void {
 
 const { t } = useI18n();
 const files = useFilesStore();
+const { openMenu } = useContextMenu();
 
 const browser = computed(() => files.browser(props.handle));
 const problem = computed(() => (browser.value?.failure ? describeShellError(translate, browser.value.failure) : null));
@@ -89,8 +94,9 @@ const crumbs = computed(() => (browser.value ? crumbsOf(browser.value.path) : []
 /** The row that was clicked last. Nothing is done to it until an action says so. */
 const selected = ref<string | null>(null);
 const typedPath = ref("");
-const typingNewFolder = ref(false);
-const newFolderName = ref("");
+/** Which kind of thing is being named, and nothing while no prompt is open. */
+const creating = ref<"folder" | "file" | null>(null);
+const newName = ref("");
 /** The path being renamed, so a server refusal can leave the typed name in place. */
 const renaming = ref<string | null>(null);
 const renameText = ref("");
@@ -173,10 +179,10 @@ function submitTypedPath(): void {
   }
 }
 
-function startNewFolder(): void {
+function startNew(kind: "folder" | "file"): void {
   cancelPrompt();
-  newFolderName.value = "";
-  typingNewFolder.value = true;
+  newName.value = "";
+  creating.value = kind;
 }
 
 function startRename(entry: SftpEntry): void {
@@ -191,23 +197,39 @@ function startRemove(entry: SftpEntry): void {
 }
 
 function cancelPrompt(): void {
-  typingNewFolder.value = false;
+  creating.value = null;
   renaming.value = null;
   confirming.value = null;
 }
 
-async function createFolder(): Promise<void> {
+/**
+ * Creates what was named, and — for a file — opens it.
+ *
+ * A file that is created and then left in the list is a file nobody asked for: the list has no way to
+ * open one, so the editor is the only place a new empty file is of any use. A folder is its own
+ * answer, and opening anything on its behalf would be presumptuous.
+ */
+async function createEntry(): Promise<void> {
   const current = browser.value;
-  const name = newFolderName.value.trim();
-  if (!current || name === "") {
+  const kind = creating.value;
+  const name = newName.value.trim();
+  if (!current || kind === null || name === "") {
     return;
   }
+
+  const path = joinPath(current.path, name);
   busy.value = true;
-  const worked = await files.createFolder(props.handle, joinPath(current.path, name));
+  const worked =
+    kind === "folder" ? await files.createFolder(props.handle, path) : await files.createFile(props.handle, path);
   busy.value = false;
-  if (worked) {
-    typingNewFolder.value = false;
-    newFolderName.value = "";
+  if (!worked) {
+    return;
+  }
+
+  creating.value = null;
+  newName.value = "";
+  if (kind === "file") {
+    editing.value = { name, path, kind: "file", size: 0 };
   }
 }
 
@@ -239,13 +261,31 @@ async function remove(entry: SftpEntry): Promise<void> {
 }
 
 function download(entry: SftpEntry): void {
-  void files.download(props.handle, entry.path, t("files.downloadTitle"), entry.name);
+  void files.download(props.handle, entry.path, t("files.downloadTitle"), entry.name, false);
+}
+
+/**
+ * A directory, packed on the far side and opened here.
+ *
+ * There is no suggested name to hand over: what the dialog asks for is the folder the directory
+ * should appear in, because the archive is a vehicle that never reaches this side as a file.
+ */
+function downloadArchive(entry: SftpEntry): void {
+  void files.download(props.handle, entry.path, t("files.downloadPackedTitle"), "", true);
 }
 
 function upload(): void {
   const current = browser.value;
   if (current) {
-    void files.upload(props.handle, current.path, t("files.uploadTitle"));
+    // The same button, two jobs: with packing on it is several files that are chosen, and they are
+    // packed here before anything crosses the wire.
+    const packed = preferences.packedTransfer;
+    void files.upload(
+      props.handle,
+      current.path,
+      packed ? t("files.uploadPackedTitle") : t("files.uploadTitle"),
+      packed,
+    );
   }
 }
 
@@ -253,6 +293,65 @@ function closeEditor(open: boolean): void {
   if (!open) {
     editing.value = null;
   }
+}
+
+/**
+ * The menu for one entry, built as it is opened.
+ *
+ * Right-clicking selects the row on the way: the menu is about the thing under the pointer, and a row
+ * that answered a question about itself without looking selected would be a row somebody has to check
+ * twice. Nothing is done to it until an entry in the menu says so, which is what the selection has
+ * always meant here.
+ */
+function openEntryMenu(event: MouseEvent, entry: SftpEntry): void {
+  selected.value = entry.path;
+  openMenu(
+    event,
+    { key: MENU_TITLES.file, params: { name: entry.name } },
+    fileEntryMenu(
+      entry,
+      {
+        open: enter,
+        download,
+        downloadArchive,
+        edit: (target) => {
+          editing.value = target;
+        },
+        rename: startRename,
+        remove: startRemove,
+      },
+      { packed: preferences.packedTransfer },
+    ),
+  );
+}
+
+/**
+ * The menu for the directory on screen, opened from the listing's empty space.
+ *
+ * The whole scroll area carries it, the sticky column headings included: those headings are part of
+ * the same listing, and a strip a few pixels tall that swallowed a right-click would be worse than one
+ * that offers the directory's actions.
+ */
+function openAreaMenu(event: MouseEvent): void {
+  const current = browser.value;
+  if (!current) {
+    return;
+  }
+  openMenu(
+    event,
+    { key: MENU_TITLES.directory },
+    fileAreaMenu(
+      { path: current.path, packed: preferences.packedTransfer },
+      {
+        newFolder: () => startNew("folder"),
+        newFile: () => startNew("file"),
+        upload,
+        paste: pasteFiles,
+        refresh: () => void files.navigate(props.handle, current.path),
+        togglePacked: () => void preferences.setPackedTransfer(!preferences.packedTransfer),
+      },
+    ),
+  );
 }
 </script>
 
@@ -294,7 +393,7 @@ function closeEditor(open: boolean): void {
         <button
           type="button"
           class="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-          @click="startNewFolder()"
+          @click="startNew('folder')"
         >
           <FolderPlus :size="12" />
           {{ t("files.newFolder") }}
@@ -337,22 +436,23 @@ function closeEditor(open: boolean): void {
       </form>
 
       <form
-        v-if="typingNewFolder"
+        v-if="creating !== null"
         class="mt-1.5 flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5"
-        @submit.prevent="createFolder()"
+        @submit.prevent="createEntry()"
       >
-        <FolderPlus :size="12" class="shrink-0 text-muted-foreground" />
+        <FolderPlus v-if="creating === 'folder'" :size="12" class="shrink-0 text-muted-foreground" />
+        <FilePlus v-else :size="12" class="shrink-0 text-muted-foreground" />
         <input
-          v-model="newFolderName"
+          v-model="newName"
           type="text"
           class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] focus:outline-none"
-          :aria-label="t('files.newFolderName')"
-          :placeholder="t('files.newFolderName')"
+          :aria-label="creating === 'folder' ? t('files.newFolderName') : t('files.newFileName')"
+          :placeholder="creating === 'folder' ? t('files.newFolderName') : t('files.newFileName')"
         />
         <button
           type="submit"
           class="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="busy || newFolderName.trim() === ''"
+          :disabled="busy || newName.trim() === ''"
         >
           {{ t("files.create") }}
         </button>
@@ -436,7 +536,7 @@ function closeEditor(open: boolean): void {
       <DirectoryTree v-if="twoPanes" :handle="props.handle" :current-path="browser.path" @navigate="goTo" />
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div class="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div class="flex min-h-0 flex-1 flex-col overflow-auto" @contextmenu="openAreaMenu">
           <div
             class="sticky top-0 flex items-center gap-2 border-b border-border bg-card/30 px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
           >
@@ -462,6 +562,7 @@ function closeEditor(open: boolean): void {
                     selected === entry.path ? 'bg-accent' : 'hover:bg-accent/50',
                   )
                 "
+                @contextmenu="openEntryMenu($event, entry)"
               >
                 <button
                   type="button"

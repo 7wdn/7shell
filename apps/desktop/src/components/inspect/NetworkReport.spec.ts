@@ -38,8 +38,10 @@ vi.mock("@/lib/terminal/bus", async (importOriginal) => {
 });
 
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
+import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
 import { monitorSockets } from "@/lib/backend/tauri";
+import type { MenuEntry } from "@/lib/menu/types";
 import { useMonitorStore } from "@/stores/monitor";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { SocketRow } from "@/types/monitor";
@@ -295,4 +297,51 @@ describe("the socket table", () => {
 
     expect(host.textContent).toContain("no listening ports");
   });
+
+  /**
+   * Both tables offer a right-click: the listeners, which are the page's controls, and the
+   * connections underneath, which are readings but are the reason somebody opened the page.
+   */
+  it("offers a listening socket and a connection their own menus", async () => {
+    await render([
+      socket({ port: 22, pid: 1741, process: "sshd" }),
+      socket({
+        address: "192.168.254.133",
+        state: "ESTAB",
+        peerAddress: "192.168.254.1",
+        peerPort: 52344,
+      }),
+    ]);
+    const { entries, visible } = useContextMenu();
+
+    const listener = [...host.querySelectorAll<HTMLTableRowElement>("tbody tr")][0];
+    listener?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(visible.value).toBe(true);
+    expect(ids(entries.value)).toEqual([
+      "show-connections",
+      "sep-copy",
+      "copy-address",
+      "copy-port",
+      "copy-endpoint",
+      "copy-process",
+      "copy-pid",
+    ]);
+
+    listener?.click();
+    await nextTick();
+    // The second table's only row: the listener is the first, the connection that landed on it is
+    // the second.
+    const connection = [...host.querySelectorAll<HTMLTableRowElement>("tbody tr")][1];
+    connection?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(ids(entries.value)).toEqual(["copy-peer-address", "copy-peer-port", "copy-state"]);
+  });
 });
+
+/** The ids of a menu's entries, in the order it would draw them. */
+function ids(entries: readonly MenuEntry[]): string[] {
+  return entries.map((entry) => entry.id);
+}

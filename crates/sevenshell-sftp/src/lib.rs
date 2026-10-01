@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use russh_sftp::client::SftpSession as Channel;
 use russh_sftp::client::error::Error as SftpError;
-use russh_sftp::protocol::{FileAttributes, StatusCode};
+use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use sevenshell_error::ShellError;
 use sevenshell_types::{EntryKind, SftpEntry, SftpListing};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -32,7 +32,10 @@ const CHUNK_BYTES: usize = 64 * 1024;
 /// callback: the caller polls it or reads it back, and nothing has to be sent over a channel just
 /// to move a number.
 pub struct TransferProgress {
-    total: u64,
+    /// How much is coming, which is not always known when the transfer is asked for: a directory
+    /// that has to be packed on the far side first is a size nobody can name until the packing is
+    /// done, and the bar reads "still counting" until then.
+    total: AtomicU64,
     transferred: AtomicU64,
     cancelled: AtomicBool,
 }
@@ -40,14 +43,19 @@ pub struct TransferProgress {
 impl TransferProgress {
     pub fn new(total: u64) -> Arc<Self> {
         Arc::new(Self {
-            total,
+            total: AtomicU64::new(total),
             transferred: AtomicU64::new(0),
             cancelled: AtomicBool::new(false),
         })
     }
 
     pub fn total(&self) -> u64 {
-        self.total
+        self.total.load(Ordering::Relaxed)
+    }
+
+    /// Says how much is coming, once that is known.
+    pub fn set_total(&self, total: u64) {
+        self.total.store(total, Ordering::Relaxed);
     }
 
     pub fn transferred(&self) -> u64 {
@@ -135,10 +143,50 @@ impl SftpSession {
     }
 
     pub async fn create_dir(&self, path: &str) -> Result<(), ShellError> {
+        // Asked before it is attempted, because the server's own refusal for a name that is taken is
+        // a bare `Failure` — and a person typing a name into a form is owed better than "the server
+        // refused the operation".
+        if self.exists(path).await? {
+            return Err(ShellError::sftp_exists(path));
+        }
+
         self.inner
             .create_dir(path.to_owned())
             .await
             .map_err(|error| failure(&error, path))
+    }
+
+    /// Whether something is already at this path. A link counts: what is being asked about is a name.
+    pub async fn exists(&self, path: &str) -> Result<bool, ShellError> {
+        self.inner
+            .try_exists(path.to_owned())
+            .await
+            .map_err(|error| failure(&error, path))
+    }
+
+    /// Creates an empty file, and refuses when something with that name is already there.
+    ///
+    /// The refusal is most of the point: SFTP's plain create opens with truncate, so a "new file"
+    /// that landed on an existing one would empty it without saying anything. The open below asks for
+    /// `EXCLUDE` as well, which is the version of that promise two people typing the same name at the
+    /// same moment cannot get past — the one above is only there to make the refusal readable.
+    pub async fn create_file(&self, path: &str) -> Result<(), ShellError> {
+        if self.exists(path).await? {
+            return Err(ShellError::sftp_exists(path));
+        }
+
+        match self
+            .inner
+            .open_with_flags(
+                path.to_owned(),
+                OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+            )
+            .await
+        {
+            // Nothing is written: the file exists from the moment the server answers the open.
+            Ok(file) => file.close().await.map_err(|error| io_failure(&error, path)),
+            Err(error) => Err(failure(&error, path)),
+        }
     }
 
     pub async fn rename(&self, from: &str, to: &str) -> Result<(), ShellError> {

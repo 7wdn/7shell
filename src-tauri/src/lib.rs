@@ -4,6 +4,7 @@
 //! in the `sevenshell-*` crates so the same operations can later be driven from a command line
 //! or an agent without going through a webview.
 
+mod clipboard;
 mod commands;
 mod dropped;
 mod state;
@@ -78,6 +79,7 @@ pub fn run() {
             commands::files::files_open,
             commands::files::files_list,
             commands::files::files_create_folder,
+            commands::files::files_create_file,
             commands::files::files_rename,
             commands::files::files_delete,
             commands::files::files_read_text,
@@ -89,6 +91,7 @@ pub fn run() {
             commands::files::transfer_cancel,
             commands::files::dropped_upload,
             commands::files::clipboard_files,
+            commands::clipboard::clipboard_text,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");

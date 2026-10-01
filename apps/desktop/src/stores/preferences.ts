@@ -60,6 +60,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * so "hidden" means the commands on the far side stop as well as the drawing.
    */
   const monitorEnabled = ref(true);
+  /**
+   * Whether a remote directory is moved as one archive rather than file by file.
+   *
+   * Off unless somebody says otherwise, which is the opposite of the monitor above and for the same
+   * kind of reason: that one is a panel appearing, this one changes what a transfer leaves on the
+   * disk. Somebody who right-clicks a folder and finds a `.tar.gz` where they expected the files
+   * would be right to be annoyed, so it is never decided for them.
+   */
+  const packedTransfer = ref(false);
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -123,6 +132,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       sessionLayout.value = settings.sessionLayout;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       monitorEnabled.value = settings.monitorEnabled;
+      packedTransfer.value = settings.packedTransfer;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -148,6 +158,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         sessionLayout: sessionLayout.value,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         monitorEnabled: monitorEnabled.value,
+        packedTransfer: packedTransfer.value,
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -185,6 +196,17 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   async function setMonitorEnabled(enabled: boolean): Promise<void> {
     monitorEnabled.value = enabled;
+    await persist();
+  }
+
+  /**
+   * Turns packed transfers on or off.
+   *
+   * Two ways in — the file panel's own menu and the settings — and one value behind them, so the
+   * checkbox in the menu and the switch in the dialog cannot come to disagree.
+   */
+  async function setPackedTransfer(enabled: boolean): Promise<void> {
+    packedTransfer.value = enabled;
     await persist();
   }
 
@@ -231,6 +253,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sessionLayout,
     terminalPanelHeight,
     monitorEnabled,
+    packedTransfer,
     resolvedTheme,
     resolvedTerminalTheme,
     resolvedPanelHeight,
@@ -243,6 +266,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setFilesLayout,
     setSessionLayout,
     setMonitorEnabled,
+    setPackedTransfer,
     setPanelHeight,
     rememberPanelHeight,
     resetPanelHeight,

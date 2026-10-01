@@ -7,11 +7,13 @@
 //! There is no dependency on the desktop shell, on purpose: the same operations have to be
 //! callable from a command line later.
 
+mod archive;
 mod batch;
 mod files;
 mod monitor;
 mod sessions;
 
+pub use archive::{ARCHIVE_TIMEOUT, archive_name, shell_quote};
 pub use batch::{BatchEvent, DEFAULT_PARALLEL, MAX_HOST_TIMEOUT, MAX_PARALLEL, MIN_HOST_TIMEOUT};
 pub use files::FileSession;
 pub use monitor::SAMPLE_TIMEOUT;
