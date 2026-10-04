@@ -7,6 +7,8 @@
     "transfer": "Transfer actions",
     "tab": "Tab actions",
     "session": "Session actions",
+    "group": "Group actions",
+    "moveToGroup": "Move to group",
     "tunnel": "Forward actions",
     "process": "Process actions",
     "disk": "File system actions",

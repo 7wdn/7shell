@@ -15,6 +15,7 @@ export const MENU_TITLES = {
   transfer: "menu.transfer",
   tab: "menu.tab",
   session: "menu.session",
+  group: "menu.group",
   tunnel: "menu.tunnel",
   process: "menu.process",
   disk: "menu.disk",

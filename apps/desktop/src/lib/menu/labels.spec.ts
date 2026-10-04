@@ -16,13 +16,13 @@ import { MENU_TITLES } from "@/lib/menu/titles";
 import { fileAreaMenu, fileEntryMenu } from "./files";
 import { connectionMenu, environmentMenu, listenerMenu, processDetailMenu, processRowMenu } from "./inspect";
 import { diskMenu, monitorProcessMenu } from "./monitor";
-import { sessionMenu, tunnelMenu } from "./sessions";
+import { sessionMenu, groupMenu, tunnelMenu } from "./sessions";
 import { terminalMenu } from "./terminal";
 import { transferMenu } from "./transfers";
 import type { MenuEntry } from "./types";
 import { tabMenu } from "./workspace";
 import type { DiskUsage, EnvironmentEntry, ProcessDetail, ProcessSample, SocketRow } from "@/types/monitor";
-import type { OpenTunnel, Session, SftpEntry, TransferInfo } from "@/types/session";
+import type { OpenTunnel, Session, SessionGroup, SftpEntry, TransferInfo } from "@/types/session";
 
 const LOCALES = ["en", "zh-CN"] as const;
 
@@ -73,6 +73,7 @@ const session: Session = {
   terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30 },
   updatedAt: 1_700_000_000,
 };
+const group: SessionGroup = { id: "group-1", name: "Work", order: 0 };
 const tunnel: OpenTunnel = {
   id: "tunnel-1",
   handle: "t1",
@@ -180,7 +181,21 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
     },
     {
       title: MENU_TITLES.session,
-      entries: sessionMenu(session, { openTerminal: nothing, openFiles: nothing, edit: nothing, remove: nothing }),
+      entries: sessionMenu(session, [group], {
+        openTerminal: nothing,
+        openFiles: nothing,
+        edit: nothing,
+        remove: nothing,
+        move: nothing,
+      }),
+    },
+    {
+      title: MENU_TITLES.group,
+      entries: groupMenu(
+        group,
+        { rename: nothing, remove: nothing, move: nothing, addInside: nothing },
+        { up: false, down: true },
+      ),
     },
     { title: MENU_TITLES.tunnel, entries: tunnelMenu(tunnel, { stop: nothing }) },
     { title: MENU_TITLES.process, entries: monitorProcessMenu(process, { openPage: nothing }) },

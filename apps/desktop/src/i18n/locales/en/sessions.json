@@ -11,7 +11,22 @@
       "confirmRemove": "Delete “{name}”?",
       "confirmRemoveNote": "The stored password or key reference goes with it.",
       "confirm": "Delete",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "addGroup": "New group",
+      "groupName": "Group name",
+      "groupCreate": "Create",
+      "groupRename": "Rename group",
+      "groupNewInside": "New group inside",
+      "groupCollapse": "Collapse {name}",
+      "groupExpand": "Expand {name}",
+      "groupRemove": "Delete group",
+      "groupConfirmRemove": "Delete the group “{name}”?",
+      "groupConfirmRemoveNote": "The sessions in it are kept: they move out to Ungrouped. Nothing inside a group is ever deleted with it.",
+      "groupUp": "Move the group up",
+      "groupDown": "Move the group down",
+      "groupEmpty": "Nothing in this group.",
+      "ungroupedEmpty": "Every session is in a group.",
+      "groupLabel": "{name}"
     },
     "editor": {
       "titleNew": "New session",

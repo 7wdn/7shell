@@ -6,6 +6,11 @@
  * session whose group no longer exists still appears, under the ungrouped heading, rather than
  * disappearing because its heading did.
  *
+ * Groups are managed where they are drawn. Making one, renaming one and deleting one all happen in
+ * the list rather than in a dialog, and deleting asks in the heading the way deleting a session asks
+ * in its row. A group is only ever a heading: nothing inside it is deleted with it, which is the
+ * sentence the confirmation says out loud.
+ *
  * Opening a terminal hangs off the row itself, with the file browser beside it; whether a terminal
  * comes up with its file panel is the settings' answer, not this row's. Editing and deleting are
  * separate buttons, and deleting always asks first, in the row, before anything is removed.
@@ -16,7 +21,9 @@
  */
 import {
   ArrowRight,
+  ChevronRight,
   Folder,
+  FolderPlus,
   LoaderCircle,
   Network,
   Pencil,
@@ -27,18 +34,23 @@ import {
   TriangleAlert,
   X,
 } from "@lucide/vue";
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import GroupNameForm from "@/components/sessions/GroupNameForm.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
-import { sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
+import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
+import { hasSibling } from "@/lib/sessions/groups";
+import { rowTarget } from "@/lib/sessions/tree";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
 import { tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
-import type { OpenTunnel, Session } from "@/types/session";
+import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
 import { PROTOCOLS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
@@ -52,6 +64,49 @@ const editorOpen = ref(false);
 const editing = ref<Session | null>(null);
 /** The session whose delete confirmation is open, if any. Never a bare click. */
 const confirming = ref<string | null>(null);
+
+/** The group prompts, of which at most one is open: a name being made, changed, or deleted. */
+const creatingGroup = ref(false);
+/** The group a new one is being made inside, or null for the root of the tree. */
+const creatingInside = ref<string | null>(null);
+const newGroupName = ref("");
+/** The naming form that is open, whichever of the places it is drawn in. */
+const openNameForm = ref<{ focus: () => void } | null>(null);
+const renamingGroup = ref<string | null>(null);
+const groupNameText = ref("");
+/** The field drawn over a group's name while it is being renamed, wherever in the list that is. */
+const renameField = ref<HTMLInputElement | null>(null);
+const confirmingGroup = ref<string | null>(null);
+/** One group write at a time, so pressing Create twice does not make two groups. */
+const groupBusy = ref(false);
+
+/** The scroller the rows live in: what a drag is hit-tested against, and what it scrolls. */
+const listBox = ref<HTMLElement | null>(null);
+const rowByKey = computed(() => new Map(library.rows.map((row) => [row.key, row])));
+const {
+  ghost: dragGhost,
+  mark: dropMark,
+  press: pressRow,
+} = useTreeDrag({
+  container: listBox,
+  targetOf: (element) => {
+    const row = rowByKey.value.get(element.dataset.row ?? "");
+    return row ? rowTarget(row) : null;
+  },
+  aim: (grabbed, target, box, pointerY) =>
+    grabbed.kind === "group" ? groupDropFor(target, box, pointerY) : sessionDropFor(target),
+  accepts: (grabbed, aimed) =>
+    grabbed.kind === "group"
+      ? library.canPlaceGroup(grabbed.id, aimed.drop, aimed.zone)
+      : library.canPlaceSession(grabbed.id, aimed.drop),
+  onDrop: (grabbed, aimed) => {
+    if (grabbed.kind === "group") {
+      void library.placeGroup(grabbed.id, aimed.drop, aimed.zone);
+    } else {
+      void library.placeSession(grabbed.id, aimed.drop);
+    }
+  },
+});
 
 const problem = computed(() => (library.failure ? describeShellError(translate, library.failure) : null));
 const tunnelProblem = computed(() =>
@@ -84,8 +139,120 @@ async function remove(session: Session): Promise<void> {
   await library.remove(session.id);
 }
 
+function cancelGroupPrompts(): void {
+  creatingGroup.value = false;
+  creatingInside.value = null;
+  renamingGroup.value = null;
+  confirmingGroup.value = null;
+}
+
 /**
- * The two menus this sidebar offers: one for a saved session and one for a forward that is up.
+ * Opens the naming form: under the list's own header for a group at the root, or under the heading
+ * it will sit inside. The cursor goes into it, because a form that was just opened is a form
+ * somebody asked to type in.
+ */
+async function startGroupCreate(parentId: string | null): Promise<void> {
+  cancelGroupPrompts();
+  newGroupName.value = "";
+  creatingInside.value = parentId;
+  creatingGroup.value = true;
+  await nextTick();
+  openNameForm.value?.focus();
+}
+
+/**
+ * The open naming form hands itself over through here.
+ *
+ * A `ref` written on an element inside a list arrives as an array of everything the list rendered,
+ * and there is one form here, drawn in whichever of two places applies — so the form is taken as it
+ * comes and the one that is mounted is the one that gets the cursor.
+ */
+function takeNameForm(form: unknown): void {
+  openNameForm.value = (form as { focus: () => void } | null) ?? null;
+}
+
+function startGroupRename(group: SessionGroup): void {
+  cancelGroupPrompts();
+  groupNameText.value = group.name;
+  renamingGroup.value = group.id;
+  void nextTick().then(() => {
+    renameField.value?.focus();
+    renameField.value?.select();
+  });
+}
+
+/**
+ * The rename field hands itself over through here, for the same reason the naming form does: a
+ * `ref` inside a list arrives as an array, and there is only ever one field on screen.
+ */
+function takeRenameField(field: unknown): void {
+  renameField.value = (field as HTMLInputElement | null) ?? null;
+}
+
+async function createGroup(): Promise<void> {
+  const name = newGroupName.value.trim();
+  if (name === "" || groupBusy.value) {
+    return;
+  }
+  groupBusy.value = true;
+  const worked = await library.addGroup(name, creatingInside.value);
+  groupBusy.value = false;
+  if (worked) {
+    creatingGroup.value = false;
+    creatingInside.value = null;
+    newGroupName.value = "";
+  }
+}
+
+/**
+ * Writes the name that was typed over the old one.
+ *
+ * Three rules, all of them from how a rename in place is used: the editing closes **before** the
+ * write, so the blur that follows Enter cannot run the same rename twice; an empty name, or the
+ * name it already had, is a cancel rather than a write; and a refusal puts the field back with what
+ * was typed still in it — the reason is drawn in the list's own problem box, and retyping a name
+ * somebody just typed is not a thing to ask for.
+ */
+async function submitGroupRename(group: SessionGroup): Promise<void> {
+  if (renamingGroup.value !== group.id) {
+    return;
+  }
+  renamingGroup.value = null;
+  const name = groupNameText.value.trim();
+  if (name === "" || name === group.name || groupBusy.value) {
+    return;
+  }
+
+  groupBusy.value = true;
+  const worked = await library.saveGroup({ ...group, name });
+  groupBusy.value = false;
+  if (!worked) {
+    renamingGroup.value = group.id;
+    await nextTick();
+    renameField.value?.focus();
+  }
+}
+
+async function removeGroup(group: SessionGroup): Promise<void> {
+  confirmingGroup.value = null;
+  groupBusy.value = true;
+  await library.removeGroup(group.id);
+  groupBusy.value = false;
+}
+
+/** How far a row is indented: one step per level of nesting. */
+function indent(depth: number): Record<string, string> {
+  return { paddingLeft: `${4 + depth * 12}px` };
+}
+
+/** How a row is drawn while it is the place a drag would land: a line beside, or a ring around. */
+function markOf(key: string): string | null {
+  return dropMark.value?.key === key ? dropMark.value.style : null;
+}
+
+/**
+ * The menus this sidebar offers: one for a saved session, one for a group heading, and one for a
+ * forward that is up.
  *
  * Deleting from the menu opens the row's own confirmation rather than doing it — the question is
  * asked in the place the name is written, and there is one place that asks it.
@@ -94,14 +261,42 @@ function openSessionMenu(event: MouseEvent, session: Session): void {
   openMenu(
     event,
     { key: MENU_TITLES.session },
-    sessionMenu(session, {
+    sessionMenu(session, library.groups, {
       openTerminal: (target) => void terminals.open(target),
       openFiles: (target) => void terminals.openFiles(target),
       edit: startEdit,
       remove: (target) => {
         confirming.value = target.id;
       },
+      move: (target, groupId) =>
+        void library.placeSession(target.id, groupId === undefined ? { kind: "root" } : { kind: "group", id: groupId }),
     }),
+  );
+}
+
+/** The ungrouped heading is not a thing anybody can rename or move, so it has no menu. */
+function openHeadingMenu(event: MouseEvent, group: SessionGroup | null): void {
+  if (!group) {
+    return;
+  }
+  openMenu(
+    event,
+    { key: MENU_TITLES.group },
+    groupMenu(
+      group,
+      {
+        rename: startGroupRename,
+        remove: (target) => {
+          confirmingGroup.value = target.id;
+        },
+        move: (target, direction) => void library.moveGroupBy(target.id, direction),
+        addInside: (target) => void startGroupCreate(target.id),
+      },
+      {
+        up: hasSibling(library.groups, group.id, -1),
+        down: hasSibling(library.groups, group.id, 1),
+      },
+    ),
   );
 }
 
@@ -135,15 +330,26 @@ const statusDot = computed(() => {
         <h2 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("shell.sidebar.sessions") }}
         </h2>
-        <button
-          type="button"
-          class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="t('sessions.list.add')"
-          :aria-label="t('sessions.list.add')"
-          @click="startNew()"
-        >
-          <Plus :size="14" />
-        </button>
+        <span class="flex items-center gap-0.5">
+          <button
+            type="button"
+            class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('sessions.list.addGroup')"
+            :aria-label="t('sessions.list.addGroup')"
+            @click="startGroupCreate(null)"
+          >
+            <FolderPlus :size="14" />
+          </button>
+          <button
+            type="button"
+            class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('sessions.list.add')"
+            :aria-label="t('sessions.list.add')"
+            @click="startNew()"
+          >
+            <Plus :size="14" />
+          </button>
+        </span>
       </header>
 
       <p v-if="problem" class="mb-2 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
@@ -151,7 +357,20 @@ const statusDot = computed(() => {
         <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
       </p>
 
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div ref="listBox" data-session-list class="min-h-0 flex-1 overflow-y-auto">
+        <!-- A group at the root is named under the header; one made inside a group is named under
+             that group's own heading, in the loop below. -->
+        <GroupNameForm
+          v-if="creatingGroup && creatingInside === null"
+          :ref="takeNameForm"
+          v-model="newGroupName"
+          :icon="FolderPlus"
+          :submit-label="t('sessions.list.groupCreate')"
+          :busy="groupBusy"
+          @submit="createGroup()"
+          @cancel="cancelGroupPrompts()"
+        />
+
         <p
           v-if="library.status === 'loading' && library.sessions.length === 0"
           class="px-1 py-2 text-xs text-muted-foreground"
@@ -160,7 +379,7 @@ const statusDot = computed(() => {
         </p>
 
         <div
-          v-else-if="library.sessions.length === 0"
+          v-else-if="library.sessions.length === 0 && library.groups.length === 0"
           class="rounded-md border border-dashed border-border px-3 py-4 text-center"
         >
           <Server :size="18" class="mx-auto mb-2 text-muted-foreground" />
@@ -168,99 +387,225 @@ const statusDot = computed(() => {
         </div>
 
         <template v-else>
-          <section v-for="section in library.sections" :key="section.key" class="mb-3">
-            <h3
-              v-if="section.name || library.groups.length > 0"
-              class="mb-1 px-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+          <template v-for="row in library.rows" :key="row.key">
+            <!-- A group: the heading, the two drawers for changing it, and the place it is dropped
+                 into. The whole row is the drag handle; the chevron opens and closes it. -->
+            <div
+              v-if="row.kind === 'group'"
+              :data-row="row.key"
+              class="relative flex items-center gap-0.5 rounded-md pr-1 transition-colors hover:bg-accent/40"
+              :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
+              :style="indent(row.depth)"
+              @contextmenu="openHeadingMenu($event, row.group)"
+              @mousedown="pressRow($event, { kind: 'group', id: row.id }, row.group.name)"
             >
-              {{ section.name ?? t("sessions.list.ungrouped") }}
-            </h3>
+              <span
+                v-if="markOf(row.key) === 'line-before'"
+                class="absolute inset-x-1 top-0 h-0.5 rounded bg-primary"
+                aria-hidden="true"
+              ></span>
+              <span
+                v-if="markOf(row.key) === 'line-after'"
+                class="absolute inset-x-1 bottom-0 h-0.5 rounded bg-primary"
+                aria-hidden="true"
+              ></span>
+              <button
+                type="button"
+                class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:text-foreground"
+                :title="
+                  t(row.collapsed ? 'sessions.list.groupExpand' : 'sessions.list.groupCollapse', {
+                    name: row.group.name,
+                  })
+                "
+                :aria-label="
+                  t(row.collapsed ? 'sessions.list.groupExpand' : 'sessions.list.groupCollapse', {
+                    name: row.group.name,
+                  })
+                "
+                :aria-expanded="!row.collapsed"
+                @click="library.setCollapsed(row.id, !row.collapsed)"
+              >
+                <ChevronRight :size="12" :class="row.collapsed ? '' : 'rotate-90'" />
+              </button>
+              <input
+                v-if="renamingGroup === row.id"
+                :ref="takeRenameField"
+                :value="groupNameText"
+                type="text"
+                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-[11px] focus:outline-none"
+                :aria-label="t('sessions.list.groupName')"
+                @input="groupNameText = ($event.target as HTMLInputElement).value"
+                @keydown.enter.prevent="submitGroupRename(row.group)"
+                @keydown.escape.prevent="cancelGroupPrompts()"
+                @blur="submitGroupRename(row.group)"
+              />
+              <h3
+                v-else
+                class="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+              >
+                {{ row.group.name }}
+              </h3>
+            </div>
 
-            <ul class="space-y-0.5">
-              <li v-for="session in section.sessions" :key="session.id">
-                <div
-                  class="group flex items-center gap-0.5 rounded-md hover:bg-accent/60"
-                  @contextmenu="openSessionMenu($event, session)"
+            <GroupNameForm
+              v-if="row.kind === 'group' && creatingGroup && creatingInside === row.id"
+              :ref="takeNameForm"
+              v-model="newGroupName"
+              :icon="FolderPlus"
+              :submit-label="t('sessions.list.groupCreate')"
+              :busy="groupBusy"
+              @submit="createGroup()"
+              @cancel="cancelGroupPrompts()"
+            />
+
+            <div
+              v-if="row.kind === 'group' && confirmingGroup === row.id"
+              class="mt-1 mb-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-2"
+            >
+              <p class="text-[11px]">
+                {{ t("sessions.list.groupConfirmRemove", { name: row.group.name }) }}
+              </p>
+              <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                {{ t("sessions.list.groupConfirmRemoveNote") }}
+              </p>
+              <div class="mt-2 flex gap-1">
+                <button
+                  type="button"
+                  class="rounded-md bg-destructive px-2 py-1 text-[11px] text-destructive-foreground transition-colors hover:bg-destructive/90"
+                  @click="removeGroup(row.group)"
                 >
-                  <button
-                    type="button"
-                    class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left"
-                    :title="t('sessions.list.open', { name: session.name })"
-                    @click="terminals.open(session)"
-                  >
-                    <Terminal :size="13" class="shrink-0 text-muted-foreground" />
-                    <span class="min-w-0 flex-1">
-                      <span class="block truncate text-sm">{{ session.name }}</span>
-                      <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
-                        endpoint(session)
-                      }}</span>
-                    </span>
-                    <LoaderCircle
-                      v-if="terminals.connectingSessionIds.includes(session.id)"
-                      :size="12"
-                      class="shrink-0 animate-spin text-muted-foreground"
-                      :aria-label="t('sessions.list.connecting', { name: session.name })"
-                    />
-                  </button>
+                  {{ t("sessions.list.confirm") }}
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+                  @click="confirmingGroup = null"
+                >
+                  {{ t("sessions.list.cancel") }}
+                </button>
+              </div>
+            </div>
 
+            <!-- A session: one row, indented by how deep its group is. -->
+            <template v-if="row.kind === 'session'">
+              <div
+                :data-row="row.key"
+                class="group relative flex items-center gap-0.5 rounded-md pr-1 transition-colors hover:bg-accent/60"
+                :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
+                :style="indent(row.depth)"
+                @contextmenu="openSessionMenu($event, row.session)"
+                @mousedown="pressRow($event, { kind: 'session', id: row.session.id }, row.session.name)"
+              >
+                <button
+                  type="button"
+                  class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left"
+                  :title="t('sessions.list.open', { name: row.session.name })"
+                  @click="terminals.open(row.session)"
+                >
+                  <Terminal :size="13" class="shrink-0 text-muted-foreground" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate text-sm">{{ row.session.name }}</span>
+                    <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
+                      endpoint(row.session)
+                    }}</span>
+                  </span>
+                  <LoaderCircle
+                    v-if="terminals.connectingSessionIds.includes(row.session.id)"
+                    :size="12"
+                    class="shrink-0 animate-spin text-muted-foreground"
+                    :aria-label="t('sessions.list.connecting', { name: row.session.name })"
+                  />
+                </button>
+
+                <button
+                  type="button"
+                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                  :title="t('files.open', { name: row.session.name })"
+                  :aria-label="t('files.open', { name: row.session.name })"
+                  @click="terminals.openFiles(row.session)"
+                >
+                  <Folder :size="12" />
+                </button>
+                <button
+                  type="button"
+                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+                  :title="t('sessions.list.edit')"
+                  :aria-label="t('sessions.list.edit')"
+                  @click="startEdit(row.session)"
+                >
+                  <Pencil :size="12" />
+                </button>
+                <button
+                  type="button"
+                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  :title="t('sessions.list.remove')"
+                  :aria-label="t('sessions.list.remove')"
+                  @click="confirming = row.session.id"
+                >
+                  <Trash2 :size="12" />
+                </button>
+              </div>
+
+              <div
+                v-if="confirming === row.session.id"
+                class="mt-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-2"
+                :style="indent(row.depth)"
+              >
+                <p class="text-[11px]">{{ t("sessions.list.confirmRemove", { name: row.session.name }) }}</p>
+                <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                  {{ t("sessions.list.confirmRemoveNote") }}
+                </p>
+                <div class="mt-2 flex gap-1">
                   <button
                     type="button"
-                    class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                    :title="t('files.open', { name: session.name })"
-                    :aria-label="t('files.open', { name: session.name })"
-                    @click="terminals.openFiles(session)"
+                    class="rounded-md bg-destructive px-2 py-1 text-[11px] text-destructive-foreground transition-colors hover:bg-destructive/90"
+                    @click="remove(row.session)"
                   >
-                    <Folder :size="12" />
+                    {{ t("sessions.list.confirm") }}
                   </button>
                   <button
                     type="button"
-                    class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                    :title="t('sessions.list.edit')"
-                    :aria-label="t('sessions.list.edit')"
-                    @click="startEdit(session)"
+                    class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+                    @click="confirming = null"
                   >
-                    <Pencil :size="12" />
-                  </button>
-                  <button
-                    type="button"
-                    class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    :title="t('sessions.list.remove')"
-                    :aria-label="t('sessions.list.remove')"
-                    @click="confirming = session.id"
-                  >
-                    <Trash2 :size="12" />
+                    {{ t("sessions.list.cancel") }}
                   </button>
                 </div>
+              </div>
+            </template>
 
-                <div
-                  v-if="confirming === session.id"
-                  class="mt-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-2"
-                >
-                  <p class="text-[11px]">{{ t("sessions.list.confirmRemove", { name: session.name }) }}</p>
-                  <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    {{ t("sessions.list.confirmRemoveNote") }}
-                  </p>
-                  <div class="mt-2 flex gap-1">
-                    <button
-                      type="button"
-                      class="rounded-md bg-destructive px-2 py-1 text-[11px] text-destructive-foreground transition-colors hover:bg-destructive/90"
-                      @click="remove(session)"
-                    >
-                      {{ t("sessions.list.confirm") }}
-                    </button>
-                    <button
-                      type="button"
-                      class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-                      @click="confirming = null"
-                    >
-                      {{ t("sessions.list.cancel") }}
-                    </button>
-                  </div>
-                </div>
-              </li>
-            </ul>
-          </section>
+            <!-- The bucket for whatever is in no group. It is also the place a drag is dropped on
+                 to take something out of every group, so it stays a row of its own. -->
+            <div
+              v-if="row.kind === 'ungrouped'"
+              :data-row="row.key"
+              class="relative flex items-center rounded-md px-1 py-1"
+              :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
+            >
+              <h3 class="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                {{ t("sessions.list.ungrouped") }}
+              </h3>
+            </div>
+
+            <p
+              v-if="row.kind === 'hint'"
+              class="px-1 py-0.5 text-[10px] text-muted-foreground"
+              :style="indent(row.depth)"
+            >
+              {{ t(row.scope === "group" ? "sessions.list.groupEmpty" : "sessions.list.ungroupedEmpty") }}
+            </p>
+          </template>
         </template>
+      </div>
+
+      <!-- What is being dragged, drawn under the pointer: a picture of the row that is moving. -->
+      <div
+        v-if="dragGhost"
+        data-drag-ghost
+        class="pointer-events-none fixed z-50 max-w-48 truncate rounded-md border border-border bg-card px-2 py-1 text-[11px] shadow-md"
+        :style="{ left: `${dragGhost.x + 12}px`, top: `${dragGhost.y + 8}px` }"
+      >
+        {{ dragGhost.label }}
       </div>
     </section>
 

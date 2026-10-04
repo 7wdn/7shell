@@ -1,16 +1,20 @@
 /**
- * What a saved session and a running forward offer.
+ * What a saved session, a group in the list and a running forward offer.
  *
- * Both menus are the sidebar's own buttons plus the address, which is the thing somebody actually
- * wants out of a session list — and the address is printed exactly the way the row prints it, so what
- * is copied is what was read.
+ * The session menu is the sidebar's own buttons plus the address, which is the thing somebody
+ * actually wants out of a session list — and the address is printed exactly the way the row prints
+ * it, so what is copied is what was read.
+ *
+ * The group half is about what a menu must not promise: a session cannot be moved into a library
+ * with no groups, a group at the top of the list cannot be moved up, and neither is offered as a
+ * row that would do nothing.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { copyText } from "./clipboard";
-import { sessionEndpoint, sessionMenu, tunnelMenu } from "./sessions";
-import type { MenuAction, MenuEntry } from "./types";
-import type { OpenTunnel, Session } from "@/types/session";
+import { groupMenu, sessionEndpoint, sessionMenu, tunnelMenu } from "./sessions";
+import type { MenuAction, MenuEntry, MenuSubmenu } from "./types";
+import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
 
 vi.mock("./clipboard", () => ({ copyText: vi.fn(async () => true) }));
 
@@ -25,6 +29,9 @@ const session: Session = {
   terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30 },
   updatedAt: 1_700_000_000,
 };
+
+const work: SessionGroup = { id: "group-1", name: "Work", order: 0 };
+const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1 };
 
 const tunnel: OpenTunnel = {
   id: "tunnel-1",
@@ -45,8 +52,16 @@ function pick(entries: readonly MenuEntry[], id: string): MenuAction {
   return found;
 }
 
+function submenu(entries: readonly MenuEntry[], id: string): MenuSubmenu {
+  const found = entries.find((entry): entry is MenuSubmenu => entry.kind === "submenu" && entry.id === id);
+  if (!found) {
+    throw new Error(`the menu has no submenu called ${id}`);
+  }
+  return found;
+}
+
 function sessionActions() {
-  return { openTerminal: vi.fn(), openFiles: vi.fn(), edit: vi.fn(), remove: vi.fn() };
+  return { openTerminal: vi.fn(), openFiles: vi.fn(), edit: vi.fn(), remove: vi.fn(), move: vi.fn() };
 }
 
 beforeEach(() => {
@@ -55,7 +70,7 @@ beforeEach(() => {
 
 describe("a saved session's menu", () => {
   it("opens both halves, edits, deletes and copies the address", () => {
-    const entries = sessionMenu(session, sessionActions());
+    const entries = sessionMenu(session, [], sessionActions());
 
     expect(entries.filter((entry) => entry.kind === "action").map((entry) => entry.id)).toEqual([
       "open-terminal",
@@ -68,7 +83,7 @@ describe("a saved session's menu", () => {
   });
 
   it("names the session in the two entries that open something", () => {
-    const entries = sessionMenu(session, sessionActions());
+    const entries = sessionMenu(session, [], sessionActions());
 
     expect(pick(entries, "open-terminal").params).toEqual({ name: "web" });
     expect(pick(entries, "open-files").params).toEqual({ name: "web" });
@@ -76,7 +91,7 @@ describe("a saved session's menu", () => {
 
   it("hands each entry the session it belongs to", () => {
     const wired = sessionActions();
-    const entries = sessionMenu(session, wired);
+    const entries = sessionMenu(session, [], wired);
 
     pick(entries, "open-terminal").run();
     pick(entries, "open-files").run();
@@ -92,9 +107,104 @@ describe("a saved session's menu", () => {
   it("copies the address the way the row writes it", () => {
     expect(sessionEndpoint(session)).toBe("root@example.test:2222");
 
-    pick(sessionMenu(session, sessionActions()), "copy-endpoint").run();
+    pick(sessionMenu(session, [], sessionActions()), "copy-endpoint").run();
 
     expect(copyText).toHaveBeenCalledWith("root@example.test:2222");
+  });
+});
+
+describe("moving a session into a group", () => {
+  it("offers no move at all when there is nowhere to move to", () => {
+    const entries = sessionMenu(session, [], sessionActions());
+
+    expect(entries.some((entry) => entry.kind === "submenu")).toBe(false);
+  });
+
+  it("lists no group first, then the groups in the order the tree draws them, each by its path", () => {
+    const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id };
+    const entries = sessionMenu(session, [lab, work, rack], sessionActions());
+    const move = submenu(entries, "move-to-group");
+
+    expect(move.entries.map((entry) => (entry.kind === "action" ? entry.id : entry.kind))).toEqual([
+      "move-to-ungrouped",
+      "move-to-group-1",
+      "move-to-group-3",
+      "move-to-group-2",
+    ]);
+    // Each group's row says the group's own name; there is no sentence to translate.
+    expect(pick(move.entries, "move-to-group-2").labelKey).toBe("sessions.list.groupLabel");
+    expect(pick(move.entries, "move-to-group-2").params).toEqual({ name: "Lab" });
+    // A nested group is named by its path: two groups may share a name at different depths.
+    expect(pick(move.entries, "move-to-group-3").params).toEqual({ name: "Work / Rack" });
+  });
+
+  it("shows where the session is now, and moves it where it was sent", () => {
+    const wired = sessionActions();
+    const inWork = { ...session, groupId: work.id };
+    const move = submenu(sessionMenu(inWork, [work, lab], wired), "move-to-group");
+
+    expect(pick(move.entries, "move-to-group-1").checked).toBe(true);
+    expect(pick(move.entries, "move-to-group-2").checked).toBe(false);
+    expect(pick(move.entries, "move-to-ungrouped").checked).toBe(false);
+
+    pick(move.entries, "move-to-group-2").run();
+    pick(move.entries, "move-to-ungrouped").run();
+
+    expect(wired.move).toHaveBeenNthCalledWith(1, inWork, "group-2");
+    expect(wired.move).toHaveBeenNthCalledWith(2, inWork, undefined);
+  });
+
+  it("reads a session whose group is gone as one that is in no group", () => {
+    const orphan = { ...session, groupId: "group-that-is-gone" };
+    const move = submenu(sessionMenu(orphan, [work], sessionActions()), "move-to-group");
+
+    expect(pick(move.entries, "move-to-ungrouped").checked).toBe(true);
+    expect(pick(move.entries, "move-to-group-1").checked).toBe(false);
+  });
+});
+
+describe("a group's menu", () => {
+  const ends = { up: true, down: true };
+
+  function groupActions() {
+    return { rename: vi.fn(), remove: vi.fn(), move: vi.fn(), addInside: vi.fn() };
+  }
+
+  it("renames, nests, moves and deletes — and never anything about the sessions inside", () => {
+    const entries = groupMenu(work, groupActions(), ends);
+
+    expect(entries.filter((entry) => entry.kind === "action").map((entry) => entry.id)).toEqual([
+      "rename-group",
+      "add-group-inside",
+      "move-group-up",
+      "move-group-down",
+      "remove-group",
+    ]);
+    expect(pick(entries, "remove-group").danger).toBe(true);
+  });
+
+  it("hands over the group, the direction a move goes in, and where a nested one goes", () => {
+    const wired = groupActions();
+    const entries = groupMenu(work, wired, ends);
+
+    pick(entries, "rename-group").run();
+    pick(entries, "add-group-inside").run();
+    pick(entries, "move-group-up").run();
+    pick(entries, "move-group-down").run();
+    pick(entries, "remove-group").run();
+
+    expect(wired.rename).toHaveBeenCalledWith(work);
+    expect(wired.addInside).toHaveBeenCalledWith(work);
+    expect(wired.move).toHaveBeenNthCalledWith(1, work, -1);
+    expect(wired.move).toHaveBeenNthCalledWith(2, work, 1);
+    expect(wired.remove).toHaveBeenCalledWith(work);
+  });
+
+  it("draws the moves that lead nowhere but does not let them be run", () => {
+    const entries = groupMenu(work, groupActions(), { up: false, down: true });
+
+    expect(pick(entries, "move-group-up").disabled).toBe(true);
+    expect(pick(entries, "move-group-down").disabled).toBe(false);
   });
 });
 

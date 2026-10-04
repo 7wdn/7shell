@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium, expect, test, type Page } from "@playwright/test";
+import { chromium, expect, test, type Locator, type Page } from "@playwright/test";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACTS = path.join(HERE, "artifacts");
@@ -351,6 +351,185 @@ test("the backend can read the clipboard the terminal pastes", async () => {
 
     expect(answer.wrote, "the webview can still write a clipboard, which the copy entries rely on").toBe(true);
     expect(answer.text).toBe("seven-shell-e2e");
+  } finally {
+    await close();
+  }
+});
+
+/** The rows the list is drawing, top to bottom, by the key each one carries. */
+function rowKeys(page: Page): Promise<string[]> {
+  return page
+    .locator("[data-row]")
+    .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-row") ?? ""));
+}
+
+/** The key of the row an element is drawn in, which is how a heading or a row is named in a list. */
+async function rowKeyOf(element: Locator): Promise<string> {
+  const key = await element.evaluate((node) => node.closest("[data-row]")?.getAttribute("data-row") ?? null);
+  if (key === null) {
+    throw new Error("the element is not drawn in a row");
+  }
+  return key;
+}
+
+/** The group row a session row sits under: the nearest group row above it in the list. */
+function groupOver(keys: readonly string[], at: number): string | null {
+  const above = keys.slice(0, at).filter((key) => key.startsWith("group:"));
+  return above.at(-1) ?? null;
+}
+
+/** A save dialog answered with a session that is only ever connected to by hand. */
+async function saveSession(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "New session" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByPlaceholder("Production web server").fill(name);
+  await editor.getByPlaceholder("example.com").fill("127.0.0.1");
+  await editor.getByPlaceholder("root").fill("labuser");
+  await editor.getByRole("button", { name: "Save" }).click();
+  await expect(editor).toHaveCount(0);
+}
+
+/** A group made where it is drawn: a name typed into the form under the list's header. */
+async function saveGroup(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "New group" }).click();
+  await page.getByPlaceholder("Group name").fill(name);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+}
+
+/**
+ * Groups, from making one to taking a session back out of it.
+ *
+ * The half of this that only a real window can show is the submenu: the list a session is moved
+ * through is drawn against the row that opened it, and the choice that lands is the one that was
+ * pointed at. What is asserted at the end is the sentence the confirmation says out loud — deleting
+ * a group deletes the group, and what was inside it is still on screen.
+ */
+test("a session can be put in a group, renamed, and taken back out", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "grouped-host");
+    await saveGroup(page, "Lab");
+
+    // The row's own menu, two levels deep, which is how a session is moved without a drag.
+    const row = page.getByTitle("Open a terminal for grouped-host");
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to group" }).hover();
+    const intoLab = page.getByRole("menuitemcheckbox", { name: "Lab", exact: true });
+    await expect(intoLab).toHaveAttribute("aria-checked", "false");
+    await intoLab.click();
+
+    // The row it sits under is the answer to where it went: the nearest group row above it.
+    const sessionKey = await rowKeyOf(row);
+    const groupKey = await rowKeyOf(page.getByRole("heading", { name: "Lab", exact: true }));
+    await expect
+      .poll(async () => {
+        const keys = await rowKeys(page);
+        return groupOver(keys, keys.indexOf(sessionKey));
+      })
+      .toBe(groupKey);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "groups.png"), fullPage: false });
+
+    // Renaming happens where the name is written: the label in the row becomes a field, through the
+    // heading's own menu, and Enter writes it.
+    await page.getByRole("heading", { name: "Lab", exact: true }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Rename group" }).click();
+    const rename = page.getByRole("textbox", { name: "Group name" });
+    await expect(rename).toHaveValue("Lab");
+    await rename.fill("Lab (EU)");
+    await rename.press("Enter");
+    await expect(page.getByRole("heading", { name: "Lab (EU)", exact: true })).toBeVisible();
+
+    // Deleting asks first, in the heading, and says what happens to what is inside.
+    await page.getByRole("heading", { name: "Lab (EU)", exact: true }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Delete group" }).click();
+    await expect(page.getByText(/Delete the group “Lab \(EU\)”\?/)).toBeVisible();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+
+    // The group is gone and the session is not. With no group left there is no heading over it at
+    // all — a flat list has nothing to set it apart from.
+    await expect(page.getByRole("heading", { name: "Lab (EU)", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Ungrouped", exact: true })).toHaveCount(0);
+    await expect(row).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The drag, driven the way a hand drives it.
+ *
+ * The pointer is real: press on the row, travel past the threshold, and the row is lifted — a ghost
+ * follows the pointer and the row it would land on is drawn as the destination. Nothing about that
+ * can be settled by reading the source, which is why it is asserted here: the release is the only
+ * thing that says which of the two the interface settled on.
+ *
+ * The second half is nesting: one group dropped in the middle of another becomes its child, and is
+ * drawn further in than the group it was dropped on.
+ */
+test("a session can be dragged into a group, and a group into another group", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "dragged-host");
+    await saveGroup(page, "Drop");
+    await saveGroup(page, "Outer");
+
+    const row = page.getByTitle("Open a terminal for dragged-host");
+    const target = page.getByRole("heading", { name: "Drop", exact: true });
+    const from = await row.boundingBox();
+    const to = await target.boundingBox();
+    if (!from || !to) {
+      throw new Error("the rows have no place on screen");
+    }
+
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 + 12, { steps: 2 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+
+    // What is moving is drawn under the pointer, and the row it would land on says so.
+    await expect(page.locator("[data-drag-ghost]")).toBeVisible();
+    await expect(page.locator("[data-drag-ghost]")).toHaveText("dragged-host");
+    const destination = target.locator("xpath=..");
+    expect(await destination.evaluate((node) => node.className)).toContain("ring-primary");
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "drag.png"), fullPage: false });
+
+    await page.mouse.up();
+    await expect(page.locator("[data-drag-ghost]")).toHaveCount(0);
+
+    // It is under "Drop" now, which is the only thing the release had to get right.
+    const sessionKey = await rowKeyOf(row);
+    const dropKey = await rowKeyOf(target);
+    await expect
+      .poll(async () => {
+        const keys = await rowKeys(page);
+        return groupOver(keys, keys.indexOf(sessionKey));
+      })
+      .toBe(dropKey);
+
+    // A group dropped in the middle of another becomes its child: drawn further in than its parent.
+    const outerRow = page.getByRole("heading", { name: "Outer", exact: true }).locator("xpath=..");
+    const dropRow = target.locator("xpath=..");
+    const dropBox = await dropRow.boundingBox();
+    const outerBox = await outerRow.boundingBox();
+    if (!dropBox || !outerBox) {
+      throw new Error("the group rows have no place on screen");
+    }
+    await page.mouse.move(dropBox.x + dropBox.width / 2, dropBox.y + dropBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(dropBox.x + dropBox.width / 2, dropBox.y + dropBox.height / 2 + 12, { steps: 2 });
+    await page.mouse.move(outerBox.x + outerBox.width / 2, outerBox.y + outerBox.height / 2, { steps: 8 });
+    await page.mouse.up();
+
+    await expect
+      .poll(async () => Number.parseInt(await dropRow.evaluate((node) => node.style.paddingLeft), 10))
+      .toBeGreaterThan(Number.parseInt(await outerRow.evaluate((node) => node.style.paddingLeft), 10));
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "nested-groups.png"), fullPage: false });
   } finally {
     await close();
   }
