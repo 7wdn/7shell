@@ -6,12 +6,15 @@
  * depends on what the person is doing — a bond carries the traffic, a bridge carries the
  * containers, and loopback is a real answer to "did anything reach the local service".
  *
- * The empty choice is "whichever is busiest", which is what the panel shows when nobody has
- * chosen: a reading that follows the traffic rather than one that has to be told where to look.
+ * The busiest interface is the first choice rather than a prompt: it is what the panel shows when
+ * nobody has chosen, a reading that follows the traffic rather than one that has to be told where to
+ * look. Its value is the empty string, which is also what the monitor records for "no particular
+ * interface", so choosing it and never having chosen are the same state rather than two.
  */
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
+import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import { useMonitorStore } from "@/stores/monitor";
 
 const props = defineProps<{
@@ -34,22 +37,24 @@ const interfaces = computed(() => (props.live ? monitor.interfaces : []));
 /** What the picker shows: the interface the figures are about, or nothing when there is none. */
 const chosen = computed(() => (props.live ? (monitor.interfaceName ?? "") : ""));
 
-function choose(event: Event): void {
-  const value = (event.target as HTMLSelectElement).value;
+const options = computed<SelectOption[]>(() => [
+  { value: "", label: t("inspect.network.automatic") },
+  ...interfaces.value.map((name) => ({ value: name, label: name })),
+]);
+
+function choose(value: string): void {
   monitor.selectInterface(value === "" ? null : value);
 }
 </script>
 
 <template>
-  <select
-    class="max-w-40 rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] text-foreground transition-colors hover:bg-accent focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
-    :value="chosen"
+  <Select
+    :model-value="chosen"
+    :options="options"
+    size="compact"
     :disabled="interfaces.length === 0"
     :aria-label="t('inspect.network.pick')"
-    :title="t('inspect.network.pick')"
-    @change="choose"
-  >
-    <option value="">{{ t("inspect.network.automatic") }}</option>
-    <option v-for="name in interfaces" :key="name" :value="name">{{ name }}</option>
-  </select>
+    trigger-class="max-w-40 font-mono"
+    @update:model-value="choose"
+  />
 </template>

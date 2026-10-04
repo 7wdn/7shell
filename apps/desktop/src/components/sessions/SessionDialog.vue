@@ -30,6 +30,7 @@ import {
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
@@ -53,8 +54,32 @@ const editor = useSessionEditorStore();
 /** Methods the transport refuses; the descriptors list them, this build does not implement them. */
 const UNSUPPORTED_METHODS: readonly AuthMethodId[] = ["agent", "pageant"];
 
-/** The hop the select is pointing at, until it is added and the select goes back to its prompt. */
+/** The hop the picker is pointing at, until it is added and the picker goes back to its prompt. */
 const hopToAdd = ref("");
+
+/** Every group there is, with "no group" first — the answer a session starts out with. */
+const groupOptions = computed<SelectOption[]>(() => [
+  { value: "", label: t("sessions.editor.groupNone") },
+  ...library.groups.map((group) => ({ value: group.id, label: group.name })),
+]);
+
+/** The same list the descriptors carry, with the two this build does not implement unchoosable. */
+const methodOptions = computed<SelectOption[]>(() =>
+  AUTH_METHODS.map((option) => ({
+    value: option.id,
+    label: t(option.labelKey),
+    disabled: UNSUPPORTED_METHODS.includes(option.id),
+  })),
+);
+
+/** The sessions a hop can be: each one by name, with the address it would be reached at under it. */
+const hopOptions = computed<SelectOption[]>(() =>
+  editor.hopChoices.map((session) => ({
+    value: session.id,
+    label: session.name,
+    detail: hopEndpoint(session),
+  })),
+);
 
 const submitted = ref(false);
 const busy = ref(false);
@@ -228,14 +253,7 @@ async function forgetKey(): Promise<void> {
 
             <div>
               <label class="block text-xs font-medium" for="session-group">{{ t("sessions.editor.group") }}</label>
-              <select
-                id="session-group"
-                v-model="editor.groupId"
-                class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
-              >
-                <option value="">{{ t("sessions.editor.groupNone") }}</option>
-                <option v-for="group in library.groups" :key="group.id" :value="group.id">{{ group.name }}</option>
-              </select>
+              <Select id="session-group" v-model="editor.groupId" class="mt-1" :options="groupOptions" />
             </div>
 
             <div class="sm:col-span-2">
@@ -280,20 +298,7 @@ async function forgetKey(): Promise<void> {
 
           <section>
             <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
-            <select
-              id="session-method"
-              v-model="editor.method"
-              class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
-            >
-              <option
-                v-for="option in AUTH_METHODS"
-                :key="option.id"
-                :value="option.id"
-                :disabled="UNSUPPORTED_METHODS.includes(option.id)"
-              >
-                {{ t(option.labelKey) }}
-              </option>
-            </select>
+            <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
             <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
 
             <div v-if="editor.method === 'password' || editor.method === 'keyboardInteractive'" class="mt-3">
@@ -447,17 +452,14 @@ async function forgetKey(): Promise<void> {
             </ul>
 
             <div class="mt-2 flex gap-1.5">
-              <select
+              <Select
                 v-model="hopToAdd"
-                class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                class="min-w-0 flex-1"
+                :options="hopOptions"
+                :placeholder="t('sessions.editor.jumps.pick')"
                 :disabled="editor.hopChoices.length === 0"
                 :aria-label="t('sessions.editor.jumps.choose')"
-              >
-                <option value="">{{ t("sessions.editor.jumps.choose") }}</option>
-                <option v-for="session in editor.hopChoices" :key="session.id" :value="session.id">
-                  {{ session.name }} — {{ hopEndpoint(session) }}
-                </option>
-              </select>
+              />
               <button
                 type="button"
                 class="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"

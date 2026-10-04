@@ -190,6 +190,63 @@ test("a saved session offers its own menu on a right-click", async () => {
 });
 
 /**
+ * The dropdown, driven the way it is used.
+ *
+ * A native control would pass any assertion about a value being chosen, so what is checked here is
+ * the part that only this build can do: the list is a real listbox drawn by the interface, one of
+ * its rows refuses to be chosen because the transport does not implement it, and the form
+ * underneath reacts to the choice. It also proves the list is reachable from inside a dialog's
+ * modal layer, where the body is not accepting pointers — the one thing about the component that
+ * could not be settled by reading the source.
+ */
+test("the session editor's dropdown draws its own list, and choosing from it changes the form", async () => {
+  const { page, close } = await openApp();
+  try {
+    await page.getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+
+    const method = editor.getByRole("combobox", { name: "Authentication" });
+    await expect(method).toBeVisible();
+    await expect(method).toHaveText("Password");
+
+    await method.click();
+    const list = page.getByRole("listbox");
+    await expect(list).toBeVisible();
+    await expect(list.getByRole("option")).toHaveText([
+      "Password",
+      "Public key",
+      "Keyboard interactive",
+      "SSH agent",
+      "Pageant",
+    ]);
+    await expect(list.getByRole("option", { name: "SSH agent" })).toHaveAttribute("aria-disabled", "true");
+    await expect(list.getByRole("option", { name: "Password" })).toHaveAttribute("aria-selected", "true");
+
+    // And it looks the part: a row nobody can choose has to be drawn differently from one they can,
+    // or the only way to find out is to try it. The platform drew that for free; this does not.
+    const [unavailable, available] = await Promise.all(
+      ["SSH agent", "Public key"].map(async (name) =>
+        Number(await list.getByRole("option", { name }).evaluate((row) => getComputedStyle(row).opacity)),
+      ),
+    );
+    expect(unavailable, "a row that cannot be chosen is drawn dimmer than one that can").toBeLessThan(available);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "dropdown.png"), fullPage: false });
+
+    await list.getByRole("option", { name: "Public key" }).click();
+    await expect(list).toHaveCount(0);
+    await expect(method).toHaveText("Public key");
+    // The half of the form that belongs to that choice is the proof it was the method that changed.
+    await expect(editor.getByRole("button", { name: "Choose a key file…" })).toBeVisible();
+
+    await page.keyboard.press("Escape");
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The browser's menu, which is cancelled everywhere except in a text field.
  *
  * It is asserted where it actually happens rather than by looking for a menu that is drawn by the
@@ -282,8 +339,9 @@ test("the backend can read the clipboard the terminal pastes", async () => {
   const { page, close } = await openApp();
   try {
     const answer = await page.evaluate(async () => {
-      const internals = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> } })
-        .__TAURI_INTERNALS__;
+      const internals = (
+        window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> } }
+      ).__TAURI_INTERNALS__;
       if (!internals) {
         return { wrote: false, text: null };
       }

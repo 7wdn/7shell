@@ -57,6 +57,7 @@
         "missing": "Missing session",
         "missingTip": "This hop names a saved session that has since been deleted. It is kept here so it is removed on purpose.",
         "choose": "Add a jump host…",
+        "pick": "Choose a session…",
         "add": "Add",
         "up": "Move up",
         "down": "Move down",
