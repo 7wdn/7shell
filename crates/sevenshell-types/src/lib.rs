@@ -11,6 +11,7 @@ mod monitor;
 mod risk;
 mod session;
 mod settings;
+mod snippet;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
@@ -34,3 +35,7 @@ pub use session::{
     TransferState, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 pub use settings::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on};
+pub use snippet::{
+    CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,
+    SendTarget, Snippet, SnippetGroup,
+};

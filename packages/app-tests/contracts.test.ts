@@ -280,6 +280,24 @@ describe("wire types", () => {
     }
   });
 
+  it("declares the same saved-command fields on both sides", () => {
+    const rust = read("crates/sevenshell-types/src/snippet.rs");
+    const typescript = read("apps/desktop/src/types/snippet.ts");
+
+    for (const name of ["SnippetGroup", "Snippet", "CommandHistoryEntry", "SendReport", "SendFailure"]) {
+      const rustFields = rustStructFields(rust, name).map(camelCase);
+
+      expect(rustFields.length, `${name} has no fields, so the comparison proves nothing`).toBeGreaterThan(0);
+      expect(sorted(rustFields), `${name} differs between Rust and the interface`).toEqual(
+        sorted(interfaceFields(typescript, name)),
+      );
+    }
+
+    expect(sorted(rustBracedEnumVariants(rust, "SendOutcome"))).toEqual(["approvalRequired", "sent"]);
+    expect(sorted(tsKindUnion(typescript, "SendOutcome"))).toEqual(sorted(rustBracedEnumVariants(rust, "SendOutcome")));
+    expect(sorted(tsKindUnion(typescript, "SendTarget"))).toEqual(sorted(rustBracedEnumVariants(rust, "SendTarget")));
+  });
+
   it("keeps the compiled interfaces aligned with the Rust structs", () => {
     // These assignments exist so `tsc` fails if a field is renamed in one language only.
     const envelope: ErrorEnvelope = {

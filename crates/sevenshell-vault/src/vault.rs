@@ -30,7 +30,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{KeyInfo, KnownHostEntry, Session, SessionGroup};
+use sevenshell_types::{CommandHistoryEntry, KeyInfo, KnownHostEntry, Session, SessionGroup, Snippet, SnippetGroup};
 use zeroize::Zeroizing;
 
 use crate::crypto::{self, KdfParams, VaultKey};
@@ -453,6 +453,76 @@ impl Vault {
         state.write_to(&self.path)
     }
 
+    /// The saved commands, grouped, in the order the interface lists them.
+    ///
+    /// Kept in the vault rather than in a settings file: a saved command is a line somebody runs on
+    /// servers, and those lines carry host names, paths and sometimes passwords. Nothing about them
+    /// belongs in plaintext on disk.
+    pub fn snippet_groups(&self) -> Result<Vec<SnippetGroup>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.snippet_groups())
+    }
+
+    /// Adds or renames a group. A group with no id is a new one.
+    pub fn save_snippet_group(&self, group: SnippetGroup) -> Result<SnippetGroup, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let saved = state.document.save_snippet_group(group);
+        state.write_to(&self.path)?;
+        Ok(saved)
+    }
+
+    /// Removes a group and the commands in it. The default group cannot be removed.
+    pub fn delete_snippet_group(&self, id: &str) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.delete_snippet_group(id)?;
+        state.write_to(&self.path)
+    }
+
+    /// Adds or updates a saved command. A command with no id is a new one.
+    pub fn save_snippet(&self, snippet: Snippet) -> Result<Snippet, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let saved = state.document.save_snippet(snippet);
+        state.write_to(&self.path)?;
+        Ok(saved)
+    }
+
+    pub fn delete_snippet(&self, id: &str) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.delete_snippet(id);
+        state.write_to(&self.path)
+    }
+
+    /// What was sent, newest first.
+    pub fn command_history(&self) -> Result<Vec<CommandHistoryEntry>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.command_history())
+    }
+
+    /// Remembers a command that was sent, at the time it was sent.
+    pub fn remember_command(&self, command: &str, at: u64) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.remember_command(command, at);
+        state.write_to(&self.path)
+    }
+
+    pub fn clear_command_history(&self) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.clear_command_history();
+        state.write_to(&self.path)
+    }
+
     /// Stores key material and returns the `KeyInfo` to show for it, with the handle the vault
     /// assigned and the truth about whether a passphrase is held.
     pub fn import_key(
@@ -693,7 +763,7 @@ pub fn secret_for_session(id: &str) -> Result<Option<SessionSecret>, ShellError>
 mod tests {
     use super::*;
     use sevenshell_error::ErrorCode;
-    use sevenshell_types::{AuthMethod, Protocol, SessionAuth, TerminalSettings};
+    use sevenshell_types::{AuthMethod, DEFAULT_GROUP_ID, Protocol, SessionAuth, TerminalSettings};
     use tempfile::tempdir;
 
     const KEY_CONTENTS: &str =
@@ -1132,18 +1202,29 @@ mod tests {
         Vault::open_at(path.clone()).create("master").expect("create");
 
         // Rewrite the payload the way a build from the future would: same KDF, newer document.
+        // One past this build's shape, not a number written down — see the sibling test in
+        // `document.rs` for why.
+        let found = document::VAULT_SCHEMA_VERSION + 1;
         let original = std::fs::read(&path).expect("read");
         let mut envelope = envelope_at(&original);
         let key = crypto::derive_key("master", &envelope.salt, &envelope.kdf).expect("derive");
-        envelope.payload =
-            crypto::encrypt(&key, br#"{"schemaVersion":2,"sessions":[]}"#, crypto::AAD_PAYLOAD).expect("seal");
+        let payload = format!(r#"{{"schemaVersion":{found},"sessions":[]}}"#);
+        envelope.payload = crypto::encrypt(&key, payload.as_bytes(), crypto::AAD_PAYLOAD).expect("seal");
         write_envelope(&path, &envelope);
 
-        let error = Vault::open_at(path.clone()).unlock("master").expect_err("version 2");
+        let error = Vault::open_at(path.clone())
+            .unlock("master")
+            .expect_err("a newer document");
 
         assert_eq!(error.code(), ErrorCode::StoreSchemaNewer);
-        assert_eq!(error.message_params().get("found").map(String::as_str), Some("2"));
-        assert_eq!(error.message_params().get("supported").map(String::as_str), Some("1"));
+        assert_eq!(
+            error.message_params().get("found").map(String::as_str),
+            Some(found.to_string().as_str())
+        );
+        assert_eq!(
+            error.message_params().get("supported").map(String::as_str),
+            Some(document::VAULT_SCHEMA_VERSION.to_string().as_str())
+        );
 
         // A newer envelope never gets as far as derivation, let alone the document.
         let mut envelope = envelope_at(&original);
@@ -1372,5 +1453,138 @@ mod tests {
             assert_eq!(path.file_name().and_then(|name| name.to_str()), Some(VAULT_FILE_NAME));
             assert_eq!(path.parent(), sevenshell_platform::config_dir().as_deref());
         }
+    }
+
+    fn snippet_of(name: &str, command: &str, group_id: &str) -> Snippet {
+        Snippet {
+            id: String::new(),
+            group_id: group_id.to_owned(),
+            name: name.to_owned(),
+            command: command.to_owned(),
+            append_cr: true,
+            order: 0,
+            slot_history: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_saved_command_lands_in_its_group_and_survives_a_lock() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let group = vault
+            .save_snippet_group(SnippetGroup {
+                id: String::new(),
+                name: "maintenance".to_owned(),
+                order: 0,
+                commands: Vec::new(),
+            })
+            .expect("save group");
+        assert!(!group.id.is_empty(), "a group with no id is a new one");
+
+        let first = vault
+            .save_snippet(snippet_of("uptime", "uptime", &group.id))
+            .expect("save");
+        let second = vault
+            .save_snippet(snippet_of("restart nginx", "systemctl restart #1", &group.id))
+            .expect("save");
+        assert_eq!((first.order, second.order), (1, 2), "new commands land at the end");
+
+        // Through the file, not just in memory: this is the only test that proves the library is
+        // really stored encrypted rather than kept beside the document.
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+
+        let groups = vault.snippet_groups().expect("read");
+        assert_eq!(groups.len(), 2, "the default group is still there");
+        let saved = groups.iter().find(|entry| entry.id == group.id).expect("the group");
+        assert_eq!(saved.name, "maintenance");
+        assert_eq!(
+            saved
+                .commands
+                .iter()
+                .map(|command| command.name.as_str())
+                .collect::<Vec<_>>(),
+            ["uptime", "restart nginx"]
+        );
+    }
+
+    #[test]
+    fn a_command_whose_group_is_gone_lands_in_the_default_group() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let saved = vault
+            .save_snippet(snippet_of("stray", "uptime", "a-group-that-never-existed"))
+            .expect("save");
+
+        assert_eq!(saved.group_id, DEFAULT_GROUP_ID);
+        let groups = vault.snippet_groups().expect("read");
+        let default = groups
+            .iter()
+            .find(|group| group.id == DEFAULT_GROUP_ID)
+            .expect("default");
+        assert_eq!(default.commands.len(), 1);
+    }
+
+    #[test]
+    fn the_default_group_cannot_be_deleted() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let error = vault
+            .delete_snippet_group(DEFAULT_GROUP_ID)
+            .expect_err("the default group is where commands land");
+
+        assert_eq!(error.code(), ErrorCode::AppUnsupported);
+        assert_eq!(vault.snippet_groups().expect("read").len(), 1);
+    }
+
+    #[test]
+    fn sending_the_same_command_again_moves_it_up_the_history() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        vault.remember_command("uptime", 10).expect("remember");
+        vault.remember_command("df -h", 20).expect("remember");
+        vault.remember_command("uptime", 30).expect("remember");
+
+        let history = vault.command_history().expect("read");
+        assert_eq!(
+            history.iter().map(|entry| entry.command.as_str()).collect::<Vec<_>>(),
+            ["uptime", "df -h"],
+            "a repeat moves to the front instead of adding a second copy"
+        );
+        assert_eq!(history[0].at, 30, "and it carries the time it was last sent");
+
+        vault.remember_command("   ", 40).expect("blank is not a command");
+        assert_eq!(vault.command_history().expect("read").len(), 2);
+
+        vault.clear_command_history().expect("clear");
+        assert!(vault.command_history().expect("read").is_empty());
+    }
+
+    #[test]
+    fn the_history_is_bounded() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        for index in 0..document::COMMAND_HISTORY_LIMIT + 5 {
+            vault
+                .remember_command(&format!("command-{index}"), index as u64)
+                .expect("remember");
+        }
+
+        let history = vault.command_history().expect("read");
+        assert_eq!(history.len(), document::COMMAND_HISTORY_LIMIT);
+        assert_eq!(
+            history[0].command,
+            format!("command-{}", document::COMMAND_HISTORY_LIMIT + 4)
+        );
     }
 }

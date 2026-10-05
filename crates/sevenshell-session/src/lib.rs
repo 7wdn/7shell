@@ -137,7 +137,10 @@ impl SessionRegistry {
             .await
             .get(handle)
             .map(|open| Arc::clone(&open.session))
-            .ok_or_else(|| ShellError::app_internal(format!("terminal {handle} is no longer open")))
+            // Not an internal error: a handle whose terminal has ended is a thing that happens to
+            // everybody who leaves a tab open, and the catalog has a code that says so — which is
+            // also what lets the interface translate it instead of printing an English sentence.
+            .ok_or_else(|| ShellError::session_not_found(handle))
     }
 
     /// Forwards one terminal's output to the host, and forgets the session when it ends.
@@ -193,7 +196,8 @@ mod tests {
 
         let error = registry.write("t404", b"ls\n").await.expect_err("no such terminal");
 
-        assert_eq!(error.code(), sevenshell_error::ErrorCode::AppInternal);
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionNotFound);
+        assert_eq!(error.diagnostics().get("sessionId").map(String::as_str), Some("t404"));
     }
 
     #[tokio::test]

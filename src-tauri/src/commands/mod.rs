@@ -17,5 +17,6 @@ pub mod known_hosts;
 pub mod monitor;
 pub mod sessions;
 pub mod settings;
+pub mod snippets;
 pub mod terminal;
 pub mod vault;

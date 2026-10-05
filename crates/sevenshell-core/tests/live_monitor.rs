@@ -281,7 +281,7 @@ async fn sampling_a_terminal_that_is_not_open_is_refused() {
         .await
         .expect_err("there is no terminal behind that handle");
 
-    assert_eq!(error.code(), ErrorCode::AppInternal);
+    assert_eq!(error.code(), ErrorCode::SessionNotFound);
 }
 
 /// The process page asks a question of its own, and the answer has to be a list somebody can read:

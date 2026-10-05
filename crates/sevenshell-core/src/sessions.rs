@@ -545,7 +545,7 @@ fn terminal_decision(decision: HostKeyDecision) -> OpenOutcome {
     }
 }
 
-fn now_seconds() -> u64 {
+pub(crate) fn now_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|since| since.as_secs())

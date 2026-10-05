@@ -13,11 +13,13 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sevenshell_types::{
-    AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, CpuCounters,
-    CpuModel, CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry,
-    LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail,
-    ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, Session, SessionAuth, SessionGroup,
-    SessionLayout, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest,
+    CommandHistoryEntry, CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, HostFailure,
+    HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
+    OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
+    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup, SessionLayout,
+    Snippet, SnippetGroup, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer, UploadOutcome,
+    VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -574,4 +576,79 @@ fn a_socket_row_serializes_with_camel_case_fields() {
         "a host that reports no counters is null, not zero"
     );
     assert_eq!(unattributed["peerPort"], serde_json::json!(52344));
+}
+
+/// What a saved command looks like once it has been through JSON, and what a send reports.
+///
+/// The slot history is checked field by field rather than only for camelCase: it is keyed by
+/// position, and a shape that flattened it would still serialize — into something the interface
+/// could not put a value back into.
+#[test]
+fn a_saved_command_serializes_with_camel_case_fields() {
+    let snippet = check(
+        &Snippet {
+            id: "snippet-1".to_owned(),
+            group_id: "default".to_owned(),
+            name: "restart nginx".to_owned(),
+            command: "systemctl restart #1".to_owned(),
+            append_cr: true,
+            order: 3,
+            slot_history: vec![vec!["nginx".to_owned(), "apache2".to_owned()], Vec::new()],
+        },
+        "Snippet",
+    );
+    assert_eq!(snippet["groupId"], serde_json::json!("default"));
+    assert_eq!(snippet["appendCr"], serde_json::json!(true));
+    assert_eq!(snippet["slotHistory"][0][1], serde_json::json!("apache2"));
+    assert_eq!(snippet["slotHistory"][1], serde_json::json!([]));
+
+    let group = check(
+        &SnippetGroup {
+            id: "default".to_owned(),
+            name: "default".to_owned(),
+            order: 0,
+            commands: Vec::new(),
+        },
+        "SnippetGroup",
+    );
+    assert_eq!(group["order"], serde_json::json!(0));
+
+    check(
+        &CommandHistoryEntry {
+            command: "uptime".to_owned(),
+            at: 1_700_000_000,
+        },
+        "CommandHistoryEntry",
+    );
+
+    let sent = check(
+        &SendOutcome::Sent {
+            report: SendReport {
+                sent: vec!["t1".to_owned()],
+                failures: vec![SendFailure {
+                    handle: "t2".to_owned(),
+                    code: "SESSION-NOT-FOUND".to_owned(),
+                    message_key: "errors.session.notFound".to_owned(),
+                    message_params: BTreeMap::from([("sessionId".to_owned(), "t2".to_owned())]),
+                    detail: None,
+                }],
+            },
+        },
+        "Sent",
+    );
+    assert_eq!(sent["kind"], serde_json::json!("sent"));
+    assert_eq!(sent["report"]["sent"][0], serde_json::json!("t1"));
+    assert_eq!(
+        sent["report"]["failures"][0]["messageKey"],
+        serde_json::json!("errors.session.notFound")
+    );
+
+    let target = check(
+        &SendTarget::Terminals {
+            handles: vec!["t1".to_owned(), "t2".to_owned()],
+        },
+        "SendTarget",
+    );
+    assert_eq!(target["kind"], serde_json::json!("terminals"));
+    assert_eq!(target["handles"][1], serde_json::json!("t2"));
 }

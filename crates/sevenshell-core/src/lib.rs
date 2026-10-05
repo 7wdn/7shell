@@ -12,9 +12,11 @@ mod batch;
 mod files;
 mod monitor;
 mod sessions;
+mod snippets;
 
 pub use archive::{ARCHIVE_TIMEOUT, archive_name, shell_quote};
 pub use batch::{BatchEvent, DEFAULT_PARALLEL, MAX_HOST_TIMEOUT, MAX_PARALLEL, MIN_HOST_TIMEOUT, classify_command};
 pub use files::FileSession;
 pub use monitor::SAMPLE_TIMEOUT;
 pub use sessions::{Core, CoreEvent, OPEN_TIMEOUT, TransferRecord};
+pub use snippets::classify_send;

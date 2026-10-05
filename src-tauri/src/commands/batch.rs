@@ -10,7 +10,7 @@
 use serde::Serialize;
 use sevenshell_core::BatchEvent;
 use sevenshell_error::ShellError;
-use sevenshell_types::{BatchHostResult, BatchOutcome, BatchRequest, RiskAssessment};
+use sevenshell_types::{BatchHostResult, BatchOutcome, BatchRequest};
 use tauri::{AppHandle, Emitter as _, State};
 
 use crate::state::ShellState;
@@ -24,15 +24,6 @@ use crate::state::ShellState;
 enum BatchProgress {
     HostStarted { session_id: String },
     HostFinished { result: Box<BatchHostResult> },
-}
-
-/// The verdict for a command, without running it.
-///
-/// The interface asks for this as somebody types, so the warning is on screen *before* the button
-/// is pressed rather than after.
-#[tauri::command]
-pub fn batch_classify(command: String) -> Result<RiskAssessment, ShellError> {
-    Ok(sevenshell_core::classify_command(&command))
 }
 
 /// Runs one command across the hosts in the request.

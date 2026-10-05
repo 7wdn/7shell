@@ -16,12 +16,23 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{AuthMethod, KeyInfo, KnownHostEntry, Session, SessionGroup};
+use sevenshell_types::{
+    AuthMethod, CommandHistoryEntry, DEFAULT_GROUP_ID, KeyInfo, KnownHostEntry, Session, SessionGroup, Snippet,
+    SnippetGroup,
+};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
-pub const VAULT_SCHEMA_VERSION: u32 = 1;
+///
+/// Version 2 added the command library and its history. An older build *can* parse a version 2
+/// document — it ignores fields it does not know — and would then write it back without them,
+/// which is the data loss this number exists to prevent.
+pub const VAULT_SCHEMA_VERSION: u32 = 2;
+
+/// How many sent commands are remembered. Enough to cover a working session's worth of "what was
+/// that line", and bounded so the vault does not grow with every command ever typed.
+pub const COMMAND_HISTORY_LIMIT: usize = 500;
 
 /// Everything a vault holds, as it is serialized into the encrypted payload.
 #[derive(Clone, Serialize, Deserialize)]
@@ -38,6 +49,13 @@ pub struct Document {
     pub secrets: Vec<StoredSecret>,
     #[serde(default)]
     pub known_hosts: Vec<KnownHostEntry>,
+    /// Commands kept for later, grouped. The default group exists from the first write, because a
+    /// command needs somewhere to live.
+    #[serde(default)]
+    pub snippet_groups: Vec<SnippetGroup>,
+    /// What was sent, newest first.
+    #[serde(default)]
+    pub command_history: Vec<CommandHistoryEntry>,
 }
 
 impl Document {
@@ -50,6 +68,8 @@ impl Document {
             keys: Vec::new(),
             secrets: Vec::new(),
             known_hosts: Vec::new(),
+            snippet_groups: vec![default_group()],
+            command_history: Vec::new(),
         }
     }
 
@@ -145,6 +165,149 @@ impl Document {
     pub(crate) fn forget_host(&mut self, host: &str, port: u16) {
         self.known_hosts
             .retain(|entry| !(entry.host == host && entry.port == port));
+    }
+
+    /// The command library, in the order the interface lists it.
+    pub(crate) fn snippet_groups(&self) -> Vec<SnippetGroup> {
+        let mut groups = self.snippet_groups.clone();
+        groups.sort_by(|a, b| a.order.cmp(&b.order).then(a.name.cmp(&b.name)));
+        for group in &mut groups {
+            group
+                .commands
+                .sort_by(|a, b| a.order.cmp(&b.order).then(a.name.cmp(&b.name)));
+        }
+        groups
+    }
+
+    /// Adds or renames a group, and answers with what was stored.
+    ///
+    /// A group with no id is a new one: it gets an id and lands at the end of the list.
+    pub(crate) fn save_snippet_group(&mut self, mut group: SnippetGroup) -> SnippetGroup {
+        if group.id.is_empty() {
+            group.id = format!("snippet-group-{}", Uuid::new_v4());
+        }
+        if group.id == DEFAULT_GROUP_ID {
+            // The default group is found rather than made, and its label is a translation rather
+            // than a name — so a rename here would be overwritten by the next interface that reads
+            // it, and storing one would be storing a lie.
+            group.name = String::new();
+        }
+
+        match self.snippet_groups.iter_mut().find(|existing| existing.id == group.id) {
+            Some(existing) => {
+                // The commands inside a group are not part of a rename: they are saved one at a
+                // time, and taking them from here would let a stale list delete the newest ones.
+                existing.name = group.name.clone();
+                existing.order = group.order;
+                existing.clone()
+            }
+            None => {
+                group.order = self.next_group_order();
+                group.commands.clear();
+                self.snippet_groups.push(group.clone());
+                group
+            }
+        }
+    }
+
+    /// Removes a group and the commands in it.
+    ///
+    /// Unlike a session group, what is inside goes with it: a command belongs to its group the way
+    /// a line belongs to the file it was written in, and "the folder is gone but its contents are
+    /// somewhere" would be a folder that only looks empty.
+    pub(crate) fn delete_snippet_group(&mut self, id: &str) -> Result<(), ShellError> {
+        if id == DEFAULT_GROUP_ID {
+            return Err(ShellError::app_unsupported("deleting the default command group"));
+        }
+        self.snippet_groups.retain(|group| group.id != id);
+        Ok(())
+    }
+
+    /// Adds or updates a saved command.
+    ///
+    /// A command whose group is gone lands in the default group rather than vanishing with it: the
+    /// alternative is a save that silently does nothing.
+    pub(crate) fn save_snippet(&mut self, mut snippet: Snippet) -> Snippet {
+        if snippet.id.is_empty() {
+            snippet.id = format!("snippet-{}", Uuid::new_v4());
+        }
+
+        let group_id = if self.snippet_groups.iter().any(|group| group.id == snippet.group_id) {
+            snippet.group_id.clone()
+        } else {
+            DEFAULT_GROUP_ID.to_owned()
+        };
+        snippet.group_id = group_id.clone();
+
+        let group = self
+            .snippet_groups
+            .iter_mut()
+            .find(|group| group.id == group_id)
+            .expect("the default group is always there");
+
+        match group.commands.iter_mut().find(|existing| existing.id == snippet.id) {
+            Some(existing) => {
+                existing.name = snippet.name.clone();
+                existing.command = snippet.command.clone();
+                existing.append_cr = snippet.append_cr;
+                existing.slot_history = snippet.slot_history.clone();
+                existing.group_id = snippet.group_id.clone();
+                existing.clone()
+            }
+            None => {
+                snippet.order = group.commands.iter().map(|command| command.order).max().unwrap_or(0) + 1;
+                group.commands.push(snippet.clone());
+                snippet
+            }
+        }
+    }
+
+    pub(crate) fn delete_snippet(&mut self, id: &str) {
+        for group in &mut self.snippet_groups {
+            group.commands.retain(|command| command.id != id);
+        }
+    }
+
+    /// What was sent, newest first.
+    pub(crate) fn command_history(&self) -> Vec<CommandHistoryEntry> {
+        self.command_history.clone()
+    }
+
+    /// Remembers a command that was sent.
+    ///
+    /// Sending the same line again moves it to the front rather than adding a second copy: the list
+    /// is read by scanning for a line, and five identical rows push the lines that were actually
+    /// different off the end.
+    pub(crate) fn remember_command(&mut self, command: &str, at: u64) {
+        let command = command.trim();
+        if command.is_empty() {
+            return;
+        }
+
+        self.command_history.retain(|entry| entry.command != command);
+        self.command_history.insert(
+            0,
+            CommandHistoryEntry {
+                command: command.to_owned(),
+                at,
+            },
+        );
+        self.command_history.truncate(COMMAND_HISTORY_LIMIT);
+    }
+
+    pub(crate) fn clear_command_history(&mut self) {
+        self.command_history.clear();
+    }
+
+    /// Adds the default group when a document predates it.
+    pub(crate) fn ensure_default_group(&mut self) {
+        if self.snippet_groups.iter().all(|group| group.id != DEFAULT_GROUP_ID) {
+            self.snippet_groups.insert(0, default_group());
+        }
+    }
+
+    fn next_group_order(&self) -> u32 {
+        self.snippet_groups.iter().map(|group| group.order).max().unwrap_or(0) + 1
     }
 
     /// Stores key material and returns the `KeyInfo` the interface should remember: the handle
@@ -368,14 +531,37 @@ impl<'de> Deserialize<'de> for SecretString {
 
 /// Brings a document written by an older build up to [`VAULT_SCHEMA_VERSION`].
 ///
-/// One arm today, because version 1 is the only shape that exists. A future version adds its
-/// step here (`1 => { ...; 2 }`) and `unlock` runs the chain before anything reads the
-/// document. A document from a *newer* build is refused instead of guessed at: silently
-/// dropping fields a future version needs is how a vault loses data.
-pub(crate) fn migrate(document: Document) -> Result<Document, ShellError> {
-    match document.schema_version {
-        VAULT_SCHEMA_VERSION => Ok(document),
-        found => Err(ShellError::store_schema_newer(found, VAULT_SCHEMA_VERSION)),
+/// Brings a stored document up to the shape this build reads.
+///
+/// A document from a *newer* build is refused instead of guessed at: silently dropping fields a
+/// future version needs is how a vault loses data.
+pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
+    if document.schema_version > VAULT_SCHEMA_VERSION {
+        return Err(ShellError::store_schema_newer(
+            document.schema_version,
+            VAULT_SCHEMA_VERSION,
+        ));
+    }
+
+    // 1 → 2: the command library arrived. An older document simply has none, and gets the group
+    // the first saved command will need.
+    if document.schema_version == 1 {
+        document.schema_version = 2;
+        document.ensure_default_group();
+    }
+
+    Ok(document)
+}
+
+/// The group every command has somewhere to land in.
+fn default_group() -> SnippetGroup {
+    SnippetGroup {
+        id: DEFAULT_GROUP_ID.to_owned(),
+        // Empty on purpose: this is the one group whose label is a translation, and a stored name
+        // would be frozen in whatever language was active when the vault was made.
+        name: String::new(),
+        order: 0,
+        commands: Vec::new(),
     }
 }
 
@@ -481,14 +667,42 @@ mod tests {
 
     #[test]
     fn a_newer_document_is_refused_with_the_schema_code() {
+        // One past this build's shape rather than a number written down: the point is that a
+        // *newer* document is refused, and a test naming a version has to be edited every time the
+        // current one moves — which is how such a test stops testing anything.
+        let found = VAULT_SCHEMA_VERSION + 1;
         let mut future = Document::empty();
-        future.schema_version = 2;
+        future.schema_version = found;
 
-        let error = migrate(future).expect_err("version 2 is not this build's shape");
+        let error = migrate(future).expect_err("a document from the future is not this build's shape");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::StoreSchemaNewer);
-        assert_eq!(error.message_params().get("found").map(String::as_str), Some("2"));
-        assert_eq!(error.message_params().get("supported").map(String::as_str), Some("1"));
+        assert_eq!(
+            error.message_params().get("found").map(String::as_str),
+            Some(found.to_string().as_str())
+        );
+        assert_eq!(
+            error.message_params().get("supported").map(String::as_str),
+            Some(VAULT_SCHEMA_VERSION.to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn a_document_without_a_library_gets_the_default_group() {
+        // What an older build wrote: version 1, no command library. Upgrading has to leave
+        // somewhere for the first saved command to go.
+        let raw = br#"{"schemaVersion":1,"sessions":[],"groups":[],"keys":[],"secrets":[],"knownHosts":[]}"#;
+
+        let document = from_slice(raw).expect("a version 1 document is readable");
+
+        assert_eq!(document.schema_version, VAULT_SCHEMA_VERSION);
+        assert_eq!(document.snippet_groups.len(), 1);
+        assert_eq!(document.snippet_groups[0].id, DEFAULT_GROUP_ID);
+        assert!(
+            document.snippet_groups[0].name.is_empty(),
+            "the default label is a translation"
+        );
+        assert!(document.command_history.is_empty());
     }
 
     #[test]
