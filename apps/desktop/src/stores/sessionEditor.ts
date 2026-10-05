@@ -15,10 +15,14 @@ import { computed, ref } from "vue";
 
 import { useSessionsStore } from "@/stores/sessions";
 import { PROTOCOLS, type AuthMethodId } from "@/types/generated/protocols";
-import type { ForwardMode, KeyInfo, LocalForward, SecretInput, Session } from "@/types/session";
+import type { ForwardMode, KeyInfo, LocalForward, SecretInput, Session, TerminalSettings } from "@/types/session";
 
 /** What `TerminalSettings::default()` uses in Rust: the wire type has no "not set" for these. */
-const DEFAULT_TERMINAL = { terminalType: "xterm-256color", keepaliveSeconds: 30 };
+const DEFAULT_TERMINAL: TerminalSettings = {
+  terminalType: "xterm-256color",
+  keepaliveSeconds: 30,
+  forwardAgent: false,
+};
 
 /** Bounds of a TCP port, and the one case where zero is a real answer: asking for a free one. */
 const PORT_MAX = 65535;
@@ -117,6 +121,12 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const jumps = ref<string[]>([]);
   const forwards = ref<ForwardDraft[]>([]);
 
+  /**
+   * The session's terminal settings, one of which is a choice: whether the far side may use this
+   * machine's key agent while the session lasts. The other two are the defaults Rust uses.
+   */
+  const terminal = ref<TerminalSettings>({ ...DEFAULT_TERMINAL });
+
   /** The route as the list draws it, in the order it is connected. A missing session stays a row. */
   const hops = computed<HopEntry[]>(() =>
     jumps.value.map((id) => ({ id, session: library.sessions.find((session) => session.id === id) })),
@@ -175,6 +185,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     keyHasPassphrase.value = false;
     jumps.value = [...(session?.jump ?? [])];
     forwards.value = (session?.forwards ?? []).map(draftFrom);
+    terminal.value = { ...(session?.terminal ?? DEFAULT_TERMINAL) };
   }
 
   /**
@@ -201,7 +212,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
         key: attachedKey.value ?? undefined,
         hasSecret: existing?.auth.hasSecret ?? false,
       },
-      terminal: existing?.terminal ?? DEFAULT_TERMINAL,
+      terminal: { ...terminal.value },
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
@@ -256,6 +267,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     keyHasPassphrase,
     jumps,
     forwards,
+    terminal,
     hops,
     hopChoices,
     sessionProblems,

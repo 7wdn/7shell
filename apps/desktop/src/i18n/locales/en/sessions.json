@@ -106,7 +106,12 @@
         "key": "Attach a key file for public-key authentication."
       },
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "terminal": {
+        "title": "Terminal",
+        "forwardAgent": "Let this server use the key agent on this machine",
+        "forwardAgentNote": "While the session is open, anything running on that server can ask for signatures. Leave it off unless the server needs it."
+      }
     },
     "hostKey": {
       "opening": "Opening {name}",

@@ -67,6 +67,7 @@ async fn lab() -> Option<Lab> {
         credential: Credential::Password(password),
         terminal_type: String::new(),
         keepalive_seconds: 0,
+        forward_agent: false,
         timeout: OPEN_TIMEOUT,
         expected_host_key: presented,
         size: TerminalSize::default(),

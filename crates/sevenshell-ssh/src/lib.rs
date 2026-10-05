@@ -74,6 +74,11 @@ pub struct OpenRequest {
     pub terminal_type: String,
     /// Seconds between keep-alives. Zero turns them off.
     pub keepalive_seconds: u16,
+    /// Whether to offer the far side the use of this machine's key agent.
+    ///
+    /// Asked of the *session* channel, because that is the process the far side would run: a
+    /// carrier carries channels and has no shell whose environment could hold the socket.
+    pub forward_agent: bool,
     /// The budget for the whole open — connecting, the key exchange, authentication and the
     /// channel — not for each step of it. Zero expires at once; there is no way to ask for
     /// no timeout, because a session that hangs forever is never what a caller wants.
@@ -145,6 +150,7 @@ mod tests {
             credential: Credential::Password("hunter2".to_owned()),
             terminal_type: "xterm-256color".to_owned(),
             keepalive_seconds: 30,
+            forward_agent: false,
             timeout: Duration::from_secs(15),
             expected_host_key: presented(),
             size: TerminalSize::default(),

@@ -52,6 +52,12 @@ capabilities:
     order: 80
     group: network
     labelKey: capability.agentForwarding.label
+    # Implemented — the request goes on the session channel and the reverse channel is bridged to
+    # this machine's agent — but not claimed yet. What is missing is proof of the *far side using
+    # it*: `crates/sevenshell-ssh/tests/live_agent_forwarding.rs` runs that end to end and has not
+    # been able to, on the machines this was built on, because neither agent there is one this build
+    # can reach. Run it where an agent is running (the test starts the server side itself), then
+    # drop this flag and claim the capability on the SSH descriptor.
     planned: true
 
   - key: jumpHost

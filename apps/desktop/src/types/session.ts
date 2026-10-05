@@ -27,6 +27,13 @@ export interface SessionAuth {
 export interface TerminalSettings {
   readonly terminalType: string;
   readonly keepaliveSeconds: number;
+  /**
+   * Whether the far side may use the key agent on this machine while the session lasts.
+   *
+   * Off by default, and off is the safe answer: while it is on, anything running on that server can
+   * ask this machine's agent to sign. It is a deliberate lending of the keys.
+   */
+  readonly forwardAgent: boolean;
 }
 
 /**

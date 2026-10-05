@@ -59,7 +59,10 @@ pub(crate) async fn connect() -> Result<Agent, ShellError> {
 }
 
 /// The stream to the agent, or why there is none.
-async fn environment_agent_stream() -> Result<BoxedStream, ShellError> {
+///
+/// A stream rather than a client, because one caller wants the socket itself: forwarding an agent
+/// is copying its bytes to the far side, and the protocol crossing does not need to be read here.
+pub(crate) async fn environment_agent_stream() -> Result<BoxedStream, ShellError> {
     // `$SSH_AUTH_SOCK` first on every platform: a setup that names an agent means that one, and on
     // Windows that is also how a forwarded agent arrives.
     if let Some(path) = std::env::var_os("SSH_AUTH_SOCK").filter(|value| !value.is_empty()) {

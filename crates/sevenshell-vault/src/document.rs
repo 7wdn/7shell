@@ -27,9 +27,11 @@ use zeroize::{Zeroize, Zeroizing};
 ///
 /// Version 2 added the command library and its history. Version 3 added a forward's mode: a build
 /// that predates it can parse the document, ignore the field and write the forward back as a
-/// *local* one — a tunnel to the wrong place rather than a missing line, which is the kind of
-/// change this number exists to refuse.
-pub const VAULT_SCHEMA_VERSION: u32 = 3;
+/// *local* one — a tunnel to the wrong place rather than a missing line. Version 4 added a session's
+/// agent forwarding, which such a build would drop on its next write — a setting changed without
+/// anybody saying so, in the direction of "off", which is the safe way round but still not a thing
+/// to do quietly.
+pub const VAULT_SCHEMA_VERSION: u32 = 4;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -565,8 +567,9 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
         document.ensure_default_group();
     }
 
-    // 2 → 3: forwards gained a mode. Nothing to rewrite — a forward without one is a local forward,
-    // which is what every forward was — so the step is the version number alone.
+    // 2 → 3: forwards gained a mode. 3 → 4: a session gained agent forwarding. Neither has
+    // anything to rewrite — the defaults are what every document meant — so both steps are the
+    // version number alone.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)

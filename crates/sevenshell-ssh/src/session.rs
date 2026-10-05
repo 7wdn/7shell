@@ -235,6 +235,7 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
         credential,
         terminal_type,
         keepalive_seconds,
+        forward_agent,
         timeout,
         expected_host_key,
         size,
@@ -256,11 +257,15 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
     };
 
     let ending: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    // Shared with the handler, which decides whether a channel the server opens for the agent is
+    // bridged to this machine's agent. Set below, once the session channel exists.
+    let agent_forwarding = Arc::new(AtomicBool::new(false));
     let check = KeyCheck {
         expected: ExpectedKey::new(&expected_host_key.key_type, &expected_host_key.public_key),
         host: target.host.clone(),
         port: target.port,
         ending: Arc::clone(&ending),
+        agent_forwarding: Arc::clone(&agent_forwarding),
     };
 
     // A route through a hop is the same handshake on a different stream: the channel behaves like
@@ -293,6 +298,17 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
                 .map_err(|error| channel_failure(&target, "a session channel could not be opened", &error))?;
             request_terminal(&mut channel, &target, &terminal_type, size, &events).await?;
 
+            if forward_agent {
+                // Asked with `want_reply: false`, the way the ssh command line asks: a server that
+                // does not forward the agent simply does not, and there is nothing useful to say to
+                // whoever is opening a terminal about it.
+                channel
+                    .agent_forward(false)
+                    .await
+                    .map_err(|error| channel_failure(&target, "the agent could not be offered", &error))?;
+                agent_forwarding.store(true, Ordering::Relaxed);
+            }
+
             let (reading, writing) = channel.split();
             let reader = spawn_reader(reading, events, Arc::clone(&ending), Arc::clone(&closing));
             (Some(writing), Some(reader))
@@ -308,6 +324,27 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
         port: target.port,
         upstream,
     })
+}
+
+/// Carries one agent connection between the far side and the agent on this machine.
+///
+/// One task per channel, and a channel per connection the far side wants to make: an agent is
+/// asked for one signature at a time over a fresh connection, which is why the bytes can simply be
+/// copied in both directions and nothing here has to understand the protocol.
+fn bridge_to_agent(channel: Channel<Msg>) {
+    tokio::spawn(async move {
+        // The socket rather than a client: what crosses is the agent protocol itself, and copying
+        // the bytes means this build never has to understand a message of it — which is also how it
+        // stays true that no key material passes through here.
+        let Ok(mut agent) = crate::agent::environment_agent_stream().await else {
+            // No agent on this machine, or none this build can reach: the far side is left with a
+            // channel that closes, which is what an agent that is not there does anyway.
+            return;
+        };
+
+        let mut remote = channel.into_stream();
+        let _ = tokio::io::copy_bidirectional(&mut remote, &mut agent).await;
+    });
 }
 
 /// The configuration one connection runs under.
@@ -749,6 +786,11 @@ struct KeyCheck {
     host: String,
     port: u16,
     ending: Arc<Mutex<Option<String>>>,
+    /// Whether this connection offered the far side the use of the local agent. The default
+    /// implementation of the channel handler accepts whatever the server asks for, so the *bridge*
+    /// is where the answer has to be checked: without this flag a server that never had forwarding
+    /// offered could still open the channel and ask this machine's agent to sign.
+    agent_forwarding: Arc<AtomicBool>,
 }
 
 impl client::Handler for KeyCheck {
@@ -771,6 +813,32 @@ impl client::Handler for KeyCheck {
             self.port,
             key.algorithm().as_str(),
         )))
+    }
+
+    /// The far side wants to use the agent on this machine.
+    ///
+    /// Answered only when this connection offered it. The channel is then bridged, byte for byte,
+    /// to the agent's own socket: the agent protocol is what crosses, and this build never sees a
+    /// key — it sees an agent's request for a signature and passes it along, which is the whole
+    /// point of forwarding rather than handing anything over.
+    async fn server_channel_open_agent_forward(
+        &mut self,
+        channel: Channel<Msg>,
+        reply: russh::client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if !self.agent_forwarding.load(Ordering::Relaxed) {
+            // Silence and a refused channel: nothing was offered to this server, and a channel
+            // opened anyway is not a conversation this connection has.
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+
+        reply.accept().await;
+        bridge_to_agent(channel);
+        Ok(())
     }
 
     /// The session is over. Keeping the reason is what lets the reader task end the caller's
@@ -798,6 +866,9 @@ mod tests {
     /// about what happens before any server says anything.
     fn a_request(host: &str, port: u16, credential: Credential) -> OpenRequest {
         OpenRequest {
+            // Nothing in these tests offers the far side the agent: what they are about is the
+            // order of key checking and authentication, and none of it forwards anything.
+            forward_agent: false,
             target: Target {
                 host: host.to_owned(),
                 port,
@@ -1003,6 +1074,7 @@ mod live_tests {
 
     fn request(lab: &Lab, expected_host_key: PresentedHostKey, credential: Credential) -> OpenRequest {
         OpenRequest {
+            forward_agent: false,
             target: Target {
                 host: lab.host.clone(),
                 port: lab.port,

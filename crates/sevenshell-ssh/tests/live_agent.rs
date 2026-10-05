@@ -80,6 +80,7 @@ async fn connect(
         credential,
         terminal_type: String::new(),
         keepalive_seconds: 0,
+        forward_agent: false,
         timeout: TIMEOUT,
         expected_host_key: presented,
         size: TerminalSize::default(),

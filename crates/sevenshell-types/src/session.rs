@@ -139,6 +139,13 @@ pub struct KeyInfo {
 pub struct TerminalSettings {
     pub terminal_type: String,
     pub keepalive_seconds: u16,
+    /// Whether the far side may use the key agent on this machine while the session lasts.
+    ///
+    /// Off by default, and off is the safe answer: while it is on, anything running on that server
+    /// — including something an attacker put there — can ask this machine's agent to sign. It is a
+    /// deliberate lending of the keys, for as long as the session is open.
+    #[serde(default)]
+    pub forward_agent: bool,
 }
 
 impl Default for TerminalSettings {
@@ -146,6 +153,7 @@ impl Default for TerminalSettings {
         Self {
             terminal_type: "xterm-256color".to_owned(),
             keepalive_seconds: 30,
+            forward_agent: false,
         }
     }
 }

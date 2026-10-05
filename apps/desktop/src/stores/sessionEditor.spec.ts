@@ -27,7 +27,7 @@ function sample(id: string, name: string): Session {
     port: 22,
     user: "root",
     auth: { method: "password", hasSecret: false },
-    terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30 },
+    terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false },
     updatedAt: 1_700_000_000,
   };
 }

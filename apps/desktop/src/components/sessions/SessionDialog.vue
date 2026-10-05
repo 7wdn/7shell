@@ -405,6 +405,25 @@ async function forgetKey(): Promise<void> {
           </section>
 
           <section>
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.terminal.title") }}</h3>
+
+            <label class="mt-2 flex items-start gap-2 text-xs">
+              <input v-model="editor.terminal.forwardAgent" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
+              <span>
+                <span>{{ t("sessions.editor.terminal.forwardAgent") }}</span>
+                <!--
+                  Said plainly, next to the switch: this is the one setting here that lends
+                  something to the far side, and what it lends is the ability to sign with the keys
+                  in this machine's agent.
+                -->
+                <span class="mt-0.5 block text-[11px] text-muted-foreground">
+                  {{ t("sessions.editor.terminal.forwardAgentNote") }}
+                </span>
+              </span>
+            </label>
+          </section>
+
+          <section>
             <h3 class="text-xs font-medium">{{ t("sessions.editor.jumps.title") }}</h3>
             <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.jumps.note") }}</p>
 

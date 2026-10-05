@@ -152,6 +152,9 @@ impl Core {
             credential,
             terminal_type: session.terminal.terminal_type.clone(),
             keepalive_seconds: session.terminal.keepalive_seconds,
+            // Only the terminal: it is the channel whose far side runs a shell, and a shell is
+            // what has an environment for the agent's socket. A carrier carries channels.
+            forward_agent: session.terminal.forward_agent,
             timeout: self.timeout,
             expected_host_key: presented,
             size: INITIAL_SIZE,
@@ -321,6 +324,7 @@ impl Core {
                 // would leave a process running on the jump host for no reason.
                 terminal_type: String::new(),
                 keepalive_seconds: hop_session.terminal.keepalive_seconds,
+                forward_agent: false,
                 timeout: self.timeout,
                 expected_host_key: presented,
                 size: INITIAL_SIZE,
@@ -478,6 +482,7 @@ impl Core {
             credential,
             terminal_type: String::new(),
             keepalive_seconds: session.terminal.keepalive_seconds,
+            forward_agent: false,
             timeout: self.timeout,
             expected_host_key: presented,
             size: INITIAL_SIZE,

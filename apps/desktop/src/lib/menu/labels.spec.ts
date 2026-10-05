@@ -70,7 +70,7 @@ const session: Session = {
   port: 22,
   user: "root",
   auth: { method: "password", hasSecret: true },
-  terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30 },
+  terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false },
   updatedAt: 1_700_000_000,
 };
 const group: SessionGroup = { id: "group-1", name: "Work", order: 0 };

@@ -106,7 +106,12 @@
         "key": "公钥认证需要先附加一个密钥文件。"
       },
       "save": "保存",
-      "cancel": "取消"
+      "cancel": "取消",
+      "terminal": {
+        "title": "终端",
+        "forwardAgent": "允许这台服务器使用本机的密钥代理",
+        "forwardAgentNote": "会话打开期间，那台服务器上运行的任何程序都可以请求签名。除非服务器确实需要，否则不要打开。"
+      }
     },
     "hostKey": {
       "opening": "正在打开 {name}",

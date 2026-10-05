@@ -36,7 +36,7 @@ function session(id: string, name: string): Session {
     port: 22,
     user: "root",
     auth: { method: "password", hasSecret: true },
-    terminal: { terminalType: "xterm-256color", keepaliveSeconds: 0 },
+    terminal: { terminalType: "xterm-256color", keepaliveSeconds: 0, forwardAgent: false },
     updatedAt: 0,
   };
 }
