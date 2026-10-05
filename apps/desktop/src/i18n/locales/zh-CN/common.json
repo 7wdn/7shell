@@ -2,6 +2,7 @@
   "common": {
     "action": {
       "close": "关闭",
+      "cancel": "取消",
       "retry": "重试"
     },
     "status": {

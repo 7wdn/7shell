@@ -262,6 +262,42 @@ pub enum TransferDirection {
     Upload,
 }
 
+/// What an upload did: sent everything, asked about a name, or nothing at all.
+///
+/// An upload is the one transfer that can destroy something without being asked to — a file that is
+/// already there is what the bytes land on — so the names on the far side are looked at before
+/// anything is sent, and a name that is taken comes back as a question. The local paths stay where
+/// they were chosen meanwhile; the token is what stands for them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum UploadOutcome {
+    /// The transfers are running: one id per file, or one for a batch that travels packed.
+    Started { ids: Vec<String> },
+    /// Some of what was chosen is already there. Nothing has been sent.
+    Conflict {
+        /// What stands for this upload while the question is open.
+        token: String,
+        /// The names already on the far side, which is what the question is about.
+        names: Vec<String>,
+        /// Whether "send only what is missing" is a real answer — it is not, for one archive.
+        skippable: bool,
+    },
+    /// Nothing was chosen, or the question was answered with "no".
+    Cancelled,
+}
+
+/// The answer to that question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UploadAnswer {
+    /// Send them anyway: what is on the far side is replaced.
+    Overwrite,
+    /// Send only the files whose names are free.
+    Skip,
+    /// Send nothing, and forget the choice.
+    Cancel,
+}
+
 /// A transfer that is running, or has stopped.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

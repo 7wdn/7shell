@@ -4,15 +4,20 @@
 //! here. The interface names neither: it asks for a file to be saved or sent, and receives the id
 //! of the transfer that does it — the same rule that keeps a script in a webview from choosing
 //! where somebody's files land.
+//!
+//! An upload is the one that can replace something, so it looks before it sends: the names on the
+//! far side are checked first, and a name that is taken comes back as a question rather than as a
+//! transfer. The files that were chosen wait in `uploads` while the question is answered.
 
 use std::path::PathBuf;
 
 use sevenshell_error::ShellError;
-use sevenshell_types::{EntryKind, SftpListing, SftpOutcome, TransferInfo};
+use sevenshell_types::{EntryKind, SftpListing, SftpOutcome, TransferInfo, UploadAnswer, UploadOutcome};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::state::ShellState;
+use crate::uploads::PendingUpload;
 
 /// Opens a file browser for a saved session.
 #[tauri::command]
@@ -182,11 +187,11 @@ pub async fn files_upload(
     directory: String,
     title: String,
     packed: bool,
-) -> Result<Option<String>, ShellError> {
+) -> Result<UploadOutcome, ShellError> {
     if packed {
         let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_files()).await?;
         let Some(chosen) = chosen else {
-            return Ok(None);
+            return Ok(UploadOutcome::Cancelled);
         };
 
         let mut sources: Vec<PathBuf> = Vec::with_capacity(chosen.len());
@@ -196,24 +201,107 @@ pub async fn files_upload(
             })?);
         }
 
-        return state
-            .core()
-            .start_packed_upload(&handle, sources, &directory)
-            .await
-            .map(Some);
+        return start_or_ask(&state, handle, directory, sources, true).await;
     }
 
     let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_file()).await?;
 
     let Some(chosen) = chosen else {
-        return Ok(None);
+        return Ok(UploadOutcome::Cancelled);
     };
 
     let local: PathBuf = chosen
         .into_path()
         .map_err(|error| ShellError::sftp_transfer_failed(&directory, format!("that file cannot be read: {error}")))?;
 
-    state.core().start_upload(&handle, local, &directory).await.map(Some)
+    start_or_ask(&state, handle, directory, vec![local], false).await
+}
+
+/// The answer to the question an upload asked about the names already there.
+#[tauri::command]
+pub async fn files_upload_answer(
+    state: State<'_, ShellState>,
+    token: String,
+    answer: UploadAnswer,
+) -> Result<UploadOutcome, ShellError> {
+    let upload = state.pending_uploads().take(&token).await?;
+
+    let sources = match answer {
+        UploadAnswer::Overwrite => upload.sources.clone(),
+        UploadAnswer::Skip => upload.missing(),
+        // Nothing is sent, and the files that were waiting are forgotten with the token.
+        UploadAnswer::Cancel => return Ok(UploadOutcome::Cancelled),
+    };
+
+    if sources.is_empty() {
+        return Ok(UploadOutcome::Cancelled);
+    }
+
+    start_uploads(&state, &upload.handle, &upload.directory, &sources, upload.packed).await
+}
+
+/// Sends the files, or stops and comes back with the names that are already there.
+///
+/// The check is a look at names rather than at contents, so it can say "this one would be replaced"
+/// without having read anything: what is on the far side is only a decision for whoever is sending.
+async fn start_or_ask(
+    state: &ShellState,
+    handle: String,
+    directory: String,
+    sources: Vec<PathBuf>,
+    packed: bool,
+) -> Result<UploadOutcome, ShellError> {
+    if sources.is_empty() {
+        return Ok(UploadOutcome::Cancelled);
+    }
+
+    let taken = state.core().upload_names_taken(&handle, &directory, &sources).await?;
+    if taken.is_empty() {
+        return start_uploads(state, &handle, &directory, &sources, packed).await;
+    }
+
+    // A single file has nothing to leave out — the answer is yes or no — and an archive is unpacked
+    // as a whole, so there is nothing to skip inside it either.
+    let skippable = !packed && sources.len() > 1;
+    let token = state
+        .pending_uploads()
+        .remember(PendingUpload {
+            handle,
+            directory,
+            sources,
+            packed,
+            taken: taken.clone(),
+        })
+        .await;
+
+    Ok(UploadOutcome::Conflict {
+        token,
+        names: taken,
+        skippable,
+    })
+}
+
+/// Starts the transfers themselves: one per file, or one archive for a batch that travels packed.
+async fn start_uploads(
+    state: &ShellState,
+    handle: &str,
+    directory: &str,
+    sources: &[PathBuf],
+    packed: bool,
+) -> Result<UploadOutcome, ShellError> {
+    if packed {
+        let id = state
+            .core()
+            .start_packed_upload(handle, sources.to_vec(), directory)
+            .await?;
+        return Ok(UploadOutcome::Started { ids: vec![id] });
+    }
+
+    let mut ids = Vec::with_capacity(sources.len());
+    for source in sources {
+        ids.push(state.core().start_upload(handle, source.clone(), directory).await?);
+    }
+    Ok(UploadOutcome::Started { ids })
 }
 
 /// Uploads files the operating system handed us — a drop, or a paste — into a directory.
@@ -233,23 +321,9 @@ pub async fn dropped_upload(
     directory: String,
     token: String,
     packed: bool,
-) -> Result<Vec<String>, ShellError> {
+) -> Result<UploadOutcome, ShellError> {
     let paths = state.pending_drops().take(&token).await?;
-
-    if packed {
-        return state
-            .core()
-            .start_packed_upload(&handle, paths, &directory)
-            .await
-            .map(|id| vec![id]);
-    }
-
-    let mut started = Vec::with_capacity(paths.len());
-    for path in paths {
-        started.push(state.core().start_upload(&handle, path, &directory).await?);
-    }
-
-    Ok(started)
+    start_or_ask(&state, handle, directory, paths, packed).await
 }
 
 /// The file list on the clipboard, as a token and the files' names.

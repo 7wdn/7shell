@@ -81,9 +81,25 @@ function groupNameField(): HTMLInputElement | null {
   return host.querySelector<HTMLInputElement>('input[aria-label="Group name"]');
 }
 
-/** Every button whose visible text is exactly this, which is how the confirmations are found. */
-function buttonNamed(text: string): HTMLElement | undefined {
-  return [...host.querySelectorAll<HTMLElement>("button")].find((button) => button.textContent?.trim() === text);
+/**
+ * The confirmation, which is teleported out of the sidebar and onto the body.
+ *
+ * That is the point of it: a question drawn inside the list would be answered from inside the list's
+ * own indentation and scroll position, and two of them could be open at once.
+ */
+function confirmDialog(): HTMLElement {
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  if (!dialog) {
+    throw new Error("no confirmation is on screen");
+  }
+  return dialog;
+}
+
+/** One of the dialog's own buttons, by the words on it. */
+function dialogButton(text: string): HTMLElement | undefined {
+  return [...confirmDialog().querySelectorAll<HTMLElement>("button")].find(
+    (button) => button.textContent?.trim() === text,
+  );
 }
 
 function rowElement(key: string): HTMLElement {
@@ -474,10 +490,13 @@ describe("changing a group", () => {
     pick(entries, "remove-group").run();
     await nextTick();
 
-    expect(host.textContent).toContain("Delete the group “Work”?");
-    expect(host.textContent).toContain("they move out to Ungrouped");
+    // The question is a dialog of its own, over the list rather than in the heading — nothing has
+    // happened yet, and the row the question is about is still drawn where it was.
+    expect(confirmDialog().textContent).toContain("Delete the group “Work”?");
+    expect(confirmDialog().textContent).toContain("move out to Ungrouped");
+    expect(heading("Work")).not.toBeNull();
 
-    buttonNamed("Delete")?.click();
+    dialogButton("Delete group")?.click();
     await vi.waitFor(() => expect(vi.mocked(groupDelete)).toHaveBeenCalledWith("group-1"));
 
     await vi.waitFor(() => expect(heading("Work")).toBeNull());
@@ -492,11 +511,12 @@ describe("changing a group", () => {
     const entries = await rightClick(headingRow("Work"));
     pick(entries, "remove-group").run();
     await nextTick();
-    buttonNamed("Cancel")?.click();
+    dialogButton("Cancel")?.click();
+    await nextTick();
     await nextTick();
 
     expect(vi.mocked(groupDelete)).not.toHaveBeenCalled();
-    expect(host.textContent).not.toContain("Delete the group");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(heading("Work")).not.toBeNull();
   });
 });

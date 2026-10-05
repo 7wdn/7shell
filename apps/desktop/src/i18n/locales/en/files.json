@@ -17,6 +17,12 @@
     "upload": "Upload",
     "uploadTitle": "Choose a file to upload",
     "uploadPackedTitle": "Choose the files to pack and upload",
+    "uploadConflict": {
+      "title": "Some names are already there",
+      "message": "These names already exist in this folder. Sending would replace what is on the far side.",
+      "overwrite": "Overwrite",
+      "skip": "Skip those"
+    },
     "downloadTitle": "Choose where to save this file",
     "downloadPackedTitle": "Choose the folder to download into",
     "empty": "This directory is empty.",
@@ -39,11 +45,12 @@
       "submit": "Rename"
     },
     "delete": {
-      "confirmFile": "Delete “{name}”?",
-      "confirmDirectory": "Delete “{name}” and everything under it?",
-      "confirmItems": "Delete these {count} items?",
-      "note": "This cannot be undone.",
-      "submit": "Delete"
+      "file": "Delete file",
+      "folder": "Delete folder",
+      "items": "Delete {count} items",
+      "fileMessage": "Delete “{name}”? This cannot be undone.",
+      "folderMessage": "Delete “{name}” and everything under it? This cannot be undone.",
+      "itemsMessage": "Delete these {count} items? This cannot be undone."
     },
     "cancel": "Cancel",
     "editor": {
@@ -51,7 +58,12 @@
       "description": "Remote text file",
       "note": "A plain text editor: no syntax highlighting yet.",
       "loading": "Reading the file…",
-      "save": "Save"
+      "save": "Save",
+      "unsavedTitle": "Unsaved changes",
+      "unsavedMessage": "Save “{name}” before closing? “Discard changes” throws away what was typed.",
+      "unsavedKeep": "Keep editing",
+      "unsavedDiscard": "Discard changes",
+      "unsavedSave": "Save and close"
     },
     "transfer": {
       "title": "Transfers",

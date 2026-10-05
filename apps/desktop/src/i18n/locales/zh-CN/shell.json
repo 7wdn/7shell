@@ -9,6 +9,13 @@
     "sidebar": {
       "sessions": "会话",
       "protocols": "协议"
+    },
+    "quit": {
+      "title": "还有没做完的事，仍然退出？",
+      "message": "现在关闭会丢掉还没保存的内容，也会中断正在进行的传输。",
+      "unsaved": "有编辑器还没保存改动。",
+      "transfers": "还有传输正在进行。",
+      "confirm": "退出"
     }
   }
 }

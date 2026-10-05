@@ -21,12 +21,13 @@
  * events is made here, once, before the first terminal can exist.
  */
 import { RotateCw } from "@lucide/vue";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import ContextMenu from "@/components/shell/ContextMenu.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
 import ToastViewport from "@/components/shell/ToastViewport.vue";
@@ -60,8 +61,97 @@ let stopDragEvents: (() => void) | undefined;
 let stopDropEvents: (() => void) | undefined;
 let stopPaste: (() => void) | undefined;
 let stopContextMenu: (() => void) | undefined;
+let stopQuitRequested: (() => void) | undefined;
 
 const backendFailure = computed(() => (app.failure ? describeShellError(translate, app.failure) : null));
+
+/**
+ * What the upload that stopped says, or nothing when none did.
+ *
+ * The question is the store's — an upload can be started from a panel's button, a drop on the
+ * window, or a paste, and all three have to be answered once — and this is where it is drawn,
+ * because a question about where somebody's bytes are going belongs to the frame rather than to
+ * whichever panel happens to be on screen.
+ */
+const uploadQuestion = computed(() => {
+  const asked = files.uploadConflict;
+  if (!asked) {
+    return null;
+  }
+  return {
+    message: t("files.uploadConflict.message"),
+    details: asked.names,
+    overwrite: t("files.uploadConflict.overwrite"),
+    skip: asked.skippable ? t("files.uploadConflict.skip") : undefined,
+  };
+});
+
+/** Whether the question about quitting is on screen. */
+const quitting = ref(false);
+
+/**
+ * What a close right now would throw away, in the order somebody would care about it.
+ *
+ * An empty list is the answer to "may the window just close?", and it is what arms the shell's quit
+ * guard: armed, the close comes back as a question instead of ending the process. Reading it from
+ * two facts rather than guessing is the point — the shell can see neither an editor's buffer nor a
+ * transfer's progress on its own.
+ */
+const quitReasons = computed(() => {
+  const reasons: string[] = [];
+  if (files.unsavedEditors.length > 0) {
+    reasons.push(t("shell.quit.unsaved"));
+  }
+  if (files.transfers.some((entry) => entry.state.kind === "running")) {
+    reasons.push(t("shell.quit.transfers"));
+  }
+  return reasons;
+});
+
+/**
+ * A close that was held back.
+ *
+ * The guard is the shell's, so the window never refuses to close on its own — it asks. Nothing to
+ * lose closes straight away, which is the path every ordinary quit takes.
+ */
+async function askedToQuit(): Promise<void> {
+  if (quitReasons.value.length === 0) {
+    await quitNow();
+    return;
+  }
+  quitting.value = true;
+}
+
+/** Closing for real: the guard goes down first, so the same request passes through this time. */
+async function quitNow(): Promise<void> {
+  quitting.value = false;
+  try {
+    await backend.window.quitGuard(false);
+    await backend.window.close();
+  } catch {
+    // A browser has no window to close, and a window that will not close is not something this
+    // side can do anything about.
+  }
+}
+
+/**
+ * Keeps the shell's guard in step with what is at stake.
+ *
+ * Armed only while there is something to lose, so an ordinary close is never held up — and so a
+ * frontend that has died, leaving the flag where it was, is the only thing a stuck window could be
+ * blamed on.
+ */
+watch(
+  () => quitReasons.value.length > 0,
+  (armed) => {
+    void backend.window.quitGuard(armed).catch((error: unknown) => {
+      // Nothing to guard in a browser, and a shell that will not take the flag is worth saying out
+      // loud: the window would close over unsaved text without asking.
+      console.warn("the quit guard could not be set", error);
+    });
+  },
+  { immediate: true },
+);
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -194,6 +284,7 @@ onMounted(async () => {
   window.addEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopContextMenu = () => window.removeEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopTerminalEvents = terminals.initialize();
+  stopQuitRequested = await backend.events.onQuitRequested(() => void askedToQuit());
   await preferences.load();
   await app.load();
   await reportFirstFrame();
@@ -207,6 +298,7 @@ onBeforeUnmount(() => {
   stopDropEvents?.();
   stopPaste?.();
   stopContextMenu?.();
+  stopQuitRequested?.();
 });
 </script>
 
@@ -258,6 +350,40 @@ onBeforeUnmount(() => {
       @trust="terminals.confirmTrust()"
       @replace="terminals.confirmReplace()"
       @cancel="terminals.dismiss()"
+    />
+
+    <!--
+      An upload that would replace a name already on the far side. Answering "no" tells the backend
+      to forget the files it was holding, so a cancelled question leaves nothing behind.
+    -->
+    <ConfirmDialog
+      v-if="uploadQuestion"
+      :open="true"
+      :title="t('files.uploadConflict.title')"
+      :message="uploadQuestion.message"
+      :details="uploadQuestion.details"
+      :discard-label="uploadQuestion.skip"
+      :confirm-label="uploadQuestion.overwrite"
+      danger
+      @confirm="files.answerUpload('overwrite')"
+      @discard="files.answerUpload('skip')"
+      @update:open="files.answerUpload('cancel')"
+    />
+
+    <!--
+      A close that was held back because something would be lost. Saying "no" leaves everything as
+      it was, which is the point: the window is still there and so is the work.
+    -->
+    <ConfirmDialog
+      v-if="quitting"
+      :open="true"
+      :title="t('shell.quit.title')"
+      :message="t('shell.quit.message')"
+      :details="quitReasons"
+      :confirm-label="t('shell.quit.confirm')"
+      danger
+      @confirm="quitNow()"
+      @update:open="quitting = false"
     />
 
     <div

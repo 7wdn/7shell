@@ -2,6 +2,7 @@
   "common": {
     "action": {
       "close": "Close",
+      "cancel": "Cancel",
       "retry": "Retry"
     },
     "status": {

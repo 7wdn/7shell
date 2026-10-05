@@ -608,6 +608,60 @@ async fn creating_a_name_that_is_taken_is_refused_rather_than_emptied() {
 
 #[tokio::test]
 #[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn an_upload_is_told_which_of_its_names_are_already_there() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    // The awkward folder this makes is not what this test is about; it is only the workspace's shape.
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // Something that is already there, put there through the same door a person would use.
+    let occupied = format!("{workspace}/there.txt");
+    lab.core
+        .write_text_file(&handle, &occupied, "already here\n")
+        .await
+        .expect("write the file that is already there");
+
+    let here = tempdir().expect("a local folder to send from");
+    let taken = here.path().join("there.txt");
+    let free = here.path().join("fresh.txt");
+    std::fs::write(&taken, "mine\n").expect("write the local file");
+    std::fs::write(&free, "mine\n").expect("write the local file");
+
+    let names = lab
+        .core
+        .upload_names_taken(&handle, &workspace, &[taken, free])
+        .await
+        .expect("check the names");
+
+    assert_eq!(
+        names,
+        vec!["there.txt".to_owned()],
+        "only the name that is taken is reported"
+    );
+
+    // Looking is not sending: what was there is untouched, and the free name was not created by
+    // being checked.
+    assert_eq!(
+        lab.core.read_text_file(&handle, &occupied).await.expect("read it back"),
+        "already here\n"
+    );
+    let listing = lab
+        .core
+        .list_files(&handle, &workspace)
+        .await
+        .expect("list the workspace");
+    assert!(
+        listing.entries.iter().all(|entry| entry.name != "fresh.txt"),
+        "checking a name does not create it"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
 async fn a_missing_file_says_what_is_missing() {
     let Some(lab) = lab() else {
         return;

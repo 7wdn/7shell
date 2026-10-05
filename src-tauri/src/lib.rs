@@ -8,12 +8,13 @@ mod clipboard;
 mod commands;
 mod dropped;
 mod state;
+mod uploads;
 mod window_chrome;
 
 use std::sync::Arc;
 
 use sevenshell_core::Core;
-use tauri::Manager as _;
+use tauri::{Emitter as _, Manager as _};
 
 pub fn run() {
     tauri::Builder::default()
@@ -34,6 +35,18 @@ pub fn run() {
                 report_drag(window, drag);
             }
 
+            // A close the interface asked to think about first. Only while it has said there is
+            // something to lose: an unarmed guard closes the window here and now, which is also what
+            // keeps a frontend that has died from leaving a window nobody can shut.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event
+                && window
+                    .try_state::<state::ShellState>()
+                    .is_some_and(|shell_state| shell_state.quit_guard())
+            {
+                api.prevent_close();
+                let _ = window.emit("quit-requested", ());
+            }
+
             // On the way out, tell the servers we are leaving rather than letting the sockets time
             // out. Fire and forget: closing the window must not wait for the network.
             if let tauri::WindowEvent::Destroyed = event
@@ -46,6 +59,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
             commands::app::app_ready,
+            commands::app::window_quit_guard,
             commands::settings::settings_get,
             commands::settings::settings_set,
             commands::vault::vault_state,
@@ -87,6 +101,7 @@ pub fn run() {
             commands::files::files_close,
             commands::files::files_download,
             commands::files::files_upload,
+            commands::files::files_upload_answer,
             commands::files::transfers_open,
             commands::files::transfer_cancel,
             commands::files::dropped_upload,

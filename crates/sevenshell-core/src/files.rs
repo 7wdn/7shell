@@ -127,6 +127,34 @@ impl Core {
         .await
     }
 
+    /**
+     * Which of these files would land on a name that is already there.
+     *
+     * The names only, so this is safe to hand to the interface, and one look each: it is the whole
+     * input of the question an upload asks before it sends anything. A name that is taken is not a
+     * failure — it is what would be *replaced* by what is sent, and that is somebody's decision.
+     */
+    pub async fn upload_names_taken(
+        &self,
+        handle: &str,
+        directory: &str,
+        sources: &[PathBuf],
+    ) -> Result<Vec<String>, ShellError> {
+        let files = Arc::clone(&self.file_session(handle).await?.sftp);
+        let mut taken = Vec::new();
+
+        for source in sources {
+            let Some(name) = source.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+                continue;
+            };
+            if files.exists(&join_remote(directory, &name)).await? {
+                taken.push(name);
+            }
+        }
+
+        Ok(taken)
+    }
+
     /// Starts copying a local file into a remote directory, and returns the transfer's id.
     pub async fn start_upload(&self, handle: &str, local: PathBuf, remote_dir: &str) -> Result<String, ShellError> {
         let files = Arc::clone(&self.file_session(handle).await?.sftp);

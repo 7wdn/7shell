@@ -39,6 +39,7 @@ import { useI18n } from "vue-i18n";
 
 import GroupNameForm from "@/components/sessions/GroupNameForm.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
@@ -62,10 +63,20 @@ const { openMenu } = useContextMenu();
 const protocols = computed(() => PROTOCOLS);
 const editorOpen = ref(false);
 const editing = ref<Session | null>(null);
-/** The session whose delete confirmation is open, if any. Never a bare click. */
-const confirming = ref<string | null>(null);
 
-/** The group prompts, of which at most one is open: a name being made, changed, or deleted. */
+/**
+ * The removal somebody has asked for and not yet answered.
+ *
+ * One value for both kinds rather than one each: a question is about a single thing at a time, and
+ * two of them on screen at once would be two dialogs stacked over each other. A trash button and a
+ * menu entry both land here; nothing is ever removed by the click that asks.
+ */
+type PendingRemoval =
+  | { readonly kind: "session"; readonly session: Session }
+  | { readonly kind: "group"; readonly group: SessionGroup };
+const pendingRemoval = ref<PendingRemoval | null>(null);
+
+/** The group prompts, of which at most one is open: a name being made, or one being changed. */
 const creatingGroup = ref(false);
 /** The group a new one is being made inside, or null for the root of the tree. */
 const creatingInside = ref<string | null>(null);
@@ -76,7 +87,6 @@ const renamingGroup = ref<string | null>(null);
 const groupNameText = ref("");
 /** The field drawn over a group's name while it is being renamed, wherever in the list that is. */
 const renameField = ref<HTMLInputElement | null>(null);
-const confirmingGroup = ref<string | null>(null);
 /** One group write at a time, so pressing Create twice does not make two groups. */
 const groupBusy = ref(false);
 
@@ -134,16 +144,43 @@ function startEdit(session: Session): void {
   editorOpen.value = true;
 }
 
-async function remove(session: Session): Promise<void> {
-  confirming.value = null;
-  await library.remove(session.id);
+/**
+ * What the confirmation says, for whichever kind of thing was asked about.
+ *
+ * The title and the button carry the same words — "Delete group" — because the button that finishes
+ * the sentence the title started is the one nobody presses by reflex. The message says what happens
+ * to what is inside: a group is not a folder, and the sessions in it outlive it.
+ */
+const removal = computed(() => {
+  const asked = pendingRemoval.value;
+  if (!asked) {
+    return null;
+  }
+  return asked.kind === "session"
+    ? {
+        title: t("sessions.list.remove"),
+        message: t("sessions.list.removeMessage", { name: asked.session.name }),
+      }
+    : {
+        title: t("sessions.list.groupRemove"),
+        message: t("sessions.list.groupRemoveMessage", { name: asked.group.name }),
+      };
+});
+
+/** The answer was yes: the question goes away first, then the removal runs. */
+async function confirmRemoval(): Promise<void> {
+  const asked = pendingRemoval.value;
+  pendingRemoval.value = null;
+  if (!asked) {
+    return;
+  }
+  await (asked.kind === "session" ? library.remove(asked.session.id) : removeGroup(asked.group));
 }
 
 function cancelGroupPrompts(): void {
   creatingGroup.value = false;
   creatingInside.value = null;
   renamingGroup.value = null;
-  confirmingGroup.value = null;
 }
 
 /**
@@ -233,8 +270,8 @@ async function submitGroupRename(group: SessionGroup): Promise<void> {
   }
 }
 
+/** A group is written one at a time, and removing one is a group write like any other. */
 async function removeGroup(group: SessionGroup): Promise<void> {
-  confirmingGroup.value = null;
   groupBusy.value = true;
   await library.removeGroup(group.id);
   groupBusy.value = false;
@@ -254,8 +291,8 @@ function markOf(key: string): string | null {
  * The menus this sidebar offers: one for a saved session, one for a group heading, and one for a
  * forward that is up.
  *
- * Deleting from the menu opens the row's own confirmation rather than doing it — the question is
- * asked in the place the name is written, and there is one place that asks it.
+ * Deleting from the menu asks the same question the trash button asks rather than doing it — the
+ * menu only decides *what* is being removed, and the one dialog decides whether it is.
  */
 function openSessionMenu(event: MouseEvent, session: Session): void {
   openMenu(
@@ -266,7 +303,7 @@ function openSessionMenu(event: MouseEvent, session: Session): void {
       openFiles: (target) => void terminals.openFiles(target),
       edit: startEdit,
       remove: (target) => {
-        confirming.value = target.id;
+        pendingRemoval.value = { kind: "session", session: target };
       },
       move: (target, groupId) =>
         void library.placeSession(target.id, groupId === undefined ? { kind: "root" } : { kind: "group", id: groupId }),
@@ -287,7 +324,7 @@ function openHeadingMenu(event: MouseEvent, group: SessionGroup | null): void {
       {
         rename: startGroupRename,
         remove: (target) => {
-          confirmingGroup.value = target.id;
+          pendingRemoval.value = { kind: "group", group: target };
         },
         move: (target, direction) => void library.moveGroupBy(target.id, direction),
         addInside: (target) => void startGroupCreate(target.id),
@@ -458,34 +495,6 @@ const statusDot = computed(() => {
               @cancel="cancelGroupPrompts()"
             />
 
-            <div
-              v-if="row.kind === 'group' && confirmingGroup === row.id"
-              class="mt-1 mb-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-2"
-            >
-              <p class="text-[11px]">
-                {{ t("sessions.list.groupConfirmRemove", { name: row.group.name }) }}
-              </p>
-              <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                {{ t("sessions.list.groupConfirmRemoveNote") }}
-              </p>
-              <div class="mt-2 flex gap-1">
-                <button
-                  type="button"
-                  class="rounded-md bg-destructive px-2 py-1 text-[11px] text-destructive-foreground transition-colors hover:bg-destructive/90"
-                  @click="removeGroup(row.group)"
-                >
-                  {{ t("sessions.list.confirm") }}
-                </button>
-                <button
-                  type="button"
-                  class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-                  @click="confirmingGroup = null"
-                >
-                  {{ t("sessions.list.cancel") }}
-                </button>
-              </div>
-            </div>
-
             <!-- A session: one row, indented by how deep its group is. -->
             <template v-if="row.kind === 'session'">
               <div
@@ -540,37 +549,10 @@ const statusDot = computed(() => {
                   class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
                   :title="t('sessions.list.remove')"
                   :aria-label="t('sessions.list.remove')"
-                  @click="confirming = row.session.id"
+                  @click="pendingRemoval = { kind: 'session', session: row.session }"
                 >
                   <Trash2 :size="12" />
                 </button>
-              </div>
-
-              <div
-                v-if="confirming === row.session.id"
-                class="mt-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-2"
-                :style="indent(row.depth)"
-              >
-                <p class="text-[11px]">{{ t("sessions.list.confirmRemove", { name: row.session.name }) }}</p>
-                <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                  {{ t("sessions.list.confirmRemoveNote") }}
-                </p>
-                <div class="mt-2 flex gap-1">
-                  <button
-                    type="button"
-                    class="rounded-md bg-destructive px-2 py-1 text-[11px] text-destructive-foreground transition-colors hover:bg-destructive/90"
-                    @click="remove(row.session)"
-                  >
-                    {{ t("sessions.list.confirm") }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-                    @click="confirming = null"
-                  >
-                    {{ t("sessions.list.cancel") }}
-                  </button>
-                </div>
               </div>
             </template>
 
@@ -716,5 +698,21 @@ const statusDot = computed(() => {
     </div>
 
     <SessionDialog :open="editorOpen" :session="editing" @update:open="editorOpen = $event" />
+
+    <!--
+      One question for both kinds of removal, drawn over everything rather than inside the list: a
+      row that opens a strip of its own puts the question under an indentation and a scroll position
+      that have nothing to do with it, and lets two questions be open at once.
+    -->
+    <ConfirmDialog
+      v-if="removal"
+      :open="true"
+      :title="removal.title"
+      :message="removal.message"
+      :confirm-label="removal.title"
+      danger
+      @confirm="confirmRemoval()"
+      @update:open="pendingRemoval = null"
+    />
   </aside>
 </template>

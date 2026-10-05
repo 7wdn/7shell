@@ -30,6 +30,7 @@ import {
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
@@ -202,8 +203,17 @@ async function chooseKey(): Promise<void> {
   }
 }
 
+/** Whether the question about forgetting the attached key is on screen. */
+const forgetting = ref(false);
+
+/** Asking to forget the key: the question comes first, because the material does not come back. */
+function requestForget(): void {
+  forgetting.value = true;
+}
+
 async function forgetKey(): Promise<void> {
   const info = editor.attachedKey;
+  forgetting.value = false;
   problem.value = null;
   if (!info?.keyRef) {
     editor.attachedKey = null;
@@ -344,7 +354,7 @@ async function forgetKey(): Promise<void> {
                 <button
                   type="button"
                   class="mt-2 flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-                  @click="forgetKey()"
+                  @click="requestForget()"
                 >
                   <Trash2 :size="12" />
                   {{ t("sessions.editor.key.forget") }}
@@ -569,4 +579,20 @@ async function forgetKey(): Promise<void> {
       </DialogContent>
     </DialogPortal>
   </DialogRoot>
+
+  <!--
+    The question about the key that is attached. It is asked after the editor is already open, so it
+    is drawn over it — and the key's material is the one thing in this dialog that cannot be typed
+    back in from memory.
+  -->
+  <ConfirmDialog
+    v-if="forgetting"
+    :open="true"
+    :title="t('sessions.editor.key.forget')"
+    :message="t('sessions.editor.key.forgetMessage', { name: editor.attachedKey?.displayName ?? '' })"
+    :confirm-label="t('sessions.editor.key.forget')"
+    danger
+    @confirm="forgetKey()"
+    @update:open="forgetting = false"
+  />
 </template>

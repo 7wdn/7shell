@@ -39,6 +39,7 @@ import { useI18n } from "vue-i18n";
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import TransferList from "@/components/files/TransferList.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
@@ -125,7 +126,7 @@ const newName = ref("");
 const renaming = ref<string | null>(null);
 const renameText = ref("");
 /** The entries whose deletion is being confirmed. Never a bare click, and never only one at a time. */
-const confirming = ref<SftpEntry[] | null>(null);
+const removal = ref<SftpEntry[] | null>(null);
 const editing = ref<SftpEntry | null>(null);
 const busy = ref(false);
 /** The listing itself, which is what takes focus and carries the keyboard. */
@@ -432,10 +433,10 @@ function startRename(entry: SftpEntry): void {
   renameText.value = entry.name;
 }
 
-/** Asking to delete: the question is asked in the panel, once, for however many rows were chosen. */
+/** Asking to delete: the entries are collected once, and the question is asked over everything else. */
 function startRemove(entries: readonly SftpEntry[]): void {
   cancelPrompt();
-  confirming.value = [...entries];
+  removal.value = [...entries];
 }
 
 function submitTypedPath(): void {
@@ -448,7 +449,6 @@ function submitTypedPath(): void {
 function cancelPrompt(): void {
   creating.value = null;
   renaming.value = null;
-  confirming.value = null;
 }
 
 /**
@@ -502,9 +502,40 @@ async function remove(entries: readonly SftpEntry[]): Promise<void> {
   const worked = await files.removeMany(props.handle, entries);
   busy.value = false;
   if (worked) {
-    confirming.value = null;
+    removal.value = null;
   }
 }
+
+/**
+ * What the question says: the action as a name, and what it takes with it.
+ *
+ * A folder is not a file and the question does not pretend otherwise — "everything under it" is in
+ * the sentence, because that is the part somebody has to have read before answering. The button
+ * repeats the name rather than saying "OK".
+ */
+const removalAction = computed(() => {
+  const entries = removal.value ?? [];
+  if (entries.length > 1) {
+    return t("files.delete.items", { count: entries.length });
+  }
+  return entries[0]?.kind === "directory" ? t("files.delete.folder") : t("files.delete.file");
+});
+
+const removalMessage = computed(() => {
+  const entries = removal.value ?? [];
+  if (entries.length > 1) {
+    return t("files.delete.itemsMessage", { count: entries.length });
+  }
+  const one = entries[0];
+  return one?.kind === "directory"
+    ? t("files.delete.folderMessage", { name: one.name })
+    : t("files.delete.fileMessage", { name: one?.name ?? "" });
+});
+
+/** The paths themselves, for a question the sentence cannot name one by one. */
+const removalDetails = computed(() =>
+  (removal.value?.length ?? 0) > 1 ? (removal.value ?? []).map((entry) => entry.path) : [],
+);
 
 /**
  * Taking what is selected, whichever way the switch says it travels.
@@ -759,36 +790,6 @@ function openAreaMenu(event: MouseEvent): void {
         </button>
       </form>
 
-      <div v-if="confirming" class="mt-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-        <p class="text-[11px]">
-          {{
-            confirming.length > 1
-              ? t("files.delete.confirmItems", { count: confirming.length })
-              : confirming[0]?.kind === "directory"
-                ? t("files.delete.confirmDirectory", { name: confirming[0]?.name ?? "" })
-                : t("files.delete.confirmFile", { name: confirming[0]?.name ?? "" })
-          }}
-        </p>
-        <p class="mt-1 text-[10px] leading-relaxed text-muted-foreground">{{ t("files.delete.note") }}</p>
-        <div class="mt-2 flex gap-1">
-          <button
-            type="button"
-            class="rounded-md bg-destructive px-2 py-1 text-[11px] text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="busy"
-            @click="remove(confirming)"
-          >
-            {{ t("files.delete.submit") }}
-          </button>
-          <button
-            type="button"
-            class="rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-            @click="cancelPrompt()"
-          >
-            {{ t("files.cancel") }}
-          </button>
-        </div>
-      </div>
-
       <p v-if="problem" class="mt-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px]">
         <span>{{ problem.message }}</span>
         <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
@@ -952,6 +953,25 @@ function openAreaMenu(event: MouseEvent): void {
       :handle="props.handle"
       :path="editing?.path ?? ''"
       @update:open="closeEditor"
+    />
+
+    <!--
+      The question, over the panel rather than inside its header: what is being asked about is the
+      rows underneath, and the header is where the panel's own writing happens. While the removal
+      runs the dialog stays up and says so — a recursive delete is not instant, and a row that
+      simply vanished would leave the question of whether it worked.
+    -->
+    <ConfirmDialog
+      v-if="removal"
+      :open="true"
+      :title="removalAction"
+      :message="removalMessage"
+      :details="removalDetails"
+      :confirm-label="removalAction"
+      danger
+      :loading="busy"
+      @confirm="remove(removal)"
+      @update:open="removal = null"
     />
   </div>
 </template>

@@ -194,3 +194,25 @@ export interface TransferInfo {
    */
   readonly packed: boolean;
 }
+
+/**
+ * What an upload did: sent everything, asked about a name, or nothing at all.
+ *
+ * An upload is the one transfer that can replace something without being asked to, so a name that
+ * is already there comes back as a question instead of as a transfer.
+ */
+export type UploadOutcome =
+  | { readonly kind: "started"; readonly ids: readonly string[] }
+  | {
+      readonly kind: "conflict";
+      /** What stands for this upload while the question is open. */
+      readonly token: string;
+      /** The names already on the far side, which is what the question is about. */
+      readonly names: readonly string[];
+      /** Whether "send only what is missing" is a real answer — it is not, for one archive. */
+      readonly skippable: boolean;
+    }
+  | { readonly kind: "cancelled" };
+
+/** The answer to that question. */
+export type UploadAnswer = "overwrite" | "skip" | "cancel";

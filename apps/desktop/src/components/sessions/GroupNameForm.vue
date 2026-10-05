@@ -67,8 +67,8 @@ defineExpose({ focus });
     <button
       type="button"
       class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      :title="t('sessions.list.cancel')"
-      :aria-label="t('sessions.list.cancel')"
+      :title="t('common.action.cancel')"
+      :aria-label="t('common.action.cancel')"
       @click="emit('cancel')"
     >
       <X :size="11" />

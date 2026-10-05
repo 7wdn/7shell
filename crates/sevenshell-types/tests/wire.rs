@@ -17,7 +17,7 @@ use sevenshell_types::{
     CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry,
     LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail,
     ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, Session, SessionAuth, SessionGroup,
-    SessionLayout, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, VaultState,
+    SessionLayout, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -113,6 +113,49 @@ fn every_outcome_serializes_with_camel_case_fields() {
     assert_eq!(opened["sessionId"], serde_json::json!("session-1"));
     assert_eq!(opened["tunnels"][0]["bindPort"], serde_json::json!(18080));
     assert_eq!(opened["tunnelFailures"][0]["forwardId"], serde_json::json!("f2"));
+}
+
+#[test]
+fn an_upload_that_found_a_name_serializes_with_camel_case_fields() {
+    let started = check(
+        &UploadOutcome::Started {
+            ids: vec!["t1".to_owned()],
+        },
+        "Started",
+    );
+    assert_eq!(started["kind"], serde_json::json!("started"));
+    assert_eq!(started["ids"][0], serde_json::json!("t1"));
+
+    // The question carries the names it is about, and whether skipping is a real answer for it.
+    let conflict = check(
+        &UploadOutcome::Conflict {
+            token: "upload-1".to_owned(),
+            names: vec!["notes.txt".to_owned()],
+            skippable: true,
+        },
+        "Conflict",
+    );
+    assert_eq!(conflict["kind"], serde_json::json!("conflict"));
+    assert_eq!(conflict["token"], serde_json::json!("upload-1"));
+    assert_eq!(conflict["names"][0], serde_json::json!("notes.txt"));
+    assert_eq!(conflict["skippable"], serde_json::json!(true));
+
+    let cancelled = check(&UploadOutcome::Cancelled, "Cancelled");
+    assert_eq!(cancelled["kind"], serde_json::json!("cancelled"));
+
+    // The answer travels as the interface spells it, one word per variant.
+    assert_eq!(
+        serde_json::to_value(UploadAnswer::Overwrite).expect("the answer serializes"),
+        serde_json::json!("overwrite")
+    );
+    assert_eq!(
+        serde_json::to_value(UploadAnswer::Skip).expect("the answer serializes"),
+        serde_json::json!("skip")
+    );
+    assert_eq!(
+        serde_json::to_value(UploadAnswer::Cancel).expect("the answer serializes"),
+        serde_json::json!("cancel")
+    );
 }
 
 #[test]

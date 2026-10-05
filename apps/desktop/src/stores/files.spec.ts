@@ -12,6 +12,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesDelete: vi.fn(),
   filesDownload: vi.fn(),
   filesUpload: vi.fn(),
+  filesUploadAnswer: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
   transferCancel: vi.fn(),
@@ -26,6 +27,7 @@ import {
   filesOpen,
   filesRename,
   filesUpload,
+  filesUploadAnswer,
   transferCancel,
   transfersOpen,
   droppedUpload,
@@ -43,6 +45,7 @@ const filesDownloadMock = vi.mocked(filesDownload);
 const filesUploadDroppedMock = vi.mocked(droppedUpload);
 const clipboardFilesMock = vi.mocked(clipboardFiles);
 const filesUploadMock = vi.mocked(filesUpload);
+const filesUploadAnswerMock = vi.mocked(filesUploadAnswer);
 const filesCloseMock = vi.mocked(filesClose);
 const transfersOpenMock = vi.mocked(transfersOpen);
 const transferCancelMock = vi.mocked(transferCancel);
@@ -105,7 +108,7 @@ describe("files store", () => {
     filesRenameMock.mockReset().mockResolvedValue(undefined);
     filesDeleteMock.mockReset().mockResolvedValue(undefined);
     filesDownloadMock.mockReset().mockResolvedValue([]);
-    filesUploadMock.mockReset().mockResolvedValue(undefined);
+    filesUploadMock.mockReset().mockResolvedValue({ kind: "cancelled" });
     filesCloseMock.mockReset().mockResolvedValue(undefined);
     transfersOpenMock.mockReset().mockResolvedValue([]);
     transferCancelMock.mockReset().mockResolvedValue(undefined);
@@ -202,7 +205,7 @@ describe("files store", () => {
 
   it("hands the packing switch, and every chosen path, to the backend", async () => {
     filesDownloadMock.mockResolvedValue([download.id]);
-    filesUploadMock.mockResolvedValue(upload.id);
+    filesUploadMock.mockResolvedValue({ kind: "started", ids: [upload.id] });
 
     const store = useFilesStore();
     await store.download(handle, ["/home/user/logs"], "Save", "", true);
@@ -320,7 +323,7 @@ describe("files store", () => {
   });
 
   it("starts reading an upload into the list as soon as it is started", async () => {
-    filesUploadMock.mockResolvedValue(upload.id);
+    filesUploadMock.mockResolvedValue({ kind: "started", ids: [upload.id] });
     transfersOpenMock.mockResolvedValue([upload]);
 
     const store = useFilesStore();
@@ -474,7 +477,7 @@ describe("files the operating system handed us", () => {
   });
 
   it("uploads by token, one transfer per file, without ever seeing a path", async () => {
-    filesUploadDroppedMock.mockResolvedValue(["x1", "x2"]);
+    filesUploadDroppedMock.mockResolvedValue({ kind: "started", ids: ["x1", "x2"] });
 
     const store = useFilesStore();
     await store.open("s1");
@@ -490,7 +493,7 @@ describe("files the operating system handed us", () => {
    * that door too: one archive, one transfer, rather than one per file.
    */
   it("packs a drop when the switch is on, and says one transfer came back", async () => {
-    filesUploadDroppedMock.mockResolvedValue(["x1"]);
+    filesUploadDroppedMock.mockResolvedValue({ kind: "started", ids: ["x1"] });
     transfersOpenMock.mockResolvedValue([download]);
 
     const store = useFilesStore();
@@ -518,9 +521,70 @@ describe("files the operating system handed us", () => {
     expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
   });
 
+  /**
+   * An upload that would replace something stops and asks. What is asserted here is that the
+   * stopping is real: nothing was started, and the names the question is about are the ones the
+   * backend named.
+   */
+  it("keeps the question when a name is already there, and starts nothing", async () => {
+    filesUploadDroppedMock.mockResolvedValue({
+      kind: "conflict",
+      token: "upload-1",
+      names: ["notes.txt"],
+      skippable: false,
+    });
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadDropped("f1", "/home", "d1", false);
+
+    expect(store.uploadConflict).toEqual({ token: "upload-1", names: ["notes.txt"], skippable: false });
+    expect(transfersOpenMock).not.toHaveBeenCalled();
+  });
+
+  it("answers the question through the backend, and starts what the answer allows", async () => {
+    filesUploadDroppedMock.mockResolvedValue({
+      kind: "conflict",
+      token: "upload-1",
+      names: ["notes.txt"],
+      skippable: true,
+    });
+    filesUploadAnswerMock.mockResolvedValue({ kind: "started", ids: ["x1"] });
+    transfersOpenMock.mockResolvedValue([download]);
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadDropped("f1", "/home", "d1", false);
+    await store.answerUpload("overwrite");
+
+    expect(filesUploadAnswerMock).toHaveBeenCalledWith("upload-1", "overwrite");
+    expect(store.uploadConflict).toBeNull();
+    expect(store.transfers).toEqual([download]);
+  });
+
+  /** Saying no is an answer too, and it tells the backend to forget the files it was holding. */
+  it("tells the backend to forget the files when the question is answered with no", async () => {
+    filesUploadDroppedMock.mockResolvedValue({
+      kind: "conflict",
+      token: "upload-2",
+      names: ["notes.txt"],
+      skippable: false,
+    });
+    filesUploadAnswerMock.mockResolvedValue({ kind: "cancelled" });
+
+    const store = useFilesStore();
+    await store.open("s1");
+    await store.uploadDropped("f1", "/home", "d1", false);
+    await store.answerUpload("cancel");
+
+    expect(filesUploadAnswerMock).toHaveBeenCalledWith("upload-2", "cancel");
+    expect(store.uploadConflict).toBeNull();
+    expect(transfersOpenMock).not.toHaveBeenCalled();
+  });
+
   it("pastes through the same door, and reports a platform that has no file list", async () => {
     clipboardFilesMock.mockResolvedValue({ token: "d9", names: ["notes.txt"] });
-    filesUploadDroppedMock.mockResolvedValue(["x1"]);
+    filesUploadDroppedMock.mockResolvedValue({ kind: "started", ids: ["x1"] });
 
     const store = useFilesStore();
     await store.open("s1");
@@ -538,6 +602,31 @@ describe("files the operating system handed us", () => {
     await store.uploadFromClipboard("f1", "/home", false);
 
     expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
+  });
+});
+
+describe("the editors holding unsaved text", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
+  /**
+   * What the shell reads before letting the window close. It is a set of names rather than a count,
+   * because the same editor says it twice — and because one editor closing must not unsay another.
+   */
+  it("remembers each editor once, and forgets only the one that stopped", () => {
+    const store = useFilesStore();
+
+    store.setUnsaved("f1:/etc/a.conf", true);
+    store.setUnsaved("f1:/etc/b.conf", true);
+    store.setUnsaved("f1:/etc/a.conf", true);
+    expect(store.unsavedEditors).toEqual(["f1:/etc/a.conf", "f1:/etc/b.conf"]);
+
+    store.setUnsaved("f1:/etc/a.conf", false);
+    expect(store.unsavedEditors).toEqual(["f1:/etc/b.conf"]);
+
+    store.setUnsaved("f1:/etc/b.conf", false);
+    expect(store.unsavedEditors).toEqual([]);
   });
 });
 

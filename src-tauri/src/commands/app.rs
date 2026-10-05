@@ -1,7 +1,8 @@
 use sevenshell_error::ShellError;
 use sevenshell_types::AppInfo;
-use tauri::WebviewWindow;
+use tauri::{State, WebviewWindow};
 
+use crate::state::ShellState;
 use crate::window_chrome::reveal_main_window;
 
 /// Facts about the running application: name, version, platform, and the descriptor
@@ -20,4 +21,14 @@ pub fn app_info() -> Result<AppInfo, ShellError> {
 #[tauri::command]
 pub fn app_ready(window: WebviewWindow) {
     reveal_main_window(&window);
+}
+
+/// Says whether closing the window would throw something away.
+///
+/// Armed while an editor holds unsaved text or a transfer is in flight, and disarmed the moment
+/// there is nothing left to lose — the window then closes on the first request, exactly as it did
+/// before. It is deliberately the interface's call: only the interface can see what is unsaved.
+#[tauri::command]
+pub fn window_quit_guard(state: State<'_, ShellState>, armed: bool) {
+    state.set_quit_guard(armed);
 }

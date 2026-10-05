@@ -29,6 +29,8 @@ import type {
   TerminalClosed,
   TerminalData,
   TransferInfo,
+  UploadAnswer,
+  UploadOutcome,
   VaultState,
 } from "@/types/session";
 
@@ -89,6 +91,21 @@ export function windowIsMaximized(): Promise<boolean> {
 
 export function windowClose(): Promise<void> {
   return getCurrentWindow().close();
+}
+
+/**
+ * Says whether closing the window would throw something away.
+ *
+ * Armed, a close request comes back as `quit-requested` instead of closing; disarmed, the window
+ * closes on the first request. The shell keeps no opinion of its own — see the command's own note.
+ */
+export function windowQuitGuard(armed: boolean): Promise<void> {
+  return invoke<void>("window_quit_guard", { armed });
+}
+
+/** Calls `listener` when a close was asked for while the guard was armed. */
+export async function onQuitRequested(listener: () => void): Promise<Unlisten> {
+  return listen("quit-requested", () => listener());
 }
 
 /** Calls `listener` whenever the window is resized, and resolves with the unsubscribe. */
@@ -286,23 +303,31 @@ export function filesDownload(
   return invoke<string[]>("files_download", { handle, paths, title, suggestedName, packed });
 }
 
-/** Resolves to the transfer's id, or `undefined` when the file picker was dismissed. */
-export function filesUpload(
-  handle: string,
-  directory: string,
-  title: string,
-  packed: boolean,
-): Promise<string | undefined> {
-  return invoke<string | null>("files_upload", { handle, directory, title, packed }).then((id) => id ?? undefined);
+/**
+ * Asks which file to send, in Rust. The answer is what the upload did: running transfers, or the
+ * question it stopped on when a name it would write is already there.
+ */
+export function filesUpload(handle: string, directory: string, title: string, packed: boolean): Promise<UploadOutcome> {
+  return invoke<UploadOutcome>("files_upload", { handle, directory, title, packed });
+}
+
+/** The answer to that question. The files that were waiting are sent, or forgotten. */
+export function filesUploadAnswer(token: string, answer: UploadAnswer): Promise<UploadOutcome> {
+  return invoke<UploadOutcome>("files_upload_answer", { token, answer });
 }
 
 export function transfersOpen(): Promise<TransferInfo[]> {
   return invoke<TransferInfo[]>("transfers_open");
 }
 
-/** Uploads the files a drop or a paste left behind, by token. Answers with the transfer ids. */
-export function droppedUpload(handle: string, directory: string, token: string, packed: boolean): Promise<string[]> {
-  return invoke<string[]>("dropped_upload", { handle, directory, token, packed });
+/** Uploads the files a drop or a paste left behind, by token. */
+export function droppedUpload(
+  handle: string,
+  directory: string,
+  token: string,
+  packed: boolean,
+): Promise<UploadOutcome> {
+  return invoke<UploadOutcome>("dropped_upload", { handle, directory, token, packed });
 }
 
 /** The file list on the clipboard, as a token and names. Refused on platforms that cannot read it. */

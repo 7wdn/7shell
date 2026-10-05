@@ -25,6 +25,8 @@ import type {
   SessionGroup,
   TerminalClosed,
   TerminalData,
+  UploadAnswer,
+  UploadOutcome,
   VaultState,
 } from "@/types/session";
 
@@ -83,6 +85,12 @@ export const backend = {
     close: (): Promise<void> => forward("window.close", () => desktop.windowClose()),
 
     /**
+     * Says whether closing would throw something away. Armed, the close comes back as
+     * `onQuitRequested` instead of closing the window.
+     */
+    quitGuard: (armed: boolean): Promise<void> => forward("window.quitGuard", () => desktop.windowQuitGuard(armed)),
+
+    /**
      * Subscribes to window resizes so the maximize button can show the right glyph.
      * In a browser there is no window to watch, so there is nothing to unsubscribe from.
      */
@@ -124,7 +132,7 @@ export const backend = {
       forward("files_write_text", () => desktop.filesWriteText(handle, path, text)),
     close: (handle: string): Promise<void> => forward("files_close", () => desktop.filesClose(handle)),
     /** Uploads what a drop or a paste left behind. The interface never sees a path. */
-    uploadDropped: (handle: string, directory: string, token: string, packed: boolean): Promise<string[]> =>
+    uploadDropped: (handle: string, directory: string, token: string, packed: boolean): Promise<UploadOutcome> =>
       forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token, packed)),
     /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it. */
     clipboardFiles: (): Promise<PendingFiles> => forward("clipboard_files", () => desktop.clipboardFiles()),
@@ -143,9 +151,15 @@ export const backend = {
       packed: boolean,
     ): Promise<string[]> =>
       forward("files_download", () => desktop.filesDownload(handle, paths, title, suggestedName, packed)),
-    /** Asks which file to send, in Rust; `undefined` means the picker was dismissed. */
-    upload: (handle: string, directory: string, title: string, packed: boolean): Promise<string | undefined> =>
+    /**
+     * Asks which file to send, in Rust, and says what became of it: transfers that are running, or
+     * the question it stopped on when a name it would write is already there.
+     */
+    upload: (handle: string, directory: string, title: string, packed: boolean): Promise<UploadOutcome> =>
       forward("files_upload", () => desktop.filesUpload(handle, directory, title, packed)),
+    /** The answer to that question: send them anyway, send only what is missing, or send nothing. */
+    uploadAnswer: (token: string, answer: UploadAnswer): Promise<UploadOutcome> =>
+      forward("files_upload_answer", () => desktop.filesUploadAnswer(token, answer)),
   },
 
   transfers: {
@@ -236,6 +250,14 @@ export const backend = {
       subscribe(desktop.onFilesDrag, listener),
     onFilesDropped: (listener: (payload: DropPayload) => void): Promise<Unlisten> =>
       subscribe(desktop.onFilesDropped, listener),
+    /**
+     * A close that arrived while the quit guard was armed: the interface asks, then closes.
+     *
+     * The one subscription with no payload, so it is registered here rather than through the
+     * helper above — that helper's listener is shaped for events that carry one.
+     */
+    onQuitRequested: (listener: () => void): Promise<Unlisten> =>
+      isDesktopRuntime() ? desktop.onQuitRequested(listener) : Promise.resolve(() => {}),
   },
 };
 

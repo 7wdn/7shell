@@ -31,6 +31,6 @@ pub use risk::{RiskAssessment, RiskLevel, RiskReason};
 pub use session::{
     EntryKind, KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, SecretInput, Session,
     SessionAuth, SessionGroup, SftpEntry, SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo,
-    TransferState, TunnelFailure, VaultState,
+    TransferState, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 pub use settings::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on};

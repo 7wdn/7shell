@@ -140,6 +140,20 @@ async function press(key: string, ...modifiers: ("ctrl" | "shift" | "meta")[]): 
   await nextTick();
 }
 
+/**
+ * The question the panel asks before a removal, which is teleported out of it and onto the body.
+ *
+ * It is about the selection rather than about one row — a strip inside the listing would be drawn
+ * under whichever row happened to be first — so it is looked for where it is actually drawn.
+ */
+function confirmDialog(): HTMLElement {
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+  if (!dialog) {
+    throw new Error("no confirmation is on screen");
+  }
+  return dialog;
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
   host = document.createElement("div");
@@ -333,7 +347,9 @@ describe("selecting rows", () => {
     await clickRow(2, "ctrl");
     await press("Delete");
 
-    expect(host.textContent).toContain("Delete these 2 items?");
+    expect(confirmDialog().textContent).toContain("Delete these 2 items?");
+    // The question names what it takes: two rows at once, and the button counts them too.
+    expect(confirmDialog().textContent).toContain("This cannot be undone");
   });
 
   it("renames the one row, and only when there is one", async () => {

@@ -195,6 +195,49 @@ test("a saved session offers its own menu on a right-click", async () => {
 });
 
 /**
+ * Deleting a session, and the question that stands in front of it.
+ *
+ * The question is a dialog over the window rather than a strip that opens inside the row — which is
+ * what it was — and the difference a person meets first is the keyboard: Escape leaves it, the
+ * focus starts on the button that changes nothing, and the row is untouched until the question is
+ * answered. Both ways out are asserted, because "asks first" is only true if the other answer works.
+ */
+test("deleting a session asks first, and Escape leaves it alone", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "doomed-host");
+
+    // Scoped to the row: by the time this runs the list has other sessions, each with a trash
+    // button that carries the same name.
+    const row = page.getByTitle("Open a terminal for doomed-host");
+    const rowBox = page.locator("[data-row]", { has: row });
+    await expect(row).toBeVisible();
+
+    await rowBox.getByRole("button", { name: "Delete session" }).click();
+    const confirm = page.getByRole("dialog");
+    await expect(confirm.getByText(/Delete “doomed-host”\?/)).toBeVisible();
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "confirm-dialog.png"), fullPage: false });
+
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(row).toBeVisible();
+    // The keyboard comes back to the button that asked, rather than being dropped on the body.
+    await expect(rowBox.getByRole("button", { name: "Delete session" })).toBeFocused();
+
+    // Answering it is what removes the row, and nothing else does.
+    await rowBox.getByRole("button", { name: "Delete session" }).click();
+    await confirm.getByRole("button", { name: "Delete session", exact: true }).click();
+
+    await expect(confirm).toHaveCount(0);
+    await expect(row).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The dropdown, driven the way it is used.
  *
  * A native control would pass any assertion about a value being chosen, so what is checked here is
@@ -508,14 +551,16 @@ test("a session can be put in a group, renamed, and taken back out", async () =>
     await rename.press("Enter");
     await expect(page.getByRole("heading", { name: "Lab (EU)", exact: true })).toBeVisible();
 
-    // Deleting asks first, in the heading, and says what happens to what is inside.
+    // Deleting asks first, in a dialog over everything, and says what happens to what is inside.
     await page.getByRole("heading", { name: "Lab (EU)", exact: true }).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Delete group" }).click();
-    await expect(page.getByText(/Delete the group “Lab \(EU\)”\?/)).toBeVisible();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    const confirm = page.getByRole("dialog");
+    await expect(confirm.getByText(/Delete the group “Lab \(EU\)”\?/)).toBeVisible();
+    await confirm.getByRole("button", { name: "Delete group", exact: true }).click();
 
     // The group is gone and the session is not. With no group left there is no heading over it at
     // all — a flat list has nothing to set it apart from.
+    await expect(confirm).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Lab (EU)", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Ungrouped", exact: true })).toHaveCount(0);
     await expect(row).toBeVisible();

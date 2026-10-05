@@ -33,6 +33,8 @@ import type {
   TransferDirection,
   TransferInfo,
   TransferState,
+  UploadAnswer,
+  UploadOutcome,
 } from "@/types/session";
 
 /** How often the transfer list is read while something is still moving. */
@@ -78,6 +80,30 @@ export const useFilesStore = defineStore("files", () => {
   const transfers = ref<TransferInfo[]>([]);
   /** A failure from reading the transfer list or stopping one. Shown next to the transfers. */
   const transferFailure = ref<ShellError | null>(null);
+  /**
+   * The upload that stopped to ask about names already on the far side.
+   *
+   * It lives here rather than in a browser because an upload can be started from three places — a
+   * panel's own button, a drop on the window, a paste — and all three have to be answered by one
+   * question. The shell draws it, for the same reason it draws the host key's: a question about
+   * where bytes are going is not a browser's question.
+   */
+  const uploadConflict = ref<{ token: string; names: readonly string[]; skippable: boolean } | null>(null);
+  /**
+   * The editors holding changes nobody has saved, by the file each one is about.
+   *
+   * Kept here because the shell has to answer "would closing the window throw something away?"
+   * without reaching into a dialog: what an editor is holding is its own state, and a dialog is not
+   * something a parent can look inside.
+   */
+  const unsavedEditors = ref<string[]>([]);
+
+  /** Records that an editor has, or no longer has, something unsaved. */
+  function setUnsaved(key: string, unsaved: boolean): void {
+    unsavedEditors.value = unsaved
+      ? [...new Set([...unsavedEditors.value, key])]
+      : unsavedEditors.value.filter((entry) => entry !== key);
+  }
   /**
    * Transfers that failed and that nobody has been told about yet.
    *
@@ -179,12 +205,40 @@ export const useFilesStore = defineStore("files", () => {
     }
 
     try {
-      const ids = await backend.files.uploadDropped(handle, directory, token, packed);
-      if (ids.length > 0) {
-        await refreshTransfers();
-      }
+      await absorbUpload(await backend.files.uploadDropped(handle, directory, token, packed));
     } catch (error) {
       reportFailure(handle, error);
+    }
+  }
+
+  /**
+   * What an upload answered: transfers that are running, a question, or nothing at all.
+   *
+   * The question is kept rather than acted on — the shell asks it, and answering it is what starts
+   * or forgets the files that are waiting on the far side of it.
+   */
+  async function absorbUpload(outcome: UploadOutcome): Promise<void> {
+    if (outcome.kind === "conflict") {
+      uploadConflict.value = { token: outcome.token, names: outcome.names, skippable: outcome.skippable };
+      return;
+    }
+    if (outcome.kind === "started" && outcome.ids.length > 0) {
+      await refreshTransfers();
+    }
+  }
+
+  /** The answer to the question: send them anyway, send only what is missing, or send nothing. */
+  async function answerUpload(answer: UploadAnswer): Promise<void> {
+    const asked = uploadConflict.value;
+    uploadConflict.value = null;
+    if (!asked) {
+      return;
+    }
+
+    try {
+      await absorbUpload(await backend.files.uploadAnswer(asked.token, answer));
+    } catch (error) {
+      transferFailure.value = asShellError(error, "files_upload");
     }
   }
 
@@ -285,10 +339,7 @@ export const useFilesStore = defineStore("files", () => {
   async function upload(handle: string, directory: string, title: string, packed: boolean): Promise<void> {
     transferFailure.value = null;
     try {
-      const id = await backend.files.upload(handle, directory, title, packed);
-      if (id !== undefined) {
-        await refreshTransfers();
-      }
+      await absorbUpload(await backend.files.upload(handle, directory, title, packed));
     } catch (error) {
       transferFailure.value = asShellError(error, "files_upload");
     }
@@ -523,6 +574,9 @@ export const useFilesStore = defineStore("files", () => {
     revision,
     transfers,
     transferFailure,
+    uploadConflict,
+    unsavedEditors,
+    setUnsaved,
     unattendedFailures,
     attendFailures,
     open,
@@ -530,6 +584,7 @@ export const useFilesStore = defineStore("files", () => {
     directories,
     uploadDropped,
     uploadFromClipboard,
+    answerUpload,
     reportFailure,
     navigate,
     followDirectory,

@@ -17,6 +17,12 @@
     "upload": "上传",
     "uploadTitle": "选择要上传的文件",
     "uploadPackedTitle": "选择要打包上传的文件（可多选）",
+    "uploadConflict": {
+      "title": "有些名字已经存在",
+      "message": "下面这些名字在这个目录里已经存在。继续发送会覆盖远端已有的内容。",
+      "overwrite": "覆盖",
+      "skip": "跳过这些"
+    },
     "downloadTitle": "选择此文件的保存位置",
     "downloadPackedTitle": "选择下载到的文件夹",
     "empty": "该目录为空。",
@@ -39,11 +45,12 @@
       "submit": "重命名"
     },
     "delete": {
-      "confirmFile": "删除“{name}”？",
-      "confirmDirectory": "删除“{name}”及其下的全部内容？",
-      "confirmItems": "删除选中的这 {count} 项？",
-      "note": "此操作无法撤销。",
-      "submit": "删除"
+      "file": "删除文件",
+      "folder": "删除文件夹",
+      "items": "删除 {count} 项",
+      "fileMessage": "删除“{name}”？此操作无法撤销。",
+      "folderMessage": "删除“{name}”及其下的全部内容？此操作无法撤销。",
+      "itemsMessage": "删除选中的这 {count} 项？此操作无法撤销。"
     },
     "cancel": "取消",
     "editor": {
@@ -51,7 +58,12 @@
       "description": "远程文本文件",
       "note": "纯文本编辑器：暂不支持语法高亮。",
       "loading": "正在读取文件…",
-      "save": "保存"
+      "save": "保存",
+      "unsavedTitle": "有未保存的改动",
+      "unsavedMessage": "关闭前保存“{name}”吗？选“放弃改动”会丢掉刚输入的内容。",
+      "unsavedKeep": "继续编辑",
+      "unsavedDiscard": "放弃改动",
+      "unsavedSave": "保存并关闭"
     },
     "transfer": {
       "title": "传输",

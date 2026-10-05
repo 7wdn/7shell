@@ -9,6 +9,13 @@
     "sidebar": {
       "sessions": "Sessions",
       "protocols": "Protocols"
+    },
+    "quit": {
+      "title": "Quit with unfinished work?",
+      "message": "Closing now throws away what has not been saved and stops what is still running.",
+      "unsaved": "An editor has unsaved changes.",
+      "transfers": "A transfer is still running.",
+      "confirm": "Quit"
     }
   }
 }
