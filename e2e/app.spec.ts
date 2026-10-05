@@ -267,13 +267,16 @@ test("the session editor's dropdown draws its own list, and choosing from it cha
       "SSH agent",
       "Pageant",
     ]);
-    await expect(list.getByRole("option", { name: "SSH agent" })).toHaveAttribute("aria-disabled", "true");
+    // Pageant is the method this build refuses now: the machine's own agent became a real path, and
+    // the row that says so moved with it.
+    await expect(list.getByRole("option", { name: "Pageant" })).toHaveAttribute("aria-disabled", "true");
+    await expect(list.getByRole("option", { name: "SSH agent" })).not.toHaveAttribute("aria-disabled", "true");
     await expect(list.getByRole("option", { name: "Password" })).toHaveAttribute("aria-selected", "true");
 
     // And it looks the part: a row nobody can choose has to be drawn differently from one they can,
     // or the only way to find out is to try it. The platform drew that for free; this does not.
     const [unavailable, available] = await Promise.all(
-      ["SSH agent", "Public key"].map(async (name) =>
+      ["Pageant", "Public key"].map(async (name) =>
         Number(await list.getByRole("option", { name }).evaluate((row) => getComputedStyle(row).opacity)),
       ),
     );

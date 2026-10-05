@@ -52,8 +52,14 @@ const { t } = useI18n();
 const library = useSessionsStore();
 const editor = useSessionEditorStore();
 
-/** Methods the transport refuses; the descriptors list them, this build does not implement them. */
-const UNSUPPORTED_METHODS: readonly AuthMethodId[] = ["agent", "pageant"];
+/**
+ * Methods the transport refuses.
+ *
+ * The agent is no longer one of them: the machine's agent is asked to sign, and the key never
+ * reaches this build. Pageant still is — it speaks a protocol of its own — and it says so in the
+ * editor rather than failing at the first connection.
+ */
+const UNSUPPORTED_METHODS: readonly AuthMethodId[] = ["pageant"];
 
 /** The hop the picker is pointing at, until it is added and the picker goes back to its prompt. */
 const hopToAdd = ref("");

@@ -38,7 +38,7 @@
       "group": "分组",
       "groupNone": "不分组",
       "method": "认证方式",
-      "methodUnsupported": "此版本尚未实现 SSH agent 与 Pageant，因此这两项无法选择。",
+      "methodUnsupported": "本版本尚未实现 Pageant，因此不可选择。",
       "secret": {
         "label": "密码",
         "placeholder": "密码",

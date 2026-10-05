@@ -38,7 +38,7 @@
       "group": "Group",
       "groupNone": "No group",
       "method": "Authentication",
-      "methodUnsupported": "This build does not implement the SSH agent or Pageant yet, so those two are not selectable.",
+      "methodUnsupported": "This build does not implement Pageant yet, so it is not selectable.",
       "secret": {
         "label": "Password",
         "placeholder": "Password",
