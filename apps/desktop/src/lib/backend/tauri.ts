@@ -174,6 +174,10 @@ export function groupDelete(id: string): Promise<void> {
 // -- Keys --------------------------------------------------------------------
 
 /** Opens a native file dialog, reads the chosen key and stores it. `undefined` means dismissed. */
+export function keysList(): Promise<KeyInfo[]> {
+  return invoke<KeyInfo[]>("keys_list");
+}
+
 export function keyImport(title: string, passphrase?: string): Promise<KeyInfo | undefined> {
   return invoke<KeyInfo | null>("key_import", { title, passphrase: passphrase ?? null }).then(
     (info) => info ?? undefined,

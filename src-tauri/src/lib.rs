@@ -74,6 +74,7 @@ pub fn run() {
             commands::sessions::groups_list,
             commands::sessions::group_save,
             commands::sessions::group_delete,
+            commands::keys::keys_list,
             commands::keys::key_import,
             commands::keys::key_forget,
             commands::known_hosts::known_hosts_list,

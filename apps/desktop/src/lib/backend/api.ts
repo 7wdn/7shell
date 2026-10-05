@@ -184,6 +184,8 @@ export const backend = {
   },
 
   keys: {
+    /** The imported keys: names, algorithms, fingerprints. Never the material. */
+    list: (): Promise<KeyInfo[]> => forward("keys_list", () => desktop.keysList()),
     /** Opens a native dialog in Rust; resolves to `undefined` when the person dismissed it. */
     import: (title: string, passphrase?: string): Promise<KeyInfo | undefined> =>
       forward("key_import", () => desktop.keyImport(title, passphrase)),

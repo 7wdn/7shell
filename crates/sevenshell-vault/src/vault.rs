@@ -539,6 +539,12 @@ impl Vault {
         Ok(imported)
     }
 
+    /// The imported keys, with their fingerprints and nothing they were imported with.
+    pub fn keys(&self) -> Result<Vec<KeyInfo>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.keys())
+    }
+
     pub fn key_material(&self, key_ref: &str) -> Result<Option<KeyMaterial>, ShellError> {
         let mut guard = self.slot();
         Ok(guard.open()?.document.key_material(key_ref))
@@ -1527,6 +1533,38 @@ mod tests {
             .find(|group| group.id == DEFAULT_GROUP_ID)
             .expect("default");
         assert_eq!(default.commands.len(), 1);
+    }
+
+    #[test]
+    fn the_key_list_carries_fingerprints_and_nothing_private() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let imported = vault
+            .import_key(
+                KEY_CONTENTS.to_owned(),
+                Some("the passphrase".to_owned()),
+                KeyInfo {
+                    key_ref: None,
+                    display_name: "id_ed25519".to_owned(),
+                    algorithm: "ssh-ed25519".to_owned(),
+                    fingerprint: "SHA256:AAAA".to_owned(),
+                    has_passphrase: false,
+                },
+            )
+            .expect("import");
+
+        let keys = vault.keys().expect("list");
+
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].key_ref.as_deref(), imported.key_ref.as_deref());
+        assert_eq!(keys[0].display_name, "id_ed25519");
+        assert_eq!(keys[0].fingerprint, "SHA256:AAAA");
+        assert!(
+            keys[0].has_passphrase,
+            "the flag reports the passphrase; it is not the passphrase"
+        );
     }
 
     #[test]

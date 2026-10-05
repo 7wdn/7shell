@@ -10,6 +10,7 @@
 mod archive;
 mod batch;
 mod files;
+mod keys;
 mod monitor;
 mod sessions;
 mod snippets;

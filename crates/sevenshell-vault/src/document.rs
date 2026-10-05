@@ -310,6 +310,15 @@ impl Document {
         self.snippet_groups.iter().map(|group| group.order).max().unwrap_or(0) + 1
     }
 
+    /// The imported keys, as the interface may know them.
+    ///
+    /// [`KeyInfo`] and nothing else. What a `StoredKey` keeps private is the material and the
+    /// passphrase; a list that carried either would be a secret leaving the vault in a shape
+    /// nobody expects to have to check.
+    pub(crate) fn keys(&self) -> Vec<KeyInfo> {
+        self.keys.iter().map(|stored| stored.info.clone()).collect()
+    }
+
     /// Stores key material and returns the `KeyInfo` the interface should remember: the handle
     /// the vault assigned, and the truth about whether a passphrase is held for it.
     pub(crate) fn import_key(

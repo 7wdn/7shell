@@ -82,6 +82,10 @@
         "summary": "Move a folder as one archive, made and opened on the way.",
         "help": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
       }
+    },
+    "security": {
+      "keys": "Keys this device holds",
+      "hosts": "Host keys this device trusts"
     }
   },
   "knownHosts": {
@@ -91,5 +95,17 @@
     "forgetTitle": "Stop trusting this key?",
     "forgetMessage": "The key for {host} is forgotten. The next connection to it asks again, and nothing else changes.",
     "forgetConfirm": "Forget it"
+  },
+  "keys": {
+    "empty": "No key has been imported yet.",
+    "import": "Import a key…",
+    "importing": "Waiting for the file…",
+    "passphrase": "Passphrase, if the key has one",
+    "forget": "Forget this key",
+    "forgetTitle": "Forget this key?",
+    "forgetMessage": "The key material for {name} is removed. The {count} session(s) using it cannot connect until another key or password is set.",
+    "forgetConfirm": "Forget it",
+    "usedBy": "used by {count} session(s)",
+    "algorithm": "{algorithm} · {type}"
   }
 }

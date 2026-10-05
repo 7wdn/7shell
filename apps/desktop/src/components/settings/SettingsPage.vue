@@ -30,6 +30,7 @@ import { useI18n } from "vue-i18n";
 
 import SettingsControl from "@/components/settings/SettingsControl.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
+import KnownKeys from "@/components/settings/KnownKeys.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
   LIST_CATEGORIES,
@@ -290,7 +291,16 @@ function translate(key: string, params?: Record<string, string>): string {
                 search for and nothing to restore, so it draws its own content —
                 `LIST_CATEGORIES` is the same list this branch answers to.
               -->
-              <TrustedKeys v-else-if="category === 'security'" />
+              <div v-else-if="category === 'security'" class="space-y-5">
+                <div class="space-y-2">
+                  <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>
+                  <KnownKeys />
+                </div>
+                <div class="space-y-2">
+                  <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.hosts") }}</h4>
+                  <TrustedKeys />
+                </div>
+              </div>
 
               <template v-else>
                 <SettingsRow

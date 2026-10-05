@@ -74,3 +74,12 @@ pub async fn key_import(
 pub fn key_forget(state: State<'_, ShellState>, key_ref: String) -> Result<(), ShellError> {
     state.vault().forget_key(&key_ref)
 }
+
+/// The imported keys, for the page that lists them.
+///
+/// The fingerprints and the names, never the material: what travels out of the vault about a key is
+/// what identifies it, and that is all this returns.
+#[tauri::command]
+pub fn keys_list(state: State<'_, ShellState>) -> Result<Vec<KeyInfo>, ShellError> {
+    state.core().keys()
+}

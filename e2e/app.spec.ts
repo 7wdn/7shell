@@ -860,6 +860,11 @@ test("a trusted host key can be read and taken back", async () => {
     // assertion that would pass on those would prove nothing about this list.
     const settings = page.getByRole("region", { name: "Settings" });
 
+    // The other half of the page: the keys this device holds. Importing one opens a native file
+    // dialog, which this run cannot drive, so what is asserted is that the section is there and
+    // says what it has.
+    await expect(settings.getByText("No key has been imported yet.")).toBeVisible();
+
     // The fingerprint, not just the address: comparing it is the whole reason to look at this list.
     await expect(settings.getByText(`${host}:${port}`, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
     await expect(settings.getByText(/^SHA256:/).first()).toBeVisible();
