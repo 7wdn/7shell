@@ -210,6 +210,7 @@ async function saveGroup(): Promise<void> {
           v-model="commands.draft.command"
           rows="4"
           spellcheck="false"
+          :aria-label="t('commands.command')"
           class="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:border-primary focus:outline-none"
           :placeholder="t('commands.command')"
         ></textarea>

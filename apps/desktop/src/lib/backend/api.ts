@@ -250,9 +250,8 @@ export const backend = {
    * person watching needs each host's row as it lands and not when the slowest one does.
    */
   batch: {
-    /** What the classifier makes of a command. Runs nothing. */
-    classify: (command: string): Promise<RiskAssessment> =>
-      forward("batch_classify", () => desktop.batchClassify(command)),
+    // The verdict for a command is not a batch feature and does not live here: `commands.classify`
+    // is the one place it is asked for, and the same answer is what the batch gate enforces.
     run: (request: BatchRequest): Promise<BatchOutcome> => forward("batch_run", () => desktop.batchRun(request)),
   },
 

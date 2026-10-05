@@ -137,14 +137,14 @@ export const useBatchStore = defineStore("batch", () => {
     const sequence = ++gradeSequence;
     grading.value = true;
     try {
-      const answer = await backend.batch.classify(asking);
+      const answer = await backend.commands.classify(asking);
       if (sequence === gradeSequence) {
         risk.value = answer;
       }
     } catch (error) {
       if (sequence === gradeSequence) {
         risk.value = null;
-        failure.value = asShellError(error, "batch_classify");
+        failure.value = asShellError(error, "command_classify");
       }
     } finally {
       if (sequence === gradeSequence) {

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
-  batchClassify: vi.fn(),
+  commandClassify: vi.fn(),
   batchRun: vi.fn(),
   knownHostTrust: vi.fn(),
   knownHostForget: vi.fn(),
@@ -16,14 +16,14 @@ vi.mock("@/lib/batch/bus", () => ({
   stopBatchBus: vi.fn(),
 }));
 
-import { batchClassify, batchRun } from "@/lib/backend/tauri";
+import { batchRun, commandClassify } from "@/lib/backend/tauri";
 import { onBatchProgress } from "@/lib/batch/bus";
 import { useBatchStore, rowFailed } from "@/stores/batch";
 import { useSessionsStore } from "@/stores/sessions";
 import type { BatchHostResult, BatchOutcome, RiskAssessment } from "@/types/batch";
 import type { Session } from "@/types/session";
 
-const classifyMock = vi.mocked(batchClassify);
+const classifyMock = vi.mocked(commandClassify);
 const runMock = vi.mocked(batchRun);
 const progressMock = vi.mocked(onBatchProgress);
 

@@ -718,3 +718,86 @@ test("a batch runs on a real host and the row says what happened", async () => {
     await close();
   }
 });
+
+/**
+ * A saved command, typed into the shell of a session that is open.
+ *
+ * The whole feature through the window: a session saved the way a person saves one, a terminal
+ * opened on it, the host key question answered, a command kept in the library with a `#1` slot,
+ * the slot filled, and the send button — then the proof that the shell *ran* it, read through a
+ * different feature entirely: the file it was told to create, seen in the file browser.
+ *
+ * That last step is why this case exists at all. A send is only bytes written to a pty: the send
+ * "succeeding" while the far side did nothing is exactly the failure a test of the panel alone
+ * would not notice. The terminal's own output cannot be read here — xterm draws to a canvas, not
+ * into the document — so the observable is the file the command was told to leave behind.
+ */
+test("a saved command reaches the shell and the file it makes appears", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `cmd-${stamp}`;
+
+    await page.getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    // Opening the terminal: the first connection to this host asks about its key.
+    await page.getByTitle(`Open a terminal for ${name}`).click();
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    if (await question.isVisible().catch(() => false)) {
+      await question.click();
+    }
+
+    // The commands panel lives under the terminal, beside the files. Waited for explicitly: the
+    // footer only appears once there is a terminal tab, so a failure here means the terminal never
+    // opened rather than that the button is missing.
+    await expect(page.getByRole("button", { name: "Commands" })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Commands" }).click();
+    await page.getByRole("button", { name: "New command" }).click();
+
+    await page.getByPlaceholder("What it is called").fill("marker");
+    await page.getByLabel(/The line, with/).fill(`touch /tmp/${stamp}-#1`);
+    // The slot box, filled the way somebody fills it before sending.
+    await page.locator('input[list="command-slot-history"]').first().fill("done");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    // What is sent is the line with the value in it, which is what the history then shows.
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(page.getByText(`touch /tmp/${stamp}-done`).first()).toBeVisible({ timeout: 30_000 });
+
+    // And the shell ran it: switch to the file half of the same panel and look at /tmp.
+    //
+    // The button is a toggle and it is `exact` on purpose: the sidebar draws a row per session
+    // whose button also says "files", so the name has to be the whole name. Clicking until the
+    // path bar is there rather than clicking once keeps this independent of which half happened to
+    // be showing.
+    const fileToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    await fileToggle.click();
+    const pathBar = page.getByPlaceholder("Path");
+    if (!(await pathBar.isVisible().catch(() => false))) {
+      await fileToggle.click();
+    }
+    await expect(pathBar).toBeVisible({ timeout: 30_000 });
+    await pathBar.fill("/tmp");
+    await pathBar.press("Enter");
+    await expect(page.getByText(`${stamp}-done`).first()).toBeVisible({ timeout: 30_000 });
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "commands-sent.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});

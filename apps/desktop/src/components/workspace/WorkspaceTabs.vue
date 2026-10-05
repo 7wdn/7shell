@@ -90,6 +90,26 @@ function showCommands(tab: TerminalTab): void {
   panelTab.value[tab.id] = "commands";
 }
 
+/**
+ * The file half of the panel: show it, or close it when it is already what is showing.
+ *
+ * Both halves are set explicitly. Returning to the files from the commands has to say so, or the
+ * panel would still be drawing the commands and the button would look broken — which is exactly
+ * what the end-to-end run said before this was fixed.
+ */
+function showFiles(tab: TerminalTab): void {
+  if (panelShowing(tab) && panelTab.value[tab.id] !== "commands") {
+    // Closing is the store's: it owns the browser and the channel it has to let go of.
+    void terminals.togglePanel(tab);
+    return;
+  }
+
+  panelTab.value[tab.id] = "files";
+  if (tab.panel === null && tab.status === "open") {
+    void terminals.openPanel(tab);
+  }
+}
+
 /** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
 function hasHandle(tab: WorkspaceTab): boolean {
   if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
@@ -298,7 +318,7 @@ function dotClass(tab: WorkspaceTab): string | null {
             :disabled="tab.panel === null && tab.status !== 'open'"
             :aria-pressed="tab.panel !== null"
             :title="tab.panel ? t('terminal.panel.close') : t('terminal.panel.open')"
-            @click="terminals.togglePanel(tab)"
+            @click="showFiles(tab)"
           >
             <PanelBottom :size="11" />
             {{ t("terminal.panel.label") }}

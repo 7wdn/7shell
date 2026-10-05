@@ -357,17 +357,6 @@ export function clipboardText(): Promise<string> {
 
 // -- Batches -----------------------------------------------------------------
 
-/**
- * The verdict for a command, without running anything.
- *
- * Asked for as somebody types, so the warning is on screen before the button is pressed. It is the
- * backend's own classifier answering — the same rules the run itself consults — rather than a copy
- * of them in the interface that could disagree with what is enforced.
- */
-export function batchClassify(command: string): Promise<RiskAssessment> {
-  return invoke<RiskAssessment>("batch_classify", { command });
-}
-
 /** Runs one command across the hosts in the request, with progress arriving on `batch:event`. */
 export function batchRun(request: BatchRequest): Promise<BatchOutcome> {
   return invoke<BatchOutcome>("batch_run", { request });
