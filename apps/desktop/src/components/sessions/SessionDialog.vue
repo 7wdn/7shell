@@ -421,6 +421,16 @@ async function forgetKey(): Promise<void> {
                 </span>
               </span>
             </label>
+
+            <label class="mt-2 flex items-start gap-2 text-xs">
+              <input v-model="editor.terminal.record" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
+              <span>
+                <span>{{ t("sessions.editor.terminal.record") }}</span>
+                <span class="mt-0.5 block text-[11px] text-muted-foreground">
+                  {{ t("sessions.editor.terminal.recordNote") }}
+                </span>
+              </span>
+            </label>
           </section>
 
           <section>

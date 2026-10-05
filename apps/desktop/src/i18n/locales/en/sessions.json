@@ -110,7 +110,9 @@
       "terminal": {
         "title": "Terminal",
         "forwardAgent": "Let this server use the key agent on this machine",
-        "forwardAgentNote": "While the session is open, anything running on that server can ask for signatures. Leave it off unless the server needs it."
+        "forwardAgentNote": "While the session is open, anything running on that server can ask for signatures. Leave it off unless the server needs it.",
+        "record": "Write this session down",
+        "recordNote": "A recording is a plain file on disk holding everything the terminal shows, in a format players like asciinema read. It goes in the recordings folder beside the settings."
       }
     },
     "hostKey": {

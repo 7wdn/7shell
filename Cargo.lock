@@ -3951,7 +3951,9 @@ name = "sevenshell-core"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "serde_json",
  "sevenshell-error",
+ "sevenshell-platform",
  "sevenshell-policy",
  "sevenshell-session",
  "sevenshell-sftp",
@@ -4022,6 +4024,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "serde",
+ "serde_json",
  "sevenshell-error",
  "sevenshell-ssh",
  "sevenshell-types",

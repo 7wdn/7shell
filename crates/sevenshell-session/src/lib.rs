@@ -5,6 +5,8 @@
 //! window events). This crate keeps no credentials: whatever a session needed to authenticate was
 //! handed to `sevenshell-ssh` and dropped there.
 
+mod recording;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,6 +16,7 @@ use sevenshell_ssh::{ChannelEvent, OpenRequest, SshSession};
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 
+pub use recording::{Recording, RecordingSpec};
 /// The events a terminal produces, re-exported so callers do not need the transport crate.
 pub use sevenshell_ssh::ChannelEvent as TerminalEvent;
 
@@ -57,12 +60,28 @@ impl SessionRegistry {
     ///
     /// Returns the handle. If the connection fails, no handle is registered and the error is the
     /// one the transport produced.
-    pub async fn open(self: &Arc<Self>, session_id: &str, request: OpenRequest) -> Result<String, ShellError> {
+    /// Opens a terminal, recording it when the caller asked for that.
+    ///
+    /// A recording that cannot be opened stops the session from opening at all, which is the one
+    /// moment it can be said out loud: a file created once the terminal is already on screen would
+    /// leave somebody believing they were recording.
+    pub async fn open(
+        self: &Arc<Self>,
+        session_id: &str,
+        request: OpenRequest,
+        recording: Option<RecordingSpec>,
+    ) -> Result<String, ShellError> {
         let handle = format!("t{}", self.next_handle.fetch_add(1, Ordering::Relaxed));
+
+        let recording = match &recording {
+            Some(spec) => Some(Recording::create(spec).await?),
+            None => None,
+        };
+
         let (sender, receiver) = mpsc::channel(256);
         let session = SshSession::open(request, sender).await?;
 
-        let forwarder = self.forward(&handle, receiver);
+        let forwarder = self.forward(&handle, receiver, recording);
         self.sessions.lock().await.insert(
             handle.clone(),
             OpenSession {
@@ -144,7 +163,12 @@ impl SessionRegistry {
     }
 
     /// Forwards one terminal's output to the host, and forgets the session when it ends.
-    fn forward(self: &Arc<Self>, handle: &str, mut receiver: mpsc::Receiver<ChannelEvent>) -> JoinHandle<()> {
+    fn forward(
+        self: &Arc<Self>,
+        handle: &str,
+        mut receiver: mpsc::Receiver<ChannelEvent>,
+        mut recording: Option<Recording>,
+    ) -> JoinHandle<()> {
         let registry = Arc::clone(self);
         let events = self.events.clone();
         let forwarded = handle.to_owned();
@@ -152,6 +176,13 @@ impl SessionRegistry {
         tokio::spawn(async move {
             while let Some(event) = receiver.recv().await {
                 let ended = matches!(event, ChannelEvent::Closed { .. });
+
+                // Recorded as it arrives and before it is forwarded: what the person saw and what
+                // the file holds have to be the same bytes, and waiting on the interface to keep up
+                // would make the recording a report about the interface instead.
+                if let (Some(recording), ChannelEvent::Data(bytes)) = (recording.as_mut(), &event) {
+                    recording.output(bytes).await;
+                }
                 // Backpressure is the point: if the interface cannot keep up, the remote reads
                 // pause rather than the bytes piling up in this process.
                 if events
@@ -167,6 +198,10 @@ impl SessionRegistry {
                 if ended {
                     break;
                 }
+            }
+
+            if let Some(recording) = recording.take() {
+                recording.finish().await;
             }
 
             // The session ended on its own, so it is dropped here rather than waiting for a close

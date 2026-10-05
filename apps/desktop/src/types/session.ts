@@ -34,6 +34,13 @@ export interface TerminalSettings {
    * ask this machine's agent to sign. It is a deliberate lending of the keys.
    */
   readonly forwardAgent: boolean;
+  /**
+   * Whether this session is written down as it happens.
+   *
+   * A recording is a plain file on disk holding everything the terminal showed, so it is off unless
+   * somebody says so.
+   */
+  readonly record: boolean;
 }
 
 /**

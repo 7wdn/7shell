@@ -146,6 +146,12 @@ pub struct TerminalSettings {
     /// deliberate lending of the keys, for as long as the session is open.
     #[serde(default)]
     pub forward_agent: bool,
+    /// Whether this session is written down as it happens.
+    ///
+    /// A recording is a plain file on disk holding everything the terminal ever showed — including
+    /// anything printed that was not meant to be kept — so it is off unless somebody says so.
+    #[serde(default)]
+    pub record: bool,
 }
 
 impl Default for TerminalSettings {
@@ -154,6 +160,7 @@ impl Default for TerminalSettings {
             terminal_type: "xterm-256color".to_owned(),
             keepalive_seconds: 30,
             forward_agent: false,
+            record: false,
         }
     }
 }

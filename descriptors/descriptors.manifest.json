@@ -77,7 +77,7 @@
       "order": 100,
       "group": "session",
       "labelKey": "capability.recording.label",
-      "planned": true
+      "planned": false
     },
     {
       "key": "secret",
@@ -127,6 +127,7 @@
         "sftp",
         "forwarding",
         "dynamicForwarding",
+        "recording",
         "jumpHost"
       ]
     }

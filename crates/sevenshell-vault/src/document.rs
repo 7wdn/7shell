@@ -30,8 +30,8 @@ use zeroize::{Zeroize, Zeroizing};
 /// *local* one — a tunnel to the wrong place rather than a missing line. Version 4 added a session's
 /// agent forwarding, which such a build would drop on its next write — a setting changed without
 /// anybody saying so, in the direction of "off", which is the safe way round but still not a thing
-/// to do quietly.
-pub const VAULT_SCHEMA_VERSION: u32 = 4;
+/// to do quietly. Version 5 added session recording, for the same reason.
+pub const VAULT_SCHEMA_VERSION: u32 = 5;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -567,9 +567,9 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
         document.ensure_default_group();
     }
 
-    // 2 → 3: forwards gained a mode. 3 → 4: a session gained agent forwarding. Neither has
-    // anything to rewrite — the defaults are what every document meant — so both steps are the
-    // version number alone.
+    // 2 → 3: forwards gained a mode. 3 → 4: a session gained agent forwarding. 4 → 5: a session
+    // gained recording. None of them has anything to rewrite — the defaults are what every document
+    // meant — so the steps are the version number alone.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)

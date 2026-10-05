@@ -22,6 +22,7 @@ const DEFAULT_TERMINAL: TerminalSettings = {
   terminalType: "xterm-256color",
   keepaliveSeconds: 30,
   forwardAgent: false,
+  record: false,
 };
 
 /** Bounds of a TCP port, and the one case where zero is a real answer: asking for a free one. */

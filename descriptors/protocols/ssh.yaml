@@ -20,4 +20,5 @@ capabilities:
   - sftp
   - forwarding
   - dynamicForwarding
+  - recording
   - jumpHost

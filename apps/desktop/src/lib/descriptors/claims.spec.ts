@@ -17,10 +17,15 @@ describe("what the descriptors claim", () => {
     expect(isCapabilityClaimed("dynamicForwarding")).toBe(true);
   });
 
-  it("leaves the ones nothing built unclaimed", () => {
-    for (const capability of ["agentForwarding", "recording"] as const) {
-      expect(isCapabilityClaimed(capability), `${capability} is not implemented`).toBe(false);
-    }
+  it("counts recording as claimed, now that a session can be written down", () => {
+    expect(isCapabilityClaimed("recording")).toBe(true);
+  });
+
+  it("leaves the one nothing has been shown to do unclaimed", () => {
+    // Agent forwarding is implemented and *still* unclaimed, which is the rule rather than an
+    // oversight: what it promises is the far side using this machine's agent, and that has not been
+    // demonstrated anywhere this was built. The descriptor says what would change that.
+    expect(isCapabilityClaimed("agentForwarding")).toBe(false);
   });
 
   it("splits the vocabulary in two, without losing or repeating anything", () => {

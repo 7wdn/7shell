@@ -69,9 +69,6 @@ capabilities:
     order: 100
     group: session
     labelKey: capability.recording.label
-    # In the vocabulary, but nothing claims it yet: session recording is not
-    # implemented, and declaring it on a protocol would let the interface offer it.
-    planned: true
 
   - key: secret
     order: 110

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
-use sevenshell_session::{OpenTerminal, SessionRegistry};
+use sevenshell_session::{OpenTerminal, RecordingSpec, SessionRegistry};
 use sevenshell_ssh::{
     Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
 };
@@ -162,7 +162,10 @@ impl Core {
             purpose: Purpose::Terminal,
         };
 
-        let handle = self.registry.open(session_id, request).await?;
+        let handle = self
+            .registry
+            .open(session_id, request, self.recording_for(&session)?)
+            .await?;
         let (tunnels, tunnel_failures) = self.bring_up_forwards(&handle, &session).await;
 
         Ok(OpenOutcome::Opened {
@@ -495,6 +498,46 @@ impl Core {
         Ok(ConnectionOutcome::Ready(Arc::new(
             SshSession::open(request, output).await?,
         )))
+    }
+
+    /// Where this session's recording goes, when it is being recorded.
+    ///
+    /// The name comes from the session and the clock, and both are cleaned up on the way into a
+    /// path: a session may be called anything at all, and a name with a slash in it would put the
+    /// recording somewhere nobody chose.
+    fn recording_for(&self, session: &Session) -> Result<Option<RecordingSpec>, ShellError> {
+        if !session.terminal.record {
+            return Ok(None);
+        }
+
+        let directory = sevenshell_platform::config_dir().ok_or_else(|| {
+            ShellError::store_io("the configuration directory could not be located, so a recording has nowhere to go")
+        })?;
+
+        let stamp = now_seconds();
+        let cleaned: String = session
+            .name
+            .chars()
+            .map(|character| {
+                if character.is_ascii_alphanumeric() {
+                    character
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        let name = if cleaned.trim_matches('-').is_empty() {
+            "session".to_owned()
+        } else {
+            cleaned.trim_matches('-').to_owned()
+        };
+
+        Ok(Some(RecordingSpec {
+            path: directory.join("recordings").join(format!("{name}-{stamp}.cast")),
+            width: INITIAL_SIZE.columns,
+            height: INITIAL_SIZE.rows,
+            title: session.name.clone(),
+        }))
     }
 
     /// Collects what a session authenticates with. The material is held only long enough to be

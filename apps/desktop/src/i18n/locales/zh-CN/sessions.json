@@ -110,7 +110,9 @@
       "terminal": {
         "title": "终端",
         "forwardAgent": "允许这台服务器使用本机的密钥代理",
-        "forwardAgentNote": "会话打开期间，那台服务器上运行的任何程序都可以请求签名。除非服务器确实需要，否则不要打开。"
+        "forwardAgentNote": "会话打开期间，那台服务器上运行的任何程序都可以请求签名。除非服务器确实需要，否则不要打开。",
+        "record": "记录这次会话",
+        "recordNote": "录制是一个普通文件，保存终端显示过的一切，格式为 asciinema 这类播放器可读取的 asciicast。文件放在设置旁边的 recordings 目录里。"
       }
     },
     "hostKey": {

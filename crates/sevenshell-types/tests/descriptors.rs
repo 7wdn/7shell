@@ -45,16 +45,18 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert!(ssh.supports(Capability::Sftp));
     assert!(ssh.supports(Capability::Forwarding));
     assert!(ssh.supports(Capability::DynamicForwarding));
+    assert!(ssh.supports(Capability::Recording));
     assert!(ssh.supports(Capability::JumpHost));
 
-    // What it does not do yet. These stay in the vocabulary as `planned`, so they are neither
-    // offered by the interface nor quietly forgotten.
-    for unclaimed in [Capability::AgentForwarding, Capability::Recording] {
-        assert!(
-            !ssh.supports(unclaimed),
-            "{unclaimed} is not implemented and must not be claimed"
-        );
-    }
+    // What it does not claim yet, and the one of these that is worth reading twice: agent
+    // forwarding *is* implemented — the request goes out and the reverse channel is bridged — and
+    // is deliberately not claimed, because what the capability promises is the far side using this
+    // machine's agent and that has not been demonstrated anywhere this was built. The descriptor
+    // says what would change that.
+    assert!(
+        !ssh.supports(Capability::AgentForwarding),
+        "agent forwarding is implemented but not verified end to end, so it stays unclaimed"
+    );
 }
 
 #[test]

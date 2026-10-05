@@ -540,3 +540,102 @@ async fn socks5_refusal(port: u16, target: u16) -> u8 {
         .expect("ten bytes of it");
     reply[1]
 }
+
+/// A recorded session writes down what the terminal showed, in a format other tools can play.
+///
+/// The proof is the file: the header describes the terminal, and the marker the test printed is in
+/// it — which is what "recorded" means. The configuration directory is pointed at a temp folder for
+/// the length of this test, which is also how the recording's path is decided: the application
+/// chooses it, and nobody types a path.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_recorded_session_leaves_a_file_that_holds_what_was_shown() {
+    let Some(mut lab) = lab_with_session(None) else {
+        return;
+    };
+
+    let directory = tempfile::tempdir().expect("a temp dir");
+    // SAFETY: one test sets one environment variable, and the live suite runs a single test at a
+    // time (`--test-threads=1`); the previous value is put back before this returns.
+    let previous = std::env::var_os("SEVENSHELL_CONFIG_DIR");
+    unsafe { std::env::set_var("SEVENSHELL_CONFIG_DIR", directory.path()) };
+
+    let mut recorded = lab.vault.sessions().expect("sessions")[0].clone();
+    recorded.id = "lab-recorded".to_owned();
+    recorded.name = "recorded lab".to_owned();
+    recorded.terminal = TerminalSettings {
+        record: true,
+        ..recorded.terminal
+    };
+    lab.vault
+        .save_session(
+            recorded,
+            Some(SessionSecret::Password(
+                environment("SEVENSHELL_TEST_PASSWORD").unwrap_or_default(),
+            )),
+        )
+        .expect("save");
+    lab.session_id = "lab-recorded".to_owned();
+
+    let mut handle = None;
+    for _ in 0..4 {
+        match lab.core.open_terminal(&lab.session_id).await.expect("open") {
+            OpenOutcome::Opened { handle: opened, .. } => {
+                handle = Some(opened);
+                break;
+            }
+            OpenOutcome::HostKeyUnknown { key } => lab.core.trust_host_key(&key).expect("trust"),
+            other => panic!("expected the session to open, got {other:?}"),
+        }
+    }
+    let handle = handle.expect("the terminal opens");
+
+    let marker = "seven-shell-recording-marker";
+    lab.core
+        .write(
+            &handle,
+            format!(
+                "echo {marker}
+"
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("the command is typed");
+    let seen = collect_until(&mut lab.events, &handle, marker).await;
+    assert!(seen.contains(marker), "the command ran; collected: {seen}");
+
+    lab.core.close_terminal(&handle).await.expect("close");
+
+    let recordings = directory.path().join("recordings");
+    let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(&recordings)
+        .expect("the recordings directory")
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .collect();
+    assert_eq!(entries.len(), 1, "one session, one recording: {entries:?}");
+
+    let path = entries.pop().expect("a recording");
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+    assert!(
+        file_name.starts_with("recorded-lab-") && file_name.ends_with(".cast"),
+        "the name comes from the session, cleaned up for a path: {file_name}"
+    );
+
+    let text = std::fs::read_to_string(&path).expect("the recording is readable");
+    let mut lines = text.lines();
+    let header: serde_json::Value = serde_json::from_str(lines.next().expect("a header")).expect("JSON");
+    assert_eq!(header["version"], 2, "asciicast v2");
+    assert_eq!(header["title"], "recorded lab");
+
+    assert!(
+        text.contains(marker),
+        "the recording holds what the terminal showed; it holds: {text}"
+    );
+
+    if let Some(previous) = previous {
+        unsafe { std::env::set_var("SEVENSHELL_CONFIG_DIR", previous) };
+    } else {
+        unsafe { std::env::remove_var("SEVENSHELL_CONFIG_DIR") };
+    }
+}
