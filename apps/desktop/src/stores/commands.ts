@@ -19,7 +19,7 @@ import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { RiskAssessment } from "@/types/batch";
-import type { CommandHistoryEntry, Snippet, SnippetGroup } from "@/types/snippet";
+import type { CommandHistoryEntry, SendFailure, Snippet, SnippetGroup } from "@/types/snippet";
 
 /** How many `#n` slots a line may use. The same five the storage knows about. */
 export const SLOTS = 5;
@@ -75,8 +75,10 @@ export const useCommandsStore = defineStore("commands", () => {
   const approval = ref<RiskAssessment | null>(null);
   const acknowledged = ref(false);
   const sending = ref(false);
-  /** What the last send answered, per terminal, when something did not reach. */
+  /** Why the send itself could not be made at all, rather than not made to every terminal. */
   const sendFailure = ref<ShellError | null>(null);
+  /** The terminals the last send could not reach, each with the reason a person reads. */
+  const sendFailures = ref<SendFailure[]>([]);
   const lastSent = ref(0);
 
   const slots = computed(() => (draft.value ? slotsIn(draft.value.command) : []));
@@ -251,12 +253,48 @@ export const useCommandsStore = defineStore("commands", () => {
       }
 
       approval.value = null;
+      // Per terminal: "it reached three of them" is the useful answer when one tab has ended.
+      sendFailures.value = [...outcome.report.failures];
       lastSent.value += 1;
       // The values that were used are the ones worth offering next time.
       const current = draft.value;
       if (current?.id && slots.value.length > 0) {
         await rememberValues(current.id);
       }
+      await load();
+    } catch (error) {
+      sendFailure.value = asShellError(error, "command_send");
+    } finally {
+      sending.value = false;
+    }
+  }
+
+  /**
+   * Sends one line, typed rather than edited: what the terminal's input bar does.
+   *
+   * The target is the terminal on screen, because the bar lives in it — and a line sent to the one
+   * shell somebody is looking at is not gated, which is the same rule as typing it there.
+   */
+  async function sendLiteral(line: string): Promise<void> {
+    const terminals = useTerminalsStore();
+    const handle = terminals.activeTerminalHandle();
+    if (handle === null || line.trim() === "" || sending.value) {
+      return;
+    }
+
+    sending.value = true;
+    sendFailure.value = null;
+    try {
+      const outcome = await backend.commands.send({ kind: "terminals", handles: [handle] }, line, true, false);
+      if (outcome.kind === "approvalRequired") {
+        // The core does not gate a single terminal, so this cannot arrive today. Reported rather
+        // than ignored: a silent no-op here would be a line that never ran and never said why.
+        approval.value = outcome.risk;
+        return;
+      }
+
+      sendFailures.value = [...outcome.report.failures];
+      lastSent.value += 1;
       await load();
     } catch (error) {
       sendFailure.value = asShellError(error, "command_send");
@@ -298,6 +336,7 @@ export const useCommandsStore = defineStore("commands", () => {
     acknowledged,
     sending,
     sendFailure,
+    sendFailures,
     lastSent,
     slots,
     filled,
@@ -313,5 +352,6 @@ export const useCommandsStore = defineStore("commands", () => {
     clearHistory,
     editFromHistory,
     send,
+    sendLiteral,
   };
 });

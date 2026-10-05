@@ -15,14 +15,14 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
-import { AUTH_METHODS, CAPABILITIES, PROTOCOLS, protocolSupports } from "@/types/generated/protocols";
+import { AUTH_METHODS } from "@/types/generated/protocols";
+import { claimedCapabilities, unclaimedCapabilities } from "@/lib/descriptors/claims";
 
 const { t } = useI18n();
 const app = useAppStore();
 const library = useSessionsStore();
 const terminals = useTerminalsStore();
 
-const protocols = computed(() => PROTOCOLS);
 const authMethods = computed(() => AUTH_METHODS);
 
 /**
@@ -33,23 +33,21 @@ const openTerminals = computed(
   () => terminals.tabs.filter((tab) => tab.kind === "terminal" && tab.status === "open").length,
 );
 
-/** The capabilities SSH declares, and the ones still sitting in the catalog unclaimed. */
-const claimedCapabilities = computed(() =>
-  CAPABILITIES.filter((capability) =>
-    protocols.value.some((protocol) => protocolSupports(protocol.id, capability.key)),
-  ),
-);
-const unclaimedCapabilities = computed(() =>
-  CAPABILITIES.filter(
-    (capability) => !protocols.value.some((protocol) => protocolSupports(protocol.id, capability.key)),
-  ),
-);
+/**
+ * What this build can do, and what nothing claims yet.
+ *
+ * From `lib/descriptors/claims`, which asks every descriptor — a capability an authentication
+ * method claims is as real as one a protocol claims, and asking only about protocols is what made
+ * this page report stored secrets and key files as missing.
+ */
+const claimed = computed(() => claimedCapabilities());
+const unclaimed = computed(() => unclaimedCapabilities());
 
 const tiles = computed(() => [
   { key: "sessions", label: t("home.tile.sessions"), value: library.sessions.length },
   { key: "terminals", label: t("home.tile.terminals"), value: openTerminals.value },
   { key: "protocols", label: t("home.tile.protocols"), value: app.info?.protocolCount ?? 0 },
-  { key: "capabilities", label: t("home.tile.capabilities"), value: claimedCapabilities.value.length },
+  { key: "capabilities", label: t("home.tile.capabilities"), value: claimed.value.length },
   { key: "authMethods", label: t("home.tile.authMethods"), value: authMethods.value.length },
 ]);
 
@@ -131,7 +129,7 @@ const buildKind = computed(() => {
           <p class="mb-2 text-xs text-muted-foreground">{{ t("home.status.claimed") }}</p>
           <ul class="flex flex-wrap gap-1.5">
             <li
-              v-for="capability in claimedCapabilities"
+              v-for="capability in claimed"
               :key="capability.key"
               class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs"
             >
@@ -145,7 +143,7 @@ const buildKind = computed(() => {
           <p class="mb-2 text-xs text-muted-foreground">{{ t("home.status.unclaimed") }}</p>
           <ul class="flex flex-wrap gap-1.5">
             <li
-              v-for="capability in unclaimedCapabilities"
+              v-for="capability in unclaimed"
               :key="capability.key"
               class="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground"
             >

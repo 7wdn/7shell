@@ -23,9 +23,20 @@
       "new": "新建分类",
       "name": "分类名称",
       "add": "添加",
-      "default": "默认分类"
+      "default": "默认分类",
+      "remove": "删除分类",
+      "removeTitle": "删除这个分类？",
+      "removeMessage": "分类和里面的 {count} 条命令会一起删除，无法撤销。",
+      "removeConfirm": "删除"
     },
     "historyClear": "清空",
-    "panel": "命令"
+    "panel": "命令",
+    "input": {
+      "placeholder": "输入命令后回车发送",
+      "label": "命令输入",
+      "send": "发送到当前会话"
+    },
+    "historyEmpty": "还没有发送过命令。",
+    "default": "默认分类"
   }
 }

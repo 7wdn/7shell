@@ -46,6 +46,7 @@ import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import BatchPanel from "@/components/batch/BatchPanel.vue";
+import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import HostPage from "@/components/inspect/HostPage.vue";
@@ -291,6 +292,13 @@ function dotClass(tab: WorkspaceTab): string | null {
           class="min-h-0 flex-1"
           :style="tab.panel ? { minHeight: `${MIN_PANE_PX}px` } : undefined"
         />
+
+        <!--
+          The command bar, directly under the terminal and above its strip: a line typed here goes
+          into the shell above it, which is what having it next to the prompt is about. It is drawn
+          only while the terminal is open — a bar that could not deliver would be a lie.
+        -->
+        <CommandInputBar v-if="tab.status === 'open'" />
 
         <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <CircleAlert :size="18" class="text-destructive" />

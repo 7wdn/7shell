@@ -17,8 +17,10 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
-import { describeShellError } from "@/i18n/errors";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import { describeErrorFields, describeShellError } from "@/i18n/errors";
 import { atLeast, needsApproval } from "@/lib/batch/risk";
+import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { useCommandsStore } from "@/stores/commands";
 import { useTerminalsStore } from "@/stores/terminals";
 
@@ -31,6 +33,15 @@ const openGroup = ref<string>("");
 
 const newGroupName = ref("");
 const addingGroup = ref(false);
+
+/**
+ * The group somebody asked to remove.
+ *
+ * A question rather than an immediate delete: taking a group takes the commands in it, and a
+ * command is a line somebody wrote — the one thing in this panel that cannot be typed again from
+ * memory.
+ */
+const removing = ref<{ id: string; name: string; count: number } | null>(null);
 
 onMounted(async () => {
   await commands.load();
@@ -50,6 +61,16 @@ function translate(key: string, params?: Record<string, string>): string {
 }
 
 const problem = computed(() => (commands.failure ? describeShellError(translate, commands.failure) : null));
+
+/**
+ * The terminals the last send could not reach.
+ *
+ * Each with its own reason, because "it reached three of them" is the answer somebody acts on when
+ * the fourth tab has ended.
+ */
+const unreached = computed(() =>
+  commands.sendFailures.map((failure) => ({ failure, described: describeErrorFields(translate, failure) })),
+);
 
 /** Whether the send button can do anything: a line, a target with a shell behind it, and no wait. */
 const canSend = computed(() => {
@@ -114,17 +135,25 @@ async function saveGroup(): Promise<void> {
 
       <ul class="shrink-0 overflow-auto border-b border-border py-1">
         <li v-for="group in commands.groups" :key="group.id">
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-2 py-1 text-left transition-colors"
+          <div
+            class="group flex items-center gap-1 px-2 py-1 transition-colors"
             :class="group.id === openGroup ? 'bg-accent/60' : 'hover:bg-accent/30'"
-            @click="openGroup = group.id"
           >
-            <span class="min-w-0 flex-1 truncate">
+            <button type="button" class="min-w-0 flex-1 truncate text-left" @click="openGroup = group.id">
               {{ group.name === "" ? t("commands.group.default") : group.name }}
-            </span>
-            <span class="text-[10px] text-muted-foreground">{{ group.commands.length }}</span>
-          </button>
+            </button>
+            <span class="shrink-0 text-[10px] text-muted-foreground">{{ group.commands.length }}</span>
+            <button
+              v-if="group.id !== DEFAULT_GROUP_ID"
+              type="button"
+              class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground"
+              :title="t('commands.group.remove')"
+              :aria-label="t('commands.group.remove')"
+              @click="removing = { id: group.id, name: group.name, count: group.commands.length }"
+            >
+              <Trash2 :size="10" />
+            </button>
+          </div>
         </li>
       </ul>
 
@@ -241,6 +270,15 @@ async function saveGroup(): Promise<void> {
           <p class="font-mono text-[10px] text-muted-foreground">{{ problem.code }}</p>
         </div>
 
+        <ul v-if="unreached.length > 0" class="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
+          <li v-for="entry in unreached" :key="entry.failure.handle" class="flex items-baseline gap-2">
+            <span class="shrink-0 font-mono text-[10px] text-muted-foreground">{{ entry.failure.handle }}</span>
+            <span class="min-w-0 flex-1 truncate" :title="entry.described.detail ?? entry.described.code">
+              {{ entry.described.message }}
+            </span>
+          </li>
+        </ul>
+
         <!-- The verdict, when the send was stopped by it: what it says and the button that agrees. -->
         <div
           v-if="commands.approval"
@@ -321,5 +359,19 @@ async function saveGroup(): Promise<void> {
         <p class="max-w-sm text-[11px] text-muted-foreground">{{ t("commands.hint") }}</p>
       </div>
     </section>
+
+    <ConfirmDialog
+      v-if="removing"
+      :open="true"
+      :title="t('commands.group.removeTitle')"
+      :message="t('commands.group.removeMessage', { count: removing.count })"
+      :confirm-label="t('commands.group.removeConfirm')"
+      danger
+      @confirm="
+        commands.removeGroup(removing.id);
+        removing = null;
+      "
+      @update:open="removing = null"
+    />
   </div>
 </template>

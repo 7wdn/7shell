@@ -23,9 +23,20 @@
       "new": "New group",
       "name": "Group name",
       "add": "Add",
-      "default": "Default"
+      "default": "Default",
+      "remove": "Delete group",
+      "removeTitle": "Delete this group?",
+      "removeMessage": "The group and the {count} command(s) in it are removed. This cannot be undone.",
+      "removeConfirm": "Delete"
     },
     "historyClear": "Clear",
-    "panel": "Commands"
+    "panel": "Commands",
+    "input": {
+      "placeholder": "Type a command and press Enter",
+      "label": "Command input",
+      "send": "Send to this session"
+    },
+    "historyEmpty": "Nothing sent yet.",
+    "default": "Default"
   }
 }

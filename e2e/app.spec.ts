@@ -797,6 +797,22 @@ test("a saved command reaches the shell and the file it makes appears", async ()
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "commands-sent.png"), fullPage: false });
+
+    // The bar under the terminal: the command somebody did not save. Enter sends it, and the line
+    // it ran is kept in the same history the panel draws.
+    const bar = page.getByLabel("Command input");
+    await bar.fill(`touch /tmp/${stamp}-typed`);
+    await bar.press("Enter");
+    await page.getByRole("button", { name: "History" }).click();
+    await expect(page.getByText(`touch /tmp/${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
+
+    // And the shell ran that one too: back to the listing, refreshed by navigating away and in.
+    await page.getByRole("button", { name: "History" }).click();
+    await pathBar.fill("/");
+    await pathBar.press("Enter");
+    await pathBar.fill("/tmp");
+    await pathBar.press("Enter");
+    await expect(page.getByText(`${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
   } finally {
     await close();
   }
