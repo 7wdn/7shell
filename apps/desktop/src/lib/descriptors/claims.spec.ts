@@ -6,13 +6,19 @@ describe("what the descriptors claim", () => {
   it("counts a capability an authentication method claims as claimed", () => {
     // The three the home page used to report as unclaimed while the build had them: passwords are
     // stored in the vault, keyboard-interactive is answered, and a key file can be imported.
-    for (const capability of ["secret", "interactive", "keyMaterial"] as const) {
-      expect(isCapabilityClaimed(capability), `${capability} is claimed by an auth method`).toBe(true);
+    for (const capability of ["secret", "interactive", "keyMaterial", "platformAgent"] as const) {
+      expect(isCapabilityClaimed(capability), `${capability} is claimed`).toBe(true);
     }
   });
 
+  it("counts a dynamic forward as claimed, now that one can be brought up", () => {
+    // It was unclaimed here until SOCKS5 landed, which is the guard doing its job: a capability
+    // that starts being implemented has to be moved deliberately.
+    expect(isCapabilityClaimed("dynamicForwarding")).toBe(true);
+  });
+
   it("leaves the ones nothing built unclaimed", () => {
-    for (const capability of ["dynamicForwarding", "agentForwarding", "recording"] as const) {
+    for (const capability of ["agentForwarding", "recording"] as const) {
       expect(isCapabilityClaimed(capability), `${capability} is not implemented`).toBe(false);
     }
   });

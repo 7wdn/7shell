@@ -19,4 +19,5 @@ capabilities:
   - hostMetrics
   - sftp
   - forwarding
+  - dynamicForwarding
   - jumpHost

@@ -130,11 +130,46 @@ describe("session editor store", () => {
 
     expect(sessionSaveMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        forwards: [{ id: row.id, bindHost: "127.0.0.1", bindPort: 0, targetHost: "db.internal", targetPort: 5432 }],
+        forwards: [
+          {
+            id: row.id,
+            mode: "local",
+            bindHost: "127.0.0.1",
+            bindPort: 0,
+            targetHost: "db.internal",
+            targetPort: 5432,
+          },
+        ],
       }),
       undefined,
     );
     expect(library.sessions[0]?.forwards?.[0]?.targetPort).toBe(5432);
+  });
+
+  it("saves a dynamic forward with no destination of its own", async () => {
+    const library = useSessionsStore();
+    const editor = useSessionEditorStore();
+    editor.fill(sample("app", "app"));
+    editor.addForward();
+
+    const row = editor.forwards[0];
+    if (!row) {
+      throw new Error("addForward should have added a row");
+    }
+    // A destination typed before the kind was switched is not carried: a field saved under a kind
+    // that ignores it is a field the next reader has to know to ignore.
+    row.targetHost = "db.internal";
+    row.targetPort = "5432";
+    row.mode = "dynamic";
+
+    await library.save(editor.draft());
+
+    expect(sessionSaveMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        forwards: [{ id: row.id, mode: "dynamic", bindHost: "127.0.0.1", bindPort: 0, targetHost: "", targetPort: 0 }],
+      }),
+      undefined,
+    );
   });
 
   it("saves no route or forwards at all when there are none", async () => {

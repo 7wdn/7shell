@@ -18,7 +18,9 @@ use std::time::Duration;
 use sevenshell_core::Core;
 use sevenshell_error::{ErrorCode, ShellError};
 use sevenshell_session::TerminalEvent;
-use sevenshell_types::{AuthMethod, KnownHostEntry, LocalForward, OpenOutcome, Session, SessionAuth, TerminalSettings};
+use sevenshell_types::{
+    AuthMethod, ForwardMode, KnownHostEntry, LocalForward, OpenOutcome, Session, SessionAuth, TerminalSettings,
+};
 use sevenshell_vault::{SessionSecret, Vault};
 use tempfile::{TempDir, tempdir};
 use tokio::sync::mpsc;
@@ -337,6 +339,7 @@ async fn a_saved_forward_answers_a_local_port_from_the_far_side() {
         // Port zero: the system picks one, and the outcome says which.
         bind_host: "127.0.0.1".to_owned(),
         bind_port: 0,
+        mode: ForwardMode::Local,
         target_host: "127.0.0.1".to_owned(),
         target_port: lab.vault.sessions().expect("sessions")[0].port,
     }];
@@ -400,4 +403,140 @@ async fn a_saved_forward_answers_a_local_port_from_the_far_side() {
         lab.core.tunnels().await.is_empty(),
         "closing the terminal closes its forwards"
     );
+}
+
+/// A dynamic forward is a SOCKS5 proxy on this machine whose destinations are reached from the
+/// far side.
+///
+/// The proof is the same shape as the local forward's and deliberately stronger: the test speaks
+/// SOCKS5 to the port it just opened, asks for the lab's *own sshd port*, and reads the SSH banner
+/// back — which can only have come through the connection, because the address it asked for means
+/// nothing to anything but the far side. A domain name is exercised as well, since passing one on
+/// unread is the whole reason a tunnel resolves names where it lands.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_dynamic_forward_answers_what_a_client_asks_for() {
+    let Some(mut lab) = lab_with_session(None) else {
+        return;
+    };
+
+    let mut forwarding = lab.vault.sessions().expect("sessions")[0].clone();
+    forwarding.id = "lab-socks".to_owned();
+    forwarding.forwards = vec![LocalForward {
+        id: "socks".to_owned(),
+        bind_host: "127.0.0.1".to_owned(),
+        // Port zero: the system picks one, and the outcome says which.
+        bind_port: 0,
+        mode: ForwardMode::Dynamic,
+        // Left empty on purpose: a dynamic forward is told where to go by each client, and an
+        // address saved here would be a destination nobody asked for.
+        target_host: String::new(),
+        target_port: 0,
+    }];
+    lab.vault
+        .save_session(
+            forwarding,
+            Some(SessionSecret::Password(
+                environment("SEVENSHELL_TEST_PASSWORD").unwrap_or_default(),
+            )),
+        )
+        .expect("save");
+    lab.session_id = "lab-socks".to_owned();
+
+    let mut bound = None;
+    for _ in 0..4 {
+        match lab.core.open_terminal(&lab.session_id).await.expect("open") {
+            OpenOutcome::Opened { handle, tunnels, .. } => {
+                assert_eq!(tunnels.len(), 1);
+                assert_eq!(tunnels[0].mode, ForwardMode::Dynamic);
+                bound = Some((handle, tunnels[0].bind_port));
+                break;
+            }
+            OpenOutcome::HostKeyUnknown { key } => lab.core.trust_host_key(&key).expect("trust"),
+            other => panic!("expected the session to open, got {other:?}"),
+        }
+    }
+
+    let (handle, port) = bound.expect("the forward is up");
+    let lab_port = lab.vault.sessions().expect("sessions")[0].port;
+
+    // A name rather than an address: `localhost` means the far side, whichever machine this is.
+    let banner = socks5_ssh_banner(port, "localhost", lab_port).await;
+    assert!(
+        banner.starts_with("SSH-"),
+        "the SOCKS5 proxy reached the far side's sshd; got {banner:?}"
+    );
+
+    // The count is the proof the connection was carried rather than refused somewhere.
+    let tunnels = lab.core.tunnels().await;
+    let socks = tunnels
+        .iter()
+        .find(|tunnel| tunnel.id.ends_with("socks"))
+        .expect("the tunnel");
+    assert!(socks.connections >= 1, "connections: {}", socks.connections);
+
+    // And a destination the far side cannot reach is refused as one rather than as a broken tunnel.
+    let refused = socks5_refusal(port, 1).await;
+    assert_eq!(refused, 0x04, "host unreachable: the far side said no");
+
+    lab.core.close_terminal(&handle).await.expect("close");
+    assert!(
+        lab.core.tunnels().await.is_empty(),
+        "a tunnel does not outlive the terminal it belongs to"
+    );
+}
+
+/// Speaks SOCKS5 to `port`, asks for `host:target`, and reads what the destination says first.
+async fn socks5_ssh_banner(port: u16, host: &str, target: u16) -> String {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect to the SOCKS5 listener");
+
+    stream.write_all(&[0x05, 0x01, 0x00]).await.expect("the greeting");
+    let mut method = [0_u8; 2];
+    stream.read_exact(&mut method).await.expect("the method");
+    assert_eq!(method, [0x05, 0x00]);
+
+    let mut request = vec![0x05, 0x01, 0x00, 0x03, host.len() as u8];
+    request.extend_from_slice(host.as_bytes());
+    request.extend_from_slice(&target.to_be_bytes());
+    stream.write_all(&request).await.expect("the request");
+
+    let mut reply = [0_u8; 10];
+    tokio::time::timeout(Duration::from_secs(10), stream.read_exact(&mut reply))
+        .await
+        .expect("the reply arrives")
+        .expect("ten bytes of it");
+    assert_eq!(reply[1], 0x00, "the connection was granted");
+
+    let mut banner = vec![0_u8; 64];
+    let read = stream.read(&mut banner).await.expect("the banner");
+    banner.truncate(read);
+    String::from_utf8_lossy(&banner).into_owned()
+}
+
+/// The reply code a request gets when the destination cannot be reached from the far side.
+async fn socks5_refusal(port: u16, target: u16) -> u8 {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .expect("connect to the SOCKS5 listener");
+    stream.write_all(&[0x05, 0x01, 0x00]).await.expect("the greeting");
+    let mut method = [0_u8; 2];
+    stream.read_exact(&mut method).await.expect("the method");
+
+    let mut request = vec![0x05, 0x01, 0x00, 0x01];
+    request.extend_from_slice(&[127, 0, 0, 1]);
+    request.extend_from_slice(&target.to_be_bytes());
+    stream.write_all(&request).await.expect("the request");
+
+    let mut reply = [0_u8; 10];
+    tokio::time::timeout(Duration::from_secs(10), stream.read_exact(&mut reply))
+        .await
+        .expect("the refusal arrives")
+        .expect("ten bytes of it");
+    reply[1]
 }

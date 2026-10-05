@@ -87,6 +87,7 @@ const tunnel: OpenTunnel = {
   sessionId: session.id,
   bindHost: "127.0.0.1",
   bindPort: 18080,
+  mode: "local",
   targetHost: "db.internal",
   targetPort: 5432,
   connections: 3,

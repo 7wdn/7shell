@@ -47,7 +47,6 @@ capabilities:
     order: 70
     group: network
     labelKey: capability.dynamicForwarding.label
-    planned: true
 
   - key: agentForwarding
     order: 80

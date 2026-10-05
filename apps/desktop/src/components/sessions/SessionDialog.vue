@@ -42,7 +42,7 @@ import {
   type SessionFieldProblem,
 } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
-import type { Session } from "@/types/session";
+import type { Session, ForwardMode } from "@/types/session";
 import { AUTH_METHODS, type AuthMethodId } from "@/types/generated/protocols";
 
 const props = defineProps<{ open: boolean; session: Session | null }>();
@@ -60,6 +60,12 @@ const editor = useSessionEditorStore();
  * editor rather than failing at the first connection.
  */
 const UNSUPPORTED_METHODS: readonly AuthMethodId[] = ["pageant"];
+
+/** The two kinds of forward this build can bring up. */
+const forwardModes = computed<SelectOption[]>(() => [
+  { value: "local", label: t("sessions.editor.forwards.modeLocal") },
+  { value: "dynamic", label: t("sessions.editor.forwards.modeDynamic") },
+]);
 
 /** The hop the picker is pointing at, until it is added and the picker goes back to its prompt. */
 const hopToAdd = ref("");
@@ -509,6 +515,19 @@ async function forgetKey(): Promise<void> {
             <ul v-else class="mt-2 space-y-2">
               <li v-for="row in editor.forwards" :key="row.id">
                 <div class="flex items-center gap-1">
+                  <!--
+                    What kind of forward this is, first, because it decides what the rest of the row
+                    asks for: a local forward has a destination, a dynamic one is told where to go by
+                    whoever connects and has none to type.
+                  -->
+                  <Select
+                    :model-value="row.mode"
+                    :options="forwardModes"
+                    size="compact"
+                    class="shrink-0"
+                    :aria-label="t('sessions.editor.forwards.mode')"
+                    @update:model-value="row.mode = $event as ForwardMode"
+                  />
                   <input
                     v-model="row.bindHost"
                     type="text"
@@ -526,8 +545,10 @@ async function forgetKey(): Promise<void> {
                     :class="submitted && forwardProblem(row, 'bindPort') ? 'border-destructive' : 'border-border'"
                     :aria-label="t('sessions.editor.forwards.bindPort')"
                   />
-                  <ArrowRight :size="12" class="shrink-0 text-muted-foreground" />
+                  <ArrowRight v-if="row.mode === 'local'" :size="12" class="shrink-0 text-muted-foreground" />
+                  <span v-else class="shrink-0 font-mono text-[10px] text-muted-foreground">SOCKS5</span>
                   <input
+                    v-if="row.mode === 'local'"
                     v-model="row.targetHost"
                     type="text"
                     class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
@@ -535,8 +556,9 @@ async function forgetKey(): Promise<void> {
                     :placeholder="t('sessions.editor.forwards.targetHostPlaceholder')"
                     :aria-label="t('sessions.editor.forwards.targetHost')"
                   />
-                  <span class="text-muted-foreground">:</span>
+                  <span v-if="row.mode === 'local'" class="text-muted-foreground">:</span>
                   <input
+                    v-if="row.mode === 'local'"
                     v-model="row.targetPort"
                     type="text"
                     inputmode="numeric"

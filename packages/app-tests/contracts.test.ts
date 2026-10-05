@@ -214,6 +214,17 @@ describe("wire types", () => {
     expect(sorted(rustStructFields(rust, "SecretInput"))).toEqual(["value"]);
   });
 
+  it("declares the same forward kinds on both sides", () => {
+    // A forward's kind decides what the tunnel does, so the two halves have to mean the same thing
+    // by "local" and "dynamic" — and a mode added on one side only would be a tunnel of the wrong
+    // kind rather than a missing line.
+    const rust = read("crates/sevenshell-types/src/session.rs");
+    const typescript = read("apps/desktop/src/types/session.ts");
+
+    expect(sorted(rustEnumVariants(rust, "ForwardMode"))).toEqual(["dynamic", "local"]);
+    expect(sorted(tsStringUnion(typescript, "ForwardMode"))).toEqual(sorted(rustEnumVariants(rust, "ForwardMode")));
+  });
+
   it("declares the same vault states on both sides", () => {
     const rustStates = rustEnumVariants(read("crates/sevenshell-types/src/session.rs"), "VaultState");
 

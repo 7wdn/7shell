@@ -36,11 +36,24 @@ pub struct Session {
     pub updated_at: u64,
 }
 
+/// What kind of forward a saved forward is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ForwardMode {
+    /// One local port, one fixed destination: the `ssh -L` shape.
+    #[default]
+    Local,
+    /// One local port that speaks SOCKS5, so the destination is chosen per connection: the
+    /// `ssh -D` shape. What asks it for an address is a browser or another tool, not this build.
+    Dynamic,
+}
+
 /// A local port answered from the far side of a connection.
 ///
-/// The name is the `ssh -L` shape: a listener on this machine, and whatever it should reach on
-/// the remote side. Only local forwarding exists so far; remote and dynamic forwarding are
-/// declared in the descriptors as planned and are refused with `APP-UNSUPPORTED`.
+/// The name is the `ssh -L` shape — a listener on this machine, and whatever it should reach on
+/// the remote side — and it is the shape of both kinds this build has: a [`ForwardMode::Local`] one
+/// has a destination of its own, a [`ForwardMode::Dynamic`] one is told the destination by whoever
+/// connects. Remote forwarding, the third kind, is still declared as planned and refused.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalForward {
@@ -49,7 +62,16 @@ pub struct LocalForward {
     pub bind_host: String,
     /// The port to listen on. Zero asks the system for a free one.
     pub bind_port: u16,
+    /// Local or dynamic. A document written before dynamic forwarding existed carries no mode, and
+    /// a missing one means a local forward — which is what every forward was.
+    #[serde(default)]
+    pub mode: ForwardMode,
+    /// Where a local forward sends what arrives. A dynamic one ignores it, and it stays in the
+    /// document rather than being dropped so that switching a forward's kind back and forth does
+    /// not lose the address somebody typed.
+    #[serde(default)]
     pub target_host: String,
+    #[serde(default)]
     pub target_port: u16,
 }
 
@@ -64,6 +86,10 @@ pub struct OpenTunnel {
     /// What is actually listening, which is worth knowing when the port was chosen for us.
     pub bind_host: String,
     pub bind_port: u16,
+    /// What the listener is for. A dynamic one has no single destination to show, and the interface
+    /// draws "SOCKS5" where the other kind draws an address.
+    #[serde(default)]
+    pub mode: ForwardMode,
     pub target_host: String,
     pub target_port: u16,
     /// How many connections it has carried since it came up.

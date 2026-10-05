@@ -14,12 +14,12 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use sevenshell_types::{
     AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest,
-    CommandHistoryEntry, CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, HostFailure,
-    HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
-    OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
-    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup, SessionLayout,
-    Snippet, SnippetGroup, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer, UploadOutcome,
-    VaultState,
+    CommandHistoryEntry, CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode,
+    HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters,
+    OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment,
+    RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup,
+    SessionLayout, Snippet, SnippetGroup, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer,
+    UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -96,6 +96,7 @@ fn every_outcome_serializes_with_camel_case_fields() {
                 session_id: "session-1".to_owned(),
                 bind_host: "127.0.0.1".to_owned(),
                 bind_port: 18080,
+                mode: ForwardMode::Local,
                 target_host: "db.internal".to_owned(),
                 target_port: 5432,
                 connections: 0,
@@ -187,6 +188,7 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
             id: "f1".to_owned(),
             bind_host: "127.0.0.1".to_owned(),
             bind_port: 0,
+            mode: ForwardMode::Local,
             target_host: "db.internal".to_owned(),
             target_port: 5432,
         }],
@@ -225,6 +227,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         },
         "SessionGroup",
     );
+    check(&ForwardMode::Dynamic, "ForwardMode");
     check(&trusted(), "KnownHostEntry");
     check(&presented(), "PresentedHostKey");
     check(&TerminalSettings::default(), "TerminalSettings");

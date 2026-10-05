@@ -35,7 +35,8 @@ fn ssh_carries_the_capabilities_we_committed_to() {
 
     // What this build does today: a shell, a command run without one, resized when the window
     // changes, kept alive while idle, reachable through another saved session, able to answer a
-    // local port from the far side of the connection, and able to say what the host is doing.
+    // local port from the far side of the connection — or to be a SOCKS5 proxy for whatever a
+    // client asks for — and able to say what the host is doing.
     assert!(ssh.supports(Capability::Shell));
     assert!(ssh.supports(Capability::Exec));
     assert!(ssh.supports(Capability::Resize));
@@ -43,15 +44,12 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert!(ssh.supports(Capability::HostMetrics));
     assert!(ssh.supports(Capability::Sftp));
     assert!(ssh.supports(Capability::Forwarding));
+    assert!(ssh.supports(Capability::DynamicForwarding));
     assert!(ssh.supports(Capability::JumpHost));
 
     // What it does not do yet. These stay in the vocabulary as `planned`, so they are neither
     // offered by the interface nor quietly forgotten.
-    for unclaimed in [
-        Capability::DynamicForwarding,
-        Capability::AgentForwarding,
-        Capability::Recording,
-    ] {
+    for unclaimed in [Capability::AgentForwarding, Capability::Recording] {
         assert!(
             !ssh.supports(unclaimed),
             "{unclaimed} is not implemented and must not be claimed"

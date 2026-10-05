@@ -29,6 +29,14 @@ export interface TerminalSettings {
   readonly keepaliveSeconds: number;
 }
 
+/**
+ * What kind of forward a saved forward is.
+ *
+ * `local` is the `ssh -L` shape: one port, one destination. `dynamic` is `ssh -D`: one port that
+ * speaks SOCKS5, and whoever connects says where it wants to go.
+ */
+export type ForwardMode = "local" | "dynamic";
+
 /** A local port answered from the far side of a connection: the `ssh -L` shape. */
 export interface LocalForward {
   readonly id: string;
@@ -36,6 +44,8 @@ export interface LocalForward {
   readonly bindHost: string;
   /** Zero asks the system for a free port, and the open outcome says which one it got. */
   readonly bindPort: number;
+  /** Local or dynamic. A document written before dynamic forwarding existed carries no mode. */
+  readonly mode: ForwardMode;
   readonly targetHost: string;
   readonly targetPort: number;
 }
@@ -66,6 +76,8 @@ export interface OpenTunnel {
   readonly sessionId: string;
   readonly bindHost: string;
   readonly bindPort: number;
+  /** What the listener is for: a dynamic one draws "SOCKS5" where a local one draws an address. */
+  readonly mode: ForwardMode;
   readonly targetHost: string;
   readonly targetPort: number;
   readonly connections: number;

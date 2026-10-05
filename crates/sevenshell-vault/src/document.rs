@@ -25,10 +25,11 @@ use zeroize::{Zeroize, Zeroizing};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 ///
-/// Version 2 added the command library and its history. An older build *can* parse a version 2
-/// document — it ignores fields it does not know — and would then write it back without them,
-/// which is the data loss this number exists to prevent.
-pub const VAULT_SCHEMA_VERSION: u32 = 2;
+/// Version 2 added the command library and its history. Version 3 added a forward's mode: a build
+/// that predates it can parse the document, ignore the field and write the forward back as a
+/// *local* one — a tunnel to the wrong place rather than a missing line, which is the kind of
+/// change this number exists to refuse.
+pub const VAULT_SCHEMA_VERSION: u32 = 3;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -561,9 +562,12 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // 1 → 2: the command library arrived. An older document simply has none, and gets the group
     // the first saved command will need.
     if document.schema_version == 1 {
-        document.schema_version = 2;
         document.ensure_default_group();
     }
+
+    // 2 → 3: forwards gained a mode. Nothing to rewrite — a forward without one is a local forward,
+    // which is what every forward was — so the step is the version number alone.
+    document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)
 }

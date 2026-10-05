@@ -625,7 +625,8 @@ const statusDot = computed(() => {
                 role="img"
                 :aria-label="t('terminal.tunnels.direction')"
               />
-              <span class="min-w-0 truncate">{{ tunnel.targetHost }}:{{ tunnel.targetPort }}</span>
+              <span v-if="tunnel.mode === 'dynamic'" class="min-w-0 truncate font-mono text-[11px]">SOCKS5</span>
+              <span v-else class="min-w-0 truncate">{{ tunnel.targetHost }}:{{ tunnel.targetPort }}</span>
             </span>
             <span class="block text-[10px] text-muted-foreground">
               {{ t("terminal.tunnels.connections", { count: tunnel.connections }, tunnel.connections) }}

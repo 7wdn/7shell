@@ -23,6 +23,7 @@ mod session;
 mod agent;
 mod exec;
 mod route;
+mod socks5;
 
 use std::time::Duration;
 

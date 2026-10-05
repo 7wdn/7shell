@@ -93,7 +93,10 @@
           "bindPort": "绑定端口必须是 0 到 65535 之间的数字；0 表示由系统分配空闲端口。",
           "targetHost": "请填写转发要到达的主机。",
           "targetPort": "目标端口必须是 1 到 65535 之间的数字。"
-        }
+        },
+        "mode": "转发类型",
+        "modeLocal": "本地端口",
+        "modeDynamic": "SOCKS5 代理"
       },
       "validation": {
         "name": "请为该会话填写名称。",

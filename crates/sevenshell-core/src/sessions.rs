@@ -10,8 +10,8 @@ use sevenshell_ssh::{
     Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
 };
 use sevenshell_types::{
-    AuthMethod, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Session, TransferInfo,
-    TunnelFailure,
+    AuthMethod, ForwardMode, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Session,
+    TransferInfo, TunnelFailure,
 };
 use sevenshell_vault::Vault;
 use tokio::sync::{Mutex, mpsc};
@@ -202,6 +202,7 @@ impl Core {
                 session_id: record.session_id.clone(),
                 bind_host: record.tunnel.listener.ip().to_string(),
                 bind_port: record.tunnel.listener.port(),
+                mode: record.spec.mode,
                 target_host: record.spec.target_host.clone(),
                 target_port: record.spec.target_port,
                 connections: record.tunnel.connections(),
@@ -366,7 +367,14 @@ impl Core {
                 target_port: spec.target_port,
             };
 
-            match Arc::clone(&connection).forward_local(requested).await {
+            // Which kind of listener to bring up is the whole difference: a local forward sends
+            // everything to one address, a dynamic one is told by whoever connects.
+            let brought_up = match spec.mode {
+                ForwardMode::Local => Arc::clone(&connection).forward_local(requested).await,
+                ForwardMode::Dynamic => Arc::clone(&connection).forward_dynamic(requested).await,
+            };
+
+            match brought_up {
                 Ok(tunnel) => {
                     let id = format!("{handle}-{forward_id}");
                     let open = OpenTunnel {
@@ -375,6 +383,7 @@ impl Core {
                         session_id: session.id.clone(),
                         bind_host: tunnel.listener.ip().to_string(),
                         bind_port: tunnel.listener.port(),
+                        mode: spec.mode,
                         target_host: spec.target_host.clone(),
                         target_port: spec.target_port,
                         connections: tunnel.connections(),

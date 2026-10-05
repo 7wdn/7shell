@@ -93,7 +93,10 @@
           "bindPort": "The bind port must be a number between 0 and 65535; 0 asks the system for a free one.",
           "targetHost": "Enter the host the forward leads to.",
           "targetPort": "The target port must be a number between 1 and 65535."
-        }
+        },
+        "mode": "Kind of forward",
+        "modeLocal": "Local port",
+        "modeDynamic": "SOCKS5 proxy"
       },
       "validation": {
         "name": "Give this session a name.",

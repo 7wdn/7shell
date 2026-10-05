@@ -196,4 +196,90 @@ impl SshSession {
             task,
         })
     }
+
+    /// Listens on `forward.bind_host:forward.bind_port` and speaks SOCKS5: every connection says
+    /// where it wants to go, and that destination is reached from the far side of this session.
+    ///
+    /// The listener, the counting and the stopping are the same as a local forward's — a dynamic
+    /// forward is one whose destination is decided per connection rather than saved with it, and
+    /// nothing else about it is different. Where it does differ is the order of the answers: the
+    /// client is told "granted" only after the channel exists, so a destination that cannot be
+    /// reached is refused with a reason instead of a connection that dies on first use.
+    pub async fn forward_dynamic(self: &Arc<Self>, forward: LocalForward) -> Result<TunnelHandle, ShellError> {
+        let listener = TcpListener::bind((forward.bind_host.as_str(), forward.bind_port))
+            .await
+            .map_err(|error| {
+                ShellError::app_internal(format!(
+                    "the forward could not listen on {}:{}: {error}",
+                    forward.bind_host, forward.bind_port
+                ))
+            })?;
+
+        let bound = listener
+            .local_addr()
+            .map_err(|error| ShellError::app_internal(format!("the listening address could not be read: {error}")))?;
+
+        let connections = Arc::new(AtomicU64::new(0));
+        let failures = Arc::new(AtomicU64::new(0));
+        let (stop, mut stopped) = oneshot::channel();
+        let session = Arc::clone(self);
+
+        let counting = Arc::clone(&connections);
+        let failing = Arc::clone(&failures);
+
+        let task = tokio::spawn(async move {
+            loop {
+                let accepted = tokio::select! {
+                    _ = &mut stopped => break,
+                    accepted = listener.accept() => accepted,
+                };
+
+                let Ok((local, _peer)) = accepted else {
+                    break;
+                };
+
+                let session = Arc::clone(&session);
+                let counting = Arc::clone(&counting);
+                let failing = Arc::clone(&failing);
+
+                tokio::spawn(async move {
+                    let mut local = local;
+                    let request = match crate::socks5::read_request(&mut local).await {
+                        Ok(request) => request,
+                        Err(_) => {
+                            // The refusal has already been written by the handshake.
+                            failing.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
+                    };
+
+                    let crate::socks5::Request::Connect { host, port } = request;
+                    match session.open_tunnel_stream(&host, port).await {
+                        Ok(mut remote) => {
+                            if crate::socks5::grant(&mut local).await.is_err() {
+                                // The client gave up between asking and being told.
+                                return;
+                            }
+                            counting.fetch_add(1, Ordering::Relaxed);
+                            if tokio::io::copy_bidirectional(&mut local, &mut remote).await.is_err() {
+                                failing.fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+                        Err(_) => {
+                            failing.fetch_add(1, Ordering::Relaxed);
+                            crate::socks5::refuse(&mut local, crate::socks5::Refusal::Unreachable).await;
+                        }
+                    }
+                });
+            }
+        });
+
+        Ok(TunnelHandle {
+            listener: bound,
+            connections,
+            failures,
+            stop,
+            task,
+        })
+    }
 }

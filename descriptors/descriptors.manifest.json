@@ -56,7 +56,7 @@
       "order": 70,
       "group": "network",
       "labelKey": "capability.dynamicForwarding.label",
-      "planned": true
+      "planned": false
     },
     {
       "key": "agentForwarding",
@@ -126,6 +126,7 @@
         "hostMetrics",
         "sftp",
         "forwarding",
+        "dynamicForwarding",
         "jumpHost"
       ]
     }

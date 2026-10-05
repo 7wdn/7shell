@@ -15,7 +15,7 @@ import { computed, ref } from "vue";
 
 import { useSessionsStore } from "@/stores/sessions";
 import { PROTOCOLS, type AuthMethodId } from "@/types/generated/protocols";
-import type { KeyInfo, LocalForward, SecretInput, Session } from "@/types/session";
+import type { ForwardMode, KeyInfo, LocalForward, SecretInput, Session } from "@/types/session";
 
 /** What `TerminalSettings::default()` uses in Rust: the wire type has no "not set" for these. */
 const DEFAULT_TERMINAL = { terminalType: "xterm-256color", keepaliveSeconds: 30 };
@@ -26,6 +26,8 @@ const PORT_MAX = 65535;
 /** A forward whose ports are still what the person typed. */
 export interface ForwardDraft {
   readonly id: string;
+  /** Local or dynamic, which decides whether the destination fields are asked for at all. */
+  mode: ForwardMode;
   bindHost: string;
   bindPort: string;
   targetHost: string;
@@ -59,12 +61,20 @@ function validPort(text: string, minimum: number): boolean {
 
 /** A row that is only waiting for a target: the bind side starts at what almost every forward uses. */
 function newForwardDraft(): ForwardDraft {
-  return { id: crypto.randomUUID(), bindHost: "127.0.0.1", bindPort: "0", targetHost: "", targetPort: "" };
+  return {
+    id: crypto.randomUUID(),
+    mode: "local",
+    bindHost: "127.0.0.1",
+    bindPort: "0",
+    targetHost: "",
+    targetPort: "",
+  };
 }
 
 function draftFrom(forward: LocalForward): ForwardDraft {
   return {
     id: forward.id,
+    mode: forward.mode,
     bindHost: forward.bindHost,
     bindPort: String(forward.bindPort),
     targetHost: forward.targetHost,
@@ -73,12 +83,17 @@ function draftFrom(forward: LocalForward): ForwardDraft {
 }
 
 function forwardFrom(row: ForwardDraft): LocalForward {
+  const dynamic = row.mode === "dynamic";
   return {
     id: row.id,
+    mode: row.mode,
     bindHost: row.bindHost.trim(),
     bindPort: portNumber(row.bindPort),
-    targetHost: row.targetHost.trim(),
-    targetPort: portNumber(row.targetPort),
+    // Empty for a dynamic forward, which has no destination of its own. Whatever was typed before
+    // switching the kind is not carried either: a destination saved under a kind that ignores it is
+    // a field the next reader would have to know to ignore.
+    targetHost: dynamic ? "" : row.targetHost.trim(),
+    targetPort: dynamic ? 0 : portNumber(row.targetPort),
   };
 }
 
