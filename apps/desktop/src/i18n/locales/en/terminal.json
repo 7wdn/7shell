@@ -23,6 +23,15 @@
       "divider": "Resize the file panel",
       "opening": "Opening the file panel…",
       "retry": "Try again"
+    },
+    "search": {
+      "placeholder": "Find in terminal",
+      "label": "Find in terminal",
+      "next": "Next match",
+      "previous": "Previous match",
+      "caseSensitive": "Match case",
+      "close": "Close the search",
+      "none": "none"
     }
   }
 }

@@ -23,9 +23,12 @@
  * selection somebody had already made, immediately before copying it.
  */
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { type ITheme, Terminal } from "@xterm/xterm";
+import { ChevronDown, ChevronUp, X } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { useContextMenu } from "@/composables/useContextMenu";
 import { terminalMenu } from "@/lib/menu/terminal";
@@ -37,12 +40,29 @@ import { useTerminalsStore } from "@/stores/terminals";
 
 import "@xterm/xterm/css/xterm.css";
 
+const { t } = useI18n();
 const preferences = usePreferencesStore();
 
 /** Which of the two palettes this pane wears, from the person's choice rather than from the window. */
 const paletteClass = computed(() =>
   preferences.resolvedTerminalTheme === "dark" ? "terminal-dark" : "terminal-light",
 );
+
+/**
+ * Find-in-terminal state.
+ *
+ * The bar belongs to the pane rather than to the workspace because the thing being searched is the
+ * scrollback xterm holds, and only the pane has it. Ctrl+F opens it, Enter walks forward, Escape
+ * closes it and hands the keyboard back to the shell — the terminal is a place where a lost
+ * keystroke is a command that did not run.
+ */
+const searching = ref(false);
+const query = ref("");
+const caseSensitive = ref(false);
+const results = ref<{ index: number; count: number } | null>(null);
+const searchInput = ref<HTMLInputElement | null>(null);
+
+let searchAddon: SearchAddon | null = null;
 
 const props = defineProps<{
   handle: string;
@@ -201,6 +221,42 @@ function onContextMenu(event: MouseEvent): void {
   );
 }
 
+/** Opens the bar, or focuses it when it is already open. */
+function openSearch(): void {
+  searching.value = true;
+  void nextTick(() => searchInput.value?.select());
+}
+
+/**
+ * Closes it and hands the keyboard back to the shell.
+ *
+ * The decorations go with it: a highlight left behind is a screen that keeps answering a question
+ * nobody is asking any more.
+ */
+function closeSearch(): void {
+  searching.value = false;
+  results.value = null;
+  searchAddon?.clearDecorations();
+  terminal?.focus();
+}
+
+/** Walks the matches, which is what typing and Enter both do. */
+function runSearch(backwards = false): void {
+  const needle = query.value;
+  if (needle === "" || !searchAddon) {
+    results.value = null;
+    searchAddon?.clearDecorations();
+    return;
+  }
+
+  const options = { caseSensitive: caseSensitive.value, incremental: true };
+  if (backwards) {
+    searchAddon.findPrevious(needle, options);
+  } else {
+    searchAddon.findNext(needle, options);
+  }
+}
+
 onMounted(() => {
   const element = container.value;
   if (!element) {
@@ -220,6 +276,20 @@ onMounted(() => {
   const fit = new FitAddon();
   instance.loadAddon(fit);
   instance.loadAddon(new WebLinksAddon());
+  const search = new SearchAddon();
+  instance.loadAddon(search);
+  search.onDidChangeResults(({ resultIndex, resultCount }) => {
+    results.value = { index: resultIndex, count: resultCount };
+  });
+  searchAddon = search;
+  // Ctrl+F is the terminal's own key combination to lose: without this the shell receives it.
+  instance.attachCustomKeyEventHandler((event) => {
+    if (event.type === "keydown" && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+      openSearch();
+      return false;
+    }
+    return true;
+  });
   instance.open(element);
 
   terminal = instance;
@@ -295,12 +365,88 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="container"
-    class="terminal-surface min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--terminal-background)]"
-    :class="paletteClass"
-    @contextmenu.capture="onContextMenu"
-  ></div>
+  <!--
+    The surface, and the find bar over it. The wrapper exists for the bar: the bar is positioned
+    against the terminal rather than pushing it, so a search does not re-fit the terminal and
+    reflow the very output somebody is searching.
+  -->
+  <div class="relative min-h-0 min-w-0 flex-1">
+    <div
+      ref="container"
+      class="terminal-surface h-full overflow-hidden bg-[var(--terminal-background)]"
+      :class="paletteClass"
+      @contextmenu.capture="onContextMenu"
+    ></div>
+
+    <div
+      v-if="searching"
+      class="absolute top-2 right-3 z-20 flex items-center gap-1 rounded-md border border-border bg-card/95 px-1.5 py-1 shadow-lg"
+    >
+      <input
+        ref="searchInput"
+        v-model="query"
+        spellcheck="false"
+        class="w-56 rounded-sm border border-border bg-background px-1.5 py-0.5 text-[11px] focus:border-primary focus:outline-none"
+        :placeholder="t('terminal.search.placeholder')"
+        :aria-label="t('terminal.search.label')"
+        @input="runSearch()"
+        @keydown.enter.prevent="runSearch($event.shiftKey)"
+        @keydown.esc.prevent="closeSearch()"
+      />
+
+      <span class="min-w-10 shrink-0 text-center font-mono text-[10px] text-muted-foreground">
+        {{
+          results === null
+            ? ""
+            : results.count === 0
+              ? t("terminal.search.none")
+              : `${results.index + 1}/${results.count}`
+        }}
+      </span>
+
+      <button
+        type="button"
+        class="grid size-5 place-items-center rounded-sm transition-colors"
+        :class="caseSensitive ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent'"
+        :aria-pressed="caseSensitive"
+        :title="t('terminal.search.caseSensitive')"
+        :aria-label="t('terminal.search.caseSensitive')"
+        @click="
+          caseSensitive = !caseSensitive;
+          runSearch();
+        "
+      >
+        Aa
+      </button>
+      <button
+        type="button"
+        class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        :title="t('terminal.search.previous')"
+        :aria-label="t('terminal.search.previous')"
+        @click="runSearch(true)"
+      >
+        <ChevronUp :size="11" />
+      </button>
+      <button
+        type="button"
+        class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        :title="t('terminal.search.next')"
+        :aria-label="t('terminal.search.next')"
+        @click="runSearch(false)"
+      >
+        <ChevronDown :size="11" />
+      </button>
+      <button
+        type="button"
+        class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        :title="t('terminal.search.close')"
+        :aria-label="t('terminal.search.close')"
+        @click="closeSearch()"
+      >
+        <X :size="11" />
+      </button>
+    </div>
+  </div>
 </template>
 
 <style scoped>

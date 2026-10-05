@@ -13,8 +13,12 @@
 import { createApp, defineComponent, h, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { i18n } from "@/i18n";
+
 /** What xterm handed the pane, so a test can type into it the way xterm would. */
 let onData: ((data: string) => void) | undefined;
+/** The pane's key handler, so a test can ask whether the terminal keeps Ctrl+F for itself. */
+let keyHandler: ((event: KeyboardEvent) => boolean) | undefined;
 let oscHandlers: Map<number, (data: string) => boolean>;
 
 /** What the pane asked of the terminal it owns, so a menu entry can be watched doing it. */
@@ -36,6 +40,11 @@ vi.mock("@xterm/xterm", () => ({
     rows = 24;
 
     loadAddon(): void {}
+    /** Kept, so a test can press Ctrl+F the way xterm would route it. */
+    attachCustomKeyEventHandler(handler: (event: KeyboardEvent) => boolean): void {
+      keyHandler = handler;
+    }
+    search(): void {}
     open(): void {}
     write(): void {}
     focus(): void {}
@@ -68,6 +77,14 @@ vi.mock("@xterm/addon-fit", () => ({
   },
 }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: class {
+    onDidChangeResults(): void {}
+    findNext(): void {}
+    findPrevious(): void {}
+    clearDecorations(): void {}
+  },
+}));
 // The real bus, with only the one call the pane makes replaced: the stores need the rest of it to
 // open a terminal at all, and a thinner mock would fail the open rather than the test.
 vi.mock("@/lib/terminal/bus", async (importOriginal) => ({
@@ -157,7 +174,9 @@ async function mountPane(interactive = true): Promise<void> {
   const host = defineComponent({
     setup: () => () => h(TerminalPane, { handle: "handle-1", active: true, interactive }),
   });
-  const app = createApp(host);
+  // The real translations rather than stubs: the pane now draws a find bar whose labels are keys,
+  // and a pane mounted without them throws before any of these tests get to look at it.
+  const app = createApp(host).use(i18n);
   const root = document.createElement("div");
   document.body.append(root);
   app.mount(root);
@@ -334,5 +353,24 @@ describe("a terminal's right-click menu", () => {
 
     expect(selectedAll).toBe(1);
     expect(cleared).toBe(1);
+  });
+});
+
+describe("the keys the terminal keeps for itself", () => {
+  beforeEach(async () => {
+    await mountPane();
+  });
+
+  it("keeps Ctrl+F for the find bar instead of sending it to the shell", () => {
+    const kept = keyHandler?.({ type: "keydown", ctrlKey: true, metaKey: false, key: "f" } as KeyboardEvent);
+
+    // `false` is xterm's "do not handle this": without it the shell receives ^F, which on some
+    // hosts is a real control character and not a search.
+    expect(kept).toBe(false);
+  });
+
+  it("passes everything else through", () => {
+    expect(keyHandler?.({ type: "keydown", ctrlKey: false, metaKey: false, key: "c" } as KeyboardEvent)).toBe(true);
+    expect(keyHandler?.({ type: "keydown", ctrlKey: true, metaKey: false, key: "d" } as KeyboardEvent)).toBe(true);
   });
 });

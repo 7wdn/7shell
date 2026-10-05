@@ -813,6 +813,20 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await pathBar.fill("/tmp");
     await pathBar.press("Enter");
     await expect(page.getByText(`${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
+
+    // Find in terminal: Ctrl+F belongs to the terminal, not to the shell, and the bar says how many
+    // matches the scrollback holds. The needle is in the typed line and in what it printed, so the
+    // count is more than one — asserted as a count rather than as a number, because which match is
+    // current depends on where the scrollback happened to be.
+    await page.locator(".xterm").click();
+    await page.keyboard.press("Control+f");
+    const findBar = page.getByLabel("Find in terminal");
+    await expect(findBar).toBeVisible();
+    await findBar.fill("ss-e2e-");
+    await expect(page.getByText(/\d+\/\d+/).first()).toBeVisible({ timeout: 15_000 });
+
+    await page.keyboard.press("Escape");
+    await expect(findBar).toHaveCount(0);
   } finally {
     await close();
   }
