@@ -27,7 +27,8 @@
       "remove": "删除分类",
       "removeTitle": "删除这个分类？",
       "removeMessage": "分类和里面的 {count} 条命令会一起删除，无法撤销。",
-      "removeConfirm": "删除"
+      "removeConfirm": "删除",
+      "rename": "重命名"
     },
     "historyClear": "清空",
     "panel": "命令",

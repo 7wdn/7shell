@@ -208,6 +208,26 @@ export const useCommandsStore = defineStore("commands", () => {
     }
   }
 
+  /**
+   * Renames a group.
+   *
+   * The same call that creates one, with the id it already has: the commands inside are not part of
+   * a rename, and the storage keeps them for exactly that reason.
+   */
+  async function renameGroup(id: string, name: string): Promise<void> {
+    const group = groups.value.find((entry) => entry.id === id);
+    if (!group || name.trim() === "") {
+      return;
+    }
+
+    try {
+      await backend.commands.saveGroup({ ...group, name: name.trim(), commands: [] });
+      await load();
+    } catch (error) {
+      failure.value = asShellError(error, "snippet_group_save");
+    }
+  }
+
   async function removeGroup(id: string): Promise<void> {
     try {
       await backend.commands.deleteGroup(id);
@@ -377,6 +397,7 @@ export const useCommandsStore = defineStore("commands", () => {
     move,
     remove,
     addGroup,
+    renameGroup,
     removeGroup,
     clearHistory,
     editFromHistory,

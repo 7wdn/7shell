@@ -12,7 +12,7 @@
  * send, and then the button says so and asks again. That is the only case where anything waits, and
  * it only happens when more than one shell is being written to.
  */
-import { ChevronDown, ChevronUp, FolderPlus, Play, Plus, Save, Trash2, TriangleAlert } from "@lucide/vue";
+import { ChevronDown, ChevronUp, FolderPlus, Pencil, Play, Plus, Save, Trash2, TriangleAlert } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -42,6 +42,9 @@ const addingGroup = ref(false);
  * memory.
  */
 const removing = ref<{ id: string; name: string; count: number } | null>(null);
+
+/** The group being renamed, and what the field holds while it is. */
+const renaming = ref<{ id: string; name: string } | null>(null);
 
 onMounted(async () => {
   await commands.load();
@@ -121,6 +124,17 @@ async function saveGroup(): Promise<void> {
   newGroupName.value = "";
   addingGroup.value = false;
 }
+
+/** Finishes a rename, whichever way it was started. */
+async function renameGroup(): Promise<void> {
+  const target = renaming.value;
+  if (!target) {
+    return;
+  }
+  await commands.renameGroup(target.id, newGroupName.value);
+  renaming.value = null;
+  newGroupName.value = "";
+}
 </script>
 
 <template>
@@ -142,15 +156,30 @@ async function saveGroup(): Promise<void> {
         </button>
       </header>
 
-      <div v-if="addingGroup" class="flex items-center gap-1 border-b border-border px-2 py-1.5">
+      <div v-if="addingGroup || renaming" class="flex items-center gap-1 border-b border-border px-2 py-1.5">
         <input
           v-model="newGroupName"
           class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 py-1 text-[11px] focus:outline-none"
           :placeholder="t('commands.group.name')"
-          @keydown.enter="saveGroup"
+          @keydown.enter="renaming ? renameGroup() : saveGroup()"
         />
-        <button type="button" class="rounded-sm border border-border px-1.5 py-1 text-[11px]" @click="saveGroup">
-          {{ t("commands.group.add") }}
+        <button
+          type="button"
+          class="rounded-sm border border-border px-1.5 py-1 text-[11px]"
+          @click="renaming ? renameGroup() : saveGroup()"
+        >
+          {{ renaming ? t("commands.group.rename") : t("commands.group.add") }}
+        </button>
+        <button
+          type="button"
+          class="rounded-sm px-1 py-1 text-[11px] text-muted-foreground hover:text-foreground"
+          @click="
+            renaming = null;
+            addingGroup = false;
+            newGroupName = '';
+          "
+        >
+          {{ t("common.action.close") }}
         </button>
       </div>
 
@@ -164,6 +193,19 @@ async function saveGroup(): Promise<void> {
               {{ group.name === "" ? t("commands.group.default") : group.name }}
             </button>
             <span class="shrink-0 text-[10px] text-muted-foreground">{{ group.commands.length }}</span>
+            <button
+              v-if="group.id !== DEFAULT_GROUP_ID"
+              type="button"
+              class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground"
+              :title="t('commands.group.rename')"
+              :aria-label="t('commands.group.rename')"
+              @click="
+                renaming = { id: group.id, name: group.name };
+                newGroupName = group.name;
+              "
+            >
+              <Pencil :size="10" />
+            </button>
             <button
               v-if="group.id !== DEFAULT_GROUP_ID"
               type="button"

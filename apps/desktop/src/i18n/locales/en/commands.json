@@ -27,7 +27,8 @@
       "remove": "Delete group",
       "removeTitle": "Delete this group?",
       "removeMessage": "The group and the {count} command(s) in it are removed. This cannot be undone.",
-      "removeConfirm": "Delete"
+      "removeConfirm": "Delete",
+      "rename": "Rename"
     },
     "historyClear": "Clear",
     "panel": "Commands",
