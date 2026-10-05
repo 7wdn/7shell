@@ -79,6 +79,8 @@ pub fn run() {
             commands::known_hosts::known_hosts_list,
             commands::known_hosts::known_host_trust,
             commands::known_hosts::known_host_forget,
+            commands::batch::batch_classify,
+            commands::batch::batch_run,
             commands::terminal::session_open,
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,

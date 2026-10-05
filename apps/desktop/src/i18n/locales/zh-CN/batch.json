@@ -1,0 +1,50 @@
+{
+  "batch": {
+    "title": "批量执行",
+    "tab": {
+      "close": "关闭批量执行"
+    },
+    "hosts": {
+      "title": "主机",
+      "all": "全选",
+      "none": "全不选",
+      "empty": "还没有保存的会话。",
+      "selected": "已选 {count} 台"
+    },
+    "command": {
+      "label": "命令",
+      "placeholder": "uptime"
+    },
+    "options": {
+      "timeout": "单台超时",
+      "parallel": "并发"
+    },
+    "action": {
+      "run": "执行",
+      "running": "执行中",
+      "retryOne": "重跑这一台",
+      "retryFailed": "重试 {count} 台未成功的"
+    },
+    "risk": {
+      "confirm": "我已读过上面的原因，仍要在 {count} 台主机上执行。",
+      "blocked": "这条命令需要你先确认才能执行。"
+    },
+    "state": {
+      "running": "已应答 {done} / {total}",
+      "decision": "正在等你确认一台主机的主机键——什么都还没执行。",
+      "approval": "还没有执行：这条命令需要你先确认。"
+    },
+    "empty": {
+      "hint": "在左边勾选主机，写一条命令，看过风险判定之后再执行。"
+    },
+    "summary": {
+      "line": "{total} 台里应答了 {done} 台，用时 {duration}"
+    },
+    "result": {
+      "exit": "退出码 {code}",
+      "noStatus": "无状态",
+      "stdout": "标准输出",
+      "stderr": "标准错误"
+    }
+  }
+}

@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 use sevenshell_error::ShellError;
 use sevenshell_policy::classify;
 use sevenshell_ssh::SshSession;
-use sevenshell_types::{BatchHostOutcome, BatchHostResult, BatchOutcome, BatchRequest, HostFailure, Session};
+use sevenshell_types::{
+    BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, HostFailure, RiskAssessment, Session,
+};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
@@ -32,6 +34,15 @@ pub const MIN_HOST_TIMEOUT: Duration = Duration::from_secs(1);
 /// Nor more: a command that runs longer than this on many hosts at once is a job for the server's
 /// own scheduler, not a request holding connections open.
 pub const MAX_HOST_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+
+/// Grades a command without running it.
+///
+/// For an interface that wants to show the verdict *before* anybody presses anything: the same
+/// classifier and the same rules the run itself consults, so what is shown and what is enforced
+/// cannot disagree.
+pub fn classify_command(command: &str) -> RiskAssessment {
+    classify(command)
+}
 
 /// What a batch reports while it is running.
 ///
@@ -120,7 +131,7 @@ impl Core {
                     // decisions are answered in request order, so which one comes back does not
                     // depend on which host happened to answer first. The connections opened so
                     // far are dropped here, which closes them.
-                    return Ok(batch_decision(*decision));
+                    return Ok(batch_decision(host, *decision));
                 }
                 HostConnection::Failed(error) => {
                     connections.push(None);
@@ -262,10 +273,15 @@ async fn connect_one(core: &Core, session: Session) -> HostConnection {
     }
 }
 
-fn batch_decision(decision: HostKeyDecision) -> BatchOutcome {
+fn batch_decision(host: &Host, decision: HostKeyDecision) -> BatchOutcome {
+    let host = BatchHostRef {
+        session_id: host.session_id.clone(),
+        session_name: host.name(),
+    };
+
     match decision {
-        HostKeyDecision::Unknown(key) => BatchOutcome::HostKeyUnknown { key },
-        HostKeyDecision::Mismatch { key, trusted } => BatchOutcome::HostKeyMismatch { key, trusted },
+        HostKeyDecision::Unknown(key) => BatchOutcome::HostKeyUnknown { host, key },
+        HostKeyDecision::Mismatch { key, trusted } => BatchOutcome::HostKeyMismatch { host, key, trusted },
     }
 }
 

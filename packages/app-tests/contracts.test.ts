@@ -53,6 +53,30 @@ function rustEnumVariants(source: string, enumName: string): string[] {
   return [...body.matchAll(/^\s{4}([A-Z][A-Za-z0-9]*),/gm)].map((match) => (match[1] as string).toLowerCase());
 }
 
+/**
+ * Variant names of a Rust enum whose variants carry fields, spelled as serde writes them.
+ *
+ * Only the first letter is lowered: serde's camelCase maps `HostKeyUnknown` to `hostKeyUnknown`,
+ * and lower-casing the whole name would compare `hostkeyunknown` against a wire value that never
+ * looks like that.
+ */
+function rustBracedEnumVariants(source: string, enumName: string): string[] {
+  const body = new RegExp(`pub enum ${enumName} \\{([\\s\\S]*?)\\n\\}`).exec(source)?.[1] ?? "";
+  return [...body.matchAll(/^\s{4}([A-Z][A-Za-z0-9]*)\s*\{/gm)].map((match) => lowerFirst(match[1] as string));
+}
+
+function lowerFirst(name: string): string {
+  return name.charAt(0).toLowerCase() + name.slice(1);
+}
+
+/** The `kind` discriminants of a TypeScript union of tagged objects. */
+function tsKindUnion(source: string, typeName: string): string[] {
+  // Up to the next declaration or the end of the file: a union of object types ends with `};` at
+  // the end of a line rather than at the start of one, so there is no line to stop at.
+  const body = new RegExp(`export type ${typeName} =([\\s\\S]*?)(?:\\nexport |$)`).exec(source)?.[1] ?? "";
+  return [...body.matchAll(/kind: "([a-zA-Z]+)"/g)].map((match) => match[1] as string);
+}
+
 /** String members of a TypeScript union type. */
 function tsStringUnion(source: string, typeName: string): string[] {
   const body = new RegExp(`export type ${typeName} =([\\s\\S]*?);`).exec(source)?.[1] ?? "";
@@ -210,6 +234,50 @@ describe("wire types", () => {
     const rustFields = rustStructFields(read("crates/sevenshell-error/src/envelope.rs"), "Origin").map(camelCase);
 
     expect(sorted(rustFields)).toEqual(sorted(interfaceFields(read("apps/desktop/src/lib/backend/errors.ts"), "ErrorOrigin")));
+  });
+
+  it("declares the same batch fields on both sides", () => {
+    const rust = read("crates/sevenshell-types/src/batch.rs");
+    const typescript = read("apps/desktop/src/types/batch.ts");
+
+    for (const name of ["BatchRequest", "BatchHostRef", "BatchHostResult", "HostFailure"]) {
+      const rustFields = rustStructFields(rust, name).map(camelCase);
+
+      expect(rustFields.length, `${name} has no fields, so the comparison proves nothing`).toBeGreaterThan(0);
+      expect(sorted(rustFields), `${name} differs between Rust and the interface`).toEqual(
+        sorted(interfaceFields(typescript, name)),
+      );
+    }
+
+    // A result's two shapes and the four things a batch can answer with. A variant that exists on
+    // one side only would arrive as an outcome the interface cannot name.
+    expect(sorted(rustBracedEnumVariants(rust, "BatchHostOutcome"))).toEqual(["failed", "ran"]);
+    expect(sorted(tsKindUnion(typescript, "BatchHostOutcome"))).toEqual(["failed", "ran"]);
+    expect(sorted(rustBracedEnumVariants(rust, "BatchOutcome"))).toEqual([
+      "approvalRequired",
+      "finished",
+      "hostKeyMismatch",
+      "hostKeyUnknown",
+    ]);
+    expect(sorted(tsKindUnion(typescript, "BatchOutcome"))).toEqual(sorted(rustBracedEnumVariants(rust, "BatchOutcome")));
+  });
+
+  it("declares the same risk verdict on both sides", () => {
+    // The verdict crosses the boundary twice — shown before a run, reported inside it — so both
+    // halves have to agree on the levels and on what a reason carries.
+    const rust = read("crates/sevenshell-types/src/risk.rs");
+    const typescript = read("apps/desktop/src/types/batch.ts");
+
+    expect(sorted(rustEnumVariants(rust, "RiskLevel"))).toEqual(["catastrophic", "caution", "destructive", "safe"]);
+    expect(sorted(tsStringUnion(typescript, "RiskLevel"))).toEqual(sorted(rustEnumVariants(rust, "RiskLevel")));
+
+    for (const name of ["RiskReason", "RiskAssessment"]) {
+      const rustFields = rustStructFields(rust, name).map(camelCase);
+      expect(rustFields.length).toBeGreaterThan(0);
+      expect(sorted(rustFields), `${name} differs between Rust and the interface`).toEqual(
+        sorted(interfaceFields(typescript, name)),
+      );
+    }
   });
 
   it("keeps the compiled interfaces aligned with the Rust structs", () => {

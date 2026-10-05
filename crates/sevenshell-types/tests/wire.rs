@@ -13,8 +13,8 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sevenshell_types::{
-    AppSettings, AuthMethod, BatchHostOutcome, BatchHostResult, BatchOutcome, BatchRequest, CpuCounters, CpuModel,
-    CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry,
+    AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, CpuCounters,
+    CpuModel, CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry,
     LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail,
     ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, Session, SessionAuth, SessionGroup,
     SessionLayout, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
@@ -265,6 +265,23 @@ fn a_batch_result_serializes_with_camel_case_fields() {
     assert_eq!(
         approval["risk"]["reasons"][0]["labelKey"],
         serde_json::json!("risk.recursiveForceDelete")
+    );
+
+    let unknown = check(
+        &BatchOutcome::HostKeyUnknown {
+            host: BatchHostRef {
+                session_id: "session-2".to_owned(),
+                session_name: "web-2".to_owned(),
+            },
+            key: presented(),
+        },
+        "HostKeyUnknown",
+    );
+    assert_eq!(unknown["kind"], serde_json::json!("hostKeyUnknown"));
+    assert_eq!(
+        unknown["host"]["sessionName"],
+        serde_json::json!("web-2"),
+        "the decision says which host raised it"
     );
 
     let finished = check(

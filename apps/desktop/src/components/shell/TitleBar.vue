@@ -11,7 +11,7 @@
  *
  * On macOS the bar keeps its native traffic lights, so the content is inset to make room.
  */
-import { Monitor, Moon, Settings, Sun } from "@lucide/vue";
+import { ListChecks, Monitor, Moon, Settings, Sun } from "@lucide/vue";
 import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -62,6 +62,9 @@ async function cycleThemeMode(): Promise<void> {
  * like nothing happened.
  */
 const settingsShowing = computed(() => terminals.activeTab?.kind === "settings");
+
+/** The same "is it already the one on screen" answer, for the batch panel's button. */
+const batchShowing = computed(() => terminals.activeTab?.kind === "batch");
 </script>
 
 <template>
@@ -89,6 +92,20 @@ const settingsShowing = computed(() => terminals.activeTab?.kind === "settings")
       @click="cycleThemeMode()"
     >
       <component :is="modeIcon" :size="15" />
+    </button>
+
+    <button
+      type="button"
+      class="grid size-8 place-items-center rounded-md transition-colors"
+      :class="
+        batchShowing ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      "
+      :title="t('batch.title')"
+      :aria-label="t('batch.title')"
+      :aria-current="batchShowing ? 'page' : undefined"
+      @click="terminals.openBatch()"
+    >
+      <ListChecks :size="15" />
     </button>
 
     <button

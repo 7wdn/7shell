@@ -9,6 +9,7 @@
 
 import { isDesktopRuntime } from "@/lib/runtime";
 import type { AppInfo, AppSettings } from "@/types/app";
+import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
   KeyInfo,
@@ -240,7 +241,24 @@ export const backend = {
     text: (): Promise<string> => forward("clipboard_text", () => desktop.clipboardText()),
   },
 
+  /**
+   * One command, many hosts.
+   *
+   * The verdict is asked for separately from the run — while somebody types, not when they press —
+   * and the run's progress arrives on `events.onBatchEvent` rather than in the answer, because the
+   * person watching needs each host's row as it lands and not when the slowest one does.
+   */
+  batch: {
+    /** What the classifier makes of a command. Runs nothing. */
+    classify: (command: string): Promise<RiskAssessment> =>
+      forward("batch_classify", () => desktop.batchClassify(command)),
+    run: (request: BatchRequest): Promise<BatchOutcome> => forward("batch_run", () => desktop.batchRun(request)),
+  },
+
   events: {
+    /** One host starting or finishing during a batch. */
+    onBatchEvent: (listener: (payload: BatchProgress) => void): Promise<Unlisten> =>
+      subscribe(desktop.onBatchEvent, listener),
     onTerminalData: (listener: (payload: TerminalData) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>

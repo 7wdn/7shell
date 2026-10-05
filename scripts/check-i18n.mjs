@@ -15,6 +15,7 @@ import path from "node:path";
 import { REPO_ROOT, loadDescriptors } from "./lib/descriptors.mjs";
 
 const LOCALES_DIR = path.join(REPO_ROOT, "apps", "desktop", "src", "i18n", "locales");
+const I18N_INDEX = path.join(REPO_ROOT, "apps", "desktop", "src", "i18n", "index.ts");
 const RUST_ROOTS = ["crates", "src-tauri"];
 const TS_ROOT = path.join(REPO_ROOT, "apps", "desktop", "src");
 
@@ -102,6 +103,50 @@ async function collectSourceKeys() {
   return { required, rustFiles, interfaceFiles };
 }
 
+/**
+ * Every locale file has to be a file the application actually reads, in every language.
+ *
+ * A file nothing imports is dead text: every key in it would pass the checks above while the
+ * interface drew the raw key instead of a sentence. That happened — a whole namespace was added,
+ * checked, and never loaded, and the end-to-end run that pressed the button is what noticed.
+ */
+async function checkLocaleFilesAreLoaded(problems) {
+  const index = await readFile(I18N_INDEX, "utf8");
+  const languages = (await readdir(LOCALES_DIR, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+
+  const filesByLanguage = new Map();
+  for (const language of languages) {
+    const names = (await readdir(path.join(LOCALES_DIR, language))).filter((name) => name.endsWith(".json")).sort();
+    filesByLanguage.set(language, names);
+  }
+
+  const [reference, referenceFiles] = [...filesByLanguage.entries()][0] ?? ["", []];
+  if (referenceFiles.length === 0) {
+    problems.push("no locale file was read at all, which is a broken check and not a clean repository");
+    return;
+  }
+
+  for (const [language, names] of filesByLanguage) {
+    for (const name of referenceFiles) {
+      if (!names.includes(name)) {
+        problems.push(`${language}: ${name} is missing, and ${reference} has it`);
+      }
+    }
+    for (const name of names) {
+      if (!referenceFiles.includes(name)) {
+        problems.push(`${reference}: ${name} is missing, and ${language} has it`);
+      }
+      // The loader names each file it imports; without that import the file is never read.
+      if (!index.includes(`locales/${language}/${name}`)) {
+        problems.push(`${language}/${name} is never imported by ${label(I18N_INDEX)}, so its keys are never loaded`);
+      }
+    }
+  }
+}
+
 async function main() {
   const { capabilities, protocols, authMethods } = await loadDescriptors();
   const locales = await loadLocaleSources();
@@ -130,6 +175,8 @@ async function main() {
   }
 
   const problems = [];
+  await checkLocaleFilesAreLoaded(problems);
+
   for (const [language, keys] of locales) {
     for (const [key, origin] of required) {
       if (!keys.has(key)) {

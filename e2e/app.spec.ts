@@ -645,3 +645,76 @@ test("a session can be dragged into a group, and a group into another group", as
     await close();
   }
 });
+
+/**
+ * One command, run on a real host, with the verdict shown before it runs.
+ *
+ * This is the whole feature through the window and nothing else: a session saved the way a person
+ * saves one, the batch panel opened from the title bar, the command typed into the box, the
+ * classifier's own answer read off the banner, the button pressed, the host key question answered,
+ * and one row that says what the host did.
+ *
+ * It needs a server, so it skips when the lab is not configured — the same four variables the Rust
+ * live tests use. What it proves that they cannot is the wiring above them: that the panel's button
+ * reaches the command, that a run stopped by a decision resumes by itself once the key is trusted,
+ * and that a row drawn from an answer that arrived as an event says the same as one drawn from the
+ * run's own result.
+ */
+test("a batch runs on a real host and the row says what happened", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    // A session of its own, so nothing another case did to the list can change what is selected.
+    const name = `lab-batch-${Date.now() % 100000}`;
+    await page.getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Batch execution" }).click();
+
+    // The host picker lists what is saved; this run is about exactly one of them.
+    await page.getByRole("checkbox", { name: new RegExp(name) }).check();
+    await page.getByPlaceholder("uptime").fill("uptime");
+
+    // The verdict is the backend's, and it is on screen before the button is pressed. `uptime`
+    // reads nothing and changes nothing, so the answer is the quiet one.
+    await expect(page.getByText("Safe", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+
+    // The first connection to this host is a question, and answering it re-runs the request: a
+    // batch that stopped for a decision has not run anything.
+    const question = page.getByText("A host key that has not been seen before");
+    await expect(question).toBeVisible({ timeout: 30_000 });
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "batch-host-key.png"), fullPage: false });
+    await page.getByRole("button", { name: "Trust this key and connect" }).click();
+
+    // One row, and it says the host exited zero.
+    await expect(page.getByText("exit 0", { exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByText("1 of 1 answered", { exact: false })).toBeVisible();
+
+    // Unfolding the row shows what the command printed, which is what the host actually said.
+    // Scoped to the workspace: the sidebar draws a row for the same session, and its button
+    // carries the same address.
+    await page
+      .getByRole("main")
+      .getByRole("button", { name: new RegExp(`${host}:${port}`) })
+      .click();
+    await expect(page.getByText("load average", { exact: false })).toBeVisible({ timeout: 15_000 });
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "batch-result.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});

@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppInfo, AppSettings } from "@/types/app";
+import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
   KeyInfo,
@@ -353,7 +354,29 @@ export function clipboardText(): Promise<string> {
   return invoke<string>("clipboard_text");
 }
 
+// -- Batches -----------------------------------------------------------------
+
+/**
+ * The verdict for a command, without running anything.
+ *
+ * Asked for as somebody types, so the warning is on screen before the button is pressed. It is the
+ * backend's own classifier answering — the same rules the run itself consults — rather than a copy
+ * of them in the interface that could disagree with what is enforced.
+ */
+export function batchClassify(command: string): Promise<RiskAssessment> {
+  return invoke<RiskAssessment>("batch_classify", { command });
+}
+
+/** Runs one command across the hosts in the request, with progress arriving on `batch:event`. */
+export function batchRun(request: BatchRequest): Promise<BatchOutcome> {
+  return invoke<BatchOutcome>("batch_run", { request });
+}
+
 // -- Events ------------------------------------------------------------------
+
+export async function onBatchEvent(listener: (payload: BatchProgress) => void): Promise<Unlisten> {
+  return listen<BatchProgress>("batch:event", (event) => listener(event.payload));
+}
 
 export async function onTerminalData(listener: (payload: TerminalData) => void): Promise<Unlisten> {
   return listen<TerminalData>("terminal:data", (event) => listener(event.payload));

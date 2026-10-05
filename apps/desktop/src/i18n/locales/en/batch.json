@@ -1,0 +1,50 @@
+{
+  "batch": {
+    "title": "Batch execution",
+    "tab": {
+      "close": "Close batch execution"
+    },
+    "hosts": {
+      "title": "Hosts",
+      "all": "All",
+      "none": "None",
+      "empty": "No sessions saved yet.",
+      "selected": "{count} selected"
+    },
+    "command": {
+      "label": "Command",
+      "placeholder": "uptime"
+    },
+    "options": {
+      "timeout": "Timeout per host",
+      "parallel": "At once"
+    },
+    "action": {
+      "run": "Run",
+      "running": "Running",
+      "retryOne": "Run this one again",
+      "retryFailed": "Retry {count} that did not succeed"
+    },
+    "risk": {
+      "confirm": "I have read the reasons above and want this to run on {count} host(s).",
+      "blocked": "This command needs your approval before it can run."
+    },
+    "state": {
+      "running": "{done} of {total} answered",
+      "decision": "Waiting for you to answer about a host key — nothing has run yet.",
+      "approval": "Nothing has run: this command needs your approval first."
+    },
+    "empty": {
+      "hint": "Pick the hosts on the left, write one command, and read the verdict before running it."
+    },
+    "summary": {
+      "line": "{done} of {total} answered in {duration}"
+    },
+    "result": {
+      "exit": "exit {code}",
+      "noStatus": "no status",
+      "stdout": "Standard output",
+      "stderr": "Standard error"
+    }
+  }
+}

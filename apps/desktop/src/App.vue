@@ -38,6 +38,7 @@ import { describeShellError } from "@/i18n/errors";
 import { useTransferNotices } from "@/composables/useTransferNotices";
 import { isTextEntry } from "@/lib/menu/editable";
 import { useAppStore } from "@/stores/app";
+import { useBatchStore } from "@/stores/batch";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useFilesStore } from "@/stores/files";
 import { backend } from "@/lib/backend/api";
@@ -49,6 +50,7 @@ const files = useFilesStore();
 const app = useAppStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
+const batch = useBatchStore();
 const vault = useVaultStore();
 
 // Watches for transfers that failed while their list was not on screen. Registered here because the
@@ -284,6 +286,9 @@ onMounted(async () => {
   window.addEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopContextMenu = () => window.removeEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopTerminalEvents = terminals.initialize();
+  // Registered here rather than by the panel: a run outlives a look at another tab, and its rows
+  // have to keep arriving while the person is somewhere else.
+  batch.listen();
   stopQuitRequested = await backend.events.onQuitRequested(() => void askedToQuit());
   await preferences.load();
   await app.load();

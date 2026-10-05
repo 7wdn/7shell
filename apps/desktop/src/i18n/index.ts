@@ -8,6 +8,7 @@ import { createI18n } from "vue-i18n";
 
 import enApp from "./locales/en/app.json";
 import enAuth from "./locales/en/auth.json";
+import enBatch from "./locales/en/batch.json";
 import enCapability from "./locales/en/capability.json";
 import enCommon from "./locales/en/common.json";
 import enErrors from "./locales/en/errors.json";
@@ -17,6 +18,7 @@ import enInspect from "./locales/en/inspect.json";
 import enMenu from "./locales/en/menu.json";
 import enMonitor from "./locales/en/monitor.json";
 import enProtocol from "./locales/en/protocol.json";
+import enRisk from "./locales/en/risk.json";
 import enSessions from "./locales/en/sessions.json";
 import enSettings from "./locales/en/settings.json";
 import enShell from "./locales/en/shell.json";
@@ -24,6 +26,7 @@ import enTerminal from "./locales/en/terminal.json";
 import enVault from "./locales/en/vault.json";
 import zhCnApp from "./locales/zh-CN/app.json";
 import zhCnAuth from "./locales/zh-CN/auth.json";
+import zhCnBatch from "./locales/zh-CN/batch.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
 import zhCnCommon from "./locales/zh-CN/common.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
@@ -33,6 +36,7 @@ import zhCnInspect from "./locales/zh-CN/inspect.json";
 import zhCnMenu from "./locales/zh-CN/menu.json";
 import zhCnMonitor from "./locales/zh-CN/monitor.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
+import zhCnRisk from "./locales/zh-CN/risk.json";
 import zhCnSessions from "./locales/zh-CN/sessions.json";
 import zhCnSettings from "./locales/zh-CN/settings.json";
 import zhCnShell from "./locales/zh-CN/shell.json";
@@ -80,6 +84,8 @@ const messages = {
     ...enApp,
     ...enErrors,
     ...enProtocol,
+    ...enRisk,
+    ...enBatch,
     ...enAuth,
     ...enCapability,
     ...enVault,
@@ -98,6 +104,8 @@ const messages = {
     ...zhCnApp,
     ...zhCnErrors,
     ...zhCnProtocol,
+    ...zhCnRisk,
+    ...zhCnBatch,
     ...zhCnAuth,
     ...zhCnCapability,
     ...zhCnVault,

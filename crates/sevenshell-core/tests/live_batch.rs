@@ -134,7 +134,7 @@ async fn trust_everything(lab: &Lab, ids: &[&str]) {
     for _ in 0..4 {
         let (outcome, _) = run_once(lab, request(ids, "true", 20_000)).await;
         match outcome {
-            BatchOutcome::HostKeyUnknown { key } => lab.core.trust_host_key(&key).expect("trust the key"),
+            BatchOutcome::HostKeyUnknown { key, .. } => lab.core.trust_host_key(&key).expect("trust the key"),
             _ => return,
         }
     }
@@ -297,8 +297,13 @@ async fn a_decision_stops_the_run_before_anything_has_run() {
     .await;
 
     match outcome {
-        BatchOutcome::HostKeyUnknown { key } => {
+        BatchOutcome::HostKeyUnknown { host, key } => {
             assert_eq!(key.host, "localhost", "the decision is about the host that needs it");
+            assert_eq!(
+                host.session_id, "lab-alias",
+                "and it names the row that has to be answered"
+            );
+            assert_eq!(host.session_name, "lab (alias)");
         }
         other => panic!("expected a decision about the alias, got {other:?}"),
     }

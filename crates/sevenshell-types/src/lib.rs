@@ -17,7 +17,7 @@ mod generated {
 }
 
 pub use app_info::{AppInfo, PRODUCT_NAME};
-pub use batch::{BatchHostOutcome, BatchHostResult, BatchOutcome, BatchRequest, HostFailure};
+pub use batch::{BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, HostFailure};
 pub use generated::{
     AUTH_METHODS, AuthMethod, AuthMethodSpec, CAPABILITIES, Capability, CapabilityGroup, CapabilitySpec,
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,

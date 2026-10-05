@@ -8,10 +8,23 @@
  * `make app-e2e` starts the application against a temporary data directory, waits for the
  * debugging endpoint and runs these.
  */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "@playwright/test";
+
+/**
+ * Where a failure's own material goes — the page as it was, the call that timed out.
+ *
+ * Named rather than defaulted: the runner's working directory is the repository root, so the
+ * default would scatter `test-results/` beside the sources instead of leaving it with the rest of
+ * the end-to-end output that `.gitignore` already accounts for.
+ */
+const OUTPUT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "test-results");
 
 export default defineConfig({
   testDir: ".",
+  outputDir: OUTPUT_DIR,
   // The whole run is one window and one vault, so a second worker would fight the first.
   workers: 1,
   fullyParallel: false,

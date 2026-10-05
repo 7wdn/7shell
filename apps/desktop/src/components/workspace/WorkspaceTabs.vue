@@ -33,6 +33,7 @@ import {
   Cpu,
   Folder,
   List,
+  ListChecks,
   LoaderCircle,
   Network,
   PanelBottom,
@@ -43,6 +44,7 @@ import {
 } from "@lucide/vue";
 import { useI18n } from "vue-i18n";
 
+import BatchPanel from "@/components/batch/BatchPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
@@ -67,7 +69,7 @@ const { openMenu } = useContextMenu();
 
 /** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
 function hasHandle(tab: WorkspaceTab): boolean {
-  if (tab.kind === "inspect" || tab.kind === "settings") {
+  if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
     return false;
   }
   return tab.handle !== null;
@@ -89,7 +91,7 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
         kind: tab.kind,
         // The settings page has no stream of its own either: it writes a file rather than holding
         // a connection, so there is nothing for the menu to offer a retry for.
-        status: tab.kind === "inspect" || tab.kind === "settings" ? null : tab.status,
+        status: tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch" ? null : tab.status,
         hasHandle: hasHandle(tab),
         index,
         total: terminals.tabs.length,
@@ -125,6 +127,8 @@ function tabLabel(tab: WorkspaceTab): string {
       return `${t(inspectTitleKey(tab.view))} · ${tab.session.host}`;
     case "settings":
       return t("settings.title");
+    case "batch":
+      return t("batch.title");
     default:
       return tab.session.name;
   }
@@ -150,6 +154,8 @@ function closeLabel(tab: WorkspaceTab): string {
       return t("inspect.tab.close");
     case "settings":
       return t("settings.tab.close");
+    case "batch":
+      return t("batch.tab.close");
     default:
       return t("terminal.tab.close");
   }
@@ -162,7 +168,7 @@ function dotClass(tab: WorkspaceTab): string | null {
   }
   // Neither page has a status of its own: an inspect page's connection belongs to a terminal
   // somewhere else, and the settings page has none to report.
-  if (tab.kind === "inspect" || tab.kind === "settings") {
+  if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
     return null;
   }
   switch (tab.status) {
@@ -201,6 +207,7 @@ function dotClass(tab: WorkspaceTab): string | null {
           <Terminal v-if="tab.kind === 'terminal'" :size="12" class="shrink-0" />
           <Folder v-else-if="tab.kind === 'files'" :size="12" class="shrink-0" />
           <Settings v-else-if="tab.kind === 'settings'" :size="12" class="shrink-0" />
+          <ListChecks v-else-if="tab.kind === 'batch'" :size="12" class="shrink-0" />
           <Cpu v-else-if="tab.view === 'system'" :size="12" class="shrink-0" />
           <List v-else-if="tab.view === 'processes'" :size="12" class="shrink-0" />
           <Network v-else :size="12" class="shrink-0" />
@@ -418,7 +425,14 @@ function dotClass(tab: WorkspaceTab): string | null {
         there after a look at a terminal — and it is a tab rather than a dialog because a preference
         is changed while the thing it is about stays on screen next to it.
       -->
-      <SettingsPage v-else />
+      <SettingsPage v-else-if="tab.kind === 'settings'" />
+
+      <!--
+        The batch panel. It is kept mounted like the other panes, and for a stronger reason than
+        most: a run outlives a look at another tab, and a panel that unmounted would come back with
+        rows that stopped being updated halfway through.
+      -->
+      <BatchPanel v-else-if="tab.kind === 'batch'" />
     </div>
   </section>
 </template>

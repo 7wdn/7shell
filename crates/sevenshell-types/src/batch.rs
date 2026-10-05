@@ -31,15 +31,28 @@ pub struct BatchRequest {
     pub acknowledged: bool,
 }
 
+/// Which host in the request a decision is about.
+///
+/// A decision stops the whole run, so the person answering it needs to know which of the hosts
+/// they selected raised it — and the interface needs to find that host's row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchHostRef {
+    pub session_id: String,
+    /// The name as it was saved, so a prompt is readable without looking the id up.
+    pub session_name: String,
+}
+
 /// What a batch did, or what it is waiting for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum BatchOutcome {
     /// The host key of this host has never been seen. Nothing was run anywhere, and the same
     /// request after trusting the key will try again.
-    HostKeyUnknown { key: PresentedHostKey },
+    HostKeyUnknown { host: BatchHostRef, key: PresentedHostKey },
     /// The presented key differs from the trusted one. A hard stop, not a prompt.
     HostKeyMismatch {
+        host: BatchHostRef,
         key: PresentedHostKey,
         trusted: KnownHostEntry,
     },

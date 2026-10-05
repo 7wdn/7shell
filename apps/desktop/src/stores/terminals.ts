@@ -45,6 +45,7 @@ import { computed, ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
+import { useBatchStore } from "@/stores/batch";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import type {
@@ -72,7 +73,10 @@ export type FilesTabStatus = "open" | "failed";
 export type OpenTarget =
   | { readonly to: "terminal" }
   | { readonly to: "files" }
-  | { readonly to: "panel"; readonly tabId: string };
+  | { readonly to: "panel"; readonly tabId: string }
+  // A batch is not about the session that raised the decision: it is about the request, which the
+  // batch store kept for exactly this — so the answer asks it to repeat that request.
+  | { readonly to: "batch" };
 
 /** The half of an open answer that is not an open: the decision that has to come first. */
 type DecisionOutcome = Exclude<OpenOutcome | SftpOutcome, { kind: "opened" }>;
@@ -146,7 +150,19 @@ export interface SettingsTab {
   id: string;
 }
 
-export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab;
+/**
+ * The batch panel, as a tab.
+ *
+ * Like the settings page it is about no single host — it is about as many as are ticked in it — so
+ * it carries no session either. It owns nothing the backend has to let go of: a run is over when
+ * its answer arrives, and the rows are the interface's own memory of it.
+ */
+export interface BatchTab {
+  readonly kind: "batch";
+  id: string;
+}
+
+export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab | BatchTab;
 
 /**
  * The session a tab is about, or nothing when it is about no host.
@@ -156,7 +172,7 @@ export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab;
  * would be the bug this makes impossible to write.
  */
 export function sessionOf(tab: WorkspaceTab): Session | null {
-  return tab.kind === "settings" ? null : tab.session;
+  return tab.kind === "settings" || tab.kind === "batch" ? null : tab.session;
 }
 
 /** A host key the backend is waiting on before it will send anything at all. */
@@ -372,6 +388,38 @@ export const useTerminalsStore = defineStore("terminals", () => {
     addTab({ kind: "settings", id: crypto.randomUUID() });
   }
 
+  /**
+   * Opens the batch panel, or brings it forward if it is already open.
+   *
+   * One panel, like the settings page and for the same reason: two of them would be two sets of
+   * rows about the same run, and only one of them would be receiving the progress.
+   */
+  function openBatch(): void {
+    const showing = tabs.value.find((entry): entry is BatchTab => entry.kind === "batch");
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({ kind: "batch", id: crypto.randomUUID() });
+  }
+
+  /**
+   * Raises the shared host key prompt for a batch.
+   *
+   * One prompt for the whole application, whichever feature hit the key it is about: a second one
+   * would be a second question about the same host, answerable in two places that do not know
+   * about each other.
+   */
+  function raiseBatchDecision(
+    session: Session,
+    outcome:
+      | { readonly kind: "hostKeyUnknown"; readonly key: PresentedHostKey }
+      | { readonly kind: "hostKeyMismatch"; readonly key: PresentedHostKey; readonly trusted: KnownHostEntry },
+  ): void {
+    raiseDecision(session, { to: "batch" }, outcome);
+  }
+
   /** The panel's answer to an open: a browser, or the decision that has to come first. */
   function acceptPanel(tab: TerminalTab, outcome: SftpOutcome): void {
     if (outcome.kind === "opened") {
@@ -450,6 +498,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   /** Opens whatever a host key decision was standing in front of. */
   async function openFor(session: Session, target: OpenTarget): Promise<void> {
+    if (target.to === "batch") {
+      await useBatchStore().resumeAfterDecision();
+      return;
+    }
     if (target.to === "files") {
       await openFiles(session);
       return;
@@ -473,6 +525,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * already exists, and if that tab is gone there is nowhere left for the reason to be true.
    */
   function failedOpen(session: Session, target: OpenTarget, failure: ShellError): void {
+    if (target.to === "batch") {
+      // The panel draws its own failures: it is where the rows are, and a terminal tab about one
+      // host would be the wrong place for a sentence about a request covering several.
+      useBatchStore().reportFailure(failure);
+      return;
+    }
     if (target.to === "files") {
       addFiles(session, { handle: null, status: "failed", failure });
       return;
@@ -508,7 +566,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // Neither a page about a host nor the settings page owns anything the backend has to let go
     // of: what an inspect page was reading belongs to a terminal, which decides for itself how long
     // it lives, and the settings page reads a file that is nobody's handle.
-    if (tab.kind === "inspect" || tab.kind === "settings") {
+    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
       forget(id);
       return;
     }
@@ -625,9 +683,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (tab.kind === "files") {
       return tab.handle;
     }
-    // A page about a host draws no browser, and nor does the settings page, so there is nowhere
-    // for a dropped file to land in either.
-    if (tab.kind === "inspect" || tab.kind === "settings") {
+    // A page about a host draws no browser, and neither does the settings page nor the batch
+    // panel, so there is nowhere for a dropped file to land in any of them.
+    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
       return null;
     }
     return tab.panel?.handle ?? null;
@@ -733,10 +791,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (!tab) {
       return;
     }
-    // Neither kind of page reconnects. An inspect page reads through whatever terminal its session
-    // has and starts reading again by itself the moment one is there; the settings page is not
-    // about a host at all. Neither offers a button, so neither has anything to do here.
-    if (tab.kind === "inspect" || tab.kind === "settings") {
+    // None of the pages reconnect. An inspect page reads through whatever terminal its session has
+    // and starts reading again by itself the moment one is there; the settings page is not about a
+    // host at all, and the batch panel is about several. None of them offers a button, so none has
+    // anything to do here.
+    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
       return;
     }
     const { session } = tab;
@@ -835,6 +894,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openFiles,
     openInspect,
     openSettings,
+    openBatch,
+    raiseBatchDecision,
     openPanel,
     closePanel,
     togglePanel,
