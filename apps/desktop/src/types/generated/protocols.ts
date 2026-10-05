@@ -96,7 +96,7 @@ export const AUTH_METHODS: readonly AuthMethodDescriptor[] = [
   {
     id: "agent",
     labelKey: "auth.agent.label",
-    capabilities: [],
+    capabilities: ["platformAgent"],
     platforms: [],
   },
   {

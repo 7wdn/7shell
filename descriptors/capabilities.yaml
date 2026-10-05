@@ -87,4 +87,3 @@ capabilities:
     order: 140
     group: auth
     labelKey: capability.platformAgent.label
-    planned: true

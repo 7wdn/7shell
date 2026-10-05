@@ -105,7 +105,7 @@
       "order": 140,
       "group": "auth",
       "labelKey": "capability.platformAgent.label",
-      "planned": true
+      "planned": false
     }
   ],
   "protocols": [
@@ -168,7 +168,9 @@
       "rustVariant": "Agent",
       "order": 40,
       "labelKey": "auth.agent.label",
-      "capabilities": [],
+      "capabilities": [
+        "platformAgent"
+      ],
       "platforms": []
     },
     {

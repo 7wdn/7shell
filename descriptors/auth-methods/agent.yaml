@@ -3,6 +3,8 @@ order: 40
 id: agent
 rustVariant: Agent
 labelKey: auth.agent.label
-# Declared because the method exists and is offered in the editor (disabled), but nothing claims
-# `platformAgent` yet: the transport answers a request to use it with "not implemented".
-capabilities: []
+# The agent running on this machine, asked to sign: the key never reaches this build, which is why
+# agent authentication is offered at all. Reached through `$SSH_AUTH_SOCK`, or through OpenSSH's own
+# named pipe on Windows when nothing names one.
+capabilities:
+  - platformAgent

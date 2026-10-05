@@ -245,11 +245,13 @@ async fn open_connection(request: OpenRequest, events: Sender<ChannelEvent>) -> 
     // The hops have to be held by the session this opens: it dies when they do.
     let upstream = route.upstream();
 
-    // The one credential this build has no path for. Naming it here is the point: a caller
-    // that was asked for an agent gets an answer, not a connection that fails for reasons of
-    // its own.
+    // The one credential this build has no path for, refused before a socket is opened: a caller
+    // that asked for Pageant gets an answer naming it rather than a connection that fails for
+    // reasons of its own. The agent itself is *not* refused here — it is a credential this build
+    // can use, and whether the machine has one is answered during authentication, where the
+    // message can say so.
     let credential = match credential {
-        Credential::Agent => return Err(ShellError::app_unsupported("agent authentication")),
+        Credential::Pageant => return Err(ShellError::app_unsupported("Pageant authentication")),
         other => other,
     };
 
@@ -392,7 +394,56 @@ async fn authenticate(
     if let Some((contents, passphrase)) = credential.key() {
         return key_authentication(handle, target, contents, passphrase).await;
     }
-    Err(ShellError::app_unsupported("agent authentication"))
+    if credential.agent() {
+        return agent_authentication(handle, target).await;
+    }
+    if credential.pageant() {
+        return Err(ShellError::app_unsupported("Pageant authentication"));
+    }
+    Err(ShellError::app_unsupported("that credential"))
+}
+
+/// Authenticates with a key the machine's agent holds.
+///
+/// Every identity the agent has is offered in turn, because the agent does not know which one this
+/// server accepts and the server is the only thing that does. Not one byte of key material passes
+/// through this crate: the agent signs with what it holds, and what comes back is a signature.
+async fn agent_authentication(handle: &mut Handle<KeyCheck>, target: &Target) -> Result<(), ShellError> {
+    let mut agent = crate::agent::connect().await?;
+    let identities = agent.identities().await?;
+
+    if identities.is_empty() {
+        // A thing to act on rather than a mystery: the agent is there and holds nothing.
+        return Err(ShellError::ssh_auth_failed(&target.host, target.port, "agent")
+            .with_detail("the key agent is running but holds no keys"));
+    }
+
+    let mut last_refusal = None;
+    for identity in identities {
+        // A certificate in the agent is offered as the key it certifies: this build does not ask
+        // for certificate authentication, and the server decides what it accepts.
+        let key = identity.public_key().into_owned();
+        let hash = if key.algorithm().is_rsa() {
+            handle
+                .best_supported_rsa_hash()
+                .await
+                .map_err(|error| auth_failed(target, "agent", Some(error.to_string())))?
+                .flatten()
+        } else {
+            None
+        };
+
+        let result = handle
+            .authenticate_publickey_with(target.user.clone(), key, hash, agent.client())
+            .await
+            .map_err(|error| auth_failed(target, "agent", Some(error.to_string())))?;
+        if result.success() {
+            return Ok(());
+        }
+        last_refusal = rejection(&result);
+    }
+
+    Err(auth_failed(target, "agent", last_refusal).with_detail("none of the keys the agent holds were accepted"))
 }
 
 /// Authenticates with a password, and answers a keyboard-interactive challenge with it.
@@ -858,14 +909,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_agent_credential_is_answered_rather_than_attempted() {
+    async fn pageant_is_refused_before_anything_is_sent() {
         let (events, _output) = tokio::sync::mpsc::channel(4);
-        match SshSession::open(a_request("127.0.0.1", 9, Credential::Agent), events).await {
-            Ok(_) => panic!("no agent path exists in this build"),
+        match SshSession::open(a_request("127.0.0.1", 9, Credential::Pageant), events).await {
+            Ok(_) => panic!("no Pageant path exists in this build"),
             Err(error) => {
                 assert_eq!(error.code(), ErrorCode::AppUnsupported);
                 assert_eq!(error.outcome(), OperationOutcome::NotSent);
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_agent_credential_is_a_credential_this_build_uses() {
+        // The difference from Pageant, and the reason both are pinned: an agent is a real path, so
+        // an unreachable host is answered as unreachable — the agent is only consulted once there
+        // is a connection to authenticate on.
+        let (events, _output) = tokio::sync::mpsc::channel(4);
+        match SshSession::open(a_request("127.0.0.1", 9, Credential::Agent), events).await {
+            Ok(_) => panic!("nothing is listening on port 9"),
+            Err(error) => assert_eq!(error.code(), ErrorCode::SshUnreachable),
         }
     }
 

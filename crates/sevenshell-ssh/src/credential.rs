@@ -30,13 +30,17 @@ pub enum Credential {
         contents: String,
         passphrase: Option<String>,
     },
-    /// A key held by a running agent (`ssh-agent`, Pageant).
+    /// A key held by the agent running on this machine (`ssh-agent`, or OpenSSH's on Windows).
     ///
-    /// The interface declares this method — an agent signs with a key it never hands over —
-    /// but no code here speaks the agent protocol, so asking for it is answered with
-    /// `APP-UNSUPPORTED` rather than a connection that fails somewhere the caller cannot
-    /// explain. The variant exists so that answer has somewhere to come from.
+    /// The agent signs; this build never sees the key. Which agent to ask comes from the
+    /// environment, or from OpenSSH's own pipe on Windows.
     Agent,
+    /// Pageant, which ships with PuTTY and speaks a protocol of its own.
+    ///
+    /// Kept separate from [`Credential::Agent`] rather than folded in: an answer of "no agent
+    /// there" would be wrong on a machine where Pageant is running, and naming what is missing is
+    /// the difference between a person starting the right program and reinstalling this one.
+    Pageant,
 }
 
 impl fmt::Debug for Credential {
@@ -50,7 +54,20 @@ impl fmt::Debug for Credential {
                 write!(f, "Credential::Key {{ contents: {MASK}, passphrase: {passphrase} }}")
             }
             Self::Agent => write!(f, "Credential::Agent"),
+            Self::Pageant => write!(f, "Credential::Pageant"),
         }
+    }
+}
+
+impl Credential {
+    /// Whether this is the machine's own agent.
+    pub fn agent(&self) -> bool {
+        matches!(self, Self::Agent)
+    }
+
+    /// Whether this is Pageant, which speaks a protocol this build does not.
+    pub fn pageant(&self) -> bool {
+        matches!(self, Self::Pageant)
     }
 }
 
@@ -65,7 +82,8 @@ impl Drop for Credential {
                 contents.zeroize();
                 passphrase.zeroize();
             }
-            Self::Agent => {}
+            // Nothing of the caller's to wipe: the key never left the agent.
+            Self::Agent | Self::Pageant => {}
         }
     }
 }
@@ -75,7 +93,7 @@ impl Credential {
     pub(crate) fn password(&self) -> Option<&str> {
         match self {
             Self::Password(password) => Some(password),
-            Self::Key { .. } | Self::Agent => None,
+            Self::Key { .. } | Self::Agent | Self::Pageant => None,
         }
     }
 
@@ -83,7 +101,7 @@ impl Credential {
     pub(crate) fn key(&self) -> Option<(&str, Option<&str>)> {
         match self {
             Self::Key { contents, passphrase } => Some((contents, passphrase.as_deref())),
-            Self::Password(_) | Self::Agent => None,
+            Self::Password(_) | Self::Agent | Self::Pageant => None,
         }
     }
 }

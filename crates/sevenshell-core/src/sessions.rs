@@ -516,9 +516,11 @@ impl Core {
                 let (contents, passphrase) = material.into_parts();
                 Ok(Credential::Key { contents, passphrase })
             }
-            // The transport answers the agent variants with `app_unsupported`, which names what is
-            // missing instead of looking like a credential that was rejected.
-            AuthMethod::Agent | AuthMethod::Pageant => Ok(Credential::Agent),
+            // Two different things, kept apart on purpose: the machine's own agent is asked for a
+            // signature, while Pageant speaks a protocol this build does not — and saying *which*
+            // one is missing is what tells somebody whether to start a program or stop looking.
+            AuthMethod::Agent => Ok(Credential::Agent),
+            AuthMethod::Pageant => Ok(Credential::Pageant),
         }
     }
 }
