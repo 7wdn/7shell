@@ -771,7 +771,8 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await page.getByPlaceholder("What it is called").fill("marker");
     await page.getByLabel(/The line, with/).fill(`touch /tmp/${stamp}-#1`);
     // The slot box, filled the way somebody fills it before sending.
-    await page.locator('input[list="command-slot-history"]').first().fill("done");
+    // The slot boxes are the inputs that carry a suggestion list; the first one is `#1`.
+    await page.locator('input[list^="slot-history-"]').first().fill("done");
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
     // What is sent is the line with the value in it, which is what the history then shows.

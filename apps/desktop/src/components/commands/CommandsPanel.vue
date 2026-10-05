@@ -12,7 +12,7 @@
  * send, and then the button says so and asks again. That is the only case where anything waits, and
  * it only happens when more than one shell is being written to.
  */
-import { FolderPlus, Play, Plus, Save, Trash2, TriangleAlert } from "@lucide/vue";
+import { ChevronDown, ChevronUp, FolderPlus, Play, Plus, Save, Trash2, TriangleAlert } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -90,6 +90,27 @@ const canSend = computed(() => {
 function suggestionsFor(slot: number): string[] {
   const stored = commands.groups.flatMap((group) => group.commands).find((entry) => entry.id === commands.draft?.id);
   return [...(stored?.slotHistory[slot - 1] ?? [])];
+}
+
+/**
+ * Whether the command being edited can move further in that direction.
+ *
+ * Asked of the list rather than kept as state: the first command cannot go up and the last cannot
+ * go down, and a button that looked pressable and did nothing would be worse than one that is dim.
+ */
+function canMove(direction: -1 | 1): boolean {
+  const draft = commands.draft;
+  if (!draft?.id) {
+    return false;
+  }
+
+  const group = commands.groups.find((entry) => entry.commands.some((command) => command.id === draft.id));
+  if (!group) {
+    return false;
+  }
+
+  const index = group.commands.findIndex((command) => command.id === draft.id);
+  return index >= 0 && group.commands[index + direction] !== undefined;
 }
 
 async function saveGroup(): Promise<void> {
@@ -249,14 +270,18 @@ async function saveGroup(): Promise<void> {
             <span class="shrink-0 font-mono text-[11px] text-muted-foreground">#{{ slot }}</span>
             <input
               :value="commands.values[slot - 1]"
-              list="command-slot-history"
+              :list="`slot-history-${slot}`"
               class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:border-primary focus:outline-none"
               @input="commands.setValue(slot - 1, ($event.target as HTMLInputElement).value)"
             />
+            <!--
+              One list per slot. A single shared list answered every box with what the first box had
+              used before, which for a command like `cp #1 #2` is an answer to the wrong question.
+            -->
+            <datalist :id="`slot-history-${slot}`">
+              <option v-for="value in suggestionsFor(slot)" :key="value" :value="value"></option>
+            </datalist>
           </label>
-          <datalist id="command-slot-history">
-            <option v-for="value in suggestionsFor(commands.slots[0] ?? 1)" :key="value" :value="value"></option>
-          </datalist>
         </div>
 
         <p v-if="commands.slots.length > 0" class="font-mono text-[11px] break-all text-muted-foreground">
@@ -316,6 +341,28 @@ async function saveGroup(): Promise<void> {
           >
             <Save :size="12" />
             {{ t("commands.save") }}
+          </button>
+          <button
+            v-if="commands.draft.id"
+            type="button"
+            class="grid size-6 place-items-center rounded-md border border-border transition-colors hover:bg-accent disabled:opacity-40"
+            :disabled="!canMove(-1)"
+            :title="t('commands.moveUp')"
+            :aria-label="t('commands.moveUp')"
+            @click="commands.move(commands.draft.id, -1)"
+          >
+            <ChevronUp :size="12" />
+          </button>
+          <button
+            v-if="commands.draft.id"
+            type="button"
+            class="grid size-6 place-items-center rounded-md border border-border transition-colors hover:bg-accent disabled:opacity-40"
+            :disabled="!canMove(1)"
+            :title="t('commands.moveDown')"
+            :aria-label="t('commands.moveDown')"
+            @click="commands.move(commands.draft.id, 1)"
+          >
+            <ChevronDown :size="12" />
           </button>
           <button
             v-if="commands.draft.id"

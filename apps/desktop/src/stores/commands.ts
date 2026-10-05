@@ -159,6 +159,34 @@ export const useCommandsStore = defineStore("commands", () => {
     }
   }
 
+  /**
+   * Moves a saved command one place up or down inside its group.
+   *
+   * The order is stored rather than implied, so this is two writes with swapped values — the
+   * neighbour and the command — rather than a list that is renumbered on every change.
+   */
+  async function move(id: string, direction: -1 | 1): Promise<void> {
+    const group = groups.value.find((entry) => entry.commands.some((command) => command.id === id));
+    if (!group) {
+      return;
+    }
+
+    const index = group.commands.findIndex((command) => command.id === id);
+    const neighbour = group.commands[index + direction];
+    const moving = group.commands[index];
+    if (!moving || !neighbour) {
+      return;
+    }
+
+    try {
+      await backend.commands.save({ ...neighbour, order: moving.order });
+      await backend.commands.save({ ...moving, order: neighbour.order });
+      await load();
+    } catch (error) {
+      failure.value = asShellError(error, "snippet_save");
+    }
+  }
+
   async function remove(id: string): Promise<void> {
     try {
       await backend.commands.delete(id);
@@ -346,6 +374,7 @@ export const useCommandsStore = defineStore("commands", () => {
     closeDraft,
     setValue,
     save,
+    move,
     remove,
     addGroup,
     removeGroup,

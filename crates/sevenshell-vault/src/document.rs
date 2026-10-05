@@ -252,6 +252,12 @@ impl Document {
                 existing.append_cr = snippet.append_cr;
                 existing.slot_history = snippet.slot_history.clone();
                 existing.group_id = snippet.group_id.clone();
+                // Zero means "leave it where it is": a caller editing a command's text has no
+                // opinion about its place in the list, and taking 0 literally would send it to the
+                // front. Moving one is the only caller that passes a real order.
+                if snippet.order != 0 {
+                    existing.order = snippet.order;
+                }
                 existing.clone()
             }
             None => {
