@@ -26,7 +26,6 @@ import { useI18n } from "vue-i18n";
 
 import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
-import SettingsDialog from "@/components/settings/SettingsDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
 import ContextMenu from "@/components/shell/ContextMenu.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
@@ -55,7 +54,6 @@ const vault = useVaultStore();
 // question it answers — what is on screen — is one only the shell can answer.
 useTransferNotices();
 
-const settingsOpen = ref(false);
 let stopFollowingSystem: (() => void) | undefined;
 let stopTerminalEvents: (() => void) | undefined;
 let stopDragEvents: (() => void) | undefined;
@@ -214,7 +212,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden">
-    <TitleBar @open-settings="settingsOpen = true" />
+    <TitleBar />
 
     <div
       v-if="backendFailure"
@@ -270,8 +268,6 @@ onBeforeUnmount(() => {
         {{ t("files.drop.hint", { path: dropTarget.path }) }}
       </p>
     </div>
-
-    <SettingsDialog :open="settingsOpen" @update:open="settingsOpen = $event" />
 
     <!--
       The context menu, like the toast, belongs to the frame rather than to any feature: it is opened

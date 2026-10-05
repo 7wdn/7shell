@@ -38,7 +38,7 @@ import {
   interfaceRates,
   isLoopback,
 } from "@/lib/monitor/rates";
-import { type TerminalTab, useTerminalsStore } from "@/stores/terminals";
+import { type TerminalTab, sessionOf, useTerminalsStore } from "@/stores/terminals";
 import {
   type ProcessRow,
   type ProcessSortKey,
@@ -176,17 +176,19 @@ export const useMonitorStore = defineStore("monitor", () => {
    * A terminal tab's session, found through whichever open terminal is carrying that session —
    * which is what makes a file tab beside its terminal keep the monitor running rather than
    * blanking the panel for a click. The handle is a terminal's, because a sample rides the
-   * connection that terminal opened.
+   * connection that terminal opened. A tab about no host at all — the settings page — is nobody's
+   * session, so the panel falls back to saying it has no connection rather than to the last one.
    */
   const target = computed<MonitorTarget | null>(() => {
     const active = terminals.activeTab;
-    if (!active) {
+    const activeSession = active ? sessionOf(active) : null;
+    if (!activeSession) {
       return null;
     }
 
     const open = terminals.tabs.find(
       (entry): entry is TerminalTab =>
-        entry.kind === "terminal" && entry.session.id === active.session.id && entry.status === "open",
+        entry.kind === "terminal" && entry.session.id === activeSession.id && entry.status === "open",
     );
     const handle = open?.handle;
     if (!open || handle === null || handle === undefined) {

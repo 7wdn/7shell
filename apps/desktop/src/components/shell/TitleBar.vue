@@ -20,12 +20,12 @@ import WindowControls from "@/components/shell/WindowControls.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
-
-const emit = defineEmits<{ "open-settings": [] }>();
+import { useTerminalsStore } from "@/stores/terminals";
 
 const { t } = useI18n();
 const app = useAppStore();
 const preferences = usePreferencesStore();
+const terminals = useTerminalsStore();
 
 const { isMac, showControls, isMaximized, minimize, toggleMaximize, close } = useWindowControls(
   () => app.info?.os ?? "",
@@ -33,7 +33,7 @@ const { isMac, showControls, isMaximized, minimize, toggleMaximize, close } = us
 
 const version = computed(() => (app.info ? `v${app.info.version}` : ""));
 
-/** One button covers all three modes, cycling in the order the settings dialog lists them. */
+/** One button covers all three modes, cycling in the order the settings page lists them. */
 const modeIcon = computed(() =>
   markRaw(preferences.themeMode === "system" ? Monitor : preferences.themeMode === "dark" ? Moon : Sun),
 );
@@ -53,6 +53,15 @@ async function cycleThemeMode(): Promise<void> {
   const next = preferences.themeMode === "system" ? "dark" : preferences.themeMode === "dark" ? "light" : "system";
   await preferences.setThemeMode(next);
 }
+
+/**
+ * Whether the settings page is the tab on screen.
+ *
+ * The gear is a way back to a page that may already be open rather than a switch for a dialog, so
+ * it says when it is the one that is showing — otherwise pressing it over a settings page looks
+ * like nothing happened.
+ */
+const settingsShowing = computed(() => terminals.activeTab?.kind === "settings");
 </script>
 
 <template>
@@ -84,10 +93,14 @@ async function cycleThemeMode(): Promise<void> {
 
     <button
       type="button"
-      class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      class="grid size-8 place-items-center rounded-md transition-colors"
+      :class="
+        settingsShowing ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      "
       :title="t('settings.title')"
       :aria-label="t('settings.title')"
-      @click="emit('open-settings')"
+      :aria-current="settingsShowing ? 'page' : undefined"
+      @click="terminals.openSettings()"
     >
       <Settings :size="15" />
     </button>

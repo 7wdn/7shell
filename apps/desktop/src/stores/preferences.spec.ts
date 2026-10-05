@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({ appInfo: vi.fn(), settingsGet: vi.fn(), settingsSet: vi.fn() }));
@@ -464,5 +464,91 @@ describe("the file panel under a terminal", () => {
 
     expect(store.resolvedPanelHeight).toBe(DEFAULT_TERMINAL_PANEL_HEIGHT);
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ terminalPanelHeight: undefined }));
+  });
+});
+
+describe("restoring the defaults", () => {
+  const CHOSEN = defaults({
+    themeMode: "dark",
+    terminalTheme: "light",
+    filesLayout: "list",
+    sessionLayout: "terminal",
+    monitorEnabled: false,
+    packedTransfer: true,
+    locale: "zh-CN",
+  });
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock.mockReset().mockResolvedValue(CHOSEN);
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  // The one test below stands in for the system's language, and nothing else in the file should
+  // inherit that stand-in.
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("puts the named fields back to what a fresh install has, in one write", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.reset(["themeMode", "terminalTheme", "filesLayout", "sessionLayout", "packedTransfer"]);
+
+    expect(store.themeMode).toBe("system");
+    expect(store.terminalTheme).toBe("system");
+    expect(store.filesLayout).toBe("tree");
+    expect(store.sessionLayout).toBe("split");
+    expect(store.packedTransfer).toBe(false);
+    expect(settingsSetMock).toHaveBeenCalledTimes(1);
+    expect(settingsSetMock).toHaveBeenLastCalledWith({
+      themeMode: "system",
+      terminalTheme: "system",
+      filesLayout: "tree",
+      sessionLayout: "split",
+      monitorEnabled: false,
+      packedTransfer: false,
+      locale: "zh-CN",
+    });
+  });
+
+  it("leaves the fields it was not asked about where they were", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.reset(["filesLayout"]);
+
+    expect(store.filesLayout).toBe("tree");
+    expect(store.monitorEnabled).toBe(false);
+    expect(store.packedTransfer).toBe(true);
+    expect(store.locale).toBe("zh-CN");
+  });
+
+  it("takes the language back to following the system rather than to a language of its own", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    vi.stubGlobal("navigator", { language: "en-GB" });
+
+    await store.reset(["locale"]);
+
+    expect(store.locale).toBe("en");
+    expect(document.documentElement.lang).toBe("en");
+    // Not written down: an absent locale is what leaves the system's language applying.
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ locale: undefined }));
+  });
+
+  it("surfaces a write that fails, the same as any other choice", async () => {
+    settingsSetMock.mockRejectedValue("the disk is full");
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.reset(["themeMode"]);
+
+    expect(store.themeMode).toBe("system");
+    expect(store.problem?.code).toBe("APP-INTERNAL");
   });
 });

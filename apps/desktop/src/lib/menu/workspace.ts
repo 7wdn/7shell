@@ -14,8 +14,8 @@ import { PanelRightClose, RotateCw, SquareX, X } from "@lucide/vue";
 import type { MenuEntry } from "./types";
 
 export interface TabMenuState {
-  /** Which half of the workspace this is: a page about a host has no stream to reconnect. */
-  readonly kind: "terminal" | "files" | "inspect";
+  /** Which half of the workspace this is: neither page has a stream to reconnect. */
+  readonly kind: "terminal" | "files" | "inspect" | "settings";
   /** `null` for a page, which has no stream of its own to have ended. */
   readonly status: "open" | "ended" | "failed" | null;
   /** Whether it is already drawing a browser: one with a handle must not be opened a second time. */
@@ -34,7 +34,7 @@ export interface TabMenuActions {
 
 /** Whether this tab is one the interface would offer a retry for. */
 export function canReconnect(state: TabMenuState): boolean {
-  if (state.kind === "inspect") {
+  if (state.kind === "inspect" || state.kind === "settings") {
     return false;
   }
   if (state.kind === "files") {

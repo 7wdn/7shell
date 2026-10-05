@@ -150,4 +150,42 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
+
+  /*
+   * The platform draws a clear button into every search field, in the platform's own colours. The
+   * settings page draws its own — same reason the dropdown and the switch are drawn here rather
+   * than by the system — so the built-in one is what is hidden.
+   */
+  input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+  }
+}
+
+/*
+ * A row a search found, in the settings page.
+ *
+ * The rows around it stay where they are while a search filters them, so the one that matched has
+ * to say so itself — and briefly: the row is already drawn where it belongs, and what the tint is
+ * for is catching the eye that was reading somewhere else. Three breaths and it settles back into
+ * the page rather than leaving a hit looking like a different kind of row.
+ */
+@keyframes settings-found-breathe {
+  0%,
+  100% {
+    background-color: var(--color-muted);
+  }
+
+  50% {
+    background-color: color-mix(in oklch, var(--color-primary) 12%, var(--color-muted));
+  }
+}
+
+.settings-found {
+  animation: settings-found-breathe 0.9s cubic-bezier(0.4, 0, 0.2, 1) 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-found {
+    animation: none;
+  }
 }

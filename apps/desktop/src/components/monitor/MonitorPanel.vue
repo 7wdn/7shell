@@ -35,7 +35,7 @@ import { perSecond, uptime } from "@/lib/monitor/format";
 import { memoryUsed, share, swapUsed } from "@/lib/monitor/rates";
 import { useMonitorStore } from "@/stores/monitor";
 import { usePreferencesStore } from "@/stores/preferences";
-import { useTerminalsStore, type InspectView } from "@/stores/terminals";
+import { sessionOf, useTerminalsStore, type InspectView } from "@/stores/terminals";
 import type { DiskUsage, ProcessSample } from "@/types/monitor";
 
 /** How long the copy button says it copied something. */
@@ -64,8 +64,14 @@ const memory = computed(() => sample.value?.memory ?? null);
 /** The host, or a dash: the panel is drawn before anything is connected, and after. */
 const host = computed(() => monitor.target?.host ?? "-");
 
-/** The session this panel is about. A page can only be opened for one that exists. */
-const session = computed(() => (monitor.target ? (terminals.activeTab?.session ?? null) : null));
+/**
+ * The session this panel is about. A page can only be opened for one that exists — and the tab on
+ * screen is not always about a host, since the settings page is a tab too.
+ */
+const session = computed(() => {
+  const active = terminals.activeTab;
+  return monitor.target && active ? sessionOf(active) : null;
+});
 
 const failure = computed(() => (monitor.failure ? describeShellError(translate, monitor.failure) : null));
 

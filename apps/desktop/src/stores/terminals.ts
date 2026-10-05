@@ -34,6 +34,9 @@
  * host rather than connected to it. They are opened from the monitor and hold a session rather than
  * a handle, so they survive a reconnect and are drawn as "not connected" when the session has no
  * terminal at all — see [`InspectTab`].
+ *
+ * The fourth is the settings page — about the application rather than about a host, which is why it
+ * is the one shape with no session in it. See [`SettingsTab`] and [`sessionOf`].
  */
 
 import { defineStore } from "pinia";
@@ -130,7 +133,31 @@ export interface InspectTab {
   readonly session: Session;
 }
 
-export type WorkspaceTab = TerminalTab | FilesTab | InspectTab;
+/**
+ * The settings page, as a tab rather than as a dialog.
+ *
+ * It is a page because it is looked at *beside* the thing it changes: a terminal stays on screen
+ * while a preference is changed, and the tab is still where it was left afterwards. It is about the
+ * application rather than about a host, so it carries no session at all — which is the one thing
+ * every other shape here has, and the reason [`sessionOf`] exists.
+ */
+export interface SettingsTab {
+  readonly kind: "settings";
+  id: string;
+}
+
+export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab;
+
+/**
+ * The session a tab is about, or nothing when it is about no host.
+ *
+ * Every reader of a tab's session goes through here rather than reaching for `tab.session`: the
+ * settings page is the shape without one, and a store that asked for a host that is not there
+ * would be the bug this makes impossible to write.
+ */
+export function sessionOf(tab: WorkspaceTab): Session | null {
+  return tab.kind === "settings" ? null : tab.session;
+}
 
 /** A host key the backend is waiting on before it will send anything at all. */
 export type HostKeyDecision =
@@ -244,7 +271,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * panel of the terminal that is carrying it.
    */
   async function openFiles(session: Session): Promise<void> {
-    const showing = tabs.value.find((entry) => entry.session.id === session.id && browserHandleOf(entry) !== null);
+    const showing = tabs.value.find((entry) => sessionOf(entry)?.id === session.id && browserHandleOf(entry) !== null);
     if (showing) {
       activeTabId.value = showing.id;
       return;
@@ -327,6 +354,22 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
 
     addTab({ kind: "inspect", view, id: crypto.randomUUID(), session });
+  }
+
+  /**
+   * Opens the settings page, or brings it forward if it is already open.
+   *
+   * One page rather than one per click: there is a single settings file, and two pages drawing it
+   * would be two answers on screen about the same value.
+   */
+  function openSettings(): void {
+    const showing = tabs.value.find((entry): entry is SettingsTab => entry.kind === "settings");
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({ kind: "settings", id: crypto.randomUUID() });
   }
 
   /** The panel's answer to an open: a browser, or the decision that has to come first. */
@@ -462,9 +505,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
       await closeFilesTab(tab);
       return;
     }
-    // A page holds nothing to close: what it was reading belongs to a terminal, and that terminal
-    // decides for itself how long it lives.
-    if (tab.kind === "inspect") {
+    // Neither a page about a host nor the settings page owns anything the backend has to let go
+    // of: what an inspect page was reading belongs to a terminal, which decides for itself how long
+    // it lives, and the settings page reads a file that is nobody's handle.
+    if (tab.kind === "inspect" || tab.kind === "settings") {
       forget(id);
       return;
     }
@@ -510,7 +554,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
     tab.panel = { handle: null, status: "opening", failure: null };
 
-    const holder = tabs.value.find((entry) => entry.session.id === tab.session.id && browserHandleOf(entry) !== null);
+    const holder = tabs.value.find(
+      (entry) => sessionOf(entry)?.id === tab.session.id && browserHandleOf(entry) !== null,
+    );
     const adopted = holder ? browserHandleOf(holder) : null;
     if (holder && adopted !== null) {
       tab.panel = { handle: adopted, status: "open", failure: null };
@@ -579,8 +625,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (tab.kind === "files") {
       return tab.handle;
     }
-    // A page about a host draws no browser, so there is nowhere for a dropped file to land.
-    if (tab.kind === "inspect") {
+    // A page about a host draws no browser, and nor does the settings page, so there is nowhere
+    // for a dropped file to land in either.
+    if (tab.kind === "inspect" || tab.kind === "settings") {
       return null;
     }
     return tab.panel?.handle ?? null;
@@ -686,15 +733,16 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (!tab) {
       return;
     }
+    // Neither kind of page reconnects. An inspect page reads through whatever terminal its session
+    // has and starts reading again by itself the moment one is there; the settings page is not
+    // about a host at all. Neither offers a button, so neither has anything to do here.
+    if (tab.kind === "inspect" || tab.kind === "settings") {
+      return;
+    }
     const { session } = tab;
     if (tab.kind === "files") {
       forget(id);
       await openFiles(session);
-      return;
-    }
-    // A page has nothing to reconnect. It reads through whatever terminal the session has, and
-    // starts reading again by itself the moment one is there — which is why it offers no button.
-    if (tab.kind === "inspect") {
       return;
     }
 
@@ -786,6 +834,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     open,
     openFiles,
     openInspect,
+    openSettings,
     openPanel,
     closePanel,
     togglePanel,

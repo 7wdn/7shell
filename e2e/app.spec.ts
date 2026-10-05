@@ -129,14 +129,19 @@ test("the host monitor is on, and hiding it is one setting", async () => {
     await expect(panel).toHaveCount(0);
 
     await page.getByRole("button", { name: "Settings" }).click();
-    const settings = page.getByRole("dialog");
-    await expect(settings.getByRole("button", { name: "Hidden" })).toHaveAttribute("aria-pressed", "true");
 
-    await settings.getByRole("button", { name: "Shown" }).click();
+    // The settings are a page in the workspace rather than a dialog over it, so it is asked for the
+    // way the other pages are — by the region it draws — and the row it is about is found by name.
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Workspace", exact: true }).click();
+    const monitorSwitch = settings.getByRole("switch", { name: "Host monitor" });
+    await expect(monitorSwitch).toHaveAttribute("aria-checked", "false");
+    await monitorSwitch.click();
+    await expect(monitorSwitch).toHaveAttribute("aria-checked", "true");
 
-    // The dialog hides the rest of the window from assistive technology while it is up, so the
-    // panel is asked for once it is closed: it is one preference, and both ends write it.
-    await page.keyboard.press("Escape");
+    // A page is left the way any tab is left; closing it is what brings the workspace back, and the
+    // panel being there again is the same preference read from the other end.
+    await page.getByRole("button", { name: "Close settings" }).click();
     await expect(settings).toHaveCount(0);
     await expect(panel).toBeVisible();
   } finally {
@@ -294,12 +299,14 @@ test("the packed-transfer switch is written down, not just remembered", async ()
   const { page, close } = await openApp();
   try {
     await page.getByRole("button", { name: "Settings" }).click();
-    const settings = page.getByRole("dialog");
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Files", exact: true }).click();
+    const packedSwitch = settings.getByRole("switch", { name: "Packed transfer" });
 
     // Everything after a transfer leaves an archive on the disk, so the default is the plain one.
-    await expect(settings.getByRole("button", { name: "File by file" })).toHaveAttribute("aria-pressed", "true");
-    await settings.getByRole("button", { name: "One archive" }).click();
-    await expect(settings.getByRole("button", { name: "One archive" })).toHaveAttribute("aria-pressed", "true");
+    await expect(packedSwitch).toHaveAttribute("aria-checked", "false");
+    await packedSwitch.click();
+    await expect(packedSwitch).toHaveAttribute("aria-checked", "true");
 
     // Polled rather than read once: the interface applies a choice at once and writes it afterwards,
     // so what is being checked is that the file catches up rather than that it was written in the
@@ -310,13 +317,72 @@ test("the packed-transfer switch is written down, not just remembered", async ()
       })
       .toBe(true);
 
-    await settings.getByRole("button", { name: "File by file" }).click();
-    await page.keyboard.press("Escape");
+    await packedSwitch.click();
+    await page.getByRole("button", { name: "Close settings" }).click();
     await expect(settings).toHaveCount(0);
 
     await expect
       .poll(async () => (await writtenSettings()).packedTransfer, {
         message: "and it is written back when it is turned off again",
+      })
+      .toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The two things a settings *page* has that a dialog of fixed rows did not: a search across every
+ * category, and a way to put a category back the way it started.
+ *
+ * The search is the way in for somebody who knows the name of a setting but not the category it is
+ * filed under — so it is checked from a category that does not hold the row it is looking for.
+ * Restoring is checked on the disk rather than on the screen, because the file is what the next
+ * run reads, and a page that only redrew itself would look identical.
+ */
+test("a setting can be found by name, and a category can be put back to its defaults", async () => {
+  const { page, close } = await openApp();
+  try {
+    await page.getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+
+    // The page as it opens: the first category, which is the one that is nearly all dropdowns —
+    // a category with switches on it is the second shot below.
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-appearance.png"), fullPage: false });
+
+    await settings.getByRole("button", { name: "Files", exact: true }).click();
+
+    // Away from its default first, so that restoring has something to do.
+    const packedSwitch = settings.getByRole("switch", { name: "Packed transfer" });
+    await packedSwitch.click();
+    await expect
+      .poll(async () => (await writtenSettings()).packedTransfer, {
+        message: "the choice is on disk before anything is restored",
+      })
+      .toBe(true);
+
+    // The search looks through every category, not only the one on screen: the monitor row lives
+    // under Workspace, and it is found from here.
+    await settings.getByRole("searchbox").fill("monitor");
+    await expect(settings.getByRole("switch", { name: "Host monitor" })).toBeVisible();
+    await expect(settings.getByRole("switch", { name: "Packed transfer" })).toHaveCount(0);
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-search.png"), fullPage: false });
+
+    // Clearing the search is what goes back to the category that was on screen, and the last shot is
+    // taken there: it is the page as somebody meets it, rather than as a query leaves it.
+    await settings.getByRole("button", { name: "Clear the search" }).click();
+    await expect(settings.getByRole("switch", { name: "Packed transfer" })).toBeVisible();
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-page.png"), fullPage: false });
+
+    await settings.getByRole("button", { name: "Restore the defaults for Files" }).click();
+    await expect(packedSwitch).toHaveAttribute("aria-checked", "false");
+
+    await expect
+      .poll(async () => (await writtenSettings()).packedTransfer, {
+        message: "and the default reached the settings file as well",
       })
       .toBe(false);
   } finally {

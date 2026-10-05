@@ -17,9 +17,30 @@ import { computed, ref } from "vue";
 import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveLocale } from "@/i18n";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
-import type { FilesLayout, ResolvedTheme, SessionLayout, ThemeMode } from "@/types/app";
+import type { AppSettings, FilesLayout, ResolvedTheme, SessionLayout, ThemeMode } from "@/types/app";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+/** One field of the settings file, named the way the file names it. */
+export type PreferenceField = keyof AppSettings;
+
+/**
+ * What each field is before anybody has chosen anything.
+ *
+ * The same answers `AppSettings::default()` gives on the far side, written once here so that
+ * "restore the defaults" and a fresh install cannot drift apart. `locale` is deliberately absent:
+ * its default is not a value but the absence of one, which is what leaves the system's language
+ * applying again.
+ */
+const FRESH: Omit<AppSettings, "locale"> = {
+  themeMode: "system",
+  terminalTheme: "system",
+  filesLayout: "tree",
+  sessionLayout: "split",
+  terminalPanelHeight: undefined,
+  monitorEnabled: true,
+  packedTransfer: false,
+};
 
 /**
  * How tall the file panel under a terminal starts out, until somebody moves the divider.
@@ -141,7 +162,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       }
     } catch (error) {
       // A settings file that cannot be read must not stop the interface from opening: the
-      // defaults are used and the reason is surfaced in the settings dialog.
+      // defaults are used and the reason is surfaced in the settings page.
       problem.value = asShellError(error, "settings_get");
       locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
     }
@@ -239,6 +260,48 @@ export const usePreferencesStore = defineStore("preferences", () => {
     await persist();
   }
 
+  /**
+   * Puts the named fields back to what a fresh install has, in one write.
+   *
+   * Several fields at once on purpose: "restore this category" is one decision, and a write per
+   * field would be several files written for it — each of them able to fail on its own. The
+   * language goes back to "not chosen" rather than to a concrete one, which is what lets the
+   * system's language apply again.
+   */
+  async function reset(fields: readonly PreferenceField[]): Promise<void> {
+    for (const field of fields) {
+      switch (field) {
+        case "themeMode":
+          themeMode.value = FRESH.themeMode;
+          break;
+        case "terminalTheme":
+          terminalTheme.value = FRESH.terminalTheme;
+          break;
+        case "filesLayout":
+          filesLayout.value = FRESH.filesLayout;
+          break;
+        case "sessionLayout":
+          sessionLayout.value = FRESH.sessionLayout;
+          break;
+        case "terminalPanelHeight":
+          terminalPanelHeight.value = null;
+          break;
+        case "monitorEnabled":
+          monitorEnabled.value = FRESH.monitorEnabled;
+          break;
+        case "packedTransfer":
+          packedTransfer.value = FRESH.packedTransfer;
+          break;
+        case "locale":
+          localeChosen.value = false;
+          locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
+          break;
+      }
+    }
+    apply();
+    await persist();
+  }
+
   /** Applies the environment's preference and starts following the system. */
   function initialize(): () => void {
     const stopFollowing = followSystemTheme();
@@ -271,5 +334,6 @@ export const usePreferencesStore = defineStore("preferences", () => {
     rememberPanelHeight,
     resetPanelHeight,
     setLocale,
+    reset,
   };
 });
