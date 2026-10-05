@@ -1,0 +1,31 @@
+{
+  "commands": {
+    "groups": "分类",
+    "saved": "已存命令",
+    "history": "历史",
+    "new": "新建命令",
+    "name": "名称",
+    "command": "命令内容，用 #1…#5 表示要填的值",
+    "appendCr": "发送后回车",
+    "save": "保存",
+    "remove": "删除",
+    "empty": "这个分类里还没有命令。",
+    "hint": "选一条命令或新建一条：它会直接打进已经开着的那个 shell。",
+    "confirm": "我已读过上面的原因，仍要在 {count} 个会话里执行。",
+    "send": "发送",
+    "sendAnyway": "仍然发送",
+    "target": {
+      "label": "发送到",
+      "session": "当前会话",
+      "all": "全部会话（{count}）"
+    },
+    "group": {
+      "new": "新建分类",
+      "name": "分类名称",
+      "add": "添加",
+      "default": "默认分类"
+    },
+    "historyClear": "清空",
+    "panel": "命令"
+  }
+}

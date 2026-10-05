@@ -15,6 +15,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
+import type { CommandHistoryEntry, SendOutcome, SendTarget, Snippet, SnippetGroup } from "@/types/snippet";
 import type {
   KeyInfo,
   KnownHostEntry,
@@ -370,6 +371,51 @@ export function batchClassify(command: string): Promise<RiskAssessment> {
 /** Runs one command across the hosts in the request, with progress arriving on `batch:event`. */
 export function batchRun(request: BatchRequest): Promise<BatchOutcome> {
   return invoke<BatchOutcome>("batch_run", { request });
+}
+
+// -- Saved commands ----------------------------------------------------------
+
+export function snippetsOpen(): Promise<SnippetGroup[]> {
+  return invoke<SnippetGroup[]>("snippets_open");
+}
+
+export function snippetGroupSave(group: SnippetGroup): Promise<SnippetGroup> {
+  return invoke<SnippetGroup>("snippet_group_save", { group });
+}
+
+export function snippetGroupDelete(id: string): Promise<void> {
+  return invoke<void>("snippet_group_delete", { id });
+}
+
+export function snippetSave(snippet: Snippet): Promise<Snippet> {
+  return invoke<Snippet>("snippet_save", { snippet });
+}
+
+export function snippetDelete(id: string): Promise<void> {
+  return invoke<void>("snippet_delete", { id });
+}
+
+export function commandHistory(): Promise<CommandHistoryEntry[]> {
+  return invoke<CommandHistoryEntry[]>("command_history");
+}
+
+export function commandHistoryClear(): Promise<void> {
+  return invoke<void>("command_history_clear");
+}
+
+/** The verdict for a command, without sending anything. */
+export function commandClassify(command: string): Promise<RiskAssessment> {
+  return invoke<RiskAssessment>("command_classify", { command });
+}
+
+/** Writes a command into the terminals in the target. */
+export function commandSend(
+  target: SendTarget,
+  command: string,
+  appendCr: boolean,
+  acknowledged: boolean,
+): Promise<SendOutcome> {
+  return invoke<SendOutcome>("command_send", { target, command, appendCr, acknowledged });
 }
 
 // -- Events ------------------------------------------------------------------

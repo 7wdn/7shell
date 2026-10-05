@@ -10,6 +10,7 @@
 import { isDesktopRuntime } from "@/lib/runtime";
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
+import type { CommandHistoryEntry, SendOutcome, SendTarget, Snippet, SnippetGroup } from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
   KeyInfo,
@@ -253,6 +254,29 @@ export const backend = {
     classify: (command: string): Promise<RiskAssessment> =>
       forward("batch_classify", () => desktop.batchClassify(command)),
     run: (request: BatchRequest): Promise<BatchOutcome> => forward("batch_run", () => desktop.batchRun(request)),
+  },
+
+  /**
+   * The commands somebody keeps, and sending one into the shells that are open.
+   *
+   * A send writes into a running shell rather than running a command somewhere: there is no
+   * connection to open and no exit status to read, which is why the answer is a report per terminal
+   * and why the whole library lives in the vault rather than in a file the user can read.
+   */
+  commands: {
+    library: (): Promise<SnippetGroup[]> => forward("snippets_open", () => desktop.snippetsOpen()),
+    saveGroup: (group: SnippetGroup): Promise<SnippetGroup> =>
+      forward("snippet_group_save", () => desktop.snippetGroupSave(group)),
+    deleteGroup: (id: string): Promise<void> => forward("snippet_group_delete", () => desktop.snippetGroupDelete(id)),
+    save: (snippet: Snippet): Promise<Snippet> => forward("snippet_save", () => desktop.snippetSave(snippet)),
+    delete: (id: string): Promise<void> => forward("snippet_delete", () => desktop.snippetDelete(id)),
+    history: (): Promise<CommandHistoryEntry[]> => forward("command_history", () => desktop.commandHistory()),
+    clearHistory: (): Promise<void> => forward("command_history_clear", () => desktop.commandHistoryClear()),
+    /** What the classifier makes of a command. Sends nothing. */
+    classify: (command: string): Promise<RiskAssessment> =>
+      forward("command_classify", () => desktop.commandClassify(command)),
+    send: (target: SendTarget, command: string, appendCr: boolean, acknowledged: boolean): Promise<SendOutcome> =>
+      forward("command_send", () => desktop.commandSend(target, command, appendCr, acknowledged)),
   },
 
   events: {

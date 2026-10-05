@@ -10,6 +10,7 @@ import enApp from "./locales/en/app.json";
 import enAuth from "./locales/en/auth.json";
 import enBatch from "./locales/en/batch.json";
 import enCapability from "./locales/en/capability.json";
+import enCommands from "./locales/en/commands.json";
 import enCommon from "./locales/en/common.json";
 import enErrors from "./locales/en/errors.json";
 import enFiles from "./locales/en/files.json";
@@ -28,6 +29,7 @@ import zhCnApp from "./locales/zh-CN/app.json";
 import zhCnAuth from "./locales/zh-CN/auth.json";
 import zhCnBatch from "./locales/zh-CN/batch.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
+import zhCnCommands from "./locales/zh-CN/commands.json";
 import zhCnCommon from "./locales/zh-CN/common.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
 import zhCnFiles from "./locales/zh-CN/files.json";
@@ -77,6 +79,7 @@ export function resolveLocale(tag: string | undefined): SupportedLocale {
 
 const messages = {
   en: {
+    ...enCommands,
     ...enCommon,
     ...enShell,
     ...enHome,
@@ -97,6 +100,7 @@ const messages = {
     ...enMenu,
   },
   "zh-CN": {
+    ...zhCnCommands,
     ...zhCnCommon,
     ...zhCnShell,
     ...zhCnHome,

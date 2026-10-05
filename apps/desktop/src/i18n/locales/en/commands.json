@@ -1,0 +1,31 @@
+{
+  "commands": {
+    "groups": "Groups",
+    "saved": "Saved commands",
+    "history": "History",
+    "new": "New command",
+    "name": "What it is called",
+    "command": "The line, with #1… #5 where values go",
+    "appendCr": "Press Enter after sending",
+    "save": "Save",
+    "remove": "Delete",
+    "empty": "Nothing saved in this group yet.",
+    "hint": "Pick a command, or make one: the line is typed into the shell that is open.",
+    "confirm": "I have read the reasons above and want this in {count} shells.",
+    "send": "Send",
+    "sendAnyway": "Send anyway",
+    "target": {
+      "label": "Send to",
+      "session": "This session",
+      "all": "All sessions ({count})"
+    },
+    "group": {
+      "new": "New group",
+      "name": "Group name",
+      "add": "Add",
+      "default": "Default"
+    },
+    "historyClear": "Clear",
+    "panel": "Commands"
+  }
+}

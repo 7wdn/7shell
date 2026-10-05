@@ -420,6 +420,26 @@ export const useTerminalsStore = defineStore("terminals", () => {
     raiseDecision(session, { to: "batch" }, outcome);
   }
 
+  /**
+   * The handles a command can be written into: every terminal that is open.
+   *
+   * Not the sessions in the vault — only a shell that is already running can be typed into — and
+   * not the tabs that ended, whose handles the backend no longer knows.
+   */
+  function writableHandles(): string[] {
+    return tabs.value
+      .filter(
+        (tab): tab is TerminalTab => tab.kind === "terminal" && tab.status === "open" && typeof tab.handle === "string",
+      )
+      .map((tab) => tab.handle as string);
+  }
+
+  /** The handle of the terminal on screen, when what is on screen is a terminal that is open. */
+  function activeTerminalHandle(): string | null {
+    const tab = activeTab.value;
+    return tab?.kind === "terminal" && tab.status === "open" ? tab.handle : null;
+  }
+
   /** The panel's answer to an open: a browser, or the decision that has to come first. */
   function acceptPanel(tab: TerminalTab, outcome: SftpOutcome): void {
     if (outcome.kind === "opened") {
@@ -895,6 +915,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openInspect,
     openSettings,
     openBatch,
+    writableHandles,
+    activeTerminalHandle,
     raiseBatchDecision,
     openPanel,
     closePanel,

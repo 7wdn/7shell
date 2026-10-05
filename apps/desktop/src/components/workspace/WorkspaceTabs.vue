@@ -42,9 +42,11 @@ import {
   Terminal,
   X,
 } from "@lucide/vue";
+import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import BatchPanel from "@/components/batch/BatchPanel.vue";
+import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
@@ -66,6 +68,27 @@ const { t } = useI18n();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
 const { openMenu } = useContextMenu();
+
+/**
+ * Which half of the panel under a terminal is showing: the files, or the commands.
+ *
+ * Kept here rather than in the store because it is the panel's own state and nothing else asks
+ * about it — and because the two halves are not alike: a file browser owns a channel the backend
+ * has to let go of, while the command library is a document that needs no connection at all, so
+ * opening the commands must not open one.
+ */
+const panelTab = ref<Record<string, "files" | "commands">>({});
+
+function panelShowing(tab: WorkspaceTab): boolean {
+  if (tab.kind !== "terminal") {
+    return false;
+  }
+  return tab.panel !== null || panelTab.value[tab.id] === "commands";
+}
+
+function showCommands(tab: TerminalTab): void {
+  panelTab.value[tab.id] = "commands";
+}
 
 /** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
 function hasHandle(tab: WorkspaceTab): boolean {
@@ -280,6 +303,21 @@ function dotClass(tab: WorkspaceTab): string | null {
             <PanelBottom :size="11" />
             {{ t("terminal.panel.label") }}
           </button>
+          <button
+            type="button"
+            :class="
+              cn(
+                'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
+                panelTab[tab.id] === 'commands'
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+              )
+            "
+            @click="showCommands(tab)"
+          >
+            <ListChecks :size="11" />
+            {{ t("commands.panel") }}
+          </button>
         </footer>
 
         <footer
@@ -312,7 +350,7 @@ function dotClass(tab: WorkspaceTab): string | null {
           </div>
         </footer>
 
-        <template v-if="tab.panel">
+        <template v-if="panelShowing(tab)">
           <SplitDivider
             :height="preferences.resolvedPanelHeight"
             @move="preferences.setPanelHeight($event)"
@@ -329,20 +367,22 @@ function dotClass(tab: WorkspaceTab): string | null {
             class="flex shrink flex-col overflow-hidden"
             :style="{ height: `${preferences.resolvedPanelHeight}px`, minHeight: `${MIN_PANE_PX}px` }"
           >
-            <FileBrowser v-if="tab.panel.handle" :handle="tab.panel.handle" class="min-h-0 flex-1" />
+            <CommandsPanel v-if="panelTab[tab.id] === 'commands'" class="min-h-0 flex-1" />
+
+            <FileBrowser v-else-if="tab.panel?.handle" :handle="tab.panel?.handle" class="min-h-0 flex-1" />
 
             <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
-              <CircleAlert v-if="tab.panel.status === 'failed'" :size="18" class="text-destructive" />
+              <CircleAlert v-if="tab.panel?.status === 'failed'" :size="18" class="text-destructive" />
               <LoaderCircle v-else :size="18" class="animate-spin text-muted-foreground" />
-              <p v-if="tab.panel.failure" class="text-xs">
-                {{ describeShellError(translate, tab.panel.failure).message }}
+              <p v-if="tab.panel?.failure" class="text-xs">
+                {{ describeShellError(translate, tab.panel?.failure).message }}
               </p>
-              <p v-if="tab.panel.failure" class="font-mono text-[10px] text-muted-foreground">
-                {{ describeShellError(translate, tab.panel.failure).code }}
+              <p v-if="tab.panel?.failure" class="font-mono text-[10px] text-muted-foreground">
+                {{ describeShellError(translate, tab.panel?.failure).code }}
               </p>
               <p v-else class="text-xs text-muted-foreground">{{ t("terminal.panel.opening") }}</p>
               <button
-                v-if="tab.panel.status === 'failed'"
+                v-if="tab.panel?.status === 'failed'"
                 type="button"
                 class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
                 @click="terminals.openPanel(tab)"
@@ -357,12 +397,12 @@ function dotClass(tab: WorkspaceTab): string | null {
               underneath it, because this is the one failure that leaves the panel working.
             -->
             <footer
-              v-if="tab.panel.handle && tab.panel.failure"
+              v-if="tab.panel?.handle && tab.panel?.failure"
               class="shrink-0 border-t border-destructive/40 bg-destructive/10 px-3 py-1.5"
             >
-              <p class="text-[11px]">{{ describeShellError(translate, tab.panel.failure).message }}</p>
+              <p class="text-[11px]">{{ describeShellError(translate, tab.panel?.failure).message }}</p>
               <p class="font-mono text-[10px] text-muted-foreground">
-                {{ describeShellError(translate, tab.panel.failure).code }}
+                {{ describeShellError(translate, tab.panel?.failure).code }}
               </p>
             </footer>
           </div>
