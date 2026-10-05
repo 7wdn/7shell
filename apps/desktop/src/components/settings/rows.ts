@@ -14,10 +14,24 @@
 import { SUPPORTED_LOCALES, type SupportedLocale } from "@/i18n";
 import type { PreferenceField } from "@/stores/preferences";
 
-export type SettingsCategoryId = "appearance" | "workspace" | "files" | "about";
+export type SettingsCategoryId = "appearance" | "workspace" | "files" | "security" | "about";
 
 /** The categories, in the order the navigation draws them. */
-export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = ["appearance", "workspace", "files", "about"];
+export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [
+  "appearance",
+  "workspace",
+  "files",
+  "security",
+  "about",
+];
+
+/**
+ * The categories that are a list of something rather than a set of choices.
+ *
+ * Their rows are not preferences — nobody sets a trusted key to a value — so they draw their own
+ * content and the search does not look inside them.
+ */
+export const LIST_CATEGORIES: readonly SettingsCategoryId[] = ["security"];
 
 /**
  * What each category is called, as a key rather than as a resolved string.
@@ -30,6 +44,7 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
   appearance: "settings.nav.appearance",
   workspace: "settings.nav.workspace",
   files: "settings.nav.files",
+  security: "settings.nav.security",
   about: "settings.nav.about",
 };
 

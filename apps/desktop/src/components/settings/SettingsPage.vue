@@ -30,7 +30,9 @@ import { useI18n } from "vue-i18n";
 
 import SettingsControl from "@/components/settings/SettingsControl.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
+import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
+  LIST_CATEGORIES,
   SETTINGS_CATEGORIES,
   SETTINGS_CATEGORY_LABEL_KEYS,
   SETTINGS_ROWS,
@@ -51,6 +53,9 @@ const preferences = usePreferencesStore();
 
 const query = ref("");
 const category = ref<SettingsCategoryId>("appearance");
+
+/** Whether the category on screen is a list of things rather than a set of choices to restore. */
+const isListCategory = computed(() => LIST_CATEGORIES.includes(category.value));
 
 const searching = computed(() => query.value.trim() !== "");
 
@@ -280,6 +285,13 @@ function translate(key: string, params?: Record<string, string>): string {
                 <p v-else class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
               </template>
 
+              <!--
+                A category that is a list rather than a set of choices: there is nothing in it to
+                search for and nothing to restore, so it draws its own content —
+                `LIST_CATEGORIES` is the same list this branch answers to.
+              -->
+              <TrustedKeys v-else-if="category === 'security'" />
+
               <template v-else>
                 <SettingsRow
                   v-for="row in rowsOfCategory(category)"
@@ -296,7 +308,7 @@ function translate(key: string, params?: Record<string, string>): string {
                   />
                 </SettingsRow>
 
-                <div class="flex justify-end pt-1">
+                <div v-if="!isListCategory" class="flex justify-end pt-1">
                   <button
                     type="button"
                     class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

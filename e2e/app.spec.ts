@@ -817,3 +817,49 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await close();
   }
 });
+
+/**
+ * The keys this device trusts, read and revoked from the settings.
+ *
+ * The other half of "a host key is verified before anything is sent": until now a key that was
+ * trusted — during a hurried first connection, or for a machine since rebuilt — could not be looked
+ * at or taken back from the interface at all. The key this case revokes is the lab's own, trusted
+ * by the cases above, so the list is not empty when it opens.
+ */
+test("a trusted host key can be read and taken back", async () => {
+  test.skip(
+    !process.env.SEVENSHELL_TEST_HOST || !process.env.SEVENSHELL_TEST_USER,
+    "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD",
+  );
+
+  const { page, close } = await openApp();
+  try {
+    const host = process.env.SEVENSHELL_TEST_HOST as string;
+    const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+
+    // The title bar's gear, not the tab that draws the same word: the banner is the one place the
+    // settings are opened from, and the tab strip says "Settings" whenever they are open.
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("button", { name: "Security" }).click();
+
+    // Scoped to the settings page: the sidebar draws the same address on every session row, and an
+    // assertion that would pass on those would prove nothing about this list.
+    const settings = page.getByRole("region", { name: "Settings" });
+
+    // The fingerprint, not just the address: comparing it is the whole reason to look at this list.
+    await expect(settings.getByText(`${host}:${port}`, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(settings.getByText(/^SHA256:/).first()).toBeVisible();
+
+    await page.getByLabel("Stop trusting this key").first().click();
+    await expect(page.getByText("Stop trusting this key?")).toBeVisible();
+    await page.getByRole("button", { name: "Forget it" }).click();
+
+    // Gone from the list, and the next connection to it would ask again.
+    await expect(settings.getByText(`${host}:${port}`, { exact: false })).toHaveCount(0, { timeout: 15_000 });
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "trusted-keys.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});

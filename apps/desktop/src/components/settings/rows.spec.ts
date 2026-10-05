@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   SETTINGS_CATEGORIES,
+  LIST_CATEGORIES,
   SETTINGS_CATEGORY_LABEL_KEYS,
   SETTINGS_ROWS,
   type SettingsRowDefinition,
@@ -92,12 +93,18 @@ describe("the settings table", () => {
     expect(new Set(ids).size, `two rows sharing an id: ${ids.join(", ")}`).toBe(ids.length);
   });
 
-  it("draws a row in every category the navigation names, except About", () => {
+  it("draws a row in every category the navigation names, except the ones that are lists", () => {
     for (const category of SETTINGS_CATEGORIES) {
       // About holds what the build is — a version, a platform — rather than a setting anybody
       // chooses, so it is the one category the table does not describe.
       if (category === "about") {
         expect(rowsOfCategory(category), "About is the build's own facts").toEqual([]);
+        continue;
+      }
+      // A list category is not a set of choices: the trusted keys are read and revoked, not set to
+      // a value, so the table that describes settings has nothing to say about them.
+      if (LIST_CATEGORIES.includes(category)) {
+        expect(rowsOfCategory(category), `${category} is a list, not settings`).toEqual([]);
         continue;
       }
       expect(rowsOfCategory(category).length, `no rows in ${category}`).toBeGreaterThan(0);

@@ -6,7 +6,8 @@
       "appearance": "Appearance",
       "workspace": "Workspace",
       "files": "Files",
-      "about": "About"
+      "about": "About",
+      "security": "Security"
     },
     "tab": {
       "close": "Close settings"
@@ -82,5 +83,13 @@
         "help": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
       }
     }
+  },
+  "knownHosts": {
+    "empty": "No host key has been trusted on this device yet.",
+    "trustedAt": "Trusted {when}",
+    "forget": "Stop trusting this key",
+    "forgetTitle": "Stop trusting this key?",
+    "forgetMessage": "The key for {host} is forgotten. The next connection to it asks again, and nothing else changes.",
+    "forgetConfirm": "Forget it"
   }
 }
