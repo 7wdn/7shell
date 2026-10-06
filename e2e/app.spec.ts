@@ -1183,3 +1183,37 @@ test("a session that fails to connect says so on its row, and rows can be picked
     await close();
   }
 });
+
+/**
+ * What hovering a row offers.
+ *
+ * Two things that only a real window can settle, and both were wrong once: the tick that picks a
+ * row out has to *appear* under the pointer — an unresolved component renders as an empty element
+ * that is present, clickable and invisible, which no assertion about its label would catch — and
+ * the card beside it has to say what the session is without opening anything.
+ */
+test("hovering a session row offers the tick and the session's details", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "hovered-host", "203.0.113.7", "2200");
+    const row = page.locator("[data-row]").filter({ has: page.getByTitle("Open a terminal for hovered-host") });
+
+    await row.hover();
+
+    // Visible, not merely present: opacity is what the hover reveals, so opacity is what is checked.
+    const tick = row.locator("[data-session-select]");
+    await expect(tick).toHaveCSS("opacity", "1");
+    await expect(tick.locator("svg"), "and it draws something").toHaveCount(1);
+
+    const card = page.locator("[data-session-details]");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("hovered-host");
+    await expect(card).toContainText("labuser@203.0.113.7:2200");
+    await expect(card).toContainText("SSH");
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-hover.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});

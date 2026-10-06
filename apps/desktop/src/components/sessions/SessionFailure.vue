@@ -57,9 +57,10 @@ const detail = computed(() =>
     </PopoverTrigger>
     <PopoverPortal>
       <PopoverContent
-        side="left"
+        side="top"
         align="start"
-        :side-offset="8"
+        :side-offset="6"
+        :collision-padding="8"
         class="z-50 w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card p-3 shadow-xl outline-none"
         @click.stop
         @mousedown.stop

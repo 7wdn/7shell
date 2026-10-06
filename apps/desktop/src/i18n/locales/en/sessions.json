@@ -69,6 +69,20 @@
       "groupDown": "Move the group down",
       "groupLabel": "{name}"
     },
+    "details": {
+      "address": "Address",
+      "host": "Host",
+      "port": "Port",
+      "user": "User",
+      "protocol": "Protocol",
+      "auth": "Sign in",
+      "authStored": "{method} · credential stored",
+      "authMissing": "{method} · no credential stored",
+      "group": "Group",
+      "noGroup": "In no group",
+      "jump": "Jump hosts",
+      "forwards": "Forwards"
+    },
     "editor": {
       "titleNew": "New session",
       "titleEdit": "Edit session",

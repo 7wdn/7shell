@@ -69,6 +69,20 @@
       "groupDown": "下移分组",
       "groupLabel": "{name}"
     },
+    "details": {
+      "address": "地址",
+      "host": "主机",
+      "port": "端口",
+      "user": "用户",
+      "protocol": "协议",
+      "auth": "认证方式",
+      "authStored": "{method} · 已保存凭据",
+      "authMissing": "{method} · 未保存凭据",
+      "group": "分组",
+      "noGroup": "不在任何分组",
+      "jump": "跳板机",
+      "forwards": "转发"
+    },
     "editor": {
       "titleNew": "新建会话",
       "titleEdit": "编辑会话",

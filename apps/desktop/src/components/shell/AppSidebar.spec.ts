@@ -1253,6 +1253,24 @@ describe("an attempt that is still going, and one that failed", () => {
     expect(host.textContent, "and no tab was opened to say it in").not.toContain("SSH-AUTH-FAILED");
   });
 
+  it("draws an icon on the tick, which is the thing that makes it findable at all", async () => {
+    // An unresolved component renders as an empty custom element: the button is in the DOM, takes
+    // its space, answers a click, and shows nothing. That is what the tick did, and no assertion
+    // about its label or its state could see it.
+    await render([work], [db]);
+
+    expect(rowTick("session:session-2").querySelector("svg"), "the row's tick is drawn").not.toBeNull();
+    expect(groupTick("Work").querySelector("svg"), "and so is the group's").not.toBeNull();
+  });
+
+  it("offers what a session is on hover, without opening it", async () => {
+    await render([work], [db]);
+
+    // The card is a hover away: the trigger is the row's own name, and the card says what the row
+    // has no room for.
+    expect(host.querySelector("[data-session-details]")).toBeNull();
+  });
+
   it("carries nothing else on the row: the rest is a right-click away", async () => {
     // Editing, deleting and the file browser were three buttons on every row, which is three
     // buttons per row saying what the menu already says.

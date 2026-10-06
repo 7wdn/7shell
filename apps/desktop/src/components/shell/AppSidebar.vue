@@ -49,6 +49,7 @@ import {
   Search,
   Server,
   RotateCcw,
+  Square,
   SlidersHorizontal,
   Terminal,
   Trash2,
@@ -60,10 +61,13 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
+import SessionDetails from "@/components/sessions/SessionDetails.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import SessionFailure from "@/components/sessions/SessionFailure.vue";
 import SidebarResizeHandle from "@/components/shell/SidebarResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import { HoverCardRoot, HoverCardTrigger } from "reka-ui";
+
 import { useContextMenu } from "@/composables/useContextMenu";
 import { useToast } from "@/composables/useToast";
 import { useTreeDrag } from "@/composables/useTreeDrag";
@@ -1230,92 +1234,103 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               actions on a saved session already are.
             -->
             <template v-if="row.kind === 'session'">
-              <div
-                :data-row="row.key"
-                class="group relative flex items-center gap-1 rounded-md py-0.5 pr-1 transition-colors hover:bg-accent/60"
-                :class="[
-                  markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : '',
-                  flashedRow === row.key ? 'row-located' : '',
-                  isSelected(row.session.id) ? 'bg-primary/10' : '',
-                ]"
-                :style="indent(row.depth)"
-                @contextmenu="openSessionMenu($event, row.session)"
-                @mousedown="startDrag($event, { kind: 'session', id: row.session.id }, row.session.name)"
-              >
-                <button
-                  type="button"
-                  class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
-                  :title="t('sessions.list.open', { name: row.session.name })"
-                  @click="terminals.open(row.session)"
-                >
-                  <Terminal :size="13" class="shrink-0 text-muted-foreground" />
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate text-sm">{{ row.session.name }}</span>
-                    <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
-                      endpoint(row.session)
-                    }}</span>
-                  </span>
-                </button>
+              <!--
+                The whole row is what is hovered: a card hung off the name alone starts where the
+                name ends, which is exactly where the tick and the failure mark sit — it would cover
+                the controls of the row it is describing.
+              -->
+              <HoverCardRoot :open-delay="400" :close-delay="120">
+                <HoverCardTrigger as-child>
+                  <div
+                    :data-row="row.key"
+                    class="group relative flex items-center gap-1 rounded-md py-0.5 pr-1 transition-colors hover:bg-accent/60"
+                    :class="[
+                      markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : '',
+                      flashedRow === row.key ? 'row-located' : '',
+                      isSelected(row.session.id) ? 'bg-primary/10' : '',
+                    ]"
+                    :style="indent(row.depth)"
+                    @contextmenu="openSessionMenu($event, row.session)"
+                    @mousedown="startDrag($event, { kind: 'session', id: row.session.id }, row.session.name)"
+                  >
+                    <!-- The row says a name and an address; hovering it says the rest. -->
+                    <button
+                      type="button"
+                      class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
+                      :title="t('sessions.list.open', { name: row.session.name })"
+                      @click="terminals.open(row.session)"
+                    >
+                      <Terminal :size="13" class="shrink-0 text-muted-foreground" />
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate text-sm">{{ row.session.name }}</span>
+                        <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
+                          endpoint(row.session)
+                        }}</span>
+                      </span>
+                    </button>
 
-                <!-- What did not connect stays on the row it is about: nothing came up, so there is
+                    <!-- What did not connect stays on the row it is about: nothing came up, so there is
                      no tab to draw it in, and the row is where the click was made. -->
-                <SessionFailure
-                  v-if="failureOf(row.session)"
-                  :failure="failureOf(row.session)!"
-                  :name="row.session.name"
-                  @dismiss="terminals.forgetFailure(row.session.id)"
-                />
+                    <SessionFailure
+                      v-if="failureOf(row.session)"
+                      :failure="failureOf(row.session)!"
+                      :name="row.session.name"
+                      @dismiss="terminals.forgetFailure(row.session.id)"
+                    />
 
-                <!-- An attempt in flight, and the way to call it off, on the row that started it. -->
-                <LoaderCircle
-                  v-if="isConnecting(row.session)"
-                  :size="12"
-                  class="shrink-0 animate-spin text-muted-foreground"
-                  :aria-label="t('sessions.list.connecting', { name: row.session.name })"
-                />
-                <button
-                  v-if="isConnecting(row.session)"
-                  type="button"
-                  data-session-cancel
-                  class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('sessions.list.cancelConnecting', { name: row.session.name })"
-                  :aria-label="t('sessions.list.cancelConnecting', { name: row.session.name })"
-                  @mousedown.stop
-                  @click.stop="terminals.cancelOpen(row.session.id)"
-                >
-                  <X :size="12" />
-                </button>
+                    <!-- An attempt in flight, and the way to call it off, on the row that started it. -->
+                    <LoaderCircle
+                      v-if="isConnecting(row.session)"
+                      :size="12"
+                      class="shrink-0 animate-spin text-muted-foreground"
+                      :aria-label="t('sessions.list.connecting', { name: row.session.name })"
+                    />
+                    <button
+                      v-if="isConnecting(row.session)"
+                      type="button"
+                      data-session-cancel
+                      class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      :title="t('sessions.list.cancelConnecting', { name: row.session.name })"
+                      :aria-label="t('sessions.list.cancelConnecting', { name: row.session.name })"
+                      @mousedown.stop
+                      @click.stop="terminals.cancelOpen(row.session.id)"
+                    >
+                      <X :size="12" />
+                    </button>
 
-                <!-- The tick that picks one out: there when the pointer is, and always there while
+                    <!-- The tick that picks one out: there when the pointer is, and always there while
                      anything else is picked. -->
-                <button
-                  v-if="!isConnecting(row.session)"
-                  type="button"
-                  data-session-select
-                  class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground/55 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none"
-                  :class="
-                    isSelected(row.session.id) || library.selecting
-                      ? 'opacity-100'
-                      : 'opacity-0 group-hover:opacity-100'
-                  "
-                  :title="
-                    isSelected(row.session.id)
-                      ? t('sessions.list.deselect', { name: row.session.name })
-                      : t('sessions.list.select', { name: row.session.name })
-                  "
-                  :aria-label="
-                    isSelected(row.session.id)
-                      ? t('sessions.list.deselect', { name: row.session.name })
-                      : t('sessions.list.select', { name: row.session.name })
-                  "
-                  :aria-pressed="isSelected(row.session.id)"
-                  @mousedown.stop
-                  @click.stop="pickSession($event, row.session)"
-                >
-                  <Check v-if="isSelected(row.session.id)" :size="12" class="text-primary" />
-                  <Square v-else :size="12" class="stroke-[1.7]" />
-                </button>
-              </div>
+                    <button
+                      v-if="!isConnecting(row.session)"
+                      type="button"
+                      data-session-select
+                      class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground/55 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none"
+                      :class="
+                        isSelected(row.session.id) || library.selecting
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover:opacity-100'
+                      "
+                      :title="
+                        isSelected(row.session.id)
+                          ? t('sessions.list.deselect', { name: row.session.name })
+                          : t('sessions.list.select', { name: row.session.name })
+                      "
+                      :aria-label="
+                        isSelected(row.session.id)
+                          ? t('sessions.list.deselect', { name: row.session.name })
+                          : t('sessions.list.select', { name: row.session.name })
+                      "
+                      :aria-pressed="isSelected(row.session.id)"
+                      @mousedown.stop
+                      @click.stop="pickSession($event, row.session)"
+                    >
+                      <Check v-if="isSelected(row.session.id)" :size="12" class="text-primary" />
+                      <Square v-else :size="12" class="stroke-[1.7]" />
+                    </button>
+                  </div>
+                </HoverCardTrigger>
+                <SessionDetails :session="row.session" :groups="library.groups" />
+              </HoverCardRoot>
             </template>
           </template>
 
