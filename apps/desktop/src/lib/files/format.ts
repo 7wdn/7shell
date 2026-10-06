@@ -26,6 +26,38 @@ export function formatModified(seconds: number): string {
   return new Date(seconds * 1000).toLocaleString();
 }
 
+/**
+ * The permission bits the way `ls -l` writes them, for example `rwxr-xr-x`.
+ *
+ * The setuid, setgid and sticky bits are written where `ls` writes them — `rws` rather than `rwx`
+ * — because a column that dropped them would make a setuid binary and an ordinary one look the
+ * same, and telling those apart is what somebody reads a permission column for.
+ */
+export function formatMode(mode: number | undefined): string {
+  if (mode === undefined) {
+    return "—";
+  }
+
+  const letters = ["r", "w", "x"];
+  const written: string[] = [];
+  for (let place = 8; place >= 0; place -= 1) {
+    written.push(mode & (1 << place) ? (letters[2 - (place % 3)] ?? "-") : "-");
+  }
+
+  // The three bits above the nine are the execute letter of their own group, said differently.
+  if (mode & 0o4000) {
+    written[2] = written[2] === "x" ? "s" : "S";
+  }
+  if (mode & 0o2000) {
+    written[5] = written[5] === "x" ? "s" : "S";
+  }
+  if (mode & 0o1000) {
+    written[8] = written[8] === "x" ? "t" : "T";
+  }
+
+  return written.join("");
+}
+
 /** The last segment of a path: what a person recognises a file by. */
 export function baseName(path: string): string {
   const segments = path.split("/").filter((segment) => segment !== "");

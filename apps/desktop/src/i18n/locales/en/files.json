@@ -27,11 +27,17 @@
     "downloadPackedTitle": "Choose the folder to download into",
     "empty": "This directory is empty.",
     "listing": "Files",
-    "name": "Name",
+    "name": "File name",
     "size": "Size",
+    "type": "Type",
     "modified": "Modified",
-    "selection": {
-      "count": "{count} selected"
+    "permissions": "Permissions",
+    "owner": "User/Group",
+    "kind": {
+      "directory": "Folder",
+      "file": "File",
+      "symlink": "Symlink",
+      "other": "Other"
     },
     "action": {
       "open": "Open",

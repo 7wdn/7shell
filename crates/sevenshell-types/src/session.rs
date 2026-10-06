@@ -268,6 +268,14 @@ pub struct SftpEntry {
     /// The permission bits (for example `0o644`), when the server sent them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<u32>,
+    /// Who owns the entry. The server reports this as a number, and what arrives here is the name
+    /// it keeps for that number when there is one — a listing is read by a person, and `1000` where
+    /// every other file manager says `labuser` is an answer to a question nobody asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// The group the entry belongs to, named the same way as `owner`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
     /// Resolved link target, for a symlink the server told us about.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_target: Option<String>,

@@ -17,19 +17,15 @@
 import {
   ArrowUp,
   ChevronRight,
-  Download,
   File,
   FilePlus,
   FileSymlink,
-  FileText,
   Folder,
   ClipboardPaste,
-  FolderOpen,
   FolderPlus,
   HardDrive,
   LoaderCircle,
   Pencil,
-  Trash2,
   Upload,
   X,
 } from "@lucide/vue";
@@ -42,7 +38,7 @@ import TransferList from "@/components/files/TransferList.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
-import { formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
+import { formatMode, formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
 import { type Band, type Point, type RowBand, bandBetween, isDrag, rowsInBand, scrollStep } from "@/lib/files/marquee";
 import {
   NOTHING_SELECTED,
@@ -138,7 +134,6 @@ let drag: { from: Point; rows: RowBand[]; moved: boolean } | null = null;
 const rows = computed(() => (browser.value?.entries ?? []).map((entry) => entry.path));
 /** The selected entries, in listing order — what every action is about. */
 const chosen = computed(() => selectedEntries(selection.value, browser.value?.entries ?? []));
-const selectedCount = computed(() => selection.value.paths.length);
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -181,6 +176,42 @@ function sizeOf(entry: SftpEntry): string {
 
 function modifiedOf(entry: SftpEntry): string {
   return entry.modifiedAt === undefined ? "—" : formatModified(entry.modifiedAt);
+}
+
+/**
+ * What kind of thing this is, in words.
+ *
+ * The icon says it as well, and the icon is what is read at a glance — but a listing that is being
+ * read column by column needs the answer in the column, not in a shape the eye has to know.
+ */
+function typeOf(entry: SftpEntry): string {
+  switch (entry.kind) {
+    case "directory":
+      return t("files.kind.directory");
+    case "file":
+      return t("files.kind.file");
+    case "symlink":
+      return t("files.kind.symlink");
+    case "other":
+      return t("files.kind.other");
+  }
+}
+
+function modeOf(entry: SftpEntry): string {
+  return formatMode(entry.mode);
+}
+
+/**
+ * Who owns the entry, and the group it belongs to, in the one column they share.
+ *
+ * Whichever half the server did not send is left as a dash of its own rather than dropped: a row
+ * that says `labuser/—` is saying the group is unknown, and one that says `labuser` is saying
+ * something else.
+ */
+function ownershipOf(entry: SftpEntry): string {
+  const owner = entry.owner ?? "—";
+  const group = entry.group ?? "—";
+  return `${owner}/${group}`;
 }
 
 /** Files and links can be downloaded or edited; a socket or a device cannot. */
@@ -827,14 +858,10 @@ function openAreaMenu(event: MouseEvent): void {
           >
             <span class="min-w-0 flex-1">{{ t("files.name") }}</span>
             <span class="w-20 shrink-0 text-right">{{ t("files.size") }}</span>
+            <span class="w-16 shrink-0">{{ t("files.type") }}</span>
             <span class="w-40 shrink-0 text-right">{{ t("files.modified") }}</span>
-            <!--
-              What is selected goes where the eye already is: the fourth column is empty in every other
-              file manager's header too, and a count here costs no height and no new row.
-            -->
-            <span class="w-28 shrink-0 text-right">
-              {{ selectedCount > 0 ? t("files.selection.count", { count: selectedCount }) : "" }}
-            </span>
+            <span class="w-20 shrink-0">{{ t("files.permissions") }}</span>
+            <span class="w-28 shrink-0">{{ t("files.owner") }}</span>
           </div>
 
           <p
@@ -871,64 +898,14 @@ function openAreaMenu(event: MouseEvent): void {
                 <span class="w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
                   sizeOf(entry)
                 }}</span>
+                <span class="w-16 shrink-0 truncate text-[10px] text-muted-foreground">{{ typeOf(entry) }}</span>
                 <span class="w-40 shrink-0 text-right text-[10px] text-muted-foreground">{{ modifiedOf(entry) }}</span>
-
-                <!--
-                  The row's own buttons act on the row and never take the selection with them: a click
-                  here is about this file, not about the three that happen to be highlighted.
-                -->
-                <span class="flex w-28 shrink-0 items-center justify-end gap-0.5">
-                  <button
-                    v-if="entry.kind === 'directory'"
-                    type="button"
-                    class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                    :title="t('files.action.open')"
-                    :aria-label="t('files.action.open')"
-                    @click.stop="enter(entry)"
-                  >
-                    <FolderOpen :size="12" />
-                  </button>
-                  <template v-else>
-                    <button
-                      v-if="isReadable(entry)"
-                      type="button"
-                      class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                      :title="t('files.action.download')"
-                      :aria-label="t('files.action.download')"
-                      @click.stop="download([entry], preferences.packedTransfer)"
-                    >
-                      <Download :size="12" />
-                    </button>
-                    <button
-                      v-if="isReadable(entry)"
-                      type="button"
-                      class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                      :title="t('files.action.edit')"
-                      :aria-label="t('files.action.edit')"
-                      @click.stop="editing = entry"
-                    >
-                      <FileText :size="12" />
-                    </button>
-                  </template>
-                  <button
-                    type="button"
-                    class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                    :title="t('files.action.rename')"
-                    :aria-label="t('files.action.rename')"
-                    @click.stop="startRename(entry)"
-                  >
-                    <Pencil :size="12" />
-                  </button>
-                  <button
-                    type="button"
-                    class="grid size-6 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    :title="t('files.action.remove')"
-                    :aria-label="t('files.action.remove')"
-                    @click.stop="startRemove([entry])"
-                  >
-                    <Trash2 :size="12" />
-                  </button>
-                </span>
+                <span class="w-20 shrink-0 font-mono text-[10px] text-muted-foreground">{{ modeOf(entry) }}</span>
+                <span
+                  class="w-28 shrink-0 truncate font-mono text-[10px] text-muted-foreground"
+                  :title="ownershipOf(entry)"
+                  >{{ ownershipOf(entry) }}</span
+                >
               </div>
             </li>
           </ul>

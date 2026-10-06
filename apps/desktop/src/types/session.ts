@@ -186,6 +186,9 @@ export interface SftpEntry {
   readonly size: number;
   readonly modifiedAt?: number;
   readonly mode?: number;
+  /** The owner's name, or the number the server sent when its accounts do not name it. */
+  readonly owner?: string;
+  readonly group?: string;
   readonly linkTarget?: string;
 }
 

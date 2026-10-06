@@ -5,6 +5,7 @@
 //! that is the caller's business — which is what keeps a download from being told where to land by
 //! a script in a webview.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -15,6 +16,7 @@ use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use sevenshell_error::ShellError;
 use sevenshell_types::{EntryKind, SftpEntry, SftpListing};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::OnceCell;
 
 /// The largest file the editor will open.
 ///
@@ -25,6 +27,10 @@ pub const MAX_EDIT_BYTES: u64 = 4 * 1024 * 1024;
 /// How much is moved per read or write. Large enough to keep the channel busy, small enough that
 /// progress moves visibly and a cancellation is noticed quickly.
 const CHUNK_BYTES: usize = 64 * 1024;
+
+/// Where a POSIX server keeps the names for the numbers it reports as ownership.
+const PASSWD_PATH: &str = "/etc/passwd";
+const GROUP_PATH: &str = "/etc/group";
 
 /// How far a transfer has come, and whether it has been asked to stop.
 ///
@@ -80,6 +86,16 @@ impl TransferProgress {
 /// One SFTP channel, and the operations worth having on it.
 pub struct SftpSession {
     inner: Channel,
+    /// The server's own names for the numbers it reports as ownership. Read at most once per
+    /// channel, on demand: a session that never lists anything never reads this.
+    names: OnceCell<IdNames>,
+}
+
+/// What a server's account files say its numbers are called.
+#[derive(Debug, Default)]
+struct IdNames {
+    users: HashMap<u32, String>,
+    groups: HashMap<u32, String>,
 }
 
 impl SftpSession {
@@ -92,7 +108,10 @@ impl SftpSession {
             .await
             .map_err(|error| ShellError::sftp_transfer_failed("the file channel", describe(&error)))?;
 
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            names: OnceCell::new(),
+        })
     }
 
     /// Reads a directory, with directories first and then names in a stable order.
@@ -102,6 +121,7 @@ impl SftpSession {
     /// browser feel broken.
     pub async fn list(&self, path: &str) -> Result<SftpListing, ShellError> {
         let resolved = self.resolve(path).await;
+        let names = self.id_names().await;
 
         let mut entries = Vec::new();
         let reader = self
@@ -115,7 +135,7 @@ impl SftpSession {
             // The listing names its own entries: a client that joined the strings itself would get
             // the root and a trailing slash wrong sooner or later.
             let entry_path = join(&resolved, &entry.file_name());
-            entries.push(describe_entry(entry.file_name(), entry_path, &attributes));
+            entries.push(describe_entry(entry.file_name(), entry_path, &attributes, names));
         }
 
         entries.sort_by(|left, right| {
@@ -139,6 +159,31 @@ impl SftpSession {
             // An unresolvable path is still worth trying to read: the error that follows says why,
             // and it is a better message than anything this could invent.
             _ => path.to_owned(),
+        }
+    }
+
+    /// The server's own names for the numbers it reports as ownership, read once per channel.
+    ///
+    /// Both account files are read at most once: accounts are added while a machine is being set
+    /// up, not while a panel is open, and reading them on every listing would put two file reads in
+    /// front of every directory. A server that will not hand them over — a Windows host, a locked
+    /// down `/etc/passwd`, a chroot without either file — simply gets numbers in the listing, which
+    /// is what the protocol itself said.
+    async fn id_names(&self) -> &IdNames {
+        self.names
+            .get_or_init(|| async {
+                IdNames {
+                    users: self.read_accounts(PASSWD_PATH).await,
+                    groups: self.read_accounts(GROUP_PATH).await,
+                }
+            })
+            .await
+    }
+
+    async fn read_accounts(&self, path: &str) -> HashMap<u32, String> {
+        match self.read_text(path).await {
+            Ok(text) => parse_accounts(&text),
+            Err(_) => HashMap::new(),
         }
     }
 
@@ -383,7 +428,7 @@ fn join(directory: &str, name: &str) -> String {
     }
 }
 
-fn describe_entry(name: String, path: String, attributes: &FileAttributes) -> SftpEntry {
+fn describe_entry(name: String, path: String, attributes: &FileAttributes, names: &IdNames) -> SftpEntry {
     let kind = if attributes.is_dir() {
         EntryKind::Directory
     } else if attributes.is_symlink() {
@@ -405,8 +450,46 @@ fn describe_entry(name: String, path: String, attributes: &FileAttributes) -> Sf
         // far in the past. Times beyond that are reported as absent rather than wrong.
         modified_at: attributes.mtime.filter(|seconds| *seconds > 0).map(u64::from),
         mode: attributes.permissions,
+        owner: attributes.uid.map(|uid| named(&names.users, uid)),
+        group: attributes.gid.map(|gid| named(&names.groups, gid)),
         link_target: None,
     }
+}
+
+/// The name an account file gave a number, or the number itself when it gave none.
+fn named(names: &HashMap<u32, String>, id: u32) -> String {
+    match names.get(&id) {
+        Some(name) => name.clone(),
+        None => id.to_string(),
+    }
+}
+
+/// The names in `/etc/passwd` or `/etc/group`, keyed by the number in the third field.
+///
+/// The two files differ in what follows the id and agree on everything before it, so one parser
+/// reads both. A line that does not look like an account is skipped rather than guessed at: the
+/// fallback for a missing name is the number, which is at least true.
+fn parse_accounts(text: &str) -> HashMap<u32, String> {
+    let mut names = HashMap::new();
+
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let mut fields = line.split(':');
+        let Some(name) = fields.next().filter(|name| !name.is_empty()) else {
+            continue;
+        };
+        let Some(id) = fields.nth(1).and_then(|field| field.parse::<u32>().ok()) else {
+            continue;
+        };
+
+        names.insert(id, name.to_owned());
+    }
+
+    names
 }
 
 fn failure(error: &SftpError, path: &str) -> ShellError {
@@ -436,5 +519,56 @@ fn describe(error: &SftpError) -> String {
         SftpError::IO(message) => format!("the channel failed: {message}"),
         SftpError::Timeout => "the server stopped answering".to_owned(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_account_file_is_read_as_names_for_the_numbers_in_it() {
+        let passwd = "\
+# the accounts this machine knows
+root:x:0:0:root:/root:/bin/bash
+
+labuser:x:1000:1000::/config:/bin/bash
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+a-line-with-no-id:x:nope:0::/:/bin/sh
+";
+        let names = parse_accounts(passwd);
+
+        assert_eq!(names.get(&0).map(String::as_str), Some("root"));
+        assert_eq!(names.get(&1000).map(String::as_str), Some("labuser"));
+        assert_eq!(
+            names.get(&65534).map(String::as_str),
+            Some("nobody"),
+            "a name after an empty field is still the name"
+        );
+        assert_eq!(
+            names.len(),
+            3,
+            "the comment, the blank line and the unparsable one are not names"
+        );
+    }
+
+    #[test]
+    fn a_group_file_is_read_the_same_way_as_a_passwd_file() {
+        let group = "root:x:0:\nlabuser:x:1000:labuser\n";
+
+        let names = parse_accounts(group);
+
+        assert_eq!(names.get(&1000).map(String::as_str), Some("labuser"));
+    }
+
+    #[test]
+    fn a_number_nothing_names_is_shown_as_the_number() {
+        let names = HashMap::new();
+
+        assert_eq!(
+            named(&names, 1000),
+            "1000",
+            "an unnamed id is still the id the server sent"
+        );
     }
 }

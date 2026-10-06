@@ -446,14 +446,42 @@ describe("selecting rows", () => {
     expect(selectedRows()).toEqual([0]);
   });
 
-  it("counts what is selected where the column headings are", async () => {
+  it("reads a row in the columns a file manager lists it in", async () => {
+    const owned: SftpEntry = {
+      name: "notes.txt",
+      path: "/home/user/notes.txt",
+      kind: "file",
+      size: 12,
+      modifiedAt: 1_700_000_000,
+      mode: 0o644,
+      owner: "labuser",
+      group: "labuser",
+    };
+    await render([folder, owned]);
+
+    const headings = listing()?.querySelector("[data-listing-header]")?.textContent ?? "";
+    for (const column of ["File name", "Size", "Type", "Modified", "Permissions", "User/Group"]) {
+      expect(headings, `the header names the ${column} column`).toContain(column);
+    }
+
+    const [directory, file] = rows();
+    expect(directory?.textContent, "a directory says what it is").toContain("Folder");
+    expect(file?.textContent, "the permissions are the ones the server sent").toContain("rw-r--r--");
+    expect(file?.textContent, "the owner and the group share their column").toContain("labuser/labuser");
+  });
+
+  it("leaves a row's actions to the menu, with nothing drawn on the row itself", async () => {
     await render(many);
 
-    await clickRow(0);
-    await clickRow(2, "ctrl");
-    await nextTick();
+    for (const row of rows()) {
+      expect(row.querySelector("button"), "a row is not a toolbar").toBeNull();
+    }
 
-    expect(host.textContent).toContain("2 selected");
+    // Nothing went away with the buttons: the same actions answer a right-click.
+    const entries = await rightClickRow(0);
+    expect(ids(entries)).toContain("download");
+    expect(ids(entries)).toContain("rename");
+    expect(ids(entries)).toContain("remove");
   });
 
   it("counts it in the menu's own words when several rows are chosen", async () => {

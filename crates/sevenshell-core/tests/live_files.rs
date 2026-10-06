@@ -153,6 +153,24 @@ async fn browsing_a_real_directory_and_changing_it() {
         .expect("the file is listed");
     assert_eq!(entry.kind, EntryKind::File);
     assert_eq!(entry.size, 18, "the size came back from the server");
+    assert_eq!(
+        entry.mode.map(|mode| mode & 0o777),
+        Some(0o644),
+        "the permissions came with the listing"
+    );
+    assert_eq!(
+        entry.owner.as_deref(),
+        Some("labuser"),
+        "the owner arrives as the name the server keeps for the number it sent"
+    );
+    assert!(
+        entry
+            .group
+            .as_deref()
+            .is_some_and(|group| !group.chars().all(|character| character.is_ascii_digit())),
+        "the group is named too, rather than left as the number: {:?}",
+        entry.group
+    );
 
     assert_eq!(
         lab.core.read_text_file(&handle, &note).await.expect("read it back"),

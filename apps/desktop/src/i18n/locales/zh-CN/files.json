@@ -27,11 +27,17 @@
     "downloadPackedTitle": "选择下载到的文件夹",
     "empty": "该目录为空。",
     "listing": "文件列表",
-    "name": "名称",
+    "name": "文件名",
     "size": "大小",
+    "type": "类型",
     "modified": "修改时间",
-    "selection": {
-      "count": "已选中 {count} 项"
+    "permissions": "权限",
+    "owner": "用户/用户组",
+    "kind": {
+      "directory": "文件夹",
+      "file": "文件",
+      "symlink": "符号链接",
+      "other": "其他"
     },
     "action": {
       "open": "打开",
