@@ -70,6 +70,7 @@
       "groupLabel": "{name}"
     },
     "details": {
+      "name": "Name",
       "address": "Address",
       "host": "Host",
       "port": "Port",

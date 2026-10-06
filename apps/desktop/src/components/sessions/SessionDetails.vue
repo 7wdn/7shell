@@ -3,13 +3,17 @@
  * What a saved session is, on hover.
  *
  * The row has room for a name and an address; everything else about a session is two clicks away in
- * the editor. This is the answer in between: the fields that identify the machine and how this
- * build would reach it, without opening anything. It is drawn beside the list rather than over it,
- * so the row it is about stays visible while it is read.
+ * the editor. This is the answer in between: the fields that identify the machine and how this build
+ * would reach it, without opening anything.
+ *
+ * It is a bubble rather than a card floating nowhere — a label/value list with a pointer aimed at
+ * the row it is about, arriving the moment the pointer stops on that row and gone the moment it
+ * leaves. The reference draws it the same way, and the pointer is what makes it read as "about
+ * *this* row" rather than as a panel that happened to appear.
  *
  * Only what is already known is shown. A server's version, its banner and how long a connection
- * took are facts about a connection, and this card is about a saved session — a card that showed
- * them as blanks would be advertising what it does not have.
+ * took are facts about a connection, and this is about a saved session — a card that showed them
+ * as blanks would be advertising what it does not have.
  */
 import { HoverCardContent, HoverCardPortal } from "reka-ui";
 import { computed } from "vue";
@@ -48,29 +52,38 @@ const groupLabel = computed(() => {
 });
 
 /**
- * The rows of the card, in the order a person reads a machine: what it is called and how to reach
- * it, then who as, then how, then where it sits and what it goes through.
+ * The rows of the bubble, in the order a person reads a machine: what it is called and how to reach
+ * it, then who as, then how, then where it sits — and what it goes through, when it goes through
+ * anything.
  */
-const rows = computed(() => [
-  { key: "address", label: t("sessions.details.address"), value: sessionEndpoint(props.session), mono: true },
-  { key: "host", label: t("sessions.details.host"), value: props.session.host, mono: true },
-  { key: "port", label: t("sessions.details.port"), value: String(props.session.port), mono: true },
-  { key: "user", label: t("sessions.details.user"), value: props.session.user, mono: true },
-  { key: "protocol", label: t("sessions.details.protocol"), value: protocolLabel.value, mono: false },
-  {
-    key: "auth",
-    label: t("sessions.details.auth"),
-    value: props.session.auth.hasSecret
-      ? t("sessions.details.authStored", { method: authLabel.value })
-      : t("sessions.details.authMissing", { method: authLabel.value }),
-    mono: false,
-  },
-  { key: "group", label: t("sessions.details.group"), value: groupLabel.value, mono: false },
-]);
+const rows = computed(() => {
+  const list = [
+    { key: "name", label: t("sessions.details.name"), value: props.session.name },
+    { key: "address", label: t("sessions.details.address"), value: sessionEndpoint(props.session) },
+    { key: "host", label: t("sessions.details.host"), value: props.session.host },
+    { key: "port", label: t("sessions.details.port"), value: String(props.session.port) },
+    { key: "user", label: t("sessions.details.user"), value: props.session.user },
+    { key: "protocol", label: t("sessions.details.protocol"), value: protocolLabel.value },
+    {
+      key: "auth",
+      label: t("sessions.details.auth"),
+      value: props.session.auth.hasSecret
+        ? t("sessions.details.authStored", { method: authLabel.value })
+        : t("sessions.details.authMissing", { method: authLabel.value }),
+    },
+    { key: "group", label: t("sessions.details.group"), value: groupLabel.value },
+  ];
 
-/** The two things a session can point at that are not fields of its own, when it points at them. */
-const jumpLabel = computed(() => `${props.session.jump?.length ?? 0}`);
-const forwardsLabel = computed(() => `${props.session.forwards?.length ?? 0}`);
+  const jump = props.session.jump?.length ?? 0;
+  if (jump > 0) {
+    list.push({ key: "jump", label: t("sessions.details.jump"), value: String(jump) });
+  }
+  const forwards = props.session.forwards?.length ?? 0;
+  if (forwards > 0) {
+    list.push({ key: "forwards", label: t("sessions.details.forwards"), value: String(forwards) });
+  }
+  return list;
+});
 </script>
 
 <template>
@@ -78,30 +91,32 @@ const forwardsLabel = computed(() => `${props.session.forwards?.length ?? 0}`);
     <HoverCardContent
       side="right"
       align="start"
-      :side-offset="8"
+      :side-offset="10"
       :collision-padding="8"
-      class="z-50 w-80 rounded-lg border border-border bg-card p-3 shadow-xl outline-none"
+      class="relative z-50 w-max min-w-40 max-w-[min(28rem,calc(100vw-24px))] rounded-md border border-border bg-card p-2 shadow-lg outline-none"
       data-session-details
     >
-      <p class="truncate text-sm font-medium">{{ props.session.name }}</p>
+      <div class="space-y-1">
+        <div
+          v-for="row in rows"
+          :key="row.key"
+          class="grid grid-cols-[max-content_minmax(0,1fr)] gap-2 text-xs leading-5"
+        >
+          <span class="shrink-0 text-muted-foreground">{{ row.label }}</span>
+          <span class="truncate font-mono text-foreground/90" :title="row.value">{{ row.value }}</span>
+        </div>
+      </div>
 
-      <dl class="mt-2 space-y-1">
-        <div v-for="row in rows" :key="row.key" class="flex items-baseline gap-2 text-xs">
-          <dt class="w-20 shrink-0 text-muted-foreground">{{ row.label }}</dt>
-          <dd class="min-w-0 flex-1 truncate" :class="row.mono ? 'font-mono' : ''" :title="row.value">
-            {{ row.value }}
-          </dd>
-        </div>
-
-        <div v-if="(props.session.jump?.length ?? 0) > 0" class="flex items-baseline gap-2 text-xs">
-          <dt class="w-20 shrink-0 text-muted-foreground">{{ t("sessions.details.jump") }}</dt>
-          <dd class="min-w-0 flex-1 truncate font-mono">{{ jumpLabel }}</dd>
-        </div>
-        <div v-if="(props.session.forwards?.length ?? 0) > 0" class="flex items-baseline gap-2 text-xs">
-          <dt class="w-20 shrink-0 text-muted-foreground">{{ t("sessions.details.forwards") }}</dt>
-          <dd class="min-w-0 flex-1 truncate font-mono">{{ forwardsLabel }}</dd>
-        </div>
-      </dl>
+      <!--
+        The pointer: a small square turned 45°, wearing the two borders that face out of the bubble
+        and the bubble's own colour, so what shows is a tip. Drawn by hand rather than with the
+        library's arrow, which is an open SVG path — filling it would draw the edge that sits on the
+        bubble's own border as well, and the reference's is this square.
+      -->
+      <span
+        class="absolute top-1/2 -left-1.25 size-2.5 -translate-y-1/2 rotate-45 rounded-[2px] border-b border-l border-border bg-card"
+        aria-hidden="true"
+      ></span>
     </HoverCardContent>
   </HoverCardPortal>
 </template>

@@ -1239,7 +1239,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                 name ends, which is exactly where the tick and the failure mark sit — it would cover
                 the controls of the row it is describing.
               -->
-              <HoverCardRoot :open-delay="400" :close-delay="120">
+              <HoverCardRoot :open-delay="0" :close-delay="30">
                 <HoverCardTrigger as-child>
                   <div
                     :data-row="row.key"
