@@ -40,7 +40,15 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
-import { extensionOf, formatMode, formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
+import {
+  extensionOf,
+  familyOf,
+  formatMode,
+  formatModified,
+  formatSize,
+  joinPath,
+  parentPath,
+} from "@/lib/files/format";
 import { INITIAL_ORDER, type ListingSort, type Order, orderEntries, pressed } from "@/lib/files/order";
 import { type Band, type Point, type RowBand, bandBetween, isDrag, rowsInBand, scrollStep } from "@/lib/files/marquee";
 import {
@@ -140,7 +148,7 @@ let drag: { from: Point; rows: RowBand[]; moved: boolean } | null = null;
  */
 const order = ref<Order>(INITIAL_ORDER);
 /** What the server sent, in the order the headings say to draw it. */
-const ordered = computed(() => orderEntries(browser.value?.entries ?? [], order.value));
+const ordered = computed(() => orderEntries(browser.value?.entries ?? [], order.value, typeOf));
 
 /** The paths the listing is showing, in the order it draws them: what the selection is made of. */
 const rows = computed(() => ordered.value.map((entry) => entry.path));
@@ -196,12 +204,14 @@ function modifiedOf(entry: SftpEntry): string {
 }
 
 /**
- * What kind of thing this is, in words.
+ * What kind of thing this is, in words, and what the type column is ordered by.
  *
  * The icon says it as well, and the icon is what is read at a glance — but a listing that is being
  * read column by column needs the answer in the column, not in a shape the eye has to know. For a
- * file the answer is its type and not just the word "file": a folder of installers holds `.rpm`,
- * `.deb` and `.tar.gz`, which is the distinction somebody sorting by this column is looking for.
+ * file the answer is its type and not just the word "file": a folder of downloads holds tarballs, a
+ * folder of work holds documents, and telling them apart is what somebody sorting by this column is
+ * looking for. What is not a family this build knows is written as its own extension, which is the
+ * honest answer and the one a file manager gives for `rpm` and `deb`.
  */
 function typeOf(entry: SftpEntry): string {
   switch (entry.kind) {
@@ -216,7 +226,22 @@ function typeOf(entry: SftpEntry): string {
       if (extension === null) {
         return t("files.kind.file");
       }
-      return t("files.kind.typed", { extension: extension.toUpperCase() });
+      switch (familyOf(extension)) {
+        case "archive":
+          return t("files.kind.archive");
+        case "image":
+          return t("files.kind.image");
+        case "video":
+          return t("files.kind.video");
+        case "audio":
+          return t("files.kind.audio");
+        case "document":
+          return t("files.kind.document");
+        case "text":
+          return t("files.kind.text");
+        case null:
+          return t("files.kind.typed", { extension: extension.toUpperCase() });
+      }
     }
   }
 }

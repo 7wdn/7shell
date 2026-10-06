@@ -80,6 +80,65 @@ export function extensionOf(name: string): string | null {
   return name.slice(dot + 1).toLowerCase();
 }
 
+/** The kinds of file a person actually sorts a folder by. */
+export type TypeFamily = "archive" | "image" | "video" | "audio" | "document" | "text";
+
+/**
+ * Which of those an extension belongs to, or null when it belongs to none of them.
+ *
+ * A short table rather than a rule, holding what a folder of downloads and a folder of work are
+ * made of: `tar.gz`, `zip` and `rar` are one type here rather than three sets of letters, which is
+ * what somebody reading a type column means by the word. Everything else is shown as its own
+ * extension — `rpm`, `deb`, `part` — which is the honest answer and the one a file manager gives.
+ */
+const FAMILIES: Record<string, TypeFamily> = {
+  "7z": "archive",
+  bz2: "archive",
+  gz: "archive",
+  rar: "archive",
+  tar: "archive",
+  tgz: "archive",
+  xz: "archive",
+  zip: "archive",
+  zst: "archive",
+  bmp: "image",
+  gif: "image",
+  ico: "image",
+  jpeg: "image",
+  jpg: "image",
+  png: "image",
+  svg: "image",
+  tiff: "image",
+  webp: "image",
+  avi: "video",
+  mkv: "video",
+  mov: "video",
+  mp4: "video",
+  webm: "video",
+  flac: "audio",
+  m4a: "audio",
+  mp3: "audio",
+  ogg: "audio",
+  wav: "audio",
+  doc: "document",
+  docx: "document",
+  ods: "document",
+  odt: "document",
+  pdf: "document",
+  ppt: "document",
+  pptx: "document",
+  rtf: "document",
+  xls: "document",
+  xlsx: "document",
+  log: "text",
+  md: "text",
+  txt: "text",
+};
+
+export function familyOf(extension: string): TypeFamily | null {
+  return FAMILIES[extension] ?? null;
+}
+
 /** The directory a path sits in, or null when there is none to go up to. */
 export function parentPath(path: string): string | null {
   const trimmed = path.replace(/\/+$/, "");

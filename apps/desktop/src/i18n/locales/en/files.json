@@ -39,7 +39,13 @@
       "file": "File",
       "symlink": "Symlink",
       "other": "Other",
-      "typed": "{extension} File"
+      "typed": "{extension} File",
+      "archive": "Archive",
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "document": "Document",
+      "text": "Text file"
     },
     "action": {
       "open": "Open",

@@ -1050,9 +1050,10 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await expect.poll(firstRow, { message: "the folders answer the type column" }).not.toBe(before);
 
     // The bar under the terminal: the command somebody did not save. Enter sends it, and the line
-    // it ran is kept in the same history the panel draws.
+    // it ran is kept in the same history the panel draws. Two files, because one of them is what the
+    // type column is asked about below.
     const bar = page.getByLabel("Command input");
-    await bar.fill(`touch /tmp/${stamp}-typed`);
+    await bar.fill(`touch /tmp/${stamp}-typed /tmp/${stamp}.tar.gz`);
     await bar.press("Enter");
     await page.getByRole("button", { name: "History" }).click();
     await expect(page.getByText(`touch /tmp/${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
@@ -1064,6 +1065,12 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await pathBar.fill("/tmp");
     await pathBar.press("Enter");
     await expect(page.getByText(`${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
+
+    // What the type column says about it: the type is read out of the name rather than the word
+    // "File" being written on every file, which is what made sorting by it look like sorting by name.
+    await expect(page.getByRole("option", { name: `${stamp}.tar.gz` })).toContainText("Archive");
+    await expect(page.getByRole("option", { name: `${stamp}-typed` })).toContainText("File");
+    await page.screenshot({ path: path.join(ARTIFACTS, "listing-types.png"), fullPage: false });
 
     // Find in terminal: Ctrl+F belongs to the terminal, not to the shell, and the bar says how many
     // matches the scrollback holds. The needle is in the typed line and in what it printed, so the

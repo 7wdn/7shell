@@ -8,11 +8,19 @@
  * about a panel: it is about rows, and it is the part worth reading without a window in front of it.
  */
 import { type SortDirection, byText, startsDescending } from "@/lib/sort";
-import { extensionOf } from "@/lib/files/format";
-import type { EntryKind, SftpEntry } from "@/types/session";
+import type { SftpEntry } from "@/types/session";
 
 /** The columns a listing can be ordered by: the ones it carries headings for. */
 export type ListingSort = "name" | "size" | "kind" | "modified" | "mode" | "owner";
+
+/**
+ * What the type column says about a row, handed in by whoever draws it.
+ *
+ * The words on screen rather than a value behind them: that column is the one whose value is a
+ * sentence rather than a number, so it is ordered by the sentence. Two rows a reader can see are of
+ * the same type are then the two rows that stay together.
+ */
+export type TypeLabel = (entry: SftpEntry) => string;
 
 /** Which of them is in use, and which end of it is being read. */
 export interface Order {
@@ -45,15 +53,6 @@ const FIRST_DIRECTION: Record<ListingSort, SortDirection> = {
   owner: "ascending",
 };
 
-/**
- * The order the kinds are read in, which is also the order the listing arrives in.
- *
- * By kind rather than by the word in the cell: the word is a translation, and an order that depends
- * on the language the interface happens to be in is not one two people can compare. Among two files
- * this rank is only the first half of the type — `typeToken` is the other half.
- */
-const KIND_RANK: Record<EntryKind, number> = { directory: 0, file: 1, symlink: 2, other: 3 };
-
 /** Pressing a heading: a column nobody has used starts at its own end, the one in use turns around. */
 export function pressed(current: Order, column: ListingSort): Order {
   if (current.column === column) {
@@ -63,18 +62,24 @@ export function pressed(current: Order, column: ListingSort): Order {
 }
 
 /** The rows in the order they are drawn. */
-export function orderEntries(entries: readonly SftpEntry[], order: Order): SftpEntry[] {
-  return [...entries].sort((left, right) => compare(left, right, order));
+export function orderEntries(entries: readonly SftpEntry[], order: Order, typeLabel: TypeLabel): SftpEntry[] {
+  return [...entries].sort((left, right) => compare(left, right, order, typeLabel));
 }
 
-function compare(left: SftpEntry, right: SftpEntry, order: Order): number {
+function compare(left: SftpEntry, right: SftpEntry, order: Order, typeLabel: TypeLabel): number {
   // A directory reads above a file whichever column is in use: a folder is a shelf rather than a
   // value, and pressing a heading turns the values around, not the shelves. It is also what the
   // server does — its listing puts the directories first and sorts the rest by name — so the
   // heading the listing opens on describes the order that is already on screen.
-  const shelves = shelf(left) - shelf(right);
-  if (shelves !== 0) {
-    return shelves;
+  //
+  // The type column is the one exception, and has to be: a directory *is* a type there, and a column
+  // that could not put one type below another would not be a type column. It carries the same rule
+  // inside its own comparison instead, where turning the column turns the folders with it.
+  if (order.column !== "kind") {
+    const shelves = shelf(left) - shelf(right);
+    if (shelves !== 0) {
+      return shelves;
+    }
   }
 
   // A row the server sent nothing for sits at the bottom either way the column is read: an absence
@@ -89,7 +94,7 @@ function compare(left: SftpEntry, right: SftpEntry, order: Order): number {
   // is. Without that, a column whose value is the same for every row on screen — the kind column in
   // a folder of ordinary files, a size column where three files are the same size — would answer
   // the first press with the order that was already there and read as a column that does nothing.
-  const values = known[0] ? byColumn(order.column, left, right) : 0;
+  const values = known[0] ? byColumn(order.column, left, right, typeLabel) : 0;
   const compared = values !== 0 ? values : byName(left, right);
   return order.descending ? -compared : compared;
 }
@@ -118,19 +123,18 @@ function has(column: ListingSort, entry: SftpEntry): boolean {
 }
 
 /** The column's own comparison. Both rows are known to have a value: `has` is what asked. */
-function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry): number {
+function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry, typeLabel: TypeLabel): number {
   switch (column) {
     case "name":
       return byName(left, right);
     case "size":
       return left.size - right.size;
     case "kind": {
-      const kinds = KIND_RANK[left.kind] - KIND_RANK[right.kind];
-      // Two rows of different kinds are ordered by the kind and by nothing else. Two rows of the
-      // same kind are two files of two types, and a file's type is its extension — which is the
-      // whole of what "sort by type" means in a folder of installers, and why grouping them by name
-      // was not that.
-      return kinds !== 0 ? kinds : byText(typeToken(left), typeToken(right));
+      // A directory is the first type and the files follow it, read from the same end as everything
+      // else in this column: pressing it twice puts the folders at the bottom, which is what a type
+      // column does when somebody turns it over.
+      const directories = shelf(left) - shelf(right);
+      return directories !== 0 ? directories : byText(typeLabel(left), typeLabel(right));
     }
     case "modified":
       return (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0);
@@ -141,19 +145,6 @@ function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry): numbe
       // for the rows that have no owner to be ordered by.
       return byText(left.owner ?? left.group ?? "", right.owner ?? right.group ?? "");
   }
-}
-
-/**
- * What kind of thing a row is, as far as the type column is concerned.
- *
- * A file's type is its extension — `rpm`, `deb`, the `gz` of a tarball — which is what a file manager
- * groups by and what somebody looking at a folder of installers means by "sort by type". The other
- * kinds carry nothing here: a directory is a directory and a link is a link whatever they are named,
- * and an extension is not a thing a folder or a link is. It is the extension itself rather than the
- * word the column shows for it, so that the order does not depend on the language of the interface.
- */
-function typeToken(entry: SftpEntry): string {
-  return entry.kind === "file" ? (extensionOf(entry.name) ?? "") : "";
 }
 
 /**

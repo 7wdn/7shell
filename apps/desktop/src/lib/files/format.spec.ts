@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { ancestorsOf, extensionOf, formatMode } from "@/lib/files/format";
+import { ancestorsOf, extensionOf, familyOf, formatMode } from "@/lib/files/format";
 
 describe("ancestorsOf", () => {
   it("lists every directory that has to be open for a path to be visible", () => {
@@ -49,6 +49,28 @@ describe("extensionOf", () => {
 
   it("reads a type the same whatever case it was written in", () => {
     expect(extensionOf("README.TXT")).toBe("txt");
+  });
+});
+
+describe("familyOf", () => {
+  it("puts every way of packing a file into one type", () => {
+    for (const extension of ["zip", "rar", "7z", "tar", "gz", "tgz", "xz", "zst", "bz2"]) {
+      expect(familyOf(extension), `${extension} is an archive`).toBe("archive");
+    }
+  });
+
+  it("knows the families a folder of work and a folder of downloads are made of", () => {
+    expect(familyOf("png")).toBe("image");
+    expect(familyOf("mp4")).toBe("video");
+    expect(familyOf("mp3")).toBe("audio");
+    expect(familyOf("pdf")).toBe("document");
+    expect(familyOf("txt")).toBe("text");
+  });
+
+  it("leaves a type it does not know to be shown as itself", () => {
+    expect(familyOf("rpm")).toBeNull();
+    expect(familyOf("deb")).toBeNull();
+    expect(familyOf("part")).toBeNull();
   });
 });
 

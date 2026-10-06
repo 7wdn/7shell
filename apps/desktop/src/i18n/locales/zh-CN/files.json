@@ -39,7 +39,13 @@
       "file": "文件",
       "symlink": "符号链接",
       "other": "其他",
-      "typed": "{extension} 文件"
+      "typed": "{extension} 文件",
+      "archive": "压缩文件",
+      "image": "图片",
+      "video": "视频",
+      "audio": "音频",
+      "document": "文档",
+      "text": "文本文件"
     },
     "action": {
       "open": "打开",

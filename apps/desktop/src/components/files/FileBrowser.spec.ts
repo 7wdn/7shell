@@ -523,7 +523,7 @@ describe("selecting rows", () => {
 
     const [directory, file] = rows();
     expect(directory?.textContent, "a directory says what it is").toContain("Folder");
-    expect(file?.textContent, "a file says its type rather than only that it is one").toContain("TXT File");
+    expect(file?.textContent, "a file says its type rather than only that it is one").toContain("Text file");
     expect(file?.textContent, "the permissions are the ones the server sent").toContain("rw-r--r--");
     expect(file?.textContent, "the owner and the group share their column").toContain("labuser/labuser");
   });
@@ -552,6 +552,34 @@ describe("selecting rows", () => {
       "c.txt",
       "a.txt",
       "b.txt",
+    ]);
+  });
+
+  it("orders the rows by the type it shows, and puts the folders last when it is turned over", async () => {
+    await render([
+      { name: "b.rpm", path: "/home/user/b.rpm", kind: "file", size: 2 },
+      { name: "logs", path: "/home/user/logs", kind: "directory", size: 0 },
+      { name: "a.deb", path: "/home/user/a.deb", kind: "file", size: 1 },
+      { name: "c.tar.gz", path: "/home/user/c.tar.gz", kind: "file", size: 3 },
+      { name: "d.txt", path: "/home/user/d.txt", kind: "file", size: 4 },
+    ]);
+
+    await pressHeading("Type");
+    expect(drawn(), "folders first, then the types from the alphabet").toEqual([
+      "logs",
+      "c.tar.gz",
+      "a.deb",
+      "b.rpm",
+      "d.txt",
+    ]);
+
+    await pressHeading("Type");
+    expect(drawn(), "and the folders go over with the column, the way a file manager's does").toEqual([
+      "d.txt",
+      "b.rpm",
+      "a.deb",
+      "c.tar.gz",
+      "logs",
     ]);
   });
 
