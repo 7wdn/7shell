@@ -51,6 +51,7 @@ import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "
 import { useBatchStore } from "@/stores/batch";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useRecentSessionsStore } from "@/stores/recentSessions";
 import type {
   KnownHostEntry,
   OpenOutcome,
@@ -209,6 +210,7 @@ export function tunnelFailureKey(failure: TunnelFailure): string {
 export const useTerminalsStore = defineStore("terminals", () => {
   const files = useFilesStore();
   const preferences = usePreferencesStore();
+  const recents = useRecentSessionsStore();
   const { toast } = useToast();
   const tabs = ref<WorkspaceTab[]>([]);
   const activeTabId = ref<string | null>(null);
@@ -279,6 +281,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (connectingSessionIds.value.includes(session.id)) {
       return;
     }
+    // Remembered here rather than where the click was: every way in — the sidebar, a row on the
+    // home page, a reconnect — comes through this function, and the list is about what somebody
+    // reached for rather than about which control they reached through.
+    recents.record(session.id);
     connectingSessionIds.value.push(session.id);
     try {
       acceptTerminal(session, await backend.terminal.open(session.id));
@@ -314,6 +320,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * panel of the terminal that is carrying it.
    */
   async function openFiles(session: Session): Promise<void> {
+    // A browser that is already up is still this session being used, which is why the record is
+    // above the early return rather than inside the attempt below it.
+    recents.record(session.id);
     const showing = tabs.value.find((entry) => sessionOf(entry)?.id === session.id && browserHandleOf(entry) !== null);
     if (showing) {
       activeTabId.value = showing.id;

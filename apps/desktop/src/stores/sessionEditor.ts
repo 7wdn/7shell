@@ -105,6 +105,16 @@ function forwardFrom(row: ForwardDraft): LocalForward {
 export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const library = useSessionsStore();
 
+  /**
+   * Whether the editor is on screen.
+   *
+   * It lives here, beside the draft, because the editor is opened from more than one place — the
+   * sidebar's own button, the right-click menu on a row, the shortcuts on the home page — and one
+   * of those has to work while the sidebar is put away. The dialog itself is drawn by the frame for
+   * the same reason: one owned by the sidebar would be gone exactly when the sidebar is.
+   */
+  const open = ref(false);
+
   /** The session being edited, which is where the protocol, the terminal settings and the id
    *  come from; null means a new one, and only then is a fresh id made. */
   const editing = ref<Session | null>(null);
@@ -170,6 +180,28 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       Object.values(sessionProblems.value).some(Boolean) ||
       forwards.value.some((row) => (forwardProblems.value[row.id]?.length ?? 0) > 0),
   );
+
+  /**
+   * Opens the editor on a new session.
+   *
+   * The draft is not filled here: the dialog fills it from `editing` as it comes up, so opening and
+   * filling happen in one order no matter which of the callers asked for it.
+   */
+  function startNew(): void {
+    editing.value = null;
+    open.value = true;
+  }
+
+  /** Opens the editor on a saved session. */
+  function startEdit(session: Session): void {
+    editing.value = session;
+    open.value = true;
+  }
+
+  /** What the dialog says when it goes away, whether it saved or was dismissed. */
+  function setOpen(value: boolean): void {
+    open.value = value;
+  }
 
   /** Starts a draft from a saved session, or from nothing when a new one is being made. */
   function fill(session: Session | null): void {
@@ -255,6 +287,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   }
 
   return {
+    open,
     editing,
     name,
     host,
@@ -274,6 +307,9 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     sessionProblems,
     forwardProblems,
     hasProblems,
+    startNew,
+    startEdit,
+    setOpen,
     fill,
     secretInput,
     draft,

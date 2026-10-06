@@ -26,6 +26,7 @@ import { useI18n } from "vue-i18n";
 
 import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
+import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import ContextMenu from "@/components/shell/ContextMenu.vue";
@@ -42,6 +43,7 @@ import { useBatchStore } from "@/stores/batch";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useFilesStore } from "@/stores/files";
 import { backend } from "@/lib/backend/api";
+import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useTerminalsStore } from "@/stores/terminals";
 import { useVaultStore } from "@/stores/vault";
 
@@ -51,6 +53,7 @@ const app = useAppStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
 const batch = useBatchStore();
+const editor = useSessionEditorStore();
 const vault = useVaultStore();
 
 // Watches for transfers that failed while their list was not on screen. Registered here because the
@@ -361,6 +364,13 @@ onBeforeUnmount(() => {
       @replace="terminals.confirmReplace()"
       @cancel="terminals.dismiss()"
     />
+
+    <!--
+      The session editor, drawn by the frame rather than by the sidebar it used to live in: it is
+      opened from the sidebar's button, from a row's menu and from the home page's shortcuts, and
+      the last of those has to work while the sidebar is put away.
+    -->
+    <SessionDialog :open="editor.open" :session="editor.editing" @update:open="editor.setOpen" />
 
     <!--
       An upload that would replace a name already on the far side. Answering "no" tells the backend

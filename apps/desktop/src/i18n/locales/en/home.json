@@ -2,10 +2,17 @@
   "home": {
     "tile": {
       "protocols": "Declared protocols",
-      "capabilities": "Committed capabilities",
-      "authMethods": "Authentication methods",
+      "capabilities": "Capabilities",
+      "authMethods": "Auth methods",
       "sessions": "Sessions saved",
-      "terminals": "Terminals open"
+      "groups": "Session groups"
+    },
+    "quick": {
+      "title": "Quick start"
+    },
+    "actions": {
+      "title": "Common operations",
+      "tip": "The library is on the left as well: expand a group, or right-click a session to edit it, open its files or copy its address."
     },
     "start": {
       "title": "Getting started",

@@ -22,6 +22,7 @@ import { computed, ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { useSessionsStore } from "@/stores/sessions";
+import { useRecentSessionsStore } from "@/stores/recentSessions";
 import type { VaultState } from "@/types/session";
 
 /** `unknown` until the backend has answered; the gate draws nothing else until then. */
@@ -50,6 +51,18 @@ export const useVaultStore = defineStore("vault", () => {
 
   const unlocked = computed(() => state.value === "unlocked");
 
+  /**
+   * Everything the library screens draw, read in one place.
+   *
+   * The recent list comes along because the home page ranks the library by it: loading one without
+   * the other would draw that list in the library's order for a moment and then reorder it under
+   * the person's eyes.
+   */
+  async function loadLibrary(): Promise<void> {
+    await useSessionsStore().load();
+    useRecentSessionsStore().load();
+  }
+
   /** Asks the backend where the vault stands, and loads the library when it is already open. */
   async function initialize(): Promise<void> {
     clearFailure();
@@ -60,7 +73,7 @@ export const useVaultStore = defineStore("vault", () => {
       return;
     }
     if (state.value === "unlocked") {
-      await useSessionsStore().load();
+      await loadLibrary();
     }
   }
 
@@ -84,7 +97,7 @@ export const useVaultStore = defineStore("vault", () => {
     clearFailure();
     try {
       state.value = await action();
-      await useSessionsStore().load();
+      await loadLibrary();
       return true;
     } catch (error) {
       reportFailure(operation, error);

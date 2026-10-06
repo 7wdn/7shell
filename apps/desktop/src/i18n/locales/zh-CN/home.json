@@ -5,7 +5,14 @@
       "capabilities": "已承诺能力",
       "authMethods": "认证方式",
       "sessions": "已保存会话",
-      "terminals": "已打开终端"
+      "groups": "会话分组"
+    },
+    "quick": {
+      "title": "快速开始"
+    },
+    "actions": {
+      "title": "常用操作",
+      "tip": "会话库也在左侧：展开分组，或右键一个会话，即可编辑它、打开它的文件或复制它的地址。"
     },
     "start": {
       "title": "开始使用",

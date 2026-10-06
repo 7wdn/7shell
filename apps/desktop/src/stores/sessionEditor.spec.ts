@@ -184,4 +184,27 @@ describe("session editor store", () => {
     await library.save(saved);
     expect(sessionSaveMock).toHaveBeenCalledWith(saved, undefined);
   });
+
+  /**
+   * What the two entry points promise.
+   *
+   * The store carries *which* session the editor is opening on, and the dialog fills the draft from
+   * it as it comes up — so a new session and an edit differ in this one value, and a stale `editing`
+   * left behind by a previous edit is how a "new session" would quietly become an overwrite.
+   */
+  it("says what the editor is opening on, and closes when the dialog does", () => {
+    const editor = useSessionEditorStore();
+    expect(editor.open).toBe(false);
+
+    editor.startEdit(sample("db", "db"));
+    expect(editor.open).toBe(true);
+    expect(editor.editing?.id).toBe("db");
+
+    editor.setOpen(false);
+    expect(editor.open).toBe(false);
+
+    editor.startNew();
+    expect(editor.open).toBe(true);
+    expect(editor.editing).toBeNull();
+  });
 });

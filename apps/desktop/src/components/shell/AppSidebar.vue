@@ -20,7 +20,9 @@
  *
  * Opening a terminal hangs off the row itself, with the file browser beside it; whether a terminal
  * comes up with its file panel is the settings' answer, not this row's. Editing and deleting are
- * separate buttons, and deleting always asks first, in the row, before anything is removed.
+ * separate buttons, and deleting always asks first, in the row, before anything is removed. The
+ * editor dialog those buttons raise is mounted by the frame rather than here: the home page opens it
+ * too, and the sidebar is not always on screen. See `App.vue`.
  *
  * The tunnels section draws what the terminals store was told by the backend, and only then: an
  * empty section is not shown at all. A forward that failed to come up is shown next to the ones
@@ -63,7 +65,6 @@ import { useI18n } from "vue-i18n";
 
 import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
 import SessionDetails from "@/components/sessions/SessionDetails.vue";
-import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import SessionFailure from "@/components/sessions/SessionFailure.vue";
 import SidebarResizeHandle from "@/components/shell/SidebarResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
@@ -80,17 +81,20 @@ import type { MenuEntry } from "@/lib/menu/types";
 import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
 import { regexIsInvalid } from "@/lib/sessions/filter";
 import { drawOrder, groupPath, hasSibling } from "@/lib/sessions/groups";
+import { importReceipt } from "@/lib/sessions/receipt";
 import { rowTarget } from "@/lib/sessions/tree";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
 import { sessionOf, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { ShellError } from "@/lib/backend/errors";
-import type { OpenTunnel, Session, SessionGroup, SessionImportSummary } from "@/types/session";
+import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
 import { AUTH_METHODS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
 const library = useSessionsStore();
 const preferences = usePreferencesStore();
+const editor = useSessionEditorStore();
 const terminals = useTerminalsStore();
 const { openMenu } = useContextMenu();
 const { toast } = useToast();
@@ -102,8 +106,6 @@ const emit = defineEmits<{
 
 /** The ways a saved session can authenticate, which is what the list can be narrowed by. */
 const authMethods = computed(() => AUTH_METHODS);
-const editorOpen = ref(false);
-const editing = ref<Session | null>(null);
 
 /**
  * The name an export is offered under.
@@ -227,13 +229,11 @@ function endpoint(session: Session): string {
 }
 
 function startNew(): void {
-  editing.value = null;
-  editorOpen.value = true;
+  editor.startNew();
 }
 
 function startEdit(session: Session): void {
-  editing.value = session;
-  editorOpen.value = true;
+  editor.startEdit(session);
 }
 
 /**
@@ -269,44 +269,19 @@ onBeforeUnmount(() => {
 });
 
 /**
- * What an import did, said as a receipt.
+ * Reads a file the user picks and says what it added. A refusal stays in the list's own box.
  *
- * The counts are joined rather than fixed into one sentence because what came out of a file is not
- * known in advance: an empty import, a plain one, and one that carried a warning all have to read
- * as the same kind of sentence. Anything that could not be carried is named here or nowhere — the
- * session is in the list either way, and this is the only moment anybody can be told why it might
- * not connect the way it did where the file came from.
+ * A refusal being a *list* failure is what the second half of this does the rest of the way: the
+ * import writes the library, so what went wrong belongs where the library is drawn rather than on
+ * the button that started it. The home page's shortcut is the one that cannot rely on that — see
+ * `HomeView`.
  */
-function importReceipt(summary: SessionImportSummary): string {
-  const parts: string[] = [];
-  const counted = (key: string, count: number): string => t(key, { count }, count);
-  if (summary.sessions > 0) {
-    parts.push(counted("sessions.list.importSessions", summary.sessions));
-  }
-  if (summary.groups > 0) {
-    parts.push(counted("sessions.list.importGroups", summary.groups));
-  }
-  if (summary.secrets > 0) {
-    parts.push(counted("sessions.list.importSecrets", summary.secrets));
-  }
-  if (summary.missingKeys > 0) {
-    parts.push(counted("sessions.list.importMissingKeys", summary.missingKeys));
-  }
-  if (summary.droppedHops > 0) {
-    parts.push(counted("sessions.list.importDroppedHops", summary.droppedHops));
-  }
-  return parts.length === 0
-    ? t("sessions.list.importNothing")
-    : t("sessions.list.importDone", { parts: parts.join(", ") });
-}
-
-/** Reads a file the user picks and says what it added. A refusal stays in the list's own box. */
 async function runImport(): Promise<void> {
   const summary = await library.importLibrary(t("sessions.list.importTitle"));
   if (!summary) {
     return;
   }
-  toast(importReceipt(summary), summary.missingKeys + summary.droppedHops > 0 ? "result" : "confirmation");
+  toast(importReceipt(summary, t), summary.missingKeys + summary.droppedHops > 0 ? "result" : "confirmation");
 }
 
 /** Writes the library to a file the user picks. */
@@ -1487,8 +1462,6 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
       neither answered a question anybody had; a status line is what a page says when it has nothing
       else on it, and a panel that holds a person's servers does.
     -->
-
-    <SessionDialog :open="editorOpen" :session="editing" @update:open="editorOpen = $event" />
 
     <!--
       Deleting several at once asks the same way one does, and names what is about to go: a count

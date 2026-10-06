@@ -34,6 +34,44 @@ async function writtenSettings(): Promise<{ packedTransfer?: boolean }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as { packedTransfer?: boolean };
 }
 
+/**
+ * The three regions the same words appear in.
+ *
+ * The home page offers the sessions that were used last and buttons with the same names as the
+ * sidebar's, and both are on screen at once — so an assertion has to say which of them it is about,
+ * and a name that matches twice is a failure rather than a guess.
+ */
+function sidebar(page: Page): Locator {
+  return page.locator("[data-session-list]").locator("xpath=ancestor::aside[1]");
+}
+
+/** The home page, which is what the workspace draws while no tab is open. */
+function home(page: Page): Locator {
+  return page.locator("[data-home]");
+}
+
+/** A saved session's row in the sidebar, by the title its own button carries. */
+function sessionRow(page: Page, name: string): Locator {
+  return sidebar(page).getByTitle(`Open a terminal for ${name}`);
+}
+
+/**
+ * The same title, rooted at the document rather than at the sidebar.
+ *
+ * For `filter({ has })`, which re-roots its inner locator against each candidate element: a
+ * locator that starts by naming the document — as {@link sessionRow} does — cannot be re-rooted,
+ * and would ask for the sidebar *inside* the row. The rows on the home page carry the same title,
+ * which is harmless here because a candidate is already a row of the sidebar's list.
+ */
+function anySessionRow(page: Page, name: string): Locator {
+  return page.getByTitle(`Open a terminal for ${name}`);
+}
+
+/** The settings button the frame draws, which is the one the home page does not have. */
+function settingsButton(page: Page): Locator {
+  return page.getByRole("banner").getByRole("button", { name: "Settings" });
+}
+
 test("the window says what it is", async () => {
   await mkdir(ARTIFACTS, { recursive: true });
   const { page, close } = await openApp();
@@ -98,6 +136,58 @@ test("a vault can be created and the shell opens", async () => {
 });
 
 /**
+ * The home page: what the workspace draws while nothing is open.
+ *
+ * Three things only a real window can show. That it is what a shell opens onto and what it comes
+ * back to — the second half by opening a page over it and closing that page again. That its quick
+ * start list is the same library the sidebar holds, reached without the sidebar, which is the whole
+ * reason the page has shortcuts. And that a row there makes the *same* attempt the sidebar's row
+ * makes: pointed at a closed port it fails, and the mark that failure leaves is on the home page's
+ * own row, which is where somebody who clicked there is looking.
+ */
+test("the home page opens a session from its own list, and says so when it cannot", async () => {
+  const { page, close } = await openApp();
+  try {
+    const board = home(page);
+    await expect(board.getByRole("heading", { name: "Quick start" })).toBeVisible();
+    await expect(board.getByText("No sessions yet", { exact: false })).toBeVisible();
+    await expect(board.getByRole("heading", { name: "Common operations" })).toBeVisible();
+    await expect(board.getByRole("heading", { name: "Getting started" })).toBeVisible();
+
+    // Saved through the sidebar's own button, so what appears below is the same library read from
+    // two places rather than a list the home page keeps for itself.
+    await saveSession(page, "home-probe", "127.0.0.1", "1");
+    const row = board.locator("[data-quick-session]").filter({ hasText: "home-probe" });
+    await expect(row).toBeVisible();
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "home.png"), fullPage: false });
+
+    // Nothing is listening on port 1, so this attempt fails. What matters is where the answer is
+    // drawn: on this page's row, not only on the sidebar's row for the same session.
+    await row.getByTitle("Open a terminal for home-probe").click();
+    const mark = row.locator("[data-session-failure]");
+    await expect(mark).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Could not connect to home-probe", { exact: false }).first()).toBeVisible();
+
+    await mark.click();
+    await expect(page.locator("[data-session-failure-detail]")).toBeVisible();
+    await page.getByRole("button", { name: "Clear error" }).click();
+    await expect(mark).toHaveCount(0);
+
+    // A shortcut that opens a page over this one, and the page being there again once it is closed.
+    // The shortcut is found inside the home page, which is also the proof that the title bar's
+    // button of the same name is not the one being pressed.
+    await board.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("region", { name: "Settings" })).toBeVisible();
+    await page.getByRole("button", { name: "Close settings" }).click();
+    await expect(board.getByRole("heading", { name: "Quick start" })).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The host monitor, and the switch that turns it off.
  *
  * What an end-to-end run can see of it: the panel is where it belongs, it says it is not connected
@@ -127,7 +217,7 @@ test("the host monitor is on, and hiding it is one setting", async () => {
     await panel.getByRole("button", { name: "Hide the monitor" }).click();
     await expect(panel).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Settings" }).click();
+    await settingsButton(page).click();
 
     // The settings are a page in the workspace rather than a dialog over it, so it is asked for the
     // way the other pages are — by the region it draws — and the row it is about is found by name.
@@ -160,7 +250,7 @@ test("the host monitor is on, and hiding it is one setting", async () => {
 test("a saved session offers its own menu on a right-click", async () => {
   const { page, close } = await openApp();
   try {
-    await page.getByRole("button", { name: "New session" }).click();
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
     const editor = page.getByRole("dialog");
     await editor.getByPlaceholder("Production web server").fill("lab");
     await editor.getByPlaceholder("example.com").fill("127.0.0.1");
@@ -169,7 +259,7 @@ test("a saved session offers its own menu on a right-click", async () => {
     await expect(editor).toHaveCount(0);
 
     // The row's name is its title as well, which is what makes it findable without connecting.
-    const row = page.getByTitle("Open a terminal for lab");
+    const row = sessionRow(page, "lab");
     await expect(row).toBeVisible();
 
     await row.click({ button: "right" });
@@ -209,7 +299,7 @@ test("deleting a session asks first, and Escape leaves it alone", async () => {
   try {
     await saveSession(page, "doomed-host");
 
-    const row = page.getByTitle("Open a terminal for doomed-host");
+    const row = sessionRow(page, "doomed-host");
     await expect(row).toBeVisible();
 
     // The row carries no buttons of its own any more: what can be done to a session is in its menu,
@@ -253,7 +343,7 @@ test("deleting a session asks first, and Escape leaves it alone", async () => {
 test("the session editor's dropdown draws its own list, and choosing from it changes the form", async () => {
   const { page, close } = await openApp();
   try {
-    await page.getByRole("button", { name: "New session" }).click();
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
     const editor = page.getByRole("dialog");
 
     const method = editor.getByRole("combobox", { name: "Authentication" });
@@ -311,7 +401,7 @@ test("the session editor's dropdown draws its own list, and choosing from it cha
 test("the browser's own menu is cancelled, and left alone in a text field", async () => {
   const { page, close } = await openApp();
   try {
-    await page.getByRole("button", { name: "New session" }).click();
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
     const field = page.getByPlaceholder("Production web server");
     await expect(field).toBeVisible();
 
@@ -347,7 +437,7 @@ test("the browser's own menu is cancelled, and left alone in a text field", asyn
 test("the packed-transfer switch is written down, not just remembered", async () => {
   const { page, close } = await openApp();
   try {
-    await page.getByRole("button", { name: "Settings" }).click();
+    await settingsButton(page).click();
     const settings = page.getByRole("region", { name: "Settings" });
     await settings.getByRole("button", { name: "Files", exact: true }).click();
     const packedSwitch = settings.getByRole("switch", { name: "Packed transfer" });
@@ -392,7 +482,7 @@ test("the packed-transfer switch is written down, not just remembered", async ()
 test("a setting can be found by name, and a category can be put back to its defaults", async () => {
   const { page, close } = await openApp();
   try {
-    await page.getByRole("button", { name: "Settings" }).click();
+    await settingsButton(page).click();
     const settings = page.getByRole("region", { name: "Settings" });
 
     // The page as it opens: the first category, which is the one that is nearly all dropdowns —
@@ -505,7 +595,7 @@ function fontSizeOf(element: Locator): Promise<string> {
 
 /** A save dialog answered with a session that is only ever connected to by hand. */
 async function saveSession(page: Page, name: string, host = "127.0.0.1", port = "22"): Promise<void> {
-  await page.getByRole("button", { name: "New session" }).click();
+  await sidebar(page).getByRole("button", { name: "New session" }).click();
   const editor = page.getByRole("dialog");
   await editor.getByPlaceholder("Production web server").fill(name);
   await editor.getByPlaceholder("example.com").fill(host);
@@ -541,7 +631,7 @@ test("a session can be given a group of its own", async () => {
   const { page, close } = await openApp();
   try {
     await saveSession(page, "groupless-host");
-    const row = page.getByTitle("Open a terminal for groupless-host");
+    const row = sessionRow(page, "groupless-host");
 
     await row.click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to a new group" }).click();
@@ -580,7 +670,7 @@ test("a session can be put in a group, renamed, and taken back out", async () =>
     await saveGroup(page, "Lab");
 
     // The row's own menu, two levels deep, which is how a session is moved without a drag.
-    const row = page.getByTitle("Open a terminal for grouped-host");
+    const row = sessionRow(page, "grouped-host");
     await row.click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to group" }).hover();
     const intoLab = page.getByRole("menuitemcheckbox", { name: "Lab", exact: true });
@@ -701,7 +791,7 @@ test("a session can be dragged into a group, and a group into another group", as
     await saveGroup(page, "Drop");
     await saveGroup(page, "Outer");
 
-    const row = page.getByTitle("Open a terminal for dragged-host");
+    const row = sessionRow(page, "dragged-host");
     const target = page.getByRole("heading", { name: "Drop", exact: true });
     const from = await row.boundingBox();
     const to = await target.boundingBox();
@@ -785,7 +875,7 @@ test("a batch runs on a real host and the row says what happened", async () => {
   try {
     // A session of its own, so nothing another case did to the list can change what is selected.
     const name = `lab-batch-${Date.now() % 100000}`;
-    await page.getByRole("button", { name: "New session" }).click();
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
     const editor = page.getByRole("dialog");
     await editor.getByPlaceholder("Production web server").fill(name);
     await editor.getByPlaceholder("example.com").fill(host as string);
@@ -858,7 +948,7 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     const stamp = `ss-e2e-${Date.now() % 100000}`;
     const name = `cmd-${stamp}`;
 
-    await page.getByRole("button", { name: "New session" }).click();
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
     const editor = page.getByRole("dialog");
     await editor.getByPlaceholder("Production web server").fill(name);
     await editor.getByPlaceholder("example.com").fill(host as string);
@@ -869,7 +959,7 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await expect(editor).toHaveCount(0);
 
     // Opening the terminal: the first connection to this host asks about its key.
-    await page.getByTitle(`Open a terminal for ${name}`).click();
+    await sessionRow(page, name).click();
     const question = page.getByRole("button", { name: "Trust this key and connect" });
     if (await question.isVisible().catch(() => false)) {
       await question.click();
@@ -957,6 +1047,13 @@ test("a saved command reaches the shell and the file it makes appears", async ()
 
     await page.keyboard.press("Escape");
     await expect(findBar).toHaveCount(0);
+
+    // Closed on the way out, and not for tidiness: "which sessions are active" is read from the tabs
+    // that are open, so a case that leaves a connected terminal behind changes what the cases after
+    // it are describing. The sidebar's own case asserts what the active-only switch does when none
+    // is open, and it was passing only because this one used to be skipped when the lab ran.
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
   } finally {
     await close();
   }
@@ -1030,8 +1127,8 @@ test("the list is searched, narrowed and exported from one menu", async () => {
     await saveSession(page, "searchable-web");
     await saveSession(page, "searchable-db");
 
-    const web = page.getByTitle("Open a terminal for searchable-web");
-    const db = page.getByTitle("Open a terminal for searchable-db");
+    const web = sessionRow(page, "searchable-web");
+    const db = sessionRow(page, "searchable-db");
     await expect(web).toBeVisible();
     await expect(db).toBeVisible();
 
@@ -1046,7 +1143,7 @@ test("the list is searched, narrowed and exported from one menu", async () => {
     await search.fill("nothing-like-this-at-all");
     // Nothing at all: no sentence, no button — what was typed is in the box with a cross in it.
     await expect(page.getByRole("heading", { name: "searchable-web", exact: true })).toHaveCount(0);
-    await expect(page.getByTitle("Open a terminal for searchable-web")).toHaveCount(0);
+    await expect(sessionRow(page, "searchable-web")).toHaveCount(0);
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-search.png"), fullPage: false });
     await search.fill("");
     await expect(web).toBeVisible();
@@ -1136,15 +1233,15 @@ test("the sidebar can be resized, put away, and narrowed by its own switches", a
     const regex = page.locator("[data-session-regex]");
     await expect(regex).toHaveAttribute("aria-pressed", "false");
     await page.getByLabel("Search sessions").fill("^panel-host$");
-    await expect(page.getByTitle("Open a terminal for panel-host")).toHaveCount(0);
+    await expect(sessionRow(page, "panel-host")).toHaveCount(0);
 
     await regex.click();
     await expect(regex).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTitle("Open a terminal for panel-host")).toBeVisible();
+    await expect(sessionRow(page, "panel-host")).toBeVisible();
 
     await page.getByLabel("Search sessions").fill("([");
     await expect(page.getByLabel("Search sessions")).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByTitle("Open a terminal for panel-host")).toHaveCount(0);
+    await expect(sessionRow(page, "panel-host")).toHaveCount(0);
 
     await regex.click();
     await page.getByLabel("Search sessions").fill("");
@@ -1155,7 +1252,7 @@ test("the sidebar can be resized, put away, and narrowed by its own switches", a
     const activeOnly = page.locator("[data-session-active-only]");
     await activeOnly.click();
     await expect(activeOnly).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByTitle("Open a terminal for panel-host")).toBeVisible();
+    await expect(sessionRow(page, "panel-host")).toBeVisible();
     await expect(page.getByRole("button", { name: "Locate in sidebar" })).toBeDisabled();
 
     // Collapse all: the session goes into the group first, so that closing every group is something
@@ -1166,7 +1263,7 @@ test("the sidebar can be resized, put away, and narrowed by its own switches", a
     await field.press("Enter");
     await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
 
-    const row = page.getByTitle("Open a terminal for panel-host");
+    const row = sessionRow(page, "panel-host");
     await row.click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to group" }).hover();
     await page.getByRole("menuitemcheckbox", { name: "Panel", exact: true }).click();
@@ -1211,12 +1308,14 @@ test("a session that fails to connect says so on its row, and rows can be picked
     await saveSession(page, "closed-port-host", "127.0.0.1", "1");
     await saveSession(page, "picked-host");
 
-    const doomed = page.getByTitle("Open a terminal for closed-port-host");
+    const doomed = sessionRow(page, "closed-port-host");
     await doomed.click();
 
     // No tab, a mark on the row, and the reason at the foot of the window.
     await expect(doomed).toBeVisible();
-    await expect(page.locator("[data-row]").filter({ has: doomed })).not.toHaveCount(0);
+    await expect(page.locator("[data-row]").filter({ has: anySessionRow(page, "closed-port-host") })).not.toHaveCount(
+      0,
+    );
     const mark = page.locator("[data-session-failure]").first();
     await expect(mark).toBeVisible({ timeout: 20_000 });
     await expect(page.locator("body")).toContainText("Could not connect to closed-port-host", { timeout: 20_000 });
@@ -1243,10 +1342,13 @@ test("a session that fails to connect says so on its row, and rows can be picked
 
     // Picking two rows out: the header becomes the actions for what is picked, and the count says
     // how many there are.
-    const first = page.locator("[data-row]").filter({ has: doomed }).first();
+    const first = page
+      .locator("[data-row]")
+      .filter({ has: anySessionRow(page, "closed-port-host") })
+      .first();
     const second = page
       .locator("[data-row]")
-      .filter({ has: page.getByTitle("Open a terminal for picked-host") })
+      .filter({ has: anySessionRow(page, "picked-host") })
       .first();
     await first.hover();
     await first.locator("[data-session-select]").click();
@@ -1267,9 +1369,7 @@ test("a session that fails to connect says so on its row, and rows can be picked
     const keys = await rowKeys(page);
     const groupKey = await rowKeyOf(page.getByRole("heading", { name: "Both", exact: true }));
     expect(groupOver(keys, keys.indexOf(await rowKeyOf(doomed)))).toBe(groupKey);
-    expect(groupOver(keys, keys.indexOf(await rowKeyOf(page.getByTitle("Open a terminal for picked-host"))))).toBe(
-      groupKey,
-    );
+    expect(groupOver(keys, keys.indexOf(await rowKeyOf(sessionRow(page, "picked-host"))))).toBe(groupKey);
   } finally {
     await close();
   }
@@ -1287,7 +1387,15 @@ test("hovering a session row offers the tick and the session's details", async (
   const { page, close } = await openApp();
   try {
     await saveSession(page, "hovered-host", "203.0.113.7", "2200");
-    const row = page.locator("[data-row]").filter({ has: page.getByTitle("Open a terminal for hovered-host") });
+
+    // Narrowed to the one row, and not for tidiness: the bubble is taller than the room between a
+    // row at the foot of the window and the window's own edge, so on the last row of a long list it
+    // is pushed back up to stay on screen — which is the right thing to do and puts the pointer off
+    // the row it is about. What is asserted below is where the pointer lands, and the row's middle
+    // is where it lands when there is room for the bubble to be centred.
+    await page.getByLabel("Search sessions").fill("hovered-host");
+    const row = page.locator("[data-row]").filter({ has: anySessionRow(page, "hovered-host") });
+    await expect(row).toHaveCount(1);
 
     await row.hover();
 
