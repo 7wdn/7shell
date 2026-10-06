@@ -1018,6 +1018,23 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "commands-sent.png"), fullPage: false });
 
+    // What the pinned headings are for, on a directory long enough to scroll: a row passing under
+    // the strip has to be hidden by it, not read through it. /etc rather than /tmp because a
+    // directory that fits on the panel cannot say anything about a pinned row.
+    await pathBar.fill("/etc");
+    await pathBar.press("Enter");
+    const listing = page.getByRole("listbox", { name: "Files", exact: true });
+    await expect(listing.getByRole("option").first()).toBeVisible({ timeout: 30_000 });
+    const reached = await listing.evaluate((element) => {
+      element.scrollTop = 200;
+      return element.scrollTop;
+    });
+    expect(reached, "a list that cannot scroll says nothing about a pinned heading").toBeGreaterThan(0);
+    await page.screenshot({ path: path.join(ARTIFACTS, "listing-scrolled.png"), fullPage: false });
+    await listing.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+
     // The bar under the terminal: the command somebody did not save. Enter sends it, and the line
     // it ran is kept in the same history the panel draws.
     const bar = page.getByLabel("Command input");

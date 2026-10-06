@@ -852,9 +852,14 @@ function openAreaMenu(event: MouseEvent): void {
           @pointerdown="onListingPointerDown"
           @contextmenu="openAreaMenu"
         >
+          <!--
+            The headings are pinned, and they are the surface rather than a tint over it: a row that
+            scrolls under a translucent strip is read through it, as two rows of text on top of each
+            other. The tables on the inspect pages carry the same background for the same reason.
+          -->
           <div
             data-listing-header
-            class="sticky top-0 flex items-center gap-2 border-b border-border bg-card/30 px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+            class="sticky top-0 flex items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
           >
             <span class="min-w-0 flex-1">{{ t("files.name") }}</span>
             <span class="w-20 shrink-0 text-right">{{ t("files.size") }}</span>

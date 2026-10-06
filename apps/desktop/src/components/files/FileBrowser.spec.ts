@@ -404,6 +404,21 @@ describe("selecting rows", () => {
     expect(container?.classList.contains("cursor-default")).toBe(true);
   });
 
+  /**
+   * The headings are pinned above rows that scroll under them.
+   *
+   * A translucent strip there is not a tint over the rows, it is a window onto them: the row that
+   * has scrolled underneath is read through it, which is two lines of text written on top of each
+   * other. So the headings carry the surface's own colour, and the class is what says so.
+   */
+  it("draws the column headings over the rows rather than through them", async () => {
+    await render(many);
+
+    const headings = listing()?.querySelector("[data-listing-header]");
+    expect(headings?.classList.contains("sticky")).toBe(true);
+    expect(headings?.classList.contains("bg-background"), "the pinned strip is opaque").toBe(true);
+  });
+
   it("takes the rows a rectangle is dragged over", async () => {
     await render(many);
     const container = listing();
