@@ -237,6 +237,9 @@ pub(crate) fn plan_import(bundle: SessionBundle, existing: &Document) -> ImportP
                 .and_then(|parent| group_ids.get(parent))
                 .cloned(),
             order: group.order,
+            // How the group was arranged is part of what the file carries: an import that quietly
+            // unpinned it would rearrange somebody's list without saying so.
+            pinned: group.pinned,
         })
         .collect();
 
@@ -347,6 +350,7 @@ mod tests {
             name: name.to_owned(),
             parent_id: None,
             order: 0,
+            pinned: false,
         }
     }
 

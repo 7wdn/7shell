@@ -35,9 +35,9 @@ const draft: Session = {
   updatedAt: 1_700_000_000,
 };
 
-const work: SessionGroup = { id: "group-1", name: "Work", order: 0 };
-const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1 };
-const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id };
+const work: SessionGroup = { id: "group-1", name: "Work", order: 0, pinned: false };
+const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1, pinned: false };
+const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id, pinned: false };
 
 /** The rows as short lines — the tree the sidebar draws, without the drawing. */
 function shape(store: ReturnType<typeof useSessionsStore>): string[] {
@@ -135,7 +135,7 @@ describe("sessions store", () => {
   });
 
   it("groups the list, and keeps a session whose group is no longer saved", async () => {
-    groupsListMock.mockResolvedValue([{ id: "group-1", name: "Work", order: 0 }]);
+    groupsListMock.mockResolvedValue([{ id: "group-1", name: "Work", order: 0, pinned: false }]);
     sessionsListMock.mockResolvedValue([
       { ...draft, id: "session-1", groupId: "group-1" },
       { ...draft, id: "session-2", groupId: "group-that-is-gone" },
@@ -272,7 +272,7 @@ describe("making and changing groups", () => {
     // The vault lifts the children out of a group it deletes, and the model nests — so the copy on
     // screen has to lift them out the same way, or the next read would come back looking different
     // from what was drawn in the meantime.
-    const child: SessionGroup = { id: "group-3", name: "Inside", order: 0, parentId: work.id };
+    const child: SessionGroup = { id: "group-3", name: "Inside", order: 0, parentId: work.id, pinned: false };
     groupsListMock.mockResolvedValue([work, child]);
 
     const store = useSessionsStore();
@@ -318,6 +318,50 @@ describe("making and changing groups", () => {
     const worked = await store.moveGroupBy(work.id, -1);
 
     expect(worked).toBe(false);
+    expect(groupSaveMock).not.toHaveBeenCalled();
+  });
+
+  it("pins a group with one write, and does not touch the order it was arranged into", async () => {
+    groupsListMock.mockResolvedValue([work, lab]);
+
+    const store = useSessionsStore();
+    await store.load();
+    await store.setGroupPinned(lab.id, true);
+
+    // The whole group goes back, because a group is saved whole — and everything in it is what it
+    // already was apart from the one field.
+    expect(groupSaveMock.mock.calls.map(([group]) => group)).toEqual([{ ...lab, pinned: true }]);
+    expect(shape(store)).toEqual(["Lab", "Work"]);
+  });
+
+  it("draws an unpinned group back in its own place, which is what the pin was laid over", async () => {
+    groupsListMock.mockResolvedValue([{ ...lab, pinned: true }, work]);
+
+    const store = useSessionsStore();
+    await store.load();
+    expect(shape(store)).toEqual(["Lab", "Work"]);
+
+    await store.setGroupPinned(lab.id, false);
+
+    expect(shape(store)).toEqual(["Work", "Lab"]);
+    expect(groupSaveMock.mock.calls.map(([group]) => group)).toEqual([lab]);
+  });
+
+  it("writes nothing when the pin is already what was asked for", async () => {
+    groupsListMock.mockResolvedValue([work]);
+
+    const store = useSessionsStore();
+    await store.load();
+    const worked = await store.setGroupPinned(work.id, false);
+
+    expect(worked).toBe(true);
+    expect(groupSaveMock).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing for a group that is not there", async () => {
+    const store = useSessionsStore();
+
+    expect(await store.setGroupPinned("group-that-is-gone", true)).toBe(false);
     expect(groupSaveMock).not.toHaveBeenCalled();
   });
 

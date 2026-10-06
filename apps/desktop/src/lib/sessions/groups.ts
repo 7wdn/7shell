@@ -6,7 +6,9 @@
  *
  * 1. **The stored shape is flat.** A group names its parent and carries an order; the tree is
  *    computed every time it is needed. Nothing here holds state, so the sidebar, the menus and the
- *    drag all ask the same functions and cannot disagree about the shape.
+ *    drag all ask the same functions and cannot disagree about the shape. A pinned group is the
+ *    one thing laid over that: it is drawn above the groups it was made beside whatever order it
+ *    carries, and its order is left alone so that unpinning puts it back.
  * 2. **A vault that was edited by hand has to draw as something.** A parent that is gone, or a
  *    chain of parents that loops back on itself, means "this group sits at the root" rather than an
  *    infinite walk — a file somebody typed is data, not a promise.
@@ -67,13 +69,55 @@ export function effectiveParentId(groups: readonly SessionGroup[], id: string): 
   return start.parentId ?? null;
 }
 
-/** One parent's children in the order the tree draws them: lowest order first, ties as listed. */
+/**
+ * Which of a parent's two bands a group is drawn in: the pinned ones above, everything else below.
+ *
+ * A number rather than a boolean so that the band is the first thing the sort compares, and so
+ * that a group with no pin at all — read from a vault written before there was one — is sorted
+ * with the rest rather than on its own.
+ */
+function bandOf(group: SessionGroup): number {
+  return group.pinned ? 0 : 1;
+}
+
+/**
+ * One parent's children in the order the tree draws them: pinned groups first, then the lowest
+ * order, ties as listed.
+ *
+ * This is the one place the arrangement is decided. The list, the menus that name groups by their
+ * path, the drop planner and the move planner all ask this function, so none of them can end up
+ * with a different answer about what is above what.
+ */
 export function childrenOf(groups: readonly SessionGroup[], parentId: ParentId): SessionGroup[] {
   return groups
     .map((group, position) => ({ group, position }))
     .filter((entry) => effectiveParentId(groups, entry.group.id) === parentId)
-    .sort((left, right) => left.group.order - right.group.order || left.position - right.position)
+    .sort(
+      (left, right) =>
+        bandOf(left.group) - bandOf(right.group) ||
+        left.group.order - right.group.order ||
+        left.position - right.position,
+    )
     .map((entry) => entry.group);
+}
+
+/**
+ * The groups this one is drawn *beside*: the same parent, and the same band of it.
+ *
+ * A pinned group is held above the others whatever order they carry, so the only groups it can be
+ * moved past are the other pinned ones — and a move to a place among the unpinned would be a move
+ * the list cannot draw.
+ */
+function siblingsOf(groups: readonly SessionGroup[], id: string): SessionGroup[] {
+  const group = groups.find((entry) => entry.id === id);
+  const siblings = childrenOf(groups, effectiveParentId(groups, id));
+  return group === undefined ? siblings : siblings.filter((entry) => entry.pinned === group.pinned);
+}
+
+/** Whether an arrangement can be drawn at all: no unpinned group left above a pinned one. */
+function bandsHold(ordered: readonly SessionGroup[]): boolean {
+  const firstBelow = ordered.findIndex((group) => !group.pinned);
+  return firstBelow < 0 || ordered.slice(firstBelow).every((group) => !group.pinned);
 }
 
 /** Every group in draw order — depth first, each parent's children in their own order. */
@@ -126,9 +170,15 @@ export function nextOrder(groups: readonly SessionGroup[], parentId: ParentId): 
   return childrenOf(groups, parentId).reduce((next, group) => Math.max(next, group.order + 1), 0);
 }
 
-/** Whether there is a sibling on that side of this group, which is what decides if a move can run. */
+/**
+ * Whether there is a group to move past on that side, which is what decides if a move can run.
+ *
+ * Asked of the band the group is drawn in rather than of every child: with a pinned group above it,
+ * the first unpinned group has nothing it can be moved past, and a menu entry that offers a move
+ * that would not happen is a menu that looks broken.
+ */
 export function hasSibling(groups: readonly SessionGroup[], id: string, direction: -1 | 1): boolean {
-  const siblings = childrenOf(groups, effectiveParentId(groups, id));
+  const siblings = siblingsOf(groups, id);
   const at = siblings.findIndex((group) => group.id === id);
   const target = at + direction;
   return at >= 0 && target >= 0 && target < siblings.length;
@@ -169,8 +219,9 @@ function withoutDragged(groups: readonly SessionGroup[], parentId: ParentId, dra
  * `zone` is the band of the row that was hit, and only a group has bands; a caller that has none
  * (the bucket at the root of the list) leaves it at `inside`.
  *
- * Refused: a group dropped onto itself, and a group dropped where it would become its own
- * descendant. Nothing: a drop that would leave the tree exactly as it is.
+ * Refused: a group dropped onto itself, a group dropped where it would become its own descendant,
+ * and a drop across the pinned line — the two bands do not mix. Nothing: a drop that would leave
+ * the tree exactly as it is.
  */
 export function planGroupDrop(
   groups: readonly SessionGroup[],
@@ -223,6 +274,14 @@ export function planGroupDrop(
   const index = at < 0 ? siblings.length : at;
   const ordered = [...siblings.slice(0, index), dragged, ...siblings.slice(index)];
 
+  // A pinned group is drawn above the others whatever order it carries, so an arrangement with an
+  // unpinned group above a pinned one is not one the list can draw — and a drop that asked for one
+  // is a drop that would change nothing on screen. Refusing it writes nothing, which is honest
+  // about that, rather than leaving behind order values that do not say what is drawn.
+  if (!bandsHold(ordered)) {
+    return null;
+  }
+
   const unchanged =
     effectiveParentId(groups, draggedId) === parentId &&
     childrenOf(groups, parentId)
@@ -231,14 +290,19 @@ export function planGroupDrop(
   return unchanged ? null : arrange(groups, parentId, ordered);
 }
 
-/** What dropping a group one place up or down among its siblings writes. */
+/**
+ * What moving a group one place up or down writes.
+ *
+ * One place among the groups it is drawn beside, which is its own band: a pinned group steps over
+ * the pinned ones, and a group below the line steps over the others below it.
+ */
 export function planSiblingMove(
   groups: readonly SessionGroup[],
   id: string,
   direction: -1 | 1,
 ): GroupPlacement[] | null {
   const parentId = effectiveParentId(groups, id);
-  const siblings = childrenOf(groups, parentId);
+  const siblings = siblingsOf(groups, id);
   const at = siblings.findIndex((group) => group.id === id);
   const target = at + direction;
   if (at < 0 || target < 0 || target >= siblings.length) {

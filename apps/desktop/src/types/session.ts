@@ -110,6 +110,13 @@ export interface SessionGroup {
   readonly name: string;
   readonly parentId?: string;
   readonly order: number;
+  /**
+   * Whether the group is drawn above the groups it was made beside.
+   *
+   * Laid over `order` rather than written into it: `order` is the arrangement somebody dragged the
+   * list into, and unpinning has to put the group back in it.
+   */
+  readonly pinned: boolean;
 }
 
 export interface KnownHostEntry {

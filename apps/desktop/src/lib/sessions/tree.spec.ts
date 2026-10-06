@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 import { rowTarget, visibleRows } from "./tree";
 import type { Session, SessionGroup } from "@/types/session";
 
-function group(id: string, name: string, order: number, parentId?: string): SessionGroup {
-  return { id, name, order, parentId };
+function group(id: string, name: string, order: number, parentId?: string, pinned = false): SessionGroup {
+  return { id, name, order, parentId, pinned };
 }
 
 function session(id: string, name: string, groupId?: string): Session {

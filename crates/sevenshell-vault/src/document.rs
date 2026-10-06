@@ -669,12 +669,14 @@ mod tests {
             name: "servers".to_owned(),
             parent_id: None,
             order: 0,
+            pinned: false,
         });
         document.save_group(SessionGroup {
             id: "g2".to_owned(),
             name: "nested".to_owned(),
             parent_id: Some("g1".to_owned()),
             order: 0,
+            pinned: false,
         });
         let mut nested = session("a", "web");
         nested.group_id = Some("g1".to_owned());

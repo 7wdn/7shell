@@ -67,6 +67,10 @@
       "groupRemoveMessage": "删除分组“{name}”？组里的会话会移出所有分组，子分组会移到最外层——分组里的任何东西都不会跟着被删。",
       "groupUp": "上移分组",
       "groupDown": "下移分组",
+      "groupPin": "置顶分组",
+      "groupUnpin": "取消置顶",
+      "groupPinned": "已置顶",
+      "groupClose": "关闭分组内连接（{count}）",
       "groupLabel": "{name}"
     },
     "details": {

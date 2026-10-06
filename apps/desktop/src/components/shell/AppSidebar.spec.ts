@@ -27,6 +27,10 @@ vi.mock("@/lib/backend/tauri", () => ({
   groupDelete: vi.fn(async () => {}),
   settingsGet: vi.fn(),
   settingsSet: vi.fn(async () => {}),
+  // Closing a connection from the heading's menu is a real close: the tab goes through the backend,
+  // and the forwards are re-read afterwards.
+  terminalClose: vi.fn(async () => {}),
+  tunnelsOpen: vi.fn(async () => []),
 }));
 
 import AppSidebar from "@/components/shell/AppSidebar.vue";
@@ -43,6 +47,7 @@ import {
   sessionsExport,
   sessionsImport,
   sessionsList,
+  terminalClose,
 } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry, MenuSubmenu } from "@/lib/menu/types";
 import { ShellError } from "@/lib/backend/errors";
@@ -50,9 +55,9 @@ import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { Session, SessionGroup } from "@/types/session";
 
-const work: SessionGroup = { id: "group-1", name: "Work", order: 0 };
-const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1 };
-const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id };
+const work: SessionGroup = { id: "group-1", name: "Work", order: 0, pinned: false };
+const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1, pinned: false };
+const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id, pinned: false };
 
 const web: Session = {
   id: "session-1",
@@ -431,6 +436,9 @@ function resetBackend(): void {
   vi.mocked(sessionDelete)
     .mockReset()
     .mockImplementation(async () => {});
+  vi.mocked(terminalClose)
+    .mockReset()
+    .mockImplementation(async () => {});
 }
 
 beforeEach(() => {
@@ -801,10 +809,13 @@ describe("a group's menu", () => {
     const entries = await rightClick(headingRow("Work"));
 
     expect(entries.filter((entry) => entry.kind === "action").map((entry) => entry.id)).toEqual([
+      "pin-group",
       "rename-group",
       "add-group-inside",
+      "close-group-connections",
       "move-group-up",
       "move-group-down",
+      "copy-group-name",
       "remove-group",
     ]);
     expect(pick(entries, "move-group-up").disabled, "the first group has nothing above it").toBe(true);
@@ -822,6 +833,82 @@ describe("a group's menu", () => {
       ["group-2", 0],
       ["group-1", 1],
     ]);
+  });
+
+  it("pins the group from its own menu, and draws it above the ones it was made beside", async () => {
+    await render([work, lab], []);
+
+    const entries = await rightClick(headingRow("Lab"));
+    pick(entries, "pin-group").run();
+
+    await vi.waitFor(() => expect(vi.mocked(groupSave)).toHaveBeenCalled());
+    expect(vi.mocked(groupSave).mock.calls[0]?.[0]).toMatchObject({ id: "group-2", pinned: true });
+    // The list draws what was written: Lab is a pinned group now, so it is the first row.
+    await vi.waitFor(() => expect(drawnRows()[0]).toBe("group:group-2"));
+    expect(headingRow("Lab")?.querySelector("svg.lucide-pin"), "and says why it moved").not.toBeNull();
+  });
+
+  it("offers to take the pin off a pinned group, and puts it back in its own place", async () => {
+    await render([{ ...lab, pinned: true }, work], []);
+
+    const entries = await rightClick(headingRow("Lab"));
+    expect(pick(entries, "unpin-group").labelKey).toBe("sessions.list.groupUnpin");
+    pick(entries, "unpin-group").run();
+
+    await vi.waitFor(() => expect(vi.mocked(groupSave)).toHaveBeenCalled());
+    expect(vi.mocked(groupSave).mock.calls[0]?.[0]).toMatchObject({ id: "group-2", pinned: false });
+    // Where it goes back to is the order it was dragged to, which the pin never touched.
+    await vi.waitFor(() => expect(drawnRows()).toEqual(["group:group-1", "group:group-2"]));
+    expect(headingRow("Lab")?.querySelector("svg.lucide-pin")).toBeNull();
+  });
+
+  it("counts the connections under the heading, subgroups included, and closes them all", async () => {
+    await render([work, rack], [db, cache]);
+    const terminals = useTerminalsStore();
+    terminals.tabs = [
+      { kind: "terminal", id: "tab-1", handle: "handle-1", session: db, status: "open", failure: null, panel: null },
+      {
+        kind: "terminal",
+        id: "tab-2",
+        handle: "handle-2",
+        session: cache,
+        status: "open",
+        failure: null,
+        panel: null,
+      },
+    ];
+
+    const entries = await rightClick(headingRow("Work"));
+    expect(pick(entries, "close-group-connections").params).toEqual({ count: "2" });
+
+    pick(entries, "close-group-connections").run();
+
+    await vi.waitFor(() => expect(terminals.tabs).toEqual([]));
+    expect(vi.mocked(terminalClose).mock.calls.map(([handle]) => handle)).toEqual(["handle-1", "handle-2"]);
+    // The library is untouched: what ended was this run's connections, not the saved sessions.
+    expect(useSessionsStore().sessions.map((session) => session.id)).toEqual(["session-2", "session-5"]);
+  });
+
+  it("draws the closing entry, says nothing is open, and does not close what is not there", async () => {
+    await render([work], [db]);
+
+    const entries = await rightClick(headingRow("Work"));
+
+    expect(pick(entries, "close-group-connections").params).toEqual({ count: "0" });
+    expect(pick(entries, "close-group-connections").disabled, "nothing inside is open").toBe(true);
+    expect(vi.mocked(terminalClose)).not.toHaveBeenCalled();
+  });
+
+  it("copies the group's name from the menu", async () => {
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    await render([work], []);
+    const entries = await rightClick(headingRow("Work"));
+    pick(entries, "copy-group-name").run();
+
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith("Work"));
+    vi.unstubAllGlobals();
   });
 });
 

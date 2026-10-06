@@ -840,6 +840,7 @@ mod tests {
             name: "servers".to_owned(),
             parent_id: None,
             order: 0,
+            pinned: false,
         }
     }
 
@@ -939,6 +940,7 @@ mod tests {
                 name: "work".to_owned(),
                 parent_id: None,
                 order: 1,
+                pinned: false,
             })
             .expect("save");
         let upgraded = std::fs::read_to_string(&path).expect("read");

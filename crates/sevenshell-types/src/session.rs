@@ -174,6 +174,12 @@ pub struct SessionGroup {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
     pub order: u32,
+    /// Whether the group is drawn above the groups it was made beside.
+    ///
+    /// A fact of its own rather than a very small `order`: pinning is laid over the arrangement and
+    /// leaves it alone, so unpinning puts the group back where somebody dragged it to.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// A host key that has been trusted for a host, so it is not asked about again.

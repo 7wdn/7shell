@@ -691,6 +691,27 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
+   * Closes every tab about these sessions: the terminal, the browser, and the pages.
+   *
+   * One session can have more than one tab, and a page left behind would be a page about a
+   * connection that is not there any more — so what is closed is the session, not a row somebody
+   * pointed at. The list of tabs is taken before any of them is closed, because closing changes it.
+   *
+   * Each close stands on its own: a browser the backend refuses to let go of keeps its tab and its
+   * reason, and the terminals that are still fine are closed anyway.
+   */
+  async function closeSessions(sessionIds: readonly string[]): Promise<void> {
+    const wanted = new Set(sessionIds);
+    const doomed = tabs.value.filter((tab) => {
+      const session = sessionOf(tab);
+      return session !== null && wanted.has(session.id);
+    });
+    for (const tab of doomed) {
+      await closeTab(tab.id);
+    }
+  }
+
+  /**
    * Opens the file panel under a terminal.
    *
    * A session has one browser, so if a file tab is already drawing it, that browser moves here and
@@ -1003,6 +1024,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     confirmReplace,
     dismiss,
     closeTab,
+    closeSessions,
     closeOthers,
     closeToTheRight,
     reconnect,

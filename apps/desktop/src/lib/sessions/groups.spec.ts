@@ -24,8 +24,8 @@ import {
 } from "./groups";
 import type { Session, SessionGroup } from "@/types/session";
 
-function group(id: string, name: string, order: number, parentId?: string): SessionGroup {
-  return { id, name, order, parentId };
+function group(id: string, name: string, order: number, parentId?: string, pinned = false): SessionGroup {
+  return { id, name, order, parentId, pinned };
 }
 
 const work = group("group-1", "Work", 0);
@@ -143,6 +143,54 @@ describe("where a group sits", () => {
     // A nested group's neighbours are its own siblings, not the root's.
     expect(hasSibling([work, lab, inside], inside.id, -1)).toBe(false);
     expect(hasSibling([work, lab, inside], inside.id, 1)).toBe(false);
+  });
+});
+
+describe("a pinned group", () => {
+  const rack = group("group-4", "Rack", 7, undefined, true);
+  const shelf = group("group-5", "Shelf", 8, undefined, true);
+
+  it("is drawn above the groups it was made beside, whatever order it carries", () => {
+    expect(order([rack, work, lab, home], null)).toEqual(["Rack", "Work", "Lab", "Home"]);
+  });
+
+  it("keeps the arrangement under the pin, so taking the pin off returns it where it was", () => {
+    // Nothing about the order was rewritten when it was pinned: Rack's own place is still last.
+    expect(order([rack, work, lab, home], null)).toEqual(["Rack", "Work", "Lab", "Home"]);
+    expect(order([{ ...rack, pinned: false }, work, lab, home], null)).toEqual(["Work", "Lab", "Home", "Rack"]);
+  });
+
+  it("pins inside its own parent, so a pinned subgroup stays under it", () => {
+    const inside = group("group-6", "Drawer", 9, work.id, true);
+
+    expect(order([work, lab, inside], null)).toEqual(["Work", "Lab"]);
+    expect(order([work, lab, inside], work.id)).toEqual(["Drawer"]);
+  });
+
+  it("is only moved past the ones it is drawn beside", () => {
+    const groups = [rack, shelf, work, lab];
+
+    // Work's own band is the two unpinned ones, so there is nothing above it to move past.
+    expect(hasSibling(groups, work.id, -1)).toBe(false);
+    expect(hasSibling(groups, lab.id, -1)).toBe(true);
+    expect(hasSibling(groups, shelf.id, -1)).toBe(true);
+    expect(hasSibling(groups, rack.id, -1)).toBe(false);
+
+    const plan = planSiblingMove(groups, shelf.id, -1);
+    expect(order(applied(groups, plan ?? []), null)).toEqual(["Shelf", "Rack", "Work", "Lab"]);
+  });
+
+  it("refuses a drop across the pinned line, which is a place the list cannot draw", () => {
+    const groups = [rack, work, lab];
+
+    // An unpinned group above a pinned one, and a pinned one below an unpinned one: both are
+    // arrangements the sort would undo the moment they were written.
+    expect(planGroupDrop(groups, lab.id, { kind: "group", id: rack.id }, "before")).toBeNull();
+    expect(planGroupDrop(groups, rack.id, { kind: "group", id: lab.id }, "after")).toBeNull();
+
+    // Within its own band it still moves, and the pinned group is left where it is.
+    const plan = planGroupDrop(groups, lab.id, { kind: "group", id: work.id }, "before");
+    expect(order(applied(groups, plan ?? []), null)).toEqual(["Rack", "Lab", "Work"]);
   });
 });
 

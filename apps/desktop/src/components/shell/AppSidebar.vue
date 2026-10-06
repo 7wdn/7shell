@@ -44,6 +44,7 @@ import {
   LoaderCircle,
   LocateFixed,
   Network,
+  Pin,
   Plus,
   RefreshCw,
   Search,
@@ -773,7 +774,17 @@ function openSessionMenu(event: MouseEvent, session: Session): void {
   );
 }
 
-/** A group heading's own menu: it can be renamed, moved, added to, and deleted — and nothing else. */
+/**
+ * The sessions inside a group that something is open for, its subgroups included.
+ *
+ * Which is what the heading's closing entry is about. The saved sessions are not touched by it:
+ * what ends is this run's connections to them.
+ */
+function openInside(group: SessionGroup): string[] {
+  return library.sessionsUnder(group.id).filter((id) => library.openSessionIds.has(id));
+}
+
+/** A group heading's own menu: where it sits, what it is called, and what is open inside it. */
 function openHeadingMenu(event: MouseEvent, group: SessionGroup): void {
   openMenu(
     event,
@@ -787,10 +798,15 @@ function openHeadingMenu(event: MouseEvent, group: SessionGroup): void {
         },
         move: (target, direction) => void library.moveGroupBy(target.id, direction),
         addInside: (target) => void startGroupCreate(target.id),
+        pin: (target, pinned) => void library.setGroupPinned(target.id, pinned),
+        // Asked again rather than taken from the count the menu drew with: what closes is what is
+        // open now, and a moment-old number would be a promise about a set that just changed.
+        close: (target) => void terminals.closeSessions(openInside(target)),
       },
       {
         up: hasSibling(library.groups, group.id, -1),
         down: hasSibling(library.groups, group.id, 1),
+        open: openInside(group).length,
       },
     ),
   );
@@ -1194,6 +1210,17 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                 @blur="submitGroupRename(row.group)"
               />
               <h3 v-else class="min-w-0 flex-1 truncate text-xs font-medium">{{ row.group.name }}</h3>
+
+              <!-- A pinned group is drawn above the ones it was made beside, and this is the only
+                   thing that says why: a list that reorders itself without a word is one people
+                   stop trusting. -->
+              <Pin
+                v-if="row.group.pinned"
+                :size="11"
+                class="shrink-0 text-primary"
+                role="img"
+                :aria-label="t('sessions.list.groupPinned')"
+              />
 
               <!-- A group's box is about what is under it: the sessions are what the actions act on. -->
               <button

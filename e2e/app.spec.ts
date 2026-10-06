@@ -619,6 +619,54 @@ test("a session can be put in a group, renamed, and taken back out", async () =>
 });
 
 /**
+ * Pinning a group above the ones it was made beside.
+ *
+ * The half worth driving through a real window is that the heading really moves and really comes
+ * back: the pin is a field written into the vault *beside* the order, so this is also the check that
+ * pinning did not turn into a reorder — Lab goes back below Work when the pin comes off, which it
+ * could not do if pinning had rewritten the arrangement.
+ */
+test("a group can be pinned above the ones it was made beside, and let go again", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveGroup(page, "Work");
+    await saveGroup(page, "Lab");
+
+    const lab = page.getByRole("heading", { name: "Lab", exact: true });
+    const row = lab.locator("xpath=ancestor::*[@data-row][1]");
+    const labKey = await rowKeyOf(lab);
+    const workKey = await rowKeyOf(page.getByRole("heading", { name: "Work", exact: true }));
+
+    /** How far below Work the Lab heading is drawn: negative means it is above it. */
+    const below = async (): Promise<number> => {
+      const keys = await rowKeys(page);
+      return keys.indexOf(labKey) - keys.indexOf(workKey);
+    };
+
+    expect(await below(), "Lab was made second, so it starts below Work").toBeGreaterThan(0);
+
+    await lab.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Pin group" }).click();
+
+    // Above the group it was made beside, with the pin in the row saying why it is there.
+    await expect.poll(below).toBeLessThan(0);
+    await expect(row.locator("svg.lucide-pin")).toBeVisible();
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "group-pinned.png"), fullPage: false });
+
+    await lab.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Unpin group" }).click();
+
+    // Back in its own place: the pin was laid over the arrangement, and the arrangement was kept.
+    await expect.poll(below).toBeGreaterThan(0);
+    await expect(row.locator("svg.lucide-pin")).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The drag, driven the way a hand drives it.
  *
  * The pointer is real: press on the row, travel past the threshold, and the row is lifted — a ghost

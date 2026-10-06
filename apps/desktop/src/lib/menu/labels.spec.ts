@@ -73,7 +73,7 @@ const session: Session = {
   terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false, record: false },
   updatedAt: 1_700_000_000,
 };
-const group: SessionGroup = { id: "group-1", name: "Work", order: 0 };
+const group: SessionGroup = { id: "group-1", name: "Work", order: 0, pinned: false };
 const tunnel: OpenTunnel = {
   id: "tunnel-1",
   handle: "t1",
@@ -195,8 +195,18 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
       title: MENU_TITLES.group,
       entries: groupMenu(
         group,
-        { rename: nothing, remove: nothing, move: nothing, addInside: nothing },
-        { up: false, down: true },
+        { rename: nothing, remove: nothing, move: nothing, addInside: nothing, pin: nothing, close: nothing },
+        { up: false, down: true, open: 2 },
+      ),
+    },
+    {
+      // Built again pinned, because the two labels the pin entry can carry are two sentences — and
+      // with nothing open, because the count is in the label that is drawn either way.
+      title: MENU_TITLES.group,
+      entries: groupMenu(
+        { ...group, pinned: true },
+        { rename: nothing, remove: nothing, move: nothing, addInside: nothing, pin: nothing, close: nothing },
+        { up: false, down: false, open: 0 },
       ),
     },
     { title: MENU_TITLES.tunnel, entries: tunnelMenu(tunnel, { stop: nothing }) },

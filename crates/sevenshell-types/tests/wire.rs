@@ -226,6 +226,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             name: "work".to_owned(),
             parent_id: Some("g0".to_owned()),
             order: 1,
+            pinned: true,
         },
         "SessionGroup",
     );

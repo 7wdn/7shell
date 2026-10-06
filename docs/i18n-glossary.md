@@ -12,6 +12,7 @@ next reads as two different features.
 | **session** | One live connection with its terminal or file browser. | connection (a session *uses* a connection) |
 | **session library** | Everything saved: the sessions and the groups they are kept in. | list, favourites, address book |
 | **group** | A folder in the session library. Deleting one deletes no sessions. | category, tag, folder (a folder is what it *looks* like) |
+| **pin** | Holding a group above the ones it was made beside, without moving it among them. | sticky, favourite, top (a *place* is not a *hold*) |
 | **connection** | The configured way to reach a host: protocol, address, auth, jump chain. | profile, bookmark |
 | **vault** | The encrypted file holding credentials and settings. | keychain, store |
 | **unlock / lock** | Deriving the vault key from the password; discarding it. | open/close, login |
@@ -43,6 +44,7 @@ next reads as two different features.
 | session | 会话 | 连接 |
 | session library | 会话库 | 列表、收藏夹、通讯录 |
 | group | 分组 | 分类、标签、文件夹（那只是它看起来的样子） |
+| pin | 置顶 | 固定、收藏、顶部（那是一个位置，不是一个动作） |
 | connection | 连接 | 配置、书签 |
 | vault | 保险库 | 密钥库、钥匙串 |
 | unlock / lock | 解锁／锁定 | 打开／关闭 |

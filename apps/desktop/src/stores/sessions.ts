@@ -337,6 +337,7 @@ export const useSessionsStore = defineStore("sessions", () => {
       name,
       parentId: parentId ?? undefined,
       order: nextOrder(groups.value, parentId),
+      pinned: false,
     });
     if (!worked) {
       return null;
@@ -368,6 +369,20 @@ export const useSessionsStore = defineStore("sessions", () => {
       failure.value = asShellError(error, "group_delete");
       return false;
     }
+  }
+
+  /**
+   * Holds a group above the ones it was made beside, or puts it back among them.
+   *
+   * One field is turned over and the arrangement is left alone: `order` is where somebody dragged
+   * the group to, and unpinning has to return it there rather than to the top of the rest.
+   */
+  async function setGroupPinned(id: string, pinned: boolean): Promise<boolean> {
+    const group = groups.value.find((entry) => entry.id === id);
+    if (!group || group.pinned === pinned) {
+      return group !== undefined;
+    }
+    return saveGroup({ ...group, pinned });
   }
 
   /** Puts one group a place up or down among the groups it shares a parent with. */
@@ -504,6 +519,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     saveGroup,
     addGroup,
     removeGroup,
+    setGroupPinned,
     moveGroupBy,
     placeGroup,
     placeSession,

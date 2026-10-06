@@ -34,9 +34,9 @@ function session(id: string, name: string, overrides: Partial<Session> = {}): Se
   };
 }
 
-const work: SessionGroup = { id: "group-1", name: "Work", order: 0 };
-const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1 };
-const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id };
+const work: SessionGroup = { id: "group-1", name: "Work", order: 0, pinned: false };
+const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1, pinned: false };
+const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id, pinned: false };
 
 const web = session("session-1", "web", { host: "web.example.test", user: "deploy" });
 const db = session("session-2", "db", {

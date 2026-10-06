@@ -67,6 +67,10 @@
       "groupRemoveMessage": "Delete the group “{name}”? Its sessions move out of every group and its subgroups move to the top level — nothing inside a group is deleted with it.",
       "groupUp": "Move the group up",
       "groupDown": "Move the group down",
+      "groupPin": "Pin group",
+      "groupUnpin": "Unpin group",
+      "groupPinned": "Pinned",
+      "groupClose": "Close connections in group ({count})",
       "groupLabel": "{name}"
     },
     "details": {

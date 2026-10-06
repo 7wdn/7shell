@@ -7,7 +7,8 @@
  *
  * The group half is about what a menu must not promise: a session cannot be moved into a library
  * with no groups, a group at the top of the list cannot be moved up, and neither is offered as a
- * row that would do nothing.
+ * row that would do nothing. The same goes for closing what is open inside a group — with nothing
+ * open its own label says so, and the entry is drawn but not runnable.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,8 +31,8 @@ const session: Session = {
   updatedAt: 1_700_000_000,
 };
 
-const work: SessionGroup = { id: "group-1", name: "Work", order: 0 };
-const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1 };
+const work: SessionGroup = { id: "group-1", name: "Work", order: 0, pinned: false };
+const lab: SessionGroup = { id: "group-2", name: "Lab", order: 1, pinned: false };
 
 const tunnel: OpenTunnel = {
   id: "tunnel-1",
@@ -137,7 +138,7 @@ describe("moving a session into a group", () => {
   });
 
   it("lists no group first, then the groups in the order the tree draws them, each by its path", () => {
-    const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id };
+    const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id, pinned: false };
     const entries = sessionMenu(session, [lab, work, rack], sessionActions());
     const move = submenu(entries, "move-to-group");
 
@@ -195,20 +196,23 @@ describe("moving a session into a group", () => {
 });
 
 describe("a group's menu", () => {
-  const ends = { up: true, down: true };
+  const ends = { up: true, down: true, open: 0 };
 
   function groupActions() {
-    return { rename: vi.fn(), remove: vi.fn(), move: vi.fn(), addInside: vi.fn() };
+    return { rename: vi.fn(), remove: vi.fn(), move: vi.fn(), addInside: vi.fn(), pin: vi.fn(), close: vi.fn() };
   }
 
-  it("renames, nests, moves and deletes — and never anything about the sessions inside", () => {
+  it("pins, renames, nests, moves, copies, closes and deletes — and touches no saved session", () => {
     const entries = groupMenu(work, groupActions(), ends);
 
     expect(entries.filter((entry) => entry.kind === "action").map((entry) => entry.id)).toEqual([
+      "pin-group",
       "rename-group",
       "add-group-inside",
+      "close-group-connections",
       "move-group-up",
       "move-group-down",
+      "copy-group-name",
       "remove-group",
     ]);
     expect(pick(entries, "remove-group").danger).toBe(true);
@@ -232,10 +236,52 @@ describe("a group's menu", () => {
   });
 
   it("draws the moves that lead nowhere but does not let them be run", () => {
-    const entries = groupMenu(work, groupActions(), { up: false, down: true });
+    const entries = groupMenu(work, groupActions(), { up: false, down: true, open: 0 });
 
     expect(pick(entries, "move-group-up").disabled).toBe(true);
     expect(pick(entries, "move-group-down").disabled).toBe(false);
+  });
+
+  it("offers the pin that matches the group's own state, and asks for the other one", () => {
+    const wired = groupActions();
+    const unpinned = groupMenu(work, wired, ends);
+    const pinned = groupMenu({ ...work, pinned: true }, wired, ends);
+
+    // The entry names what it does to the group as it stands, so it never offers a pin that is
+    // already there.
+    expect(pick(unpinned, "pin-group").labelKey).toBe("sessions.list.groupPin");
+    expect(pick(pinned, "unpin-group").labelKey).toBe("sessions.list.groupUnpin");
+
+    pick(unpinned, "pin-group").run();
+    pick(pinned, "unpin-group").run();
+
+    expect(wired.pin).toHaveBeenNthCalledWith(1, work, true);
+    expect(wired.pin).toHaveBeenNthCalledWith(2, { ...work, pinned: true }, false);
+  });
+
+  it("counts what is open inside the group in its own label, and closes it when pressed", () => {
+    const wired = groupActions();
+    const entries = groupMenu(work, wired, { up: true, down: true, open: 3 });
+
+    expect(pick(entries, "close-group-connections").params).toEqual({ count: "3" });
+
+    pick(entries, "close-group-connections").run();
+    expect(wired.close).toHaveBeenCalledWith(work);
+  });
+
+  it("draws the closing entry with nothing open, and does not let it be run", () => {
+    const entries = groupMenu(work, groupActions(), ends);
+
+    expect(pick(entries, "close-group-connections").params).toEqual({ count: "0" });
+    expect(pick(entries, "close-group-connections").disabled).toBe(true);
+  });
+
+  it("copies the group's own name, which is the field worth having elsewhere", () => {
+    const entries = groupMenu({ ...work, name: "Work / EU" }, groupActions(), ends);
+
+    pick(entries, "copy-group-name").run();
+
+    expect(copyText).toHaveBeenCalledWith("Work / EU");
   });
 });
 

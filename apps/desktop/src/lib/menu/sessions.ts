@@ -6,13 +6,30 @@
  * is about, and there is exactly one of them.
  *
  * The address is the one thing worth copying, and it is copied the way the sidebar prints it — with
- * the user and the port — because that is the string somebody pastes into another tool.
+ * the user and the port — because that is the string somebody pastes into another tool. A group's
+ * menu copies its name, which is the only one of its fields anybody has a use for elsewhere.
  *
- * A group's menu never offers anything about the sessions inside it. Renaming, moving and deleting a
+ * A group's menu offers nothing about the *saved* sessions inside it. Renaming, moving and deleting a
  * group are all changes to the group; what is inside stays where it is, which is also what the vault
- * does when a group goes away.
+ * does when a group goes away. Closing what is open inside it is the one exception, and not really
+ * one: it is about the connections this run has, not about the library — the count says how many
+ * there are, and the sessions themselves are left alone.
  */
-import { ArrowDown, ArrowUp, Copy, Folder, FolderInput, FolderPlus, Pencil, Terminal, Trash2, X } from "@lucide/vue";
+import {
+  ArrowDown,
+  ArrowUp,
+  Copy,
+  Folder,
+  FolderInput,
+  FolderPlus,
+  Pencil,
+  Pin,
+  PinOff,
+  Terminal,
+  Trash2,
+  Unplug,
+  X,
+} from "@lucide/vue";
 
 import { drawOrder, groupPath } from "@/lib/sessions/groups";
 import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
@@ -150,6 +167,24 @@ export interface GroupMenuActions {
   readonly move: (group: SessionGroup, direction: -1 | 1) => void;
   /** Makes a group inside this one, which is how nesting is made without dragging. */
   readonly addInside: (group: SessionGroup) => void;
+  /**
+   * Holds the group above the ones it was made beside, or lets it go again.
+   *
+   * The flag travels rather than being turned over inside the menu: the menu draws what is true now,
+   * and what is written is the store's business.
+   */
+  readonly pin: (group: SessionGroup, pinned: boolean) => void;
+  /** Closes every connection that is open inside it, subgroups included. */
+  readonly close: (group: SessionGroup) => void;
+}
+
+/** What the heading's own state says about the entries that cannot always run. */
+export interface GroupMenuState {
+  /** Whether there is a group to move past on that side, within the band it is drawn in. */
+  readonly up: boolean;
+  readonly down: boolean;
+  /** How many connections are open inside it right now; nothing to close when it is zero. */
+  readonly open: number;
 }
 
 /**
@@ -157,14 +192,19 @@ export interface GroupMenuActions {
  *
  * The two move entries are drawn at the ends of their own parent's list but not runnable there: a
  * list where the first heading offers "Move up" and nothing happens is a list that looks broken,
- * and there is no fifth thing a person could mean.
+ * and there is no fifth thing a person could mean. Closing is drawn the same way — the count is in
+ * its own label, and with nothing open inside there is nothing for it to do.
  */
-export function groupMenu(
-  group: SessionGroup,
-  actions: GroupMenuActions,
-  ends: { readonly up: boolean; readonly down: boolean },
-): MenuEntry[] {
+export function groupMenu(group: SessionGroup, actions: GroupMenuActions, state: GroupMenuState): MenuEntry[] {
   return [
+    {
+      kind: "action",
+      id: group.pinned ? "unpin-group" : "pin-group",
+      labelKey: group.pinned ? "sessions.list.groupUnpin" : "sessions.list.groupPin",
+      icon: group.pinned ? PinOff : Pin,
+      run: () => actions.pin(group, !group.pinned),
+    },
+    { kind: "separator", id: "sep-pin-group" },
     {
       kind: "action",
       id: "rename-group",
@@ -179,13 +219,22 @@ export function groupMenu(
       icon: FolderPlus,
       run: () => actions.addInside(group),
     },
+    {
+      kind: "action",
+      id: "close-group-connections",
+      labelKey: "sessions.list.groupClose",
+      params: { count: String(state.open) },
+      icon: Unplug,
+      disabled: state.open === 0,
+      run: () => actions.close(group),
+    },
     { kind: "separator", id: "sep-move-group" },
     {
       kind: "action",
       id: "move-group-up",
       labelKey: "sessions.list.groupUp",
       icon: ArrowUp,
-      disabled: !ends.up,
+      disabled: !state.up,
       run: () => actions.move(group, -1),
     },
     {
@@ -193,8 +242,16 @@ export function groupMenu(
       id: "move-group-down",
       labelKey: "sessions.list.groupDown",
       icon: ArrowDown,
-      disabled: !ends.down,
+      disabled: !state.down,
       run: () => actions.move(group, 1),
+    },
+    { kind: "separator", id: "sep-copy-group" },
+    {
+      kind: "action",
+      id: "copy-group-name",
+      labelKey: "menu.copyName",
+      icon: Copy,
+      run: () => void copyText(group.name),
     },
     { kind: "separator", id: "sep-remove-group" },
     {
