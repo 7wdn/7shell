@@ -1144,6 +1144,16 @@ describe("filtering by how a session authenticates", () => {
 
     expect(drawnRows()).toEqual(["session:session-1"]);
   });
+
+  it("does nothing at all while nothing is open, rather than showing an empty list", async () => {
+    await render([work], [web, db]);
+
+    activeOnlyButton().click();
+    await nextTick();
+
+    expect(activeOnlyButton().getAttribute("aria-pressed")).toBe("false");
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
+  });
 });
 
 describe("the panel's own controls", () => {

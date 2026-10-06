@@ -1069,13 +1069,14 @@ test("the sidebar can be resized, put away, and narrowed by its own switches", a
     await regex.click();
     await page.getByLabel("Search sessions").fill("");
 
-    // Only what is open: nothing is connected in this run, so pressing it empties the list — and a
-    // locate has nothing to find, which is what its disabled state says.
+    // Only what is open: nothing is connected in this run, so the switch refuses to stay on — an
+    // empty list whose only clue is a pressed button is not an answer to anything. And a locate has
+    // nothing to find, which is what its disabled state says.
     const activeOnly = page.locator("[data-session-active-only]");
     await activeOnly.click();
-    await expect(page.getByTitle("Open a terminal for panel-host")).toHaveCount(0);
+    await expect(activeOnly).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTitle("Open a terminal for panel-host")).toBeVisible();
     await expect(page.getByRole("button", { name: "Locate in sidebar" })).toBeDisabled();
-    await activeOnly.click();
 
     // Collapse all: the session goes into the group first, so that closing every group is something
     // that can be seen.

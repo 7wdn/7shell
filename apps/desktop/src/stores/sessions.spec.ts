@@ -13,6 +13,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import { groupDelete, groupSave, groupsList, sessionDelete, sessionSave, sessionsList } from "@/lib/backend/tauri";
 import { useSessionsStore } from "@/stores/sessions";
+import { useTerminalsStore } from "@/stores/terminals";
 import type { Session, SessionGroup } from "@/types/session";
 
 const sessionsListMock = vi.mocked(sessionsList);
@@ -502,6 +503,39 @@ describe("narrowing the list", () => {
     store.toggleMethod("publicKey");
     expect(store.filtering).toBe(false);
     expect(shape(store)).toEqual(["web", "keyed"]);
+  });
+
+  it("will not turn on while nothing is open, because it would show nothing at all", async () => {
+    sessionsListMock.mockResolvedValue([draft, { ...draft, id: "session-2", name: "db" }]);
+
+    const store = useSessionsStore();
+    await store.load();
+
+    store.toggleOnlyOpen();
+
+    // A press that does nothing: the list is unchanged and the switch is not left looking pressed.
+    expect(store.filter.onlyOpen).toBe(false);
+    expect(store.filtering).toBe(false);
+    expect(shape(store)).toEqual(["web", "db"]);
+  });
+
+  it("turns itself off when the last open session goes away", async () => {
+    sessionsListMock.mockResolvedValue([draft]);
+    const terminals = useTerminalsStore();
+    terminals.tabs = [
+      { kind: "terminal", id: "tab-1", handle: "h1", session: draft, status: "open", failure: null, panel: null },
+    ];
+
+    const store = useSessionsStore();
+    await store.load();
+    store.toggleOnlyOpen();
+    expect(store.filter.onlyOpen).toBe(true);
+    expect(shape(store)).toEqual(["web"]);
+
+    terminals.tabs = [];
+
+    expect(store.filter.onlyOpen, "the filter belongs to what is open").toBe(false);
+    expect(shape(store)).toEqual(["web"]);
   });
 
   it("clears both halves of the narrowing at once", async () => {

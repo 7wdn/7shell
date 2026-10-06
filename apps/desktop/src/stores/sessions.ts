@@ -22,7 +22,7 @@
  */
 
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
@@ -110,6 +110,25 @@ export const useSessionsStore = defineStore("sessions", () => {
   function toggleOnlyOpen(): void {
     filter.value = { ...filter.value, onlyOpen: !filter.value.onlyOpen };
   }
+
+  /**
+   * The switch cannot stay on while nothing is open.
+   *
+   * Two cases, one rule. Pressing it when nothing is connected would show an empty list with the
+   * only clue a button that looks pressed — so the press does nothing, which is what the reference
+   * does with the same pair watched synchronously. And when the last connection goes away while the
+   * switch is on, the switch turns itself off: the filter belongs to what is open, so what is open
+   * ending is the end of it.
+   */
+  watch(
+    [() => filter.value.onlyOpen, () => openSessionIds.value.size],
+    ([onlyOpen, openCount]) => {
+      if (onlyOpen && openCount === 0) {
+        filter.value = { ...filter.value, onlyOpen: false };
+      }
+    },
+    { flush: "sync" },
+  );
 
   /** Takes every narrowing off, which is what the panel's own way back does. */
   function clearFilter(): void {
