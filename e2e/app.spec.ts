@@ -493,6 +493,16 @@ function groupOver(keys: readonly string[], at: number): string | null {
   return above.at(-1) ?? null;
 }
 
+/**
+ * The size an element's own text is drawn at, as the window computed it.
+ *
+ * Asked of the rendering rather than of the markup: a class only says what was intended, and any
+ * rule anywhere in the sheet can have the last word about what a person sees.
+ */
+function fontSizeOf(element: Locator): Promise<string> {
+  return element.evaluate((node) => getComputedStyle(node).fontSize);
+}
+
 /** A save dialog answered with a session that is only ever connected to by hand. */
 async function saveSession(page: Page, name: string, host = "127.0.0.1", port = "22"): Promise<void> {
   await page.getByRole("button", { name: "New session" }).click();
@@ -598,7 +608,14 @@ test("a session can be put in a group, renamed, and taken back out", async () =>
     await expect(rename).toHaveValue("Lab");
     await rename.fill("Lab (EU)");
     await rename.press("Enter");
-    await expect(page.getByRole("heading", { name: "Lab (EU)", exact: true })).toBeVisible();
+    const heading = page.getByRole("heading", { name: "Lab (EU)", exact: true });
+    await expect(heading).toBeVisible();
+
+    // A group's name is set at the size a session's name is set at: the reference draws both with
+    // one class, and a heading set larger or smaller makes the list read as two things stacked
+    // rather than one tree. Measured rather than read off the classes, because that is what the
+    // window actually renders.
+    expect(await fontSizeOf(heading)).toBe(await fontSizeOf(row.locator("span.text-sm").first()));
 
     // Deleting asks first, in a dialog over everything, and says what happens to what is inside.
     await page.getByRole("heading", { name: "Lab (EU)", exact: true }).click({ button: "right" });

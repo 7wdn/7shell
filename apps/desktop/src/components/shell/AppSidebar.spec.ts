@@ -535,6 +535,27 @@ describe("the rows", () => {
     expect(headingRow("Work")?.querySelector("svg.lucide-folder")).not.toBeNull();
   });
 
+  it("sets a heading at the size the rows are set at, because a group is a row in the list", async () => {
+    await render([work], [db]);
+
+    // The reference draws a group's name with the very class it draws a connection's with, weight
+    // and all, and ours had drifted to smaller and heavier. What says a heading is a heading is the
+    // folder and the chevron beside it, not a title's type.
+    expect(heading("Work")?.classList.contains("text-sm")).toBe(true);
+    expect(heading("Work")?.classList.contains("font-medium")).toBe(false);
+    // The same size as the name on the session row, which is what "a row in the list" means.
+    expect(rowElement("session:session-2").querySelector("span.text-sm")).not.toBeNull();
+  });
+
+  it("keeps a heading the same size while its name is being typed over", async () => {
+    await render([work], [db]);
+
+    await openRename("Work");
+    // The field stands where the name stood: a rename that changes the size of the row under the
+    // pointer is one somebody notices in the wrong place.
+    expect(groupNameField()?.classList.contains("text-sm")).toBe(true);
+  });
+
   it("draws no row for leaving every group until something is being dragged", async () => {
     await render([work], [db]);
 

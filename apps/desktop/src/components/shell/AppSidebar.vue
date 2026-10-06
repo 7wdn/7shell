@@ -1202,14 +1202,18 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                 :ref="takeRenameField"
                 :value="groupNameText"
                 type="text"
-                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-xs select-text focus:outline-none"
+                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-sm select-text focus:outline-none"
                 :aria-label="t('sessions.list.groupName')"
                 @input="groupNameText = ($event.target as HTMLInputElement).value"
                 @keydown.enter.prevent="submitGroupRename(row.group)"
                 @keydown.escape.prevent="cancelGroupRename()"
                 @blur="submitGroupRename(row.group)"
               />
-              <h3 v-else class="min-w-0 flex-1 truncate text-xs font-medium">{{ row.group.name }}</h3>
+              <!-- The heading is set at the size the rows are set at — a group is a folder in the
+                   same list, not a title over it — and the folder and the chevron are what say it
+                   is one. The reference draws a group's name with the very same class it draws a
+                   connection's with, weight included. -->
+              <h3 v-else class="min-w-0 flex-1 truncate text-sm">{{ row.group.name }}</h3>
 
               <!-- A pinned group is drawn above the ones it was made beside, and this is the only
                    thing that says why: a list that reorders itself without a word is one people
