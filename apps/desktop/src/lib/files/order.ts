@@ -3,9 +3,9 @@
  *
  * The server hands over a directory already sorted — directories first, then names — and this is
  * that order written down as a rule that can be turned around: which end of a column a heading
- * starts at, where a row the server said nothing about goes, and what happens to the directories.
- * It is a module of its own because none of that is about a panel: it is about rows, and it is the
- * part worth reading without a window in front of it.
+ * starts at, what orders the rows that share a value, where a row the server said nothing about
+ * goes, and what happens to the directories. It is a module of its own because none of that is
+ * about a panel: it is about rows, and it is the part worth reading without a window in front of it.
  */
 import { type SortDirection, byText, startsDescending } from "@/lib/sort";
 import type { EntryKind, SftpEntry } from "@/types/session";
@@ -82,12 +82,14 @@ function compare(left: SftpEntry, right: SftpEntry, order: Order): number {
   if (known[0] !== known[1]) {
     return known[0] ? -1 : 1;
   }
-  if (!known[0]) {
-    return 0;
-  }
 
-  const ascending = byColumn(order.column, left, right);
-  return order.descending ? -ascending : ascending;
+  // Rows that share a value are ordered by name, and the name is read from the same end the column
+  // is. Without that, a column whose value is the same for every row on screen — the kind column in
+  // a folder of ordinary files, a size column where three files are the same size — would answer
+  // the first press with the order that was already there and read as a column that does nothing.
+  const values = known[0] ? byColumn(order.column, left, right) : 0;
+  const compared = values !== 0 ? values : byName(left, right);
+  return order.descending ? -compared : compared;
 }
 
 /** Which shelf a row stands on, compared before the column and never turned around with it. */
@@ -117,10 +119,7 @@ function has(column: ListingSort, entry: SftpEntry): boolean {
 function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry): number {
   switch (column) {
     case "name":
-      // Lower case, because the server ordered its own listing that way: the heading the listing
-      // opens with has to describe the order that is already on screen, and `A.txt` and `a.txt`
-      // are one letter apart only in a case-sensitive reading.
-      return byText(left.name.toLowerCase(), right.name.toLowerCase());
+      return byName(left, right);
     case "size":
       return left.size - right.size;
     case "kind":
@@ -134,4 +133,16 @@ function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry): numbe
       // for the rows that have no owner to be ordered by.
       return byText(left.owner ?? left.group ?? "", right.owner ?? right.group ?? "");
   }
+}
+
+/**
+ * Two rows by name.
+ *
+ * Lower case, because the server ordered its own listing that way: the heading the listing opens
+ * with has to describe the order that is already on screen, and `A.txt` and `a.txt` are one letter
+ * apart only in a case-sensitive reading. This is the name column's own comparison and every other
+ * column's tie-break.
+ */
+function byName(left: SftpEntry, right: SftpEntry): number {
+  return byText(left.name.toLowerCase(), right.name.toLowerCase());
 }

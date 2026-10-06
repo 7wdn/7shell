@@ -149,8 +149,8 @@ describe("the rows in that order", () => {
     expect(drawn(arrived, { column: "kind", descending: true })).toEqual([
       "logs",
       "elsewhere",
-      "notes.txt",
       "photo.jpg",
+      "notes.txt",
     ]);
   });
 
@@ -158,6 +158,19 @@ describe("the rows in that order", () => {
     // Descending kinds would start with the sockets and the links, and the folders would be at the
     // bottom of the list somebody keeps their work in.
     expect(drawn(arrived, { column: "kind", descending: true })[0]).toBe("logs");
+  });
+
+  it("answers even when every row on screen has the same value for the column", () => {
+    // A folder of ordinary files holds one kind, and one press of the kind column used to hand back
+    // the order the rows arrived in — which is the order on screen — so the column read as one that
+    // does nothing at all. The same holds for three files of one size under the size column.
+    const first = entry("a.txt", "file", { size: 4, modifiedAt: 1 });
+    const second = entry("b.txt", "file", { size: 4, modifiedAt: 1 });
+
+    expect(drawn([first, second], { column: "kind", descending: false })).toEqual(["a.txt", "b.txt"]);
+    expect(drawn([first, second], { column: "kind", descending: true })).toEqual(["b.txt", "a.txt"]);
+    expect(drawn([first, second], { column: "size", descending: true })).toEqual(["b.txt", "a.txt"]);
+    expect(drawn([first, second], { column: "size", descending: false })).toEqual(["a.txt", "b.txt"]);
   });
 
   it("orders by the owner, and by the group only where there is no owner", () => {

@@ -1041,6 +1041,14 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await expect(listing.getByRole("option").first()).toBeVisible();
     await page.screenshot({ path: path.join(ARTIFACTS, "listing-sorted.png"), fullPage: false });
 
+    // The kind column, in a directory that holds nothing but folders: every row has the same value
+    // for it, and the press has to answer anyway — this is the case that came back as "sorting by
+    // type does nothing", because the rows fell back to the order they were already in.
+    const firstRow = (): Promise<string | null> => listing.locator("li[data-path]").first().getAttribute("data-path");
+    const before = await firstRow();
+    await page.getByRole("button", { name: "Sort by Type" }).click();
+    await expect.poll(firstRow, { message: "the folders answer the type column" }).not.toBe(before);
+
     // The bar under the terminal: the command somebody did not save. Enter sends it, and the line
     // it ran is kept in the same history the panel draws.
     const bar = page.getByLabel("Command input");
