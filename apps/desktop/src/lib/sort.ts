@@ -1,9 +1,9 @@
 /**
  * How a sortable table reads its columns.
  *
- * One module rather than a copy per table: both tables in this application sort the same way, and
- * the way they sort is a rule rather than a detail — text reads from the alphabet, figures from the
- * top, and pressing a heading that is already in use turns the order around.
+ * One module rather than a copy per table: everything in this application that sorts a column sorts
+ * the same way, and the way it sorts is a rule rather than a detail — text reads from the alphabet,
+ * figures from the top, and pressing a heading that is already in use turns the order around.
  */
 
 /** Which end of a column a table reads from. */

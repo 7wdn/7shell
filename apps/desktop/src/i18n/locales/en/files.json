@@ -33,6 +33,7 @@
     "modified": "Modified",
     "permissions": "Permissions",
     "owner": "User/Group",
+    "sortBy": "Sort by {column}",
     "kind": {
       "directory": "Folder",
       "file": "File",

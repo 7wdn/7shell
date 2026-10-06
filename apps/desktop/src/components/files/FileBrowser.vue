@@ -3,9 +3,10 @@
  * One remote directory, drawn as a panel: where it is, what is in it, and what can be done with
  * each thing in it.
  *
- * Entries are drawn in the order they arrive. The backend sorts directories first and then names,
- * and sorting again here would be a second answer to the same question — one that would drift the
- * first time either side changed its mind.
+ * Rows are drawn in the order their headings say, which starts out as the order the server sent them
+ * in: a directory arrives sorted with its directories first, and the name heading opens describing
+ * exactly that list. What the order is, and what changes when a heading is pressed, is
+ * `lib/files/order.ts`'s business — one module rather than a rule guessed at in a template.
  *
  * Nothing in this panel names a local path, and it could not: a download and an upload ask where to
  * write or what to read inside Rust, and the answer never comes back to this side. That is why the
@@ -36,9 +37,11 @@ import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import TransferList from "@/components/files/TransferList.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import SortHeader from "@/components/ui/SortHeader.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatMode, formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
+import { INITIAL_ORDER, type ListingSort, type Order, orderEntries, pressed } from "@/lib/files/order";
 import { type Band, type Point, type RowBand, bandBetween, isDrag, rowsInBand, scrollStep } from "@/lib/files/marquee";
 import {
   NOTHING_SELECTED,
@@ -130,10 +133,24 @@ const listing = ref<HTMLDivElement | null>(null);
 /** A drag in progress over the empty space: where it started and what the rows measured. */
 let drag: { from: Point; rows: RowBand[]; moved: boolean } | null = null;
 
+/**
+ * The order the rows are drawn in, held here rather than in the store for the same reason the
+ * selection is: it is how this panel is being looked at, and it stays put while somebody walks into
+ * a directory and back out of it.
+ */
+const order = ref<Order>(INITIAL_ORDER);
+/** What the server sent, in the order the headings say to draw it. */
+const ordered = computed(() => orderEntries(browser.value?.entries ?? [], order.value));
+
 /** The paths the listing is showing, in the order it draws them: what the selection is made of. */
-const rows = computed(() => (browser.value?.entries ?? []).map((entry) => entry.path));
+const rows = computed(() => ordered.value.map((entry) => entry.path));
 /** The selected entries, in listing order — what every action is about. */
-const chosen = computed(() => selectedEntries(selection.value, browser.value?.entries ?? []));
+const chosen = computed(() => selectedEntries(selection.value, ordered.value));
+
+/** Pressing a heading: the listing is ordered by it, or turned around when it already is. */
+function orderBy(column: ListingSort): void {
+  order.value = pressed(order.value, column);
+}
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -305,6 +322,13 @@ function modifies(event: MouseEvent | KeyboardEvent): boolean {
  * and "select all the files" is what somebody means by it.
  */
 function onListingKeydown(event: KeyboardEvent): void {
+  // The headings are controls of their own, and they keep the keyboard once one of them has it: a
+  // key pressed there belongs to that heading — Enter presses it — and walking the rows underneath
+  // at the same time would be two answers to one key.
+  if ((event.target as HTMLElement | null)?.closest("[data-listing-header]")) {
+    return;
+  }
+
   const paths = rows.value;
 
   switch (event.key) {
@@ -861,12 +885,60 @@ function openAreaMenu(event: MouseEvent): void {
             data-listing-header
             class="sticky top-0 flex items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
           >
-            <span class="min-w-0 flex-1">{{ t("files.name") }}</span>
-            <span class="w-20 shrink-0 text-right">{{ t("files.size") }}</span>
-            <span class="w-16 shrink-0">{{ t("files.type") }}</span>
-            <span class="w-40 shrink-0 text-right">{{ t("files.modified") }}</span>
-            <span class="w-20 shrink-0">{{ t("files.permissions") }}</span>
-            <span class="w-28 shrink-0">{{ t("files.owner") }}</span>
+            <span class="min-w-0 flex-1">
+              <SortHeader
+                :label="t('files.name')"
+                :sorted="order.column === 'name'"
+                :descending="order.descending"
+                :hint="t('files.sortBy', { column: t('files.name') })"
+                @sort="orderBy('name')"
+              />
+            </span>
+            <span class="w-20 shrink-0 text-right">
+              <SortHeader
+                :label="t('files.size')"
+                :sorted="order.column === 'size'"
+                :descending="order.descending"
+                :hint="t('files.sortBy', { column: t('files.size') })"
+                @sort="orderBy('size')"
+              />
+            </span>
+            <span class="w-16 shrink-0">
+              <SortHeader
+                :label="t('files.type')"
+                :sorted="order.column === 'kind'"
+                :descending="order.descending"
+                :hint="t('files.sortBy', { column: t('files.type') })"
+                @sort="orderBy('kind')"
+              />
+            </span>
+            <span class="w-40 shrink-0 text-right">
+              <SortHeader
+                :label="t('files.modified')"
+                :sorted="order.column === 'modified'"
+                :descending="order.descending"
+                :hint="t('files.sortBy', { column: t('files.modified') })"
+                @sort="orderBy('modified')"
+              />
+            </span>
+            <span class="w-24 shrink-0">
+              <SortHeader
+                :label="t('files.permissions')"
+                :sorted="order.column === 'mode'"
+                :descending="order.descending"
+                :hint="t('files.sortBy', { column: t('files.permissions') })"
+                @sort="orderBy('mode')"
+              />
+            </span>
+            <span class="w-28 shrink-0">
+              <SortHeader
+                :label="t('files.owner')"
+                :sorted="order.column === 'owner'"
+                :descending="order.descending"
+                :hint="t('files.sortBy', { column: t('files.owner') })"
+                @sort="orderBy('owner')"
+              />
+            </span>
           </div>
 
           <p
@@ -877,7 +949,7 @@ function openAreaMenu(event: MouseEvent): void {
           </p>
 
           <ul class="p-1.5">
-            <li v-for="entry in browser.entries" :key="entry.path" :data-path="entry.path">
+            <li v-for="entry in ordered" :key="entry.path" :data-path="entry.path">
               <div
                 :id="rowId(entry.path)"
                 role="option"

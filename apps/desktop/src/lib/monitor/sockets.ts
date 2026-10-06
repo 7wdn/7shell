@@ -19,7 +19,7 @@
  *    that names no peer is waiting for datagrams, which is the same thing to a reader.
  */
 
-import { byText } from "@/lib/monitor/sort";
+import { byText } from "@/lib/sort";
 import type { SocketRow } from "@/types/monitor";
 
 /** What one listening socket is carrying right now. */

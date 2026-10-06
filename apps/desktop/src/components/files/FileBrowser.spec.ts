@@ -40,6 +40,19 @@ const HANDLE = "f1";
 const folder: SftpEntry = { name: "logs", path: "/home/user/logs", kind: "directory", size: 0 };
 const file: SftpEntry = { name: "notes.txt", path: "/home/user/notes.txt", kind: "file", size: 12 };
 
+/**
+ * A directory deliberately not in the order a server would send it.
+ *
+ * The order the panel draws is the claim in these cases, so the rows arriving shuffled is what keeps
+ * them from passing by handing back what they were given.
+ */
+const unsorted: SftpEntry[] = [
+  { name: "b.txt", path: "/home/user/b.txt", kind: "file", size: 30 },
+  { name: "logs", path: "/home/user/logs", kind: "directory", size: 0 },
+  { name: "c.txt", path: "/home/user/c.txt", kind: "file", size: 10 },
+  { name: "a.txt", path: "/home/user/a.txt", kind: "file", size: 20 },
+];
+
 let host: HTMLDivElement;
 let app: App | undefined;
 
@@ -109,6 +122,32 @@ function selectedRows(): number[] {
   return rows()
     .map((row, index) => (row.getAttribute("aria-selected") === "true" ? index : -1))
     .filter((index) => index >= 0);
+}
+
+/** The paths drawn as selected, in the order the listing draws them. */
+function selectedPaths(): string[] {
+  return rows()
+    .filter((row) => row.getAttribute("aria-selected") === "true")
+    .map((row) => row.parentElement?.dataset.path ?? "");
+}
+
+/** The rows as they are drawn, by file name, which is the order the headings decide. */
+function drawn(): string[] {
+  return [...(listing()?.querySelectorAll<HTMLElement>("li[data-path]") ?? [])].map(
+    (row) => row.dataset.path?.split("/").pop() ?? "",
+  );
+}
+
+/** Presses the heading that says this, which is how a person orders the listing. */
+async function pressHeading(label: string): Promise<void> {
+  const heading = [...(listing()?.querySelectorAll<HTMLButtonElement>("[data-listing-header] button") ?? [])].find(
+    (button) => button.textContent?.trim() === label,
+  );
+  if (!heading) {
+    throw new Error(`no heading says ${label}`);
+  }
+  heading.click();
+  await nextTick();
 }
 
 /** Clicks a row, with whichever modifiers the gesture calls for. */
@@ -269,11 +308,14 @@ describe("the directory's own menu", () => {
  * menu away from every macOS user.
  */
 describe("selecting rows", () => {
+  // The order a server sends a directory in: the folders first, then the names. It matters that the
+  // fixture is in it, because the panel now draws every directory in that order — so a case that
+  // reaches for "the third row" is reaching for the third row somebody would see.
   const many: SftpEntry[] = [
+    { name: "logs", path: "/home/user/logs", kind: "directory", size: 0 },
     { name: "a.txt", path: "/home/user/a.txt", kind: "file", size: 1 },
     { name: "b.txt", path: "/home/user/b.txt", kind: "file", size: 2 },
     { name: "c.txt", path: "/home/user/c.txt", kind: "file", size: 3 },
-    { name: "logs", path: "/home/user/logs", kind: "directory", size: 0 },
   ];
 
   it("takes one row on a plain click, and only that one", async () => {
@@ -375,7 +417,7 @@ describe("selecting rows", () => {
   it("opens the one selected row on Enter, and nothing when several are chosen", async () => {
     await render(many);
 
-    await clickRow(3);
+    await clickRow(0);
     await press("Enter");
     await vi.waitFor(() => expect(vi.mocked(filesList)).toHaveBeenCalledWith(HANDLE, "/home/user/logs"));
 
@@ -485,6 +527,47 @@ describe("selecting rows", () => {
     expect(file?.textContent, "the owner and the group share their column").toContain("labuser/labuser");
   });
 
+  it("orders the rows by a heading, and turns them around when it is pressed again", async () => {
+    await render(unsorted);
+
+    expect(drawn(), "the heading it opens on is the order the server sends: folders, then names").toEqual([
+      "logs",
+      "a.txt",
+      "b.txt",
+      "c.txt",
+    ]);
+
+    await pressHeading("Size");
+    expect(drawn(), "the biggest file first, with the folder still above it").toEqual([
+      "logs",
+      "b.txt",
+      "a.txt",
+      "c.txt",
+    ]);
+
+    await pressHeading("Size");
+    expect(drawn(), "and the smallest first when the same heading is pressed again").toEqual([
+      "logs",
+      "c.txt",
+      "a.txt",
+      "b.txt",
+    ]);
+  });
+
+  it("takes a range over the rows as they are drawn rather than as they arrived", async () => {
+    await render(unsorted);
+    await pressHeading("Size");
+
+    await clickRow(1);
+    await clickRow(3, "shift");
+
+    expect(selectedPaths(), "the rows between the two clicks, in the order they are drawn").toEqual([
+      "/home/user/b.txt",
+      "/home/user/a.txt",
+      "/home/user/c.txt",
+    ]);
+  });
+
   it("leaves a row's actions to the menu, with nothing drawn on the row itself", async () => {
     await render(many);
 
@@ -493,7 +576,7 @@ describe("selecting rows", () => {
     }
 
     // Nothing went away with the buttons: the same actions answer a right-click.
-    const entries = await rightClickRow(0);
+    const entries = await rightClickRow(1);
     expect(ids(entries)).toContain("download");
     expect(ids(entries)).toContain("rename");
     expect(ids(entries)).toContain("remove");
@@ -502,7 +585,7 @@ describe("selecting rows", () => {
   it("counts it in the menu's own words when several rows are chosen", async () => {
     await render(many);
 
-    await clickRow(0);
+    await clickRow(1);
     await clickRow(2, "ctrl");
     const entries = await rightClickRow(2);
 

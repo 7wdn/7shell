@@ -33,6 +33,7 @@
     "modified": "修改时间",
     "permissions": "权限",
     "owner": "用户/用户组",
+    "sortBy": "按{column}排序",
     "kind": {
       "directory": "文件夹",
       "file": "文件",

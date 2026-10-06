@@ -21,14 +21,14 @@ import { X } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
-import SortHeader from "@/components/inspect/SortHeader.vue";
+import SortHeader from "@/components/ui/SortHeader.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatSize } from "@/lib/files/format";
 import { connectionMenu, listenerMenu } from "@/lib/menu/inspect";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { UNKNOWN } from "@/lib/monitor/format";
-import { type SortDirection, startsDescending } from "@/lib/monitor/sort";
+import { type SortDirection, startsDescending } from "@/lib/sort";
 import { type ListenerSort, connectionsFor, listenerRows, sortListeners } from "@/lib/monitor/sockets";
 import { useMonitorStore } from "@/stores/monitor";
 import type { SocketRow } from "@/types/monitor";

@@ -16,7 +16,7 @@
  *    trade the cut has always made.
  */
 
-import { byText } from "@/lib/monitor/sort";
+import { byText } from "@/lib/sort";
 import type { ProcessPage, ProcessSample } from "@/types/monitor";
 
 /** One line of the table: what the host said, and what the process did since the last read. */

@@ -1035,6 +1035,12 @@ test("a saved command reaches the shell and the file it makes appears", async ()
       element.scrollTop = 0;
     });
 
+    // And the headings order the rows: pressed once, the column reads from its own end — the newest
+    // time first — which is what the caret beside it then says.
+    await page.getByRole("button", { name: "Sort by Modified" }).click();
+    await expect(listing.getByRole("option").first()).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACTS, "listing-sorted.png"), fullPage: false });
+
     // The bar under the terminal: the command somebody did not save. Enter sends it, and the line
     // it ran is kept in the same history the panel draws.
     const bar = page.getByLabel("Command input");

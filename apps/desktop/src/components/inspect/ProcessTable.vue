@@ -22,7 +22,7 @@ import { LoaderCircle, RefreshCw, X } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
-import SortHeader from "@/components/inspect/SortHeader.vue";
+import SortHeader from "@/components/ui/SortHeader.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { formatSize } from "@/lib/files/format";
@@ -30,7 +30,7 @@ import { environmentMenu, processDetailMenu, processRowMenu } from "@/lib/menu/i
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { UNKNOWN } from "@/lib/monitor/format";
 import type { ProcessSortKey } from "@/lib/monitor/processes";
-import { type SortDirection, startsDescending } from "@/lib/monitor/sort";
+import { type SortDirection, startsDescending } from "@/lib/sort";
 import { useMonitorStore } from "@/stores/monitor";
 import type { EnvironmentEntry, ProcessSample } from "@/types/monitor";
 

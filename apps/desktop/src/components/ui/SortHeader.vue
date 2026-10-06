@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * A column heading that sorts, in the one shape both tables use.
+ * A column heading that sorts, in the one shape every sortable table uses.
  *
  * It exists because two tables sorting the same way in two different ways is what happened: one
  * drew an arrow, the other a chevron, and neither said what pressing it again would do. A heading
