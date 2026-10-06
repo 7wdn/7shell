@@ -7,7 +7,15 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { NO_FILTER, filterIsOn, filterLibrary, matchesQuery, passesMethods, type SessionFilter } from "./filter";
+import {
+  NO_FILTER,
+  filterIsOn,
+  filterLibrary,
+  matchesQuery,
+  passesMethods,
+  regexIsInvalid,
+  type SessionFilter,
+} from "./filter";
 import type { AuthMethod } from "@/types/generated/protocols";
 import type { Session, SessionGroup } from "@/types/session";
 
@@ -44,11 +52,19 @@ const all = [work, lab, rack];
 const everything = [web, db, cache];
 
 function query(text: string): SessionFilter {
-  return { query: text, methods: new Set() };
+  return { query: text, methods: new Set(), regex: false, onlyOpen: false };
 }
 
 function methods(...list: AuthMethod[]): SessionFilter {
-  return { query: "", methods: new Set(list) };
+  return { query: "", methods: new Set(list), regex: false, onlyOpen: false };
+}
+
+function pattern(text: string): SessionFilter {
+  return { query: text, methods: new Set(), regex: true, onlyOpen: false };
+}
+
+function openOnly(): SessionFilter {
+  return { query: "", methods: new Set(), regex: false, onlyOpen: true };
 }
 
 /** The names of what is left, groups and sessions in one list, which is what a reader sees. */
@@ -91,6 +107,49 @@ describe("matching a session by what identifies it", () => {
   });
 });
 
+describe("reading the query as a regular expression", () => {
+  it("matches each field on its own, so an anchor is about one of them", () => {
+    // Anchors are the point: a term search cannot say "starts with this", and `^postgres` is a
+    // claim about the *user* rather than about the address and the protocol strung together.
+    expect(matchesQuery(db, "^postgres@db", true)).toBe(true);
+    expect(matchesQuery(db, "postgres|nothing", true)).toBe(true);
+    expect(matchesQuery(web, "^root$", true)).toBe(false);
+  });
+
+  it("ignores case, like the word search does, because a pattern cannot say so itself", () => {
+    expect(matchesQuery(web, "WEB", true)).toBe(true);
+  });
+
+  it("says when a pattern does not compile, and matches nothing with it", () => {
+    // A search that is silently ignored is worse than one that is visibly broken: the box draws
+    // its own state from this, and the list goes empty rather than showing everything again.
+    expect(regexIsInvalid("([")).toBe(true);
+    expect(regexIsInvalid("^postgres")).toBe(false);
+    expect(matchesQuery(web, "([", true)).toBe(false);
+  });
+
+  it("lights up a folder whose name matches the pattern", () => {
+    expect(kept(pattern("^work$"))).toEqual(["Work", "Rack", "db", "cache"]);
+  });
+});
+
+describe("showing only what is open", () => {
+  it("keeps the sessions something is open for, and the folders they are in", () => {
+    const result = filterLibrary(all, everything, openOnly(), new Set(["session-3"]));
+
+    expect(result.sessions.map((session) => session.name)).toEqual(["cache"]);
+    expect(result.groups.map((group) => group.name)).toEqual(["Work", "Rack"]);
+  });
+
+  it("keeps nothing when nothing is open", () => {
+    expect(kept(openOnly())).toEqual([]);
+  });
+
+  it("counts as narrowing, on its own", () => {
+    expect(filterIsOn(openOnly())).toBe(true);
+  });
+});
+
 describe("what the list shows while it is narrowed", () => {
   it("keeps the folder a match is in, and everything above it", () => {
     const result = filterLibrary(all, everything, query("cache"));
@@ -123,7 +182,12 @@ describe("what the list shows while it is narrowed", () => {
   it("keeps a folder that matched by name even when a filter emptied it out", () => {
     // The folder is what was asked for, so it is drawn saying it has nothing in it — which is a
     // true answer, unlike a folder that vanishes.
-    const filter: SessionFilter = { query: "work", methods: new Set<AuthMethod>(["agent"]) };
+    const filter: SessionFilter = {
+      query: "work",
+      methods: new Set<AuthMethod>(["agent"]),
+      regex: false,
+      onlyOpen: false,
+    };
 
     expect(kept(filter)).toEqual(["Work"]);
   });

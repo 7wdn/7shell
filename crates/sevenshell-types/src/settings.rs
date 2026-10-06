@@ -126,6 +126,18 @@ pub struct AppSettings {
     /// height that no longer fits is honoured as far as it can be rather than refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_panel_height: Option<u32>,
+    /// How wide the session sidebar is, in pixels.
+    ///
+    /// The same kind of wish as the height above and clamped by the same rule: a sidebar wider than
+    /// the window it is beside is honoured as far as the workspace allows rather than refused.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sidebar_width: Option<u32>,
+    /// Whether the session sidebar is on screen.
+    ///
+    /// On unless somebody puts it away: the sessions live there, and a window that opens with an
+    /// empty left edge reads as a build that has lost them.
+    #[serde(default = "sidebar_on")]
+    pub sidebar_open: bool,
     /// Whether the host monitor runs beside the workspace.
     ///
     /// On unless somebody says otherwise, unlike the fields above: those describe a choice the
@@ -154,6 +166,13 @@ pub fn monitor_on() -> bool {
     true
 }
 
+/// The sidebar's default, which is "on screen".
+///
+/// A named function for the same reason as the monitor's above.
+pub fn sidebar_on() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -162,6 +181,8 @@ impl Default for AppSettings {
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
+            sidebar_width: None,
+            sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
             packed_transfer: false,
             locale: None,
@@ -178,6 +199,8 @@ impl AppSettings {
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
             && self.terminal_panel_height.is_none()
+            && self.sidebar_width.is_none()
+            && self.sidebar_open
             && self.monitor_enabled
             && !self.packed_transfer
             && self.locale.is_none()

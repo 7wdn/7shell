@@ -38,9 +38,19 @@ const FRESH: Omit<AppSettings, "locale"> = {
   filesLayout: "tree",
   sessionLayout: "split",
   terminalPanelHeight: undefined,
+  sidebarWidth: undefined,
+  sidebarOpen: true,
   monitorEnabled: true,
   packedTransfer: false,
 };
+
+/**
+ * How wide the session sidebar starts out, until somebody moves the divider beside it.
+ *
+ * Wide enough for the panel's own toolbar — the import/export control and five buttons — without
+ * the label being cut off, which is the point at which the panel stops saying what it is.
+ */
+export const DEFAULT_SIDEBAR_WIDTH = 280;
 
 /**
  * How tall the file panel under a terminal starts out, until somebody moves the divider.
@@ -72,6 +82,21 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * that can absorb whatever the window does.
    */
   const terminalPanelHeight = ref<number | null>(null);
+  /**
+   * How wide the session sidebar is, in pixels; null until somebody moves the divider beside it.
+   *
+   * A pixel width, like the file panel's height above and for the same reason: the sidebar is a
+   * fixed-purpose thing — a list of names — and the workspace beside it is the half that can
+   * absorb whatever the window does.
+   */
+  const sidebarWidth = ref<number | null>(null);
+  /**
+   * Whether the sidebar is drawn at all.
+   *
+   * On unless somebody puts it away, and remembered: somebody who works with the sidebar collapsed
+   * is somebody who wants it collapsed the next time they open the application.
+   */
+  const sidebarOpen = ref(true);
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -120,6 +145,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
   /** What the divider is drawn at: the height somebody chose, or the starting one. */
   const resolvedPanelHeight = computed(() => terminalPanelHeight.value ?? DEFAULT_TERMINAL_PANEL_HEIGHT);
 
+  /** The same answer for the sidebar's width. */
+  const resolvedSidebarWidth = computed(() => sidebarWidth.value ?? DEFAULT_SIDEBAR_WIDTH);
+
   function apply(): void {
     document.documentElement.classList.toggle("dark", resolvedTheme.value === "dark");
     document.documentElement.dataset.theme = resolvedTheme.value;
@@ -152,6 +180,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       filesLayout.value = settings.filesLayout;
       sessionLayout.value = settings.sessionLayout;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
+      sidebarWidth.value = settings.sidebarWidth ?? null;
+      sidebarOpen.value = settings.sidebarOpen;
       monitorEnabled.value = settings.monitorEnabled;
       packedTransfer.value = settings.packedTransfer;
       if (settings.locale && isSupportedLocale(settings.locale)) {
@@ -178,6 +208,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         filesLayout: filesLayout.value,
         sessionLayout: sessionLayout.value,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
+        sidebarWidth: sidebarWidth.value ?? undefined,
+        sidebarOpen: sidebarOpen.value,
         monitorEnabled: monitorEnabled.value,
         packedTransfer: packedTransfer.value,
         locale: localeChosen.value ? locale.value : undefined,
@@ -253,6 +285,33 @@ export const usePreferencesStore = defineStore("preferences", () => {
     await persist();
   }
 
+  /** Moves the sidebar's divider, applied at once and written down when the drag ends. */
+  function setSidebarWidth(width: number): void {
+    sidebarWidth.value = Math.round(width);
+  }
+
+  /** Writes down the width the sidebar's divider was left at. */
+  async function rememberSidebarWidth(): Promise<void> {
+    await persist();
+  }
+
+  /** Puts the divider back where it started, and forgets the width: nothing has been chosen. */
+  async function resetSidebarWidth(): Promise<void> {
+    sidebarWidth.value = null;
+    await persist();
+  }
+
+  /**
+   * Puts the sidebar away, or brings it back.
+   *
+   * Written down at once rather than at the end of a drag: it is one decision, and somebody who
+   * closed the sidebar and quit meant it.
+   */
+  async function setSidebarOpen(open: boolean): Promise<void> {
+    sidebarOpen.value = open;
+    await persist();
+  }
+
   async function setLocale(next: SupportedLocale): Promise<void> {
     localeChosen.value = true;
     locale.value = next;
@@ -286,6 +345,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalPanelHeight":
           terminalPanelHeight.value = null;
           break;
+        case "sidebarWidth":
+          sidebarWidth.value = null;
+          break;
+        case "sidebarOpen":
+          sidebarOpen.value = FRESH.sidebarOpen;
+          break;
         case "monitorEnabled":
           monitorEnabled.value = FRESH.monitorEnabled;
           break;
@@ -315,11 +380,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
     filesLayout,
     sessionLayout,
     terminalPanelHeight,
+    sidebarWidth,
+    sidebarOpen,
     monitorEnabled,
     packedTransfer,
     resolvedTheme,
     resolvedTerminalTheme,
     resolvedPanelHeight,
+    resolvedSidebarWidth,
     locale,
     problem,
     initialize,
@@ -333,6 +401,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setPanelHeight,
     rememberPanelHeight,
     resetPanelHeight,
+    setSidebarWidth,
+    rememberSidebarWidth,
+    resetSidebarWidth,
+    setSidebarOpen,
     setLocale,
     reset,
   };

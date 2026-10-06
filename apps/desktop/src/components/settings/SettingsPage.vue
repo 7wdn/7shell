@@ -82,11 +82,18 @@ function selectCategory(id: SettingsCategoryId): void {
   category.value = id;
 }
 
-/** The fields a category is made of. The panel height has no row, so the workspace names it here. */
+/**
+ * The fields a category is made of.
+ *
+ * Three of them have no row — the file panel's height, the sidebar's width, and whether the sidebar
+ * is on screen — because nobody chooses them in a row: they are a divider somebody drags and a
+ * button in the sidebar's own header. "Restore the defaults" still has to put the frame back the
+ * way it came, so the category that owns them names them here.
+ */
 function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
   const fields: PreferenceField[] = rowsOfCategory(id).map((row) => row.field);
   if (id === "workspace") {
-    fields.push("terminalPanelHeight");
+    fields.push("terminalPanelHeight", "sidebarWidth", "sidebarOpen");
   }
   return fields;
 }

@@ -38,6 +38,10 @@ export interface AppSettings {
   readonly sessionLayout: SessionLayout;
   /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */
   readonly terminalPanelHeight?: number;
+  /** How wide the session sidebar is, in pixels. Absent means nobody has moved the divider. */
+  readonly sidebarWidth?: number;
+  /** Whether the session sidebar is on screen. On unless somebody puts it away. */
+  readonly sidebarOpen: boolean;
   /**
    * Whether the host monitor runs beside the workspace. On unless somebody turns it off: hidden
    * means nothing is sampled either, not merely that nothing is drawn.

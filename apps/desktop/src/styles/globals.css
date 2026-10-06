@@ -189,3 +189,64 @@
     animation: none;
   }
 }
+
+/*
+ * The mark on a divider somebody can drag.
+ *
+ * Three dots, in the middle of the edge: an edge that can be moved says so by carrying something
+ * that is plainly a handle, and the alternative — a line that appears on hover only — cannot be
+ * found by anybody who does not already know it is there. Drawn in `currentColor`, so resting,
+ * hovered and dragging are one colour change and nothing else.
+ */
+.panel-grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background-color: currentColor;
+  box-shadow:
+    0 5px 0 currentColor,
+    0 10px 0 currentColor;
+  transform: translate(-50%, -50%);
+  transition:
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+/* The same mark on a divider that runs across rather than down: the dots lie along it. */
+.panel-grip--row {
+  box-shadow:
+    5px 0 0 currentColor,
+    10px 0 0 currentColor;
+}
+
+/*
+ * The row the list was asked to find.
+ *
+ * It is drawn for a moment and then left alone: a locate is a question about where something is,
+ * not a selection — nothing was chosen, so nothing stays chosen. Two breaths, so an eye that was
+ * looking somewhere else still catches it.
+ */
+@keyframes row-located-breathe {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+
+  50% {
+    background-color: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  }
+}
+
+.row-located {
+  animation: row-located-breathe 0.6s cubic-bezier(0.4, 0, 0.2, 1) 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row-located {
+    animation: none;
+    background-color: color-mix(in oklch, var(--color-primary) 14%, transparent);
+  }
+}

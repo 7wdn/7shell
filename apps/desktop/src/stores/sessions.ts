@@ -26,7 +26,7 @@ import { computed, ref } from "vue";
 
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
-import { type SessionFilter, filterIsOn, filterLibrary } from "@/lib/sessions/filter";
+import { NO_FILTER, type SessionFilter, filterIsOn, filterLibrary } from "@/lib/sessions/filter";
 import {
   type Drop,
   type DropZone,
@@ -38,6 +38,7 @@ import {
   planSiblingMove,
 } from "@/lib/sessions/groups";
 import { type TreeRow, visibleRows } from "@/lib/sessions/tree";
+import { sessionOf, useTerminalsStore } from "@/stores/terminals";
 import type { AuthMethod } from "@/types/generated/protocols";
 import type { Session, SessionExportSummary, SessionGroup, SessionImportSummary, SecretInput } from "@/types/session";
 
@@ -48,16 +49,34 @@ export const useSessionsStore = defineStore("sessions", () => {
   const groups = ref<SessionGroup[]>([]);
   /** The groups drawn closed, by id. In memory: this is how the list looks, not what is saved. */
   const collapsed = ref<ReadonlySet<string>>(new Set());
-  /** What the list is narrowed to. Empty means everything, which is how it starts. */
-  const filter = ref<SessionFilter>({ query: "", methods: new Set() });
+  /** What the list is narrowed to. Nothing set means everything, which is how it starts. */
+  const filter = ref<SessionFilter>(NO_FILTER);
   const status = ref<LibraryStatus>("idle");
   const failure = ref<ShellError | null>(null);
 
-  /** Whether the list is narrowed at all, which is what its "nothing found" state keys off. */
+  /** Whether the list is narrowed at all, which is what the filter button's own state reports. */
   const filtering = computed(() => filterIsOn(filter.value));
 
+  /**
+   * The sessions something is open for right now.
+   *
+   * Read from the terminals store rather than kept here, because "open" is a fact about this run
+   * and not about the library: what is saved and what is on screen are two different questions, and
+   * the answer to the second one is already somewhere. A tab with a session is a tab whose host was
+   * dialled — the terminal, the files, the pages about it — so any of them counts.
+   */
+  const openSessionIds = computed<ReadonlySet<string>>(() => {
+    const terminals = useTerminalsStore();
+    return new Set(
+      terminals.tabs
+        .map((tab) => sessionOf(tab))
+        .filter((session) => session !== null)
+        .map((session) => session.id),
+    );
+  });
+
   /** The library as the filter leaves it, with the groups that have to be drawn open. */
-  const shown = computed(() => filterLibrary(groups.value, sessions.value, filter.value));
+  const shown = computed(() => filterLibrary(groups.value, sessions.value, filter.value, openSessionIds.value));
 
   /** The rows the sidebar draws, in reading order, with closed groups left closed. */
   const rows = computed<TreeRow[]>(() =>
@@ -77,8 +96,34 @@ export const useSessionsStore = defineStore("sessions", () => {
     filter.value = { ...filter.value, methods };
   }
 
+  /** What the list is read as: the words it holds, or one regular expression over the same text. */
+  function toggleRegex(): void {
+    filter.value = { ...filter.value, regex: !filter.value.regex };
+  }
+
+  /** Whether the list shows only what is open right now. */
+  function toggleOnlyOpen(): void {
+    filter.value = { ...filter.value, onlyOpen: !filter.value.onlyOpen };
+  }
+
+  /** Takes every narrowing off, which is what the panel's own way back does. */
   function clearFilter(): void {
-    filter.value = { query: "", methods: new Set() };
+    filter.value = NO_FILTER;
+  }
+
+  /**
+   * Takes off the filter the panel sets and leaves the search alone.
+   *
+   * Two halves, two ways out: the query has a cross in the box it was typed into, and a panel that
+   * cleared a search somebody typed would be a panel taking away something it did not do.
+   */
+  function clearMethods(): void {
+    filter.value = { ...filter.value, methods: new Set() };
+  }
+
+  /** Closes every group at once, which is what a long list wants before it is read. */
+  function collapseAll(): void {
+    collapsed.value = new Set(groups.value.map((group) => group.id));
   }
 
   async function load(): Promise<void> {
@@ -356,6 +401,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     collapsed,
     filter,
     filtering,
+    openSessionIds,
     status,
     failure,
     rows,
@@ -371,9 +417,13 @@ export const useSessionsStore = defineStore("sessions", () => {
     canPlaceGroup,
     canPlaceSession,
     setCollapsed,
+    collapseAll,
     setQuery,
     toggleMethod,
+    toggleRegex,
+    toggleOnlyOpen,
     clearFilter,
+    clearMethods,
     exportLibrary,
     importLibrary,
   };

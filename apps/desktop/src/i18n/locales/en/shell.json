@@ -7,7 +7,9 @@
       "close": "Close"
     },
     "sidebar": {
-      "sessions": "Sessions",
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
+      "divider": "Resize the sidebar",
       "protocols": "Protocols"
     },
     "quit": {

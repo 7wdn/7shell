@@ -51,10 +51,11 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 /**
  * The fields a row can write.
  *
- * The panel height is a setting as well, but nobody chooses it in a row: it is a divider somebody
- * drags, and it is reset with the workspace rather than listed in it.
+ * Four settings have no row: the file panel's height and the sidebar's width are dividers somebody
+ * drags, and whether the sidebar is open is a button in the sidebar's own header. They are reset
+ * with the workspace — `SettingsPage.fieldsOf` is where that is said — rather than listed here.
  */
-export type SettingsRowField = Exclude<PreferenceField, "terminalPanelHeight">;
+export type SettingsRowField = Exclude<PreferenceField, "terminalPanelHeight" | "sidebarWidth" | "sidebarOpen">;
 
 export interface SettingsSelectOption {
   /** What the choice is worth, in the settings file's own spelling. */

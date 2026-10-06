@@ -86,8 +86,8 @@ test("a vault can be created and the shell opens", async () => {
     await page.getByPlaceholder("Type the password again").fill("seven-shell-e2e");
     await page.getByRole("button", { name: "Create vault" }).click();
 
-    // The shell is up when the session list and the protocol list are on screen.
-    await expect(page.getByText("Sessions", { exact: true })).toBeVisible();
+    // The shell is up when the sidebar — its own controls and the list it holds — is on screen.
+    await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible();
     await expect(page.getByText("Protocols", { exact: true })).toBeVisible();
     await expect(page.getByText("SSH", { exact: true })).toBeVisible();
 
@@ -963,14 +963,13 @@ test("the list is searched, narrowed and exported from one menu", async () => {
     // A query that matches nothing says so and offers the way back, rather than an empty list with
     // a search box somebody has to work out for themselves.
     await search.fill("nothing-like-this-at-all");
-    await expect(page.getByText("No session matches.")).toBeVisible();
-    await mkdir(ARTIFACTS, { recursive: true });
+    // Nothing at all: no sentence, no button — what was typed is in the box with a cross in it.
+    await expect(page.getByRole("heading", { name: "searchable-web", exact: true })).toHaveCount(0);
+    await expect(page.getByTitle("Open a terminal for searchable-web")).toHaveCount(0);
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-search.png"), fullPage: false });
-
-    await page.getByRole("button", { name: "Show every session" }).click();
+    await search.fill("");
     await expect(web).toBeVisible();
     await expect(db).toBeVisible();
-    await expect(search).toHaveValue("");
 
     // The filter panel, which is a panel rather than a menu: choosing one thing must not close it.
     await page.getByRole("button", { name: "Filter sessions" }).click();
@@ -983,17 +982,13 @@ test("the list is searched, narrowed and exported from one menu", async () => {
 
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-filter.png"), fullPage: false });
 
-    // The panel's own way out, which is the one on screen while the panel is: the list's is behind
-    // it, and the two would be told apart by nothing.
-    await page
-      .getByRole("group", { name: "Filter sessions" })
-      .getByRole("button", { name: "Show every session" })
-      .click();
+    // The panel's own way out, which clears the filter and leaves the search somebody typed alone.
+    await page.getByRole("group", { name: "Filter sessions" }).getByRole("button", { name: "Clear filter" }).click();
     await expect(web).toBeVisible();
 
     // Exporting, from the library's own menu. The file dialog that follows is the platform's, so
     // the question before it is what this run can hold the interface to.
-    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("button", { name: "Import / Export" }).click();
     await page.getByRole("menuitem", { name: /^Export sessions/ }).click();
 
     const asked = page.getByRole("dialog");
@@ -1006,9 +1001,110 @@ test("the list is searched, narrowed and exported from one menu", async () => {
 
     // And the other half of the menu is there: importing is the one that opens a file dialog first,
     // so it is not run here.
-    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("button", { name: "Import / Export" }).click();
     await expect(page.getByRole("menuitem", { name: /^Import sessions/ })).toBeVisible();
     await page.keyboard.press("Escape");
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The panel's own controls, driven the way a hand drives them.
+ *
+ * What only a real window can settle: the divider really moves and the list really follows it, the
+ * sidebar really leaves the frame and the title bar really brings it back, and the two switches in
+ * the search row do what their own state says they do. These run last, because two of them write
+ * settings — the width and whether the panel is open — and a run that leaves the sidebar at 400
+ * pixels wide would be a run that changed what the next one sees.
+ */
+test("the sidebar can be resized, put away, and narrowed by its own switches", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "panel-host");
+
+    const sidebar = page.locator("[data-session-list]").locator("xpath=ancestor::aside[1]");
+    const width = () => sidebar.evaluate((element) => element.getBoundingClientRect().width);
+    const before = await width();
+
+    // The divider is a strip at the panel's edge with three dots on it. Dragging it wider has to
+    // make the panel wider — the dots are the affordance, so this is what they promise.
+    const divider = page.locator("[data-sidebar-divider]");
+    await expect(divider).toBeVisible();
+    const grip = await divider.boundingBox();
+    if (!grip) {
+      throw new Error("the divider has no place on screen");
+    }
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + 300);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2 + 120, grip.y + 300, { steps: 8 });
+    await page.mouse.up();
+
+    await expect.poll(width).toBeGreaterThan(before + 60);
+
+    // What it was left at is written down, not only remembered: the drag ends with a settings write,
+    // which is an answer from the backend and does not land the moment the pointer comes up.
+    await expect
+      .poll(async () => {
+        const written = JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as { sidebarWidth?: number };
+        return written.sidebarWidth ?? 0;
+      }, "the width is written down when the drag ends")
+      .toBeGreaterThan(300);
+
+    // The switches beside the search: a pattern is read as one, and a broken one is marked.
+    const regex = page.locator("[data-session-regex]");
+    await expect(regex).toHaveAttribute("aria-pressed", "false");
+    await page.getByLabel("Search sessions").fill("^panel-host$");
+    await expect(page.getByTitle("Open a terminal for panel-host")).toHaveCount(0);
+
+    await regex.click();
+    await expect(regex).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTitle("Open a terminal for panel-host")).toBeVisible();
+
+    await page.getByLabel("Search sessions").fill("([");
+    await expect(page.getByLabel("Search sessions")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByTitle("Open a terminal for panel-host")).toHaveCount(0);
+
+    await regex.click();
+    await page.getByLabel("Search sessions").fill("");
+
+    // Only what is open: nothing is connected in this run, so pressing it empties the list — and a
+    // locate has nothing to find, which is what its disabled state says.
+    const activeOnly = page.locator("[data-session-active-only]");
+    await activeOnly.click();
+    await expect(page.getByTitle("Open a terminal for panel-host")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Locate in sidebar" })).toBeDisabled();
+    await activeOnly.click();
+
+    // Collapse all: the session goes into the group first, so that closing every group is something
+    // that can be seen.
+    await page.getByRole("button", { name: "New group" }).click();
+    const field = page.getByRole("textbox", { name: "Group name" });
+    await field.fill("Panel");
+    await field.press("Enter");
+    await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
+
+    const row = page.getByTitle("Open a terminal for panel-host");
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to group" }).hover();
+    await page.getByRole("menuitemcheckbox", { name: "Panel", exact: true }).click();
+    await expect(row).toBeVisible();
+
+    await page.getByRole("button", { name: "Collapse all" }).click();
+    await expect(row).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-chrome.png"), fullPage: false });
+
+    // Away, and back: the way back is in the title bar, where the window's own controls are.
+    await page.getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(page.getByRole("button", { name: "Import / Export" })).toHaveCount(0);
+
+    await page.getByRole("banner").getByRole("button", { name: "Expand sidebar" }).click();
+    await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible();
+
+    // A refresh is a read, not a change: what was saved is still there afterwards.
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
   } finally {
     await close();
   }

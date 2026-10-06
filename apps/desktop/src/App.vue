@@ -332,7 +332,12 @@ onBeforeUnmount(() => {
     <UnlockScreen v-if="!vault.unlocked" />
 
     <div v-else class="relative flex min-h-0 flex-1">
-      <AppSidebar />
+      <!--
+        Put away rather than unmounted, and the state is the settings': somebody who works with the
+        list out of the way is somebody who wants it out of the way the next time the window opens,
+        and the way back lives in the title bar where the rest of the window's own controls are.
+      -->
+      <AppSidebar v-if="preferences.sidebarOpen" @collapse="preferences.setSidebarOpen(false)" />
       <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspaceTabs v-if="terminals.tabs.length > 0" />
         <div v-else class="min-h-0 flex-1 overflow-auto">

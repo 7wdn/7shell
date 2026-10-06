@@ -11,7 +11,7 @@
  *
  * On macOS the bar keeps its native traffic lights, so the content is inset to make room.
  */
-import { ListChecks, Monitor, Moon, Settings, Sun } from "@lucide/vue";
+import { ChevronsRight, ListChecks, Monitor, Moon, Settings, Sun } from "@lucide/vue";
 import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -81,6 +81,22 @@ const batchShowing = computed(() => terminals.activeTab?.kind === "batch");
     >
       {{ version }}
     </span>
+
+    <!--
+      The way back to the sidebar, drawn only while it is away: the window's own frame is where a
+      person looks for the panels it is made of, and a control that is there all the time would be
+      one more thing in the way of the ones that are used.
+    -->
+    <button
+      v-if="!preferences.sidebarOpen"
+      type="button"
+      class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      :title="t('shell.sidebar.expand')"
+      :aria-label="t('shell.sidebar.expand')"
+      @click="preferences.setSidebarOpen(true)"
+    >
+      <ChevronsRight :size="15" />
+    </button>
 
     <div data-tauri-drag-region class="h-full min-w-4 flex-1"></div>
 

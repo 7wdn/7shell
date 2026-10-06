@@ -16,7 +16,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on};
+use sevenshell_types::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on, sidebar_on};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -55,6 +55,14 @@ struct StoredSettings {
     /// does not, but that is what the schema version is for.
     #[serde(default)]
     packed_transfer: bool,
+    /// Absent in a file written before the sidebar could be resized, which reads as "the divider
+    /// has never been moved".
+    #[serde(default)]
+    sidebar_width: Option<u32>,
+    /// Absent in a file written before the sidebar could be put away, which reads as the default it
+    /// ships with — on — rather than as a sidebar somebody closed before it could be closed.
+    #[serde(default = "sidebar_on")]
+    sidebar_open: bool,
     #[serde(default)]
     locale: Option<String>,
 }
@@ -68,6 +76,8 @@ impl StoredSettings {
             files_layout: settings.files_layout.as_str().to_owned(),
             session_layout: settings.session_layout.as_str().to_owned(),
             terminal_panel_height: settings.terminal_panel_height,
+            sidebar_width: settings.sidebar_width,
+            sidebar_open: settings.sidebar_open,
             monitor_enabled: settings.monitor_enabled,
             packed_transfer: settings.packed_transfer,
             locale: settings.locale.clone(),
@@ -81,6 +91,8 @@ impl StoredSettings {
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             terminal_panel_height: self.terminal_panel_height,
+            sidebar_width: self.sidebar_width,
+            sidebar_open: self.sidebar_open,
             monitor_enabled: self.monitor_enabled,
             packed_transfer: self.packed_transfer,
             locale: self.locale.filter(|locale| !locale.is_empty()),
@@ -176,6 +188,8 @@ mod tests {
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
+            sidebar_width: None,
+            sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
             packed_transfer: false,
             locale: locale.map(str::to_owned),

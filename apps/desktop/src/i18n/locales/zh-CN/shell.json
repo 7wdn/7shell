@@ -7,7 +7,9 @@
       "close": "关闭"
     },
     "sidebar": {
-      "sessions": "会话",
+      "collapse": "收起侧边栏",
+      "expand": "展开侧边栏",
+      "divider": "调整侧边栏宽度",
       "protocols": "协议"
     },
     "quit": {

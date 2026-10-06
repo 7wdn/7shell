@@ -32,9 +32,18 @@ import AppSidebar from "@/components/shell/AppSidebar.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
-import { groupDelete, groupSave, sessionSave, sessionsExport, sessionsImport } from "@/lib/backend/tauri";
+import {
+  groupDelete,
+  groupSave,
+  groupsList,
+  sessionSave,
+  sessionsExport,
+  sessionsImport,
+  sessionsList,
+} from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry, MenuSubmenu } from "@/lib/menu/types";
 import { useSessionsStore } from "@/stores/sessions";
+import { useTerminalsStore } from "@/stores/terminals";
 import type { Session, SessionGroup } from "@/types/session";
 
 const work: SessionGroup = { id: "group-1", name: "Work", order: 0 };
@@ -59,15 +68,27 @@ const keyed: Session = { ...web, id: "session-3", name: "keyed", auth: { method:
 let host: HTMLDivElement;
 let app: App | undefined;
 
+/** What the sidebar asked the shell to do, which is only ever "put me away". */
+const collapseRequested = vi.fn();
+
 /** Mounts the sidebar over a library the store is simply told about, which is what it draws. */
 async function render(groups: readonly SessionGroup[], sessions: readonly Session[]): Promise<void> {
   const library = useSessionsStore();
   library.groups = [...groups];
   library.sessions = [...sessions];
 
-  app = createApp({ render: () => h(AppSidebar) }).use(i18n);
+  app = createApp({ render: () => h(AppSidebar, { onCollapse: collapseRequested }) }).use(i18n);
   app.mount(host);
   await nextTick();
+}
+
+/** Puts a terminal for one session on screen, which is what "active" means to the list. */
+function openTerminalFor(session: Session): void {
+  const terminals = useTerminalsStore();
+  terminals.tabs = [
+    { kind: "terminal", id: "tab-1", handle: "handle-1", session, status: "open", failure: null, panel: null },
+  ];
+  terminals.activeTabId = "tab-1";
 }
 
 function heading(text: string): HTMLElement | null {
@@ -160,6 +181,33 @@ function methodRow(label: string): HTMLElement | undefined {
 
 function toastMessage(): string {
   return useToast().message.value;
+}
+
+/** The box's own switch between words and a pattern. */
+function regexButton(): HTMLElement {
+  const button = host.querySelector<HTMLElement>("[data-session-regex]");
+  if (!button) {
+    throw new Error("the regex switch is not drawn");
+  }
+  return button;
+}
+
+/** The button that keeps only the sessions something is open for. */
+function activeOnlyButton(): HTMLElement {
+  const button = host.querySelector<HTMLElement>("[data-session-active-only]");
+  if (!button) {
+    throw new Error("the active-only button is not drawn");
+  }
+  return button;
+}
+
+/** The import/export control the panel is operated from. */
+function transferButton(): HTMLElement {
+  const button = host.querySelector<HTMLElement>("[data-session-transfer]");
+  if (!button) {
+    throw new Error("the import/export button is not drawn");
+  }
+  return button;
 }
 
 /**
@@ -357,6 +405,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   resetBackend();
+  collapseRequested.mockClear();
   // jsdom runs no animation frames unless it was asked to; the drag scrolls on them.
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 1));
   vi.stubGlobal("cancelAnimationFrame", (handle: number) => window.clearTimeout(handle));
@@ -941,19 +990,47 @@ describe("searching the list", () => {
     expect(drawnRows()).toEqual(["group:group-1", "session:session-2"]);
   });
 
-  it("says nothing was found, and offers the way back", async () => {
+  it("draws nothing at all when nothing matches", async () => {
+    // No sentence, no button: what somebody typed is in the box in front of them, with a cross in
+    // it, and the list being empty is the answer they asked for.
     await render([work], [web, db]);
 
     await typeInto(searchField(), "nothing-like-this");
 
     expect(drawnRows()).toEqual([]);
-    expect(host.textContent).toContain("No session matches");
+    expect(host.textContent).not.toContain("No session matches");
 
-    textButton(host, "Show every session")?.click();
+    buttonIn(host, "Clear the search")?.click();
     await nextTick();
 
     expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
     expect(searchField().value).toBe("");
+  });
+
+  it("reads the query as a regular expression when the box says so", async () => {
+    await render([work, lab], [web, db]);
+
+    // `^web$` is a shape rather than a word: as words, no session has a dollar sign in it, and as a
+    // pattern it is a session called exactly that.
+    await typeInto(searchField(), "^web$");
+    expect(drawnRows()).toEqual([]);
+
+    regexButton().click();
+    await nextTick();
+
+    expect(regexButton().getAttribute("aria-pressed")).toBe("true");
+    expect(drawnRows()).toEqual(["session:session-1"]);
+  });
+
+  it("says a pattern is broken by marking the box, and matches nothing with it", async () => {
+    await render([work], [web, db]);
+    regexButton().click();
+    await nextTick();
+
+    await typeInto(searchField(), "([");
+
+    expect(searchField().getAttribute("aria-invalid")).toBe("true");
+    expect(drawnRows()).toEqual([]);
   });
 
   it("empties the field from the button inside it, which is where the search is", async () => {
@@ -1015,10 +1092,76 @@ describe("filtering by how a session authenticates", () => {
     methodRow("Public key")?.click();
     await nextTick();
 
-    methodRow("Show every session")?.click();
+    textButton(host, "Clear filter")?.click();
     await nextTick();
 
     expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1", "session:session-3"]);
+    expect(searchField().value, "and the search somebody typed is left alone").toBe("");
+  });
+
+  it("keeps a session that is open, and drops the ones that are not", async () => {
+    await render([work], [web, db]);
+    openTerminalFor(web);
+    await nextTick();
+    expect(activeOnlyButton().textContent).toContain("Active sessions: 1");
+
+    activeOnlyButton().click();
+    await nextTick();
+
+    expect(drawnRows()).toEqual(["session:session-1"]);
+  });
+});
+
+describe("the panel's own controls", () => {
+  it("closes every group at once", async () => {
+    await render([work, lab], [web, db]);
+
+    buttonIn(host, "Collapse all")?.click();
+    await nextTick();
+
+    expect(useSessionsStore().collapsed).toEqual(new Set([work.id, lab.id]));
+    expect(drawnRows()).toEqual(["group:group-1", "group:group-2", "session:session-1"]);
+  });
+
+  it("reads the library again when it is asked to", async () => {
+    await render([work], [db]);
+    vi.mocked(sessionsList).mockClear();
+    vi.mocked(groupsList).mockClear();
+
+    buttonIn(host, "Refresh")?.click();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionsList)).toHaveBeenCalled());
+    expect(vi.mocked(groupsList)).toHaveBeenCalled();
+  });
+
+  it("asks the shell to put it away", async () => {
+    await render([work], [db]);
+
+    buttonIn(host, "Collapse sidebar")?.click();
+
+    expect(collapseRequested).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds the session the window is showing, whatever the list is narrowed to", async () => {
+    await render([work], [web, db]);
+    openTerminalFor(db);
+    await typeInto(searchField(), "web");
+    expect(drawnRows()).toEqual(["session:session-1"]);
+
+    buttonIn(host, "Locate in sidebar")?.click();
+    await nextTick();
+
+    // The search is let go of, the row is drawn, and it is marked for a moment so an eye can find
+    // it — nothing is selected, because nothing was chosen.
+    expect(searchField().value).toBe("");
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
+    await vi.waitFor(() => expect(rowElement("session:session-2").className).toContain("row-located"));
+  });
+
+  it("has nothing to find on a page that is about no host", async () => {
+    await render([work], [db]);
+
+    expect(buttonIn(host, "Locate in sidebar")?.hasAttribute("disabled")).toBe(true);
   });
 });
 
@@ -1026,7 +1169,7 @@ describe("importing and exporting the library", () => {
   it("offers both from the library menu, and has nothing to export from an empty library", async () => {
     await render([], []);
 
-    const entries = await clickMenu(buttonIn(host, "More actions"));
+    const entries = await clickMenu(transferButton());
 
     expect(entries.map((entry) => (entry.kind === "action" ? entry.id : "·"))).toEqual([
       "import-sessions",
@@ -1044,7 +1187,7 @@ describe("importing and exporting the library", () => {
     });
     await render([work], [web, db]);
 
-    const entries = await clickMenu(buttonIn(host, "More actions"));
+    const entries = await clickMenu(transferButton());
     pick(entries, "export-sessions").run();
     await nextTick();
 
@@ -1071,7 +1214,7 @@ describe("importing and exporting the library", () => {
     });
     await render([work], [web, db]);
 
-    const entries = await clickMenu(buttonIn(host, "More actions"));
+    const entries = await clickMenu(transferButton());
     pick(entries, "export-sessions").run();
     await nextTick();
     dialogButton("Export sessions")?.click();
@@ -1090,7 +1233,7 @@ describe("importing and exporting the library", () => {
     });
     await render([], []);
 
-    const entries = await clickMenu(buttonIn(host, "More actions"));
+    const entries = await clickMenu(transferButton());
     pick(entries, "import-sessions").run();
 
     await vi.waitFor(() => expect(vi.mocked(sessionsImport)).toHaveBeenCalledWith("Import sessions"));
@@ -1106,7 +1249,7 @@ describe("importing and exporting the library", () => {
     await render([work], [db]);
     const before = toastMessage();
 
-    const entries = await clickMenu(buttonIn(host, "More actions"));
+    const entries = await clickMenu(transferButton());
     pick(entries, "import-sessions").run();
     await vi.waitFor(() => expect(vi.mocked(sessionsImport)).toHaveBeenCalled());
 
@@ -1125,7 +1268,7 @@ describe("importing and exporting the library", () => {
     });
     await render([work], [db]);
 
-    const entries = await clickMenu(buttonIn(host, "More actions"));
+    const entries = await clickMenu(transferButton());
     pick(entries, "import-sessions").run();
 
     await vi.waitFor(() => expect(host.textContent).toContain("is not a session export"));

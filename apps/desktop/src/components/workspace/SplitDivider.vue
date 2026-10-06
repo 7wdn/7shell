@@ -169,5 +169,15 @@ onBeforeUnmount(() => observer?.disconnect());
         )
       "
     />
+    <!--
+      Three dots in the middle, lying along the line: the mark that says this edge can be moved.
+      Without it the divider is a line that only shows itself to somebody whose pointer happens to
+      cross it, which is a control nobody finds by looking.
+    -->
+    <span
+      class="panel-grip panel-grip--row"
+      :class="dragging ? 'text-primary' : 'text-muted-foreground/50 group-hover:text-primary/70'"
+      aria-hidden="true"
+    ></span>
   </div>
 </template>

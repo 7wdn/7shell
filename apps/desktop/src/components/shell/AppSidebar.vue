@@ -27,22 +27,28 @@
  * that are, because "the tunnel is not there" is the answer somebody staring at a port needs.
  */
 import {
+  ArrowDownUp,
   ArrowRight,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsLeft,
   Download,
-  EllipsisVertical,
   Folder,
   FolderInput,
   FolderOpen,
   FolderPlus,
   ListFilter,
   LoaderCircle,
+  LocateFixed,
   Network,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Server,
+  RotateCcw,
   SlidersHorizontal,
   Terminal,
   Trash2,
@@ -55,6 +61,7 @@ import { useI18n } from "vue-i18n";
 
 import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
+import SidebarResizeHandle from "@/components/shell/SidebarResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { useToast } from "@/composables/useToast";
@@ -63,20 +70,28 @@ import { describeShellError } from "@/i18n/errors";
 import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
+import { regexIsInvalid } from "@/lib/sessions/filter";
 import { hasSibling } from "@/lib/sessions/groups";
 import { rowTarget } from "@/lib/sessions/tree";
 import { useAppStore } from "@/stores/app";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useSessionsStore } from "@/stores/sessions";
-import { tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
+import { sessionOf, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { OpenTunnel, Session, SessionGroup, SessionImportSummary } from "@/types/session";
 import { AUTH_METHODS, PROTOCOLS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
 const app = useAppStore();
 const library = useSessionsStore();
+const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
 const { openMenu } = useContextMenu();
 const { toast } = useToast();
+
+const emit = defineEmits<{
+  /** Put the sidebar away: the frame around this panel owns where it goes and how it comes back. */
+  collapse: [];
+}>();
 
 const protocols = computed(() => PROTOCOLS);
 /** The ways a saved session can authenticate, which is what the list can be narrowed by. */
@@ -241,7 +256,10 @@ watch(filterOpen, (open) => {
   }
 });
 
-onBeforeUnmount(() => document.removeEventListener("mousedown", closeFilterOnOutsideClick, true));
+onBeforeUnmount(() => {
+  document.removeEventListener("mousedown", closeFilterOnOutsideClick, true);
+  window.clearTimeout(flashTimer);
+});
 
 /**
  * What an import did, said as a receipt.
@@ -300,8 +318,8 @@ async function runExport(includeSecrets: boolean): Promise<void> {
   }
 }
 
-/** The library's own menu: the two things that are done to the whole list rather than to a row. */
-function openLibraryMenu(event: MouseEvent): void {
+/** What the import/export button opens: the two things done to the whole list rather than to a row. */
+function openTransferMenu(event: MouseEvent): void {
   openMenu(event, { key: MENU_TITLES.library }, [
     {
       kind: "action",
@@ -321,6 +339,63 @@ function openLibraryMenu(event: MouseEvent): void {
       },
     },
   ]);
+}
+
+/** Whether the query is a pattern that does not compile, which the box says by turning red. */
+const regexInvalid = computed(() => library.filter.regex && regexIsInvalid(library.filter.query));
+
+/** How many sessions are open right now, which is what the active-only button reports. */
+const openCount = computed(() => library.openSessionIds.size);
+
+/** The row that has just been located, drawn for a moment so an eye can find it. */
+const flashedRow = ref<string | null>(null);
+let flashTimer = 0;
+
+/**
+ * Draws one row for a moment and then leaves it alone.
+ *
+ * Cleared before it is set again, so asking twice draws twice: a class that is already on the row
+ * is a class the browser has nothing to do about, and the second ask would look like nothing.
+ */
+async function flash(key: string): Promise<void> {
+  window.clearTimeout(flashTimer);
+  flashedRow.value = null;
+  await nextTick();
+  flashedRow.value = key;
+  flashTimer = window.setTimeout(() => {
+    flashedRow.value = null;
+  }, 1400);
+}
+
+/**
+ * Finds the session the window is showing, in the list.
+ *
+ * The one thing the list cannot answer on its own: a session can be open — a terminal, a file
+ * browser, a page about its host — while its row is off screen, behind a closed folder, or behind a
+ * search somebody has since typed. So the search and the switches are cleared first, which is what
+ * makes the row exist at all, and then it is brought into view and marked.
+ *
+ * Nothing is open on the home page, so there is nothing to find and the button says so by being
+ * disabled rather than by doing nothing.
+ */
+async function locateActive(): Promise<void> {
+  const session = terminals.activeTab ? sessionOf(terminals.activeTab) : null;
+  if (!session) {
+    return;
+  }
+  library.clearFilter();
+  await nextTick();
+  const row = rowForSession(session.id);
+  if (!row) {
+    return;
+  }
+  row.scrollIntoView({ block: "center" });
+  await flash(`session:${session.id}`);
+}
+
+/** The row a session is drawn in, once it is on screen. */
+function rowForSession(sessionId: string): HTMLElement | null {
+  return listBox.value?.querySelector<HTMLElement>(`[data-row="session:${sessionId}"]`) ?? null;
 }
 
 /**
@@ -563,39 +638,79 @@ const statusDot = computed(() => {
 </script>
 
 <template>
-  <aside class="flex w-64 shrink-0 flex-col border-r border-border bg-card/30">
+  <aside
+    class="relative flex shrink-0 flex-col border-r border-border bg-card/30"
+    :style="{ width: `${preferences.resolvedSidebarWidth}px` }"
+  >
     <section class="flex min-h-0 flex-1 flex-col px-3 pt-3">
-      <header class="mb-2 flex shrink-0 items-center justify-between">
-        <h2 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-          {{ t("shell.sidebar.sessions") }}
-        </h2>
-        <span class="flex items-center gap-0.5">
+      <!--
+        The row the panel is operated from: bringing the library in or sending it out on the left —
+        the one thing that is about the whole list rather than a row, and the place a word about the
+        panel would otherwise go — and the controls that act on the list on the right.
+      -->
+      <header class="mb-2 flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          data-session-transfer
+          class="inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('sessions.list.importExport')"
+          :aria-label="t('sessions.list.importExport')"
+          aria-haspopup="true"
+          @click="openTransferMenu($event)"
+        >
+          <ArrowDownUp :size="13" class="shrink-0" />
+          <span class="min-w-0 truncate">{{ t("sessions.list.importExport") }}</span>
+          <ChevronDown :size="12" class="shrink-0 opacity-60" />
+        </button>
+
+        <span class="min-w-0 flex-1"></span>
+
+        <span class="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
-            class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('sessions.list.collapseAll')"
+            :aria-label="t('sessions.list.collapseAll')"
+            @click="library.collapseAll()"
+          >
+            <ChevronsDownUp :size="12" />
+          </button>
+          <button
+            type="button"
+            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             :title="t('sessions.list.addGroup')"
             :aria-label="t('sessions.list.addGroup')"
             @click="startGroupCreate(null)"
           >
-            <FolderPlus :size="14" />
+            <FolderPlus :size="12" />
           </button>
           <button
             type="button"
-            class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             :title="t('sessions.list.add')"
             :aria-label="t('sessions.list.add')"
             @click="startNew()"
           >
-            <Plus :size="14" />
+            <Plus :size="12" />
           </button>
           <button
             type="button"
-            class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="t('sessions.list.more')"
-            :aria-label="t('sessions.list.more')"
-            @click="openLibraryMenu($event)"
+            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
+            :title="t('sessions.list.refresh')"
+            :aria-label="t('sessions.list.refresh')"
+            :disabled="library.status === 'loading'"
+            @click="library.load()"
           >
-            <EllipsisVertical :size="14" />
+            <RefreshCw :size="12" :class="library.status === 'loading' ? 'animate-spin' : ''" />
+          </button>
+          <button
+            type="button"
+            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('shell.sidebar.collapse')"
+            :aria-label="t('shell.sidebar.collapse')"
+            @click="emit('collapse')"
+          >
+            <ChevronsLeft :size="12" />
           </button>
         </span>
       </header>
@@ -617,12 +732,35 @@ const statusDot = computed(() => {
             autocapitalize="off"
             autocorrect="off"
             spellcheck="false"
-            class="h-7 w-full rounded-md border border-border bg-background pr-6 pl-7 text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+            class="h-7 w-full rounded-md border bg-background pr-12 pl-7 text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+            :class="regexInvalid ? 'border-destructive focus:ring-destructive' : 'border-border'"
+            :aria-invalid="regexInvalid ? 'true' : 'false'"
             :placeholder="t('sessions.list.search')"
             :aria-label="t('sessions.list.search')"
             @input="library.setQuery(($event.target as HTMLInputElement).value)"
             @keydown.escape.prevent="library.setQuery('')"
           />
+          <!--
+            How the query is read, said next to where it is typed: words to look for, or one regular
+            expression over the same text. The glyph is the pattern language's own shorthand for
+            "any text", which is what somebody reaching for this already has in mind.
+          -->
+          <button
+            type="button"
+            data-session-regex
+            class="absolute top-1/2 right-7 grid h-5 min-w-5 -translate-y-1/2 place-items-center rounded-sm px-0.5 font-mono text-[10px] transition-colors"
+            :class="
+              library.filter.regex
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            "
+            :title="t('sessions.list.regexHint')"
+            :aria-label="t('sessions.list.regex')"
+            :aria-pressed="library.filter.regex"
+            @click="library.toggleRegex()"
+          >
+            .*
+          </button>
           <button
             v-if="library.filter.query !== ''"
             type="button"
@@ -634,6 +772,19 @@ const statusDot = computed(() => {
             <X :size="12" />
           </button>
         </div>
+
+        <!-- Find what is on screen: the one thing the list cannot work out on its own. -->
+        <button
+          type="button"
+          data-session-locate
+          class="grid size-7 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
+          :title="t('sessions.list.locate')"
+          :aria-label="t('sessions.list.locate')"
+          :disabled="terminals.activeTab === null || sessionOf(terminals.activeTab) === null"
+          @click="locateActive()"
+        >
+          <LocateFixed :size="13" />
+        </button>
         <button
           ref="filterButton"
           type="button"
@@ -652,6 +803,27 @@ const statusDot = computed(() => {
         >
           <ListFilter v-if="library.filter.methods.size > 0" :size="13" />
           <SlidersHorizontal v-else :size="13" />
+        </button>
+        <button
+          type="button"
+          data-session-active-only
+          class="relative grid size-7 shrink-0 place-items-center rounded-md border transition-colors"
+          :class="
+            library.filter.onlyOpen
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'
+          "
+          :title="t('sessions.list.onlyActive')"
+          :aria-label="t('sessions.list.onlyActive')"
+          :aria-pressed="library.filter.onlyOpen"
+          @click="library.toggleOnlyOpen()"
+        >
+          <span
+            class="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] transition-all duration-200 ease-out"
+            :class="openCount > 0 ? 'size-1.5 border-success bg-success' : 'size-3 border-current'"
+            aria-hidden="true"
+          ></span>
+          <span class="sr-only" aria-live="polite">{{ t("sessions.list.activeCount", { count: openCount }) }}</span>
         </button>
 
         <!-- The panel hangs off the button that opened it, over the list rather than in it. -->
@@ -681,12 +853,13 @@ const statusDot = computed(() => {
             <span class="min-w-0 flex-1 truncate">{{ t(method.labelKey) }}</span>
           </button>
           <button
-            v-if="library.filtering"
+            v-if="library.filter.methods.size > 0"
             type="button"
-            class="mt-1 w-full rounded-md border-t border-border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            @click="library.clearFilter()"
+            class="mt-1 flex w-full items-center gap-2 rounded-md border-t border-border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            @click="library.clearMethods()"
           >
-            {{ t("sessions.list.filterClear") }}
+            <RotateCcw :size="12" class="shrink-0" />
+            <span class="min-w-0 flex-1 truncate">{{ t("sessions.list.filterClear") }}</span>
           </button>
         </div>
       </div>
@@ -713,25 +886,10 @@ const statusDot = computed(() => {
         </div>
 
         <!--
-          Nothing was found. Drawn as a state of its own rather than as the empty library's line:
-          what somebody needs here is to be told the search is why the list is empty, and the way
-          back out of it.
+          A search that matched nothing draws nothing at all. Not a sentence, not a button: the
+          person can see what they typed, the list is empty because of it, and the way back — the
+          box with the cross in it — is the thing they are already looking at.
         -->
-        <div
-          v-else-if="library.filtering && library.rows.length === 0"
-          class="rounded-md border border-dashed border-border px-3 py-4 text-center"
-        >
-          <Search :size="16" class="mx-auto mb-2 text-muted-foreground" />
-          <p class="text-xs leading-relaxed text-muted-foreground">{{ t("sessions.list.noMatches") }}</p>
-          <button
-            type="button"
-            class="mt-2 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-            @click="library.clearFilter()"
-          >
-            {{ t("sessions.list.filterClear") }}
-          </button>
-        </div>
-
         <template v-else>
           <template v-for="row in library.rows" :key="row.key">
             <!-- A group: the heading, the two drawers for changing it, and the place it is dropped
@@ -799,7 +957,10 @@ const statusDot = computed(() => {
               <div
                 :data-row="row.key"
                 class="group relative flex items-center gap-0.5 rounded-md pr-1 transition-colors hover:bg-accent/60"
-                :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
+                :class="[
+                  markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : '',
+                  flashedRow === row.key ? 'row-located' : '',
+                ]"
                 :style="indent(row.depth)"
                 @contextmenu="openSessionMenu($event, row.session)"
                 @mousedown="startDrag($event, { kind: 'session', id: row.session.id }, row.session.name)"
@@ -1033,6 +1194,17 @@ const statusDot = computed(() => {
       danger
       @confirm="confirmRemoval()"
       @update:open="pendingRemoval = null"
+    />
+    <!--
+      The edge, and the drag that moves it. Drawn inside the panel and hanging over its edge so the
+      target is easy to hit; the width it reports goes to the settings, because a sidebar somebody
+      widened is a sidebar they want wide the next time the application opens.
+    -->
+    <SidebarResizeHandle
+      :width="preferences.resolvedSidebarWidth"
+      @move="preferences.setSidebarWidth($event)"
+      @settle="preferences.rememberSidebarWidth()"
+      @reset="preferences.resetSidebarWidth()"
     />
   </aside>
 </template>
