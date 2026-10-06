@@ -176,10 +176,13 @@ test("a saved session offers its own menu on a right-click", async () => {
     await row.click({ button: "right" });
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
+    // The row of its own rather than a submenu, because this library has no group to move into yet:
+    // the entry that makes one is drawn where the list of destinations would have been.
     await expect(menu.getByRole("menuitem")).toHaveText([
       "Open a terminal for lab",
       "Open files for lab",
       "Edit session",
+      "Move to a new group",
       "Delete session",
       "Copy address",
     ]);
@@ -501,13 +504,55 @@ async function saveSession(page: Page, name: string): Promise<void> {
   await expect(editor).toHaveCount(0);
 }
 
-/** A group made where it is drawn: a name typed into the form under the list's header. */
+/**
+ * A group made where it is drawn: one click, and the name typed over the one it was made with.
+ *
+ * What the click produces is a row, not a form: the group exists from the moment it is asked for,
+ * which is why the field that appears is the row's own name and the name in it is the default.
+ */
 async function saveGroup(page: Page, name: string): Promise<void> {
   await page.getByRole("button", { name: "New group" }).click();
-  await page.getByPlaceholder("Group name").fill(name);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const field = page.getByRole("textbox", { name: "Group name" });
+  await expect(field).toHaveValue("New group");
+  await field.fill(name);
+  await field.press("Enter");
   await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
 }
+
+/**
+ * Giving a session a group that does not exist yet.
+ *
+ * This runs before any group is made, which is the case it is about: with no group to move into,
+ * the session's own menu offers it as a row of its own — "Move to a new group" — and the group is
+ * made with the session already inside it by the time its name is typed over.
+ */
+test("a session can be given a group of its own", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "groupless-host");
+    const row = page.getByTitle("Open a terminal for groupless-host");
+
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to a new group" }).click();
+
+    const field = page.getByRole("textbox", { name: "Group name" });
+    await expect(field).toHaveValue("New group");
+    await field.fill("Mine");
+    await field.press("Enter");
+    await expect(page.getByRole("heading", { name: "Mine", exact: true })).toBeVisible();
+
+    // Inside it, which is the whole point: the row it sits under is the nearest group row above it.
+    const keys = await rowKeys(page);
+    const sessionKey = await rowKeyOf(row);
+    const groupKey = await rowKeyOf(page.getByRole("heading", { name: "Mine", exact: true }));
+    expect(groupOver(keys, keys.indexOf(sessionKey))).toBe(groupKey);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "group-new.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});
 
 /**
  * Groups, from making one to taking a session back out of it.

@@ -190,13 +190,14 @@ describe("making and changing groups", () => {
 
     const store = useSessionsStore();
     await store.load();
-    const worked = await store.addGroup("Lab");
+    const made = await store.addGroup("Lab");
 
-    expect(worked).toBe(true);
+    // What comes back is the group the list holds, which is what a caller about to name it needs.
+    expect(made?.id).toBeTruthy();
     const written = groupSaveMock.mock.calls[0]?.[0];
     expect(written?.name).toBe("Lab");
     expect(written?.order).toBe(5);
-    expect(written?.id).toBeTruthy();
+    expect(written?.id).toBe(made?.id);
     expect(store.groups.map((group) => group.name)).toEqual(["Work", "Lab"]);
   });
 
@@ -207,9 +208,9 @@ describe("making and changing groups", () => {
     await store.load();
     store.setCollapsed(work.id, true);
 
-    const worked = await store.addGroup("Shelf", work.id);
+    const made = await store.addGroup("Shelf", work.id);
 
-    expect(worked).toBe(true);
+    expect(made?.id).toBeTruthy();
     expect(groupSaveMock.mock.calls[0]?.[0]).toMatchObject({ name: "Shelf", parentId: work.id, order: 1 });
     expect(store.collapsed.has(work.id)).toBe(false);
     expect(shape(store)).toContain("  Shelf");
@@ -219,9 +220,9 @@ describe("making and changing groups", () => {
     groupSaveMock.mockRejectedValue(refusal("STORE-IO"));
 
     const store = useSessionsStore();
-    const worked = await store.addGroup("Lab");
+    const made = await store.addGroup("Lab");
 
-    expect(worked).toBe(false);
+    expect(made).toBeNull();
     expect(store.failure?.code).toBe("STORE-IO");
     expect(store.groups).toEqual([]);
   });

@@ -188,6 +188,7 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
         edit: nothing,
         remove: nothing,
         move: nothing,
+        newGroup: nothing,
       }),
     },
     {

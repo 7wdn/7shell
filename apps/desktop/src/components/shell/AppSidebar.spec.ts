@@ -214,12 +214,6 @@ async function typeInto(field: HTMLInputElement, value: string): Promise<void> {
   await nextTick();
 }
 
-/** Answers a prompt the way its own form is answered, which is how the panel's prompts are tested. */
-async function submit(field: HTMLInputElement): Promise<void> {
-  field.closest("form")?.dispatchEvent(new Event("submit"));
-  await nextTick();
-}
-
 /** Opens the field over a group's name the way the list opens it: through the heading's own menu. */
 async function openRename(name: string): Promise<void> {
   const entries = await rightClick(headingRow(name));
@@ -337,15 +331,32 @@ function marked(key: string): boolean {
   return classes.includes("ring-primary") || classes.includes("bg-primary/10");
 }
 
+/**
+ * Puts every backend mock back to the answer a working backend gives.
+ *
+ * `mockClear` only forgets the calls: a test that asked for a refusal — and one does, to prove a
+ * group is not made when its write is refused — would otherwise leave the *next* test with a
+ * backend that refuses everything, and it would fail for a reason that has nothing to do with it.
+ */
+function resetBackend(): void {
+  vi.mocked(groupSave)
+    .mockReset()
+    .mockImplementation(async (group: SessionGroup) => group);
+  vi.mocked(groupDelete)
+    .mockReset()
+    .mockImplementation(async () => {});
+  vi.mocked(sessionSave)
+    .mockReset()
+    .mockImplementation(async (session: Session) => session);
+  vi.mocked(sessionsExport).mockReset().mockResolvedValue(undefined);
+  vi.mocked(sessionsImport).mockReset().mockResolvedValue(undefined);
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
   host = document.createElement("div");
   document.body.append(host);
-  vi.mocked(groupSave).mockClear();
-  vi.mocked(groupDelete).mockClear();
-  vi.mocked(sessionSave).mockClear();
-  vi.mocked(sessionsExport).mockClear().mockResolvedValue(undefined);
-  vi.mocked(sessionsImport).mockClear().mockResolvedValue(undefined);
+  resetBackend();
   // jsdom runs no animation frames unless it was asked to; the drag scrolls on them.
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 1));
   vi.stubGlobal("cancelAnimationFrame", (handle: number) => window.clearTimeout(handle));
@@ -451,27 +462,73 @@ describe("the rows", () => {
 });
 
 describe("making a group", () => {
-  it("asks for a name under the header, and draws the group once the backend has it", async () => {
+  it("makes one in a single click, and puts its name in the row to type over", async () => {
     await render([], [web]);
 
     buttonIn(host, "New group")?.click();
-    await nextTick();
+
+    // The row that appears is a group with its name in a field: what the person sees is the group
+    // they asked for, already there, with the name ready to be typed over.
+    await vi.waitFor(() => expect(groupNameField()).not.toBeNull());
+    expect(groupNameField()?.value).toBe("New group");
+
+    // One write, with the name it is drawn under until somebody says otherwise.
+    const written = vi.mocked(groupSave).mock.calls[0]?.[0];
+    expect(written).toMatchObject({ name: "New group", order: 0 });
+    expect(written?.parentId).toBeUndefined();
+    expect(written?.id).toBeTruthy();
+    expect(drawnRows()[0]?.startsWith("group:"), "and it is drawn where it landed").toBe(true);
+  });
+
+  it("writes the name that was typed over it", async () => {
+    await render([], [web]);
+    buttonIn(host, "New group")?.click();
+    await vi.waitFor(() => expect(groupNameField()).not.toBeNull());
+    vi.mocked(groupSave).mockClear();
 
     const field = groupNameField();
-    expect(field, "the naming form is open").not.toBeNull();
     if (field) {
       await typeInto(field, "Lab");
-      await submit(field);
+      await pressEnter(field);
     }
-    await vi.waitFor(() => expect(vi.mocked(groupSave)).toHaveBeenCalled());
 
-    const written = vi.mocked(groupSave).mock.calls[0]?.[0];
-    expect(written?.name).toBe("Lab");
-    expect(written?.parentId).toBeUndefined();
-    expect(written?.order, "a new group goes after the ones that exist").toBe(0);
-    expect(written?.id).toBeTruthy();
-    await vi.waitFor(() => expect(groupNameField(), "the form closes once it worked").toBeNull());
-    expect(heading("Lab")).not.toBeNull();
+    await vi.waitFor(() => expect(vi.mocked(groupSave)).toHaveBeenCalled());
+    expect(vi.mocked(groupSave).mock.calls[0]?.[0]).toMatchObject({ name: "Lab" });
+    await vi.waitFor(() => expect(heading("Lab")).not.toBeNull());
+    expect(groupNameField(), "and the field closes once it worked").toBeNull();
+  });
+
+  it("leaves the group named as it was made when the name is emptied", async () => {
+    // Nothing is thrown away: the group exists, and an empty name is somebody changing their mind
+    // about the name rather than about the group.
+    await render([], [web]);
+    buttonIn(host, "New group")?.click();
+    await vi.waitFor(() => expect(groupNameField()).not.toBeNull());
+    vi.mocked(groupSave).mockClear();
+
+    const field = groupNameField();
+    if (field) {
+      await typeInto(field, "   ");
+      await pressEnter(field);
+    }
+    await nextTick();
+
+    expect(vi.mocked(groupSave)).not.toHaveBeenCalled();
+    expect(heading("New group"), "the group is still there, under the name it was made with").not.toBeNull();
+  });
+
+  it("lets a narrowed list out of its filter, so the group it made can be named", async () => {
+    // The name is typed in the row, and a row the search is hiding cannot be typed into: a group
+    // that is asked for and does not appear is worse than a search that is cleared by asking.
+    await render([], [web]);
+    await typeInto(searchField(), "nothing-like-this-at-all");
+    expect(drawnRows()).toEqual([]);
+
+    buttonIn(host, "New group")?.click();
+
+    await vi.waitFor(() => expect(groupNameField()).not.toBeNull());
+    expect(searchField().value).toBe("");
+    expect(drawnRows()[0]?.startsWith("group:")).toBe(true);
   });
 
   it("makes one inside a group through that group's own menu, and opens it so it can be seen", async () => {
@@ -482,34 +539,59 @@ describe("making a group", () => {
 
     const entries = await rightClick(headingRow("Work"));
     pick(entries, "add-group-inside").run();
-    await nextTick();
 
-    const field = groupNameField();
-    expect(field, "the naming form is drawn under that group").not.toBeNull();
-    if (field) {
-      await typeInto(field, "Shelf");
-      await submit(field);
-    }
-    await vi.waitFor(() => expect(vi.mocked(groupSave)).toHaveBeenCalled());
-
-    expect(vi.mocked(groupSave).mock.calls[0]?.[0]).toMatchObject({ name: "Shelf", parentId: "group-1" });
+    await vi.waitFor(() => expect(groupNameField()).not.toBeNull());
+    expect(vi.mocked(groupSave).mock.calls[0]?.[0]).toMatchObject({ name: "New group", parentId: "group-1" });
     // The group it was made in opens: a group that was just made and cannot be seen is not made.
-    await vi.waitFor(() => expect(heading("Shelf")).not.toBeNull());
-    expect(drawnRows()).toContain("group:group-3");
+    // Its own name is in a field, so what says it is there is the field's place in the list.
+    const keys = drawnRows();
+    expect(keys.slice(0, 2), "Work opens and Rack is drawn again").toEqual(["group:group-1", "group:group-3"]);
+    expect(keys[2]?.startsWith("group:"), "the group that was just made is drawn inside Work").toBe(true);
+    expect(keys[3]).toBe("session:session-2");
+  });
+});
+
+describe("a group made for a session", () => {
+  it("makes the group and moves the session into it, in that order", async () => {
+    await render([], [web]);
+    vi.mocked(groupSave).mockImplementation(async (group) => group);
+
+    const entries = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for web"]'));
+    pick(entries, "move-to-new-group").run();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionSave)).toHaveBeenCalled());
+    const made = vi.mocked(groupSave).mock.calls[0]?.[0];
+    const moved = vi.mocked(sessionSave).mock.calls[0]?.[0];
+    expect(moved).toMatchObject({ id: "session-1", groupId: made?.id });
+    expect(made?.name).toBe("New group");
   });
 
-  it("will not make a group with no name", async () => {
+  it("offers it inside the list of groups when there are any", async () => {
+    await render([work], [db]);
+
+    const entries = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for db"]'));
+    const move = submenu(entries, "move-to-group");
+    const ids = move.entries.map((entry) => (entry.kind === "action" ? entry.id : entry.kind));
+
+    expect(ids).toEqual(["move-to-ungrouped", "move-to-group-1", "separator", "move-to-new-group"]);
+  });
+
+  it("makes no group when the write is refused, and moves nothing", async () => {
     await render([], [web]);
+    vi.mocked(groupSave).mockRejectedValue({
+      version: 1,
+      code: "STORE-IO",
+      messageKey: "errors.store.io",
+      messageParams: {},
+      origin: { subsystem: "store" },
+      outcome: "notSent",
+    });
 
-    buttonIn(host, "New group")?.click();
-    await nextTick();
-    const field = groupNameField();
-    if (field) {
-      await submit(field);
-    }
+    const entries = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for web"]'));
+    pick(entries, "move-to-new-group").run();
 
-    expect(vi.mocked(groupSave)).not.toHaveBeenCalled();
-    expect(groupNameField(), "the form stays open for a name").not.toBeNull();
+    await vi.waitFor(() => expect(useSessionsStore().failure?.code).toBe("STORE-IO"));
+    expect(vi.mocked(sessionSave)).not.toHaveBeenCalled();
   });
 });
 

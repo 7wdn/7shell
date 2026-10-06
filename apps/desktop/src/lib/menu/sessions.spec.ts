@@ -62,7 +62,14 @@ function submenu(entries: readonly MenuEntry[], id: string): MenuSubmenu {
 }
 
 function sessionActions() {
-  return { openTerminal: vi.fn(), openFiles: vi.fn(), edit: vi.fn(), remove: vi.fn(), move: vi.fn() };
+  return {
+    openTerminal: vi.fn(),
+    openFiles: vi.fn(),
+    edit: vi.fn(),
+    remove: vi.fn(),
+    move: vi.fn(),
+    newGroup: vi.fn(),
+  };
 }
 
 beforeEach(() => {
@@ -77,6 +84,7 @@ describe("a saved session's menu", () => {
       "open-terminal",
       "open-files",
       "edit",
+      "move-to-new-group",
       "remove",
       "copy-endpoint",
     ]);
@@ -115,10 +123,17 @@ describe("a saved session's menu", () => {
 });
 
 describe("moving a session into a group", () => {
-  it("offers no move at all when there is nowhere to move to", () => {
-    const entries = sessionMenu(session, [], sessionActions());
+  it("offers making a group when there is none to move into, without a submenu in the way", () => {
+    const wired = sessionActions();
+    const entries = sessionMenu(session, [], wired);
 
     expect(entries.some((entry) => entry.kind === "submenu")).toBe(false);
+    // A submenu holding one entry and a separator is a door in front of a door, so with no groups
+    // the row is drawn where the submenu would have been — and says what it does to the session.
+    expect(pick(entries, "move-to-new-group").labelKey).toBe("sessions.list.moveToNewGroup");
+
+    pick(entries, "move-to-new-group").run();
+    expect(wired.newGroup).toHaveBeenCalledWith(session);
   });
 
   it("lists no group first, then the groups in the order the tree draws them, each by its path", () => {
@@ -131,12 +146,27 @@ describe("moving a session into a group", () => {
       "move-to-group-1",
       "move-to-group-3",
       "move-to-group-2",
+      "separator",
+      "move-to-new-group",
     ]);
     // Each group's row says the group's own name; there is no sentence to translate.
     expect(pick(move.entries, "move-to-group-2").labelKey).toBe("sessions.list.groupLabel");
     expect(pick(move.entries, "move-to-group-2").params).toEqual({ name: "Lab" });
     // A nested group is named by its path: two groups may share a name at different depths.
     expect(pick(move.entries, "move-to-group-3").params).toEqual({ name: "Work / Rack" });
+    // And the last line of the list is where a group that is not there yet comes from: it says
+    // "New group", because the list it sits at the end of is a list of places to move to.
+    expect(pick(move.entries, "move-to-new-group").labelKey).toBe("sessions.list.groupNewForSession");
+  });
+
+  it("makes a group for the session, and moves it in", () => {
+    const wired = sessionActions();
+    const move = submenu(sessionMenu(session, [work], wired), "move-to-group");
+
+    pick(move.entries, "move-to-new-group").run();
+
+    expect(wired.newGroup).toHaveBeenCalledWith(session);
+    expect(wired.move).not.toHaveBeenCalled();
   });
 
   it("shows where the session is now, and moves it where it was sent", () => {

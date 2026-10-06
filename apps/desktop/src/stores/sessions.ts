@@ -187,18 +187,26 @@ export const useSessionsStore = defineStore("sessions", () => {
    * Makes a group with a fresh id: at the root unless a parent is named, and after the groups that
    * already sit there. A group made inside a closed one opens it — a group that was just made and
    * cannot be seen is a group that was not made.
+   *
+   * Hands back the group that was written, because the caller that made it is the one about to name
+   * it: the new heading has to be found among the rows to put its name in front of the person.
+   * `null` means the write was refused, and the envelope is in `failure`.
    */
-  async function addGroup(name: string, parentId: ParentId = null): Promise<boolean> {
+  async function addGroup(name: string, parentId: ParentId = null): Promise<SessionGroup | null> {
+    const id = crypto.randomUUID();
     const worked = await saveGroup({
-      id: crypto.randomUUID(),
+      id,
       name,
       parentId: parentId ?? undefined,
       order: nextOrder(groups.value, parentId),
     });
-    if (worked) {
-      reveal(parentId);
+    if (!worked) {
+      return null;
     }
-    return worked;
+    reveal(parentId);
+    // The backend's answer is what the list draws, so the group comes back out of the list rather
+    // than being the object that was handed in.
+    return groups.value.find((group) => group.id === id) ?? null;
   }
 
   /**

@@ -54,7 +54,6 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
-import GroupNameForm from "@/components/sessions/GroupNameForm.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
@@ -116,13 +115,14 @@ type PendingRemoval =
   | { readonly kind: "group"; readonly group: SessionGroup };
 const pendingRemoval = ref<PendingRemoval | null>(null);
 
-/** The group prompts, of which at most one is open: a name being made, or one being changed. */
-const creatingGroup = ref(false);
-/** The group a new one is being made inside, or null for the root of the tree. */
-const creatingInside = ref<string | null>(null);
-const newGroupName = ref("");
-/** The naming form that is open, whichever of the places it is drawn in. */
-const openNameForm = ref<{ focus: () => void } | null>(null);
+/**
+ * The name being typed over a group's own, and which group that is.
+ *
+ * One field for both cases, because they are the same case: a group that was just made is one whose
+ * name is still the placeholder, and a name somebody wants to change is a name somebody wants to
+ * type. Nothing is written until the typing stops, and an empty name, or the one it already had, is
+ * a cancel — the field is not a form, it is the name itself.
+ */
 const renamingGroup = ref<string | null>(null);
 const groupNameText = ref("");
 /** The field drawn over a group's name while it is being renamed, wherever in the list that is. */
@@ -356,39 +356,74 @@ async function confirmRemoval(): Promise<void> {
   await (asked.kind === "session" ? library.remove(asked.session.id) : removeGroup(asked.group));
 }
 
-function cancelGroupPrompts(): void {
-  creatingGroup.value = false;
-  creatingInside.value = null;
-  renamingGroup.value = null;
-}
-
 /**
- * Opens the naming form: under the list's own header for a group at the root, or under the heading
- * it will sit inside. The cursor goes into it, because a form that was just opened is a form
- * somebody asked to type in.
+ * Makes a group and puts its name in front of the person to type over.
+ *
+ * One click rather than a form, because a group is a heading and the only thing anybody wants to
+ * decide about one is what it says: the name is decided where the name is written — in the row
+ * itself, through the same field that renames one — instead of in a form that has to be typed into
+ * and then submitted before anything exists. The name it starts with is the one the form used to
+ * ask for, so somebody who changes their mind about naming it still has a group rather than a
+ * half-filled form to throw away.
+ *
+ * A group made inside a closed one opens it, and the row it landed in is brought into view: a group
+ * that was just made has to be visible if it is to be named, and the end of a long list is exactly
+ * where the new one is.
+ *
+ * A list that is narrowed is let out of it first. The name is typed in the row, so a group the
+ * search is hiding is a group that cannot be named — and "New group" doing nothing visible is worse
+ * than a search being cleared by the person who asked for a new group.
  */
 async function startGroupCreate(parentId: string | null): Promise<void> {
-  cancelGroupPrompts();
-  newGroupName.value = "";
-  creatingInside.value = parentId;
-  creatingGroup.value = true;
+  if (groupBusy.value) {
+    return;
+  }
+  library.clearFilter();
+  groupBusy.value = true;
+  const created = await library.addGroup(t("sessions.list.groupNewDefault"), parentId);
+  groupBusy.value = false;
+  if (!created) {
+    return;
+  }
+  startGroupRename(created);
   await nextTick();
-  openNameForm.value?.focus();
+  rowFor(created.id)?.scrollIntoView({ block: "nearest" });
+}
+
+/** The row a group is drawn in, once it is on screen. */
+function rowFor(groupId: string): HTMLElement | null {
+  return listBox.value?.querySelector<HTMLElement>(`[data-row="group:${groupId}"]`) ?? null;
 }
 
 /**
- * The open naming form hands itself over through here.
+ * A group made for a session, with the session put inside it.
  *
- * A `ref` written on an element inside a list arrives as an array of everything the list rendered,
- * and there is one form here, drawn in whichever of two places applies — so the form is taken as it
- * comes and the one that is mounted is the one that gets the cursor.
+ * The two writes are one action to the person who asked for it, so a refusal of the first is where
+ * it stops: a group with a session missing from it would be a folder somebody has to find out about
+ * afterwards. The name is typed over in the row afterwards, exactly as it is for a group made from
+ * the header — and, for the same reason, a narrowed list is let out of it first: the session has
+ * just moved into the new group, and both of them have to be on screen.
  */
-function takeNameForm(form: unknown): void {
-  openNameForm.value = (form as { focus: () => void } | null) ?? null;
+async function newGroupForSession(session: Session): Promise<void> {
+  if (groupBusy.value) {
+    return;
+  }
+  library.clearFilter();
+  groupBusy.value = true;
+  const created = await library.addGroup(t("sessions.list.groupNewDefault"), null);
+  if (created) {
+    await library.placeSession(session.id, { kind: "group", id: created.id });
+  }
+  groupBusy.value = false;
+  if (!created) {
+    return;
+  }
+  startGroupRename(created);
+  await nextTick();
+  rowFor(created.id)?.scrollIntoView({ block: "nearest" });
 }
 
 function startGroupRename(group: SessionGroup): void {
-  cancelGroupPrompts();
   groupNameText.value = group.name;
   renamingGroup.value = group.id;
   void nextTick().then(() => {
@@ -397,27 +432,17 @@ function startGroupRename(group: SessionGroup): void {
   });
 }
 
+/** Closes the name being typed, whatever it was doing there. */
+function cancelGroupRename(): void {
+  renamingGroup.value = null;
+}
+
 /**
- * The rename field hands itself over through here, for the same reason the naming form does: a
- * `ref` inside a list arrives as an array, and there is only ever one field on screen.
+ * The rename field hands itself over through here: a `ref` inside a list arrives as an array of
+ * everything the list rendered, and there is only ever one field on screen.
  */
 function takeRenameField(field: unknown): void {
   renameField.value = (field as HTMLInputElement | null) ?? null;
-}
-
-async function createGroup(): Promise<void> {
-  const name = newGroupName.value.trim();
-  if (name === "" || groupBusy.value) {
-    return;
-  }
-  groupBusy.value = true;
-  const worked = await library.addGroup(name, creatingInside.value);
-  groupBusy.value = false;
-  if (worked) {
-    creatingGroup.value = false;
-    creatingInside.value = null;
-    newGroupName.value = "";
-  }
 }
 
 /**
@@ -486,15 +511,13 @@ function openSessionMenu(event: MouseEvent, session: Session): void {
       },
       move: (target, groupId) =>
         void library.placeSession(target.id, groupId === undefined ? { kind: "root" } : { kind: "group", id: groupId }),
+      newGroup: (target) => void newGroupForSession(target),
     }),
   );
 }
 
-/** The ungrouped heading is not a thing anybody can rename or move, so it has no menu. */
-function openHeadingMenu(event: MouseEvent, group: SessionGroup | null): void {
-  if (!group) {
-    return;
-  }
+/** A group heading's own menu: it can be renamed, moved, added to, and deleted — and nothing else. */
+function openHeadingMenu(event: MouseEvent, group: SessionGroup): void {
   openMenu(
     event,
     { key: MENU_TITLES.group },
@@ -674,19 +697,6 @@ const statusDot = computed(() => {
       </p>
 
       <div ref="listBox" data-session-list class="min-h-0 flex-1 overflow-y-auto">
-        <!-- A group at the root is named under the header; one made inside a group is named under
-             that group's own heading, in the loop below. -->
-        <GroupNameForm
-          v-if="creatingGroup && creatingInside === null"
-          :ref="takeNameForm"
-          v-model="newGroupName"
-          :icon="FolderPlus"
-          :submit-label="t('sessions.list.groupCreate')"
-          :busy="groupBusy"
-          @submit="createGroup()"
-          @cancel="cancelGroupPrompts()"
-        />
-
         <p
           v-if="library.status === 'loading' && library.sessions.length === 0"
           class="px-1 py-2 text-xs text-muted-foreground"
@@ -778,22 +788,11 @@ const statusDot = computed(() => {
                 :aria-label="t('sessions.list.groupName')"
                 @input="groupNameText = ($event.target as HTMLInputElement).value"
                 @keydown.enter.prevent="submitGroupRename(row.group)"
-                @keydown.escape.prevent="cancelGroupPrompts()"
+                @keydown.escape.prevent="cancelGroupRename()"
                 @blur="submitGroupRename(row.group)"
               />
               <h3 v-else class="min-w-0 flex-1 truncate text-xs font-medium">{{ row.group.name }}</h3>
             </div>
-
-            <GroupNameForm
-              v-if="row.kind === 'group' && creatingGroup && creatingInside === row.id"
-              :ref="takeNameForm"
-              v-model="newGroupName"
-              :icon="FolderPlus"
-              :submit-label="t('sessions.list.groupCreate')"
-              :busy="groupBusy"
-              @submit="createGroup()"
-              @cancel="cancelGroupPrompts()"
-            />
 
             <!-- A session: one row, indented by how deep its group is. -->
             <template v-if="row.kind === 'session'">

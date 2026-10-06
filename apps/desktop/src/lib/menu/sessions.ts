@@ -27,6 +27,12 @@ export interface SessionMenuActions {
   readonly remove: (session: Session) => void;
   /** Into a group, or out of every group when the id is absent. */
   readonly move: (session: Session, groupId: string | undefined) => void;
+  /**
+   * Makes a group and puts this session in it, which is the way in for a library that has no groups
+   * yet: without it, "move into a group" is a thing you can only do twice, and the second time is
+   * the one you actually wanted.
+   */
+  readonly newGroup: (session: Session) => void;
 }
 
 /** The address as the sidebar writes it, which is what somebody would type somewhere else. */
@@ -63,6 +69,19 @@ export function sessionMenu(
       checked: inGroup === undefined,
       run: () => actions.move(session, undefined),
     });
+    // At the end of the list of groups, where a list that is short one group continues: the entry
+    // is a way of arriving at a group that is not there yet, and it reads as the last line of the
+    // list it belongs to.
+    moveEntries.push(
+      { kind: "separator", id: "sep-new-group" },
+      {
+        kind: "action",
+        id: "move-to-new-group",
+        labelKey: "sessions.list.groupNewForSession",
+        icon: FolderPlus,
+        run: () => actions.newGroup(session),
+      },
+    );
   }
 
   return [
@@ -94,7 +113,17 @@ export function sessionMenu(
             entries: moveEntries,
           },
         ] satisfies MenuEntry[])
-      : []),
+      : // With no group to move into, the same thing is a row of its own — and it says what it does
+        // to the session, because there is no list of destinations above it to read it against.
+        ([
+          {
+            kind: "action",
+            id: "move-to-new-group",
+            labelKey: "sessions.list.moveToNewGroup",
+            icon: FolderPlus,
+            run: () => actions.newGroup(session),
+          },
+        ] satisfies MenuEntry[])),
     { kind: "separator", id: "sep-remove" },
     {
       kind: "action",
