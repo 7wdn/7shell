@@ -88,8 +88,7 @@ test("a vault can be created and the shell opens", async () => {
 
     // The shell is up when the sidebar — its own controls and the list it holds — is on screen.
     await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible();
-    await expect(page.getByText("Protocols", { exact: true })).toBeVisible();
-    await expect(page.getByText("SSH", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Search sessions")).toBeVisible();
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "shell.png"), fullPage: false });
@@ -210,13 +209,16 @@ test("deleting a session asks first, and Escape leaves it alone", async () => {
   try {
     await saveSession(page, "doomed-host");
 
-    // Scoped to the row: by the time this runs the list has other sessions, each with a trash
-    // button that carries the same name.
     const row = page.getByTitle("Open a terminal for doomed-host");
-    const rowBox = page.locator("[data-row]", { has: row });
     await expect(row).toBeVisible();
 
-    await rowBox.getByRole("button", { name: "Delete session" }).click();
+    // The row carries no buttons of its own any more: what can be done to a session is in its menu,
+    // which is where the same actions on any other kind of row already live.
+    const ask = async () => {
+      await row.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Delete session" }).click();
+    };
+    await ask();
     const confirm = page.getByRole("dialog");
     await expect(confirm.getByText(/Delete “doomed-host”\?/)).toBeVisible();
 
@@ -226,11 +228,9 @@ test("deleting a session asks first, and Escape leaves it alone", async () => {
     await page.keyboard.press("Escape");
     await expect(confirm).toHaveCount(0);
     await expect(row).toBeVisible();
-    // The keyboard comes back to the button that asked, rather than being dropped on the body.
-    await expect(rowBox.getByRole("button", { name: "Delete session" })).toBeFocused();
 
     // Answering it is what removes the row, and nothing else does.
-    await rowBox.getByRole("button", { name: "Delete session" }).click();
+    await ask();
     await confirm.getByRole("button", { name: "Delete session", exact: true }).click();
 
     await expect(confirm).toHaveCount(0);
@@ -494,12 +494,13 @@ function groupOver(keys: readonly string[], at: number): string | null {
 }
 
 /** A save dialog answered with a session that is only ever connected to by hand. */
-async function saveSession(page: Page, name: string): Promise<void> {
+async function saveSession(page: Page, name: string, host = "127.0.0.1", port = "22"): Promise<void> {
   await page.getByRole("button", { name: "New session" }).click();
   const editor = page.getByRole("dialog");
   await editor.getByPlaceholder("Production web server").fill(name);
-  await editor.getByPlaceholder("example.com").fill("127.0.0.1");
+  await editor.getByPlaceholder("example.com").fill(host);
   await editor.getByPlaceholder("root").fill("labuser");
+  await editor.locator("#session-port").fill(port);
   await editor.getByRole("button", { name: "Save" }).click();
   await expect(editor).toHaveCount(0);
 }
@@ -1105,6 +1106,78 @@ test("the sidebar can be resized, put away, and narrowed by its own switches", a
     // A refresh is a read, not a change: what was saved is still there afterwards.
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A session that will not connect, and one that is picked out with others.
+ *
+ * The failure half is the part this interface changed its mind about: nothing came up, so there is
+ * nothing for the workspace to show. What is asserted is where the answer went instead — a mark on
+ * the row, the reason behind it, and a line at the foot of the window — and that no tab was opened
+ * to hold a message about a connection that never happened. The address is a closed port on this
+ * machine, which fails the same way everywhere and does not need the lab.
+ *
+ * The second half is the bulk selection: ticking two rows turns the panel's header into the
+ * actions for what is ticked, and both of them land in the group that was chosen.
+ */
+test("a session that fails to connect says so on its row, and rows can be picked out together", async () => {
+  const { page, close } = await openApp();
+  try {
+    // The editor's default port is 22; nothing is listening on 1.
+    await saveSession(page, "closed-port-host", "127.0.0.1", "1");
+    await saveSession(page, "picked-host");
+
+    const doomed = page.getByTitle("Open a terminal for closed-port-host");
+    await doomed.click();
+
+    // No tab, a mark on the row, and the reason at the foot of the window.
+    await expect(doomed).toBeVisible();
+    await expect(page.locator("[data-row]").filter({ has: doomed })).not.toHaveCount(0);
+    const mark = page.locator("[data-session-failure]").first();
+    await expect(mark).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator("body")).toContainText("Could not connect to closed-port-host", { timeout: 20_000 });
+
+    await mark.click();
+    await expect(page.locator("[data-session-failure-detail]")).toBeVisible();
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-failure.png"), fullPage: false });
+
+    // Clearing it puts the row back to what it was.
+    await page.getByRole("button", { name: "Clear error" }).click();
+    await expect(page.locator("[data-session-failure]")).toHaveCount(0);
+
+    // Picking two rows out: the header becomes the actions for what is picked, and the count says
+    // how many there are.
+    const first = page.locator("[data-row]").filter({ has: doomed }).first();
+    const second = page
+      .locator("[data-row]")
+      .filter({ has: page.getByTitle("Open a terminal for picked-host") })
+      .first();
+    await first.hover();
+    await first.locator("[data-session-select]").click();
+    await second.hover();
+    await second.locator("[data-session-select]").click();
+
+    await expect(page.locator("[data-session-selected-count]")).toHaveText("2 selected");
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-selection.png"), fullPage: false });
+
+    // Both into one group, made from the selection: the name is typed over the one it is made with.
+    await page.getByRole("button", { name: "New group" }).click();
+    const field = page.getByRole("textbox", { name: "Group name" });
+    await expect(field).toHaveValue("New group");
+    await field.fill("Both");
+    await field.press("Enter");
+
+    await expect(page.locator("[data-session-selected-count]")).toHaveCount(0);
+    const keys = await rowKeys(page);
+    const groupKey = await rowKeyOf(page.getByRole("heading", { name: "Both", exact: true }));
+    expect(groupOver(keys, keys.indexOf(await rowKeyOf(doomed)))).toBe(groupKey);
+    expect(groupOver(keys, keys.indexOf(await rowKeyOf(page.getByTitle("Open a terminal for picked-host"))))).toBe(
+      groupKey,
+    );
   } finally {
     await close();
   }

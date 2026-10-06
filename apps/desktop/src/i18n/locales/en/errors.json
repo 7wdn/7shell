@@ -33,6 +33,7 @@
       "schemaNewer": "This data was written by a newer version (format {found}; this build understands up to {supported})."
     },
     "session": {
+      "openCancelled": "The connection attempt was called off.",
       "notFound": "That session is no longer saved.",
       "bundleInvalid": "That file is not a session export from this application, or it has been damaged.",
       "bundleIo": "The session file could not be read or written."

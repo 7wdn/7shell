@@ -10,7 +10,7 @@
       "collapse": "收起侧边栏",
       "expand": "展开侧边栏",
       "divider": "调整侧边栏宽度",
-      "protocols": "协议"
+      "sessions": "会话"
     },
     "quit": {
       "title": "还有没做完的事，仍然退出？",

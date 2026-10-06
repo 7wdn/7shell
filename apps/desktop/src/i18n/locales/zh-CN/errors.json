@@ -33,6 +33,7 @@
       "schemaNewer": "这份数据由更新的版本写入（格式 {found}；当前版本最高支持 {supported}）。"
     },
     "session": {
+      "openCancelled": "连接已被取消。",
       "notFound": "这个会话已经不存在了。",
       "bundleInvalid": "这个文件不是本应用导出的会话文件，或者已经损坏。",
       "bundleIo": "无法读写这个会话文件。"

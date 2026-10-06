@@ -383,6 +383,15 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    /// An attempt that somebody called off.
+    ///
+    /// Its own code rather than a connection failure, because nothing failed: the interface says
+    /// "cancelled" instead of drawing the row as broken, and that difference has to survive the
+    /// trip through an envelope.
+    pub fn session_open_cancelled() -> Self {
+        Self::new(ErrorCode::SessionOpenCancelled, Origin::new(Subsystem::Ssh)).with_outcome(OperationOutcome::NotSent)
+    }
+
     pub fn store_io(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::StoreIo, Origin::new(Subsystem::Store)).with_detail(detail)
     }

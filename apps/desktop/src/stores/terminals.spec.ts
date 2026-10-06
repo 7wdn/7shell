@@ -275,7 +275,7 @@ describe("terminals store", () => {
     expect(terminalTab(store)?.reason).toBe("the server refused the channel");
   });
 
-  it("gives a failed open a tab, because that is where the person is looking", async () => {
+  it("keeps a failed open on the row it was made from, and opens nothing", async () => {
     sessionOpenMock.mockRejectedValue({
       version: 1,
       code: "SSH-AUTH-FAILED",
@@ -289,11 +289,42 @@ describe("terminals store", () => {
     open();
     await store.open(session);
 
-    expect(store.tabs).toHaveLength(1);
-    expect(terminalTab(store)?.status).toBe("failed");
-    expect(terminalTab(store)?.failure?.code).toBe("SSH-AUTH-FAILED");
-    // Nothing was opened, so there is no handle to close later.
-    expect(terminalTab(store)?.handle).toBeNull();
+    // Nothing came up, so there is nothing for the workspace to show: the row the click was made
+    // on is where the answer belongs, and it is also the row that can be clicked again.
+    expect(store.tabs).toHaveLength(0);
+    expect(store.failures[session.id]?.code).toBe("SSH-AUTH-FAILED");
+    expect(store.connectingSessionIds).toEqual([]);
+  });
+
+  it("forgets a failure when the next attempt works", async () => {
+    sessionOpenMock.mockRejectedValueOnce(refused);
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    expect(store.failures[session.id]).toBeDefined();
+
+    sessionOpenMock.mockResolvedValue(opened());
+    await store.open(session);
+
+    expect(store.failures[session.id]).toBeUndefined();
+  });
+
+  it("says an attempt that was called off is not a failure", async () => {
+    sessionOpenMock.mockRejectedValue({
+      version: 1,
+      code: "SESSION-OPEN-CANCELLED",
+      messageKey: "errors.session.openCancelled",
+      messageParams: {},
+      origin: { subsystem: "ssh" },
+      outcome: "notSent",
+    });
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    expect(store.tabs).toHaveLength(0);
+    expect(store.failures[session.id], "the person who pressed the cross knows what happened").toBeUndefined();
   });
 
   it("removes a tab whose terminal is closed", async () => {
@@ -658,11 +689,10 @@ describe("terminals store", () => {
     open();
     await store.open(session);
 
-    // The panel is opened onto the tab that exists afterwards, and a terminal that never opened is
-    // not a place for a file browser.
+    // There is no tab at all, so there is nothing for a file browser to be opened onto.
     expect(filesOpenMock).not.toHaveBeenCalled();
-    expect(terminalTabOrFail(store).status).toBe("failed");
-    expect(terminalTabOrFail(store).panel).toBeNull();
+    expect(store.tabs).toHaveLength(0);
+    expect(store.failures[session.id]).toBeDefined();
   });
 
   it("reconnects in the shape the settings name, not the shape the tab happened to have", async () => {

@@ -42,6 +42,9 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
+import { useToast } from "@/composables/useToast";
+import { i18n } from "@/i18n";
+import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
@@ -57,6 +60,9 @@ import type {
   SftpOutcome,
   TunnelFailure,
 } from "@/types/session";
+
+/** What the backend answers when an attempt was called off, which is not a failure. */
+export const CANCELLED_OPEN = "SESSION-OPEN-CANCELLED";
 
 export type TerminalTabStatus = "open" | "ended" | "failed";
 
@@ -203,10 +209,30 @@ export function tunnelFailureKey(failure: TunnelFailure): string {
 export const useTerminalsStore = defineStore("terminals", () => {
   const files = useFilesStore();
   const preferences = usePreferencesStore();
+  const { toast } = useToast();
   const tabs = ref<WorkspaceTab[]>([]);
   const activeTabId = ref<string | null>(null);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
   const connectingSessionIds = ref<string[]>([]);
+  /**
+   * The last connection failure per session, in the order they happened.
+   *
+   * Kept here rather than on a tab because a failed attempt no longer opens one: nothing came up,
+   * so there is nothing for the workspace to show, and the row the person clicked is the place the
+   * answer belongs. Cleared by them, or by the next attempt succeeding.
+   */
+  const failures = ref<Record<string, ShellError>>({});
+
+  /**
+   * The interface's own translation, reached from the store.
+   *
+   * A store is not a component, so it has no `useI18n()`; the instance is a module singleton and
+   * the messages are what a store can honestly own — a connection failure is reported from here,
+   * because there is nowhere else that knows the row it belongs to.
+   */
+  function translate(key: string, params?: Record<string, string>): string {
+    return params ? i18n.global.t(key, params) : i18n.global.t(key);
+  }
   const decision = ref<HostKeyDecision | null>(null);
   /** The forwards that are up, as the backend last described them. */
   const tunnels = ref<OpenTunnel[]>([]);
@@ -256,8 +282,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     connectingSessionIds.value.push(session.id);
     try {
       acceptTerminal(session, await backend.terminal.open(session.id));
+      forgetFailure(session.id);
     } catch (error) {
-      addTerminal(session, { handle: null, status: "failed", failure: asShellError(error, "session_open") });
+      recordFailure(session, asShellError(error, "session_open"));
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
@@ -295,22 +322,68 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (connectingSessionIds.value.includes(session.id)) {
       return;
     }
-    // A tab whose open failed holds no browser at all: asking again is a retry, not a second view.
-    const failed = tabs.value.find(
-      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === session.id,
-    );
-    if (failed) {
-      forget(failed.id);
-    }
 
     connectingSessionIds.value.push(session.id);
     try {
       acceptFiles(session, await files.open(session.id));
+      forgetFailure(session.id);
     } catch (error) {
-      addFiles(session, { handle: null, status: "failed", failure: asShellError(error, "files_open") });
+      recordFailure(session, asShellError(error, "files_open"));
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
+  }
+
+  /**
+   * What a refused attempt leaves behind, and what it says.
+   *
+   * A cancelled attempt is not a failure and says so with a receipt: the person who pressed the
+   * cross knows what happened, and drawing their row as broken would be answering a question they
+   * did not ask. Anything else is a failure — a marker on the row, with the reason behind it, and
+   * a toast, because the click was made on a row that may already be scrolled past.
+   */
+  function recordFailure(session: Session, failure: ShellError): void {
+    if (failure.code === CANCELLED_OPEN) {
+      toast(translate("sessions.list.connectCancelled", { name: session.name }), "receipt");
+      return;
+    }
+
+    failures.value = { ...failures.value, [session.id]: failure };
+    const reason = describeShellError(translate, failure).message;
+    toast(translate("sessions.list.connectFailed", { name: session.name, reason }), "failure");
+  }
+
+  /** Forgets a session's failure, which its next attempt does by succeeding. */
+  function forgetFailure(sessionId: string): void {
+    if (!(sessionId in failures.value)) {
+      return;
+    }
+    const next = { ...failures.value };
+    delete next[sessionId];
+    failures.value = next;
+  }
+
+  /** Calls off an attempt that has not finished, and says whether there was one. */
+  async function cancelOpen(sessionId: string): Promise<void> {
+    try {
+      const stopped = await backend.terminal.cancelOpen(sessionId);
+      if (stopped) {
+        toast(translate("sessions.list.connectCancelled", { name: sessionName(sessionId) }), "receipt");
+      }
+    } catch (error) {
+      // The attempt is over by the time the answer comes back, in which case there is nothing to
+      // call off and nothing to say: the open itself reports how it ended.
+      const failure = asShellError(error, "session_open_cancel");
+      if (failure.code !== "SESSION-NOT-FOUND") {
+        toast(describeShellError(translate, failure).message, "failure");
+      }
+    }
+  }
+
+  /** What to call a session in a sentence, for the one place that has only its id. */
+  function sessionName(sessionId: string): string {
+    const tab = tabs.value.find((entry) => sessionOf(entry)?.id === sessionId);
+    return tab ? (sessionOf(tab)?.name ?? sessionId) : sessionId;
   }
 
   function acceptTerminal(session: Session, outcome: OpenOutcome): void {
@@ -905,6 +978,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     activeTab,
     activeTabId,
     connectingSessionIds,
+    failures,
     decision,
     tunnels,
     tunnelFailures,
@@ -918,6 +992,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     writableHandles,
     activeTerminalHandle,
     raiseBatchDecision,
+    cancelOpen,
+    forgetFailure,
     openPanel,
     closePanel,
     togglePanel,

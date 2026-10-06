@@ -21,6 +21,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionDelete: vi.fn(async () => {}),
   sessionsExport: vi.fn(async () => undefined),
   sessionsImport: vi.fn(async () => undefined),
+  sessionOpenCancel: vi.fn(async () => false),
   groupsList: vi.fn(async () => []),
   groupSave: vi.fn(async (group: SessionGroup) => group),
   groupDelete: vi.fn(async () => {}),
@@ -37,11 +38,14 @@ import {
   groupSave,
   groupsList,
   sessionSave,
+  sessionDelete,
+  sessionOpenCancel,
   sessionsExport,
   sessionsImport,
   sessionsList,
 } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry, MenuSubmenu } from "@/lib/menu/types";
+import { ShellError } from "@/lib/backend/errors";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { Session, SessionGroup } from "@/types/session";
@@ -64,6 +68,8 @@ const web: Session = {
 const db: Session = { ...web, id: "session-2", name: "db", groupId: work.id };
 /** A session that authenticates a different way, which is what the method filter is about. */
 const keyed: Session = { ...web, id: "session-3", name: "keyed", auth: { method: "publicKey", hasSecret: false } };
+/** A session inside a nested group, which is what a group's own tick has to reach. */
+const cache: Session = { ...web, id: "session-5", name: "cache", groupId: rack.id };
 
 let host: HTMLDivElement;
 let app: App | undefined;
@@ -197,6 +203,29 @@ function activeOnlyButton(): HTMLElement {
   const button = host.querySelector<HTMLElement>("[data-session-active-only]");
   if (!button) {
     throw new Error("the active-only button is not drawn");
+  }
+  return button;
+}
+
+/** The cross on a row whose attempt is still going. */
+function cancelButton(): HTMLElement | null {
+  return host.querySelector<HTMLElement>("[data-session-cancel]");
+}
+
+/** The tick on a row, which is how a bulk selection is built. */
+function rowTick(key: string): HTMLElement {
+  const button = rowElement(key).querySelector<HTMLElement>("[data-session-select]");
+  if (!button) {
+    throw new Error(`the row ${key} has no tick`);
+  }
+  return button;
+}
+
+/** The tick on a group, which is about everything under it. */
+function groupTick(name: string): HTMLElement {
+  const button = headingRow(name)?.querySelector<HTMLElement>("[data-group-select]");
+  if (!button) {
+    throw new Error(`the group ${name} has no tick`);
   }
   return button;
 }
@@ -398,6 +427,10 @@ function resetBackend(): void {
     .mockImplementation(async (session: Session) => session);
   vi.mocked(sessionsExport).mockReset().mockResolvedValue(undefined);
   vi.mocked(sessionsImport).mockReset().mockResolvedValue(undefined);
+  vi.mocked(sessionOpenCancel).mockReset().mockResolvedValue(false);
+  vi.mocked(sessionDelete)
+    .mockReset()
+    .mockImplementation(async () => {});
 }
 
 beforeEach(() => {
@@ -424,11 +457,11 @@ afterEach(() => {
 });
 
 describe("the rows", () => {
-  it("draws a group before what is in it, and says when a group is empty", async () => {
+  it("draws a group before what is in it, and nothing at all under an empty one", async () => {
     await render([work, lab], [web, db]);
 
     expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "group:group-2", "session:session-1"]);
-    expect(host.textContent).toContain("Nothing in this group.");
+    expect(host.textContent).not.toContain("Nothing in this group");
   });
 
   it("draws a session that is in no group at the root, with no heading over it", async () => {
@@ -467,11 +500,12 @@ describe("the rows", () => {
   it("draws no buttons on a group heading: changing one is a right-click away", async () => {
     await render([work], [web]);
 
-    // The chevron is the only button on the row. Renaming and deleting live in the menu, so the
-    // heading is a name with a folder beside it rather than a strip of icons.
+    // Two buttons: the chevron, and the tick that picks the group out for a bulk action. Renaming
+    // and deleting live in the menu, so the heading is a name with a folder beside it rather than a
+    // strip of icons.
     const row = headingRow("Work");
     const labels = [...(row?.querySelectorAll("button") ?? [])].map((button) => button.getAttribute("aria-label"));
-    expect(labels).toEqual(["Collapse Work"]);
+    expect(labels).toEqual(["Collapse Work", "Select everything in Work"]);
 
     const entries = await rightClick(row);
     const actions = entries.filter((entry) => entry.kind === "action").map((entry) => entry.id);
@@ -1162,6 +1196,159 @@ describe("the panel's own controls", () => {
     await render([work], [db]);
 
     expect(buttonIn(host, "Locate in sidebar")?.hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("an attempt that is still going, and one that failed", () => {
+  it("draws the spinner and the cross on the row that started it", async () => {
+    await render([work], [web, db]);
+    const terminals = useTerminalsStore();
+    terminals.connectingSessionIds = [db.id];
+    await nextTick();
+
+    expect(cancelButton(), "the way to call it off is on the row").not.toBeNull();
+    expect(cancelButton()?.getAttribute("aria-label")).toBe("Cancel connecting to db");
+  });
+
+  it("calls it off through the backend", async () => {
+    vi.mocked(sessionOpenCancel).mockResolvedValue(true);
+    await render([work], [web, db]);
+    const terminals = useTerminalsStore();
+    terminals.connectingSessionIds = [db.id];
+    await nextTick();
+
+    cancelButton()?.click();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionOpenCancel)).toHaveBeenCalledWith(db.id));
+  });
+
+  it("keeps a failure on the row, with the reason behind a click", async () => {
+    await render([], [web]);
+    const terminals = useTerminalsStore();
+    terminals.failures = {
+      [web.id]: new ShellError({
+        version: 1,
+        code: "SSH-AUTH-FAILED",
+        messageKey: "errors.ssh.authFailed",
+        messageParams: { host: "example.test", port: "22" },
+        origin: { subsystem: "ssh" },
+        outcome: "sent",
+      }),
+    };
+    await nextTick();
+
+    const mark = host.querySelector<HTMLElement>("[data-session-failure]");
+    expect(mark, "the row says something went wrong").not.toBeNull();
+    expect(mark?.getAttribute("aria-label")).toContain("Click for the reason");
+    expect(host.textContent, "and no tab was opened to say it in").not.toContain("SSH-AUTH-FAILED");
+  });
+
+  it("carries nothing else on the row: the rest is a right-click away", async () => {
+    // Editing, deleting and the file browser were three buttons on every row, which is three
+    // buttons per row saying what the menu already says.
+    await render([work], [db]);
+
+    const labels = [...rowElement("session:session-2").querySelectorAll("button")].map(
+      (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
+    );
+    expect(labels).toEqual(["Open a terminal for db", "Select db"]);
+  });
+});
+
+describe("picking several sessions out", () => {
+  it("turns the header into the bulk toolbar, and says how many are picked", async () => {
+    await render([work, lab], [web, db]);
+
+    expect(host.querySelector("[data-session-selected-count]")).toBeNull();
+
+    rowTick("session:session-2").click();
+    await nextTick();
+
+    expect(host.querySelector("[data-session-selected-count]")?.textContent?.trim()).toBe("1 selected");
+    expect(buttonIn(host, "Import / Export"), "the panel's own controls step aside").toBeNull();
+    expect(host.querySelector("[data-session-move-selected]")).not.toBeNull();
+    expect(host.querySelector("[data-session-select-all]")).not.toBeNull();
+    expect(host.querySelector("[data-session-exit-selection]")).not.toBeNull();
+  });
+
+  it("picks every session, and puts every one back", async () => {
+    await render([work, lab], [web, db]);
+
+    rowTick("session:session-2").click();
+    await nextTick();
+    host.querySelector<HTMLElement>("[data-session-select-all]")?.click();
+    await nextTick();
+
+    expect(host.querySelector("[data-session-selected-count]")?.textContent?.trim()).toBe("2 selected");
+
+    host.querySelector<HTMLElement>("[data-session-select-all]")?.click();
+    await nextTick();
+
+    expect(useSessionsStore().selected.size).toBe(0);
+  });
+
+  it("leaves the selection on Escape, wherever the keyboard is", async () => {
+    await render([work], [web, db]);
+    rowTick("session:session-2").click();
+    await nextTick();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await nextTick();
+
+    expect(useSessionsStore().selected.size).toBe(0);
+  });
+
+  it("moves everything picked into a group in one go", async () => {
+    await render([work, lab], [web, db]);
+    rowTick("session:session-2").click();
+    rowTick("session:session-1").click();
+    await nextTick();
+
+    host.querySelector<HTMLElement>("[data-session-move-selected]")?.click();
+    await nextTick();
+    const entries = useContextMenu().entries.value;
+    pick(entries, "move-selected-to-group-2").run();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionSave)).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(sessionSave).mock.calls.map(([session]) => [session.id, session.groupId])).toEqual([
+      ["session-2", "group-2"],
+      ["session-1", "group-2"],
+    ]);
+    expect(useSessionsStore().selected.size, "and the selection is done with").toBe(0);
+  });
+
+  it("asks before deleting what is picked, and names it", async () => {
+    await render([work], [web, db]);
+    rowTick("session:session-2").click();
+    rowTick("session:session-1").click();
+    await nextTick();
+
+    host.querySelector<HTMLElement>('[title="Delete 2 sessions"]')?.click();
+    await nextTick();
+
+    expect(confirmDialog().textContent).toContain("the 2 sessions you picked");
+    expect(confirmDialog().textContent).toContain("db");
+    expect(confirmDialog().textContent).toContain("web");
+
+    dialogButton("Delete 2 sessions")?.click();
+    await vi.waitFor(() => expect(vi.mocked(sessionDelete)).toHaveBeenCalledTimes(2));
+  });
+
+  it("picks everything under a group when its own box is ticked, and says so in three states", async () => {
+    await render([work, rack], [cache]);
+
+    groupTick("Work").click();
+    await nextTick();
+
+    // The group holds Rack, and Rack holds cache: a tick on a group is about the whole subtree.
+    expect([...useSessionsStore().selected]).toEqual(["session-5"]);
+    expect(groupTick("Work").getAttribute("aria-checked")).toBe("true");
+
+    rowTick("session:session-5").click();
+    await nextTick();
+
+    expect(useSessionsStore().selected.size).toBe(0);
+    expect(groupTick("Work").getAttribute("aria-checked")).toBe("false");
   });
 });
 

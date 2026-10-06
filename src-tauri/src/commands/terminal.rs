@@ -40,6 +40,15 @@ pub async fn session_open(state: State<'_, ShellState>, session_id: String) -> R
     state.core().open_terminal(&session_id).await
 }
 
+/// Calls off an open that is still going, and says whether there was one to call off.
+///
+/// A separate command rather than a handle to close: what is being stopped is an attempt, which has
+/// no handle yet — that is the whole reason somebody wants to stop it.
+#[tauri::command]
+pub async fn session_open_cancel(state: State<'_, ShellState>, session_id: String) -> Result<bool, ShellError> {
+    Ok(state.core().cancel_open(&session_id).await)
+}
+
 /// Sends keystrokes or pasted text, base64-encoded.
 #[tauri::command]
 pub async fn terminal_write(state: State<'_, ShellState>, handle: String, base64: String) -> Result<(), ShellError> {

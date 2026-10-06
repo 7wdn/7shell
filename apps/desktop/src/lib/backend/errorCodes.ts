@@ -34,6 +34,7 @@ export const ERROR_CATALOG = {
   "STORE-IO": "errors.store.io",
   "STORE-SCHEMA-NEWER": "errors.store.schemaNewer",
   "SESSION-NOT-FOUND": "errors.session.notFound",
+  "SESSION-OPEN-CANCELLED": "errors.session.openCancelled",
   "SESSION-BUNDLE-INVALID": "errors.session.bundleInvalid",
   "SESSION-BUNDLE-IO": "errors.session.bundleIo",
   // Policy

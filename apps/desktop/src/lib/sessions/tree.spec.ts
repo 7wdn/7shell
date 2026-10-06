@@ -45,10 +45,8 @@ function shape(rows: ReturnType<typeof visibleRows>): string[] {
     switch (row.kind) {
       case "group":
         return `${"  ".repeat(row.depth)}${row.group.name}${row.collapsed ? " (closed)" : ""}`;
-      case "session":
-        return `${"  ".repeat(row.depth)}${row.session.name}`;
       default:
-        return `${"  ".repeat(row.depth)}·${row.scope}`;
+        return `${"  ".repeat(row.depth)}${row.session.name}`;
     }
   });
 }
@@ -57,13 +55,13 @@ describe("the rows the sidebar draws", () => {
   it("draws a group before the sessions in it, and its own groups before those", () => {
     const rows = visibleRows([work, lab, rack], [web, db, cache], none);
 
-    expect(shape(rows)).toEqual(["Work", "  Rack", "    cache", "  db", "Lab", "  ·group", "web"]);
+    expect(shape(rows)).toEqual(["Work", "  Rack", "    cache", "  db", "Lab", "web"]);
   });
 
   it("hides what is under a closed group and keeps the group itself", () => {
     const rows = visibleRows([work, lab, rack], [web, db, cache], new Set([work.id]));
 
-    expect(shape(rows)).toEqual(["Work (closed)", "Lab", "  ·group", "web"]);
+    expect(shape(rows)).toEqual(["Work (closed)", "Lab", "web"]);
   });
 
   it("draws a group open when it was asked for, whatever its own state is", () => {
@@ -72,16 +70,18 @@ describe("the rows the sidebar draws", () => {
     expect(shape(rows)).toEqual(["Work", "  db"]);
   });
 
-  it("says a group is empty once, where its contents would have been", () => {
+  it("draws nothing under a group with nothing in it", () => {
+    // An empty folder is a folder. A line saying so is one more line to read in a list somebody is
+    // scanning, and the reference draws nothing here either.
     const rows = visibleRows([lab], [web], none);
 
-    expect(shape(rows)).toEqual(["Lab", "  ·group", "web"]);
+    expect(shape(rows)).toEqual(["Lab", "web"]);
   });
 
-  it("does not say a group is empty when it holds only groups", () => {
+  it("draws nothing under a group that holds only empty groups", () => {
     const rows = visibleRows([work, rack], [], none);
 
-    expect(shape(rows)).toEqual(["Work", "  Rack", "    ·group"]);
+    expect(shape(rows)).toEqual(["Work", "  Rack"]);
   });
 
   it("draws a session that is in no group at the root, with no heading and no indent", () => {
@@ -101,19 +101,17 @@ describe("the rows the sidebar draws", () => {
     const orphan = session("session-9", "orphan", "group-that-is-gone");
     const rows = visibleRows([work], [orphan], none);
 
-    expect(shape(rows)).toEqual(["Work", "  ·group", "orphan"]);
+    expect(shape(rows)).toEqual(["Work", "orphan"]);
   });
 
   it("hands a drag the thing each row stands for", () => {
     const rows = visibleRows([work, lab], [db], none);
     const targets = rows.map((row) => rowTarget(row));
 
-    expect(shape(rows)).toEqual(["Work", "  db", "Lab", "  ·group"]);
+    expect(shape(rows)).toEqual(["Work", "  db", "Lab"]);
     expect(targets[0]).toEqual({ kind: "group", id: work.id });
     expect(targets[1]).toEqual({ kind: "session", parentId: work.id });
     expect(targets[2]).toEqual({ kind: "group", id: lab.id });
-    // The hint is a line of text, not something a drag can land on.
-    expect(targets[3]).toBeNull();
   });
 
   it("hands a drag the root when the row it is on is in no group", () => {

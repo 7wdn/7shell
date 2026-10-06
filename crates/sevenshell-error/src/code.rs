@@ -90,6 +90,8 @@ error_catalog! {
     StoreSchemaNewer => "STORE-SCHEMA-NEWER", "errors.store.schemaNewer";
     #[doc = "The session being opened is no longer saved."]
     SessionNotFound => "SESSION-NOT-FOUND", "errors.session.notFound";
+    #[doc = "Somebody called off a connection attempt before it finished."]
+    SessionOpenCancelled => "SESSION-OPEN-CANCELLED", "errors.session.openCancelled";
     #[doc = "The chosen file is not a session export from this application, or it has been damaged."]
     SessionBundleInvalid => "SESSION-BUNDLE-INVALID", "errors.session.bundleInvalid";
     #[doc = "A session export file could not be read or written."]

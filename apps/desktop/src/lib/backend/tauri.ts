@@ -236,6 +236,14 @@ export function sessionOpen(sessionId: string): Promise<OpenOutcome> {
   return invoke<OpenOutcome>("session_open", { sessionId });
 }
 
+/**
+ * Calls off an open that is still going. Answers whether there was one to call off, which is what
+ * the interface says out loud — a click that stopped nothing must not read as though it did.
+ */
+export function sessionOpenCancel(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("session_open_cancel", { sessionId });
+}
+
 export function terminalWrite(handle: string, base64: string): Promise<void> {
   return invoke<void>("terminal_write", { handle, base64 });
 }

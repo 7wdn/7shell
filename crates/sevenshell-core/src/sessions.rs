@@ -14,7 +14,7 @@ use sevenshell_types::{
     TransferInfo, TunnelFailure,
 };
 use sevenshell_vault::Vault;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, Notify, mpsc};
 
 /// One event from an open terminal, on its way to the host.
 pub use sevenshell_session::SessionEvent as CoreEvent;
@@ -65,6 +65,12 @@ pub struct Core {
     pub(crate) next_file: std::sync::atomic::AtomicU64,
     pub(crate) next_transfer: std::sync::atomic::AtomicU64,
     tunnels: Mutex<HashMap<String, TunnelRecord>>,
+    /// The opens that are still going, so one of them can be called off.
+    ///
+    /// Keyed by session rather than by attempt: the interface knows which row was clicked, not which
+    /// request it made, and a second attempt for the same session while one is in flight is already
+    /// refused by the interface.
+    opens_in_flight: Mutex<HashMap<String, Arc<Notify>>>,
     pub(crate) timeout: Duration,
 }
 
@@ -81,6 +87,7 @@ impl Core {
                 next_file: std::sync::atomic::AtomicU64::new(1),
                 next_transfer: std::sync::atomic::AtomicU64::new(1),
                 tunnels: Mutex::new(HashMap::new()),
+                opens_in_flight: Mutex::new(HashMap::new()),
                 timeout: OPEN_TIMEOUT,
             }),
             events,
@@ -109,6 +116,45 @@ impl Core {
     /// A decision names the host it is about, which is what makes a route of any length work with
     /// one prompt: trust that host, ask again, and the next unknown one asks in its turn.
     pub async fn open_terminal(&self, session_id: &str) -> Result<OpenOutcome, ShellError> {
+        let cancel = self.begin_open(session_id).await;
+        let outcome = self.open_terminal_until_cancelled(session_id, &cancel).await;
+        self.opens_in_flight.lock().await.remove(session_id);
+        outcome
+    }
+
+    /// Calls off an open that is still going, and says whether there was one.
+    ///
+    /// The answer is what the interface shows: a click that cancelled something says so, and one
+    /// that arrived after the terminal was already up does not pretend it stopped anything.
+    pub async fn cancel_open(&self, session_id: &str) -> bool {
+        let open = self.opens_in_flight.lock().await.get(session_id).cloned();
+        match open {
+            Some(cancel) => {
+                // `notify_one` rather than `notify_waiters`: the step that is waiting is between two
+                // awaits half the time, and a notification with nobody listening is kept until the
+                // next step does listen.
+                cancel.notify_one();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The token for one attempt, registered so a cancel can find it.
+    async fn begin_open(&self, session_id: &str) -> Arc<Notify> {
+        let cancel = Arc::new(Notify::new());
+        self.opens_in_flight
+            .lock()
+            .await
+            .insert(session_id.to_owned(), cancel.clone());
+        cancel
+    }
+
+    async fn open_terminal_until_cancelled(
+        &self,
+        session_id: &str,
+        cancel: &Arc<Notify>,
+    ) -> Result<OpenOutcome, ShellError> {
         let session = self.session(session_id)?;
         let credential = self.credential(&session)?;
         let target = Target {
@@ -117,14 +163,27 @@ impl Core {
             user: session.user.clone(),
         };
 
-        let hop = match self.open_route(&session).await? {
+        let route = until_cancelled(self.open_route(&session), cancel).await?;
+        let hop = match route {
             RouteOutcome::Ready(hop) => hop,
             RouteOutcome::Decision(decision) => return Ok(terminal_decision(*decision)),
         };
 
         let presented = match &hop {
-            Some(hop) => sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout).await?,
-            None => sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?,
+            Some(hop) => {
+                until_cancelled(
+                    sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout),
+                    cancel,
+                )
+                .await?
+            }
+            None => {
+                until_cancelled(
+                    sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout),
+                    cancel,
+                )
+                .await?
+            }
         };
 
         match self.vault.find_known_host(&target.host, target.port)? {
@@ -162,10 +221,22 @@ impl Core {
             purpose: Purpose::Terminal,
         };
 
-        let handle = self
-            .registry
-            .open(session_id, request, self.recording_for(&session)?)
-            .await?;
+        let opened = until_cancelled(
+            self.registry.open(session_id, request, self.recording_for(&session)?),
+            cancel,
+        )
+        .await;
+        let handle = match opened {
+            Ok(handle) => handle,
+            Err(cancelled) => {
+                // Registering the terminal is the last thing that function does, so a cancellation
+                // can land a moment after it — and a terminal nobody was told the handle of is a
+                // connection left running with nothing on screen to close it. Closing whatever this
+                // session opened is what makes "cancelled" true rather than nearly true.
+                self.close_terminals_for(session_id).await;
+                return Err(cancelled);
+            }
+        };
         let (tunnels, tunnel_failures) = self.bring_up_forwards(&handle, &session).await;
 
         Ok(OpenOutcome::Opened {
@@ -174,6 +245,15 @@ impl Core {
             tunnels,
             tunnel_failures,
         })
+    }
+
+    /// Closes every terminal this session has, which is what a cancelled open leaves behind it.
+    async fn close_terminals_for(&self, session_id: &str) {
+        for open in self.registry.open_sessions().await {
+            if open.session_id == session_id {
+                let _ = self.close_terminal(&open.handle).await;
+            }
+        }
     }
 
     /// Sends keystrokes or pasted text.
@@ -611,6 +691,21 @@ pub(crate) fn now_seconds() -> u64 {
         .unwrap_or_default()
 }
 
+/// One step of an open, unless it is called off first.
+///
+/// The step is a future rather than a closure, so a cancellation *drops* it at an await point: the
+/// socket being dialled is closed and whatever it had already built goes with it. What that must
+/// not swallow — a terminal that made it into the registry — is handled by the caller.
+async fn until_cancelled<T>(
+    step: impl std::future::Future<Output = Result<T, ShellError>>,
+    cancel: &Arc<Notify>,
+) -> Result<T, ShellError> {
+    tokio::select! {
+        result = step => result,
+        () = cancel.notified() => Err(ShellError::session_open_cancelled()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sevenshell_types::{AuthMethod, SessionAuth, TerminalSettings};
@@ -765,5 +860,82 @@ mod tests {
             vault.find_known_host("example.test", 2222).expect("read").is_none(),
             "ports are not interchangeable"
         );
+    }
+
+    #[tokio::test]
+    async fn calling_off_an_open_that_is_not_running_says_so() {
+        // The answer is what the interface shows: a click that cancelled nothing must not say it
+        // stopped something.
+        let (_directory, vault, _) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+
+        assert!(!core.cancel_open("session-1").await);
+    }
+
+    #[tokio::test]
+    async fn a_called_off_open_stops_before_it_gets_a_terminal() {
+        // A listener that accepts and then says nothing: the SSH handshake waits for a banner that
+        // never arrives, which is a connect that hangs — exactly what somebody looking at a row
+        // that says "connecting" wants to call off.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+        let port = listener.local_addr().expect("the bound address").port();
+        tokio::spawn(async move {
+            // Held rather than dropped: accepting and letting the stream go would close the socket,
+            // and a probe that sees the far side hang up fails instead of waiting.
+            let mut held = Vec::new();
+            while let Ok((stream, _)) = listener.accept().await {
+                held.push(stream);
+            }
+        });
+
+        let (_directory, vault, _) = vault_with_a_session();
+        let mut hanging = sample("session-1", "hanging");
+        hanging.port = port;
+        // With a password to send, the attempt gets as far as the socket: a session with no
+        // credential is refused before anything is dialled, which is not what this is about.
+        vault
+            .save_session(
+                hanging,
+                Some(sevenshell_vault::SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+        let (core, _events) = Core::new(vault);
+
+        let opening = tokio::spawn({
+            let core = core.clone();
+            async move { core.open_terminal("session-1").await }
+        });
+
+        // Long enough for the socket to be dialled, far inside the 30 second budget.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(core.cancel_open("session-1").await, "there is an attempt to call off");
+
+        let error = opening
+            .await
+            .expect("the task ran")
+            .expect_err("no terminal came out of it");
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionOpenCancelled);
+        assert!(
+            core.registry.open_sessions().await.is_empty(),
+            "and the attempt left nothing behind it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_open_is_forgotten_so_the_next_one_works() {
+        // The token is per attempt: cancelling once must not leave the session marked as busy, or
+        // the row would stop being openable at all.
+        let (_directory, vault, _) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+
+        let opening = tokio::spawn({
+            let core = core.clone();
+            async move { core.open_terminal("session-1").await }
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let _ = core.cancel_open("session-1").await;
+        let _ = opening.await;
+
+        assert!(!core.cancel_open("session-1").await, "nothing is in flight any more");
     }
 }

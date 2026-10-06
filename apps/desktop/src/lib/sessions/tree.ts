@@ -7,7 +7,8 @@
  * it.
  *
  * Groups come before the sessions that sit directly in them, the way folders come before files
- * everywhere else. A group with nothing in it says so, once, where its contents would have been.
+ * everywhere else. A group with nothing in it draws nothing under itself: an empty folder is a
+ * folder, and a line saying so is one more line to read in a list somebody is scanning.
  *
  * Sessions that are in no group are drawn at the root, with no heading over them: there is nothing
  * under the ungrouped heading that its rows do not say themselves, and a list of one's own files
@@ -38,8 +39,7 @@ export type TreeRow =
       readonly depth: number;
       /** The group it is drawn inside, which is what dropping something onto it would mean. */
       readonly parentId: ParentId;
-    }
-  | { readonly kind: "hint"; readonly key: string; readonly depth: number; readonly scope: "group" };
+    };
 
 /**
  * The rows to draw, with collapsed groups left closed.
@@ -75,9 +75,6 @@ export function visibleRows(
       walk(group.id, depth + 1);
       for (const session of own) {
         rows.push({ kind: "session", key: `session:${session.id}`, session, depth: depth + 1, parentId: group.id });
-      }
-      if (own.length === 0 && children.length === 0) {
-        rows.push({ kind: "hint", key: `hint:${group.id}`, depth: depth + 1, scope: "group" });
       }
     }
   };

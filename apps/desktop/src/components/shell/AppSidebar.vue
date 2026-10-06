@@ -35,6 +35,7 @@ import {
   ChevronsDownUp,
   ChevronsLeft,
   Download,
+  Minus,
   Folder,
   FolderInput,
   FolderOpen,
@@ -43,7 +44,6 @@ import {
   LoaderCircle,
   LocateFixed,
   Network,
-  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -61,27 +61,29 @@ import { useI18n } from "vue-i18n";
 
 import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
+import SessionFailure from "@/components/sessions/SessionFailure.vue";
 import SidebarResizeHandle from "@/components/shell/SidebarResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { useToast } from "@/composables/useToast";
 import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
+import { isTextEntry } from "@/lib/menu/editable";
 import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import type { MenuEntry } from "@/lib/menu/types";
 import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
 import { regexIsInvalid } from "@/lib/sessions/filter";
-import { hasSibling } from "@/lib/sessions/groups";
+import { drawOrder, groupPath, hasSibling } from "@/lib/sessions/groups";
 import { rowTarget } from "@/lib/sessions/tree";
-import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useSessionsStore } from "@/stores/sessions";
 import { sessionOf, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
+import type { ShellError } from "@/lib/backend/errors";
 import type { OpenTunnel, Session, SessionGroup, SessionImportSummary } from "@/types/session";
-import { AUTH_METHODS, PROTOCOLS } from "@/types/generated/protocols";
+import { AUTH_METHODS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
-const app = useAppStore();
 const library = useSessionsStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
@@ -93,7 +95,6 @@ const emit = defineEmits<{
   collapse: [];
 }>();
 
-const protocols = computed(() => PROTOCOLS);
 /** The ways a saved session can authenticate, which is what the list can be narrowed by. */
 const authMethods = computed(() => AUTH_METHODS);
 const editorOpen = ref(false);
@@ -258,6 +259,7 @@ watch(filterOpen, (open) => {
 
 onBeforeUnmount(() => {
   document.removeEventListener("mousedown", closeFilterOnOutsideClick, true);
+  document.removeEventListener("keydown", exitSelectionOnEscape, true);
   window.clearTimeout(flashTimer);
 });
 
@@ -556,6 +558,182 @@ async function removeGroup(group: SessionGroup): Promise<void> {
   groupBusy.value = false;
 }
 
+/** Whether an attempt for this session is in flight, which the row draws around. */
+function isConnecting(session: Session): boolean {
+  return terminals.connectingSessionIds.includes(session.id);
+}
+
+/** What the last attempt at this session failed with, or nothing when it did not. */
+function failureOf(session: Session): ShellError | undefined {
+  return terminals.failures[session.id];
+}
+
+function isSelected(id: string): boolean {
+  return library.selected.has(id);
+}
+
+/**
+ * The tick on a group: everything under it, some of it, or none of it.
+ *
+ * A group is not a thing that can be in a selection — what the bulk actions act on are sessions —
+ * so the group's own box is a statement about what is under it, and ticking it picks all of them.
+ */
+function groupPicked(group: SessionGroup): "none" | "partial" | "all" {
+  const ids = library.sessionsUnder(group.id);
+  if (ids.length === 0) {
+    return "none";
+  }
+  const picked = ids.filter((id) => library.selected.has(id)).length;
+  return picked === 0 ? "none" : picked === ids.length ? "all" : "partial";
+}
+
+function pickGroup(group: SessionGroup): void {
+  const ids = library.sessionsUnder(group.id);
+  if (groupPicked(group) === "all") {
+    const remaining = [...library.selected].filter((id) => !ids.includes(id));
+    library.setSelected(remaining);
+    return;
+  }
+  library.setSelected([...new Set([...library.selected, ...ids])]);
+  // An opened group is one whose contents can be seen to be picked.
+  library.setCollapsed(group.id, false);
+}
+
+/** Where a shift-click measures from: the last row that was picked or opened. */
+const selectionAnchor = ref<string | null>(null);
+
+/**
+ * Picking one row out, with the two modifiers a list is expected to answer.
+ *
+ * Shift extends from the last row that was touched, over the rows as they are drawn — the drawn
+ * order is the only order a person can see, and a range that did not follow it would be a range
+ * nobody could aim.
+ */
+function pickSession(event: MouseEvent, session: Session): void {
+  if (event.shiftKey && selectionAnchor.value !== null) {
+    const visible = library.rows
+      .filter((row) => row.kind === "session")
+      .map((row) => (row.kind === "session" ? row.session.id : ""));
+    const from = visible.indexOf(selectionAnchor.value);
+    const to = visible.indexOf(session.id);
+    if (from >= 0 && to >= 0) {
+      const [low, high] = from <= to ? [from, to] : [to, from];
+      library.setSelected([...new Set([...library.selected, ...visible.slice(low, high + 1)])]);
+      return;
+    }
+  }
+  library.toggleSelected(session.id);
+  selectionAnchor.value = session.id;
+}
+
+/** Every session the list is showing, which is what the select-all control is about. */
+const visibleSessionIds = computed(() =>
+  library.rows.filter((row) => row.kind === "session").map((row) => (row.kind === "session" ? row.session.id : "")),
+);
+
+/** Whether every one of them is picked, which is what the tri-state control reports. */
+const allSessionsPicked = computed(
+  () => visibleSessionIds.value.length > 0 && visibleSessionIds.value.every((id) => library.selected.has(id)),
+);
+
+const selectAllLabel = computed(() =>
+  allSessionsPicked.value ? t("sessions.list.deselectAll") : t("sessions.list.selectAll"),
+);
+
+/** Picks every session in the list, or puts every one back. */
+function toggleAllSessions(): void {
+  const all = library.rows
+    .filter((row) => row.kind === "session")
+    .map((row) => (row.kind === "session" ? row.session.id : ""));
+  const picked = all.filter((id) => library.selected.has(id)).length;
+  library.setSelected(picked === all.length ? [] : all);
+}
+
+async function placeSelected(groupId: string | undefined): Promise<void> {
+  await library.placeSelected(groupId);
+}
+
+/** Deletes everything picked, after the one question a delete asks. */
+const deleteSelectedOpen = ref(false);
+
+async function confirmDeleteSelected(): Promise<void> {
+  deleteSelectedOpen.value = false;
+  await library.removeSelected();
+}
+
+/** The names of what is picked, for the question that names them. */
+const selectedNames = computed(() =>
+  library.sessions.filter((session) => library.selected.has(session.id)).map((session) => session.name),
+);
+
+/** A group made for the picked sessions, with all of them moved into it and the name typed over. */
+async function newGroupForSelection(): Promise<void> {
+  if (groupBusy.value || library.selected.size === 0) {
+    return;
+  }
+  library.clearFilter();
+  groupBusy.value = true;
+  const created = await library.addGroup(t("sessions.list.groupNewDefault"), null);
+  if (created) {
+    await library.placeSelected(created.id);
+  }
+  groupBusy.value = false;
+  if (!created) {
+    return;
+  }
+  startGroupRename(created);
+  await nextTick();
+  rowFor(created.id)?.scrollIntoView({ block: "nearest" });
+}
+
+/** Where the picked sessions can be sent, as the same list the row's own menu offers. */
+function openMoveSelectedMenu(event: MouseEvent): void {
+  const entries: MenuEntry[] = drawOrder(library.groups).map(({ group }) => ({
+    kind: "action",
+    id: `move-selected-to-${group.id}`,
+    labelKey: "sessions.list.groupLabel",
+    params: { name: groupPath(library.groups, group.id) },
+    checked: false,
+    run: () => void placeSelected(group.id),
+  }));
+  if (entries.length > 0) {
+    entries.unshift({
+      kind: "action",
+      id: "move-selected-to-ungrouped",
+      labelKey: "sessions.editor.groupNone",
+      checked: false,
+      run: () => void placeSelected(undefined),
+    });
+  }
+  openMenu(event, { key: MENU_TITLES.session }, entries);
+}
+
+/**
+ * Escape leaves the selection, wherever the keyboard is.
+ *
+ * A listener on the document rather than on the panel, because the rows are not focusable: the
+ * keyboard is usually in a terminal or a search box when somebody decides they are done picking
+ * things, and a key that only works when the pointer happens to be over the list is a key nobody
+ * can rely on. Text fields are left alone — Escape belongs to whatever is being typed.
+ */
+function exitSelectionOnEscape(event: KeyboardEvent): void {
+  if (event.key !== "Escape" || !library.selecting || isTextEntry(event.target)) {
+    return;
+  }
+  library.clearSelection();
+}
+
+watch(
+  () => library.selecting,
+  (selecting) => {
+    if (selecting) {
+      document.addEventListener("keydown", exitSelectionOnEscape, true);
+    } else {
+      document.removeEventListener("keydown", exitSelectionOnEscape, true);
+    }
+  },
+);
+
 /** How far a row is indented: one step per level of nesting. */
 function indent(depth: number): Record<string, string> {
   return { paddingLeft: `${4 + depth * 12}px` };
@@ -617,24 +795,6 @@ function openHeadingMenu(event: MouseEvent, group: SessionGroup): void {
 function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
   openMenu(event, { key: MENU_TITLES.tunnel }, tunnelMenu(tunnel, { stop: (id) => void terminals.stopTunnel(id) }));
 }
-
-const statusLabel = computed(() => {
-  switch (app.status) {
-    case "loading":
-      return t("common.status.loading");
-    case "failed":
-      return t("common.status.failed");
-    default:
-      return t("common.status.ready");
-  }
-});
-
-const statusDot = computed(() => {
-  if (app.status === "failed") {
-    return "bg-destructive";
-  }
-  return app.status === "ready" ? "bg-success" : "bg-warning";
-});
 </script>
 
 <template>
@@ -649,70 +809,139 @@ const statusDot = computed(() => {
         panel would otherwise go — and the controls that act on the list on the right.
       -->
       <header class="mb-2 flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          data-session-transfer
-          class="inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="t('sessions.list.importExport')"
-          :aria-label="t('sessions.list.importExport')"
-          aria-haspopup="true"
-          @click="openTransferMenu($event)"
-        >
-          <ArrowDownUp :size="13" class="shrink-0" />
-          <span class="min-w-0 truncate">{{ t("sessions.list.importExport") }}</span>
-          <ChevronDown :size="12" class="shrink-0 opacity-60" />
-        </button>
+        <!--
+          Picking rows out replaces the panel's own controls with the ones that act on what is
+          picked: a toolbar that still offered "new session" while a selection is being built would
+          be answering a question nobody asked, and the count is the thing to look at instead.
+        -->
+        <template v-if="library.selecting">
+          <span class="min-w-0 truncate text-xs font-medium text-muted-foreground">
+            {{ t("shell.sidebar.sessions") }}
+          </span>
+          <span class="shrink-0 text-[11px] font-normal text-muted-foreground/80" data-session-selected-count>
+            {{ t("sessions.list.selected", { count: library.selected.size }, library.selected.size) }}
+          </span>
+          <span class="min-w-0 flex-1"></span>
+          <span class="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('sessions.list.addGroup')"
+              :aria-label="t('sessions.list.addGroup')"
+              @click="newGroupForSelection()"
+            >
+              <FolderPlus :size="12" />
+            </button>
+            <button
+              type="button"
+              data-session-move-selected
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('menu.moveToGroup')"
+              :aria-label="t('menu.moveToGroup')"
+              aria-haspopup="true"
+              @click="openMoveSelectedMenu($event)"
+            >
+              <FolderInput :size="12" />
+            </button>
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+              :title="t('sessions.list.removeSelected', { count: library.selected.size }, library.selected.size)"
+              :aria-label="t('sessions.list.removeSelected', { count: library.selected.size }, library.selected.size)"
+              @click="deleteSelectedOpen = true"
+            >
+              <Trash2 :size="12" />
+            </button>
+            <button
+              type="button"
+              data-session-select-all
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="selectAllLabel"
+              :aria-label="selectAllLabel"
+              @click="toggleAllSessions()"
+            >
+              <Check v-if="allSessionsPicked" :size="12" class="text-primary" />
+              <Minus v-else-if="library.selected.size > 0" :size="12" class="text-primary" />
+              <Square v-else :size="12" class="stroke-[1.7]" />
+            </button>
+            <button
+              type="button"
+              data-session-exit-selection
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('sessions.list.exitSelection')"
+              :aria-label="t('sessions.list.exitSelection')"
+              @click="library.clearSelection()"
+            >
+              <X :size="12" />
+            </button>
+          </span>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            data-session-transfer
+            class="inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('sessions.list.importExport')"
+            :aria-label="t('sessions.list.importExport')"
+            aria-haspopup="true"
+            @click="openTransferMenu($event)"
+          >
+            <ArrowDownUp :size="13" class="shrink-0" />
+            <span class="min-w-0 truncate">{{ t("sessions.list.importExport") }}</span>
+            <ChevronDown :size="12" class="shrink-0 opacity-60" />
+          </button>
 
-        <span class="min-w-0 flex-1"></span>
+          <span class="min-w-0 flex-1"></span>
 
-        <span class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="t('sessions.list.collapseAll')"
-            :aria-label="t('sessions.list.collapseAll')"
-            @click="library.collapseAll()"
-          >
-            <ChevronsDownUp :size="12" />
-          </button>
-          <button
-            type="button"
-            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="t('sessions.list.addGroup')"
-            :aria-label="t('sessions.list.addGroup')"
-            @click="startGroupCreate(null)"
-          >
-            <FolderPlus :size="12" />
-          </button>
-          <button
-            type="button"
-            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="t('sessions.list.add')"
-            :aria-label="t('sessions.list.add')"
-            @click="startNew()"
-          >
-            <Plus :size="12" />
-          </button>
-          <button
-            type="button"
-            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
-            :title="t('sessions.list.refresh')"
-            :aria-label="t('sessions.list.refresh')"
-            :disabled="library.status === 'loading'"
-            @click="library.load()"
-          >
-            <RefreshCw :size="12" :class="library.status === 'loading' ? 'animate-spin' : ''" />
-          </button>
-          <button
-            type="button"
-            class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="t('shell.sidebar.collapse')"
-            :aria-label="t('shell.sidebar.collapse')"
-            @click="emit('collapse')"
-          >
-            <ChevronsLeft :size="12" />
-          </button>
-        </span>
+          <span class="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('sessions.list.collapseAll')"
+              :aria-label="t('sessions.list.collapseAll')"
+              @click="library.collapseAll()"
+            >
+              <ChevronsDownUp :size="12" />
+            </button>
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('sessions.list.addGroup')"
+              :aria-label="t('sessions.list.addGroup')"
+              @click="startGroupCreate(null)"
+            >
+              <FolderPlus :size="12" />
+            </button>
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('sessions.list.add')"
+              :aria-label="t('sessions.list.add')"
+              @click="startNew()"
+            >
+              <Plus :size="12" />
+            </button>
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
+              :title="t('sessions.list.refresh')"
+              :aria-label="t('sessions.list.refresh')"
+              :disabled="library.status === 'loading'"
+              @click="library.load()"
+            >
+              <RefreshCw :size="12" :class="library.status === 'loading' ? 'animate-spin' : ''" />
+            </button>
+            <button
+              type="button"
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('shell.sidebar.collapse')"
+              :aria-label="t('shell.sidebar.collapse')"
+              @click="emit('collapse')"
+            >
+              <ChevronsLeft :size="12" />
+            </button>
+          </span>
+        </template>
       </header>
 
       <!--
@@ -732,7 +961,7 @@ const statusDot = computed(() => {
             autocapitalize="off"
             autocorrect="off"
             spellcheck="false"
-            class="h-7 w-full rounded-md border bg-background pr-12 pl-7 text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+            class="h-7 w-full rounded-md border bg-background pr-12 pl-7 text-xs select-text focus:ring-1 focus:ring-ring focus:outline-none"
             :class="regexInvalid ? 'border-destructive focus:ring-destructive' : 'border-border'"
             :aria-invalid="regexInvalid ? 'true' : 'false'"
             :placeholder="t('sessions.list.search')"
@@ -869,7 +1098,18 @@ const statusDot = computed(() => {
         <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
       </p>
 
-      <div ref="listBox" data-session-list class="min-h-0 flex-1 overflow-y-auto">
+      <!--
+        Nothing in the panel is text to be selected. What a drag across these rows means is a drag —
+        carrying a session somewhere, or picking several out — and a list that turns blue under the
+        pointer is a list fighting the hand that is using it. The names can still be copied, from
+        the menu that offers exactly that.
+      -->
+      <div
+        ref="listBox"
+        data-session-list
+        class="min-h-0 flex-1 overflow-y-auto select-none"
+        @click="library.clearSelection()"
+      >
         <p
           v-if="library.status === 'loading' && library.sessions.length === 0"
           class="px-1 py-2 text-xs text-muted-foreground"
@@ -927,7 +1167,7 @@ const statusDot = computed(() => {
                   })
                 "
                 :aria-expanded="!row.collapsed"
-                @click="library.setCollapsed(row.id, !row.collapsed)"
+                @click.stop="library.setCollapsed(row.id, !row.collapsed)"
               >
                 <ChevronRight :size="12" :class="row.collapsed ? '' : 'rotate-90'" />
               </button>
@@ -942,7 +1182,7 @@ const statusDot = computed(() => {
                 :ref="takeRenameField"
                 :value="groupNameText"
                 type="text"
-                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-xs focus:outline-none"
+                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-xs select-text focus:outline-none"
                 :aria-label="t('sessions.list.groupName')"
                 @input="groupNameText = ($event.target as HTMLInputElement).value"
                 @keydown.enter.prevent="submitGroupRename(row.group)"
@@ -950,16 +1190,53 @@ const statusDot = computed(() => {
                 @blur="submitGroupRename(row.group)"
               />
               <h3 v-else class="min-w-0 flex-1 truncate text-xs font-medium">{{ row.group.name }}</h3>
+
+              <!-- A group's box is about what is under it: the sessions are what the actions act on. -->
+              <button
+                type="button"
+                data-group-select
+                class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground/55 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none"
+                :class="
+                  groupPicked(row.group) !== 'none' || library.selecting
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100'
+                "
+                :title="
+                  groupPicked(row.group) === 'all'
+                    ? t('sessions.list.deselectGroup', { name: row.group.name })
+                    : t('sessions.list.selectGroup', { name: row.group.name })
+                "
+                :aria-label="
+                  groupPicked(row.group) === 'all'
+                    ? t('sessions.list.deselectGroup', { name: row.group.name })
+                    : t('sessions.list.selectGroup', { name: row.group.name })
+                "
+                :aria-checked="groupPicked(row.group) === 'partial' ? 'mixed' : groupPicked(row.group) === 'all'"
+                role="checkbox"
+                @mousedown.stop
+                @click.stop="pickGroup(row.group)"
+              >
+                <Check v-if="groupPicked(row.group) === 'all'" :size="12" class="text-primary" />
+                <Minus v-else-if="groupPicked(row.group) === 'partial'" :size="12" class="text-primary" />
+                <Square v-else :size="12" class="stroke-[1.7]" />
+              </button>
             </div>
 
-            <!-- A session: one row, indented by how deep its group is. -->
+            <!--
+              A session: one row, indented by how deep its group is. What the row carries is what
+              cannot live in the menu — an attempt in flight with the way to call it off, the mark a
+              failure leaves with the reason behind it, and the tick that picks the row out. Editing,
+              deleting and the file browser are in the right-click menu, where the rest of the
+              actions on a saved session already are.
+            -->
             <template v-if="row.kind === 'session'">
               <div
                 :data-row="row.key"
-                class="group relative flex items-center gap-0.5 rounded-md pr-1 transition-colors hover:bg-accent/60"
+                class="group relative flex items-center gap-1 rounded-md py-0.5 pr-1 transition-colors hover:bg-accent/60"
                 :class="[
                   markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : '',
                   flashedRow === row.key ? 'row-located' : '',
+                  isSelected(row.session.id) ? 'bg-primary/10' : '',
                 ]"
                 :style="indent(row.depth)"
                 @contextmenu="openSessionMenu($event, row.session)"
@@ -967,7 +1244,7 @@ const statusDot = computed(() => {
               >
                 <button
                   type="button"
-                  class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left"
+                  class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
                   :title="t('sessions.list.open', { name: row.session.name })"
                   @click="terminals.open(row.session)"
                 >
@@ -978,56 +1255,68 @@ const statusDot = computed(() => {
                       endpoint(row.session)
                     }}</span>
                   </span>
-                  <LoaderCircle
-                    v-if="terminals.connectingSessionIds.includes(row.session.id)"
-                    :size="12"
-                    class="shrink-0 animate-spin text-muted-foreground"
-                    :aria-label="t('sessions.list.connecting', { name: row.session.name })"
-                  />
                 </button>
 
+                <!-- What did not connect stays on the row it is about: nothing came up, so there is
+                     no tab to draw it in, and the row is where the click was made. -->
+                <SessionFailure
+                  v-if="failureOf(row.session)"
+                  :failure="failureOf(row.session)!"
+                  :name="row.session.name"
+                  @dismiss="terminals.forgetFailure(row.session.id)"
+                />
+
+                <!-- An attempt in flight, and the way to call it off, on the row that started it. -->
+                <LoaderCircle
+                  v-if="isConnecting(row.session)"
+                  :size="12"
+                  class="shrink-0 animate-spin text-muted-foreground"
+                  :aria-label="t('sessions.list.connecting', { name: row.session.name })"
+                />
                 <button
+                  v-if="isConnecting(row.session)"
                   type="button"
-                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('files.open', { name: row.session.name })"
-                  :aria-label="t('files.open', { name: row.session.name })"
-                  @click="terminals.openFiles(row.session)"
+                  data-session-cancel
+                  class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  :title="t('sessions.list.cancelConnecting', { name: row.session.name })"
+                  :aria-label="t('sessions.list.cancelConnecting', { name: row.session.name })"
+                  @mousedown.stop
+                  @click.stop="terminals.cancelOpen(row.session.id)"
                 >
-                  <Folder :size="12" />
+                  <X :size="12" />
                 </button>
+
+                <!-- The tick that picks one out: there when the pointer is, and always there while
+                     anything else is picked. -->
                 <button
+                  v-if="!isConnecting(row.session)"
                   type="button"
-                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('sessions.list.edit')"
-                  :aria-label="t('sessions.list.edit')"
-                  @click="startEdit(row.session)"
+                  data-session-select
+                  class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground/55 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none"
+                  :class="
+                    isSelected(row.session.id) || library.selecting
+                      ? 'opacity-100'
+                      : 'opacity-0 group-hover:opacity-100'
+                  "
+                  :title="
+                    isSelected(row.session.id)
+                      ? t('sessions.list.deselect', { name: row.session.name })
+                      : t('sessions.list.select', { name: row.session.name })
+                  "
+                  :aria-label="
+                    isSelected(row.session.id)
+                      ? t('sessions.list.deselect', { name: row.session.name })
+                      : t('sessions.list.select', { name: row.session.name })
+                  "
+                  :aria-pressed="isSelected(row.session.id)"
+                  @mousedown.stop
+                  @click.stop="pickSession($event, row.session)"
                 >
-                  <Pencil :size="12" />
-                </button>
-                <button
-                  type="button"
-                  class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                  :title="t('sessions.list.remove')"
-                  :aria-label="t('sessions.list.remove')"
-                  @click="pendingRemoval = { kind: 'session', session: row.session }"
-                >
-                  <Trash2 :size="12" />
+                  <Check v-if="isSelected(row.session.id)" :size="12" class="text-primary" />
+                  <Square v-else :size="12" class="stroke-[1.7]" />
                 </button>
               </div>
             </template>
-
-            <!--
-              A group with nothing in it says so, once, where its contents would have been. Sessions
-              that are in no group need no such line: they are drawn at the root like anything else
-              that is not inside a folder, and the list of them says what it is.
-            -->
-            <p
-              v-if="row.kind === 'hint'"
-              class="px-1 py-0.5 text-[10px] text-muted-foreground"
-              :style="indent(row.depth)"
-            >
-              {{ t("sessions.list.groupEmpty") }}
-            </p>
           </template>
 
           <!--
@@ -1146,31 +1435,30 @@ const statusDot = computed(() => {
       </ul>
     </section>
 
-    <section class="mt-4 shrink-0 px-3">
-      <h2 class="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {{ t("shell.sidebar.protocols") }}
-      </h2>
-      <ul class="space-y-0.5">
-        <li
-          v-for="protocol in protocols"
-          :key="protocol.id"
-          class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-accent/60"
-        >
-          <span class="flex items-center gap-2">
-            <Terminal :size="14" class="text-muted-foreground" />
-            {{ t(protocol.labelKey) }}
-          </span>
-          <span class="font-mono text-[10px] text-muted-foreground">{{ protocol.defaultPort ?? "—" }}</span>
-        </li>
-      </ul>
-    </section>
-
-    <div class="mt-auto flex items-center gap-2 px-4 py-3 text-[11px] text-muted-foreground">
-      <span class="size-1.5 rounded-full" :class="statusDot"></span>
-      {{ statusLabel }}
-    </div>
+    <!--
+      What used to sit here was a list of protocols — one line, saying the thing this application
+      obviously does — and a dot reporting that the backend answered. Neither was a control and
+      neither answered a question anybody had; a status line is what a page says when it has nothing
+      else on it, and a panel that holds a person's servers does.
+    -->
 
     <SessionDialog :open="editorOpen" :session="editing" @update:open="editorOpen = $event" />
+
+    <!--
+      Deleting several at once asks the same way one does, and names what is about to go: a count
+      alone is a question somebody answers without knowing what they said yes to.
+    -->
+    <ConfirmDialog
+      v-if="deleteSelectedOpen"
+      :open="true"
+      :title="t('sessions.list.removeSelected', { count: library.selected.size }, library.selected.size)"
+      :message="t('sessions.list.removeSelectedMessage', { count: library.selected.size }, library.selected.size)"
+      :details="selectedNames"
+      :confirm-label="t('sessions.list.removeSelected', { count: library.selected.size }, library.selected.size)"
+      danger
+      @confirm="confirmDeleteSelected()"
+      @update:open="deleteSelectedOpen = false"
+    />
 
     <!-- What the export file will hold, asked once, before a file is asked for. -->
     <ExportSessionsDialog

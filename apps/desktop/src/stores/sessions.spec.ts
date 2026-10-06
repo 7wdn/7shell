@@ -44,10 +44,8 @@ function shape(store: ReturnType<typeof useSessionsStore>): string[] {
     switch (row.kind) {
       case "group":
         return `${"  ".repeat(row.depth)}${row.group.name}`;
-      case "session":
-        return `${"  ".repeat(row.depth)}${row.session.name}`;
       default:
-        return `${"  ".repeat(row.depth)}·empty`;
+        return `${"  ".repeat(row.depth)}${row.session.name}`;
     }
   });
 }
@@ -156,7 +154,7 @@ describe("sessions store", () => {
     const store = useSessionsStore();
     await store.load();
 
-    expect(shape(store)).toEqual(["Work", "  Rack", "    inside", "Lab", "  ·empty"]);
+    expect(shape(store)).toEqual(["Work", "  Rack", "    inside", "Lab"]);
   });
 
   it("keeps what is under a closed group out of the rows, and puts it back when it opens", async () => {
@@ -252,7 +250,7 @@ describe("making and changing groups", () => {
     expect(store.groups.map((group) => group.id)).toEqual([lab.id]);
     // The session is still here, and now it sits at the root — the invariant the confirmation in
     // the sidebar says out loud.
-    expect(shape(store)).toEqual(["Lab", "  ·empty", "web"]);
+    expect(shape(store)).toEqual(["Lab", "web"]);
     expect(store.sessions[0]?.groupId).toBeUndefined();
   });
 
@@ -281,7 +279,7 @@ describe("making and changing groups", () => {
     await store.removeGroup(work.id);
 
     expect(store.groups.map((group) => [group.id, group.parentId])).toEqual([["group-3", undefined]]);
-    expect(shape(store)).toEqual(["Inside", "  ·empty"]);
+    expect(shape(store)).toEqual(["Inside"]);
   });
 
   it("writes only the two groups whose order changed when one is moved a place", async () => {
@@ -295,7 +293,7 @@ describe("making and changing groups", () => {
       ["group-2", 0],
       ["group-1", 1],
     ]);
-    expect(shape(store)).toEqual(["Lab", "  ·empty", "Work", "  ·empty"]);
+    expect(shape(store)).toEqual(["Lab", "Work"]);
   });
 
   it("moves a group among its own siblings, never past a group that is not one", async () => {
@@ -333,7 +331,7 @@ describe("making and changing groups", () => {
     expect(groupSaveMock.mock.calls.map(([group]) => [group.id, group.parentId, group.order])).toEqual([
       ["group-1", "group-2", 0],
     ]);
-    expect(shape(store)).toEqual(["Lab", "  Work", "    ·empty"]);
+    expect(shape(store)).toEqual(["Lab", "  Work"]);
   });
 
   it("refuses a drop that would put a group under itself, and writes nothing", async () => {
@@ -394,7 +392,7 @@ describe("moving a session between groups", () => {
     await store.placeSession(draft.id, { kind: "root" });
 
     expect(sessionSaveMock.mock.calls[0]?.[0]?.groupId).toBeUndefined();
-    expect(shape(store)).toEqual(["Work", "  ·empty", "web"]);
+    expect(shape(store)).toEqual(["Work", "web"]);
   });
 
   it("opens the group a session was dropped into, so it does not vanish into a closed group", async () => {

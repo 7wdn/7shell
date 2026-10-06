@@ -58,17 +58,22 @@ export const useSessionsStore = defineStore("sessions", () => {
   const filtering = computed(() => filterIsOn(filter.value));
 
   /**
-   * The sessions something is open for right now.
+   * The sessions that are actually connected right now.
    *
    * Read from the terminals store rather than kept here, because "open" is a fact about this run
-   * and not about the library: what is saved and what is on screen are two different questions, and
-   * the answer to the second one is already somewhere. A tab with a session is a tab whose host was
-   * dialled — the terminal, the files, the pages about it — so any of them counts.
+   * and not about the library. What counts is a connection that came up: a tab that is still
+   * dialling, one whose attempt failed, and a terminal that has ended are all *not* open, and
+   * counting them would make this switch mean "sessions somebody has touched today".
    */
   const openSessionIds = computed<ReadonlySet<string>>(() => {
     const terminals = useTerminalsStore();
     return new Set(
       terminals.tabs
+        // A page about a host exists only once a connection is up; the two kinds that carry a
+        // status are open only when that status says so.
+        .filter(
+          (tab) => tab.kind === "inspect" || (tab.kind !== "settings" && tab.kind !== "batch" && tab.status === "open"),
+        )
         .map((tab) => sessionOf(tab))
         .filter((session) => session !== null)
         .map((session) => session.id),
@@ -124,6 +129,75 @@ export const useSessionsStore = defineStore("sessions", () => {
   /** Closes every group at once, which is what a long list wants before it is read. */
   function collapseAll(): void {
     collapsed.value = new Set(groups.value.map((group) => group.id));
+  }
+
+  /**
+   * The sessions picked out, by id, for an action that applies to several at once.
+   *
+   * A set of ids rather than a flag per row: the selection is one thing that several rows are in,
+   * and every reader — the header, the rows' own checkboxes, the bulk actions — asks the same
+   * question about it.
+   */
+  const selected = ref<ReadonlySet<string>>(new Set());
+
+  /** Whether anything is picked out, which is what turns the header into the bulk toolbar. */
+  const selecting = computed(() => selected.value.size > 0);
+
+  function setSelected(ids: readonly string[]): void {
+    selected.value = new Set(ids);
+  }
+
+  /** Picks a session out, or puts it back when it was already picked. */
+  function toggleSelected(id: string): void {
+    const next = new Set(selected.value);
+    if (!next.delete(id)) {
+      next.add(id);
+    }
+    selected.value = next;
+  }
+
+  function clearSelection(): void {
+    selected.value = new Set();
+  }
+
+  /** Every session under a group, its subgroups included, which is what a group's tick covers. */
+  function sessionsUnder(groupId: string): string[] {
+    const inside = new Set<string>([groupId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const group of groups.value) {
+        if (group.parentId && inside.has(group.parentId) && !inside.has(group.id)) {
+          inside.add(group.id);
+          grew = true;
+        }
+      }
+    }
+    return sessions.value
+      .filter((session) => session.groupId !== undefined && inside.has(session.groupId))
+      .map((session) => session.id);
+  }
+
+  /** Moves every picked session into a group, or out of all of them. */
+  async function placeSelected(groupId: string | undefined): Promise<void> {
+    const ids = [...selected.value];
+    const drop = groupId === undefined ? { kind: "root" as const } : { kind: "group" as const, id: groupId };
+    for (const id of ids) {
+      await placeSession(id, drop);
+    }
+    clearSelection();
+  }
+
+  /** Removes every picked session, one at a time, and stops at the first refusal. */
+  async function removeSelected(): Promise<void> {
+    const ids = [...selected.value];
+    for (const id of ids) {
+      await remove(id);
+      if (failure.value) {
+        return;
+      }
+    }
+    clearSelection();
   }
 
   async function load(): Promise<void> {
@@ -418,6 +492,14 @@ export const useSessionsStore = defineStore("sessions", () => {
     canPlaceSession,
     setCollapsed,
     collapseAll,
+    selected,
+    selecting,
+    setSelected,
+    toggleSelected,
+    clearSelection,
+    sessionsUnder,
+    placeSelected,
+    removeSelected,
     setQuery,
     toggleMethod,
     toggleRegex,

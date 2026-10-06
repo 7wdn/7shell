@@ -215,6 +215,9 @@ export const backend = {
   terminal: {
     /** May answer that a host key decision is needed first; nothing is sent until it is made. */
     open: (sessionId: string): Promise<OpenOutcome> => forward("session_open", () => desktop.sessionOpen(sessionId)),
+    /** Calls off an attempt that has not finished; false means there was nothing left to stop. */
+    cancelOpen: (sessionId: string): Promise<boolean> =>
+      forward("session_open_cancel", () => desktop.sessionOpenCancel(sessionId)),
     write: (handle: string, base64: string): Promise<void> =>
       forward("terminal_write", () => desktop.terminalWrite(handle, base64)),
     resize: (handle: string, columns: number, rows: number): Promise<void> =>
