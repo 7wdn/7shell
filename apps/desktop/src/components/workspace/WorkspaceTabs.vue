@@ -87,6 +87,18 @@ function panelShowing(tab: WorkspaceTab): boolean {
   return tab.panel !== null || panelTab.value[tab.id] === "commands";
 }
 
+/**
+ * Whether the files are the half on screen.
+ *
+ * The panel record alone is not the answer. Switching to the commands leaves the browser open —
+ * the backend holds its channel either way, and only the half being drawn changes — so a panel
+ * that exists while the commands are showing would light the files button too, and both buttons
+ * would read as the one that is on screen.
+ */
+function filesShowing(tab: WorkspaceTab): boolean {
+  return panelShowing(tab) && panelTab.value[tab.id] !== "commands";
+}
+
 function showCommands(tab: TerminalTab): void {
   panelTab.value[tab.id] = "commands";
 }
@@ -319,13 +331,15 @@ function dotClass(tab: WorkspaceTab): string | null {
             :class="
               cn(
                 'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
-                tab.panel ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                filesShowing(tab)
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                 'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
               )
             "
             :disabled="tab.panel === null && tab.status !== 'open'"
-            :aria-pressed="tab.panel !== null"
-            :title="tab.panel ? t('terminal.panel.close') : t('terminal.panel.open')"
+            :aria-pressed="filesShowing(tab)"
+            :title="filesShowing(tab) ? t('terminal.panel.close') : t('terminal.panel.open')"
             @click="showFiles(tab)"
           >
             <PanelBottom :size="11" />
@@ -341,6 +355,7 @@ function dotClass(tab: WorkspaceTab): string | null {
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground',
               )
             "
+            :aria-pressed="panelTab[tab.id] === 'commands'"
             @click="showCommands(tab)"
           >
             <ListChecks :size="11" />

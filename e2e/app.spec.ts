@@ -845,6 +845,21 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await pathBar.press("Enter");
     await expect(page.getByText(`${stamp}-done`).first()).toBeVisible({ timeout: 30_000 });
 
+    // And switching halves, which is where the two buttons have to disagree: the browser stays open
+    // behind the commands — only the half being drawn changes — so exactly one of them may read as
+    // the one on screen. Both lit at once is what this run was written after seeing: the files
+    // button asked whether a panel existed rather than which half was showing.
+    const commandsToggle = page.getByRole("main").getByRole("button", { name: "Commands", exact: true });
+    await commandsToggle.click();
+    await expect(commandsToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(fileToggle).toHaveAttribute("aria-pressed", "false");
+
+    await fileToggle.click();
+    await expect(fileToggle).toHaveAttribute("aria-pressed", "true");
+    await expect(commandsToggle).toHaveAttribute("aria-pressed", "false");
+    // The same browser, back in front: nothing was opened a second time on the same session.
+    await expect(pathBar).toBeVisible();
+
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "commands-sent.png"), fullPage: false });
 
