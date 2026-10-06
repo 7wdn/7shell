@@ -40,7 +40,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
-import { formatMode, formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
+import { extensionOf, formatMode, formatModified, formatSize, joinPath, parentPath } from "@/lib/files/format";
 import { INITIAL_ORDER, type ListingSort, type Order, orderEntries, pressed } from "@/lib/files/order";
 import { type Band, type Point, type RowBand, bandBetween, isDrag, rowsInBand, scrollStep } from "@/lib/files/marquee";
 import {
@@ -199,18 +199,25 @@ function modifiedOf(entry: SftpEntry): string {
  * What kind of thing this is, in words.
  *
  * The icon says it as well, and the icon is what is read at a glance — but a listing that is being
- * read column by column needs the answer in the column, not in a shape the eye has to know.
+ * read column by column needs the answer in the column, not in a shape the eye has to know. For a
+ * file the answer is its type and not just the word "file": a folder of installers holds `.rpm`,
+ * `.deb` and `.tar.gz`, which is the distinction somebody sorting by this column is looking for.
  */
 function typeOf(entry: SftpEntry): string {
   switch (entry.kind) {
     case "directory":
       return t("files.kind.directory");
-    case "file":
-      return t("files.kind.file");
     case "symlink":
       return t("files.kind.symlink");
     case "other":
       return t("files.kind.other");
+    case "file": {
+      const extension = extensionOf(entry.name);
+      if (extension === null) {
+        return t("files.kind.file");
+      }
+      return t("files.kind.typed", { extension: extension.toUpperCase() });
+    }
   }
 }
 
@@ -903,7 +910,7 @@ function openAreaMenu(event: MouseEvent): void {
                 @sort="orderBy('size')"
               />
             </span>
-            <span class="w-16 shrink-0">
+            <span class="w-20 shrink-0">
               <SortHeader
                 :label="t('files.type')"
                 :sorted="order.column === 'kind'"
@@ -975,7 +982,7 @@ function openAreaMenu(event: MouseEvent): void {
                 <span class="w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
                   sizeOf(entry)
                 }}</span>
-                <span class="w-16 shrink-0 truncate text-[10px] text-muted-foreground">{{ typeOf(entry) }}</span>
+                <span class="w-20 shrink-0 truncate text-[10px] text-muted-foreground">{{ typeOf(entry) }}</span>
                 <span class="w-40 shrink-0 text-right text-[10px] text-muted-foreground">{{ modifiedOf(entry) }}</span>
                 <span class="w-20 shrink-0 font-mono text-[10px] text-muted-foreground">{{ modeOf(entry) }}</span>
                 <span

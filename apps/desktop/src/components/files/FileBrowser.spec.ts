@@ -523,6 +523,7 @@ describe("selecting rows", () => {
 
     const [directory, file] = rows();
     expect(directory?.textContent, "a directory says what it is").toContain("Folder");
+    expect(file?.textContent, "a file says its type rather than only that it is one").toContain("TXT File");
     expect(file?.textContent, "the permissions are the ones the server sent").toContain("rw-r--r--");
     expect(file?.textContent, "the owner and the group share their column").toContain("labuser/labuser");
   });

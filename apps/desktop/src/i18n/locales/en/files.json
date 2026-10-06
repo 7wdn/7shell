@@ -38,7 +38,8 @@
       "directory": "Folder",
       "file": "File",
       "symlink": "Symlink",
-      "other": "Other"
+      "other": "Other",
+      "typed": "{extension} File"
     },
     "action": {
       "open": "Open",

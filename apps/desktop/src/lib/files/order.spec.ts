@@ -142,15 +142,37 @@ describe("the rows in that order", () => {
   it("reads the kind column in kind order rather than in the language's order", () => {
     expect(drawn(arrived, { column: "kind", descending: false })).toEqual([
       "logs",
-      "notes.txt",
       "photo.jpg",
+      "notes.txt",
       "elsewhere",
     ]);
     expect(drawn(arrived, { column: "kind", descending: true })).toEqual([
       "logs",
       "elsewhere",
-      "photo.jpg",
       "notes.txt",
+      "photo.jpg",
+    ]);
+  });
+
+  it("groups files by their type rather than by their name", () => {
+    // What somebody means by "sort by type" in a folder of installers: everything of one type
+    // together. Name order would be aaa, mmm, notype, zzz — which is what it looked like before.
+    const deb = entry("aaa.deb", "file");
+    const rpm = entry("zzz.rpm", "file");
+    const tarball = entry("mmm.tar.gz", "file");
+    const plain = entry("notype", "file");
+
+    expect(drawn([deb, rpm, tarball, plain], { column: "kind", descending: false })).toEqual([
+      "notype",
+      "aaa.deb",
+      "mmm.tar.gz",
+      "zzz.rpm",
+    ]);
+    expect(drawn([deb, rpm, tarball, plain], { column: "kind", descending: true })).toEqual([
+      "zzz.rpm",
+      "mmm.tar.gz",
+      "aaa.deb",
+      "notype",
     ]);
   });
 

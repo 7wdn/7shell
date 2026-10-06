@@ -38,7 +38,8 @@
       "directory": "文件夹",
       "file": "文件",
       "symlink": "符号链接",
-      "other": "其他"
+      "other": "其他",
+      "typed": "{extension} 文件"
     },
     "action": {
       "open": "打开",

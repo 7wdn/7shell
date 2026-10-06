@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { ancestorsOf, formatMode } from "@/lib/files/format";
+import { ancestorsOf, extensionOf, formatMode } from "@/lib/files/format";
 
 describe("ancestorsOf", () => {
   it("lists every directory that has to be open for a path to be visible", () => {
@@ -24,6 +24,31 @@ describe("ancestorsOf", () => {
 
   it("ignores a trailing separator rather than inventing an empty segment", () => {
     expect(ancestorsOf("/var/log/")).toEqual(["/", "/var"]);
+  });
+});
+
+describe("extensionOf", () => {
+  it("reads what follows the last dot, which is what a file manager groups by", () => {
+    expect(extensionOf("NVM.Desktop_4.4.0-1.x86_64.rpm")).toBe("rpm");
+    expect(extensionOf("archive.tar.gz"), "one type for every tarball, not three").toBe("gz");
+  });
+
+  it("reads a name without one as having none", () => {
+    expect(extensionOf("Makefile")).toBeNull();
+    expect(extensionOf("ss-e2e-10719-done")).toBeNull();
+  });
+
+  it("does not read a leading dot as an extension", () => {
+    expect(extensionOf(".bashrc")).toBeNull();
+    expect(extensionOf(".config.json"), "the last dot wins, and it has one").toBe("json");
+  });
+
+  it("does not read a trailing dot as an extension either", () => {
+    expect(extensionOf("something.")).toBeNull();
+  });
+
+  it("reads a type the same whatever case it was written in", () => {
+    expect(extensionOf("README.TXT")).toBe("txt");
   });
 });
 

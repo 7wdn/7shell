@@ -64,6 +64,22 @@ export function baseName(path: string): string {
   return segments[segments.length - 1] ?? path;
 }
 
+/**
+ * The extension a name carries, lower case, or null when it carries none.
+ *
+ * The *last* dot, because that is the one a file manager groups by: `archive.tar.gz` is a `.gz`
+ * here, and every tarball in a folder reads as one type rather than as three. A name that begins
+ * with the dot carries no extension at all — `~/.bashrc` is not a "bashrc file" — and neither does
+ * one that ends with it.
+ */
+export function extensionOf(name: string): string | null {
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || dot === name.length - 1) {
+    return null;
+  }
+  return name.slice(dot + 1).toLowerCase();
+}
+
 /** The directory a path sits in, or null when there is none to go up to. */
 export function parentPath(path: string): string | null {
   const trimmed = path.replace(/\/+$/, "");

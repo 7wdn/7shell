@@ -8,6 +8,7 @@
  * about a panel: it is about rows, and it is the part worth reading without a window in front of it.
  */
 import { type SortDirection, byText, startsDescending } from "@/lib/sort";
+import { extensionOf } from "@/lib/files/format";
 import type { EntryKind, SftpEntry } from "@/types/session";
 
 /** The columns a listing can be ordered by: the ones it carries headings for. */
@@ -48,7 +49,8 @@ const FIRST_DIRECTION: Record<ListingSort, SortDirection> = {
  * The order the kinds are read in, which is also the order the listing arrives in.
  *
  * By kind rather than by the word in the cell: the word is a translation, and an order that depends
- * on the language the interface happens to be in is not one two people can compare.
+ * on the language the interface happens to be in is not one two people can compare. Among two files
+ * this rank is only the first half of the type — `typeToken` is the other half.
  */
 const KIND_RANK: Record<EntryKind, number> = { directory: 0, file: 1, symlink: 2, other: 3 };
 
@@ -122,8 +124,14 @@ function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry): numbe
       return byName(left, right);
     case "size":
       return left.size - right.size;
-    case "kind":
-      return KIND_RANK[left.kind] - KIND_RANK[right.kind];
+    case "kind": {
+      const kinds = KIND_RANK[left.kind] - KIND_RANK[right.kind];
+      // Two rows of different kinds are ordered by the kind and by nothing else. Two rows of the
+      // same kind are two files of two types, and a file's type is its extension — which is the
+      // whole of what "sort by type" means in a folder of installers, and why grouping them by name
+      // was not that.
+      return kinds !== 0 ? kinds : byText(typeToken(left), typeToken(right));
+    }
     case "modified":
       return (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0);
     case "mode":
@@ -133,6 +141,19 @@ function byColumn(column: ListingSort, left: SftpEntry, right: SftpEntry): numbe
       // for the rows that have no owner to be ordered by.
       return byText(left.owner ?? left.group ?? "", right.owner ?? right.group ?? "");
   }
+}
+
+/**
+ * What kind of thing a row is, as far as the type column is concerned.
+ *
+ * A file's type is its extension — `rpm`, `deb`, the `gz` of a tarball — which is what a file manager
+ * groups by and what somebody looking at a folder of installers means by "sort by type". The other
+ * kinds carry nothing here: a directory is a directory and a link is a link whatever they are named,
+ * and an extension is not a thing a folder or a link is. It is the extension itself rather than the
+ * word the column shows for it, so that the order does not depend on the language of the interface.
+ */
+function typeToken(entry: SftpEntry): string {
+  return entry.kind === "file" ? (extensionOf(entry.name) ?? "") : "";
 }
 
 /**
