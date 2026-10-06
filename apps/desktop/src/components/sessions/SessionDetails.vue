@@ -11,6 +11,10 @@
  * leaves. The reference draws it the same way, and the pointer is what makes it read as "about
  * *this* row" rather than as a panel that happened to appear.
  *
+ * It is centred on the row rather than hung from its top, which is what puts the pointer on the row
+ * instead of in the middle of a list of eight fields: the reference centres it the same way, and the
+ * pointer is the whole reason somebody can tell which row the bubble is about.
+ *
  * Only what is already known is shown. A server's version, its banner and how long a connection
  * took are facts about a connection, and this is about a saved session — a card that showed them
  * as blanks would be advertising what it does not have.
@@ -90,8 +94,8 @@ const rows = computed(() => {
   <HoverCardPortal>
     <HoverCardContent
       side="right"
-      align="start"
-      :side-offset="10"
+      align="center"
+      :side-offset="8"
       :collision-padding="8"
       class="relative z-50 w-max min-w-40 max-w-[min(28rem,calc(100vw-24px))] rounded-md border border-border bg-card p-2 shadow-lg outline-none"
       data-session-details

@@ -58,15 +58,24 @@ const detail = computed(() =>
     <PopoverPortal>
       <PopoverContent
         side="top"
-        align="start"
-        :side-offset="6"
+        align="center"
+        :side-offset="4"
         :collision-padding="8"
-        class="z-50 w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card p-3 shadow-xl outline-none"
+        class="z-50 w-96 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card p-2 shadow-xl outline-none"
         @click.stop
         @mousedown.stop
       >
-        <div class="flex items-start justify-between gap-2">
-          <p class="text-xs font-medium">{{ t("sessions.list.failureTitle") }}</p>
+        <div class="flex items-start gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-foreground">{{ t("sessions.list.failureTitle") }}</div>
+            <textarea
+              readonly
+              data-session-failure-detail
+              class="mt-1 max-h-40 min-h-20 w-full resize-none overflow-auto rounded-md border border-border bg-muted/30 p-2 font-mono text-[11px] leading-4 text-muted-foreground outline-none"
+              :value="detail"
+              @focus="($event.target as HTMLTextAreaElement).select()"
+            ></textarea>
+          </div>
           <button
             type="button"
             class="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -75,14 +84,6 @@ const detail = computed(() =>
             {{ t("sessions.list.failureClear") }}
           </button>
         </div>
-        <textarea
-          readonly
-          data-session-failure-detail
-          class="mt-2 max-h-40 min-h-20 w-full resize-none rounded-md border border-border bg-muted/30 p-2 font-mono text-[11px] leading-4 text-muted-foreground outline-none"
-          :value="detail"
-          @focus="($event.target as HTMLTextAreaElement).select()"
-        ></textarea>
-        <p class="mt-1.5 font-mono text-[10px] text-muted-foreground">{{ described.code }}</p>
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>

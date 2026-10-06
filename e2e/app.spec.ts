@@ -1141,8 +1141,19 @@ test("a session that fails to connect says so on its row, and rows can be picked
     await expect(mark).toBeVisible({ timeout: 20_000 });
     await expect(page.locator("body")).toContainText("Could not connect to closed-port-host", { timeout: 20_000 });
 
+    const markBox = await mark.boundingBox();
     await mark.click();
     await expect(page.locator("[data-session-failure-detail]")).toBeVisible();
+
+    // Above the row, which is where the reference puts it — and the reason our own bubble had to
+    // lose a line of height: a row near the top has the toolbar above it and nothing else.
+    const side = await page.locator("[data-session-failure-detail]").evaluate((element, markTop) => {
+      const content = element.closest("[data-side]");
+      const box = content.getBoundingClientRect();
+      return { place: content.getAttribute("data-side"), bottom: Math.round(box.bottom), markTop: Math.round(markTop) };
+    }, markBox.y);
+    expect(side.place, `the reason opens above the row: ${JSON.stringify(side)}`).toBe("top");
+    expect(side.bottom).toBeLessThanOrEqual(side.markTop);
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-failure.png"), fullPage: false });
 
@@ -1210,6 +1221,27 @@ test("hovering a session row offers the tick and the session's details", async (
     await expect(card).toContainText("hovered-host");
     await expect(card).toContainText("labuser@203.0.113.7:2200");
     await expect(card).toContainText("SSH");
+
+    // And the pointer meets the row: the bubble is centred on it rather than hung from its top, so
+    // the tip — not the middle of a list of fields — is what says which row this is about.
+    const rowBox = await row.boundingBox();
+    const centring = await card.evaluate(
+      (element, rowMiddle) => {
+        const arrow = element.querySelector("span[aria-hidden='true']");
+        const box = element.getBoundingClientRect();
+        const tip = arrow.getBoundingClientRect();
+        return {
+          cardMiddle: Math.round(box.top + box.height / 2),
+          arrowMiddle: Math.round(tip.top + tip.height / 2),
+          rowMiddle: Math.round(rowMiddle),
+        };
+      },
+      rowBox.y + rowBox.height / 2,
+    );
+    expect(
+      Math.abs(centring.arrowMiddle - centring.rowMiddle),
+      `the pointer is on the row: ${JSON.stringify(centring)}`,
+    ).toBeLessThanOrEqual(2);
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-hover.png"), fullPage: false });
