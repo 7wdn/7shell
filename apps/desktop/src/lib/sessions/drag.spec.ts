@@ -54,12 +54,10 @@ describe("what dropping on a row would mean", () => {
   });
 
   it("sends either out to the root when the row it lands on is in no group", () => {
-    expect(groupDropFor({ kind: "ungrouped" }, box, 120)).toEqual({ drop: { kind: "root" }, zone: "inside" });
     expect(groupDropFor({ kind: "session", parentId: null }, box, 120)).toEqual({
       drop: { kind: "root" },
       zone: "inside",
     });
-    expect(sessionDropFor({ kind: "ungrouped" })).toEqual({ drop: { kind: "root" }, zone: "inside" });
     expect(sessionDropFor({ kind: "session", parentId: null })).toEqual({ drop: { kind: "root" }, zone: "inside" });
   });
 });

@@ -19,6 +19,8 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionsList: vi.fn(async () => []),
   sessionSave: vi.fn(async (session: Session) => session),
   sessionDelete: vi.fn(async () => {}),
+  sessionsExport: vi.fn(async () => undefined),
+  sessionsImport: vi.fn(async () => undefined),
   groupsList: vi.fn(async () => []),
   groupSave: vi.fn(async (group: SessionGroup) => group),
   groupDelete: vi.fn(async () => {}),
@@ -28,8 +30,9 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import AppSidebar from "@/components/shell/AppSidebar.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useToast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
-import { groupDelete, groupSave, sessionSave } from "@/lib/backend/tauri";
+import { groupDelete, groupSave, sessionSave, sessionsExport, sessionsImport } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry, MenuSubmenu } from "@/lib/menu/types";
 import { useSessionsStore } from "@/stores/sessions";
 import type { Session, SessionGroup } from "@/types/session";
@@ -50,6 +53,8 @@ const web: Session = {
   updatedAt: 1_700_000_000,
 };
 const db: Session = { ...web, id: "session-2", name: "db", groupId: work.id };
+/** A session that authenticates a different way, which is what the method filter is about. */
+const keyed: Session = { ...web, id: "session-3", name: "keyed", auth: { method: "publicKey", hasSecret: false } };
 
 let host: HTMLDivElement;
 let app: App | undefined;
@@ -102,12 +107,59 @@ function dialogButton(text: string): HTMLElement | undefined {
   );
 }
 
+/** The export's own question: whether the passwords go into the file. */
+function exportCheckbox(): HTMLInputElement {
+  const box = confirmDialog().querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!box) {
+    throw new Error("the export dialog has no question about passwords");
+  }
+  return box;
+}
+
 function rowElement(key: string): HTMLElement {
   const row = host.querySelector<HTMLElement>(`[data-row="${key}"]`);
   if (!row) {
     throw new Error(`there is no row for ${key}`);
   }
   return row;
+}
+
+/** The same lookup without the throw, for asking whether a row is there at all. */
+function rowOrNull(key: string): HTMLElement | null {
+  return host.querySelector<HTMLElement>(`[data-row="${key}"]`);
+}
+
+/** How far a row is indented, which is how far inside the tree it is drawn. */
+function indentOf(key: string): number {
+  return Number.parseInt(rowElement(key).style.paddingLeft, 10);
+}
+
+function searchField(): HTMLInputElement {
+  const field = host.querySelector<HTMLInputElement>('input[aria-label="Search sessions"]');
+  if (!field) {
+    throw new Error("the search field is not drawn");
+  }
+  return field;
+}
+
+function filterButton(): HTMLElement {
+  const button = host.querySelector<HTMLElement>("[data-session-filter]");
+  if (!button) {
+    throw new Error("the filter button is not drawn");
+  }
+  return button;
+}
+
+/** The filter panel's row for one authentication method, by the words on it. */
+function methodRow(label: string): HTMLElement | undefined {
+  const panel = host.querySelector<HTMLElement>("[data-session-filter-panel]");
+  return [...(panel?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+    (button) => button.textContent?.trim() === label,
+  );
+}
+
+function toastMessage(): string {
+  return useToast().message.value;
 }
 
 /**
@@ -124,6 +176,20 @@ async function rightClick(element: HTMLElement | null): Promise<readonly MenuEnt
   element?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   await nextTick();
   return useContextMenu().entries.value;
+}
+
+/** The menu an ordinary button opens, which is a click rather than a right-click. */
+async function clickMenu(element: HTMLElement | null): Promise<readonly MenuEntry[]> {
+  element?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  await nextTick();
+  return useContextMenu().entries.value;
+}
+
+/** A button by the words on it, for the ones drawn as a sentence rather than as an icon. */
+function textButton(scope: HTMLElement | null, text: string): HTMLElement | undefined {
+  return [...(scope?.querySelectorAll<HTMLElement>("button") ?? [])].find(
+    (button) => button.textContent?.trim() === text,
+  );
 }
 
 function pick(entries: readonly MenuEntry[], id: string): MenuAction {
@@ -278,6 +344,8 @@ beforeEach(() => {
   vi.mocked(groupSave).mockClear();
   vi.mocked(groupDelete).mockClear();
   vi.mocked(sessionSave).mockClear();
+  vi.mocked(sessionsExport).mockClear().mockResolvedValue(undefined);
+  vi.mocked(sessionsImport).mockClear().mockResolvedValue(undefined);
   // jsdom runs no animation frames unless it was asked to; the drag scrolls on them.
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 1));
   vi.stubGlobal("cancelAnimationFrame", (handle: number) => window.clearTimeout(handle));
@@ -286,6 +354,12 @@ beforeEach(() => {
 afterEach(() => {
   app?.unmount();
   host.remove();
+  // A drag that ended in a drop leaves one listener that eats the next click; that is what keeps
+  // letting go of a row from opening it. In the window, the next click is the person's own — but
+  // between tests there is nobody to click, and the listener would be left to eat the first click
+  // of whatever runs next. This is that click.
+  window.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+  window.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   vi.unstubAllGlobals();
 });
 
@@ -293,14 +367,18 @@ describe("the rows", () => {
   it("draws a group before what is in it, and says when a group is empty", async () => {
     await render([work, lab], [web, db]);
 
-    expect(drawnRows()).toEqual([
-      "group:group-1",
-      "session:session-2",
-      "group:group-2",
-      "ungrouped",
-      "session:session-1",
-    ]);
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "group:group-2", "session:session-1"]);
     expect(host.textContent).toContain("Nothing in this group.");
+  });
+
+  it("draws a session that is in no group at the root, with no heading over it", async () => {
+    await render([work], [web, db]);
+
+    // The heading that used to sit here said what the row already says. Nothing replaces it: the
+    // session is drawn at the same indent as a group, at the end of the list.
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
+    expect(indentOf("session:session-1")).toBe(indentOf("group:group-1"));
+    expect([...host.querySelectorAll("h3")].map((heading) => heading.textContent?.trim())).toEqual(["Work"]);
   });
 
   it("indents a nested group further than the group it sits in", async () => {
@@ -318,19 +396,19 @@ describe("the rows", () => {
     buttonIn(headingRow("Work"), "Collapse Work")?.click();
     await nextTick();
 
-    expect(drawnRows()).toEqual(["group:group-1", "ungrouped", "session:session-1"]);
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-1"]);
 
     buttonIn(headingRow("Work"), "Expand Work")?.click();
     await nextTick();
 
-    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "ungrouped", "session:session-1"]);
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
   });
 
   it("draws no buttons on a group heading: changing one is a right-click away", async () => {
     await render([work], [web]);
 
     // The chevron is the only button on the row. Renaming and deleting live in the menu, so the
-    // heading is a name rather than a strip of icons.
+    // heading is a name with a folder beside it rather than a strip of icons.
     const row = headingRow("Work");
     const labels = [...(row?.querySelectorAll("button") ?? [])].map((button) => button.getAttribute("aria-label"));
     expect(labels).toEqual(["Collapse Work"]);
@@ -339,6 +417,36 @@ describe("the rows", () => {
     const actions = entries.filter((entry) => entry.kind === "action").map((entry) => entry.id);
     expect(actions).toContain("rename-group");
     expect(actions).toContain("remove-group");
+  });
+
+  it("draws the folder a group stands for, and the open one when it is open", async () => {
+    await render([work], [db]);
+
+    // A folder is what the row is; the two shapes are the two states, the way the file browser
+    // draws its own.
+    expect(headingRow("Work")?.querySelector("svg.lucide-folder-open")).not.toBeNull();
+
+    buttonIn(headingRow("Work"), "Collapse Work")?.click();
+    await nextTick();
+
+    expect(headingRow("Work")?.querySelector("svg.lucide-folder-open")).toBeNull();
+    expect(headingRow("Work")?.querySelector("svg.lucide-folder")).not.toBeNull();
+  });
+
+  it("draws no row for leaving every group until something is being dragged", async () => {
+    await render([work], [db]);
+
+    // What that row is for exists only while a drag is: the rest of the time the list is the
+    // sessions and the folders, and nothing that is only a place to put something.
+    expect(rowOrNull("drop-out")).toBeNull();
+
+    await startDrag("session:session-2");
+    layOutRows();
+
+    expect(rowOrNull("drop-out")).not.toBeNull();
+
+    await drop();
+    expect(rowOrNull("drop-out")).toBeNull();
   });
 });
 
@@ -493,14 +601,14 @@ describe("changing a group", () => {
     // The question is a dialog of its own, over the list rather than in the heading — nothing has
     // happened yet, and the row the question is about is still drawn where it was.
     expect(confirmDialog().textContent).toContain("Delete the group “Work”?");
-    expect(confirmDialog().textContent).toContain("move out to Ungrouped");
+    expect(confirmDialog().textContent).toContain("move out of every group");
     expect(heading("Work")).not.toBeNull();
 
     dialogButton("Delete group")?.click();
     await vi.waitFor(() => expect(vi.mocked(groupDelete)).toHaveBeenCalledWith("group-1"));
 
     await vi.waitFor(() => expect(heading("Work")).toBeNull());
-    // With no group left there is no ungrouped heading either, and the session is still on screen.
+    // The session that was in it is still on screen, now at the root.
     expect(drawnRows()).toEqual(["session:session-2"]);
     expect(useSessionsStore().sessions.map((session) => session.id)).toEqual(["session-2"]);
   });
@@ -538,17 +646,6 @@ describe("a group's menu", () => {
     expect(pick(entries, "move-group-down").disabled).toBe(false);
   });
 
-  it("draws no menu on the ungrouped heading", async () => {
-    await render([work], [web]);
-
-    // Whatever the menu was showing before, a right-click on a heading that is nobody's group does
-    // not replace it — the ungrouped list is not a thing anybody can rename or move.
-    const before = await rightClick(headingRow("Work"));
-    const after = await rightClick(headingRow("Ungrouped"));
-
-    expect(after).toBe(before);
-  });
-
   it("moves the group a place through the menu", async () => {
     await render([work, lab], []);
 
@@ -584,7 +681,7 @@ describe("a session's menu", () => {
 describe("dragging", () => {
   it("moves a session into the group it was dropped on", async () => {
     await render([work, lab], [web, db]);
-    const before = drawnRows();
+    const atRoot = indentOf("session:session-1");
 
     await startDrag("session:session-1");
     expect(ghost()?.textContent?.trim(), "what is moving is drawn under the pointer").toBe("web");
@@ -596,16 +693,26 @@ describe("dragging", () => {
     expect(vi.mocked(sessionSave)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(sessionSave).mock.calls[0]?.[0]).toMatchObject({ id: "session-1", groupId: "group-2" });
     await vi.waitFor(() => expect(drawnRows()).toContain("session:session-1"));
-    expect(drawnRows()).not.toEqual(before);
     expect(drawnRows().indexOf("session:session-1")).toBeGreaterThan(drawnRows().indexOf("group:group-2"));
+    // Drawn inside the group, which is what the indent means: the row is one step further in than
+    // it was when it sat at the root.
+    expect(indentOf("session:session-1")).toBeGreaterThan(atRoot);
   });
 
-  it("takes a session out of every group when it is dropped on the ungrouped row", async () => {
+  it("takes a session out of every group when it is dropped on the row drawn for it", async () => {
     await render([work], [web, db]);
+    const inside = indentOf("session:session-2");
 
-    await drag("session:session-2", "ungrouped");
+    await startDrag("session:session-2");
+    // The row appears with the drag, so it has to be given a place on screen before the pointer can
+    // be over it — jsdom lays nothing out.
+    layOutRows();
+    await dragOver("drop-out");
+    expect(marked("drop-out"), "the row says it is where the session would go").toBe(true);
+    await drop();
 
     expect(vi.mocked(sessionSave).mock.calls[0]?.[0]).toMatchObject({ id: "session-2", groupId: undefined });
+    await vi.waitFor(() => expect(indentOf("session:session-2")).toBeLessThan(inside));
   });
 
   it("puts a group inside the one it was dropped on, and beside another at the edges", async () => {
@@ -728,5 +835,218 @@ describe("dragging", () => {
 
     expect(scrolled).toBe(0);
     await drop();
+  });
+});
+
+describe("searching the list", () => {
+  it("narrows the list to what matches, and keeps the folder a match is in", async () => {
+    await render([work, lab], [web, db]);
+
+    await typeInto(searchField(), "db");
+
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2"]);
+  });
+
+  it("opens a folder a match is in, even when it was closed", async () => {
+    await render([work], [web, db]);
+    buttonIn(headingRow("Work"), "Collapse Work")?.click();
+    await nextTick();
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-1"]);
+
+    await typeInto(searchField(), "db");
+
+    // The match is why the search ran, so the folder it is in cannot stay shut over it.
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2"]);
+  });
+
+  it("says nothing was found, and offers the way back", async () => {
+    await render([work], [web, db]);
+
+    await typeInto(searchField(), "nothing-like-this");
+
+    expect(drawnRows()).toEqual([]);
+    expect(host.textContent).toContain("No session matches");
+
+    textButton(host, "Show every session")?.click();
+    await nextTick();
+
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
+    expect(searchField().value).toBe("");
+  });
+
+  it("empties the field from the button inside it, which is where the search is", async () => {
+    await render([work], [web, db]);
+    await typeInto(searchField(), "db");
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2"]);
+
+    buttonIn(host, "Clear the search")?.click();
+    await nextTick();
+
+    expect(searchField().value).toBe("");
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1"]);
+  });
+
+  it("takes the drag away while the list is narrowed", async () => {
+    // A drop lands in the list as it is drawn, and while a search is narrowing it the row under the
+    // pointer is not the row the store would move something next to. Nothing is offered rather than
+    // something guessed at.
+    await render([work], [web, db]);
+    await typeInto(searchField(), "web");
+
+    await startDrag("session:session-1");
+
+    expect(ghost()).toBeNull();
+  });
+});
+
+describe("filtering by how a session authenticates", () => {
+  it("keeps only the sessions that authenticate the way that was chosen", async () => {
+    await render([work], [web, db, keyed]);
+
+    filterButton().click();
+    await nextTick();
+    methodRow("Public key")?.click();
+    await nextTick();
+
+    expect(drawnRows()).toEqual(["session:session-3"]);
+    expect(filterButton().getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("closes the panel when the pointer goes somewhere else, and keeps the filter", async () => {
+    await render([work], [web, db, keyed]);
+    filterButton().click();
+    await nextTick();
+    methodRow("Public key")?.click();
+    await nextTick();
+
+    document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    await nextTick();
+
+    expect(host.querySelector("[data-session-filter-panel]")).toBeNull();
+    expect(drawnRows()).toEqual(["session:session-3"]);
+  });
+
+  it("puts everything back when the filter is taken off", async () => {
+    await render([work], [web, db, keyed]);
+    filterButton().click();
+    await nextTick();
+    methodRow("Public key")?.click();
+    await nextTick();
+
+    methodRow("Show every session")?.click();
+    await nextTick();
+
+    expect(drawnRows()).toEqual(["group:group-1", "session:session-2", "session:session-1", "session:session-3"]);
+  });
+});
+
+describe("importing and exporting the library", () => {
+  it("offers both from the library menu, and has nothing to export from an empty library", async () => {
+    await render([], []);
+
+    const entries = await clickMenu(buttonIn(host, "More actions"));
+
+    expect(entries.map((entry) => (entry.kind === "action" ? entry.id : "·"))).toEqual([
+      "import-sessions",
+      "export-sessions",
+    ]);
+    expect(pick(entries, "export-sessions").disabled).toBe(true);
+  });
+
+  it("asks about the passwords before exporting, and writes with the answer that was given", async () => {
+    vi.mocked(sessionsExport).mockResolvedValue({
+      sessions: 2,
+      groups: 1,
+      secrets: 1,
+      fileName: "7shell-sessions.json",
+    });
+    await render([work], [web, db]);
+
+    const entries = await clickMenu(buttonIn(host, "More actions"));
+    pick(entries, "export-sessions").run();
+    await nextTick();
+
+    // The question starts at the answer that gives nothing away, every time it is asked.
+    const ask = exportCheckbox();
+    expect(ask.checked).toBe(false);
+
+    ask.checked = true;
+    ask.dispatchEvent(new Event("change"));
+    await nextTick();
+    dialogButton("Export sessions")?.click();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
+    expect(vi.mocked(sessionsExport).mock.calls[0]).toEqual(["Export sessions", "7shell-sessions.json", true]);
+    await vi.waitFor(() => expect(toastMessage()).toContain("2 sessions written to 7shell-sessions.json"));
+  });
+
+  it("leaves the passwords behind when the question is left as it was asked", async () => {
+    vi.mocked(sessionsExport).mockResolvedValue({
+      sessions: 2,
+      groups: 1,
+      secrets: 0,
+      fileName: "7shell-sessions.json",
+    });
+    await render([work], [web, db]);
+
+    const entries = await clickMenu(buttonIn(host, "More actions"));
+    pick(entries, "export-sessions").run();
+    await nextTick();
+    dialogButton("Export sessions")?.click();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
+    expect(vi.mocked(sessionsExport).mock.calls[0]?.[2]).toBe(false);
+  });
+
+  it("imports what a file holds and says what came with it, warnings and all", async () => {
+    vi.mocked(sessionsImport).mockResolvedValue({
+      sessions: 3,
+      groups: 2,
+      secrets: 1,
+      missingKeys: 1,
+      droppedHops: 0,
+    });
+    await render([], []);
+
+    const entries = await clickMenu(buttonIn(host, "More actions"));
+    pick(entries, "import-sessions").run();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionsImport)).toHaveBeenCalledWith("Import sessions"));
+    await vi.waitFor(() =>
+      expect(toastMessage()).toBe(
+        "Imported 3 sessions, 2 groups, 1 saved password, 1 session names a key this device does not hold.",
+      ),
+    );
+  });
+
+  it("says nothing when the file dialog is dismissed", async () => {
+    vi.mocked(sessionsImport).mockResolvedValue(undefined);
+    await render([work], [db]);
+    const before = toastMessage();
+
+    const entries = await clickMenu(buttonIn(host, "More actions"));
+    pick(entries, "import-sessions").run();
+    await vi.waitFor(() => expect(vi.mocked(sessionsImport)).toHaveBeenCalled());
+
+    expect(toastMessage()).toBe(before);
+    expect(useSessionsStore().failure).toBeNull();
+  });
+
+  it("shows a file that cannot be read in the list's own box rather than in a toast", async () => {
+    vi.mocked(sessionsImport).mockRejectedValue({
+      version: 1,
+      code: "SESSION-BUNDLE-INVALID",
+      messageKey: "errors.session.bundleInvalid",
+      messageParams: {},
+      origin: { subsystem: "store" },
+      outcome: "notSent",
+    });
+    await render([work], [db]);
+
+    const entries = await clickMenu(buttonIn(host, "More actions"));
+    pick(entries, "import-sessions").run();
+
+    await vi.waitFor(() => expect(host.textContent).toContain("is not a session export"));
+    expect(host.textContent).toContain("SESSION-BUNDLE-INVALID");
   });
 });

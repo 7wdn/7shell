@@ -109,6 +109,27 @@ Keeping that line sharp is what makes it safe to write the settings file with pl
 read it back without ceremony — and it is why `settings.json` may never grow a field holding a
 password, a key, or a path that names something private.
 
+**The one way a secret leaves this process is a file somebody asked for.** Exporting the session
+library writes a plain JSON file — sessions, groups, and, only when the checkbox was ticked, the
+stored passwords and key passphrases — through a native save dialog that runs in Rust. The dialog
+is the only moment the writing side learns a path, the file is never read back into the interface,
+and the interface is told a count and a file name. Three consequences are deliberate:
+
+- The checkbox starts every time unchecked, and the sentence beside it says the passwords will be
+  written in plain text. A remembered "yes" is how a password ends up in a file somebody meant to
+  share, so the answer is never inherited from last time.
+- An export without them carries no `secrets` array at all rather than an array of blanks: a file
+  that was asked to leave them behind reads as exactly that, not as a file whose passwords were
+  lost.
+- Importing is the same door in reverse and is narrower. A chosen file's ids are replaced with
+  fresh ones where they collide, references only ever point at things inside the same file, and
+  nothing already in the vault is modified or removed — a file that came from somewhere else can
+  add to the library but never rearrange it.
+
+The bundle is built in `sevenshell-vault`, which already holds the secrets, rather than in the host
+that moves the bytes; what travels up is a summary. The values are wiped from memory when the
+bundle is dropped, and the type never implements `Debug`.
+
 **Secrets are scrubbed, not merely avoided.** `crates/sevenshell-error/src/redact.rs` removes
 private key blocks, credential assignments and bearer tokens from any string on its way into an
 envelope, masks parameter and diagnostic values whose *key* looks like a secret, and truncates

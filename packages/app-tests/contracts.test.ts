@@ -182,6 +182,8 @@ describe("wire types", () => {
       "SftpEntry",
       "SftpListing",
       "TransferInfo",
+      "SessionExportSummary",
+      "SessionImportSummary",
     ]) {
       const rustFields = rustStructFields(rust, name).map(camelCase);
 

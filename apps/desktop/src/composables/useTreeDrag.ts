@@ -50,7 +50,7 @@ export interface TreeDragOptions {
 }
 
 /** The row a drop decorates: a line beside the group it goes next to, or a ring around where it goes. */
-export function dropMark(aimed: AimedDrop): DropMark {
+export function dropMark(aimed: AimedDrop, key: string): DropMark {
   if (aimed.drop.kind === "group") {
     if (aimed.zone === "before") {
       return { key: `group:${aimed.drop.id}`, style: "line-before" };
@@ -60,16 +60,19 @@ export function dropMark(aimed: AimedDrop): DropMark {
     }
     return { key: `group:${aimed.drop.id}`, style: "ring" };
   }
-  // The ungrouped bucket is where both "no group" and "the root of the tree" are drawn.
-  return { key: "ungrouped", style: "ring" };
+  // A drop at the root lands on the row it was dropped on, whatever that row is: a session row at
+  // the root means the root, and the row the sidebar draws during a drag means the root as well.
+  // The key comes from the row itself, so the ring is drawn around the row the pointer is on.
+  return { key, style: "ring" };
 }
 
 export function useTreeDrag(options: TreeDragOptions) {
   const active = ref(false);
+  /** What is being dragged, once the pointer has travelled: what a drop-target hint is drawn from. */
+  const grabbed = ref<Grabbed | null>(null);
   const ghost = ref<{ readonly label: string; readonly x: number; readonly y: number } | null>(null);
   const mark = ref<DropMark | null>(null);
 
-  let grabbed: Grabbed | null = null;
   let label = "";
   let from = { x: 0, y: 0 };
   let at = { x: 0, y: 0 };
@@ -80,7 +83,7 @@ export function useTreeDrag(options: TreeDragOptions) {
     if (event.button !== 0 || active.value) {
       return;
     }
-    grabbed = item;
+    grabbed.value = item;
     label = name;
     from = { x: event.clientX, y: event.clientY };
     at = { ...from };
@@ -90,7 +93,7 @@ export function useTreeDrag(options: TreeDragOptions) {
   }
 
   function onMove(event: MouseEvent): void {
-    if (!grabbed) {
+    if (!grabbed.value) {
       return;
     }
     at = { x: event.clientX, y: event.clientY };
@@ -118,7 +121,7 @@ export function useTreeDrag(options: TreeDragOptions) {
   /** Reads what is under the pointer and turns it into the one drop that would be accepted. */
   function look(): void {
     const container = options.container.value;
-    const item = grabbed;
+    const item = grabbed.value;
     if (!container || !item) {
       candidate = null;
       mark.value = null;
@@ -143,7 +146,7 @@ export function useTreeDrag(options: TreeDragOptions) {
       return;
     }
     candidate = aimed;
-    mark.value = dropMark(aimed);
+    mark.value = dropMark(aimed, row.dataset.row ?? "");
   }
 
   /** Scrolls while the pointer is held near an end, and looks again after every step. */
@@ -186,7 +189,7 @@ export function useTreeDrag(options: TreeDragOptions) {
   }
 
   function onUp(): void {
-    const item = grabbed;
+    const item = grabbed.value;
     const aimed = candidate;
     const dragging = active.value;
     finish();
@@ -228,7 +231,7 @@ export function useTreeDrag(options: TreeDragOptions) {
       window.cancelAnimationFrame(frame);
       frame = 0;
     }
-    grabbed = null;
+    grabbed.value = null;
     candidate = null;
     active.value = false;
     ghost.value = null;
@@ -239,5 +242,5 @@ export function useTreeDrag(options: TreeDragOptions) {
 
   onBeforeUnmount(finish);
 
-  return { active, ghost, mark, press };
+  return { active, grabbed, ghost, mark, press };
 }

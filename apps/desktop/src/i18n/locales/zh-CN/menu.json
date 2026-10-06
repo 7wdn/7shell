@@ -8,6 +8,7 @@
     "tab": "标签页操作",
     "session": "会话操作",
     "group": "分组操作",
+    "library": "会话库操作",
     "moveToGroup": "移动到分组",
     "tunnel": "转发操作",
     "process": "进程操作",

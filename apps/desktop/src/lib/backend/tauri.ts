@@ -25,7 +25,9 @@ import type {
   SecretInput,
   OpenTunnel,
   Session,
+  SessionExportSummary,
   SessionGroup,
+  SessionImportSummary,
   SftpListing,
   SftpOutcome,
   TerminalClosed,
@@ -169,6 +171,32 @@ export function groupSave(group: SessionGroup): Promise<SessionGroup> {
 
 export function groupDelete(id: string): Promise<void> {
   return invoke<void>("group_delete", { id });
+}
+
+/**
+ * Asks for a file to write the library into, in Rust, and writes it.
+ *
+ * `includeSecrets` is the only thing the interface decides: the passwords themselves are read out
+ * of the vault and written by the other side, so they never arrive here. Resolves to `undefined`
+ * when the dialog was dismissed.
+ */
+export function sessionsExport(
+  title: string,
+  fileName: string,
+  includeSecrets: boolean,
+): Promise<SessionExportSummary | undefined> {
+  return invoke<SessionExportSummary | null>("sessions_export", { title, fileName, includeSecrets }).then(
+    (summary) => summary ?? undefined,
+  );
+}
+
+/**
+ * Asks which file to read a library out of, in Rust, and adds what it holds.
+ *
+ * Resolves to `undefined` when the dialog was dismissed.
+ */
+export function sessionsImport(title: string): Promise<SessionImportSummary | undefined> {
+  return invoke<SessionImportSummary | null>("sessions_import", { title }).then((summary) => summary ?? undefined);
 }
 
 // -- Keys --------------------------------------------------------------------

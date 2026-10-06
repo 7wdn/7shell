@@ -886,3 +886,85 @@ test("a trusted host key can be read and taken back", async () => {
     await close();
   }
 });
+
+/**
+ * Finding one session among many, and handing the library to a file.
+ *
+ * Three things only a real window can settle. The search box is a field a person types into, and
+ * what it does to the rows — including the folders it has to open to show what it found — is the
+ * answer to whether it is a search or a filter. The narrowing by authentication is behind a panel
+ * that has to stay open while it is used and close when the pointer goes elsewhere. And the export
+ * question is the last thing between this interface and a native dialog, which is where the run
+ * stops: the file dialog is the platform's and cannot be driven from here, so what is asserted is
+ * the question — including that the answer which writes passwords into a file starts off unset.
+ */
+test("the list is searched, narrowed and exported from one menu", async () => {
+  const { page, close } = await openApp();
+  try {
+    await saveSession(page, "searchable-web");
+    await saveSession(page, "searchable-db");
+
+    const web = page.getByTitle("Open a terminal for searchable-web");
+    const db = page.getByTitle("Open a terminal for searchable-db");
+    await expect(web).toBeVisible();
+    await expect(db).toBeVisible();
+
+    // The search box, over the things that identify a machine.
+    const search = page.getByLabel("Search sessions");
+    await search.fill("searchable-web");
+    await expect(web).toBeVisible();
+    await expect(db).toHaveCount(0);
+
+    // A query that matches nothing says so and offers the way back, rather than an empty list with
+    // a search box somebody has to work out for themselves.
+    await search.fill("nothing-like-this-at-all");
+    await expect(page.getByText("No session matches.")).toBeVisible();
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-search.png"), fullPage: false });
+
+    await page.getByRole("button", { name: "Show every session" }).click();
+    await expect(web).toBeVisible();
+    await expect(db).toBeVisible();
+    await expect(search).toHaveValue("");
+
+    // The filter panel, which is a panel rather than a menu: choosing one thing must not close it.
+    await page.getByRole("button", { name: "Filter sessions" }).click();
+    const publicKey = page.getByRole("menuitemcheckbox", { name: "Public key", exact: true });
+    await publicKey.click();
+    await expect(publicKey).toHaveAttribute("aria-checked", "true");
+    // Both of these authenticate with a password, so neither is what was asked for.
+    await expect(web).toHaveCount(0);
+    await expect(db).toHaveCount(0);
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-filter.png"), fullPage: false });
+
+    // The panel's own way out, which is the one on screen while the panel is: the list's is behind
+    // it, and the two would be told apart by nothing.
+    await page
+      .getByRole("group", { name: "Filter sessions" })
+      .getByRole("button", { name: "Show every session" })
+      .click();
+    await expect(web).toBeVisible();
+
+    // Exporting, from the library's own menu. The file dialog that follows is the platform's, so
+    // the question before it is what this run can hold the interface to.
+    await page.getByRole("button", { name: "More actions" }).click();
+    await page.getByRole("menuitem", { name: /^Export sessions/ }).click();
+
+    const asked = page.getByRole("dialog");
+    await expect(asked.getByText(/Anyone who can read that file/)).toBeVisible();
+    await expect(asked.getByRole("checkbox")).not.toBeChecked();
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-export.png"), fullPage: false });
+
+    await asked.getByRole("button", { name: "Cancel" }).click();
+    await expect(asked).toHaveCount(0);
+
+    // And the other half of the menu is there: importing is the one that opens a file dialog first,
+    // so it is not run here.
+    await page.getByRole("button", { name: "More actions" }).click();
+    await expect(page.getByRole("menuitem", { name: /^Import sessions/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+  } finally {
+    await close();
+  }
+});

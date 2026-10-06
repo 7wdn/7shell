@@ -51,12 +51,11 @@ export function groupDropFor(target: DragTarget, box: RowBox, pointerY: number):
   if (target.kind === "group") {
     return { drop: { kind: "group", id: target.id }, zone: zoneIn(box, pointerY) };
   }
-  // Onto a session, or onto the bucket at the root: the group goes where that row is — inside the
-  // group the row is drawn in, or at the root when the row is in no group.
-  const parentId = target.kind === "session" ? target.parentId : null;
-  return parentId === null
+  // Onto a session: the group goes where that row is — inside the group the row is drawn in, or at
+  // the root when the row is in no group.
+  return target.parentId === null
     ? { drop: { kind: "root" }, zone: "inside" }
-    : { drop: { kind: "group", id: parentId }, zone: "inside" };
+    : { drop: { kind: "group", id: target.parentId }, zone: "inside" };
 }
 
 /** What dropping a session on this row would mean. A session only ever changes which group it is in. */
@@ -64,8 +63,7 @@ export function sessionDropFor(target: DragTarget): AimedDrop {
   if (target.kind === "group") {
     return { drop: { kind: "group", id: target.id }, zone: "inside" };
   }
-  const parentId = target.kind === "session" ? target.parentId : null;
-  return parentId === null
+  return target.parentId === null
     ? { drop: { kind: "root" }, zone: "inside" }
-    : { drop: { kind: "group", id: parentId }, zone: "inside" };
+    : { drop: { kind: "group", id: target.parentId }, zone: "inside" };
 }

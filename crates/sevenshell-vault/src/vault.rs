@@ -30,11 +30,14 @@ use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{CommandHistoryEntry, KeyInfo, KnownHostEntry, Session, SessionGroup, Snippet, SnippetGroup};
+use sevenshell_types::{
+    CommandHistoryEntry, KeyInfo, KnownHostEntry, Session, SessionGroup, SessionImportSummary, Snippet, SnippetGroup,
+};
 use zeroize::Zeroizing;
 
 use crate::crypto::{self, KdfParams, VaultKey};
 use crate::document::{self, Document, KeyMaterial, SessionSecret};
+use crate::transfer::{self, SessionBundle};
 
 /// The vault file name inside the platform configuration directory.
 pub const VAULT_FILE_NAME: &str = "vault.json";
@@ -424,6 +427,45 @@ impl Vault {
 
         state.document.delete_group(id);
         state.write_to(&self.path)
+    }
+
+    /// Everything an export writes: the sessions, the groups, and — only when asked — the logins.
+    ///
+    /// Built in one go, before the caller has asked anybody where to put it: a locked vault is
+    /// refused here rather than after a file dialog has been opened and dismissed.
+    pub fn export_bundle(&self, include_secrets: bool, now: u64) -> Result<SessionBundle, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+        Ok(transfer::build_bundle(&state.document, include_secrets, now))
+    }
+
+    /// Adds everything a bundle carries, and changes nothing that was already here.
+    ///
+    /// The whole plan is worked out first and applied as one document write, rather than a write per
+    /// session: a file that fails half-way through would otherwise leave somebody with half an
+    /// import and no way to tell which half.
+    pub fn import_bundle(&self, bundle: SessionBundle) -> Result<SessionImportSummary, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let plan = transfer::plan_import(bundle, &state.document);
+        let summary = SessionImportSummary {
+            sessions: plan.sessions.len() as u32,
+            groups: plan.groups.len() as u32,
+            secrets: plan.sessions.iter().filter(|entry| entry.secret.is_some()).count() as u32,
+            missing_keys: plan.missing_keys,
+            dropped_hops: plan.dropped_hops,
+        };
+
+        for group in plan.groups {
+            state.document.save_group(group);
+        }
+        for entry in plan.sessions {
+            state.document.save_session(entry.session, entry.secret);
+        }
+        state.write_to(&self.path)?;
+
+        Ok(summary)
     }
 
     pub fn known_hosts(&self) -> Result<Vec<KnownHostEntry>, ShellError> {
@@ -1624,5 +1666,86 @@ mod tests {
             history[0].command,
             format!("command-{}", document::COMMAND_HISTORY_LIMIT + 4)
         );
+    }
+
+    #[test]
+    fn a_library_travels_to_another_vault_with_the_passwords_it_was_asked_to_carry() {
+        let directory = tempdir().expect("temp dir");
+        let source = Vault::open_at(directory.path().join("source.json"));
+        source.create("master").expect("create");
+        source.save_group(sample_group("g")).expect("save the group");
+        source
+            .save_session(
+                Session {
+                    group_id: Some("g".to_owned()),
+                    ..sample_session("a", "web")
+                },
+                Some(SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+
+        let written = source
+            .export_bundle(true, 1_700_000_000)
+            .expect("export")
+            .to_json()
+            .expect("write");
+
+        let target = Vault::open_at(directory.path().join("target.json"));
+        target.create("another password").expect("create");
+        let summary = target
+            .import_bundle(SessionBundle::parse(&written).expect("read"))
+            .expect("import");
+
+        assert_eq!(summary.sessions, 1);
+        assert_eq!(summary.groups, 1);
+        assert_eq!(summary.secrets, 1);
+        let imported = target.sessions().expect("sessions");
+        assert_eq!(imported[0].name, "web");
+        assert_eq!(imported[0].group_id.as_deref(), Some("g"), "the folder came with it");
+        assert!(imported[0].auth.has_secret, "and so did the password");
+        assert_eq!(
+            target
+                .secret_for_session(&imported[0].id)
+                .expect("read")
+                .expect("stored")
+                .expose(),
+            "hunter2"
+        );
+    }
+
+    #[test]
+    fn importing_the_same_file_twice_adds_a_second_copy_instead_of_replacing_the_first() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+        vault.save_session(sample_session("a", "web"), None).expect("save");
+
+        let written = vault.export_bundle(false, 0).expect("export").to_json().expect("write");
+
+        vault
+            .import_bundle(SessionBundle::parse(&written).expect("read"))
+            .expect("import");
+        vault
+            .import_bundle(SessionBundle::parse(&written).expect("read"))
+            .expect("import again");
+
+        let sessions = vault.sessions().expect("sessions");
+        assert_eq!(sessions.len(), 3, "the original and two imported copies");
+        let names: std::collections::HashSet<&str> = sessions.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names.len(), 1, "nothing about the original was changed");
+        let ids: std::collections::HashSet<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids.len(), 3, "and every copy has an id of its own");
+    }
+
+    #[test]
+    fn a_locked_vault_exports_nothing() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+        vault.lock();
+
+        let error = vault.export_bundle(true, 0).expect_err("locked");
+
+        assert_eq!(error.code(), ErrorCode::VaultLocked);
     }
 }

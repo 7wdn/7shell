@@ -8,6 +8,12 @@
  *
  * Groups come before the sessions that sit directly in them, the way folders come before files
  * everywhere else. A group with nothing in it says so, once, where its contents would have been.
+ *
+ * Sessions that are in no group are drawn at the root, with no heading over them: there is nothing
+ * under the ungrouped heading that its rows do not say themselves, and a list of one's own files
+ * does not need to be told it is a list of one's own files. What that heading was also *for* — a
+ * place to drop something to take it out of every group — is drawn by the sidebar while a drag is
+ * in flight, where it is wanted, rather than sitting there the rest of the time.
  */
 import type { Session, SessionGroup } from "@/types/session";
 
@@ -33,24 +39,19 @@ export type TreeRow =
       /** The group it is drawn inside, which is what dropping something onto it would mean. */
       readonly parentId: ParentId;
     }
-  | {
-      readonly kind: "ungrouped";
-      readonly key: string;
-      readonly depth: number;
-    }
-  | { readonly kind: "hint"; readonly key: string; readonly depth: number; readonly scope: "group" | "ungrouped" };
+  | { readonly kind: "hint"; readonly key: string; readonly depth: number; readonly scope: "group" };
 
 /**
  * The rows to draw, with collapsed groups left closed.
  *
- * The ungrouped bucket is drawn whenever there is a group to be outside of — it is a place things
- * can be put, and a place that appears and disappears as sessions come and go is a place nobody can
- * aim at. With no groups at all there is no bucket: a flat list has nothing to be apart from.
+ * `open` names the groups to draw open whatever their own state is. It is how a search shows what
+ * it found: a match inside a folder the person had closed is a match they cannot see.
  */
 export function visibleRows(
   groups: readonly SessionGroup[],
   sessions: readonly Session[],
   collapsed: ReadonlySet<string>,
+  open: ReadonlySet<string> = new Set(),
 ): TreeRow[] {
   const rows: TreeRow[] = [];
 
@@ -58,7 +59,7 @@ export function visibleRows(
     for (const group of childrenOf(groups, parentId)) {
       const children = childrenOf(groups, group.id);
       const own = sessions.filter((session) => sessionParentId(groups, session) === group.id);
-      const closed = collapsed.has(group.id);
+      const closed = collapsed.has(group.id) && !open.has(group.id);
       rows.push({
         kind: "group",
         key: `group:${group.id}`,
@@ -82,21 +83,9 @@ export function visibleRows(
   };
   walk(null, 0);
 
-  const loose = sessions.filter((session) => sessionParentId(groups, session) === null);
-  if (groups.length === 0) {
-    // No groups at all: a flat list, with no heading over it — there is nothing to be outside of.
-    for (const session of loose) {
-      rows.push({ kind: "session", key: `session:${session.id}`, session, depth: 0, parentId: null });
-    }
-    return rows;
-  }
-
-  rows.push({ kind: "ungrouped", key: "ungrouped", depth: 0 });
-  for (const session of loose) {
-    rows.push({ kind: "session", key: `session:${session.id}`, session, depth: 1, parentId: null });
-  }
-  if (loose.length === 0) {
-    rows.push({ kind: "hint", key: "hint:ungrouped", depth: 1, scope: "ungrouped" });
+  // Whatever is in no group, at the root and unindented: there is no heading left to sit under.
+  for (const session of sessions.filter((session) => sessionParentId(groups, session) === null)) {
+    rows.push({ kind: "session", key: `session:${session.id}`, session, depth: 0, parentId: null });
   }
   return rows;
 }
@@ -105,8 +94,7 @@ export function visibleRows(
 export type DragTarget =
   | { readonly kind: "group"; readonly id: string }
   /** A session row is its group: dropping onto one means the group the row is drawn in. */
-  | { readonly kind: "session"; readonly parentId: ParentId }
-  | { readonly kind: "ungrouped" };
+  | { readonly kind: "session"; readonly parentId: ParentId };
 
 /** The drag identity of a row, or nothing for a row a drag cannot land on. */
 export function rowTarget(row: TreeRow): DragTarget | null {
@@ -115,9 +103,6 @@ export function rowTarget(row: TreeRow): DragTarget | null {
   }
   if (row.kind === "session") {
     return { kind: "session", parentId: row.parentId };
-  }
-  if (row.kind === "ungrouped") {
-    return { kind: "ungrouped" };
   }
   return null;
 }

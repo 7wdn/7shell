@@ -24,7 +24,9 @@ import type {
   TransferInfo,
   SecretInput,
   Session,
+  SessionExportSummary,
   SessionGroup,
+  SessionImportSummary,
   TerminalClosed,
   TerminalData,
   UploadAnswer,
@@ -175,6 +177,17 @@ export const backend = {
     save: (session: Session, secret?: SecretInput): Promise<Session> =>
       forward("session_save", () => desktop.sessionSave(session, secret)),
     remove: (id: string): Promise<void> => forward("session_delete", () => desktop.sessionDelete(id)),
+
+    /**
+     * Writes the library to a file the user picks. The dialog runs in Rust and the secrets — when
+     * they were asked for — are read there too, so none of this crosses the boundary.
+     */
+    export: (title: string, fileName: string, includeSecrets: boolean): Promise<SessionExportSummary | undefined> =>
+      forward("sessions_export", () => desktop.sessionsExport(title, fileName, includeSecrets)),
+
+    /** Adds what a chosen file holds. `undefined` means the dialog was dismissed. */
+    import: (title: string): Promise<SessionImportSummary | undefined> =>
+      forward("sessions_import", () => desktop.sessionsImport(title)),
 
     groups: {
       list: (): Promise<SessionGroup[]> => forward("groups_list", () => desktop.groupsList()),

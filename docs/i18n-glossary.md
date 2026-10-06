@@ -10,6 +10,8 @@ next reads as two different features.
 |---|---|---|
 | **host** | A machine you connect to, identified by name or address. | server, box, machine |
 | **session** | One live connection with its terminal or file browser. | connection (a session *uses* a connection) |
+| **session library** | Everything saved: the sessions and the groups they are kept in. | list, favourites, address book |
+| **group** | A folder in the session library. Deleting one deletes no sessions. | category, tag, folder (a folder is what it *looks* like) |
 | **connection** | The configured way to reach a host: protocol, address, auth, jump chain. | profile, bookmark |
 | **vault** | The encrypted file holding credentials and settings. | keychain, store |
 | **unlock / lock** | Deriving the vault key from the password; discarding it. | open/close, login |
@@ -28,6 +30,9 @@ next reads as two different features.
 | **policy** | The rules deciding whether an action is allowed. | permission (that is one input to a decision) |
 | **approval** | A person saying yes to a specific action. | confirmation, consent |
 | **grant** | Access to a local file the user picked, as an opaque token. | permission, path |
+| **search** | Narrowing the list by what a person types: name, address, user, port. | find, query |
+| **filter** | Narrowing the list by a value it already has — for example how a session authenticates. | search (that is typed, this is chosen) |
+| **export / import** | Writing the library to a file, and adding what a file holds. | save, load, backup |
 | **envelope** | The structured error that crosses a boundary. | error object, payload |
 
 ## 简体中文
@@ -36,6 +41,8 @@ next reads as two different features.
 |---|---|---|
 | host | 主机 | 服务器、机器 |
 | session | 会话 | 连接 |
+| session library | 会话库 | 列表、收藏夹、通讯录 |
+| group | 分组 | 分类、标签、文件夹（那只是它看起来的样子） |
 | connection | 连接 | 配置、书签 |
 | vault | 保险库 | 密钥库、钥匙串 |
 | unlock / lock | 解锁／锁定 | 打开／关闭 |
@@ -54,6 +61,9 @@ next reads as two different features.
 | policy | 策略 | 权限 |
 | approval | 审批 | 确认、同意 |
 | grant | 授权 | 权限 |
+| search | 搜索 | 查找、查询 |
+| filter | 筛选 | 过滤、搜索（搜索是打字的，筛选是选的） |
+| export / import | 导出／导入 | 保存、加载、备份 |
 | envelope | 错误信封 | 错误对象 |
 
 ## Rules

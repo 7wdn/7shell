@@ -47,10 +47,12 @@
 
 mod crypto;
 mod document;
+mod transfer;
 mod vault;
 
 pub use crypto::KdfParams;
 pub use document::{KeyMaterial, SessionSecret, VAULT_SCHEMA_VERSION};
+pub use transfer::{BUNDLE_FORMAT, BUNDLE_VERSION, MAX_BUNDLE_BYTES, SessionBundle};
 pub use vault::{
     VAULT_FILE_NAME, Vault, VaultStatus, change_password, create, default_path, delete_group, delete_session,
     find_known_host, forget_host, forget_key, groups, import_key, key_material, known_hosts, lock, save_group,

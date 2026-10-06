@@ -46,10 +46,8 @@ function shape(store: ReturnType<typeof useSessionsStore>): string[] {
         return `${"  ".repeat(row.depth)}${row.group.name}`;
       case "session":
         return `${"  ".repeat(row.depth)}${row.session.name}`;
-      case "ungrouped":
-        return "Ungrouped";
       default:
-        return `${"  ".repeat(row.depth)}·${row.scope === "group" ? "empty" : "none"}`;
+        return `${"  ".repeat(row.depth)}·empty`;
     }
   });
 }
@@ -148,7 +146,7 @@ describe("sessions store", () => {
     const store = useSessionsStore();
     await store.load();
 
-    expect(shape(store)).toEqual(["Work", "  web", "Ungrouped", "  web", "  web"]);
+    expect(shape(store)).toEqual(["Work", "  web", "web", "web"]);
   });
 
   it("nests what a group holds, in the order the tree draws it", async () => {
@@ -158,7 +156,7 @@ describe("sessions store", () => {
     const store = useSessionsStore();
     await store.load();
 
-    expect(shape(store)).toEqual(["Work", "  Rack", "    inside", "Lab", "  ·empty", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Work", "  Rack", "    inside", "Lab", "  ·empty"]);
   });
 
   it("keeps what is under a closed group out of the rows, and puts it back when it opens", async () => {
@@ -169,11 +167,11 @@ describe("sessions store", () => {
     await store.load();
     store.setCollapsed(work.id, true);
 
-    expect(shape(store)).toEqual(["Work", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Work"]);
 
     store.setCollapsed(work.id, false);
 
-    expect(shape(store)).toEqual(["Work", "  Rack", "    inside", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Work", "  Rack", "    inside"]);
   });
 });
 
@@ -251,9 +249,9 @@ describe("making and changing groups", () => {
     expect(worked).toBe(true);
     expect(groupDeleteMock).toHaveBeenCalledWith(work.id);
     expect(store.groups.map((group) => group.id)).toEqual([lab.id]);
-    // The session is still here, and now it sits under Ungrouped — the invariant the confirmation
-    // in the sidebar says out loud.
-    expect(shape(store)).toEqual(["Lab", "  ·empty", "Ungrouped", "  web"]);
+    // The session is still here, and now it sits at the root — the invariant the confirmation in
+    // the sidebar says out loud.
+    expect(shape(store)).toEqual(["Lab", "  ·empty", "web"]);
     expect(store.sessions[0]?.groupId).toBeUndefined();
   });
 
@@ -282,7 +280,7 @@ describe("making and changing groups", () => {
     await store.removeGroup(work.id);
 
     expect(store.groups.map((group) => [group.id, group.parentId])).toEqual([["group-3", undefined]]);
-    expect(shape(store)).toEqual(["Inside", "  ·empty", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Inside", "  ·empty"]);
   });
 
   it("writes only the two groups whose order changed when one is moved a place", async () => {
@@ -296,7 +294,7 @@ describe("making and changing groups", () => {
       ["group-2", 0],
       ["group-1", 1],
     ]);
-    expect(shape(store)).toEqual(["Lab", "  ·empty", "Work", "  ·empty", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Lab", "  ·empty", "Work", "  ·empty"]);
   });
 
   it("moves a group among its own siblings, never past a group that is not one", async () => {
@@ -334,7 +332,7 @@ describe("making and changing groups", () => {
     expect(groupSaveMock.mock.calls.map(([group]) => [group.id, group.parentId, group.order])).toEqual([
       ["group-1", "group-2", 0],
     ]);
-    expect(shape(store)).toEqual(["Lab", "  Work", "    ·empty", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Lab", "  Work", "    ·empty"]);
   });
 
   it("refuses a drop that would put a group under itself, and writes nothing", async () => {
@@ -382,7 +380,7 @@ describe("moving a session between groups", () => {
     expect(written?.groupId).toBe(work.id);
     expect(written?.name).toBe("web");
     expect(secret).toBeUndefined();
-    expect(shape(store)).toEqual(["Work", "  web", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Work", "  web"]);
   });
 
   it("moves a session out of every group when it is sent to the root", async () => {
@@ -395,7 +393,7 @@ describe("moving a session between groups", () => {
     await store.placeSession(draft.id, { kind: "root" });
 
     expect(sessionSaveMock.mock.calls[0]?.[0]?.groupId).toBeUndefined();
-    expect(shape(store)).toEqual(["Work", "  ·empty", "Ungrouped", "  web"]);
+    expect(shape(store)).toEqual(["Work", "  ·empty", "web"]);
   });
 
   it("opens the group a session was dropped into, so it does not vanish into a closed group", async () => {
@@ -408,7 +406,7 @@ describe("moving a session between groups", () => {
     await store.placeSession(draft.id, { kind: "group", id: work.id });
 
     expect(store.collapsed.has(work.id)).toBe(false);
-    expect(shape(store)).toEqual(["Work", "  web", "Ungrouped", "  ·none"]);
+    expect(shape(store)).toEqual(["Work", "  web"]);
   });
 
   it("writes nothing when the session is already where it was dropped", async () => {
@@ -447,5 +445,95 @@ describe("moving a session between groups", () => {
     expect(worked).toBe(false);
     expect(store.failure?.code).toBe("STORE-IO");
     expect(store.sessions[0]?.groupId).toBeUndefined();
+  });
+});
+
+describe("narrowing the list", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    sessionsListMock.mockReset().mockResolvedValue([]);
+    groupsListMock.mockReset().mockResolvedValue([]);
+    sessionSaveMock.mockReset().mockImplementation(async (session: Session) => session);
+  });
+
+  it("narrows the rows without touching the library itself", async () => {
+    sessionsListMock.mockResolvedValue([draft, { ...draft, id: "session-2", name: "db", groupId: work.id }]);
+    groupsListMock.mockResolvedValue([work]);
+
+    const store = useSessionsStore();
+    await store.load();
+    store.setQuery("db");
+
+    expect(shape(store)).toEqual(["Work", "  db"]);
+    // The filter is a view: what is saved, and what a write will act on, is still everything.
+    expect(store.sessions.map((session) => session.name)).toEqual(["web", "db"]);
+    expect(store.groups.map((group) => group.id)).toEqual([work.id]);
+  });
+
+  it("draws a folder open when a match is inside it, whatever was closed", async () => {
+    sessionsListMock.mockResolvedValue([{ ...draft, id: "session-2", name: "db", groupId: work.id }]);
+    groupsListMock.mockResolvedValue([work]);
+
+    const store = useSessionsStore();
+    await store.load();
+    store.setCollapsed(work.id, true);
+    expect(shape(store)).toEqual(["Work"]);
+
+    store.setQuery("db");
+    expect(shape(store)).toEqual(["Work", "  db"]);
+
+    store.clearFilter();
+    // Closing a group is not undone by having searched inside it.
+    expect(shape(store)).toEqual(["Work"]);
+  });
+
+  it("keeps the sessions that authenticate the way that was chosen, and takes it back", async () => {
+    sessionsListMock.mockResolvedValue([
+      draft,
+      { ...draft, id: "session-2", name: "keyed", auth: { method: "publicKey", hasSecret: false } },
+    ]);
+
+    const store = useSessionsStore();
+    await store.load();
+
+    store.toggleMethod("publicKey");
+    expect(store.filtering).toBe(true);
+    expect(shape(store)).toEqual(["keyed"]);
+
+    store.toggleMethod("publicKey");
+    expect(store.filtering).toBe(false);
+    expect(shape(store)).toEqual(["web", "keyed"]);
+  });
+
+  it("clears both halves of the narrowing at once", async () => {
+    sessionsListMock.mockResolvedValue([draft, { ...draft, id: "session-2", name: "keyed" }]);
+
+    const store = useSessionsStore();
+    await store.load();
+    store.setQuery("keyed");
+    store.toggleMethod("password");
+
+    store.clearFilter();
+
+    expect(store.filtering).toBe(false);
+    expect(store.filter.query).toBe("");
+    expect(shape(store)).toEqual(["web", "keyed"]);
+  });
+
+  it("still moves a session into a group the search is hiding", async () => {
+    // Which is the whole reason the filter is a view rather than a filtered copy: what a write acts
+    // on is the library, not the list.
+    sessionsListMock.mockResolvedValue([draft]);
+    groupsListMock.mockResolvedValue([work, lab]);
+
+    const store = useSessionsStore();
+    await store.load();
+    store.setQuery("web");
+    expect(shape(store)).toEqual(["web"]);
+
+    const worked = await store.placeSession(draft.id, { kind: "group", id: lab.id });
+
+    expect(worked).toBe(true);
+    expect(sessionSaveMock.mock.calls[0]?.[0]).toMatchObject({ id: "session-1", groupId: "group-2" });
   });
 });

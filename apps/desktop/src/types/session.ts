@@ -242,3 +242,33 @@ export type UploadOutcome =
 
 /** The answer to that question. */
 export type UploadAnswer = "overwrite" | "skip" | "cancel";
+
+/**
+ * What an export of the session library wrote.
+ *
+ * A count and a file name: the file stays where Rust put it, and the interface is never told where
+ * that is.
+ */
+export interface SessionExportSummary {
+  readonly sessions: number;
+  readonly groups: number;
+  /** How many stored credentials travelled. Zero when the export was asked to leave them behind. */
+  readonly secrets: number;
+  readonly fileName: string;
+}
+
+/**
+ * What an import added.
+ *
+ * The last two are warnings rather than failures: what they count was imported anyway, and they are
+ * the only sign that a session may not connect the way it did where the file came from.
+ */
+export interface SessionImportSummary {
+  readonly sessions: number;
+  readonly groups: number;
+  readonly secrets: number;
+  /** Imported sessions that name a key this device does not hold. */
+  readonly missingKeys: number;
+  /** Imported sessions that jumped through a session the file did not carry. */
+  readonly droppedHops: number;
+}

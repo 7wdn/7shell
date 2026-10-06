@@ -90,6 +90,10 @@ error_catalog! {
     StoreSchemaNewer => "STORE-SCHEMA-NEWER", "errors.store.schemaNewer";
     #[doc = "The session being opened is no longer saved."]
     SessionNotFound => "SESSION-NOT-FOUND", "errors.session.notFound";
+    #[doc = "The chosen file is not a session export from this application, or it has been damaged."]
+    SessionBundleInvalid => "SESSION-BUNDLE-INVALID", "errors.session.bundleInvalid";
+    #[doc = "A session export file could not be read or written."]
+    SessionBundleIo => "SESSION-BUNDLE-IO", "errors.session.bundleIo";
 
     // -- Policy ------------------------------------------------------------
     #[doc = "The active policy forbids this action."]

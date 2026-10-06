@@ -397,3 +397,36 @@ pub enum VaultState {
 pub struct SecretInput {
     pub value: String,
 }
+
+/// What an export of the session library wrote.
+///
+/// Counts and a file name, and nothing else: the file itself, and whatever is in it, stays where it
+/// was written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionExportSummary {
+    pub sessions: u32,
+    pub groups: u32,
+    /// How many stored credentials travelled. Zero when the export was asked to leave them behind.
+    pub secrets: u32,
+    /// The file's own name, never a path: the interface has no business knowing where it is.
+    pub file_name: String,
+}
+
+/// What an import added.
+///
+/// `missing_keys` and `dropped_hops` are not failures: what they count was imported anyway, and the
+/// sentence they feed is the only warning that a session will not connect the way it did where the
+/// file came from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionImportSummary {
+    pub sessions: u32,
+    pub groups: u32,
+    /// How many stored credentials came with the file.
+    pub secrets: u32,
+    /// Imported sessions that name a key this device does not hold.
+    pub missing_keys: u32,
+    /// Imported sessions that jumped through a session the file did not carry.
+    pub dropped_hops: u32,
+}

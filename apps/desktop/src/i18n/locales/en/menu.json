@@ -8,6 +8,7 @@
     "tab": "Tab actions",
     "session": "Session actions",
     "group": "Group actions",
+    "library": "Session library actions",
     "moveToGroup": "Move to group",
     "tunnel": "Forward actions",
     "process": "Process actions",

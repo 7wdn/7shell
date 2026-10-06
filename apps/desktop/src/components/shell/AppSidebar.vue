@@ -3,13 +3,20 @@
  * The session list, the forwards that are up, and the protocols this build speaks.
  *
  * The list is what is saved, grouped by the groups that are saved. Nothing here invents a row: a
- * session whose group no longer exists still appears, under the ungrouped heading, rather than
- * disappearing because its heading did.
+ * session whose group no longer exists still appears, at the root, rather than disappearing because
+ * its heading did.
  *
  * Groups are managed where they are drawn. Making one, renaming one and deleting one all happen in
  * the list rather than in a dialog, and deleting asks in the heading the way deleting a session asks
  * in its row. A group is only ever a heading: nothing inside it is deleted with it, which is the
  * sentence the confirmation says out loud.
+ *
+ * A session that is in no group is drawn at the root with no heading over it — the rows say what
+ * they are. What the heading was also for is drawn only while a session is being dragged: a row at
+ * the end of the list that means "out of every group", there when somebody needs it and not part of
+ * the list the rest of the time. Dragging is off while the list is filtered, because a drop lands
+ * in the list as it is *drawn*, and when that order is not the saved order the drop would be a
+ * guess.
  *
  * Opening a terminal hangs off the row itself, with the file browser beside it; whether a terminal
  * comes up with its file panel is the settings' answer, not this row's. Editing and deleting are
@@ -21,26 +28,37 @@
  */
 import {
   ArrowRight,
+  Check,
   ChevronRight,
+  Download,
+  EllipsisVertical,
   Folder,
+  FolderInput,
+  FolderOpen,
   FolderPlus,
+  ListFilter,
   LoaderCircle,
   Network,
   Pencil,
   Plus,
+  Search,
   Server,
+  SlidersHorizontal,
   Terminal,
   Trash2,
   TriangleAlert,
+  Upload,
   X,
 } from "@lucide/vue";
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
 import GroupNameForm from "@/components/sessions/GroupNameForm.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useToast } from "@/composables/useToast";
 import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
 import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
@@ -51,18 +69,40 @@ import { rowTarget } from "@/lib/sessions/tree";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
 import { tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
-import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
-import { PROTOCOLS } from "@/types/generated/protocols";
+import type { OpenTunnel, Session, SessionGroup, SessionImportSummary } from "@/types/session";
+import { AUTH_METHODS, PROTOCOLS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
 const app = useAppStore();
 const library = useSessionsStore();
 const terminals = useTerminalsStore();
 const { openMenu } = useContextMenu();
+const { toast } = useToast();
 
 const protocols = computed(() => PROTOCOLS);
+/** The ways a saved session can authenticate, which is what the list can be narrowed by. */
+const authMethods = computed(() => AUTH_METHODS);
 const editorOpen = ref(false);
 const editing = ref<Session | null>(null);
+
+/**
+ * The name an export is offered under.
+ *
+ * A fixed name rather than a translated one: it is a file name, and a file name that changes with
+ * the interface language is one that cannot be found again in a folder listing.
+ */
+const SESSION_FILE_NAME = "7shell-sessions.json";
+
+/** The row that exists only while a session is being dragged: where "out of every group" is. */
+const DROP_OUT_ROW = "drop-out";
+
+const exportOpen = ref(false);
+const exportBusy = ref(false);
+
+/** The filter panel, and whether the panel the button opens is up. */
+const filterOpen = ref(false);
+const filterBox = ref<HTMLElement | null>(null);
+const filterButton = ref<HTMLElement | null>(null);
 
 /**
  * The removal somebody has asked for and not yet answered.
@@ -94,13 +134,22 @@ const groupBusy = ref(false);
 const listBox = ref<HTMLElement | null>(null);
 const rowByKey = computed(() => new Map(library.rows.map((row) => [row.key, row])));
 const {
+  active: dragActive,
+  grabbed: dragGrabbed,
   ghost: dragGhost,
   mark: dropMark,
   press: pressRow,
 } = useTreeDrag({
   container: listBox,
   targetOf: (element) => {
-    const row = rowByKey.value.get(element.dataset.row ?? "");
+    const key = element.dataset.row ?? "";
+    // The row that is there only while a drag is: it stands for the root of the list, which is
+    // where a session goes when it leaves every group. It is not in the tree, so it is answered for
+    // here rather than looked up.
+    if (key === DROP_OUT_ROW) {
+      return { kind: "session", parentId: null };
+    }
+    const row = rowByKey.value.get(key);
     return row ? rowTarget(row) : null;
   },
   aim: (grabbed, target, box, pointerY) =>
@@ -117,6 +166,28 @@ const {
     }
   },
 });
+
+/**
+ * Whether the row for "out of every group" belongs on screen: a session is in the air, and there is
+ * a group for it to be outside of — with no groups at all, everything is already at the root.
+ */
+const dropOutRow = computed(
+  () => dragActive.value && dragGrabbed.value?.kind === "session" && library.groups.length > 0,
+);
+
+/**
+ * Starts a drag, unless the list is narrowed.
+ *
+ * A drop lands in the list as it is drawn, so while a filter is on the row under the pointer is not
+ * the row the store would move something next to. Rather than guessing, the drag is not offered —
+ * the menus still move things, and clearing the search brings it back.
+ */
+function startDrag(event: MouseEvent, item: { kind: "group" | "session"; id: string }, name: string): void {
+  if (library.filtering) {
+    return;
+  }
+  pressRow(event, item, name);
+}
 
 const problem = computed(() => (library.failure ? describeShellError(translate, library.failure) : null));
 const tunnelProblem = computed(() =>
@@ -142,6 +213,114 @@ function startNew(): void {
 function startEdit(session: Session): void {
   editing.value = session;
   editorOpen.value = true;
+}
+
+/**
+ * Keeps the filter panel open while it is being used, and closes it when the pointer goes anywhere
+ * else.
+ *
+ * A panel of checkboxes that closes on the first one would be a panel somebody has to open once per
+ * method, so the click that chooses is not the click that closes; the click outside is.
+ */
+function closeFilterOnOutsideClick(event: MouseEvent): void {
+  const target = event.target;
+  if (!(target instanceof Node)) {
+    return;
+  }
+  if (filterBox.value?.contains(target) || filterButton.value?.contains(target)) {
+    return;
+  }
+  filterOpen.value = false;
+}
+
+watch(filterOpen, (open) => {
+  if (open) {
+    document.addEventListener("mousedown", closeFilterOnOutsideClick, true);
+  } else {
+    document.removeEventListener("mousedown", closeFilterOnOutsideClick, true);
+  }
+});
+
+onBeforeUnmount(() => document.removeEventListener("mousedown", closeFilterOnOutsideClick, true));
+
+/**
+ * What an import did, said as a receipt.
+ *
+ * The counts are joined rather than fixed into one sentence because what came out of a file is not
+ * known in advance: an empty import, a plain one, and one that carried a warning all have to read
+ * as the same kind of sentence. Anything that could not be carried is named here or nowhere — the
+ * session is in the list either way, and this is the only moment anybody can be told why it might
+ * not connect the way it did where the file came from.
+ */
+function importReceipt(summary: SessionImportSummary): string {
+  const parts: string[] = [];
+  const counted = (key: string, count: number): string => t(key, { count }, count);
+  if (summary.sessions > 0) {
+    parts.push(counted("sessions.list.importSessions", summary.sessions));
+  }
+  if (summary.groups > 0) {
+    parts.push(counted("sessions.list.importGroups", summary.groups));
+  }
+  if (summary.secrets > 0) {
+    parts.push(counted("sessions.list.importSecrets", summary.secrets));
+  }
+  if (summary.missingKeys > 0) {
+    parts.push(counted("sessions.list.importMissingKeys", summary.missingKeys));
+  }
+  if (summary.droppedHops > 0) {
+    parts.push(counted("sessions.list.importDroppedHops", summary.droppedHops));
+  }
+  return parts.length === 0
+    ? t("sessions.list.importNothing")
+    : t("sessions.list.importDone", { parts: parts.join(", ") });
+}
+
+/** Reads a file the user picks and says what it added. A refusal stays in the list's own box. */
+async function runImport(): Promise<void> {
+  const summary = await library.importLibrary(t("sessions.list.importTitle"));
+  if (!summary) {
+    return;
+  }
+  toast(importReceipt(summary), summary.missingKeys + summary.droppedHops > 0 ? "result" : "confirmation");
+}
+
+/** Writes the library to a file the user picks. */
+async function runExport(includeSecrets: boolean): Promise<void> {
+  exportBusy.value = true;
+  const summary = await library.exportLibrary(t("sessions.list.exportTitle"), SESSION_FILE_NAME, includeSecrets);
+  exportBusy.value = false;
+  // Closed either way: a dismissed file dialog and a failed write are both "nothing more to decide
+  // here", and a failure is already drawn in the list's own box.
+  exportOpen.value = false;
+  if (summary) {
+    toast(
+      t("sessions.list.exportDone", { count: summary.sessions, file: summary.fileName }, summary.sessions),
+      "receipt",
+    );
+  }
+}
+
+/** The library's own menu: the two things that are done to the whole list rather than to a row. */
+function openLibraryMenu(event: MouseEvent): void {
+  openMenu(event, { key: MENU_TITLES.library }, [
+    {
+      kind: "action",
+      id: "import-sessions",
+      labelKey: "sessions.list.import",
+      icon: Download,
+      run: () => void runImport(),
+    },
+    {
+      kind: "action",
+      id: "export-sessions",
+      labelKey: "sessions.list.export",
+      icon: Upload,
+      disabled: library.sessions.length === 0,
+      run: () => {
+        exportOpen.value = true;
+      },
+    },
+  ]);
 }
 
 /**
@@ -386,8 +565,108 @@ const statusDot = computed(() => {
           >
             <Plus :size="14" />
           </button>
+          <button
+            type="button"
+            class="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('sessions.list.more')"
+            :aria-label="t('sessions.list.more')"
+            @click="openLibraryMenu($event)"
+          >
+            <EllipsisVertical :size="14" />
+          </button>
         </span>
       </header>
+
+      <!--
+        What narrows the list: a search over the things that identify a machine, and a filter over
+        how a session authenticates. Both live in the store, so the rows, the hit-testing of a drag
+        and anything else that asks "what is drawn" get the same answer.
+      -->
+      <div class="relative mb-2 flex shrink-0 items-center gap-1">
+        <div class="relative min-w-0 flex-1">
+          <Search
+            :size="12"
+            class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
+          />
+          <input
+            :value="library.filter.query"
+            type="text"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            class="h-7 w-full rounded-md border border-border bg-background pr-6 pl-7 text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+            :placeholder="t('sessions.list.search')"
+            :aria-label="t('sessions.list.search')"
+            @input="library.setQuery(($event.target as HTMLInputElement).value)"
+            @keydown.escape.prevent="library.setQuery('')"
+          />
+          <button
+            v-if="library.filter.query !== ''"
+            type="button"
+            class="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('sessions.list.searchClear')"
+            :aria-label="t('sessions.list.searchClear')"
+            @click="library.setQuery('')"
+          >
+            <X :size="12" />
+          </button>
+        </div>
+        <button
+          ref="filterButton"
+          type="button"
+          data-session-filter
+          class="grid size-7 shrink-0 place-items-center rounded-md border transition-colors"
+          :class="
+            library.filter.methods.size > 0
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'
+          "
+          :title="t('sessions.list.filter')"
+          :aria-label="t('sessions.list.filter')"
+          :aria-expanded="filterOpen"
+          aria-haspopup="true"
+          @click="filterOpen = !filterOpen"
+        >
+          <ListFilter v-if="library.filter.methods.size > 0" :size="13" />
+          <SlidersHorizontal v-else :size="13" />
+        </button>
+
+        <!-- The panel hangs off the button that opened it, over the list rather than in it. -->
+        <div
+          v-if="filterOpen"
+          ref="filterBox"
+          data-session-filter-panel
+          class="absolute top-full right-0 z-30 mt-1 w-52 rounded-lg border border-border bg-card p-1 shadow-xl"
+          role="group"
+          :aria-label="t('sessions.list.filter')"
+        >
+          <p class="px-2 pt-1 pb-1 text-[10px] tracking-wide text-muted-foreground uppercase">
+            {{ t("sessions.list.filterAuth") }}
+          </p>
+          <button
+            v-for="method in authMethods"
+            :key="method.id"
+            type="button"
+            role="menuitemcheckbox"
+            :aria-checked="library.filter.methods.has(method.id)"
+            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
+            @click="library.toggleMethod(method.id)"
+          >
+            <span class="grid size-3 shrink-0 place-items-center text-muted-foreground">
+              <Check v-if="library.filter.methods.has(method.id)" :size="12" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">{{ t(method.labelKey) }}</span>
+          </button>
+          <button
+            v-if="library.filtering"
+            type="button"
+            class="mt-1 w-full rounded-md border-t border-border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            @click="library.clearFilter()"
+          >
+            {{ t("sessions.list.filterClear") }}
+          </button>
+        </div>
+      </div>
 
       <p v-if="problem" class="mb-2 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
         <span class="block text-[11px]">{{ problem.message }}</span>
@@ -423,6 +702,26 @@ const statusDot = computed(() => {
           <p class="text-xs leading-relaxed text-muted-foreground">{{ t("sessions.list.empty") }}</p>
         </div>
 
+        <!--
+          Nothing was found. Drawn as a state of its own rather than as the empty library's line:
+          what somebody needs here is to be told the search is why the list is empty, and the way
+          back out of it.
+        -->
+        <div
+          v-else-if="library.filtering && library.rows.length === 0"
+          class="rounded-md border border-dashed border-border px-3 py-4 text-center"
+        >
+          <Search :size="16" class="mx-auto mb-2 text-muted-foreground" />
+          <p class="text-xs leading-relaxed text-muted-foreground">{{ t("sessions.list.noMatches") }}</p>
+          <button
+            type="button"
+            class="mt-2 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+            @click="library.clearFilter()"
+          >
+            {{ t("sessions.list.filterClear") }}
+          </button>
+        </div>
+
         <template v-else>
           <template v-for="row in library.rows" :key="row.key">
             <!-- A group: the heading, the two drawers for changing it, and the place it is dropped
@@ -430,11 +729,11 @@ const statusDot = computed(() => {
             <div
               v-if="row.kind === 'group'"
               :data-row="row.key"
-              class="relative flex items-center gap-0.5 rounded-md pr-1 transition-colors hover:bg-accent/40"
+              class="relative flex items-center gap-1 rounded-md py-1 pr-1 transition-colors hover:bg-accent/40"
               :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
               :style="indent(row.depth)"
               @contextmenu="openHeadingMenu($event, row.group)"
-              @mousedown="pressRow($event, { kind: 'group', id: row.id }, row.group.name)"
+              @mousedown="startDrag($event, { kind: 'group', id: row.id }, row.group.name)"
             >
               <span
                 v-if="markOf(row.key) === 'line-before'"
@@ -464,24 +763,25 @@ const statusDot = computed(() => {
               >
                 <ChevronRight :size="12" :class="row.collapsed ? '' : 'rotate-90'" />
               </button>
+
+              <!-- A folder, drawn like the file browser's: the same shape means the same thing
+                   wherever a tree is nested. -->
+              <FolderOpen v-if="!row.collapsed" :size="14" class="shrink-0 text-primary" />
+              <Folder v-else :size="14" class="shrink-0 text-primary" />
+
               <input
                 v-if="renamingGroup === row.id"
                 :ref="takeRenameField"
                 :value="groupNameText"
                 type="text"
-                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-[11px] focus:outline-none"
+                class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-xs focus:outline-none"
                 :aria-label="t('sessions.list.groupName')"
                 @input="groupNameText = ($event.target as HTMLInputElement).value"
                 @keydown.enter.prevent="submitGroupRename(row.group)"
                 @keydown.escape.prevent="cancelGroupPrompts()"
                 @blur="submitGroupRename(row.group)"
               />
-              <h3
-                v-else
-                class="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
-              >
-                {{ row.group.name }}
-              </h3>
+              <h3 v-else class="min-w-0 flex-1 truncate text-xs font-medium">{{ row.group.name }}</h3>
             </div>
 
             <GroupNameForm
@@ -503,7 +803,7 @@ const statusDot = computed(() => {
                 :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
                 :style="indent(row.depth)"
                 @contextmenu="openSessionMenu($event, row.session)"
-                @mousedown="pressRow($event, { kind: 'session', id: row.session.id }, row.session.name)"
+                @mousedown="startDrag($event, { kind: 'session', id: row.session.id }, row.session.name)"
               >
                 <button
                   type="button"
@@ -556,27 +856,39 @@ const statusDot = computed(() => {
               </div>
             </template>
 
-            <!-- The bucket for whatever is in no group. It is also the place a drag is dropped on
-                 to take something out of every group, so it stays a row of its own. -->
-            <div
-              v-if="row.kind === 'ungrouped'"
-              :data-row="row.key"
-              class="relative flex items-center rounded-md px-1 py-1"
-              :class="markOf(row.key) === 'ring' ? 'bg-primary/10 ring-1 ring-primary/50' : ''"
-            >
-              <h3 class="min-w-0 flex-1 truncate text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                {{ t("sessions.list.ungrouped") }}
-              </h3>
-            </div>
-
+            <!--
+              A group with nothing in it says so, once, where its contents would have been. Sessions
+              that are in no group need no such line: they are drawn at the root like anything else
+              that is not inside a folder, and the list of them says what it is.
+            -->
             <p
               v-if="row.kind === 'hint'"
               class="px-1 py-0.5 text-[10px] text-muted-foreground"
               :style="indent(row.depth)"
             >
-              {{ t(row.scope === "group" ? "sessions.list.groupEmpty" : "sessions.list.ungroupedEmpty") }}
+              {{ t("sessions.list.groupEmpty") }}
             </p>
           </template>
+
+          <!--
+            Where a dragged session goes to leave every group. It is drawn only while one is in the
+            air, at the end of the list rather than at its top so that nothing already drawn moves
+            under the pointer: what it replaces is the ungrouped heading, which was there the rest of
+            the time to say something the rows say themselves.
+          -->
+          <div
+            v-if="dropOutRow"
+            :data-row="DROP_OUT_ROW"
+            class="mt-1 flex items-center gap-2 rounded-md border border-dashed px-2 py-1.5 text-[11px] transition-colors"
+            :class="
+              markOf(DROP_OUT_ROW) === 'ring'
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border text-muted-foreground'
+            "
+          >
+            <FolderInput :size="13" class="shrink-0" />
+            {{ t("sessions.list.dropOutOfGroups") }}
+          </div>
         </template>
       </div>
 
@@ -699,6 +1011,14 @@ const statusDot = computed(() => {
     </div>
 
     <SessionDialog :open="editorOpen" :session="editing" @update:open="editorOpen = $event" />
+
+    <!-- What the export file will hold, asked once, before a file is asked for. -->
+    <ExportSessionsDialog
+      :open="exportOpen"
+      :busy="exportBusy"
+      @confirm="runExport($event)"
+      @update:open="exportOpen = $event"
+    />
 
     <!--
       One question for both kinds of removal, drawn over everything rather than inside the list: a

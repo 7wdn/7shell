@@ -16,6 +16,8 @@ export const MENU_TITLES = {
   tab: "menu.tab",
   session: "menu.session",
   group: "menu.group",
+  /** The whole session library — exporting it, importing into it — rather than any one row. */
+  library: "menu.library",
   tunnel: "menu.tunnel",
   process: "menu.process",
   disk: "menu.disk",

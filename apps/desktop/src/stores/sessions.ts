@@ -14,6 +14,11 @@
  * things ask about it: the menus name groups by their path, a drop has to know what is under a row,
  * and a move has to expand what it landed in. Which rows are *closed* is the one piece of pure
  * appearance this store holds; it lives in memory, so a restart draws the tree open.
+ *
+ * The search and the filters live here too, for the same reason: they decide which rows exist, and
+ * a second copy of that decision in a component is how the two come apart. They are a view over
+ * `sessions` and `groups` — the arrays themselves are never filtered — so everything that writes
+ * (a move, a removal, an import) works on the whole library while the list is narrowed.
  */
 
 import { defineStore } from "pinia";
@@ -21,6 +26,7 @@ import { computed, ref } from "vue";
 
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { type SessionFilter, filterIsOn, filterLibrary } from "@/lib/sessions/filter";
 import {
   type Drop,
   type DropZone,
@@ -32,7 +38,8 @@ import {
   planSiblingMove,
 } from "@/lib/sessions/groups";
 import { type TreeRow, visibleRows } from "@/lib/sessions/tree";
-import type { Session, SessionGroup, SecretInput } from "@/types/session";
+import type { AuthMethod } from "@/types/generated/protocols";
+import type { Session, SessionExportSummary, SessionGroup, SessionImportSummary, SecretInput } from "@/types/session";
 
 export type LibraryStatus = "idle" | "loading" | "ready" | "failed";
 
@@ -41,11 +48,38 @@ export const useSessionsStore = defineStore("sessions", () => {
   const groups = ref<SessionGroup[]>([]);
   /** The groups drawn closed, by id. In memory: this is how the list looks, not what is saved. */
   const collapsed = ref<ReadonlySet<string>>(new Set());
+  /** What the list is narrowed to. Empty means everything, which is how it starts. */
+  const filter = ref<SessionFilter>({ query: "", methods: new Set() });
   const status = ref<LibraryStatus>("idle");
   const failure = ref<ShellError | null>(null);
 
-  /** The rows the sidebar draws, in reading order, with collapsed groups left closed. */
-  const rows = computed<TreeRow[]>(() => visibleRows(groups.value, sessions.value, collapsed.value));
+  /** Whether the list is narrowed at all, which is what its "nothing found" state keys off. */
+  const filtering = computed(() => filterIsOn(filter.value));
+
+  /** The library as the filter leaves it, with the groups that have to be drawn open. */
+  const shown = computed(() => filterLibrary(groups.value, sessions.value, filter.value));
+
+  /** The rows the sidebar draws, in reading order, with closed groups left closed. */
+  const rows = computed<TreeRow[]>(() =>
+    visibleRows(shown.value.groups, shown.value.sessions, collapsed.value, shown.value.revealed),
+  );
+
+  function setQuery(query: string): void {
+    filter.value = { ...filter.value, query };
+  }
+
+  /** Adds a method to the filter, or takes it out again when it is already in. */
+  function toggleMethod(method: AuthMethod): void {
+    const methods = new Set(filter.value.methods);
+    if (!methods.delete(method)) {
+      methods.add(method);
+    }
+    filter.value = { ...filter.value, methods };
+  }
+
+  function clearFilter(): void {
+    filter.value = { query: "", methods: new Set() };
+  }
 
   async function load(): Promise<void> {
     status.value = "loading";
@@ -81,6 +115,50 @@ export const useSessionsStore = defineStore("sessions", () => {
       sessions.value = sessions.value.filter((session) => session.id !== id);
     } catch (error) {
       failure.value = asShellError(error, "session_delete");
+    }
+  }
+
+  /**
+   * Writes the library to a file the user picks, in the shell.
+   *
+   * `null` is "nothing was written": either the file dialog was dismissed, or the write failed and
+   * the envelope is in `failure`. There is no way to tell those apart from the answer, and there
+   * does not need to be — one is somebody changing their mind and the other is shown where they are
+   * looking.
+   */
+  async function exportLibrary(
+    title: string,
+    fileName: string,
+    includeSecrets: boolean,
+  ): Promise<SessionExportSummary | null> {
+    failure.value = null;
+    try {
+      return (await backend.sessions.export(title, fileName, includeSecrets)) ?? null;
+    } catch (error) {
+      failure.value = asShellError(error, "sessions_export");
+      return null;
+    }
+  }
+
+  /**
+   * Adds what a file holds, in the shell, and reads the library again afterwards.
+   *
+   * Read again rather than merged here: which ids the import had to replace is the backend's
+   * answer, and a second implementation of that rule on this side is how the list and the vault
+   * come to disagree about what is saved.
+   */
+  async function importLibrary(title: string): Promise<SessionImportSummary | null> {
+    failure.value = null;
+    try {
+      const summary = await backend.sessions.import(title);
+      if (!summary) {
+        return null;
+      }
+      await load();
+      return summary;
+    } catch (error) {
+      failure.value = asShellError(error, "sessions_import");
+      return null;
     }
   }
 
@@ -268,6 +346,8 @@ export const useSessionsStore = defineStore("sessions", () => {
     sessions,
     groups,
     collapsed,
+    filter,
+    filtering,
     status,
     failure,
     rows,
@@ -283,5 +363,10 @@ export const useSessionsStore = defineStore("sessions", () => {
     canPlaceGroup,
     canPlaceSession,
     setCollapsed,
+    setQuery,
+    toggleMethod,
+    clearFilter,
+    exportLibrary,
+    importLibrary,
   };
 });

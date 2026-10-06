@@ -394,6 +394,23 @@ impl ShellError {
             .with_outcome(OperationOutcome::Rejected)
     }
 
+    /// A file that was chosen as a session export and is not one.
+    ///
+    /// The detail is what the parser said, which for a truncated file is the only clue there is;
+    /// nothing of the file's own content is ever put there.
+    pub fn session_bundle_invalid(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SessionBundleInvalid, Origin::new(Subsystem::Store))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A session export file that could not be read from or written to the disk.
+    pub fn session_bundle_io(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SessionBundleIo, Origin::new(Subsystem::Store))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     // -- Policy ------------------------------------------------------------
 
     pub fn policy_denied(action: &str) -> Self {
