@@ -53,6 +53,7 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     // field left out here is not "unset", it is a control drawn with no value at all.
     cornerStyle: "large",
     homeLayout: "workspace",
+    appLayout: "separated",
     filesLayout: "tree",
     sessionLayout: "split",
     sidebarOpen: true,

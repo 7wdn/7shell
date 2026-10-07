@@ -42,7 +42,7 @@ import {
   Terminal,
   X,
 } from "@lucide/vue";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import BatchPanel from "@/components/batch/BatchPanel.vue";
@@ -236,6 +236,38 @@ function dotClass(tab: WorkspaceTab): string | null {
       return "bg-success";
   }
 }
+
+/**
+ * Whether the chrome is drawn in the classic layout: one tab bar, tighter headers.
+ *
+ * Asked here rather than expressed in the stylesheet because the tab's other classes are already a
+ * function of its state — an active tab is a different shape, not a different colour — and two
+ * systems deciding the same element's classes is how one of them ends up winning by accident. The
+ * rest of the choice is a number, and that one is a token (see `globals.css`).
+ */
+const classic = computed(() => preferences.appLayout === "classic");
+
+/**
+ * What a tab wears: the layout's shape and the tab's own state together.
+ *
+ * One function rather than nested conditions in the template, because the two layouts disagree about
+ * the shape of a tab and agree about what its state means — in both, the tab on screen is painted in
+ * the panel's own surface and the ones beside it are not. The bar is a row of blocks with air above
+ * them in one layout and a continuous run of dividers in the other, and the active tab is told apart
+ * by a line along its top in the second, where there is no gap to tell it apart by.
+ */
+function tabClass(tab: WorkspaceTab): string {
+  const active = tab.id === terminals.activeTabId;
+  const state = active
+    ? classic.value
+      ? "border-t-primary bg-background text-foreground"
+      : "border-border bg-background"
+    : classic.value
+      ? "border-t-transparent text-muted-foreground hover:bg-accent/60"
+      : "border-transparent text-muted-foreground hover:bg-accent/60";
+  const shape = classic.value ? "h-8 border-t-2 border-r border-border px-3" : "rounded-t-md border border-b-0 px-2";
+  return cn("flex max-w-60 shrink-0 items-center gap-1", shape, state);
+}
 </script>
 
 <template>
@@ -247,19 +279,20 @@ function dotClass(tab: WorkspaceTab): string | null {
     -->
     <div
       data-workspace-tabs
-      class="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-border bg-card/30 px-2 pt-1.5 cursor-default select-none"
+      :class="
+        cn(
+          'flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-card/30 cursor-default select-none',
+          // The bar itself: blocks that sit apart with a finger of air above them, or one run of tabs
+          // filling the row from edge to edge. The heights are close on purpose — the space this
+          // layout saves is in the headers, not in the bar.
+          classic ? 'gap-0 px-0' : 'gap-1 px-2 pt-1.5',
+        )
+      "
     >
       <div
         v-for="(tab, index) in terminals.tabs"
         :key="tab.id"
-        :class="
-          cn(
-            'flex max-w-60 shrink-0 items-center gap-1 rounded-t-md border border-b-0 px-2',
-            tab.id === terminals.activeTabId
-              ? 'border-border bg-background'
-              : 'border-transparent text-muted-foreground hover:bg-accent/60',
-          )
-        "
+        :class="tabClass(tab)"
         @contextmenu="openTabMenu($event, tab, index)"
       >
         <button

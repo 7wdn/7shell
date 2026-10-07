@@ -736,7 +736,7 @@ function openAreaMenu(event: MouseEvent): void {
 
 <template>
   <div v-if="browser" class="flex min-h-0 flex-1 flex-col">
-    <header class="shrink-0 border-b border-border px-3 py-2">
+    <header class="shrink-0 border-b border-border px-3 py-[var(--panel-header-y)]">
       <div class="flex items-center gap-1.5">
         <button
           type="button"

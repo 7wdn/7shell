@@ -934,6 +934,59 @@ test("a choice is applied at once, written on Apply, and dropped only when asked
 });
 
 /**
+ * The interface layout, which is the one appearance choice whose whole effect is on the chrome.
+ *
+ * What only a real window can settle: a tab takes its shape from the setting rather than only being
+ * stored, and the headers give the row back — measured as the two computed numbers a person sees,
+ * the corner of a tab and the room above the monitor's title, rather than as the class names that
+ * happen to produce them. The other half is the file, which is where the next launch reads it from.
+ */
+test("the interface layout redraws the chrome, and the file hears about it", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    // The settings page is a tab of its own, so the strip this is about is on screen while it is
+    // open — and the monitor's header is beside it, which is the other half of the same choice.
+    const tab = page.locator("[data-workspace-tabs] > div").first();
+    const panel = page.getByRole("complementary", { name: "Host monitor" });
+
+    // The corner is read as a number rather than as a length: how round a block is depends on the
+    // corner style as well, and this case is about whether there is rounding at all.
+    const radius = async (): Promise<number> =>
+      tab.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
+
+    await expect(settings.getByRole("radio", { name: /^Modern separated/ })).toBeChecked();
+    expect(await radius(), "a tab drawn as a block with a rounded top").toBeGreaterThan(0);
+    await expect(panel.locator("header").first()).toHaveCSS("padding-top", "8px");
+
+    await settings.getByRole("radio", { name: /^Classic compact/ }).click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("classic");
+    await expect.poll(radius, { message: "a tab with no rounding, in a bar with no gaps" }).toBe(0);
+    await expect(panel.locator("header").first(), "and a header that gave the row back").toHaveCSS(
+      "padding-top",
+      "4px",
+    );
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-layout-classic.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the window it expects: the shape is a property of
+    // the whole window, and every case after this one draws its own chrome in it.
+    await settings.getByRole("radio", { name: /^Modern separated/ }).click();
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("separated");
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The home page, which is one of two.
  *
  * The page is the surface with nothing open on it, and there are two of them: the introduction, for

@@ -419,6 +419,31 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     },
   },
   {
+    id: "app-layout",
+    category: "appearance",
+    field: "appLayout",
+    titleKey: "settings.rows.appLayout.title",
+    summaryKey: "settings.rows.appLayout.summary",
+    helpKey: "settings.rows.appLayout.help",
+    presentation: "field",
+    grid: "wide",
+    control: {
+      kind: "cards",
+      options: [
+        {
+          value: "separated",
+          titleKey: "settings.appLayout.separated",
+          descriptionKey: "settings.appLayout.separatedHint",
+        },
+        {
+          value: "classic",
+          titleKey: "settings.appLayout.classic",
+          descriptionKey: "settings.appLayout.classicHint",
+        },
+      ],
+    },
+  },
+  {
     id: "session-layout",
     category: "workspace",
     field: "sessionLayout",

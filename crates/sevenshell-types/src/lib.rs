@@ -36,7 +36,7 @@ pub use session::{
     UploadAnswer, UploadOutcome, VaultState,
 };
 pub use settings::{
-    AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, ThemeMode, ThemePalette,
+    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, ThemeMode, ThemePalette,
     UI_SCALE_PERCENTS, monitor_on, normalize_ui_scale, sidebar_on, ui_scale_default,
 };
 pub use snippet::{

@@ -309,6 +309,38 @@ impl HomeLayout {
     }
 }
 
+/// How the chrome around the panels is drawn.
+///
+/// Two shapes rather than a set of switches, because the two are answers to one question — how much
+/// of the window should be the thing being looked at — and every difference between them falls out of
+/// that answer: tabs that sit apart as blocks against tabs joined into one bar, and headers with room
+/// around what they say against headers that give the row back to the panel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppLayout {
+    /// Tabs as blocks with space between them, and headers with room around what they say. What this
+    /// build has always drawn, so a fresh install gets it.
+    #[default]
+    Separated,
+    /// One continuous tab bar and tighter headers: the same information in fewer pixels.
+    Classic,
+}
+
+impl AppLayout {
+    pub const ALL: &'static [AppLayout] = &[AppLayout::Separated, AppLayout::Classic];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Separated => "separated",
+            Self::Classic => "classic",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|layout| layout.as_str() == id)
+    }
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -396,6 +428,10 @@ pub struct AppSettings {
     /// reads as the one this build has always drawn.
     #[serde(default)]
     pub home_layout: HomeLayout,
+    /// How the chrome around the panels is drawn. Absent in a file written before this was a choice,
+    /// which reads as the shape this build has always drawn.
+    #[serde(default)]
+    pub app_layout: AppLayout,
     /// The family the interface draws its text in, as a `font-family` stack.
     ///
     /// The whole stack rather than one name, and absent means the one this build ships with: somebody
@@ -476,6 +512,7 @@ impl Default for AppSettings {
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
             home_layout: HomeLayout::default(),
+            app_layout: AppLayout::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -494,6 +531,7 @@ impl AppSettings {
             && self.ui_scale == ui_scale_default()
             && self.corner_style == CornerStyle::Large
             && self.home_layout == HomeLayout::Workspace
+            && self.app_layout == AppLayout::Separated
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
@@ -545,6 +583,23 @@ mod tests {
                 "a home page whose name does not read back is one the settings file cannot hold"
             );
         }
+    }
+
+    #[test]
+    fn every_app_layout_round_trips_through_its_own_name() {
+        for layout in AppLayout::ALL {
+            assert_eq!(
+                AppLayout::from_id(layout.as_str()),
+                Some(*layout),
+                "a layout whose name does not read back is one the settings file cannot hold"
+            );
+        }
+        assert_eq!(
+            AppLayout::default(),
+            AppLayout::Separated,
+            "the default has to be the shape this build already draws, or a file written before the \
+             choice existed would open onto a different interface than the one that wrote it"
+        );
     }
 
     #[test]

@@ -66,6 +66,7 @@ import {
   CUSTOM_COLOR_KEYS,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
+  type AppLayout,
   type CornerStyle,
   type HomeLayout,
   type CustomColors,
@@ -178,6 +179,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.cornerStyle;
     case "homeLayout":
       return preferences.homeLayout;
+    case "appLayout":
+      return preferences.appLayout;
     case "uiFont":
       // Nothing chosen reads as the one this build ships with, because that is what is being drawn:
       // the picker shows a family, and "no answer" is not one.
@@ -221,6 +224,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "homeLayout":
       void preferences.setHomeLayout(value as HomeLayout);
+      return;
+    case "appLayout":
+      void preferences.setAppLayout(value as AppLayout);
       return;
     case "uiFont":
       void preferences.setUiFont(String(value));

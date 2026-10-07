@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sevenshell_types::{
-    AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest,
+    AppLayout, AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest,
     CommandHistoryEntry, CornerStyle, CpuCounters, CpuModel, CpuStates, CustomColors, DiskUsage, EnvironmentEntry,
     FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward,
     MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
@@ -218,6 +218,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             ui_scale: 125,
             corner_style: CornerStyle::Small,
             home_layout: HomeLayout::Intro,
+            app_layout: AppLayout::Classic,
             ui_font: Some("Inter, sans-serif".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),
@@ -231,6 +232,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     // when the interface expects `"large"` is what this file is for.
     check(&CornerStyle::Large, "CornerStyle");
     check(&HomeLayout::Workspace, "HomeLayout");
+    check(&AppLayout::Classic, "AppLayout");
     check(&ThemeMode::System, "ThemeMode");
     // Both of the settings the interface offers as words rather than as numbers: a variant that
     // serialized as `default` when the interface expects `"default"` is the bug this file is for.

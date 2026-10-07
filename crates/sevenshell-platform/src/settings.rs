@@ -17,7 +17,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, ThemeMode, ThemePalette,
+    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, ThemeMode, ThemePalette,
     monitor_on, normalize_ui_scale, sidebar_on, ui_scale_default,
 };
 
@@ -82,6 +82,10 @@ struct StoredSettings {
     /// has always drawn.
     #[serde(default)]
     home_layout: String,
+    /// Absent in a file written before the chrome was a choice, which reads as the shape this build
+    /// has always drawn.
+    #[serde(default)]
+    app_layout: String,
     /// Absent in a file written before a font could be chosen, which reads as the one this build
     /// ships with rather than as somebody having picked something.
     #[serde(default)]
@@ -115,6 +119,7 @@ impl StoredSettings {
             ui_scale: settings.ui_scale,
             corner_style: settings.corner_style.as_str().to_owned(),
             home_layout: settings.home_layout.as_str().to_owned(),
+            app_layout: settings.app_layout.as_str().to_owned(),
             ui_font: settings.ui_font.clone(),
             terminal_font: settings.terminal_font.clone(),
             custom_colors: settings.custom_colors.clone(),
@@ -138,6 +143,7 @@ impl StoredSettings {
             ui_scale: normalize_ui_scale(self.ui_scale),
             corner_style: CornerStyle::from_id(&self.corner_style).unwrap_or_default(),
             home_layout: HomeLayout::from_id(&self.home_layout).unwrap_or_default(),
+            app_layout: AppLayout::from_id(&self.app_layout).unwrap_or_default(),
             // A name the machine does not have is not an error and not worth a message: the stack
             // falls through to what follows it, which is exactly why the whole stack is stored.
             ui_font: self.ui_font.filter(|font| !font.trim().is_empty()),
@@ -248,6 +254,7 @@ mod tests {
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
             home_layout: HomeLayout::default(),
+            app_layout: AppLayout::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -400,6 +407,8 @@ mod tests {
             corner_style: CornerStyle::None,
             // Not the default, so the round trip proves a choice survives.
             home_layout: HomeLayout::Intro,
+            // Not the default, so the round trip proves a choice survives.
+            app_layout: AppLayout::Classic,
             ui_font: Some("'JetBrains Mono', monospace".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),

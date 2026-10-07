@@ -13,6 +13,7 @@ import { i18n } from "@/i18n";
 import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
 import {
+  DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
@@ -41,6 +42,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     uiScale: DEFAULT_UI_SCALE,
     cornerStyle: DEFAULT_CORNER_STYLE,
     homeLayout: DEFAULT_HOME_LAYOUT,
+    appLayout: DEFAULT_APP_LAYOUT,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -160,6 +162,7 @@ describe("preferences store", () => {
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
+      appLayout: DEFAULT_APP_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -190,6 +193,7 @@ describe("preferences store", () => {
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
+      appLayout: DEFAULT_APP_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -331,6 +335,7 @@ describe("the terminal palette", () => {
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
+      appLayout: DEFAULT_APP_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -536,6 +541,27 @@ describe("the colour theme", () => {
     await store.reset(["cornerStyle"]);
     expect(store.cornerStyle).toBe(DEFAULT_CORNER_STYLE);
     expect(document.documentElement.dataset.cornerStyle).toBe("large");
+  });
+
+  it("writes the interface layout on the document, and puts it back", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // The shape of the chrome is two answers to "how much of the window is the thing I am looking
+    // at", and it reaches the stylesheet as an attribute for the same reason the palette does: what
+    // it changes is spread over the strip, the headers and the frames rather than being one class.
+    expect(document.documentElement.dataset.appLayout).toBe("separated");
+
+    await store.setAppLayout("classic");
+
+    expect(document.documentElement.dataset.appLayout).toBe("classic");
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ appLayout: "classic" }));
+
+    await store.reset(["appLayout"]);
+    expect(store.appLayout).toBe(DEFAULT_APP_LAYOUT);
+    expect(document.documentElement.dataset.appLayout).toBe("separated");
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {
@@ -919,6 +945,7 @@ describe("restoring the defaults", () => {
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
+      appLayout: DEFAULT_APP_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

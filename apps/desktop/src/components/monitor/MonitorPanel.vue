@@ -199,7 +199,7 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
     class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card/20 cursor-default select-none"
     :aria-label="t('monitor.title')"
   >
-    <header class="shrink-0 border-b border-border px-3 py-2">
+    <header class="shrink-0 border-b border-border px-3 py-[var(--panel-header-y)]">
       <div class="flex items-center gap-2">
         <Activity :size="13" :class="monitor.sampling ? 'animate-pulse text-primary' : 'text-muted-foreground'" />
         <h2 class="min-w-0 flex-1 truncate text-xs font-medium">{{ t("monitor.title") }}</h2>

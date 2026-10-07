@@ -19,6 +19,7 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
+  DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
@@ -26,6 +27,7 @@ import {
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
+  type AppLayout,
   type AppSettings,
   type CornerStyle,
   type HomeLayout,
@@ -56,6 +58,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   uiScale: DEFAULT_UI_SCALE,
   cornerStyle: DEFAULT_CORNER_STYLE,
   homeLayout: DEFAULT_HOME_LAYOUT,
+  appLayout: DEFAULT_APP_LAYOUT,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -188,6 +191,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * pieces belong together — the counters and the host names are the same answer, not two.
    */
   const homeLayout = ref<HomeLayout>(DEFAULT_HOME_LAYOUT);
+  /**
+   * How the chrome around the panels is drawn.
+   *
+   * Not a preference about a colour or a size but about how much of the window is the thing being
+   * looked at: tabs joined into one bar and tighter headers leave a row or two to the panel. The
+   * choice reaches the stylesheet as an attribute rather than as classes, because what it changes is
+   * spread over the strip, the headers and the panel frames.
+   */
+  const appLayout = ref<AppLayout>(DEFAULT_APP_LAYOUT);
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -335,6 +347,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     document.documentElement.dataset.theme = resolvedTheme.value;
     document.documentElement.dataset.palette = wornPalette.value;
     document.documentElement.dataset.cornerStyle = cornerStyle.value;
+    document.documentElement.dataset.appLayout = appLayout.value;
     document.documentElement.lang = locale.value;
     i18n.global.locale.value = locale.value;
     applyCustomColors();
@@ -370,6 +383,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       uiScale.value = settings.uiScale;
       cornerStyle.value = settings.cornerStyle;
       homeLayout.value = settings.homeLayout;
+      appLayout.value = settings.appLayout;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -438,6 +452,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         uiScale: uiScale.value,
         cornerStyle: cornerStyle.value,
         homeLayout: homeLayout.value,
+        appLayout: appLayout.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -542,6 +557,13 @@ export const usePreferencesStore = defineStore("preferences", () => {
   /** Chooses which of the two home pages is drawn, which is the page itself being redrawn. */
   function setHomeLayout(layout: HomeLayout): void {
     homeLayout.value = layout;
+    dirty.value = true;
+  }
+
+  /** Chooses the chrome's shape, which the whole window is redrawn into at once. */
+  async function setAppLayout(layout: AppLayout): Promise<void> {
+    appLayout.value = layout;
+    apply();
     dirty.value = true;
   }
 
@@ -741,6 +763,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "homeLayout":
           homeLayout.value = FRESH.homeLayout;
           break;
+        case "appLayout":
+          appLayout.value = FRESH.appLayout;
+          apply();
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -801,6 +827,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     uiScale,
     cornerStyle,
     homeLayout,
+    appLayout,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -833,6 +860,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setUiScale,
     setCornerStyle,
     setHomeLayout,
+    setAppLayout,
     setUiFont,
     setTerminalFont,
     previewFont,

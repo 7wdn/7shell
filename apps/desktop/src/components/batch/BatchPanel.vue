@@ -113,7 +113,7 @@ async function retryOne(sessionId: string): Promise<void> {
       place for the address to be wrong.
     -->
     <aside class="flex w-72 shrink-0 flex-col border-r border-border">
-      <header class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+      <header class="flex items-center justify-between gap-2 border-b border-border px-3 py-[var(--panel-header-y)]">
         <h2 class="text-xs font-medium">{{ t("batch.hosts.title") }}</h2>
         <div class="flex items-center gap-1">
           <button

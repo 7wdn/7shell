@@ -78,6 +78,12 @@
         "workspaceHint": "What the library holds, the hosts used last, and the actions that start something."
       }
     },
+    "appLayout": {
+      "separated": "Modern separated",
+      "separatedHint": "Clear panel separation with block-style tabs.",
+      "classic": "Classic compact",
+      "classicHint": "Continuous tab bar with compact panel headers."
+    },
     "corner": {
       "none": "Square",
       "small": "Small",
@@ -143,6 +149,11 @@
         "title": "Home content",
         "summary": "Which of the two pages is drawn with nothing open.",
         "help": "The home page is the surface with nothing open on it, and there are two of them because they answer different questions. The introduction is for somebody who has not connected anything yet: what this build is, what it can do, and the three steps of a first connection. The workspace overview is for somebody who has: what the library holds, the hosts they were just on, and the actions that start something. Which one is drawn is remembered."
+      },
+      "appLayout": {
+        "title": "Interface layout",
+        "summary": "How much of the window is the thing being looked at.",
+        "help": "Two shapes for the chrome around the panels. The separated one keeps the tabs as blocks of their own and gives every header room around what it says, so the parts of the window are read one at a time. The classic one joins the tabs into a single bar and tightens the headers, which hands a row or two back to the panel — the same information, in less of the window."
       },
       "cornerStyle": {
         "title": "Corner style",

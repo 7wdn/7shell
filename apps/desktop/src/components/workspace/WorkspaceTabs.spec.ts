@@ -25,6 +25,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { i18n } from "@/i18n";
 import { filesOpen } from "@/lib/backend/tauri";
+import { usePreferencesStore } from "@/stores/preferences";
 import { type TerminalPanel, useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
 
@@ -152,6 +153,51 @@ describe("the half of the panel that is on screen", () => {
  * notice it going missing from the elements this file draws, which the file-level guard cannot see —
  * both strips live in one component, and either could lose the class alone.
  */
+/**
+ * The two interface layouts, as the strip draws them.
+ *
+ * The separated one is what this build has always drawn: every tab a block with air around it. The
+ * classic one joins them into a single run divided by lines, and tells the lit one apart with a line
+ * along its top — there is no gap left to tell it apart by. What each tab *says* does not change, so
+ * this is the whole of the difference the component is responsible for; the headers' half of the
+ * choice is a token in the stylesheet.
+ */
+describe("the two interface layouts", () => {
+  /** The first tab in the strip, which is the drawn box rather than the button inside it. */
+  function firstTab(): HTMLElement {
+    const found = host.querySelector<HTMLElement>("[data-workspace-tabs] > div");
+    if (!found) {
+      throw new Error("the strip has no tab in it");
+    }
+    return found;
+  }
+
+  function strip(): HTMLElement {
+    const found = host.querySelector<HTMLElement>("[data-workspace-tabs]");
+    if (!found) {
+      throw new Error("the workspace has no tab strip");
+    }
+    return found;
+  }
+
+  it("draws tabs as blocks of their own when the chrome is separated", async () => {
+    usePreferencesStore().setAppLayout("separated");
+    await render(openPanel);
+
+    expect(firstTab().classList.contains("rounded-t-md"), "a block with a rounded top").toBe(true);
+    expect(strip().classList.contains("gap-1"), "and air between the blocks").toBe(true);
+  });
+
+  it("draws one run of tabs when the chrome is classic", async () => {
+    usePreferencesStore().setAppLayout("classic");
+    await render(openPanel);
+
+    expect(firstTab().className, "no block, no rounding").not.toContain("rounded");
+    expect(firstTab().classList.contains("border-t-primary"), "the lit tab is a line along its top").toBe(true);
+    expect(strip().classList.contains("gap-0"), "the tabs are edge to edge").toBe(true);
+  });
+});
+
 describe("the workspace's own strips", () => {
   it("keeps the tabs and the terminal's strip from being read as text", async () => {
     await render(openPanel);

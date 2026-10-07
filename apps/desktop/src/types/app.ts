@@ -144,6 +144,17 @@ export type HomeLayout = "intro" | "workspace";
 /** The page a fresh install opens on: the one this build has always drawn. */
 export const DEFAULT_HOME_LAYOUT: HomeLayout = "workspace";
 
+/**
+ * How the chrome around the panels is drawn, from `sevenshell_types::AppLayout`.
+ *
+ * Two shapes rather than a set of switches: they are two answers to "how much of the window should
+ * be the thing I am looking at", and every difference between them falls out of that answer.
+ */
+export type AppLayout = "separated" | "classic";
+
+/** The shape a fresh install gets: the one this build has always drawn. */
+export const DEFAULT_APP_LAYOUT: AppLayout = "separated";
+
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";
 
@@ -204,6 +215,8 @@ export interface AppSettings {
   readonly cornerStyle: CornerStyle;
   /** Which of the two home pages is drawn. */
   readonly homeLayout: HomeLayout;
+  /** How the chrome around the panels is drawn. */
+  readonly appLayout: AppLayout;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** The stack the terminal draws in, which is a choice of its own. */
