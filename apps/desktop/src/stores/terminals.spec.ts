@@ -504,16 +504,81 @@ describe("terminals store", () => {
     await store.openFiles(session);
     store.openInspect("system", session);
 
-    await store.closeToTheRight(store.tabs[0]?.id ?? "");
+    // The drawn order is handed in, which in the manual order is the array itself.
+    await store.closeToTheRight(
+      store.tabs[0]?.id ?? "",
+      store.tabs.map((tab) => tab.id),
+    );
 
     expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal"]);
 
     // And from the middle: what is after it goes, what is before it stays.
     await store.openFiles(session);
     store.openInspect("network", session);
-    await store.closeToTheRight(store.tabs[1]?.id ?? "");
+    await store.closeToTheRight(
+      store.tabs[1]?.id ?? "",
+      store.tabs.map((tab) => tab.id),
+    );
 
     expect(store.tabs.map((tab) => tab.kind)).toEqual(["terminal", "files"]);
+  });
+
+  it("remembers the order the tabs were opened in, and forgets the one that is closed", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+
+    // The order the bar can draw by, kept beside the tabs: every tab in it, and only those.
+    expect(store.openedOrder).toEqual(store.tabs.map((tab) => tab.id));
+
+    const first = store.tabs[0]?.id ?? "";
+    await store.closeTab(first);
+
+    expect(store.openedOrder, "a tab that is gone takes its place with it").not.toContain(first);
+    expect(store.openedOrder).toHaveLength(store.tabs.length);
+  });
+
+  it("moves a tab to where another one is, which is what a drag in the bar does", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    // Two pages that are always tabs of their own, whatever the session layout says the files panel
+    // does: this case is about the order, and the tabs it orders are not the point.
+    store.openSettings();
+    store.openBatch();
+
+    const [first, second, third] = store.tabs.map((tab) => tab.id);
+    expect(store.tabs, "three tabs to move around").toHaveLength(3);
+
+    // A tab lands where the one it was dropped on is: just before it, which is what makes a drag to
+    // the right and a drag to the left both read as "put it here".
+    store.moveTab(first ?? "", third ?? "");
+    expect(store.tabs.map((tab) => tab.id)).toEqual([second, first, third]);
+
+    // And back: dropped on the first tab it takes that place rather than the one after it.
+
+    store.moveTab(first ?? "", second ?? "");
+    expect(store.tabs.map((tab) => tab.id)).toEqual([first, second, third]);
+  });
+
+  it("closes what the bar draws to the right, not what the array happens to hold there", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    store.openSettings();
+    store.openBatch();
+
+    const [first, second, third] = store.tabs.map((tab) => tab.id);
+
+    // A drawn order that is not the array's, which is what a sort or a grouping produces: the tabs
+    // after the one that was right-clicked are the ones the person can see after it.
+    await store.closeToTheRight(first ?? "", [third ?? "", first ?? "", second ?? ""]);
+
+    expect(store.tabs.map((tab) => tab.id)).toEqual([first, third]);
   });
 
   it("keeps the browser tab and says why when the backend refuses to close it", async () => {

@@ -19,6 +19,10 @@ import {
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_TAB_GROUP_MODE,
+  DEFAULT_TAB_MAX_WIDTH,
+  DEFAULT_TAB_PLACEMENT,
+  DEFAULT_TAB_SORT_MODE,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
@@ -45,6 +49,10 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     homeLayout: DEFAULT_HOME_LAYOUT,
     appLayout: DEFAULT_APP_LAYOUT,
     tabLayout: DEFAULT_TAB_LAYOUT,
+    tabPlacement: DEFAULT_TAB_PLACEMENT,
+    tabGroupMode: DEFAULT_TAB_GROUP_MODE,
+    tabSortMode: DEFAULT_TAB_SORT_MODE,
+    tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -166,6 +174,10 @@ describe("preferences store", () => {
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
       tabLayout: DEFAULT_TAB_LAYOUT,
+      tabPlacement: DEFAULT_TAB_PLACEMENT,
+      tabGroupMode: DEFAULT_TAB_GROUP_MODE,
+      tabSortMode: DEFAULT_TAB_SORT_MODE,
+      tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -198,6 +210,10 @@ describe("preferences store", () => {
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
       tabLayout: DEFAULT_TAB_LAYOUT,
+      tabPlacement: DEFAULT_TAB_PLACEMENT,
+      tabGroupMode: DEFAULT_TAB_GROUP_MODE,
+      tabSortMode: DEFAULT_TAB_SORT_MODE,
+      tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -341,6 +357,10 @@ describe("the terminal palette", () => {
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
       tabLayout: DEFAULT_TAB_LAYOUT,
+      tabPlacement: DEFAULT_TAB_PLACEMENT,
+      tabGroupMode: DEFAULT_TAB_GROUP_MODE,
+      tabSortMode: DEFAULT_TAB_SORT_MODE,
+      tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -586,6 +606,46 @@ describe("the colour theme", () => {
 
     await store.reset(["tabLayout"]);
     expect(store.tabLayout).toBe(DEFAULT_TAB_LAYOUT);
+  });
+
+  it("remembers where the bar sits, how it groups, how it orders and how wide it draws", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // Every one of the four is what this build has always drawn: the bar across the top of the panel,
+    // one run of tabs, the order they were opened in, and the width they have always had.
+    expect([store.tabPlacement, store.tabGroupMode, store.tabSortMode, store.tabMaxWidth]).toEqual([
+      "top",
+      "none",
+      "manual",
+      "wide",
+    ]);
+
+    // None of them touches the document, unlike the palette and the layout: these are read where the
+    // bar is drawn, so there is no attribute and no token for them to reach the stylesheet through.
+    store.setTabPlacement("left");
+    store.setTabGroupMode("session");
+    store.setTabSortMode("title-asc");
+    store.setTabMaxWidth("narrow");
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tabPlacement: "left",
+        tabGroupMode: "session",
+        tabSortMode: "title-asc",
+        tabMaxWidth: "narrow",
+      }),
+    );
+
+    await store.reset(["tabPlacement", "tabGroupMode", "tabSortMode", "tabMaxWidth"]);
+    expect([store.tabPlacement, store.tabGroupMode, store.tabSortMode, store.tabMaxWidth]).toEqual([
+      "top",
+      "none",
+      "manual",
+      "wide",
+    ]);
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {
@@ -971,6 +1031,10 @@ describe("restoring the defaults", () => {
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
       tabLayout: DEFAULT_TAB_LAYOUT,
+      tabPlacement: DEFAULT_TAB_PLACEMENT,
+      tabGroupMode: DEFAULT_TAB_GROUP_MODE,
+      tabSortMode: DEFAULT_TAB_SORT_MODE,
+      tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

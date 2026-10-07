@@ -1042,6 +1042,98 @@ test("the tab bar is told what to do when the tabs do not fit", async () => {
 });
 
 /**
+ * The tab bar's own four choices, which are the ones about the bar rather than about its tabs.
+ *
+ * What a real window is needed for: each of the four is a measurement rather than a colour — which way
+ * the bar runs, whether the runs are named, what order the tabs are drawn in and how wide one may be —
+ * and every one of them is read back as the computed style or the drawn element that produces it. The
+ * file is read for the choice itself, which is the half a fresh window has to agree with.
+ */
+test("the tab bar is drawn where it was put, grouped, ordered and no wider than it was told", async () => {
+  const { page, close } = await openApp();
+  try {
+    // A session in the library, because the cases after this one expect a window with something in it.
+    await saveSession(page, "bar-probe", "127.0.0.1", "1");
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    const strip = page.locator("[data-workspace-tabs]");
+    const section = page.locator("section").filter({ has: strip }).first();
+
+    // Where this build has always put the bar: across the top, which is a row of tabs in a column of
+    // two rows — the bar and the pane under it.
+    await expect(strip).toHaveAttribute("data-tab-placement", "top");
+    await expect(strip, "across the top means a row of tabs").toHaveCSS("flex-direction", "row");
+    await expect(section, "with the pane under it").toHaveCSS("flex-direction", "column");
+
+    // How wide a tab may be: a step of the horizontal bar, which is what a tab's own box answers for.
+    await settings.getByRole("combobox", { name: "Tab width limit" }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "160 px" }).click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).tabMaxWidth).toBe("narrow");
+    await expect(page.locator("[data-tab]").first(), "the narrowest step, in pixels").toHaveCSS("max-width", "160px");
+
+    // Down the left: the section becomes a row — the bar beside the panes — and the bar a column with
+    // its line against the panes rather than against the window.
+    await settings.getByRole("combobox", { name: "Tab bar position" }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "Left side" }).click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).tabPlacement).toBe("left");
+    await expect(section, "the panes beside the bar").toHaveCSS("flex-direction", "row");
+    await expect(strip).toHaveCSS("flex-direction", "column");
+
+    // Which side the line is on rather than how thick: the interface is scaled inside the window, so a
+    // one-pixel rule measures as a fraction of one, and the edge it is drawn against is the fact this
+    // case is about.
+    const edges = await strip.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { right: parseFloat(style.borderRightWidth), left: parseFloat(style.borderLeftWidth) };
+    });
+    expect(edges.right, "a line against the left edge of the panes").toBeGreaterThan(0);
+    expect(edges.left, "and none on the outside").toBe(0);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-tab-bar-left.png"), fullPage: false });
+
+    // Grouped by session and ordered by name, which are two answers about the drawing alone. Nothing
+    // in this window belongs to a session except the settings page, which belongs to none — so the
+    // grouping has no run to name here, and the case checks that it says so rather than inventing one.
+    await settings.getByRole("combobox", { name: "Group by" }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "Group by session" }).click();
+    await settings.getByRole("combobox", { name: "Sort by" }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "Tab name" }).click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).tabGroupMode).toBe("session");
+    await expect.poll(async () => (await writtenSettings()).tabSortMode).toBe("title-asc");
+    await expect(page.locator("[data-tab-group]"), "a heading only for tabs that belong to a session").toHaveCount(0);
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-tab-bar-grouped.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the bar it expects.
+    for (const [name, value] of [
+      ["Tab bar position", "Top"],
+      ["Group by", "No grouping"],
+      ["Sort by", "Manual order"],
+      ["Tab width limit", "240 px"],
+    ] as const) {
+      await settings.getByRole("combobox", { name }).click();
+      await page.getByRole("listbox").getByRole("option", { name: value }).click();
+    }
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).tabPlacement).toBe("top");
+    await expect.poll(async () => (await writtenSettings()).tabMaxWidth).toBe("wide");
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The home page, which is one of two.
  *
  * The page is the surface with nothing open on it, and there are two of them: the introduction, for

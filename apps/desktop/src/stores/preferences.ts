@@ -21,7 +21,11 @@ import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
+  DEFAULT_TAB_GROUP_MODE,
   DEFAULT_TAB_LAYOUT,
+  DEFAULT_TAB_MAX_WIDTH,
+  DEFAULT_TAB_PLACEMENT,
+  DEFAULT_TAB_SORT_MODE,
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
@@ -30,7 +34,11 @@ import {
   DEFAULT_UI_SCALE,
   type AppLayout,
   type AppSettings,
+  type TabGroupMode,
   type TabLayout,
+  type TabMaxWidth,
+  type TabPlacement,
+  type TabSortMode,
   type CornerStyle,
   type HomeLayout,
   type CustomColors,
@@ -62,6 +70,10 @@ const FRESH: Omit<AppSettings, "locale"> = {
   homeLayout: DEFAULT_HOME_LAYOUT,
   appLayout: DEFAULT_APP_LAYOUT,
   tabLayout: DEFAULT_TAB_LAYOUT,
+  tabPlacement: DEFAULT_TAB_PLACEMENT,
+  tabGroupMode: DEFAULT_TAB_GROUP_MODE,
+  tabSortMode: DEFAULT_TAB_SORT_MODE,
+  tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -212,6 +224,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * answer means anything.
    */
   const tabLayout = ref<TabLayout>(DEFAULT_TAB_LAYOUT);
+  /** Which edge of the window the tab bar is drawn against. */
+  const tabPlacement = ref<TabPlacement>(DEFAULT_TAB_PLACEMENT);
+  /** What the tabs are grouped by when they are drawn. */
+  const tabGroupMode = ref<TabGroupMode>(DEFAULT_TAB_GROUP_MODE);
+  /** The order the tabs are drawn in. Sorting moves the drawing, never the tabs themselves. */
+  const tabSortMode = ref<TabSortMode>(DEFAULT_TAB_SORT_MODE);
+  /** How wide a horizontal tab may be drawn, as a step rather than as a number of pixels. */
+  const tabMaxWidth = ref<TabMaxWidth>(DEFAULT_TAB_MAX_WIDTH);
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -397,6 +417,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
       homeLayout.value = settings.homeLayout;
       appLayout.value = settings.appLayout;
       tabLayout.value = settings.tabLayout;
+      tabPlacement.value = settings.tabPlacement;
+      tabGroupMode.value = settings.tabGroupMode;
+      tabSortMode.value = settings.tabSortMode;
+      tabMaxWidth.value = settings.tabMaxWidth;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -467,6 +491,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
         homeLayout: homeLayout.value,
         appLayout: appLayout.value,
         tabLayout: tabLayout.value,
+        tabPlacement: tabPlacement.value,
+        tabGroupMode: tabGroupMode.value,
+        tabSortMode: tabSortMode.value,
+        tabMaxWidth: tabMaxWidth.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -584,6 +612,33 @@ export const usePreferencesStore = defineStore("preferences", () => {
   /** Chooses what the tab bar does when the tabs do not fit, which the bar redraws itself into. */
   function setTabLayout(layout: TabLayout): void {
     tabLayout.value = layout;
+    dirty.value = true;
+  }
+
+  /**
+   * The four the bar is drawn by: where it sits, how it groups, how it orders and how wide it draws.
+   *
+   * All four are the bar's own business rather than the window's, so they are one setter's worth of
+   * the same thing: each takes effect the moment it is chosen, because the bar is on screen behind the
+   * page that chose it.
+   */
+  function setTabPlacement(edge: TabPlacement): void {
+    tabPlacement.value = edge;
+    dirty.value = true;
+  }
+
+  function setTabGroupMode(mode: TabGroupMode): void {
+    tabGroupMode.value = mode;
+    dirty.value = true;
+  }
+
+  function setTabSortMode(mode: TabSortMode): void {
+    tabSortMode.value = mode;
+    dirty.value = true;
+  }
+
+  function setTabMaxWidth(width: TabMaxWidth): void {
+    tabMaxWidth.value = width;
     dirty.value = true;
   }
 
@@ -790,6 +845,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "tabLayout":
           tabLayout.value = FRESH.tabLayout;
           break;
+        case "tabPlacement":
+          tabPlacement.value = FRESH.tabPlacement;
+          break;
+        case "tabGroupMode":
+          tabGroupMode.value = FRESH.tabGroupMode;
+          break;
+        case "tabSortMode":
+          tabSortMode.value = FRESH.tabSortMode;
+          break;
+        case "tabMaxWidth":
+          tabMaxWidth.value = FRESH.tabMaxWidth;
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -852,6 +919,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     homeLayout,
     appLayout,
     tabLayout,
+    tabPlacement,
+    tabGroupMode,
+    tabSortMode,
+    tabMaxWidth,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -886,6 +957,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setHomeLayout,
     setAppLayout,
     setTabLayout,
+    setTabPlacement,
+    setTabGroupMode,
+    setTabSortMode,
+    setTabMaxWidth,
     setUiFont,
     setTerminalFont,
     previewFont,

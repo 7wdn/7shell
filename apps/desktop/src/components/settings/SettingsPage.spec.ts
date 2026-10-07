@@ -169,6 +169,23 @@ describe("the settings page", () => {
     expect(host.textContent).toContain("Reset the colours");
   });
 
+  it("draws the tab bar's own choices in one row, each with the line that says what it is for", async () => {
+    await mount();
+    await openCategory("Appearance");
+
+    for (const title of ["Tab bar position", "Group by", "Sort by", "Tab width limit"]) {
+      expect(host.textContent, `${title} is on the page`).toContain(title);
+    }
+
+    // One grid, four columns — and the only grid whose fields draw their summary: at a quarter of the
+    // page's width a control with no words under it is a value nobody can tell apart from the next one.
+    const row = [...host.querySelectorAll<HTMLElement>("div.grid")].find((grid) =>
+      grid.textContent?.includes("Tab bar position"),
+    );
+    expect(row?.className, "four to a row where this page has room for four").toContain("@4xl:grid-cols-4");
+    expect(row?.textContent, "with the line under the control").toContain("Side tab bars scroll vertically");
+  });
+
   it("keeps the keys and hosts this device holds selectable, inside a page that is not", async () => {
     await mount();
     await openCategory("Security");

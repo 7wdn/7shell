@@ -41,20 +41,37 @@ const session: Session = {
   updatedAt: 1_700_000_000,
 };
 
+const other: Session = { ...session, id: "session-2", name: "db", host: "db.example.test" };
+
 const openPanel: TerminalPanel = { handle: null, status: "opening", failure: null };
 
 let host: HTMLDivElement;
 let app: App | undefined;
 
-/** Mounts the workspace over one open terminal, with or without a file panel under it. */
-async function render(panel: TerminalPanel | null): Promise<void> {
+/** Mounts the workspace over the tabs a case needs, with the first of them on screen. */
+async function renderTabs(
+  tabs: { kind: "terminal"; id: string; session: Session; panel?: TerminalPanel | null }[],
+): Promise<void> {
   const terminals = useTerminalsStore();
-  terminals.tabs = [{ kind: "terminal", id: "tab-1", handle: null, session, status: "open", failure: null, panel }];
-  terminals.activeTabId = "tab-1";
+  terminals.tabs = tabs.map((tab) => ({
+    kind: "terminal" as const,
+    id: tab.id,
+    handle: null,
+    session: tab.session,
+    status: "open" as const,
+    failure: null,
+    panel: tab.panel ?? null,
+  }));
+  terminals.activeTabId = tabs[0]?.id ?? null;
 
   app = createApp({ render: () => h(WorkspaceTabs) }).use(i18n);
   app.mount(host);
   await nextTick();
+}
+
+/** Mounts the workspace over one open terminal, with or without a file panel under it. */
+async function render(panel: TerminalPanel | null): Promise<void> {
+  await renderTabs([{ kind: "terminal", id: "tab-1", session, panel }]);
 }
 
 function stripButton(label: string): HTMLElement {
@@ -171,6 +188,91 @@ describe("the half of the panel that is on screen", () => {
  * notice it going missing from the elements this file draws, which the file-level guard cannot see —
  * both strips live in one component, and either could lose the class alone.
  */
+/**
+ * Where the bar is drawn, what it groups by, what order it draws and how wide.
+ *
+ * The four choices about the bar itself, all of which change what somebody sees without changing any
+ * tab: which edge it is against (and therefore whether it is a row or a column), whether the tabs are
+ * cut into runs by session, the order they are drawn in, and how wide one may be. What the *scrolling*
+ * choice does is the case above; what the store does with a move or a close is the store's own suite.
+ */
+describe("the bar's own choices", () => {
+  it("draws the bar as a column down the edge it was given", async () => {
+    usePreferencesStore().setTabPlacement("left");
+    await render(openPanel);
+
+    const section = host.querySelector("section");
+    expect(section?.classList.contains("flex-row"), "a column beside the panes").toBe(true);
+    expect(strip().classList.contains("flex-col"), "with the tabs stacked in it").toBe(true);
+    expect(strip().classList.contains("border-r"), "against the left edge").toBe(true);
+  });
+
+  it("puts the bar after the panes at the far edges and before them across the top", async () => {
+    await render(openPanel);
+    expect(strip().classList.contains("order-1"), "the bar is the way in, so it comes first").toBe(true);
+
+    usePreferencesStore().setTabPlacement("bottom");
+    await render(openPanel);
+    expect(strip().classList.contains("order-2"), "at the bottom it is drawn after the pane").toBe(true);
+    expect(strip().classList.contains("border-t"), "and the line between them is its own top edge").toBe(true);
+  });
+
+  it("names each session once when the tabs are grouped by one", async () => {
+    usePreferencesStore().setTabGroupMode("session");
+    await renderTabs([
+      { kind: "terminal", id: "tab-1", session },
+      { kind: "terminal", id: "tab-2", session },
+      { kind: "terminal", id: "tab-3", session: other },
+    ]);
+
+    // One heading per session, named after it, in the order the sessions first appear — and the two
+    // tabs of the same session share one heading rather than getting one each.
+    const headings = [...host.querySelectorAll<HTMLElement>("[data-tab-group]")].map((entry) =>
+      entry.textContent?.trim(),
+    );
+    expect(headings).toEqual(["web", "db"]);
+  });
+
+  it("draws no heading at all when nothing is grouped", async () => {
+    await renderTabs([
+      { kind: "terminal", id: "tab-1", session },
+      { kind: "terminal", id: "tab-2", session: other },
+    ]);
+
+    expect(host.querySelectorAll("[data-tab-group]")).toHaveLength(0);
+  });
+
+  it("orders the tabs by name when that is the choice", async () => {
+    usePreferencesStore().setTabSortMode("title-asc");
+    await renderTabs([
+      { kind: "terminal", id: "tab-1", session: other },
+      { kind: "terminal", id: "tab-2", session },
+    ]);
+
+    const drawn = [...host.querySelectorAll<HTMLElement>("[data-tab]")].map((tab) => tab.dataset.tab);
+    expect(drawn, "db before web, whatever order they were opened in").toEqual(["tab-1", "tab-2"]);
+  });
+
+  it("draws a tab no wider than the step it was given", async () => {
+    usePreferencesStore().setTabMaxWidth("narrow");
+    await render(openPanel);
+    expect(firstTab().style.maxWidth, "the narrowest step").toBe("160px");
+
+    usePreferencesStore().setTabMaxWidth("unlimited");
+    await renderTabs([{ kind: "terminal", id: "tab-1", session, panel: openPanel }]);
+    expect(firstTab().style.maxWidth, "and nothing at all where the name sets the width").toBe("");
+  });
+
+  it("offers a tab for dragging only while the order on screen is the manual one", async () => {
+    await render(openPanel);
+    expect(firstTab().getAttribute("draggable"), "the order a drag writes to").toBe("true");
+
+    usePreferencesStore().setTabSortMode("created-asc");
+    await renderTabs([{ kind: "terminal", id: "tab-1", session, panel: openPanel }]);
+    expect(firstTab().getAttribute("draggable"), "a move into a list nobody is looking at").toBe("false");
+  });
+});
+
 /**
  * The two interface layouts, as the strip draws them.
  *

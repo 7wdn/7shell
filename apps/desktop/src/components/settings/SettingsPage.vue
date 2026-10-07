@@ -68,7 +68,11 @@ import {
   DEFAULT_UI_FONT,
   type AppLayout,
   type CornerStyle,
+  type TabGroupMode,
   type TabLayout,
+  type TabMaxWidth,
+  type TabPlacement,
+  type TabSortMode,
   type HomeLayout,
   type CustomColors,
   type FilesLayout,
@@ -102,6 +106,14 @@ const settingsFields = computed(() =>
 const fontFields = computed(() => fieldRows.value.filter((row) => row.grid === "fonts"));
 /** The fields that are a block rather than a word: one to a line, label above. */
 const wideFields = computed(() => fieldRows.value.filter((row) => row.grid === "wide"));
+/**
+ * The four the tab bar is drawn by, in one row, each with the line that says what it is for.
+ *
+ * The only grid whose fields draw a summary: at a quarter of the page's width there is room for a
+ * control and one line under it, and four controls alone would be four values nobody can tell apart.
+ * The explanation behind the question mark is there as it is everywhere else.
+ */
+const tabFields = computed(() => fieldRows.value.filter((row) => row.grid === "four"));
 
 /**
  * The five colours being edited, when a custom palette is worn.
@@ -184,6 +196,14 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.appLayout;
     case "tabLayout":
       return preferences.tabLayout;
+    case "tabPlacement":
+      return preferences.tabPlacement;
+    case "tabGroupMode":
+      return preferences.tabGroupMode;
+    case "tabSortMode":
+      return preferences.tabSortMode;
+    case "tabMaxWidth":
+      return preferences.tabMaxWidth;
     case "uiFont":
       // Nothing chosen reads as the one this build ships with, because that is what is being drawn:
       // the picker shows a family, and "no answer" is not one.
@@ -233,6 +253,18 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "tabLayout":
       void preferences.setTabLayout(value as TabLayout);
+      return;
+    case "tabPlacement":
+      void preferences.setTabPlacement(value as TabPlacement);
+      return;
+    case "tabGroupMode":
+      void preferences.setTabGroupMode(value as TabGroupMode);
+      return;
+    case "tabSortMode":
+      void preferences.setTabSortMode(value as TabSortMode);
+      return;
+    case "tabMaxWidth":
+      void preferences.setTabMaxWidth(value as TabMaxWidth);
       return;
     case "uiFont":
       void preferences.setUiFont(String(value));
@@ -688,6 +720,34 @@ function translate(key: string, params?: Record<string, string>): string {
                       :key="row.id"
                       :title="t(row.titleKey)"
                       :help="t(row.helpKey)"
+                    >
+                      <SettingsControl
+                        :row="row"
+                        :value="currentValue(row)"
+                        :label="t(row.titleKey)"
+                        stretch
+                        @choose="(value) => choose(row, value)"
+                        @preview="(value: string) => preview(row, value)"
+                        @end-preview="endPreview(row)"
+                      />
+                    </SettingsField>
+                  </div>
+
+                  <!--
+                  The row of four, last of all: the tab bar's own choices are answers to one
+                  question, so they are read together rather than one per screenful — and the bar is
+                  the last part of the window somebody looks at before they leave this page.
+                -->
+                  <div
+                    v-if="tabFields.length > 0"
+                    class="grid gap-x-3 gap-y-4 pt-2 pb-1 sm:grid-cols-2 @4xl:grid-cols-4"
+                  >
+                    <SettingsField
+                      v-for="row in tabFields"
+                      :key="row.id"
+                      :title="t(row.titleKey)"
+                      :help="t(row.helpKey)"
+                      :summary="t(row.summaryKey)"
                     >
                       <SettingsControl
                         :row="row"

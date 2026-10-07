@@ -213,6 +213,15 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const recents = useRecentSessionsStore();
   const { toast } = useToast();
   const tabs = ref<WorkspaceTab[]>([]);
+  /**
+   * The tabs in the order they were opened, by id.
+   *
+   * Beside the tabs rather than on them, because the tabs are a union the rest of the store narrows by
+   * `kind`, and a field every member had to carry for one setting's sake would be paid for in every
+   * one of those predicates. Two places change the set of tabs — the one that adds and the one that
+   * forgets — and this is kept in both of them.
+   */
+  const openedOrder = ref<string[]>([]);
   const activeTabId = ref<string | null>(null);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
   const connectingSessionIds = ref<string[]>([]);
@@ -569,6 +578,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   function addTab(tab: WorkspaceTab): void {
     tabs.value.push(tab);
+    openedOrder.value.push(tab.id);
     activeTabId.value = tab.id;
   }
 
@@ -979,18 +989,52 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
-  async function closeToTheRight(id: string): Promise<void> {
-    const index = tabs.value.findIndex((entry) => entry.id === id);
+  /**
+   * Closes every tab the bar draws to the right of this one.
+   *
+   * The drawn order is handed in rather than taken from the array, because the two are only the same
+   * while the bar is in the order the tabs were opened: under a sort or a grouping, "the ones to the
+   * right" means the ones somebody can see to the right, and closing by the array would close tabs
+   * that are nowhere near the one that was right-clicked.
+   */
+  async function closeToTheRight(id: string, drawn: readonly string[]): Promise<void> {
+    const index = drawn.indexOf(id);
     if (index < 0) {
       return;
     }
-    for (const tab of tabs.value.slice(index + 1)) {
-      await closeTab(tab.id);
+    for (const other of drawn.slice(index + 1)) {
+      await closeTab(other);
     }
+  }
+
+  /**
+   * Moves a tab to where another one is, which is what a drag in the bar does.
+   *
+   * The array is the manual order — the order the tabs were opened in, until somebody moves one — and
+   * this is the only thing that changes it. Sorting never does: it reorders the drawing, so a drag is
+   * offered only while the bar is drawn in the manual order.
+   */
+  function moveTab(id: string, before: string): void {
+    if (id === before) {
+      return;
+    }
+    const from = tabs.value.findIndex((entry) => entry.id === id);
+    const to = tabs.value.findIndex((entry) => entry.id === before);
+    if (from < 0 || to < 0) {
+      return;
+    }
+    const [moved] = tabs.value.splice(from, 1);
+    if (!moved) {
+      return;
+    }
+    // Where the target ended up once the moved tab left the list: dropping a tab to the right of
+    // where it was shifts everything between the two by one.
+    tabs.value.splice(from < to ? to - 1 : to, 0, moved);
   }
 
   function forget(id: string): void {
     tabs.value = tabs.value.filter((entry) => entry.id !== id);
+    openedOrder.value = openedOrder.value.filter((entry) => entry !== id);
     if (activeTabId.value === id) {
       activeTabId.value = tabs.value[tabs.value.length - 1]?.id ?? null;
     }
@@ -1062,6 +1106,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     closeSessions,
     closeOthers,
     closeToTheRight,
+    moveTab,
+    openedOrder,
     reconnect,
     activate,
     send,

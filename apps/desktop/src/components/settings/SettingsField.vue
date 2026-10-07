@@ -9,6 +9,11 @@
  *
  * What a field gives up is the summary line, not the explanation: the question mark beside the name
  * opens the same text a card's does, and the search still finds the row by either line.
+ *
+ * The one exception is the row of four at the foot of the appearance page: there, a quarter of the
+ * page's width holds nothing but a control, and four controls with no words between them are four
+ * values nobody can tell apart. Those fields pass their summary in, and it is drawn under the
+ * control — the only grid that draws one.
  */
 import SettingsHelp from "@/components/settings/SettingsHelp.vue";
 
@@ -17,6 +22,8 @@ const props = defineProps<{
   title: string;
   /** The whole explanation, behind the question mark. */
   help: string;
+  /** The one-line summary, drawn only where the grid asks for it. */
+  summary?: string;
 }>();
 </script>
 
@@ -27,5 +34,6 @@ const props = defineProps<{
       <SettingsHelp :title="props.title" :help="props.help" />
     </div>
     <slot />
+    <p v-if="props.summary" class="text-xs leading-relaxed text-muted-foreground">{{ props.summary }}</p>
   </div>
 </template>

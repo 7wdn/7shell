@@ -376,6 +376,160 @@ impl TabLayout {
     }
 }
 
+/// Which edge of the window the tab bar is drawn against.
+///
+/// The four edges rather than two, because a bar at the top and a bar at the side are answers to
+/// different problems: a top bar costs height — the thing a terminal has least of — while a side bar
+/// costs width and pays for it with a column of names instead of a row of tabs. A bar on the left or
+/// the right is drawn as a column, which is also why wrapping is a choice only the horizontal ones
+/// have.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabPlacement {
+    /// Across the top of the panel. What this build has always drawn, so a fresh install gets it.
+    #[default]
+    Top,
+    /// Across the bottom, which is the same bar with the room it takes from the other end.
+    Bottom,
+    /// Down the left, as a column of names.
+    Left,
+    /// Down the right, which is the same column on the other side.
+    Right,
+}
+
+impl TabPlacement {
+    pub const ALL: &'static [TabPlacement] = &[
+        TabPlacement::Top,
+        TabPlacement::Bottom,
+        TabPlacement::Left,
+        TabPlacement::Right,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Top => "top",
+            Self::Bottom => "bottom",
+            Self::Left => "left",
+            Self::Right => "right",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|edge| edge.as_str() == id)
+    }
+
+    /// Whether the bar is drawn as a column rather than as a row.
+    pub const fn is_vertical(self) -> bool {
+        matches!(self, Self::Left | Self::Right)
+    }
+}
+
+/// What the tabs are grouped by when they are drawn.
+///
+/// One axis rather than the three a database client has, because this build's tabs belong to sessions
+/// and to nothing else: a terminal, a file browser and a host's pages opened from one session are the
+/// same kind of togetherness the other application gets from a connection, and there is no second axis
+/// under it to group by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabGroupMode {
+    /// Every tab in one run. What this build has always drawn.
+    #[default]
+    None,
+    /// One run per session, under the session's name.
+    Session,
+}
+
+impl TabGroupMode {
+    pub const ALL: &'static [TabGroupMode] = &[TabGroupMode::None, TabGroupMode::Session];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Session => "session",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|mode| mode.as_str() == id)
+    }
+}
+
+/// The order the tabs are drawn in.
+///
+/// The order they were opened is the manual one, and it is what the bar has always shown. Sorting
+/// reorders the drawing and never the tabs themselves, so going back to manual puts everything where
+/// it was — and only the manual order is the one somebody can drag.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TabSortMode {
+    /// The order they were opened in, which is the order they can be dragged into.
+    #[default]
+    Manual,
+    /// Oldest first, by when each tab was opened.
+    CreatedAsc,
+    /// By the name each tab draws.
+    TitleAsc,
+}
+
+impl TabSortMode {
+    pub const ALL: &'static [TabSortMode] = &[TabSortMode::Manual, TabSortMode::CreatedAsc, TabSortMode::TitleAsc];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::CreatedAsc => "created-asc",
+            Self::TitleAsc => "title-asc",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|mode| mode.as_str() == id)
+    }
+}
+
+/// How wide a horizontal tab is allowed to be drawn.
+///
+/// A closed list of steps rather than a number of pixels, for the reason the interface scale is one:
+/// it is a choice made by looking at the window, and a width nobody offers cannot be arrived at by
+/// using the interface. A name longer than the step is truncated, and the whole of it is shown on
+/// hover.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabMaxWidth {
+    /// As wide as the name asks for, up to what the bar can give it.
+    Unlimited,
+    /// The step this build has always drawn at: fifteen rem.
+    #[default]
+    Wide,
+    /// A step narrower, for a bar holding many tabs.
+    Medium,
+    /// The narrowest step, where a name is read by its first word.
+    Narrow,
+}
+
+impl TabMaxWidth {
+    pub const ALL: &'static [TabMaxWidth] = &[
+        TabMaxWidth::Unlimited,
+        TabMaxWidth::Wide,
+        TabMaxWidth::Medium,
+        TabMaxWidth::Narrow,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unlimited => "unlimited",
+            Self::Wide => "wide",
+            Self::Medium => "medium",
+            Self::Narrow => "narrow",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|width| width.as_str() == id)
+    }
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -472,6 +626,18 @@ pub struct AppSettings {
     /// this was a choice, which reads as the one row that scrolls this build has always drawn.
     #[serde(default)]
     pub tab_layout: TabLayout,
+    /// Which edge the tab bar is drawn against.
+    #[serde(default)]
+    pub tab_placement: TabPlacement,
+    /// What the tabs are grouped by when they are drawn.
+    #[serde(default)]
+    pub tab_group_mode: TabGroupMode,
+    /// The order the tabs are drawn in.
+    #[serde(default)]
+    pub tab_sort_mode: TabSortMode,
+    /// How wide a horizontal tab may be drawn.
+    #[serde(default)]
+    pub tab_max_width: TabMaxWidth,
     /// The family the interface draws its text in, as a `font-family` stack.
     ///
     /// The whole stack rather than one name, and absent means the one this build ships with: somebody
@@ -554,6 +720,10 @@ impl Default for AppSettings {
             home_layout: HomeLayout::default(),
             app_layout: AppLayout::default(),
             tab_layout: TabLayout::default(),
+            tab_placement: TabPlacement::default(),
+            tab_group_mode: TabGroupMode::default(),
+            tab_sort_mode: TabSortMode::default(),
+            tab_max_width: TabMaxWidth::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -574,6 +744,10 @@ impl AppSettings {
             && self.home_layout == HomeLayout::Workspace
             && self.app_layout == AppLayout::Classic
             && self.tab_layout == TabLayout::Scroll
+            && self.tab_placement == TabPlacement::Top
+            && self.tab_group_mode == TabGroupMode::None
+            && self.tab_sort_mode == TabSortMode::Manual
+            && self.tab_max_width == TabMaxWidth::Wide
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
@@ -651,6 +825,58 @@ mod tests {
                 TabLayout::from_id(layout.as_str()),
                 Some(*layout),
                 "a tab bar whose name does not read back is one the settings file cannot hold"
+            );
+        }
+    }
+
+    #[test]
+    fn every_tab_edge_round_trips_through_its_own_name() {
+        for edge in TabPlacement::ALL {
+            assert_eq!(
+                TabPlacement::from_id(edge.as_str()),
+                Some(*edge),
+                "an edge whose name does not read back is one the settings file cannot hold"
+            );
+        }
+        assert!(
+            TabPlacement::Left.is_vertical() && TabPlacement::Right.is_vertical(),
+            "a bar down one side is drawn as a column"
+        );
+        assert!(
+            !TabPlacement::Top.is_vertical() && !TabPlacement::Bottom.is_vertical(),
+            "and a bar across the window is drawn as a row"
+        );
+    }
+
+    #[test]
+    fn every_tab_grouping_round_trips_through_its_own_name() {
+        for mode in TabGroupMode::ALL {
+            assert_eq!(
+                TabGroupMode::from_id(mode.as_str()),
+                Some(*mode),
+                "a grouping whose name does not read back is one the settings file cannot hold"
+            );
+        }
+    }
+
+    #[test]
+    fn every_tab_order_round_trips_through_its_own_name() {
+        for mode in TabSortMode::ALL {
+            assert_eq!(
+                TabSortMode::from_id(mode.as_str()),
+                Some(*mode),
+                "an order whose name does not read back is one the settings file cannot hold"
+            );
+        }
+    }
+
+    #[test]
+    fn every_tab_width_round_trips_through_its_own_name() {
+        for width in TabMaxWidth::ALL {
+            assert_eq!(
+                TabMaxWidth::from_id(width.as_str()),
+                Some(*width),
+                "a width whose name does not read back is one the settings file cannot hold"
             );
         }
     }

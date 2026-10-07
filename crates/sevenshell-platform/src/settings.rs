@@ -17,8 +17,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabLayout, ThemeMode,
-    ThemePalette, monitor_on, normalize_ui_scale, sidebar_on, ui_scale_default,
+    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_ui_scale, sidebar_on,
+    ui_scale_default,
 };
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
@@ -90,6 +91,16 @@ struct StoredSettings {
     /// has always drawn.
     #[serde(default)]
     tab_layout: String,
+    /// The four below are absent in the same way: a file written before the bar could be moved,
+    /// grouped, ordered or narrowed reads as the bar this build has always drawn.
+    #[serde(default)]
+    tab_placement: String,
+    #[serde(default)]
+    tab_group_mode: String,
+    #[serde(default)]
+    tab_sort_mode: String,
+    #[serde(default)]
+    tab_max_width: String,
     /// Absent in a file written before a font could be chosen, which reads as the one this build
     /// ships with rather than as somebody having picked something.
     #[serde(default)]
@@ -125,6 +136,10 @@ impl StoredSettings {
             home_layout: settings.home_layout.as_str().to_owned(),
             app_layout: settings.app_layout.as_str().to_owned(),
             tab_layout: settings.tab_layout.as_str().to_owned(),
+            tab_placement: settings.tab_placement.as_str().to_owned(),
+            tab_group_mode: settings.tab_group_mode.as_str().to_owned(),
+            tab_sort_mode: settings.tab_sort_mode.as_str().to_owned(),
+            tab_max_width: settings.tab_max_width.as_str().to_owned(),
             ui_font: settings.ui_font.clone(),
             terminal_font: settings.terminal_font.clone(),
             custom_colors: settings.custom_colors.clone(),
@@ -150,6 +165,10 @@ impl StoredSettings {
             home_layout: HomeLayout::from_id(&self.home_layout).unwrap_or_default(),
             app_layout: AppLayout::from_id(&self.app_layout).unwrap_or_default(),
             tab_layout: TabLayout::from_id(&self.tab_layout).unwrap_or_default(),
+            tab_placement: TabPlacement::from_id(&self.tab_placement).unwrap_or_default(),
+            tab_group_mode: TabGroupMode::from_id(&self.tab_group_mode).unwrap_or_default(),
+            tab_sort_mode: TabSortMode::from_id(&self.tab_sort_mode).unwrap_or_default(),
+            tab_max_width: TabMaxWidth::from_id(&self.tab_max_width).unwrap_or_default(),
             // A name the machine does not have is not an error and not worth a message: the stack
             // falls through to what follows it, which is exactly why the whole stack is stored.
             ui_font: self.ui_font.filter(|font| !font.trim().is_empty()),
@@ -262,6 +281,10 @@ mod tests {
             home_layout: HomeLayout::default(),
             app_layout: AppLayout::default(),
             tab_layout: TabLayout::default(),
+            tab_placement: TabPlacement::default(),
+            tab_group_mode: TabGroupMode::default(),
+            tab_sort_mode: TabSortMode::default(),
+            tab_max_width: TabMaxWidth::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -416,8 +439,12 @@ mod tests {
             home_layout: HomeLayout::Intro,
             // Not the default, so the round trip proves a choice survives.
             app_layout: AppLayout::Classic,
-            // The same, for the second of the two words the chrome is stored as.
+            // The same, for the rest of the words the bar is stored as.
             tab_layout: TabLayout::Wrap,
+            tab_placement: TabPlacement::Right,
+            tab_group_mode: TabGroupMode::Session,
+            tab_sort_mode: TabSortMode::TitleAsc,
+            tab_max_width: TabMaxWidth::Narrow,
             ui_font: Some("'JetBrains Mono', monospace".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),

@@ -18,8 +18,9 @@ use sevenshell_types::{
     FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward,
     MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
     Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
-    SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup, SocketRow, TabLayout, TerminalSettings, ThemeMode,
-    ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup, SocketRow, TabGroupMode, TabLayout, TabMaxWidth,
+    TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome,
+    VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -220,6 +221,10 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             home_layout: HomeLayout::Intro,
             app_layout: AppLayout::Classic,
             tab_layout: TabLayout::Scroll,
+            tab_placement: TabPlacement::Left,
+            tab_group_mode: TabGroupMode::Session,
+            tab_sort_mode: TabSortMode::TitleAsc,
+            tab_max_width: TabMaxWidth::Narrow,
             ui_font: Some("Inter, sans-serif".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),
@@ -235,6 +240,10 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(&HomeLayout::Workspace, "HomeLayout");
     check(&AppLayout::Classic, "AppLayout");
     check(&TabLayout::Wrap, "TabLayout");
+    check(&TabPlacement::Bottom, "TabPlacement");
+    check(&TabGroupMode::Session, "TabGroupMode");
+    check(&TabSortMode::CreatedAsc, "TabSortMode");
+    check(&TabMaxWidth::Unlimited, "TabMaxWidth");
     check(&ThemeMode::System, "ThemeMode");
     // Both of the settings the interface offers as words rather than as numbers: a variant that
     // serialized as `default` when the interface expects `"default"` is the bug this file is for.

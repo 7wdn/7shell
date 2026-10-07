@@ -172,8 +172,16 @@ export interface SettingsRowDefinition {
    * `wide` is a field on a line of its own, and it is for a control that is a block rather than a
    * word: cards that describe what they do are two hundred pixels each, and a row that puts them
    * beside a title squeezes the title to nothing.
+   *
+   * `four` is the row the tab bar's own choices are drawn in — where it sits, how it groups, how it
+   * orders and how wide it draws. Four answers to one question, so they are read together rather than
+   * one per screenful, and each carries its one-line summary underneath: at that width a bare control
+   * is a value with nothing to say what it is for. Four across only where this page is wide enough
+   * for four — measured against the page rather than against the window, because the panels beside it
+   * take a share of the window that changes with their own settings. Below that they pair up: a
+   * control too narrow to draw its own value is worse than a row that takes twice the height.
    */
-  readonly grid?: "settings" | "fonts" | "wide";
+  readonly grid?: "settings" | "fonts" | "wide" | "four";
 }
 
 /**
@@ -461,6 +469,79 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
           descriptionKey: "settings.tabLayout.scrollHint",
         },
         { value: "wrap", titleKey: "settings.tabLayout.wrap", descriptionKey: "settings.tabLayout.wrapHint" },
+      ],
+    },
+  },
+  {
+    id: "tab-placement",
+    category: "appearance",
+    field: "tabPlacement",
+    titleKey: "settings.rows.tabPlacement.title",
+    summaryKey: "settings.rows.tabPlacement.summary",
+    helpKey: "settings.rows.tabPlacement.help",
+    presentation: "field",
+    grid: "four",
+    control: {
+      kind: "select",
+      options: [
+        { value: "top", labelKey: "settings.tabPlacement.top" },
+        { value: "bottom", labelKey: "settings.tabPlacement.bottom" },
+        { value: "left", labelKey: "settings.tabPlacement.left" },
+        { value: "right", labelKey: "settings.tabPlacement.right" },
+      ],
+    },
+  },
+  {
+    id: "tab-group-mode",
+    category: "appearance",
+    field: "tabGroupMode",
+    titleKey: "settings.rows.tabGroupMode.title",
+    summaryKey: "settings.rows.tabGroupMode.summary",
+    helpKey: "settings.rows.tabGroupMode.help",
+    presentation: "field",
+    grid: "four",
+    control: {
+      kind: "select",
+      options: [
+        { value: "none", labelKey: "settings.tabGroupMode.none" },
+        { value: "session", labelKey: "settings.tabGroupMode.session" },
+      ],
+    },
+  },
+  {
+    id: "tab-sort-mode",
+    category: "appearance",
+    field: "tabSortMode",
+    titleKey: "settings.rows.tabSortMode.title",
+    summaryKey: "settings.rows.tabSortMode.summary",
+    helpKey: "settings.rows.tabSortMode.help",
+    presentation: "field",
+    grid: "four",
+    control: {
+      kind: "select",
+      options: [
+        { value: "manual", labelKey: "settings.tabSortMode.manual" },
+        { value: "created-asc", labelKey: "settings.tabSortMode.created" },
+        { value: "title-asc", labelKey: "settings.tabSortMode.title" },
+      ],
+    },
+  },
+  {
+    id: "tab-max-width",
+    category: "appearance",
+    field: "tabMaxWidth",
+    titleKey: "settings.rows.tabMaxWidth.title",
+    summaryKey: "settings.rows.tabMaxWidth.summary",
+    helpKey: "settings.rows.tabMaxWidth.help",
+    presentation: "field",
+    grid: "four",
+    control: {
+      kind: "select",
+      options: [
+        { value: "unlimited", labelKey: "settings.tabMaxWidth.unlimited" },
+        { value: "wide", labelKey: "settings.tabMaxWidth.wide" },
+        { value: "medium", labelKey: "settings.tabMaxWidth.medium" },
+        { value: "narrow", labelKey: "settings.tabMaxWidth.narrow" },
       ],
     },
   },

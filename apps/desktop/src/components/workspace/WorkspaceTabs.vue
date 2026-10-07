@@ -61,9 +61,16 @@ import { describeShellError } from "@/i18n/errors";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { tabMenu } from "@/lib/menu/workspace";
 import { MIN_PANE_PX } from "@/lib/workspace/split";
+import { TAB_MAX_WIDTH_PX } from "@/types/app";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
-import { type TerminalTab, type WorkspaceTab, type InspectView, useTerminalsStore } from "@/stores/terminals";
+import {
+  type TerminalTab,
+  type WorkspaceTab,
+  type InspectView,
+  sessionOf,
+  useTerminalsStore,
+} from "@/stores/terminals";
 
 const { t } = useI18n();
 const preferences = usePreferencesStore();
@@ -150,12 +157,14 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
         status: tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch" ? null : tab.status,
         hasHandle: hasHandle(tab),
         index,
-        total: terminals.tabs.length,
+        total: drawnIds.value.length,
       },
       {
         close: () => void terminals.closeTab(tab.id),
         closeOthers: () => void terminals.closeOthers(tab.id),
-        closeToTheRight: () => void terminals.closeToTheRight(tab.id),
+        // The drawn order, because that is what "to the right" means to somebody looking at the bar:
+        // under a sort or a grouping the array order and the drawn one are not the same list.
+        closeToTheRight: () => void terminals.closeToTheRight(tab.id, drawnIds.value),
         reconnect: () => void terminals.reconnect(tab.id),
       },
     ),
@@ -252,9 +261,146 @@ const classic = computed(() => preferences.appLayout === "classic");
  *
  * Read here rather than left to the stylesheet, because wrapping is not only a look: the bar stops
  * being one row tall, and the panel underneath gives up the difference — which is the whole trade the
- * setting makes, and it has to be decided where the bar is drawn.
+ * setting makes, and it has to be decided where the bar is drawn. A bar down one side never wraps:
+ * its rows are all the width it has, and the tabs scroll down it by definition.
  */
-const wrapping = computed(() => preferences.tabLayout === "wrap");
+const wrapping = computed(() => preferences.tabLayout === "wrap" && !vertical.value);
+
+/** Whether the bar is a column rather than a row, which follows from the edge it is drawn against. */
+const vertical = computed(() => preferences.tabPlacement === "left" || preferences.tabPlacement === "right");
+
+/**
+ * Whether the bar is drawn after the panes rather than before them.
+ *
+ * The bar is the first thing in the markup in every case — it is the way through the workspace, and
+ * a keyboard reaches it first — and the two placements that put it at the far end say so with an
+ * order rather than by being written twice.
+ */
+const atEnd = computed(() => preferences.tabPlacement === "bottom" || preferences.tabPlacement === "right");
+
+/**
+ * The tabs in the order the bar draws them.
+ *
+ * The store's array is the manual order — what the tabs were opened in, until somebody drags one —
+ * and the two other orders are read off it rather than written into it: a sorted copy each time, so
+ * that going back to the manual order is the list that was always there. Names are compared in the
+ * interface's own language, because that is the language they are written in.
+ */
+const ordered = computed(() => {
+  const tabs = terminals.tabs;
+  if (preferences.tabSortMode === "created-asc") {
+    const opened = terminals.openedOrder;
+    return [...tabs].sort((left, right) => opened.indexOf(left.id) - opened.indexOf(right.id));
+  }
+  if (preferences.tabSortMode === "title-asc") {
+    return [...tabs].sort((left, right) => tabLabel(left).localeCompare(tabLabel(right), preferences.locale));
+  }
+  return tabs;
+});
+
+/** One line of the bar: a run's name, or a tab. */
+type StripEntry =
+  | { readonly kind: "group"; readonly id: string; readonly label: string }
+  | {
+      readonly kind: "tab";
+      readonly id: string;
+      readonly tab: WorkspaceTab;
+    };
+
+/**
+ * The bar as it is drawn: the tabs in their order, cut into runs by session when the grouping says so.
+ *
+ * The group a tab belongs to is the session it is about. The tabs that are about no host at all — the
+ * settings page and the batch panel — are drawn after every run rather than under a heading of their
+ * own: they belong to nobody's session, and a heading for them would be a heading for nothing.
+ */
+const strip = computed<StripEntry[]>(() => {
+  if (preferences.tabGroupMode !== "session") {
+    return ordered.value.map((tab) => ({ kind: "tab" as const, id: tab.id, tab }));
+  }
+  const entries: StripEntry[] = [];
+  const seen = new Set<string>();
+  for (const tab of ordered.value) {
+    const session = sessionOf(tab);
+    if (!session) {
+      continue;
+    }
+    if (!seen.has(session.id)) {
+      seen.add(session.id);
+      entries.push({ kind: "group", id: `group:${session.id}`, label: session.name });
+    }
+    entries.push({ kind: "tab", id: tab.id, tab });
+  }
+  for (const tab of ordered.value) {
+    if (!sessionOf(tab)) {
+      entries.push({ kind: "tab", id: tab.id, tab });
+    }
+  }
+  return entries;
+});
+
+/** The ids in the order they are drawn, which is what the bar's own menu counts to the right. */
+const drawnIds = computed(() => strip.value.flatMap((entry) => (entry.kind === "tab" ? [entry.id] : [])));
+
+/**
+ * How wide a horizontal tab may be drawn, or nothing where the name sets the width.
+ *
+ * The step is the setting and the pixels are what drawing it means, so the number is looked up here
+ * rather than stored in the settings file: somebody choosing "medium" is choosing a look, and a build
+ * that decided medium is a different number of pixels would be changing the drawing, not the choice.
+ */
+const maxTabWidth = computed(() => TAB_MAX_WIDTH_PX[preferences.tabMaxWidth]);
+
+/**
+ * Whether a tab can be dragged, which is only while the bar draws the manual order.
+ *
+ * Dragging under a sort would be a move into a list that is not the one on screen: the tab would land
+ * somewhere in the array and the bar would redraw it wherever the sort says, which is a gesture that
+ * appears to do nothing. So the handle is there only in the manual order — which is also the order a
+ * drag writes to.
+ */
+const draggable = computed(() => preferences.tabSortMode === "manual");
+
+/** The tab being dragged, and the one it is over, while a drag is in flight. */
+const dragging = ref<string | null>(null);
+const dragOver = ref<string | null>(null);
+
+function onDragStart(event: DragEvent, tab: WorkspaceTab): void {
+  if (!draggable.value) {
+    return;
+  }
+  dragging.value = tab.id;
+  event.dataTransfer?.setData("text/plain", tab.id);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+  }
+}
+
+function onDragOver(event: DragEvent, tab: WorkspaceTab): void {
+  if (!dragging.value || dragging.value === tab.id) {
+    return;
+  }
+  // A drop is only allowed where the drag over it said it would be, which is the whole of what the
+  // browser wants to know before it will let one happen.
+  event.preventDefault();
+  dragOver.value = tab.id;
+}
+
+function onDrop(event: DragEvent, tab: WorkspaceTab): void {
+  const moved = dragging.value;
+  dragging.value = null;
+  dragOver.value = null;
+  if (!moved || moved === tab.id) {
+    return;
+  }
+  event.preventDefault();
+  terminals.moveTab(moved, tab.id);
+}
+
+function onDragEnd(): void {
+  dragging.value = null;
+  dragOver.value = null;
+}
 
 /**
  * What a tab wears: the layout's shape and the tab's own state together.
@@ -268,6 +414,17 @@ const wrapping = computed(() => preferences.tabLayout === "wrap");
  */
 function tabClass(tab: WorkspaceTab): string {
   const active = tab.id === terminals.activeTabId;
+  if (vertical.value) {
+    // A column of names, in both chrome layouts: a box with a border inside a bar that is itself one
+    // row wide would be a box drawn twice, and what tells the tab on screen apart is the rail down its
+    // side and the surface under it.
+    return cn(
+      "flex w-full shrink-0 items-center gap-2 border-l-[3px] px-2 py-1.5",
+      active
+        ? "border-l-primary bg-accent text-foreground"
+        : "border-l-transparent text-muted-foreground hover:bg-accent/60",
+    );
+  }
   const state = active
     ? classic.value
       ? "border-b-foreground/60 bg-background text-foreground"
@@ -278,12 +435,28 @@ function tabClass(tab: WorkspaceTab): string {
   const shape = classic.value
     ? "h-8 border-r border-b-2 border-border px-3"
     : "rounded-md border border-border/60 px-2 py-1";
-  return cn("flex max-w-60 shrink-0 items-center gap-1", shape, state);
+  return cn("flex shrink-0 items-center gap-1", shape, state, dragging.value === tab.id && "opacity-50");
+}
+
+/** What the run a group of tabs belongs to is called, which is a name rather than a control. */
+function groupClass(): string {
+  return cn(
+    "flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground",
+    vertical.value ? "w-full px-2 pt-2 pb-0.5" : "px-1.5",
+  );
+}
+
+/** The size a tab is drawn at: the step's pixels across, or whatever the name asks for. */
+function tabStyle(): Record<string, string> | undefined {
+  if (vertical.value || maxTabWidth.value === null) {
+    return undefined;
+  }
+  return { maxWidth: `${maxTabWidth.value}px` };
 }
 </script>
 
 <template>
-  <section class="flex min-h-0 flex-1 flex-col">
+  <section :class="cn('flex min-h-0 flex-1', vertical ? 'flex-row' : 'flex-col')">
     <!--
       The strip of tabs is chrome, and so is the terminal's own strip below: a name on a tab is
       something to press rather than to copy, and a drag along it is somebody trying to scroll or
@@ -291,57 +464,90 @@ function tabClass(tab: WorkspaceTab): string {
     -->
     <div
       data-workspace-tabs
+      :data-tab-placement="preferences.tabPlacement"
       :class="
         cn(
-          // The bar itself. It is one row that scrolls sideways, or as many rows as the tabs need —
-          // and a bar that wraps has no fixed height and nothing to clip, because the rows it grew are
-          // the point, and the panel below is what gets shorter.
-          'flex shrink-0 border-b border-border bg-card/30 cursor-default select-none',
-          wrapping ? 'flex-wrap content-start overflow-visible' : 'items-stretch overflow-x-auto',
-          // The tabs themselves: boxes with air around them, or one run joined to the top edge. The
+          // The bar itself. Across the window it is one row that scrolls sideways, or as many rows as
+          // the tabs need — and a bar that wraps has no fixed height and nothing to clip, because the
+          // rows it grew are the point, and the panel below is what gets shorter. Down one side it is
+          // a column, which scrolls the other way and never wraps.
+          'flex shrink-0 bg-card/30 cursor-default select-none',
+          vertical
+            ? 'h-full w-60 flex-col overflow-y-auto py-1'
+            : 'items-stretch ' + (wrapping ? 'flex-wrap content-start overflow-visible' : 'overflow-x-auto'),
+          // The edge it is drawn against. A bar at the far end is drawn after the panes rather than
+          // before them, which is the same markup read in the other order.
+          vertical
+            ? preferences.tabPlacement === 'left'
+              ? 'order-1 border-r border-border'
+              : 'order-2 border-l border-border'
+            : preferences.tabPlacement === 'top'
+              ? 'order-1 border-b border-border'
+              : 'order-2 border-t border-border',
+          // The tabs themselves: boxes with air around them, or one run joined to the edge. The
           // heights are close on purpose — the room this layout saves is in the headers, not here.
-          classic ? 'gap-0 px-0' : 'gap-1.5 px-2 py-1.5',
+          vertical ? 'gap-0.5 px-1.5' : classic ? 'gap-0 px-0' : 'gap-1.5 px-2 py-1.5',
         )
       "
     >
-      <div
-        v-for="(tab, index) in terminals.tabs"
-        :key="tab.id"
-        :class="tabClass(tab)"
-        @contextmenu="openTabMenu($event, tab, index)"
-      >
-        <button
-          type="button"
-          class="flex min-w-0 items-center gap-2 py-1.5 text-xs"
-          @click="terminals.activate(tab.id)"
+      <template v-for="entry in strip" :key="entry.id">
+        <!--
+          A run of tabs that belong to one session, named once: the grouping is a heading rather than
+          an indent, because the tabs inside it are the same tabs and every one of them still has to
+          be readable and pressable.
+        -->
+        <div v-if="entry.kind === 'group'" data-tab-group :class="groupClass()">
+          <span class="truncate">{{ entry.label }}</span>
+        </div>
+
+        <div
+          v-else
+          :class="tabClass(entry.tab)"
+          :style="tabStyle()"
+          :draggable="draggable"
+          :data-tab="entry.tab.id"
+          :data-drag-over="dragOver === entry.tab.id ? 'true' : undefined"
+          @contextmenu="openTabMenu($event, entry.tab, drawnIds.indexOf(entry.tab.id))"
+          @dragstart="onDragStart($event, entry.tab)"
+          @dragover="onDragOver($event, entry.tab)"
+          @drop="onDrop($event, entry.tab)"
+          @dragend="onDragEnd"
         >
-          <span v-if="dotClass(tab)" class="size-1.5 shrink-0 rounded-full" :class="dotClass(tab)"></span>
-          <Terminal v-if="tab.kind === 'terminal'" :size="12" class="shrink-0" />
-          <Folder v-else-if="tab.kind === 'files'" :size="12" class="shrink-0" />
-          <Settings v-else-if="tab.kind === 'settings'" :size="12" class="shrink-0" />
-          <ListChecks v-else-if="tab.kind === 'batch'" :size="12" class="shrink-0" />
-          <Cpu v-else-if="tab.view === 'system'" :size="12" class="shrink-0" />
-          <List v-else-if="tab.view === 'processes'" :size="12" class="shrink-0" />
-          <Network v-else :size="12" class="shrink-0" />
-          <span class="truncate">{{ tabLabel(tab) }}</span>
-        </button>
-        <button
-          type="button"
-          class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="closeLabel(tab)"
-          :aria-label="closeLabel(tab)"
-          @click="terminals.closeTab(tab.id)"
-        >
-          <X :size="11" />
-        </button>
-      </div>
+          <button
+            type="button"
+            :class="cn('flex min-w-0 items-center gap-2 text-xs', vertical ? 'flex-1 py-1' : 'py-1.5')"
+            @click="terminals.activate(entry.tab.id)"
+          >
+            <span v-if="dotClass(entry.tab)" class="size-1.5 shrink-0 rounded-full" :class="dotClass(entry.tab)"></span>
+            <Terminal v-if="entry.tab.kind === 'terminal'" :size="12" class="shrink-0" />
+            <Folder v-else-if="entry.tab.kind === 'files'" :size="12" class="shrink-0" />
+            <Settings v-else-if="entry.tab.kind === 'settings'" :size="12" class="shrink-0" />
+            <ListChecks v-else-if="entry.tab.kind === 'batch'" :size="12" class="shrink-0" />
+            <Cpu v-else-if="entry.tab.view === 'system'" :size="12" class="shrink-0" />
+            <List v-else-if="entry.tab.view === 'processes'" :size="12" class="shrink-0" />
+            <Network v-else :size="12" class="shrink-0" />
+            <!-- The whole name on hover, which is what makes a width step a choice rather than a
+                 loss: a truncated tab is read by its first word and its title. -->
+            <span class="truncate" :title="tabLabel(entry.tab)">{{ tabLabel(entry.tab) }}</span>
+          </button>
+          <button
+            type="button"
+            class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="closeLabel(entry.tab)"
+            :aria-label="closeLabel(entry.tab)"
+            @click="terminals.closeTab(entry.tab.id)"
+          >
+            <X :size="11" />
+          </button>
+        </div>
+      </template>
     </div>
 
     <div
       v-for="tab in terminals.tabs"
       v-show="tab.id === terminals.activeTabId"
       :key="tab.id"
-      class="flex min-h-0 flex-1 flex-col"
+      :class="cn('flex min-h-0 flex-1 flex-col', atEnd ? 'order-1' : 'order-2')"
     >
       <template v-if="tab.kind === 'terminal'">
         <!--

@@ -166,6 +166,45 @@ export type TabLayout = "scroll" | "wrap";
 /** One row that scrolls, which is what this build has always drawn. */
 export const DEFAULT_TAB_LAYOUT: TabLayout = "scroll";
 
+/** Which edge of the window the tab bar is drawn against, from `sevenshell_types::TabPlacement`. */
+export type TabPlacement = "top" | "bottom" | "left" | "right";
+
+/** Across the top, which is where this build has always drawn it. */
+export const DEFAULT_TAB_PLACEMENT: TabPlacement = "top";
+
+/** What the tabs are grouped by, from `sevenshell_types::TabGroupMode`. */
+export type TabGroupMode = "none" | "session";
+
+/** One run of tabs, which is what this build has always drawn. */
+export const DEFAULT_TAB_GROUP_MODE: TabGroupMode = "none";
+
+/** The order the tabs are drawn in, from `sevenshell_types::TabSortMode`. */
+export type TabSortMode = "manual" | "created-asc" | "title-asc";
+
+/** The order they were opened in, which is also the one that can be dragged. */
+export const DEFAULT_TAB_SORT_MODE: TabSortMode = "manual";
+
+/** How wide a horizontal tab may be, from `sevenshell_types::TabMaxWidth`. */
+export type TabMaxWidth = "unlimited" | "wide" | "medium" | "narrow";
+
+/**
+ * The pixels each step of the tab width stands for, or null where the name sets the width.
+ *
+ * The steps are the setting and the pixels are what drawing them means, which is why the numbers are
+ * here rather than on the wire: somebody choosing "medium" is choosing a look, and a rebuild that
+ * decided medium is a different number of pixels would be a change to the drawing rather than to the
+ * choice. `wide` is what this build has always drawn.
+ */
+export const TAB_MAX_WIDTH_PX: Record<TabMaxWidth, number | null> = {
+  unlimited: null,
+  wide: 240,
+  medium: 200,
+  narrow: 160,
+};
+
+/** The step this build has always drawn at. */
+export const DEFAULT_TAB_MAX_WIDTH: TabMaxWidth = "wide";
+
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";
 
@@ -230,6 +269,14 @@ export interface AppSettings {
   readonly appLayout: AppLayout;
   /** What the tab bar does when the tabs no longer fit in one row. */
   readonly tabLayout: TabLayout;
+  /** Which edge the tab bar is drawn against. */
+  readonly tabPlacement: TabPlacement;
+  /** What the tabs are grouped by when they are drawn. */
+  readonly tabGroupMode: TabGroupMode;
+  /** The order the tabs are drawn in. */
+  readonly tabSortMode: TabSortMode;
+  /** How wide a horizontal tab may be drawn. */
+  readonly tabMaxWidth: TabMaxWidth;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** The stack the terminal draws in, which is a choice of its own. */
