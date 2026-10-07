@@ -313,16 +313,20 @@ impl HomeLayout {
 ///
 /// Two shapes rather than a set of switches, because the two are answers to one question — how much
 /// of the window should be the thing being looked at — and every difference between them falls out of
-/// that answer: tabs that sit apart as blocks against tabs joined into one bar, and headers with room
-/// around what they say against headers that give the row back to the panel.
+/// that answer: panels floating with the window showing between them against panels flush with a
+/// single line between them, tabs that sit apart as boxes against tabs joined into one bar, and
+/// headers with room around what they say against headers that give the row back to the panel.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AppLayout {
-    /// Tabs as blocks with space between them, and headers with room around what they say. What this
-    /// build has always drawn, so a fresh install gets it.
-    #[default]
+    /// Panels floating as cards with the window showing between them, tabs as boxes of their own, and
+    /// headers with room around what they say.
     Separated,
-    /// One continuous tab bar and tighter headers: the same information in fewer pixels.
+    /// Panels flush against each other with a single line between them, one continuous tab bar, and
+    /// tighter headers: the same information in fewer pixels. The panels have been drawn this way all
+    /// along — the floating ones are the newer half of the choice — so this is what a fresh install
+    /// gets, and what a settings file written before the choice existed reads as.
+    #[default]
     Classic,
 }
 
@@ -531,7 +535,7 @@ impl AppSettings {
             && self.ui_scale == ui_scale_default()
             && self.corner_style == CornerStyle::Large
             && self.home_layout == HomeLayout::Workspace
-            && self.app_layout == AppLayout::Separated
+            && self.app_layout == AppLayout::Classic
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
@@ -596,7 +600,7 @@ mod tests {
         }
         assert_eq!(
             AppLayout::default(),
-            AppLayout::Separated,
+            AppLayout::Classic,
             "the default has to be the shape this build already draws, or a file written before the \
              choice existed would open onto a different interface than the one that wrote it"
         );

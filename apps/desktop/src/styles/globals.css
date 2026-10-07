@@ -78,13 +78,30 @@
  *
  * Two attributes rather than a class on each element, because what the choice changes is spread over
  * the tab strip, the headers and the frames around panels — and because a layout is a property of the
- * window rather than of any one component. `separated` needs no block: `:root` above already is it,
- * which is also what a settings file written before this was a choice reads as.
+ * window rather than of any one component. `classic` needs no block of its own here beyond the
+ * header's number: it is the shape this build has always drawn, and therefore what a settings file
+ * written before the choice existed reads as.
  *
- * The tabs themselves are drawn in the component, where their active state already lives; here is the
- * half that is a number: a header in the classic layout keeps four pixels above and below instead of
- * eight, and twelve panel headers on screen are a row of the window given back to the terminal.
+ * The tabs themselves are drawn in the component, where their active state already lives, and this is
+ * the half that is left: the panels and the room their headers keep.
+ *
+ * The separated layout floats every panel as a card — the window's own colour showing through a
+ * four-pixel gutter — which is why the panels' own dividers are switched off here. A card drawn
+ * inside its neighbour's card is the same line drawn twice, and the line between two floating panels
+ * is the gutter rather than an edge.
  */
+[data-app-layout="separated"] [data-panel-gutter] {
+  gap: 0.25rem;
+  padding: 0.25rem;
+}
+
+[data-app-layout="separated"] [data-panel-frame] {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
 [data-app-layout="classic"] {
   --panel-header-y: 0.25rem;
 }

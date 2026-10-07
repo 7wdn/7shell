@@ -551,17 +551,17 @@ describe("the colour theme", () => {
     // The shape of the chrome is two answers to "how much of the window is the thing I am looking
     // at", and it reaches the stylesheet as an attribute for the same reason the palette does: what
     // it changes is spread over the strip, the headers and the frames rather than being one class.
-    expect(document.documentElement.dataset.appLayout).toBe("separated");
-
-    await store.setAppLayout("classic");
-
     expect(document.documentElement.dataset.appLayout).toBe("classic");
+
+    await store.setAppLayout("separated");
+
+    expect(document.documentElement.dataset.appLayout).toBe("separated");
     await store.commit();
-    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ appLayout: "classic" }));
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ appLayout: "separated" }));
 
     await store.reset(["appLayout"]);
     expect(store.appLayout).toBe(DEFAULT_APP_LAYOUT);
-    expect(document.documentElement.dataset.appLayout).toBe("separated");
+    expect(document.documentElement.dataset.appLayout).toBe("classic");
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {

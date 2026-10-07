@@ -156,11 +156,11 @@ describe("the half of the panel that is on screen", () => {
 /**
  * The two interface layouts, as the strip draws them.
  *
- * The separated one is what this build has always drawn: every tab a block with air around it. The
- * classic one joins them into a single run divided by lines, and tells the lit one apart with a line
- * along its top — there is no gap left to tell it apart by. What each tab *says* does not change, so
- * this is the whole of the difference the component is responsible for; the headers' half of the
- * choice is a token in the stylesheet.
+ * The classic one is what this build has always drawn: one run of tabs joined to the top edge, told
+ * apart by the line along the bottom of the one on screen. The separated one floats every tab as a box
+ * with air around it and marks the lit one by a brighter edge, because a gap has no bottom line to
+ * draw. What each tab *says* does not change, so this is the whole of the difference the component is
+ * responsible for; the panels' and the headers' halves are the stylesheet's.
  */
 describe("the two interface layouts", () => {
   /** The first tab in the strip, which is the drawn box rather than the button inside it. */
@@ -180,21 +180,23 @@ describe("the two interface layouts", () => {
     return found;
   }
 
-  it("draws tabs as blocks of their own when the chrome is separated", async () => {
-    usePreferencesStore().setAppLayout("separated");
-    await render(openPanel);
-
-    expect(firstTab().classList.contains("rounded-t-md"), "a block with a rounded top").toBe(true);
-    expect(strip().classList.contains("gap-1"), "and air between the blocks").toBe(true);
-  });
-
-  it("draws one run of tabs when the chrome is classic", async () => {
+  it("draws one run of tabs when the chrome is classic, which is the default", async () => {
     usePreferencesStore().setAppLayout("classic");
     await render(openPanel);
 
-    expect(firstTab().className, "no block, no rounding").not.toContain("rounded");
-    expect(firstTab().classList.contains("border-t-primary"), "the lit tab is a line along its top").toBe(true);
+    expect(firstTab().className, "no box, no rounding").not.toContain("rounded");
+    expect(firstTab().classList.contains("border-b-foreground/60"), "the lit tab is a line along its bottom").toBe(
+      true,
+    );
     expect(strip().classList.contains("gap-0"), "the tabs are edge to edge").toBe(true);
+  });
+
+  it("draws every tab as a box of its own when the chrome is separated", async () => {
+    usePreferencesStore().setAppLayout("separated");
+    await render(openPanel);
+
+    expect(firstTab().classList.contains("rounded-md"), "a box with rounded corners").toBe(true);
+    expect(strip().classList.contains("gap-1.5"), "and air around it").toBe(true);
   });
 });
 

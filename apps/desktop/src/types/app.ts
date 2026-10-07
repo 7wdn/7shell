@@ -153,7 +153,7 @@ export const DEFAULT_HOME_LAYOUT: HomeLayout = "workspace";
 export type AppLayout = "separated" | "classic";
 
 /** The shape a fresh install gets: the one this build has always drawn. */
-export const DEFAULT_APP_LAYOUT: AppLayout = "separated";
+export const DEFAULT_APP_LAYOUT: AppLayout = "classic";
 
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";

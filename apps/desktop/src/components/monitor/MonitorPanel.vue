@@ -196,6 +196,7 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
     `docs/ui-conventions.md` is where that rule and the rest of them are written down.
   -->
   <aside
+    data-panel-frame
     class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card/20 cursor-default select-none"
     :aria-label="t('monitor.title')"
   >

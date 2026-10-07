@@ -953,33 +953,45 @@ test("the interface layout redraws the chrome, and the file hears about it", asy
     const tab = page.locator("[data-workspace-tabs] > div").first();
     const panel = page.getByRole("complementary", { name: "Host monitor" });
 
-    // The corner is read as a number rather than as a length: how round a block is depends on the
+    // The corner is read as a number rather than as a length: how round a box is depends on the
     // corner style as well, and this case is about whether there is rounding at all.
     const radius = async (): Promise<number> =>
       tab.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
 
-    await expect(settings.getByRole("radio", { name: /^Modern separated/ })).toBeChecked();
-    expect(await radius(), "a tab drawn as a block with a rounded top").toBeGreaterThan(0);
-    await expect(panel.locator("header").first()).toHaveCSS("padding-top", "8px");
-
-    await settings.getByRole("radio", { name: /^Classic compact/ }).click();
-    await applySettings(page);
-
-    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("classic");
-    await expect.poll(radius, { message: "a tab with no rounding, in a bar with no gaps" }).toBe(0);
+    // Classic is the shape this build has always drawn: square, flush, panels divided by single lines.
+    await expect(settings.getByRole("radio", { name: /^Classic compact/ })).toBeChecked();
+    expect(await radius(), "a tab with no rounding, in a bar with no gaps").toBe(0);
     await expect(panel.locator("header").first(), "and a header that gave the row back").toHaveCSS(
       "padding-top",
       "4px",
     );
+    await expect(panel, "panels flush against each other").toHaveCSS("border-top-left-radius", "0px");
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-layout-classic.png"), fullPage: false });
 
-    // Put back, so that the rest of the run meets the window it expects: the shape is a property of
-    // the whole window, and every case after this one draws its own chrome in it.
     await settings.getByRole("radio", { name: /^Modern separated/ }).click();
     await applySettings(page);
+
     await expect.poll(async () => (await writtenSettings()).appLayout).toBe("separated");
+    expect(await radius(), "the tab is a box of its own").toBeGreaterThan(0);
+    await expect(panel.locator("header").first(), "and a header with room around its title").toHaveCSS(
+      "padding-top",
+      "8px",
+    );
+    await expect
+      .poll(async () => panel.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius)), {
+        message: "and every panel a floating card",
+      })
+      .toBeGreaterThan(0);
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-layout-separated.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the window it expects: the shape is a property of
+    // the whole window, and every case after this one draws its own chrome in it.
+    await settings.getByRole("radio", { name: /^Classic compact/ }).click();
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("classic");
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();

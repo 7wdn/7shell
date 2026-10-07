@@ -794,6 +794,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
 
 <template>
   <aside
+    data-panel-frame
     class="relative flex shrink-0 flex-col border-r border-border bg-card/30"
     :style="{ width: `${preferences.resolvedSidebarWidth}px` }"
   >

@@ -334,14 +334,20 @@ onBeforeUnmount(() => {
 
     <UnlockScreen v-if="!vault.unlocked" />
 
-    <div v-else class="relative flex min-h-0 flex-1">
+    <!--
+      The three panels of the working window — the library, the workspace and the monitor — and the
+      gutter between them. Which shape that gutter takes is the interface layout's business and is
+      drawn in `globals.css` from the document's attribute: it is decoration, and a component that
+      had to ask which one is on would be the fourth place the same answer is written down.
+    -->
+    <div v-else data-panel-gutter class="relative flex min-h-0 flex-1">
       <!--
         Put away rather than unmounted, and the state is the settings': somebody who works with the
         list out of the way is somebody who wants it out of the way the next time the window opens,
         and the way back lives in the title bar where the rest of the window's own controls are.
       -->
       <AppSidebar v-if="preferences.sidebarOpen" @collapse="preferences.setSidebarOpen(false)" />
-      <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <main data-panel-frame class="flex min-w-0 flex-1 flex-col overflow-hidden">
         <WorkspaceTabs v-if="terminals.tabs.length > 0" />
         <div v-else class="min-h-0 flex-1 overflow-auto">
           <HomeView />
