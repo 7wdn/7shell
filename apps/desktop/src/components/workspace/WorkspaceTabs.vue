@@ -240,7 +240,15 @@ function dotClass(tab: WorkspaceTab): string | null {
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col">
-    <div class="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-border bg-card/30 px-2 pt-1.5">
+    <!--
+      The strip of tabs is chrome, and so is the terminal's own strip below: a name on a tab is
+      something to press rather than to copy, and a drag along it is somebody trying to scroll or
+      re-order. `docs/ui-conventions.md` says which surfaces are text and which are not.
+    -->
+    <div
+      data-workspace-tabs
+      class="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-border bg-card/30 px-2 pt-1.5 cursor-default select-none"
+    >
       <div
         v-for="(tab, index) in terminals.tabs"
         :key="tab.id"
@@ -322,7 +330,10 @@ function dotClass(tab: WorkspaceTab): string | null {
           panel is open — it is where the toggle that closes it lives — and it sits above the
           divider rather than below it, because what is under the line is the panel and nothing else.
         -->
-        <footer class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1">
+        <footer
+          data-terminal-strip
+          class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1 cursor-default select-none"
+        >
           <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
             {{ tab.session.user }}@{{ tab.session.host }}:{{ tab.session.port }}
           </span>

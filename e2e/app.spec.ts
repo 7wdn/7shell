@@ -128,6 +128,10 @@ test("a vault can be created and the shell opens", async () => {
     await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible();
     await expect(page.getByLabel("Search sessions")).toBeVisible();
 
+    // A control is not text, and that is said once for every button in the base layer rather than on
+    // each of them — so what is checked here is that the rule reaches a real one.
+    await expect(page.getByRole("button", { name: "Import / Export" })).toHaveCSS("user-select", "none");
+
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "shell.png"), fullPage: false });
   } finally {
@@ -271,6 +275,9 @@ test("a saved session offers its own menu on a right-click", async () => {
     await row.click({ button: "right" });
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
+    // A menu is chrome: its rows are verbs, and a drag across one is somebody leaving in a hurry.
+    // The class is in the markup; the computed style is what the browser actually does with it.
+    await expect(menu).toHaveCSS("user-select", "none");
     // The row of its own rather than a submenu, because this library has no group to move into yet:
     // the entry that makes one is drawn where the list of destinations would have been.
     await expect(menu.getByRole("menuitem")).toHaveText([
@@ -490,6 +497,12 @@ test("a setting can be found by name, and a category can be put back to its defa
   try {
     await settingsButton(page).click();
     const settings = page.getByRole("region", { name: "Settings" });
+
+    // The settings page is a tab, so the strip of tabs is on screen — and it is chrome rather than a
+    // document: a drag along it is somebody scrolling or reaching for a tab. A class says nothing
+    // about how a browser treats the text inside it, so the computed style is what is checked here;
+    // the strip is drawn only while a tab is open, which is why this is the case that carries it.
+    await expect(page.locator("[data-workspace-tabs]")).toHaveCSS("user-select", "none");
 
     // The page as it opens: the first category, which is the one that is nearly all dropdowns —
     // a category with switches on it is the second shot below.
@@ -997,6 +1010,27 @@ test("the panel's tables draw a real host, and mark the row under the pointer", 
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "monitor-tables.png"), fullPage: false });
+
+    // The line under the terminal — the session's address and the way into the file panel — is
+    // chrome too, and this is the only case that has a terminal open to draw it. A drag along it is
+    // somebody reaching for the panel's toggle, not somebody reading the address, which is on the
+    // panel as well.
+    await expect(page.locator("[data-terminal-strip]")).toHaveCSS("user-select", "none");
+
+    // And the same for the strip naming the page, which was the other half of what a drag used to
+    // take: the address is in the tab and on the panel, and the chip beside it is a status. Found by
+    // its title rather than as the first header inside the workspace — the file panel has one too,
+    // and it is a different surface.
+    await panel.getByRole("button", { name: "System info" }).click();
+    await page
+      .getByRole("table", { name: "File systems" })
+      .locator("tbody tr")
+      .first()
+      .waitFor({ state: "visible", timeout: 30_000 });
+    await expect(page.locator("main header").filter({ hasText: "System info" }).first()).toHaveCSS(
+      "user-select",
+      "none",
+    );
   } finally {
     await close();
   }

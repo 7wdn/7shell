@@ -248,6 +248,29 @@ describe("the socket table", () => {
   });
 
   /**
+   * The strip naming the connections is chrome; the tables under it are not.
+   *
+   * The strip is the heading of the table below it — the address and the process are on the row that
+   * opened it, which is where they are taken from — while both tables hold readings, which is what
+   * the page exists to let somebody copy. The file-level guard cannot tell those apart, because this
+   * page owns both; `docs/ui-conventions.md` is where the rule they follow is written down.
+   */
+  it("refuses to be selected in the strip and not in the tables", async () => {
+    await render([socket({ port: 22 })]);
+
+    const listener = [...host.querySelectorAll<HTMLTableRowElement>("tbody tr")][0]!;
+    listener.click();
+    await nextTick();
+
+    const strip = host.querySelector("section > div");
+    expect(strip?.classList.contains("select-none"), "the strip naming the connections is chrome").toBe(true);
+
+    for (const table of host.querySelectorAll("table")) {
+      expect(table.classList.contains("select-none"), "a table of readings is not").toBe(false);
+    }
+  });
+
+  /**
    * The heading is the control, and it is the same control on both pages: pressing a column orders
    * by it, pressing the one in use turns the order around.
    */

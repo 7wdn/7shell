@@ -189,6 +189,11 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
     selectable content, and both are wrong here, where nothing is taken by hand: the host is copied
     by the button in the header, a process or a file system by its own menu. The failure block below
     is the one exception, because a code somebody has to quote is worth selecting.
+
+    The system card's own readings are the one thing on the panel that is neither selectable nor
+    copyable by hand, and that is deliberate: every one of them is on the system page, which is the
+    place a value is read and taken from, and the card is a way in rather than a place to read.
+    `docs/ui-conventions.md` is where that rule and the rest of them are written down.
   -->
   <aside
     class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card/20 cursor-default select-none"

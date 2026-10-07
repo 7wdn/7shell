@@ -316,3 +316,34 @@ describe("a row that is a switch", () => {
     expect(items()[2]?.getAttribute("aria-checked")).toBe("false");
   });
 });
+
+/**
+ * A menu is chrome rather than a document.
+ *
+ * Its rows are verbs rather than readings, and a drag across one is somebody leaving in a hurry. The
+ * classes are what stop the browser treating the list as text — both levels, since the list beside a
+ * row is the same kind of thing as the one it came from. `docs/ui-conventions.md` states the rule.
+ */
+describe("a menu as text", () => {
+  it("refuses to be selected, at both levels", async () => {
+    await open(withSubmenu(() => {}, false));
+    press("ArrowDown");
+    press("ArrowDown");
+    press("ArrowRight");
+    await nextTick();
+    await nextTick();
+
+    const levels = [
+      { what: "the menu", box: menu() },
+      { what: "the list beside a row", box: submenu() },
+    ];
+
+    for (const { what, box } of levels) {
+      if (!box) {
+        throw new Error(`${what} is not drawn`);
+      }
+      expect(box.classList.contains("select-none"), `${what} is not selectable`).toBe(true);
+      expect(box.classList.contains("cursor-default"), `${what} shows no I-beam`).toBe(true);
+    }
+  });
+});

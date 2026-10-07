@@ -134,7 +134,9 @@ function diskUsed(size: number, available: number): { used: string; percent: str
         </tbody>
       </table>
 
-      <p class="mt-2 mb-1 text-[11px] text-muted-foreground">{{ t("inspect.cpu.shareHint") }}</p>
+      <p class="mt-2 mb-1 text-[11px] text-muted-foreground cursor-default select-none">
+        {{ t("inspect.cpu.shareHint") }}
+      </p>
       <table :class="TABLE.page.table" :aria-label="t('inspect.cpu.share')">
         <thead :class="TABLE.page.head">
           <tr :class="TABLE.page.headRow">

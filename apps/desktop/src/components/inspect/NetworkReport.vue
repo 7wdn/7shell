@@ -225,7 +225,12 @@ watch(rows, (current) => {
       a table that appeared under a row without saying which row would be a table nobody trusts.
     -->
     <section v-if="picked" class="flex min-h-0 flex-1 flex-col border-t border-border pt-1">
-      <div class="flex shrink-0 items-center gap-2 pb-1">
+      <!--
+        The strip naming what the table below is about: a chip, the process holding it, and the way
+        out. Chrome rather than the reading — the address and the process are on the row above, which
+        is where they are taken from.
+      -->
+      <div class="flex shrink-0 items-center gap-2 pb-1 cursor-default select-none">
         <span class="rounded-t-md border border-b-0 border-border bg-card/40 px-2 py-1 font-mono text-[11px]">
           {{ picked.address }}:{{ picked.port }}
         </span>

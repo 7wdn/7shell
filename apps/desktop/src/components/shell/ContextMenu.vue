@@ -49,7 +49,11 @@ const open = ref<{ index: number; entry: MenuSubmenu } | null>(null);
 let restoreTo: HTMLElement | null = null;
 
 const label = computed(() => t(title.value.key, title.value.params ?? {}));
-const boxClass = "fixed z-[70] max-w-72 min-w-44 rounded-lg border border-border bg-card py-1 shadow-xl outline-none";
+// A menu is chrome rather than a document: a drag across it is somebody leaving in a hurry, and a
+// selection smeared over a list of verbs is noise. `select-none` on the box is inherited by both
+// levels — the rows below are its children. See `docs/ui-conventions.md`.
+const boxClass =
+  "fixed z-[70] max-w-72 min-w-44 rounded-lg border border-border bg-card py-1 shadow-xl outline-none cursor-default select-none";
 const rootActiveId = computed(() => rowId(ROOT, entries.value[active.value]));
 const submenuActiveId = computed(() => rowId(SUB, open.value?.entry.entries[subActive.value]));
 

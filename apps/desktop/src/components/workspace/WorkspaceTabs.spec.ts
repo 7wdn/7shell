@@ -141,3 +141,33 @@ describe("the half of the panel that is on screen", () => {
     expect(filesHalfDrawn()).toBe(false);
   });
 });
+
+/**
+ * The strips are chrome rather than text.
+ *
+ * A tab name is something to press, and the line under the terminal says where the session is and
+ * holds the way into the file panel. Left to itself the browser treats both as a document: a drag
+ * along the strip smears a selection over the names, and the pointer turns into an I-beam over them.
+ * `docs/ui-conventions.md` states the rule for the whole interface; this is the case that would
+ * notice it going missing from the elements this file draws, which the file-level guard cannot see —
+ * both strips live in one component, and either could lose the class alone.
+ */
+describe("the workspace's own strips", () => {
+  it("keeps the tabs and the terminal's strip from being read as text", async () => {
+    await render(openPanel);
+
+    const strips = [
+      { what: "the tab strip", selector: "[data-workspace-tabs]" },
+      { what: "the terminal's strip", selector: "[data-terminal-strip]" },
+    ] as const;
+
+    for (const { what, selector } of strips) {
+      const drawn = host.querySelector(selector);
+      if (!drawn) {
+        throw new Error(`${what} is not drawn`);
+      }
+      expect(drawn.classList.contains("select-none"), `${what} is not selectable`).toBe(true);
+      expect(drawn.classList.contains("cursor-default"), `${what} shows no I-beam`).toBe(true);
+    }
+  });
+});

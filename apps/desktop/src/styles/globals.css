@@ -159,6 +159,28 @@
   input[type="search"]::-webkit-search-cancel-button {
     display: none;
   }
+
+  /*
+   * What a control is made of is not text.
+   *
+   * A button, a heading, a column heading and a field's name are all things the interface *says*;
+   * the reading beside them is what somebody copies. Left alone the browser treats every one of them
+   * as a document — a drag that starts on a button takes its label with it, and the icon inside
+   * comes along as a highlighted box — so the shape of the control says this once, here, rather than
+   * a class on each of the several hundred buttons.
+   *
+   * The readings are untouched: cells, values, fields and the terminal are all still text. That half
+   * of the rule is what `scripts/tests/selection.test.mjs` guards, and both halves are written out in
+   * `docs/ui-conventions.md`.
+   */
+  button,
+  th,
+  dt,
+  h1,
+  h2,
+  h3 {
+    user-select: none;
+  }
 }
 
 /*

@@ -76,7 +76,15 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-    <header class="flex shrink-0 flex-wrap items-baseline gap-2 border-b border-border px-4 py-2">
+    <!--
+      The page's own header: what this page is, whose host it is about, and whether it is live. It is
+      chrome — the address is on the tab and on the monitor panel, the name is in the tab, and the
+      chip is a status — so a drag along it takes nothing. `docs/ui-conventions.md` states the rule
+      for the whole interface; this is the strip it was missing from.
+    -->
+    <header
+      class="flex shrink-0 flex-wrap items-baseline gap-2 border-b border-border px-4 py-2 cursor-default select-none"
+    >
       <h2 class="text-sm font-medium">{{ title }}</h2>
       <span class="font-mono text-xs text-muted-foreground">{{ props.session.name }}</span>
       <span class="font-mono text-xs text-muted-foreground">
