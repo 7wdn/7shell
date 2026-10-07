@@ -505,7 +505,7 @@ function dotClass(tab: WorkspaceTab): string | null {
         of its own and should do that only while somebody is looking at it.
       -->
       <template v-else-if="tab.kind === 'inspect'">
-        <HostPage :session="tab.session" :view="tab.view" :active="tab.id === terminals.activeTabId">
+        <HostPage :session="tab.session" :active="tab.id === terminals.activeTabId">
           <template #default="{ live }">
             <SystemReport v-if="tab.view === 'system'" :live="live" />
             <ProcessTable v-else-if="tab.view === 'processes'" :active="tab.id === terminals.activeTabId" />

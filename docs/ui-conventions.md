@@ -45,7 +45,6 @@ somebody paste this somewhere?
 | Menus | no | a list of verbs |
 | Dividers, sidebar handle | no | dragging means resizing; the whole body refuses selection while one is dragged |
 | Buttons, headings, column headings, field names | no | a control says what it does; the reading beside it is the text |
-| The strip naming a host page (page, session, "live") | no | the address is on the tab and on the panel; the chip is a status |
 | The strip naming the connections of a port | no | it is the heading of the table under it; the row above holds the same values |
 | Monitor panel | no | it is an instrument; the address has its own button and the rows have menus. The failure block is the one exception |
 | Sidebar search, rename fields, command bar, file editor | yes | text being typed |
@@ -55,9 +54,9 @@ somebody paste this somewhere?
 | Error banners and toasts | yes | an error is quoted somewhere |
 
 Measured in a real window rather than asserted from the markup: a selection over the monitor panel,
-the tab strip, the terminal's strip, a host page's header, a table's headings or the connections strip
-contains **nothing**; the same selection over the body of any of those tables contains the readings
-and only the readings.
+the tab strip, the terminal's strip, a table's headings or the connections strip contains
+**nothing**; the same selection over the body of any of those tables contains the readings and only
+the readings.
 
 `scripts/tests/selection.test.mjs` keeps both halves honest — every shell component still refuses
 selection, and the surfaces that hold readings never do — and the elements a component draws for

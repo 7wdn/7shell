@@ -1017,20 +1017,13 @@ test("the panel's tables draw a real host, and mark the row under the pointer", 
     // panel as well.
     await expect(page.locator("[data-terminal-strip]")).toHaveCSS("user-select", "none");
 
-    // And the same for the strip naming the page, which was the other half of what a drag used to
-    // take: the address is in the tab and on the panel, and the chip beside it is a status. Found by
-    // its title rather than as the first header inside the workspace — the file panel has one too,
-    // and it is a different surface.
+    // And the card is the way in to the page: what it opens is the page itself, which no longer
+    // says so in a strip of its own — the tab carries the page's name and the host. Scoped to the
+    // workspace, because the panel draws a file-system table of its own under the same name.
     await panel.getByRole("button", { name: "System info" }).click();
-    await page
-      .getByRole("table", { name: "File systems" })
-      .locator("tbody tr")
-      .first()
-      .waitFor({ state: "visible", timeout: 30_000 });
-    await expect(page.locator("main header").filter({ hasText: "System info" }).first()).toHaveCSS(
-      "user-select",
-      "none",
-    );
+    await expect(page.getByRole("main").getByRole("table", { name: "File systems" })).toBeVisible({
+      timeout: 30_000,
+    });
   } finally {
     await close();
   }

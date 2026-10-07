@@ -1,28 +1,30 @@
 <script setup lang="ts">
 /**
- * The frame every host page shares: which machine it is about, whether it is being read, and why
- * not when it is not.
+ * The frame every host page shares: whether it is being read, and why not when it is not.
  *
- * The three pages differ only in what they list, so the parts that are easy to get subtly different
- * — the title, the two states a page can be in, the sentence that says which of them it is — live
- * here once. What a page provides is a body that draws dashes where its own section is missing.
+ * Which machine a page is about is the tab's business rather than something the page writes across
+ * its own top: the tab carries the page and the host, and the monitor panel carries the address and
+ * the state of the connection. A strip repeating them was removed for saying the same thing twice —
+ * and the word it ended with, "live", for saying nothing at all: a page reads while it is on screen,
+ * which is what its numbers arriving already shows.
+ *
+ * What is left is what a page cannot draw for itself: the two states it can be in, and the sentence
+ * that says which of them it is.
  *
  * A page reads through whatever terminal its session has open; it holds no connection of its own.
  * That is why it can be left open across a reconnect, and why "not connected" here is a state
  * rather than a failure: a page whose host is not connected is a page waiting, not a page broken.
  */
-import { CircleAlert, LoaderCircle } from "@lucide/vue";
+import { CircleAlert } from "@lucide/vue";
 import { computed, onBeforeUnmount, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { describeShellError } from "@/i18n/errors";
 import { useMonitorStore } from "@/stores/monitor";
-import type { InspectView } from "@/stores/terminals";
 import type { Session } from "@/types/session";
 
 const props = defineProps<{
   session: Session;
-  view: InspectView;
   /** Whether this page is the tab on screen. A hidden page samples nothing and shows nothing. */
   active: boolean;
 }>();
@@ -48,17 +50,6 @@ const watching = computed(() => props.active && monitor.target?.sessionId === pr
 /** Watching, and with something to show that is about this host: what a body draws. */
 const live = computed(() => props.active && monitor.sampleSessionId === props.session.id);
 
-const title = computed(() => {
-  switch (props.view) {
-    case "system":
-      return t("inspect.system.title");
-    case "processes":
-      return t("inspect.processes.title");
-    default:
-      return t("inspect.network.title");
-  }
-});
-
 const failure = computed(() => (monitor.failure ? describeShellError(translate, monitor.failure) : null));
 
 // The page is what asks for samples while it is the tab on screen; the panel asks for its own.
@@ -76,27 +67,6 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
-    <!--
-      The page's own header: what this page is, whose host it is about, and whether it is live. It is
-      chrome — the address is on the tab and on the monitor panel, the name is in the tab, and the
-      chip is a status — so a drag along it takes nothing. `docs/ui-conventions.md` states the rule
-      for the whole interface; this is the strip it was missing from.
-    -->
-    <header
-      class="flex shrink-0 flex-wrap items-baseline gap-2 border-b border-border px-4 py-2 cursor-default select-none"
-    >
-      <h2 class="text-sm font-medium">{{ title }}</h2>
-      <span class="font-mono text-xs text-muted-foreground">{{ props.session.name }}</span>
-      <span class="font-mono text-xs text-muted-foreground">
-        {{ props.session.user }}@{{ props.session.host }}:{{ props.session.port }}
-      </span>
-      <span class="flex-1"></span>
-      <span v-if="watching" class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <LoaderCircle v-if="monitor.sampling" :size="11" class="animate-spin" />
-        {{ t("inspect.reading") }}
-      </span>
-    </header>
-
     <!--
       A flex column rather than a scrolling box: a page may want to split itself — the network
       page keeps its sockets and their connections apart — so the frame gives it the room and

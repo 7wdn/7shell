@@ -39,7 +39,6 @@ const REFUSING = [
   { file: "files/FileBrowser.vue", what: "the directory listing" },
   { file: "files/DirectoryTree.vue", what: "the tree beside the listing" },
   { file: "monitor/MonitorPanel.vue", what: "the monitor panel" },
-  { file: "inspect/HostPage.vue", what: "the frame a host page is drawn in, its header included" },
 ];
 
 /** The surfaces that hold readings, which must stay selectable. */
