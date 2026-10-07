@@ -75,6 +75,23 @@
     "uiScale": {
       "percent": "{percent}%"
     },
+    "font": {
+      "systemDefault": "系统默认",
+      "appDefault": "应用默认",
+      "search": "搜索字体…",
+      "loading": "正在读取本机字体…",
+      "empty": "没有这个名称的字体",
+      "use": "使用“{font}”",
+      "presets": {
+        "firaCode": "Fira Code",
+        "jetbrainsMono": "JetBrains Mono",
+        "cascadiaCode": "Cascadia Code",
+        "sourceCodePro": "Source Code Pro",
+        "sfMono": "SF Mono / Menlo",
+        "consolas": "Consolas",
+        "systemMonospace": "系统等宽"
+      }
+    },
     "rows": {
       "themeMode": {
         "title": "界面主题",
@@ -100,6 +117,16 @@
         "title": "界面缩放",
         "summary": "在同一个窗口里，把整个界面画得更大。",
         "help": "窗口大小不变，里面的东西一起变大：文字、边框，以及终端自己的字符网格。它是给密度高到看不清默认字号的屏幕准备的——系统自带的缩放管不到一个已经打开的窗口。"
+      },
+      "uiFont": {
+        "title": "界面字体",
+        "summary": "窗口其余部分所用的字体。",
+        "help": "存下来的是整条字体栈，而不只是一个名字：你选的那款没装时（换了一台机器、字体改了名），界面会接着用它后面的字体。终端字体是另一项，在它旁边。"
+      },
+      "terminalFont": {
+        "title": "终端字体",
+        "summary": "终端里的文字所用的字体。",
+        "help": "终端读的是等宽字体，所以列表先给出大家常带着的那几款，再列这台机器自己的。选中立刻生效——已经打开的终端会跟着换，因为终端的字符网格有多宽，取决于它用什么字体画。"
       },
       "sessionLayout": {
         "title": "打开会话",

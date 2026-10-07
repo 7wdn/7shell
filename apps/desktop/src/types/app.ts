@@ -99,6 +99,45 @@ export const UI_SCALE_PERCENTS: readonly number[] = [75, 90, 100, 110, 125, 150,
 /** The size the interface is drawn at until somebody changes it, from `ui_scale_default()`. */
 export const DEFAULT_UI_SCALE = 100;
 
+/**
+ * What the interface draws its text in until somebody chooses a font.
+ *
+ * The same stack the stylesheet declares for `--font-sans`, and written out again here because the
+ * setting has to be able to *show* what "the default" is: a picker whose first entry is a name it
+ * cannot print is a picker with an empty row in it.
+ */
+export const DEFAULT_UI_FONT = `Inter, "Segoe UI", system-ui, sans-serif`;
+
+/** The same for the terminal, matching the stylesheet's `--font-mono`. */
+export const DEFAULT_TERMINAL_FONT = `"JetBrains Mono", Consolas, ui-monospace, monospace`;
+
+/**
+ * The interface as the operating system would draw it, which is what somebody who wants this window
+ * to look like the rest of their desktop is asking for.
+ */
+export const SYSTEM_UI_FONT = `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+
+/**
+ * The families offered by name, before the machine's own list.
+ *
+ * Each is a stack rather than a name, and each carries what follows the face it names: a font that
+ * is not installed is common enough that the fallbacks are part of the choice rather than a detail
+ * of how it is applied. The last one is the keyword itself — "whatever this system calls fixed
+ * width" — which is a real answer for somebody who does not want to pick a face at all.
+ */
+export const FONT_PRESETS: readonly { readonly value: string; readonly labelKey: string }[] = [
+  {
+    value: "'Fira Code', 'Cascadia Code', 'Cascadia Mono', 'JetBrains Mono', monospace",
+    labelKey: "settings.font.presets.firaCode",
+  },
+  { value: "'JetBrains Mono', 'Fira Code', monospace", labelKey: "settings.font.presets.jetbrainsMono" },
+  { value: "'Cascadia Code', 'Cascadia Mono', monospace", labelKey: "settings.font.presets.cascadiaCode" },
+  { value: "'Source Code Pro', monospace", labelKey: "settings.font.presets.sourceCodePro" },
+  { value: "'SF Mono', 'Menlo', monospace", labelKey: "settings.font.presets.sfMono" },
+  { value: "'Consolas', 'Courier New', monospace", labelKey: "settings.font.presets.consolas" },
+  { value: "monospace", labelKey: "settings.font.presets.systemMonospace" },
+];
+
 /** How the file browser is laid out, from `sevenshell_types::FilesLayout`. */
 export type FilesLayout = "tree" | "list";
 
@@ -136,6 +175,10 @@ export interface AppSettings {
    * One of `UI_SCALE_PERCENTS`; the Rust side reads anything else as the default.
    */
   readonly uiScale: number;
+  /** The stack the interface draws its text in. Absent means the one this build ships with. */
+  readonly uiFont?: string;
+  /** The stack the terminal draws in, which is a choice of its own. */
+  readonly terminalFont?: string;
   /** What a `custom` palette is drawn from. Absent means nobody has picked any yet. */
   readonly customColors?: CustomColors;
   /** The same for the dark theme, which has a set of its own. */

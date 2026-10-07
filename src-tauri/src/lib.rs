@@ -60,6 +60,7 @@ pub fn run() {
             commands::app::app_info,
             commands::app::app_ready,
             commands::app::window_quit_guard,
+            commands::fonts::system_fonts_list,
             commands::settings::settings_get,
             commands::settings::settings_set,
             commands::vault::vault_state,

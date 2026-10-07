@@ -20,6 +20,11 @@ base64 = "0.23"
 # Reading the file list off the clipboard is a Windows API rather than a portable one; the
 # alternative is telling Windows users that pasting files is not supported.
 clipboard-win = { version = "5.4", features = ["std"] }
+# The families a machine has, for the interface font and the terminal font. A system source rather
+# than a reader of the font files: the names have to come back spelled the way this machine spells
+# them, which on a Chinese installation means 微软雅黑 rather than Microsoft YaHei — a name table
+# carries both and the choice between them is the platform's.
+font-kit = "0.14"
 argon2 = "0.6"
 chacha20poly1305 = "0.11"
 getrandom = "0.3"

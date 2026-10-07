@@ -75,6 +75,23 @@
     "uiScale": {
       "percent": "{percent}%"
     },
+    "font": {
+      "systemDefault": "System default",
+      "appDefault": "App default",
+      "search": "Search fonts…",
+      "loading": "Reading this machine's fonts…",
+      "empty": "No font by that name",
+      "use": "Use “{font}”",
+      "presets": {
+        "firaCode": "Fira Code",
+        "jetbrainsMono": "JetBrains Mono",
+        "cascadiaCode": "Cascadia Code",
+        "sourceCodePro": "Source Code Pro",
+        "sfMono": "SF Mono / Menlo",
+        "consolas": "Consolas",
+        "systemMonospace": "System monospace"
+      }
+    },
     "rows": {
       "themeMode": {
         "title": "Interface theme",
@@ -100,6 +117,16 @@
         "title": "Interface scale",
         "summary": "Draws the whole interface larger, inside the same window.",
         "help": "The window keeps its size and everything in it grows: text, borders, and the terminal's own grid of characters. It is meant for a display dense enough to make the default size hard to read, where the operating system's own scaling does not reach a window that is already open."
+      },
+      "uiFont": {
+        "title": "Interface font",
+        "summary": "The family the rest of the window is drawn in.",
+        "help": "What is kept is the whole stack rather than one name: whatever follows the family you pick is what the interface falls back to when that family is not installed — on another machine, or after a font is renamed. The terminal's font is a choice of its own, beside this one."
+      },
+      "terminalFont": {
+        "title": "Terminal font",
+        "summary": "The family the terminal's text is drawn in.",
+        "help": "A terminal is read in a fixed-width face, so the list offers the ones people bring with them before this machine's own. Choosing one takes effect at once, in the terminals that are already open: the grid a terminal is made of is as wide as the face it is drawn in, so a new font is a new grid."
       },
       "sessionLayout": {
         "title": "Opening a session",

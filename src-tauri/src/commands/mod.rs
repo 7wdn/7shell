@@ -12,6 +12,7 @@ pub mod app;
 pub mod batch;
 pub mod clipboard;
 pub mod files;
+pub mod fonts;
 pub mod keys;
 pub mod known_hosts;
 pub mod monitor;

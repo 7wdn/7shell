@@ -80,6 +80,11 @@ export function settingsSet(settings: AppSettings): Promise<void> {
   return invoke<void>("settings_set", { settings });
 }
 
+/** Every font family this machine has, for the two settings that choose one. */
+export function systemFontsList(): Promise<string[]> {
+  return invoke<string[]>("system_fonts_list");
+}
+
 // -- Window ------------------------------------------------------------------
 
 export function windowMinimize(): Promise<void> {

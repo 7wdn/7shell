@@ -12,7 +12,14 @@ vi.mock("@/lib/backend/tauri", () => ({
 import { i18n } from "@/i18n";
 import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
-import { DEFAULT_CUSTOM_COLORS, DEFAULT_CUSTOM_COLORS_DARK, DEFAULT_UI_SCALE, type AppSettings } from "@/types/app";
+import {
+  DEFAULT_CUSTOM_COLORS,
+  DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_TERMINAL_FONT,
+  DEFAULT_UI_FONT,
+  DEFAULT_UI_SCALE,
+  type AppSettings,
+} from "@/types/app";
 
 const settingsGetMock = vi.mocked(settingsGet);
 const settingsSetMock = vi.mocked(settingsSet);
@@ -30,6 +37,8 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     themeMode: "system",
     themePalette: "default",
     uiScale: DEFAULT_UI_SCALE,
+    uiFont: undefined,
+    terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
     customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
     terminalTheme: "system",
@@ -143,6 +152,8 @@ describe("preferences store", () => {
       themeMode: "dark",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      uiFont: undefined,
+      terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
@@ -167,6 +178,8 @@ describe("preferences store", () => {
       themeMode: "system",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      uiFont: undefined,
+      terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
@@ -263,6 +276,8 @@ describe("the terminal palette", () => {
       themeMode: "dark",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      uiFont: undefined,
+      terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "light",
@@ -426,6 +441,55 @@ describe("the colour theme", () => {
     expect(settingsSetMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ customColorsDark: DEFAULT_CUSTOM_COLORS_DARK }),
     );
+  });
+
+  it("writes both stacks onto the document, and shows one before it is chosen", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // Nothing chosen still means a family is being drawn in: the stylesheet's declaration is
+    // written over with the same value, so what the document says and what the store says agree.
+    expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe(DEFAULT_UI_FONT);
+
+    await store.setUiFont("'Fira Code', monospace");
+
+    expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe("'Fira Code', monospace");
+    expect(store.wornTerminalFont, "the terminal's own choice is not the interface's font").toBe(DEFAULT_TERMINAL_FONT);
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ uiFont: "'Fira Code', monospace" }));
+  });
+
+  it("shows a family the pointer is on without choosing it", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.previewFont("terminalFont", "'Cascadia Code', monospace");
+
+    expect(store.wornTerminalFont, "the pane is handed this").toBe("'Cascadia Code', monospace");
+    expect(store.wornUiFont, "the other list is not the preview").toBe(DEFAULT_UI_FONT);
+    expect(document.documentElement.style.getPropertyValue("--font-sans"), "and the interface is untouched").toBe(
+      DEFAULT_UI_FONT,
+    );
+    expect(store.terminalFont, "and nothing has been chosen").toBeNull();
+    expect(settingsSetMock).not.toHaveBeenCalled();
+
+    store.clearFontPreview();
+    expect(store.wornTerminalFont).toBe(DEFAULT_TERMINAL_FONT);
+  });
+
+  it("stops previewing the moment a family is chosen", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.previewFont("uiFont", "'Consolas', monospace");
+    await store.setUiFont("'Consolas', monospace");
+
+    // Letting go of the list afterwards is a no-op rather than a jump back to what used to be
+    // chosen: the preview and the choice are the same stack from here on.
+    store.clearFontPreview();
+    expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe("'Consolas', monospace");
   });
 });
 
@@ -746,6 +810,8 @@ describe("restoring the defaults", () => {
       themeMode: "system",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      uiFont: undefined,
+      terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",

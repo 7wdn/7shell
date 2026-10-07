@@ -321,6 +321,18 @@ pub struct AppSettings {
     /// what it is given — rather than a measurement of anything.
     #[serde(default = "ui_scale_default")]
     pub ui_scale: u32,
+    /// The family the interface draws its text in, as a `font-family` stack.
+    ///
+    /// The whole stack rather than one name, and absent means the one this build ships with: somebody
+    /// picking a font is choosing the first family that resolves, and what follows it is how the
+    /// interface stays readable when that family turns out not to be installed after all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_font: Option<String>,
+    /// The same for the terminal, which is a choice of its own: a window is read in a proportional
+    /// face and a terminal in a fixed-width one, and somebody who wants their editor's font under the
+    /// shell prompt rarely wants it in the file listing beside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_font: Option<String>,
     /// The five colours the `custom` palette is drawn from, for the light theme. Absent means
     /// nobody has picked any, and the ones a fresh install starts from apply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -387,6 +399,8 @@ impl Default for AppSettings {
             monitor_enabled: monitor_on(),
             packed_transfer: false,
             ui_scale: ui_scale_default(),
+            ui_font: None,
+            terminal_font: None,
             custom_colors: None,
             custom_colors_dark: None,
             locale: None,
@@ -401,6 +415,8 @@ impl AppSettings {
         self.theme_mode == ThemeMode::System
             && self.theme_palette == ThemePalette::Default
             && self.ui_scale == ui_scale_default()
+            && self.ui_font.is_none()
+            && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split

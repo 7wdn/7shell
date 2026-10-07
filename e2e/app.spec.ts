@@ -34,6 +34,8 @@ async function writtenSettings(): Promise<{
   packedTransfer?: boolean;
   themePalette?: string;
   uiScale?: number;
+  uiFont?: string;
+  terminalFont?: string;
   customColors?: { primary?: string };
   customColorsDark?: { primary?: string };
 }> {
@@ -41,6 +43,8 @@ async function writtenSettings(): Promise<{
     packedTransfer?: boolean;
     themePalette?: string;
     uiScale?: number;
+    uiFont?: string;
+    terminalFont?: string;
     customColors?: { primary?: string };
     customColorsDark?: { primary?: string };
   };
@@ -628,6 +632,70 @@ test("a setting can be found by name, and a category can be put back to its defa
       });
     expect(await pane(), "the pane follows the colour the window is wearing").not.toBe(backgroundBefore);
 
+    // The two fonts. What a font setting is worth is a stack, and the family under the pointer is
+    // shown before it is taken — through the token the stylesheet reads, which is why the whole
+    // window follows a hover rather than only the row being looked at.
+    const sans = (): Promise<string> =>
+      page.evaluate(() => document.documentElement.style.getPropertyValue("--font-sans"));
+
+    const interfaceFont = settings.getByRole("button", { name: "Interface font", exact: true });
+    const interfaceBefore = await sans();
+    await interfaceFont.click();
+    const fontList = page.getByRole("listbox");
+    await expect(fontList).toBeVisible();
+    // Two rows answer to "Consolas": the preset, which carries the fallbacks this build gives it, and
+    // the machine's own spelling of the same family. The first is the one a person finds first, and
+    // the one a list led by the fixed-width families puts in front of them.
+    await fontList.getByRole("option", { name: "Consolas" }).first().hover();
+    await expect
+      .poll(sans, { message: "the family under the pointer is the one being drawn" })
+      .toBe("'Consolas', 'Courier New', monospace");
+    // The list itself, kept as a picture: every row is drawn in the face it offers, which is what
+    // makes a list of names worth reading — and what makes the pointer's row visibly the one worn.
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-font-list.png"), fullPage: false });
+    await page.keyboard.press("Escape");
+    await expect.poll(sans, { message: "letting go of the list puts the chosen family back" }).toBe(interfaceBefore);
+
+    await interfaceFont.click();
+    await fontList.getByRole("option", { name: "Consolas" }).first().click();
+    await expect.poll(async () => (await writtenSettings()).uiFont ?? "").toBe("'Consolas', 'Courier New', monospace");
+
+    // The terminal's list is the other setting, and what it changes goes to the panes: a terminal is
+    // a canvas with one font handed to it, so the family travels through the store rather than
+    // through the stylesheet, and "the open pane follows" is asserted in that pane's own spec. What
+    // is asked here is the half a page can see — hovering the terminal's list dresses nothing on
+    // this page, which is the failure worth catching: a preview that dresses the wrong thing.
+    const terminalFont = settings.getByRole("button", { name: "Terminal font", exact: true });
+    await terminalFont.click();
+    await expect(fontList).toBeVisible();
+    await fontList.getByRole("option", { name: "JetBrains Mono" }).hover();
+    await expect
+      .poll(sans, { message: "the interface is not the terminal's list to dress" })
+      .toBe("'Consolas', 'Courier New', monospace");
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-fonts.png"), fullPage: false });
+
+    await terminalFont.click();
+    await fontList.getByRole("option", { name: "JetBrains Mono" }).click();
+    await expect
+      .poll(async () => (await writtenSettings()).terminalFont ?? "")
+      .toBe("'JetBrains Mono', 'Fira Code', monospace");
+
+    // The machine's own names, in the language this machine is in. An installation in Chinese has
+    // 微软雅黑, 黑体 and 楷体, and the names come from the platform rather than from the font files —
+    // a file carries both spellings and picking one here would be this build guessing what language
+    // the computer is set to. Typed into the field rather than scrolled to, which is what the field
+    // is for: a list of two hundred families is a list nobody scrolls.
+    await interfaceFont.click();
+    // The panel's own search box, which is where the typing goes: the field beside the row shows the
+    // chosen family and the search is inside the panel, which is the shape a list of two hundred
+    // families asks for.
+    await expect(page.getByRole("combobox", { name: "Search fonts…" })).toBeFocused();
+    await page.keyboard.type("黑");
+    await expect(fontList.getByRole("option", { name: /黑/ }).first()).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-font-cjk.png"), fullPage: false });
+    await page.keyboard.press("Escape");
+
     // Custom: five colours, and everything else derived from them — the panels, the hovered rows,
     // the text written on the accent, and the pane. Two halves of that are checked here, the one the
     // pickers write straight onto the document and the one it derives.
@@ -679,6 +747,10 @@ test("a setting can be found by name, and a category can be put back to its defa
     await page.getByRole("listbox").getByRole("option", { name: "White" }).click();
     await scale.click();
     await page.getByRole("listbox").getByRole("option", { name: "100%" }).click();
+    await interfaceFont.click();
+    await page.getByRole("listbox").getByRole("option", { name: "App default" }).click();
+    await terminalFont.click();
+    await page.getByRole("listbox").getByRole("option", { name: "App default" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "default");
     await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe("");
 

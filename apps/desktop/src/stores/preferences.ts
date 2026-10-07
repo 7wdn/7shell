@@ -21,6 +21,8 @@ import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_TERMINAL_FONT,
+  DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
   type AppSettings,
   type CustomColors,
@@ -48,6 +50,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   themeMode: "system",
   themePalette: "default",
   uiScale: DEFAULT_UI_SCALE,
+  uiFont: undefined,
+  terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
   customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
@@ -111,6 +115,22 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * cannot do for a window that is already open.
    */
   const uiScale = ref<number>(DEFAULT_UI_SCALE);
+  /**
+   * The stacks the interface and the terminal draw in, or null while nobody has chosen one.
+   *
+   * Null rather than the default's own stack, because "not chosen" and "chosen the default" are two
+   * answers to two different questions: the first is what a reading of the settings file has to
+   * report, and the second is a choice somebody made and can make again.
+   */
+  const uiFont = ref<string | null>(null);
+  const terminalFont = ref<string | null>(null);
+  /**
+   * The family the pointer is on in one of the two lists, and which of the two it was.
+   *
+   * One ref for both because a preview can only ever be in one list at a time, and the field is
+   * carried with the value so that hovering the terminal's list does not dress the interface.
+   */
+  const previewedFont = ref<{ field: "uiFont" | "terminalFont"; value: string } | null>(null);
   /** Which palette the terminal draws in; `system` means "follow the interface theme". */
   const terminalTheme = ref<ThemeMode>("system");
   /** Two panes or one, in the file browser. */
@@ -199,6 +219,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   const wornPalette = computed<ThemePalette>(() => previewedPalette.value ?? themePalette.value);
 
+  /** What the interface draws in: the family under the pointer, or the one chosen. */
+  const wornUiFont = computed(() =>
+    previewedFont.value?.field === "uiFont" ? previewedFont.value.value : (uiFont.value ?? DEFAULT_UI_FONT),
+  );
+
+  /** The same for the terminal, which is a choice of its own. */
+  const wornTerminalFont = computed(() =>
+    previewedFont.value?.field === "terminalFont"
+      ? previewedFont.value.value
+      : (terminalFont.value ?? DEFAULT_TERMINAL_FONT),
+  );
+
   /** What the divider is drawn at: the height somebody chose, or the starting one. */
   const resolvedPanelHeight = computed(() => terminalPanelHeight.value ?? DEFAULT_TERMINAL_PANEL_HEIGHT);
 
@@ -283,6 +315,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     document.documentElement.lang = locale.value;
     i18n.global.locale.value = locale.value;
     applyCustomColors();
+    applyFonts();
     applyScale();
   }
 
@@ -306,11 +339,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
     problem.value = null;
     // Whatever was being shown belongs to the settings that were on screen before this read.
     previewedPalette.value = null;
+    previewedFont.value = null;
     try {
       const settings = await backend.settings.get();
       themeMode.value = settings.themeMode;
       themePalette.value = settings.themePalette;
       uiScale.value = settings.uiScale;
+      uiFont.value = settings.uiFont ?? null;
+      terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
       customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
@@ -343,6 +379,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         themeMode: themeMode.value,
         themePalette: themePalette.value,
         uiScale: uiScale.value,
+        uiFont: uiFont.value ?? undefined,
+        terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
         customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
@@ -403,6 +441,60 @@ export const usePreferencesStore = defineStore("preferences", () => {
     }
     previewedPalette.value = null;
     apply();
+  }
+
+  /**
+   * Writes the interface's stack onto the document, which is where the interface reads it.
+   *
+   * One of the two fonts goes here and the other does not, and the difference is deliberate. The
+   * interface is drawn from tokens, so its font is a token. The terminal is not: it is a canvas with
+   * one font handed to it, and the token that would carry a terminal's font — `--font-mono` — is the
+   * face this whole window uses for paths, fingerprints and codes. Writing the terminal's choice
+   * there would dress every reading on every page in it, which is not what somebody choosing a
+   * terminal font asked for. So the pane reads the store, and this writes one thing.
+   */
+  function applyFonts(): void {
+    document.documentElement.style.setProperty("--font-sans", wornUiFont.value);
+  }
+
+  /**
+   * Shows a family without choosing it: the row the pointer is on, or the one a key landed on.
+   *
+   * Nothing is written and nothing is remembered. A terminal that is already open follows, because
+   * the family reaches the pane as a token rather than as a decision — the pane watches it.
+   */
+  function previewFont(field: "uiFont" | "terminalFont", value: string): void {
+    if (previewedFont.value?.field === field && previewedFont.value.value === value) {
+      return;
+    }
+    previewedFont.value = { field, value };
+    apply();
+  }
+
+  /** Puts down what was being shown, which is what leaving the list means. */
+  function clearFontPreview(): void {
+    if (previewedFont.value === null) {
+      return;
+    }
+    previewedFont.value = null;
+    apply();
+  }
+
+  /** Chooses what the interface draws in, applied before it is written down. */
+  async function setUiFont(stack: string): Promise<void> {
+    uiFont.value = stack;
+    // The preview has served its purpose: what is on screen from here is the choice.
+    previewedFont.value = null;
+    apply();
+    await persist();
+  }
+
+  /** The same for the terminal, whose choice is its own. */
+  async function setTerminalFont(stack: string): Promise<void> {
+    terminalFont.value = stack;
+    previewedFont.value = null;
+    apply();
+    await persist();
   }
 
   /**
@@ -556,6 +648,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function reset(fields: readonly PreferenceField[]): Promise<void> {
     // A preview is not a field and is not restored: it is something the pointer was doing.
     previewedPalette.value = null;
+    previewedFont.value = null;
     for (const field of fields) {
       switch (field) {
         case "themeMode":
@@ -566,6 +659,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
           break;
         case "uiScale":
           uiScale.value = FRESH.uiScale;
+          break;
+        case "uiFont":
+          uiFont.value = null;
+          break;
+        case "terminalFont":
+          terminalFont.value = null;
           break;
         case "customColors":
           customColors.value = { ...DEFAULT_CUSTOM_COLORS };
@@ -619,6 +718,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     themePalette,
     wornPalette,
     uiScale,
+    uiFont,
+    terminalFont,
+    wornUiFont,
+    wornTerminalFont,
     customColors,
     customColorsDark,
     terminalTheme,
@@ -642,6 +745,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     previewThemePalette,
     clearThemePalettePreview,
     setUiScale,
+    setUiFont,
+    setTerminalFont,
+    previewFont,
+    clearFontPreview,
     setCustomColor,
     resetCustomColors,
     setTerminalTheme,

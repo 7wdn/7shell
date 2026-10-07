@@ -13,7 +13,15 @@
  */
 import { SUPPORTED_LOCALES, type SupportedLocale } from "@/i18n";
 import type { PreferenceField } from "@/stores/preferences";
-import { UI_SCALE_PERCENTS, type CustomColors, type ThemePalette } from "@/types/app";
+import {
+  DEFAULT_TERMINAL_FONT,
+  DEFAULT_UI_FONT,
+  FONT_PRESETS,
+  SYSTEM_UI_FONT,
+  UI_SCALE_PERCENTS,
+  type CustomColors,
+  type ThemePalette,
+} from "@/types/app";
 
 export type SettingsCategoryId = "appearance" | "workspace" | "files" | "security" | "about";
 
@@ -92,7 +100,14 @@ export interface SettingsRowDefinition {
   readonly helpKey: string;
   readonly control:
     | { readonly kind: "switch" }
-    | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] };
+    | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
+    /**
+     * A font, which is not a dropdown of fixed choices: the options are this machine's families and
+     * they are read when the list opens, and a name that is not among them can be typed and taken.
+     * Which of the two fonts it is decides the rest — the families offered and the label on the
+     * default — so that is all the table has to say.
+     */
+    | { readonly kind: "font"; readonly family: "interface" | "terminal" };
   /**
    * Drawn as a bare labelled control in the grid at the top of its category, rather than as a card
    * of its own.
@@ -103,6 +118,15 @@ export interface SettingsRowDefinition {
    * tooltip go on using.
    */
   readonly presentation?: "field";
+  /**
+   * Which grid a field is drawn in.
+   *
+   * The appearance page opens with a row of three — a language, a colour and a size, each a word and
+   * a control — and then a row of two for the fonts. The fonts have their own row because a row of
+   * three with one column empty in it reads as a mistake, and because a family name is longer than
+   * the words beside it: the picker that opens from it is a list of names.
+   */
+  readonly grid?: "settings" | "fonts";
 }
 
 /**
@@ -176,6 +200,21 @@ const PALETTE_SWATCHES: Record<ThemePalette, string> = {
 const PALETTES = Object.keys(PALETTE_LABEL_KEYS) as readonly ThemePalette[];
 
 /**
+ * What the families that carry a name of their own are called, keyed by the stack they are stored as.
+ *
+ * The three that are not a family at all — the two defaults and the system's own face — are here for
+ * the same reason the plain ones are: so that no name is put together in a component, and every one
+ * of them is a translation that exists in both languages. A family this machine has is its own name
+ * and has no key; it is shown as the system spells it.
+ */
+export const FONT_LABEL_KEYS: Record<string, string> = {
+  [SYSTEM_UI_FONT]: "settings.font.systemDefault",
+  [DEFAULT_UI_FONT]: "settings.font.appDefault",
+  [DEFAULT_TERMINAL_FONT]: "settings.font.appDefault",
+  ...Object.fromEntries(FONT_PRESETS.map((preset) => [preset.value, preset.labelKey])),
+};
+
+/**
  * The five colours a hand-picked palette is made of, as the labels of the pickers that set them.
  *
  * The keys are the wire type's, so a colour added to a custom palette fails to compile until it has
@@ -236,6 +275,28 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         params: { percent },
       })),
     },
+  },
+  {
+    id: "interface-font",
+    category: "appearance",
+    field: "uiFont",
+    titleKey: "settings.rows.uiFont.title",
+    summaryKey: "settings.rows.uiFont.summary",
+    helpKey: "settings.rows.uiFont.help",
+    presentation: "field",
+    grid: "fonts",
+    control: { kind: "font", family: "interface" },
+  },
+  {
+    id: "terminal-font",
+    category: "appearance",
+    field: "terminalFont",
+    titleKey: "settings.rows.terminalFont.title",
+    summaryKey: "settings.rows.terminalFont.summary",
+    helpKey: "settings.rows.terminalFont.help",
+    presentation: "field",
+    grid: "fonts",
+    control: { kind: "font", family: "terminal" },
   },
   {
     id: "theme-mode",

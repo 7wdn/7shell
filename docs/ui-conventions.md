@@ -69,6 +69,38 @@ itself are asserted in that component's own spec, where they can be named (`Work
 only place the difference is visible: `SettingsPage.spec.ts` names the exemption each reading
 carries, because "the settings page refuses selection" and "the search field does not" are one file.
 
+## Type
+
+Four sizes and one weight. Each has a job, and a size that has no job is the one that makes a page
+look accidental — a 10px line here, a bold word there, neither of which anybody can give a reason
+for. The scale was worked out against the reference implementation's own distribution, whose
+settings page is overwhelmingly `text-xs` with `text-sm` for names and one `text-base` title.
+
+| What it is | Size | Weight |
+|---|---|---|
+| The page's own title — the tab says "Settings", so the page says nothing | `text-base` | medium |
+| A name: a row's title, a field's label, a button's label, a key's name | `text-sm` | medium |
+| A sentence at reading size: a value, an empty state, an address | `text-sm` | normal |
+| A supporting sentence: a summary, a hint, an explanation, a timestamp | `text-xs` | normal |
+| Machine text: an error code, a fingerprint, a version, a path | `text-[11px]` `font-mono` | normal |
+
+1. **Nothing is smaller than 11px.** That is the floor for text somebody has to read, and everything
+   below it in this interface is a machine's own text — which is monospace, and 11px is where
+   monospace stops looking like a smudge.
+2. **Nothing is bolder than medium.** A name is medium; a sentence is not bold at all. A page that
+   reaches for `font-semibold` to make a point has run out of hierarchy, and the next one reaches
+   for it twice.
+3. **A category is named once.** The navigation says which one is on screen; the body of the page
+   does not repeat it. The exception is a search, where a hit is grouped under the category it came
+   from — because there the question being answered is "where is this setting".
+
+The monitor panel is the one place that goes below the floor, on purpose and as a whole: it is an
+instrument drawn at 10px with 19px rows, so that a dozen readings fit beside the workspace. It is
+exempt because the exception is the panel's whole design rather than a line somebody shrank.
+
+`scripts/tests/typography.test.mjs` holds the first two rules over the settings page, which is where
+the drift was.
+
 ## Tables
 
 Every table is drawn from `apps/desktop/src/lib/table.ts` — two surfaces, `page` and `panel`, and one

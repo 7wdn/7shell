@@ -722,6 +722,40 @@
 }
 
 /*
+ * The scrollbar of a panel that scrolls inside itself: a picker's list, a long menu.
+ *
+ * Thin, with no track and a translucent thumb — the window's own scrollbar is the one that belongs to
+ * the window, and a second full-width one inside a card reads as a piece of the operating system that
+ * has been pasted into it. Its colour is the foreground at 30%, which is a grey on every palette and
+ * in both themes without being a grey anybody had to choose.
+ */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 30%, transparent) transparent;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-thin::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 30%, transparent);
+  background-clip: padding-box;
+}
+
+.scroll-thin:hover::-webkit-scrollbar-thumb {
+  border: 0;
+  background: color-mix(in oklch, var(--foreground) 48%, transparent);
+}
+
+/*
  * A row a search found, in the settings page.
  *
  * The rows around it stay where they are while a search filters them, so the one that matched has

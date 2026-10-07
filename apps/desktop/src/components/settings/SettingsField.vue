@@ -23,7 +23,7 @@ const props = defineProps<{
 <template>
   <div class="min-w-0 space-y-1.5">
     <div class="flex min-w-0 items-center gap-1">
-      <span class="truncate text-xs font-medium text-muted-foreground">{{ props.title }}</span>
+      <span class="truncate text-sm font-medium leading-tight">{{ props.title }}</span>
       <SettingsHelp :title="props.title" :help="props.help" />
     </div>
     <slot />

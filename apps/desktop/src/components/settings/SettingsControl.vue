@@ -8,12 +8,19 @@
  * The width on the dropdown is not decoration: the controls line up down the right edge of the
  * page, so two rows with different option lengths would otherwise put their arrows in two places.
  */
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import type { SettingsRowDefinition } from "@/components/settings/rows";
+import { FONT_LABEL_KEYS, type SettingsRowDefinition } from "@/components/settings/rows";
+import FontSelect from "@/components/ui/FontSelect.vue";
 import Select from "@/components/ui/Select.vue";
 import Switch from "@/components/ui/Switch.vue";
+import {
+  fontOptionsFor,
+  loadSystemFontNames,
+  normalizeCustomFontFamilyInput,
+  readableFontFamily,
+} from "@/lib/settings/fonts";
 
 const props = defineProps<{
   row: SettingsRowDefinition;
@@ -42,6 +49,40 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 
+// -- The font picker ---------------------------------------------------------
+
+/**
+ * This machine's families, read the first time a font picker is opened.
+ *
+ * Not when the page is drawn: the read is several hundred font files, and a page of settings that
+ * spends that on opening is a page that looks slow for the sake of a list nobody has asked for yet.
+ */
+const systemFonts = ref<readonly string[]>([]);
+const reading = ref(false);
+
+async function readFonts(): Promise<void> {
+  if (systemFonts.value.length > 0 || reading.value) {
+    return;
+  }
+  reading.value = true;
+  systemFonts.value = await loadSystemFontNames();
+  reading.value = false;
+}
+
+const fontOptions = computed(() =>
+  props.row.control.kind === "font"
+    ? fontOptionsFor(props.row.control.family, systemFonts.value, String(props.value))
+    : [],
+);
+
+/** What a stack is called: a name for the ones that have one, the system's spelling for the rest. */
+function fontName(stack: string): string {
+  const key = FONT_LABEL_KEYS[stack];
+  return key ? t(key) : readableFontFamily(stack);
+}
+
+// -- The rest ----------------------------------------------------------------
+
 const options = computed(() =>
   props.row.control.kind === "select"
     ? props.row.control.options.map((option) => ({
@@ -61,6 +102,26 @@ const options = computed(() =>
     :model-value="props.value === true"
     :aria-label="props.label"
     @update:model-value="(value: boolean) => emit('choose', value)"
+  />
+
+  <FontSelect
+    v-else-if="props.row.control.kind === 'font'"
+    :model-value="String(props.value)"
+    :options="fontOptions"
+    :name="fontName"
+    :aria-label="props.label"
+    :search-placeholder="t('settings.font.search')"
+    :loading="reading"
+    :loading-text="t('settings.font.loading')"
+    :empty-text="t('settings.font.empty')"
+    :use-typed-text="(value: string) => t('settings.font.use', { font: value })"
+    allow-custom
+    :normalize-custom="normalizeCustomFontFamilyInput"
+    :trigger-class="props.stretch ? 'h-9 w-full' : 'h-9 w-44'"
+    @update:model-value="(value: string) => emit('choose', value)"
+    @open="(open: boolean) => open && readFonts()"
+    @preview="(value: string) => emit('preview', value)"
+    @end-preview="emit('endPreview')"
   />
 
   <Select

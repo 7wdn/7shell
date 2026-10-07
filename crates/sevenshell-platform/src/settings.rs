@@ -74,6 +74,12 @@ struct StoredSettings {
     /// has always been drawn at rather than as somebody having asked for something else.
     #[serde(default = "ui_scale_default")]
     ui_scale: u32,
+    /// Absent in a file written before a font could be chosen, which reads as the one this build
+    /// ships with rather than as somebody having picked something.
+    #[serde(default)]
+    ui_font: Option<String>,
+    #[serde(default)]
+    terminal_font: Option<String>,
     /// Absent in a file written before the interface could be coloured by hand, which reads as
     /// "nobody has picked any" — the defaults a fresh install starts from.
     #[serde(default)]
@@ -99,6 +105,8 @@ impl StoredSettings {
             monitor_enabled: settings.monitor_enabled,
             packed_transfer: settings.packed_transfer,
             ui_scale: settings.ui_scale,
+            ui_font: settings.ui_font.clone(),
+            terminal_font: settings.terminal_font.clone(),
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
@@ -118,6 +126,10 @@ impl StoredSettings {
             monitor_enabled: self.monitor_enabled,
             packed_transfer: self.packed_transfer,
             ui_scale: normalize_ui_scale(self.ui_scale),
+            // A name the machine does not have is not an error and not worth a message: the stack
+            // falls through to what follows it, which is exactly why the whole stack is stored.
+            ui_font: self.ui_font.filter(|font| !font.trim().is_empty()),
+            terminal_font: self.terminal_font.filter(|font| !font.trim().is_empty()),
             // A hand-coloured set that cannot be drawn is dropped whole rather than per colour: half
             // of somebody's palette with defaults filled in for the rest is a window nobody asked
             // for, and there is nothing in it they could recognise to fix.
@@ -222,6 +234,8 @@ mod tests {
             packed_transfer: false,
             theme_palette: ThemePalette::default(),
             ui_scale: ui_scale_default(),
+            ui_font: None,
+            terminal_font: None,
             custom_colors: None,
             custom_colors_dark: None,
             locale: locale.map(str::to_owned),
@@ -368,6 +382,8 @@ mod tests {
             // come back as the ones that were chosen.
             theme_palette: ThemePalette::Claude,
             ui_scale: 150,
+            ui_font: Some("'JetBrains Mono', monospace".to_owned()),
+            terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),
             custom_colors_dark: Some(CustomColors::dark_default()),
             ..settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"))

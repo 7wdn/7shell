@@ -151,11 +151,6 @@ function terminalTheme(): ITheme {
   return theme as ITheme;
 }
 
-function monospaceFamily(): string | undefined {
-  const value = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
-  return value === "" ? undefined : value;
-}
-
 function applySize(): void {
   const instance = terminal;
   const fit = fitAddon;
@@ -265,7 +260,7 @@ onMounted(() => {
 
   const instance = new Terminal({
     cursorBlink: true,
-    fontFamily: monospaceFamily(),
+    fontFamily: preferences.wornTerminalFont,
     fontSize: 13,
     scrollback: 5000,
     theme: terminalTheme(),
@@ -334,6 +329,22 @@ watch(
     void nextTick(() => {
       if (terminal) {
         terminal.options.theme = terminalTheme();
+      }
+    });
+  },
+);
+
+watch(
+  () => preferences.wornTerminalFont,
+  () => {
+    // A terminal is built with its font and does not go looking for a new one, so what has changed
+    // has to be handed to it — the family, and then a new size: the grid a terminal is drawn on is
+    // as wide as the face it uses, so a different face is a different grid and the number of columns
+    // that fit changes with it.
+    void nextTick(() => {
+      if (terminal) {
+        terminal.options.fontFamily = preferences.wornTerminalFont;
+        applySize();
       }
     });
   },

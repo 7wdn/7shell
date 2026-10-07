@@ -271,6 +271,18 @@ export const backend = {
   },
 
   /**
+   * What this machine can draw in, for the two settings that choose a font.
+   *
+   * Read when a picker opens rather than at start-up: it is the machine's whole font list, and most
+   * runs of this application never open one. An empty answer is a machine whose fonts could not be
+   * read, which the picker shows as "the families that ship with the application" rather than as a
+   * failure — the setting still works, and a name can still be typed into it.
+   */
+  fonts: {
+    systemList: (): Promise<string[]> => forward("system_fonts_list", () => desktop.systemFontsList()),
+  },
+
+  /**
    * One command, many hosts.
    *
    * The verdict is asked for separately from the run — while somebody types, not when they press —

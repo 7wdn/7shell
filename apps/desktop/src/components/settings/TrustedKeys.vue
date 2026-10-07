@@ -49,7 +49,7 @@ onMounted(() => void keys.load());
   <div class="space-y-2 select-text">
     <p v-if="problem" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
       <span>{{ problem.message }}</span>
-      <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
+      <span class="mt-1 block font-mono text-[11px] text-muted-foreground">{{ problem.code }}</span>
     </p>
 
     <p v-if="keys.loaded && entries.length === 0" class="text-xs text-muted-foreground">
@@ -66,9 +66,9 @@ onMounted(() => void keys.load());
       </span>
 
       <div class="min-w-0 flex-1">
-        <p class="font-mono text-xs">{{ entry.host }}:{{ entry.port }}</p>
+        <p class="font-mono text-[11px]">{{ entry.host }}:{{ entry.port }}</p>
         <p class="mt-1 font-mono text-[11px] break-all text-muted-foreground">{{ entry.fingerprint }}</p>
-        <p class="mt-0.5 text-[10px] text-muted-foreground">
+        <p class="mt-0.5 text-xs text-muted-foreground">
           {{ t("knownHosts.trustedAt", { when: trustedAt(entry.addedAt) }) }} · {{ entry.keyType }}
         </p>
       </div>

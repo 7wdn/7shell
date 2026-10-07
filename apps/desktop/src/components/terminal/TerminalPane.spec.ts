@@ -14,6 +14,7 @@ import { createApp, defineComponent, h, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { i18n } from "@/i18n";
+import { DEFAULT_TERMINAL_FONT } from "@/types/app";
 
 /** What xterm handed the pane, so a test can type into it the way xterm would. */
 let onData: ((data: string) => void) | undefined;
@@ -23,19 +24,27 @@ let oscHandlers: Map<number, (data: string) => boolean>;
 
 /** What the pane asked of the terminal it owns, so a menu entry can be watched doing it. */
 let selection = "";
+/** Every terminal the pane built, so a test can look at what it was handed and when. */
+const builtTerminals: { options: Record<string, unknown> }[] = [];
 let pasted: string[] = [];
 let selectedAll = 0;
 let cleared = 0;
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
+    options: Record<string, unknown> = {};
+    constructor(options: Record<string, unknown> = {}) {
+      // What the real one does with the object it is built from, so a test can ask what font the
+      // pane opened with rather than only what it was changed to afterwards.
+      Object.assign(this.options, options);
+      builtTerminals.push(this as unknown as { options: Record<string, unknown> });
+    }
     readonly parser = {
       registerOscHandler: (identifier: number, handler: (data: string) => boolean) => {
         oscHandlers.set(identifier, handler);
         return { dispose: () => oscHandlers.delete(identifier) };
       },
     };
-    options = {};
     cols = 80;
     rows = 24;
 
@@ -353,6 +362,39 @@ describe("a terminal's right-click menu", () => {
 
     expect(selectedAll).toBe(1);
     expect(cleared).toBe(1);
+  });
+});
+
+describe("the font the pane draws in", () => {
+  /**
+   * A terminal is built with its font and does not go looking for another one.
+   *
+   * So the family has to be handed to the terminal that is already open, which is what makes the
+   * setting visible in the pane the person is looking at rather than in the next one they open —
+   * and it is also the only way the hover preview can show a font before it is chosen. The grid
+   * matters as much as the face: a terminal is a grid of cells as wide as the font it is drawn in,
+   * so a new family means a new fit, and the case would pass with the font set and the columns left
+   * at the old face's width.
+   */
+  it("follows a family chosen, or looked at, after the pane was opened", async () => {
+    const preferences = usePreferencesStore();
+    preferences.initialize();
+    await withPanelUnderTerminal();
+    await mountPane();
+
+    const terminal = builtTerminals.at(-1);
+    expect(terminal?.options.fontFamily, "built with the family the document carried").toBe(DEFAULT_TERMINAL_FONT);
+
+    // What a hover does: the same path, with nothing written down afterwards.
+    preferences.previewFont("terminalFont", "'Cascadia Code', monospace");
+    await nextTick();
+    await nextTick();
+    expect(terminal?.options.fontFamily, "a pane that is already open follows").toBe("'Cascadia Code', monospace");
+
+    preferences.clearFontPreview();
+    await nextTick();
+    await nextTick();
+    expect(terminal?.options.fontFamily, "and lets go of it again").toBe(DEFAULT_TERMINAL_FONT);
   });
 });
 

@@ -63,6 +63,8 @@ import { useAppStore } from "@/stores/app";
 import { type PreferenceField, usePreferencesStore } from "@/stores/preferences";
 import {
   CUSTOM_COLOR_KEYS,
+  DEFAULT_TERMINAL_FONT,
+  DEFAULT_UI_FONT,
   type CustomColors,
   type FilesLayout,
   type SessionLayout,
@@ -83,6 +85,16 @@ const isListCategory = computed(() => LIST_CATEGORIES.includes(category.value));
 /** The settings this category draws as fields, and the ones it draws as cards under them. */
 const fieldRows = computed(() => fieldRowsOfCategory(category.value));
 const cardRows = computed(() => cardRowsOfCategory(category.value));
+
+/**
+ * The fields of the two grids the appearance page opens with.
+ *
+ * A row of three for the settings that are a word and a control, and a row of two for the fonts: a
+ * family name is longer than the words beside it, and the picker that opens from it is a list of
+ * names — so the two share a full row rather than sitting in two thirds of one with a hole in it.
+ */
+const settingsFields = computed(() => fieldRows.value.filter((row) => row.grid !== "fonts"));
+const fontFields = computed(() => fieldRows.value.filter((row) => row.grid === "fonts"));
 
 /**
  * The five colours being edited, when a custom palette is worn.
@@ -157,6 +169,12 @@ function currentValue(row: SettingsRowDefinition): string | boolean {
       // A number in the store and a string in a dropdown: the value the settings file holds is the
       // number, so the conversion is here rather than in the store, which keeps it a number.
       return String(preferences.uiScale);
+    case "uiFont":
+      // Nothing chosen reads as the one this build ships with, because that is what is being drawn:
+      // the picker shows a family, and "no answer" is not one.
+      return preferences.uiFont ?? DEFAULT_UI_FONT;
+    case "terminalFont":
+      return preferences.terminalFont ?? DEFAULT_TERMINAL_FONT;
     case "terminalTheme":
       return preferences.terminalTheme;
     case "locale":
@@ -183,6 +201,12 @@ function choose(row: SettingsRowDefinition, value: string | boolean): void {
       return;
     case "uiScale":
       void preferences.setUiScale(Number(value));
+      return;
+    case "uiFont":
+      void preferences.setUiFont(String(value));
+      return;
+    case "terminalFont":
+      void preferences.setTerminalFont(String(value));
       return;
     case "terminalTheme":
       void preferences.setTerminalTheme(value as ThemeMode);
@@ -211,7 +235,7 @@ function choose(row: SettingsRowDefinition, value: string | boolean): void {
  * Short enough to read as instant, long enough that crossing the list on the way to another option
  * does not repaint the window on every one it passes.
  */
-const PALETTE_PREVIEW_DELAY_MS = 80;
+const PREVIEW_DELAY_MS = 80;
 
 /**
  * Showing a setting's option before it is taken.
@@ -223,11 +247,24 @@ const PALETTE_PREVIEW_DELAY_MS = 80;
  */
 const showPaletteOption = createDelayedPreview<string>((palette) => {
   preferences.previewThemePalette(palette as ThemePalette);
-}, PALETTE_PREVIEW_DELAY_MS);
+}, PREVIEW_DELAY_MS);
+
+/**
+ * The same delay for the two font lists, which are the other settings whose content is what they
+ * look like. Which of the two is being previewed travels with the family, because dressing the
+ * terminal's list in the interface's font — or the other way round — is not a preview of anything.
+ */
+const showFontOption = createDelayedPreview<{ field: "uiFont" | "terminalFont"; value: string }>(
+  ({ field, value }) => preferences.previewFont(field, value),
+  PREVIEW_DELAY_MS,
+);
 
 function preview(row: SettingsRowDefinition, value: string): void {
   if (row.field === "themePalette") {
     showPaletteOption.schedule(value);
+  }
+  if (row.field === "uiFont" || row.field === "terminalFont") {
+    showFontOption.schedule({ field: row.field, value });
   }
 }
 
@@ -235,6 +272,10 @@ function endPreview(row: SettingsRowDefinition): void {
   if (row.field === "themePalette") {
     showPaletteOption.cancel();
     preferences.clearThemePalettePreview();
+  }
+  if (row.field === "uiFont" || row.field === "terminalFont") {
+    showFontOption.cancel();
+    preferences.clearFontPreview();
   }
 }
 
@@ -245,7 +286,10 @@ function endPreview(row: SettingsRowDefinition): void {
  * is a way out of the page that never reaches `endPreview` — and the window would go on wearing a
  * colour nobody can see the reason for, since the list it came from is gone.
  */
-onBeforeUnmount(() => preferences.clearThemePalettePreview());
+onBeforeUnmount(() => {
+  preferences.clearThemePalettePreview();
+  preferences.clearFontPreview();
+});
 
 /**
  * What the About category lists: the build's own facts, which nobody chooses and nobody restores.
@@ -311,7 +355,7 @@ function translate(key: string, params?: Record<string, string>): string {
             <span class="truncate">{{ t(SETTINGS_CATEGORY_LABEL_KEYS[id]) }}</span>
             <!-- While searching, the way to a hit is the category it is in — so the count is what
                  tells apart a category that has one from a category that does not. -->
-            <span v-if="searching && hitsIn(id) > 0" class="shrink-0 font-mono text-[10px] opacity-70">
+            <span v-if="searching && hitsIn(id) > 0" class="shrink-0 font-mono text-[11px] opacity-70">
               {{ hitsIn(id) }}
             </span>
           </button>
@@ -365,7 +409,7 @@ function translate(key: string, params?: Record<string, string>): string {
                 class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs select-text"
               >
                 <span>{{ problem.message }}</span>
-                <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
+                <span class="mt-1 block font-mono text-[11px] text-muted-foreground">{{ problem.code }}</span>
               </p>
 
               <template v-if="searching">
@@ -400,11 +444,14 @@ function translate(key: string, params?: Record<string, string>): string {
                 </p>
               </template>
 
+              <!--
+                No heading for the category: the navigation beside this column already says which one
+                is on screen, in the item that is lit — and a page that repeats its own name under the
+                thing that named it has said nothing twice. The search is the other case and keeps its
+                headings: a hit is grouped under the category it came from, which is the answer to
+                "where is this setting".
+              -->
               <section v-else class="space-y-2">
-                <h3 class="text-sm font-medium text-muted-foreground">
-                  {{ t(SETTINGS_CATEGORY_LABEL_KEYS[category]) }}
-                </h3>
-
                 <template v-if="category === 'about'">
                   <!-- The build's own facts: a version and a platform are pasted into bug reports. -->
                   <dl v-if="aboutFacts.length > 0" class="space-y-2 select-text">
@@ -413,8 +460,8 @@ function translate(key: string, params?: Record<string, string>): string {
                       :key="fact.id"
                       class="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5"
                     >
-                      <dt class="text-sm">{{ t(fact.labelKey) }}</dt>
-                      <dd class="font-mono text-xs text-muted-foreground">{{ fact.value }}</dd>
+                      <dt class="text-sm font-medium">{{ t(fact.labelKey) }}</dt>
+                      <dd class="font-mono text-[11px] text-muted-foreground">{{ fact.value }}</dd>
                     </div>
                   </dl>
                   <p v-else class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
@@ -427,11 +474,11 @@ function translate(key: string, params?: Record<string, string>): string {
               -->
                 <div v-else-if="category === 'security'" class="space-y-5">
                   <div class="space-y-2">
-                    <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>
+                    <h4 class="text-sm font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>
                     <KnownKeys />
                   </div>
                   <div class="space-y-2">
-                    <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.hosts") }}</h4>
+                    <h4 class="text-sm font-medium text-muted-foreground">{{ t("settings.security.hosts") }}</h4>
                     <TrustedKeys />
                   </div>
                 </div>
@@ -444,9 +491,9 @@ function translate(key: string, params?: Record<string, string>): string {
                   mark still opens the whole explanation, and the search still finds them by either
                   line, because both are in the table rather than in the drawing.
                 -->
-                  <div v-if="fieldRows.length > 0" class="grid gap-x-3 gap-y-4 pb-1 sm:grid-cols-3">
+                  <div v-if="settingsFields.length > 0" class="grid gap-x-3 gap-y-4 pb-1 sm:grid-cols-3">
                     <SettingsField
-                      v-for="row in fieldRows"
+                      v-for="row in settingsFields"
                       :key="row.id"
                       :title="t(row.titleKey)"
                       :help="t(row.helpKey)"
@@ -471,7 +518,7 @@ function translate(key: string, params?: Record<string, string>): string {
                   -->
                     <template v-if="editingCustomColors">
                       <div class="flex items-end justify-between gap-2 sm:col-span-3">
-                        <span class="text-xs font-medium text-muted-foreground">
+                        <span class="text-xs text-muted-foreground">
                           {{ t(`settings.custom.${customThemeKey}`) }}
                         </span>
                         <button
@@ -504,6 +551,25 @@ function translate(key: string, params?: Record<string, string>): string {
                     </template>
                   </div>
 
+                  <div v-if="fontFields.length > 0" class="grid gap-x-3 gap-y-4 pb-1 sm:grid-cols-2">
+                    <SettingsField
+                      v-for="row in fontFields"
+                      :key="row.id"
+                      :title="t(row.titleKey)"
+                      :help="t(row.helpKey)"
+                    >
+                      <SettingsControl
+                        :row="row"
+                        :value="currentValue(row)"
+                        :label="t(row.titleKey)"
+                        stretch
+                        @choose="(value: string | boolean) => choose(row, value)"
+                        @preview="(value: string) => preview(row, value)"
+                        @end-preview="endPreview(row)"
+                      />
+                    </SettingsField>
+                  </div>
+
                   <SettingsRow
                     v-for="row in cardRows"
                     :key="row.id"
@@ -524,7 +590,7 @@ function translate(key: string, params?: Record<string, string>): string {
                   <div v-if="!isListCategory" class="flex justify-end pt-1">
                     <button
                       type="button"
-                      class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                       :aria-label="t('settings.reset.for', { category: t(SETTINGS_CATEGORY_LABEL_KEYS[category]) })"
                       @click="preferences.reset(fieldsOf(category))"
                     >

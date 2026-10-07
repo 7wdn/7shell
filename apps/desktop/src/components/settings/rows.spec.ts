@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CUSTOM_COLOR_LABEL_KEYS,
+  FONT_LABEL_KEYS,
   SETTINGS_CATEGORIES,
   LIST_CATEGORIES,
   SETTINGS_CATEGORY_LABEL_KEYS,
@@ -98,6 +99,27 @@ describe("the settings table", () => {
     for (const language of languages) {
       const translations = messages(language);
       for (const key of keys) {
+        if (!translations.has(key)) {
+          missing.push(`${language}: ${key}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("names the fonts that have a name of their own, in every language", () => {
+    const missing: string[] = [];
+    // The list is drawn from stacks — three that mean something rather than name a family, and the
+    // presets — and none of those labels is a literal `t("…")` a checker can read, because they
+    // arrive through the table the picker is built from.
+    for (const language of languages) {
+      const translations = messages(language);
+      for (const key of Object.values(FONT_LABEL_KEYS)) {
+        if (!translations.has(key)) {
+          missing.push(`${language}: ${key}`);
+        }
+      }
+      for (const key of ["settings.font.loading", "settings.font.empty", "settings.font.use"]) {
         if (!translations.has(key)) {
           missing.push(`${language}: ${key}`);
         }
