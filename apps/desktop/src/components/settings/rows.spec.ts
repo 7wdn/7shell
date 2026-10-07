@@ -59,6 +59,10 @@ function keysOf(row: SettingsRowDefinition): string[] {
   if (row.control.kind === "select" || row.control.kind === "choice") {
     keys.push(...row.control.options.map((option) => option.labelKey));
   }
+  if (row.control.kind === "cards") {
+    // A card says what it is and what it does, and both are drawn — so both have to be translated.
+    keys.push(...row.control.options.flatMap((option) => [option.titleKey, option.descriptionKey]));
+  }
   return keys;
 }
 

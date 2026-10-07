@@ -14,11 +14,13 @@ vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   sessionOpen: vi.fn(),
   sessionsImport: vi.fn(async () => undefined),
+  snippetsOpen: vi.fn(async () => []),
+  commandHistory: vi.fn(async () => []),
 }));
 
 import HomeView from "@/components/views/HomeView.vue";
 import { i18n } from "@/i18n";
-import { sessionOpen, sessionsImport } from "@/lib/backend/tauri";
+import { commandHistory, sessionOpen, sessionsImport } from "@/lib/backend/tauri";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
@@ -28,6 +30,7 @@ import type { Session } from "@/types/session";
 
 const sessionOpenMock = vi.mocked(sessionOpen);
 const sessionsImportMock = vi.mocked(sessionsImport);
+const commandHistoryMock = vi.mocked(commandHistory);
 
 function sample(id: string, name: string): Session {
   return {
@@ -105,6 +108,7 @@ beforeEach(() => {
     tunnelFailures: [],
   });
   sessionsImportMock.mockReset().mockResolvedValue(undefined);
+  commandHistoryMock.mockReset().mockResolvedValue([]);
   useSessionsStore().sessions = [alpha, beta, gamma];
   // The panel under a terminal is not this page's business: a click here opens the terminal, and
   // the store's own suite already says what it does about the file panel afterwards.
@@ -169,5 +173,55 @@ describe("the home page", () => {
     buttonIn(card("Common operations"), "Import sessions…").click();
 
     await vi.waitFor(() => expect(sessionsImportMock).toHaveBeenCalledWith("Import sessions"));
+  });
+
+  it("lists the commands that were sent, newest first", async () => {
+    commandHistoryMock.mockResolvedValue([
+      { command: "systemctl reload nginx", at: 1_700_000_100 },
+      { command: "uptime", at: 1_700_000_000 },
+    ]);
+    render();
+
+    await vi.waitFor(() => expect(card("History").textContent).toContain("systemctl reload nginx"));
+    expect(card("History").textContent).toContain("uptime");
+  });
+
+  it("says nothing has been sent rather than drawing an empty list", async () => {
+    render();
+
+    await vi.waitFor(() => expect(card("History").textContent).toContain("Nothing sent yet."));
+  });
+});
+
+/**
+ * Which of the two pages is drawn.
+ *
+ * The page is the surface somebody meets a hundred times, and what it should hold changes as they
+ * learn the application: while nothing has been connected, what this is and how a first connection
+ * goes are what the page is for — and once there are hosts, the hosts are. Two pages rather than one
+ * page with parts switched off, because the parts belong together: the counters and the names of the
+ * hosts are one answer, not two.
+ */
+describe("the two home pages", () => {
+  it("opens on the working one: what the library holds, the hosts, the actions and what was run", () => {
+    render();
+
+    expect(card("Quick start")).toBeTruthy();
+    expect(card("Common operations")).toBeTruthy();
+    expect(card("History"), "what was run is this page's too").toBeTruthy();
+    expect(host.textContent, "the counters are this page's").toContain("Sessions saved");
+    expect(() => card("Getting started"), "and the explanation belongs to the other one").toThrow();
+  });
+
+  it("draws the introduction instead, with nothing that names or counts a connection", () => {
+    usePreferencesStore().setHomeLayout("intro");
+
+    render();
+
+    expect(card("Getting started")).toBeTruthy();
+    expect(card("What this build can and cannot do")).toBeTruthy();
+    expect(host.textContent, "what it does is named in its own words").toContain("File workbench");
+    expect(() => card("Quick start"), "no host is named on this page").toThrow();
+    expect(host.textContent, "and nothing here counts one either").not.toContain("Sessions saved");
   });
 });

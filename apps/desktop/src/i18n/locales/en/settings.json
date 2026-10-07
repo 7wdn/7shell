@@ -70,6 +70,14 @@
       "claude": "Claude Code",
       "custom": "Custom"
     },
+    "home": {
+      "layouts": {
+        "intro": "Introduction",
+        "introHint": "What this is and how a first connection goes. No host names, no counts, no history.",
+        "workspace": "Workspace overview",
+        "workspaceHint": "What the library holds, the hosts used last, and the actions that start something."
+      }
+    },
     "corner": {
       "none": "Square",
       "small": "Small",
@@ -130,6 +138,11 @@
         "title": "Interface scale",
         "summary": "Draws the whole interface larger, inside the same window.",
         "help": "The window keeps its size and everything in it grows: text, borders, and the terminal's own grid of characters. It is meant for a display dense enough to make the default size hard to read, where the operating system's own scaling does not reach a window that is already open."
+      },
+      "homeContent": {
+        "title": "Home content",
+        "summary": "Which of the two pages is drawn with nothing open.",
+        "help": "The home page is the surface with nothing open on it, and there are two of them because they answer different questions. The introduction is for somebody who has not connected anything yet: what this build is, what it can do, and the three steps of a first connection. The workspace overview is for somebody who has: what the library holds, the hosts they were just on, and the actions that start something. Which one is drawn is remembered."
       },
       "cornerStyle": {
         "title": "Corner style",

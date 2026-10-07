@@ -14,6 +14,7 @@ import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
 import {
   DEFAULT_CORNER_STYLE,
+  DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
   DEFAULT_TERMINAL_FONT,
@@ -39,6 +40,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     themePalette: "default",
     uiScale: DEFAULT_UI_SCALE,
     cornerStyle: DEFAULT_CORNER_STYLE,
+    homeLayout: DEFAULT_HOME_LAYOUT,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -157,6 +159,7 @@ describe("preferences store", () => {
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
+      homeLayout: DEFAULT_HOME_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -186,6 +189,7 @@ describe("preferences store", () => {
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
+      homeLayout: DEFAULT_HOME_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -326,6 +330,7 @@ describe("the terminal palette", () => {
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
+      homeLayout: DEFAULT_HOME_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -493,6 +498,24 @@ describe("the colour theme", () => {
     expect(settingsSetMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ customColorsDark: DEFAULT_CUSTOM_COLORS_DARK }),
     );
+  });
+
+  it("remembers which of the two home pages is drawn", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // The working page is what this build has always drawn, so a fresh install opens on it.
+    expect(store.homeLayout).toBe("workspace");
+
+    store.setHomeLayout("intro");
+
+    expect(store.homeLayout).toBe("intro");
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ homeLayout: "intro" }));
+
+    await store.reset(["homeLayout"]);
+    expect(store.homeLayout).toBe("workspace");
   });
 
   it("writes the corner style on the document, and puts it back", async () => {
@@ -895,6 +918,7 @@ describe("restoring the defaults", () => {
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
       cornerStyle: DEFAULT_CORNER_STYLE,
+      homeLayout: DEFAULT_HOME_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

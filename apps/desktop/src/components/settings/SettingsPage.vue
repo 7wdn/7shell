@@ -67,6 +67,7 @@ import {
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
   type CornerStyle,
+  type HomeLayout,
   type CustomColors,
   type FilesLayout,
   type SessionLayout,
@@ -93,8 +94,12 @@ const cardRows = computed(() => cardRowsOfCategory(category.value));
  * family name is longer than the words beside it, and the picker that opens from it is a list of
  * names — so the two share a full row rather than sitting in two thirds of one with a hole in it.
  */
-const settingsFields = computed(() => fieldRows.value.filter((row) => row.grid !== "fonts"));
+const settingsFields = computed(() =>
+  fieldRows.value.filter((row) => row.grid === undefined || row.grid === "settings"),
+);
 const fontFields = computed(() => fieldRows.value.filter((row) => row.grid === "fonts"));
+/** The fields that are a block rather than a word: one to a line, label above. */
+const wideFields = computed(() => fieldRows.value.filter((row) => row.grid === "wide"));
 
 /**
  * The five colours being edited, when a custom palette is worn.
@@ -159,7 +164,7 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
 }
 
 /** What a row's control currently shows. */
-function currentValue(row: SettingsRowDefinition): string | boolean {
+function currentValue(row: SettingsRowDefinition): string | boolean | readonly string[] {
   switch (row.field) {
     case "themeMode":
       return preferences.themeMode;
@@ -171,6 +176,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean {
       return String(preferences.uiScale);
     case "cornerStyle":
       return preferences.cornerStyle;
+    case "homeLayout":
+      return preferences.homeLayout;
     case "uiFont":
       // Nothing chosen reads as the one this build ships with, because that is what is being drawn:
       // the picker shows a family, and "no answer" is not one.
@@ -192,8 +199,13 @@ function currentValue(row: SettingsRowDefinition): string | boolean {
   }
 }
 
-/** Writing a row, which applies at once and is written down afterwards — there is no save button. */
-function choose(row: SettingsRowDefinition, value: string | boolean): void {
+/**
+ * Writing a row.
+ *
+ * It applies at once, and it is written down when the bar at the foot of the page says so — which is
+ * the difference the two buttons there are about.
+ */
+function choose(row: SettingsRowDefinition, value: string | boolean | readonly string[]): void {
   switch (row.field) {
     case "themeMode":
       void preferences.setThemeMode(value as ThemeMode);
@@ -206,6 +218,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean): void {
       return;
     case "cornerStyle":
       void preferences.setCornerStyle(value as CornerStyle);
+      return;
+    case "homeLayout":
+      void preferences.setHomeLayout(value as HomeLayout);
       return;
     case "uiFont":
       void preferences.setUiFont(String(value));
@@ -491,7 +506,7 @@ function translate(key: string, params?: Record<string, string>): string {
                       :row="row"
                       :value="currentValue(row)"
                       :label="t(row.titleKey)"
-                      @choose="(value: string | boolean) => choose(row, value)"
+                      @choose="(value) => choose(row, value)"
                       @preview="(value: string) => preview(row, value)"
                       @end-preview="endPreview(row)"
                     />
@@ -565,7 +580,7 @@ function translate(key: string, params?: Record<string, string>): string {
                         :value="currentValue(row)"
                         :label="t(row.titleKey)"
                         stretch
-                        @choose="(value: string | boolean) => choose(row, value)"
+                        @choose="(value) => choose(row, value)"
                         @preview="(value: string) => preview(row, value)"
                         @end-preview="endPreview(row)"
                       />
@@ -625,7 +640,7 @@ function translate(key: string, params?: Record<string, string>): string {
                         :value="currentValue(row)"
                         :label="t(row.titleKey)"
                         stretch
-                        @choose="(value: string | boolean) => choose(row, value)"
+                        @choose="(value) => choose(row, value)"
                         @preview="(value: string) => preview(row, value)"
                         @end-preview="endPreview(row)"
                       />
@@ -643,11 +658,36 @@ function translate(key: string, params?: Record<string, string>): string {
                       :row="row"
                       :value="currentValue(row)"
                       :label="t(row.titleKey)"
-                      @choose="(value: string | boolean) => choose(row, value)"
+                      @choose="(value) => choose(row, value)"
                       @preview="(value: string) => preview(row, value)"
                       @end-preview="endPreview(row)"
                     />
                   </SettingsRow>
+
+                  <!--
+                  The blocks last: a row above is a name and a control, and a block is a shape of its
+                  own — two cards to choose between, a label over it rather than beside it. Putting one
+                  between the rows would break the column they read down, and the settings a person
+                  changes often are the rows, so the block is what they come to after them.
+                -->
+                  <div v-if="wideFields.length > 0" class="grid gap-y-4 pt-2 pb-1">
+                    <SettingsField
+                      v-for="row in wideFields"
+                      :key="row.id"
+                      :title="t(row.titleKey)"
+                      :help="t(row.helpKey)"
+                    >
+                      <SettingsControl
+                        :row="row"
+                        :value="currentValue(row)"
+                        :label="t(row.titleKey)"
+                        stretch
+                        @choose="(value) => choose(row, value)"
+                        @preview="(value: string) => preview(row, value)"
+                        @end-preview="endPreview(row)"
+                      />
+                    </SettingsField>
+                  </div>
                 </template>
               </section>
             </div>

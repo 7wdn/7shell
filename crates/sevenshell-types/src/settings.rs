@@ -276,6 +276,39 @@ impl CornerStyle {
     }
 }
 
+/// What the home page is for.
+///
+/// Two pages rather than one page with parts that can be turned off, because the two answer
+/// different questions: somebody who has never connected anything wants to know what this is, and
+/// somebody who has wants their own hosts and the thing they were doing. A page made of optional
+/// pieces would be a third answer nobody asked for, and would have to guess which pieces belong
+/// together — the counters and the host names are the same answer, not two.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HomeLayout {
+    /// What this build is, and the steps of a first connection: no names, no counts, no history.
+    Intro,
+    /// The working page: what the library holds, the hosts used last, and the actions that start
+    /// something. What this build has always drawn, so a fresh install opens on it.
+    #[default]
+    Workspace,
+}
+
+impl HomeLayout {
+    pub const ALL: &'static [HomeLayout] = &[HomeLayout::Intro, HomeLayout::Workspace];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Intro => "intro",
+            Self::Workspace => "workspace",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|layout| layout.as_str() == id)
+    }
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -359,6 +392,10 @@ pub struct AppSettings {
     /// which reads as the roundness this build has always drawn.
     #[serde(default)]
     pub corner_style: CornerStyle,
+    /// Which of the two home pages is drawn. Absent in a file written before there were two, which
+    /// reads as the one this build has always drawn.
+    #[serde(default)]
+    pub home_layout: HomeLayout,
     /// The family the interface draws its text in, as a `font-family` stack.
     ///
     /// The whole stack rather than one name, and absent means the one this build ships with: somebody
@@ -438,6 +475,7 @@ impl Default for AppSettings {
             packed_transfer: false,
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
+            home_layout: HomeLayout::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -455,6 +493,7 @@ impl AppSettings {
             && self.theme_palette == ThemePalette::Default
             && self.ui_scale == ui_scale_default()
             && self.corner_style == CornerStyle::Large
+            && self.home_layout == HomeLayout::Workspace
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
@@ -493,6 +532,17 @@ mod tests {
             assert!(
                 !colours.is_drawable(),
                 "`{undrawable}` would reach a stylesheet that cannot use it"
+            );
+        }
+    }
+
+    #[test]
+    fn every_home_layout_round_trips_through_its_own_name() {
+        for layout in HomeLayout::ALL {
+            assert_eq!(
+                HomeLayout::from_id(layout.as_str()),
+                Some(*layout),
+                "a home page whose name does not read back is one the settings file cannot hold"
             );
         }
     }

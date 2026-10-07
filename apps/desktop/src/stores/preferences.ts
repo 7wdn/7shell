@@ -20,6 +20,7 @@ import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
   DEFAULT_CORNER_STYLE,
+  DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
   DEFAULT_TERMINAL_FONT,
@@ -27,6 +28,7 @@ import {
   DEFAULT_UI_SCALE,
   type AppSettings,
   type CornerStyle,
+  type HomeLayout,
   type CustomColors,
   type FilesLayout,
   type ResolvedTheme,
@@ -53,6 +55,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   themePalette: "default",
   uiScale: DEFAULT_UI_SCALE,
   cornerStyle: DEFAULT_CORNER_STYLE,
+  homeLayout: DEFAULT_HOME_LAYOUT,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -177,6 +180,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * is somebody who wants it collapsed the next time they open the application.
    */
   const sidebarOpen = ref(true);
+  /**
+   * Which of the two home pages is drawn.
+   *
+   * Two pages rather than one page with parts that can be turned off: somebody who has never
+   * connected anything wants to know what this is, and somebody who has wants their own hosts. The
+   * pieces belong together — the counters and the host names are the same answer, not two.
+   */
+  const homeLayout = ref<HomeLayout>(DEFAULT_HOME_LAYOUT);
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -358,6 +369,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       themePalette.value = settings.themePalette;
       uiScale.value = settings.uiScale;
       cornerStyle.value = settings.cornerStyle;
+      homeLayout.value = settings.homeLayout;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -425,6 +437,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         themePalette: themePalette.value,
         uiScale: uiScale.value,
         cornerStyle: cornerStyle.value,
+        homeLayout: homeLayout.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -524,6 +537,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
     }
     previewedFont.value = null;
     apply();
+  }
+
+  /** Chooses which of the two home pages is drawn, which is the page itself being redrawn. */
+  function setHomeLayout(layout: HomeLayout): void {
+    homeLayout.value = layout;
+    dirty.value = true;
   }
 
   /** Chooses how round the corners are, which is felt at once — the whole window is redrawn. */
@@ -719,6 +738,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "cornerStyle":
           cornerStyle.value = FRESH.cornerStyle;
           break;
+        case "homeLayout":
+          homeLayout.value = FRESH.homeLayout;
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -778,6 +800,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     wornPalette,
     uiScale,
     cornerStyle,
+    homeLayout,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -809,6 +832,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     clearThemePalettePreview,
     setUiScale,
     setCornerStyle,
+    setHomeLayout,
     setUiFont,
     setTerminalFont,
     previewFont,

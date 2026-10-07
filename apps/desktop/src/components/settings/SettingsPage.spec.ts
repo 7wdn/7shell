@@ -49,6 +49,10 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     themePalette: "default",
     uiScale: 100,
     terminalTheme: "system",
+    // Both pages' choices are on the appearance tab, and the fixture is what the store reads: a
+    // field left out here is not "unset", it is a control drawn with no value at all.
+    cornerStyle: "large",
+    homeLayout: "workspace",
     filesLayout: "tree",
     sessionLayout: "split",
     sidebarOpen: true,

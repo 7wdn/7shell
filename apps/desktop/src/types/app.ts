@@ -138,6 +138,12 @@ export const FONT_PRESETS: readonly { readonly value: string; readonly labelKey:
   { value: "monospace", labelKey: "settings.font.presets.systemMonospace" },
 ];
 
+/** What the home page is for, from `sevenshell_types::HomeLayout`. */
+export type HomeLayout = "intro" | "workspace";
+
+/** The page a fresh install opens on: the one this build has always drawn. */
+export const DEFAULT_HOME_LAYOUT: HomeLayout = "workspace";
+
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";
 
@@ -196,6 +202,8 @@ export interface AppSettings {
   readonly uiScale: number;
   /** How round the corners are: nothing, a little, or what this build has always drawn. */
   readonly cornerStyle: CornerStyle;
+  /** Which of the two home pages is drawn. */
+  readonly homeLayout: HomeLayout;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** The stack the terminal draws in, which is a choice of its own. */

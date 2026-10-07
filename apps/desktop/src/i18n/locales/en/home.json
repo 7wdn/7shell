@@ -2,10 +2,33 @@
   "home": {
     "tile": {
       "protocols": "Declared protocols",
-      "capabilities": "Capabilities",
-      "authMethods": "Auth methods",
       "sessions": "Sessions saved",
       "groups": "Session groups"
+    },
+    "intro": {
+      "badge": "SSH operations client",
+      "headline": "Your hosts, your keys, your history — all on this machine.",
+      "body": "Sessions, credentials and the commands you have run are kept here, encrypted with a passphrase only you hold. No account, no sync, no telemetry. Make a session, confirm the host key on the first connection, then work in a terminal or in the file workbench beside it.",
+      "notice": "This page names no host and counts nothing: no session, no host key and no history is shown on it.",
+      "settings": "Home page settings"
+    },
+    "feature": {
+      "sessions": {
+        "title": "Session library",
+        "body": "Address, authentication, jump hosts and forwards in one saved entry, with groups to keep them apart."
+      },
+      "terminal": {
+        "title": "Real terminals",
+        "body": "A terminal per session, with its own font and colour scheme — and one command that can be sent to several at once."
+      },
+      "files": {
+        "title": "File workbench",
+        "body": "Both directories side by side, drag to move a file, and one packed archive when a whole tree is going over."
+      },
+      "monitor": {
+        "title": "Host monitor",
+        "body": "Load, memory, disk and processes, sampled over the connection you already have — nothing to install on the host."
+      }
     },
     "quick": {
       "title": "Quick start"
@@ -22,12 +45,8 @@
       "pending": "Sessions, password and key authentication and terminals work today; jump hosts, forwarding, SFTP and the platform agents do not yet. A session can only reach a host this build speaks to directly."
     },
     "about": {
-      "title": "This build",
       "version": "Version",
       "platform": "Platform",
-      "build": "Build",
-      "debugBuild": "development",
-      "releaseBuild": "release",
       "descriptorSchema": "Descriptor schema"
     },
     "status": {

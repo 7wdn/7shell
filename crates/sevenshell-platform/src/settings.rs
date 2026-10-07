@@ -17,8 +17,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AppSettings, CornerStyle, CustomColors, FilesLayout, SessionLayout, ThemeMode, ThemePalette, monitor_on,
-    normalize_ui_scale, sidebar_on, ui_scale_default,
+    AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, ThemeMode, ThemePalette,
+    monitor_on, normalize_ui_scale, sidebar_on, ui_scale_default,
 };
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
@@ -78,6 +78,10 @@ struct StoredSettings {
     /// build has always drawn rather than as somebody having asked for squares.
     #[serde(default)]
     corner_style: String,
+    /// Absent in a file written before there were two home pages, which reads as the one this build
+    /// has always drawn.
+    #[serde(default)]
+    home_layout: String,
     /// Absent in a file written before a font could be chosen, which reads as the one this build
     /// ships with rather than as somebody having picked something.
     #[serde(default)]
@@ -110,6 +114,7 @@ impl StoredSettings {
             packed_transfer: settings.packed_transfer,
             ui_scale: settings.ui_scale,
             corner_style: settings.corner_style.as_str().to_owned(),
+            home_layout: settings.home_layout.as_str().to_owned(),
             ui_font: settings.ui_font.clone(),
             terminal_font: settings.terminal_font.clone(),
             custom_colors: settings.custom_colors.clone(),
@@ -132,6 +137,7 @@ impl StoredSettings {
             packed_transfer: self.packed_transfer,
             ui_scale: normalize_ui_scale(self.ui_scale),
             corner_style: CornerStyle::from_id(&self.corner_style).unwrap_or_default(),
+            home_layout: HomeLayout::from_id(&self.home_layout).unwrap_or_default(),
             // A name the machine does not have is not an error and not worth a message: the stack
             // falls through to what follows it, which is exactly why the whole stack is stored.
             ui_font: self.ui_font.filter(|font| !font.trim().is_empty()),
@@ -241,6 +247,7 @@ mod tests {
             theme_palette: ThemePalette::default(),
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
+            home_layout: HomeLayout::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -391,6 +398,8 @@ mod tests {
             ui_scale: 150,
             // Not the default, so the round trip proves a choice survives.
             corner_style: CornerStyle::None,
+            // Not the default, so the round trip proves a choice survives.
+            home_layout: HomeLayout::Intro,
             ui_font: Some("'JetBrains Mono', monospace".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),

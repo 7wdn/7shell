@@ -98,6 +98,21 @@ export interface SettingsChoiceOption {
   readonly radius?: string;
 }
 
+/**
+ * One card in a choice of a few, each with a line under its name.
+ *
+ * For the choices that are too big to be a button: a whole page's contents, a layout, a shape — the
+ * name says which one it is and the line under it says what it does, because two names like
+ * "overview" and "introduction" are not enough to choose between at a glance.
+ */
+export interface SettingsCardOption {
+  /** What the choice is worth, in the settings file's own spelling. */
+  readonly value: string;
+  readonly titleKey: string;
+  /** One line under the title: what this one does, said short enough to sit in a card. */
+  readonly descriptionKey: string;
+}
+
 export interface SettingsSelectOption {
   /** What the choice is worth, in the settings file's own spelling. */
   readonly value: string;
@@ -128,6 +143,7 @@ export interface SettingsRowDefinition {
     | { readonly kind: "switch" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
     | { readonly kind: "choice"; readonly options: readonly SettingsChoiceOption[] }
+    | { readonly kind: "cards"; readonly options: readonly SettingsCardOption[] }
     /**
      * A font, which is not a dropdown of fixed choices: the options are this machine's families and
      * they are read when the list opens, and a name that is not among them can be typed and taken.
@@ -152,8 +168,12 @@ export interface SettingsRowDefinition {
    * a control — and then a row of two for the fonts. The fonts have their own row because a row of
    * three with one column empty in it reads as a mistake, and because a family name is longer than
    * the words beside it: the picker that opens from it is a list of names.
+   *
+   * `wide` is a field on a line of its own, and it is for a control that is a block rather than a
+   * word: cards that describe what they do are two hundred pixels each, and a row that puts them
+   * beside a title squeezes the title to nothing.
    */
-  readonly grid?: "settings" | "fonts";
+  readonly grid?: "settings" | "fonts" | "wide";
 }
 
 /**
@@ -374,6 +394,27 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         { value: "light", labelKey: "settings.terminal.light", icon: "sun" },
         { value: "dark", labelKey: "settings.terminal.dark", icon: "moon" },
         { value: "system", labelKey: "settings.terminal.follow", icon: "sun-moon" },
+      ],
+    },
+  },
+  {
+    id: "home-content",
+    category: "appearance",
+    field: "homeLayout",
+    titleKey: "settings.rows.homeContent.title",
+    summaryKey: "settings.rows.homeContent.summary",
+    helpKey: "settings.rows.homeContent.help",
+    presentation: "field",
+    grid: "wide",
+    control: {
+      kind: "cards",
+      options: [
+        { value: "intro", titleKey: "settings.home.layouts.intro", descriptionKey: "settings.home.layouts.introHint" },
+        {
+          value: "workspace",
+          titleKey: "settings.home.layouts.workspace",
+          descriptionKey: "settings.home.layouts.workspaceHint",
+        },
       ],
     },
   },

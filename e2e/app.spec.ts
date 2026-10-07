@@ -35,6 +35,7 @@ async function writtenSettings(): Promise<{
   themePalette?: string;
   uiScale?: number;
   cornerStyle?: string;
+  homeLayout?: string;
   uiFont?: string;
   terminalFont?: string;
   customColors?: { primary?: string };
@@ -45,6 +46,7 @@ async function writtenSettings(): Promise<{
     themePalette?: string;
     uiScale?: number;
     cornerStyle?: string;
+    homeLayout?: string;
     uiFont?: string;
     terminalFont?: string;
     customColors?: { primary?: string };
@@ -188,7 +190,10 @@ test("the home page opens a session from its own list, and says so when it canno
     await expect(board.getByRole("heading", { name: "Quick start" })).toBeVisible();
     await expect(board.getByText("No sessions yet", { exact: false })).toBeVisible();
     await expect(board.getByRole("heading", { name: "Common operations" })).toBeVisible();
-    await expect(board.getByRole("heading", { name: "Getting started" })).toBeVisible();
+    // Nothing has been sent yet in a window this fresh, which is the other half of the panel.
+    await expect(board.getByRole("heading", { name: "History" })).toBeVisible();
+    await expect(board.getByText("Nothing sent yet.", { exact: false })).toBeVisible();
+    // "Getting started" is the other home page's card, and which one is drawn is its own case.
 
     // Saved through the sidebar's own button, so what appears below is the same library read from
     // two places rather than a list the home page keeps for itself.
@@ -919,6 +924,69 @@ test("a choice is applied at once, written on Apply, and dropped only when asked
     await again.getByRole("radio", { name: "Dark", exact: true }).click();
     await applySettings(page);
     await expect.poll(async () => (await writtenSettings()).themeMode ?? "light").toBe("dark");
+
+    // Closed, so that the case after this one meets the window it expects: nothing open is the home
+    // page, and a case cannot assume it is there while a tab of somebody else's is.
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The home page, which is one of two.
+ *
+ * The page is the surface with nothing open on it, and there are two of them: the introduction, for
+ * somebody who has not connected anything yet — what this build is and how a first connection goes,
+ * with no host named and nothing counted — and the workspace overview, which is the library it
+ * holds, the hosts used last, the actions and what was run. Which one is chosen in the settings
+ * page's appearance tab, and the page itself is where it is seen, which means closing the settings
+ * tab first: the home page is what is on screen when no tab is.
+ */
+test("the home page is the one somebody chose", async () => {
+  const { page, close } = await openApp();
+  try {
+    // Nothing open is the home page, which is what the case before this one left behind.
+    const board = home(page);
+    await expect(board.getByText("Sessions saved")).toBeVisible();
+
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    // The cards say what each page is, so the radio a reader finds is the card whose line begins
+    // with its name — and the working page is the one a fresh install is on.
+    const intro = settings.getByRole("radio", { name: /^Introduction/ });
+    const workspace = settings.getByRole("radio", { name: /^Workspace overview/ });
+    await expect(workspace).toBeChecked();
+
+    // Kept as a picture: two cards, each with the line that tells them apart, one of them lit.
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-home-content.png"), fullPage: false });
+
+    await intro.click();
+    await expect(intro).toBeChecked();
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).homeLayout).toBe("intro");
+
+    await page.getByRole("button", { name: "Close settings" }).click();
+
+    // The page it is about: nothing names or counts a connection, and what this is takes their place.
+    await expect(board.getByText("Sessions saved"), "nothing on this page counts a session").toHaveCount(0);
+    await expect(board.getByRole("heading", { name: "Getting started" })).toBeVisible();
+    // Including the one thing it promises about itself, and the way back to the other page.
+    await expect(board.getByText("no host key and no history", { exact: false })).toBeVisible();
+    await expect(board.getByRole("button", { name: "Home page settings" })).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACTS, "home-intro.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the page it expects.
+    await settingsButton(page).click();
+    const again = page.getByRole("region", { name: "Settings" });
+    await again.getByRole("button", { name: "Appearance", exact: true }).click();
+    await again.getByRole("radio", { name: /^Workspace overview/ }).click();
+    await applySettings(page);
+    await page.getByRole("button", { name: "Close settings" }).click();
+    await expect(board.getByText("Sessions saved")).toBeVisible();
   } finally {
     await close();
   }

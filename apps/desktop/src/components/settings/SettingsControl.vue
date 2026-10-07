@@ -31,8 +31,11 @@ import {
 
 const props = defineProps<{
   row: SettingsRowDefinition;
-  /** What the field is now — a string for a dropdown, a boolean for a switch. */
-  value: string | boolean;
+  /**
+   * What the field is now: a string for a dropdown or a font, a boolean for a switch, and a list of
+   * names for a set of tick boxes.
+   */
+  value: string | boolean | readonly string[];
   /** The control's accessible name, which is the row's own title. */
   label: string;
   /**
@@ -47,7 +50,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  choose: [value: string | boolean];
+  choose: [value: string | boolean | readonly string[]];
   /** An option is under the pointer: what the setting would look like if it were taken. */
   preview: [value: string];
   /** The pointer is off the list: show what was actually chosen again. */
@@ -103,6 +106,17 @@ const CHOICE_ICONS: Record<SettingsChoiceIcon, Component> = {
   "sun-moon": SunMoon,
 };
 
+/** The cards of a choice, with the line under each name. */
+const cards = computed(() =>
+  props.row.control.kind === "cards"
+    ? props.row.control.options.map((option) => ({
+        value: option.value,
+        title: t(option.titleKey),
+        description: t(option.descriptionKey),
+      }))
+    : [],
+);
+
 /** A set of choices, ready to draw: what each is worth, what it says, and its glyph. */
 const choices = computed(() =>
   props.row.control.kind === "choice"
@@ -135,6 +149,38 @@ const options = computed(() =>
     :aria-label="props.label"
     @update:model-value="(value: boolean) => emit('choose', value)"
   />
+
+  <!--
+    A choice of a few, each drawn as a card with a line under its name. A radio group rather than a
+    set of buttons, for the same reason the three modes beside it are: one of these, always one. The
+    description is what tells them apart — two names are not enough to choose between at a glance.
+  -->
+  <div
+    v-else-if="props.row.control.kind === 'cards'"
+    role="radiogroup"
+    :aria-label="props.label"
+    class="grid min-w-0 gap-2.5 sm:grid-cols-2"
+  >
+    <button
+      v-for="option in cards"
+      :key="option.value"
+      type="button"
+      role="radio"
+      :aria-checked="String(props.value) === option.value"
+      :class="
+        cn(
+          'rounded-md border p-3 text-left transition-colors',
+          String(props.value) === option.value
+            ? 'border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/30'
+            : 'border-border text-foreground hover:bg-accent',
+        )
+      "
+      @click="emit('choose', option.value)"
+    >
+      <span class="block text-sm font-medium">{{ option.title }}</span>
+      <span class="mt-0.5 block text-xs text-muted-foreground">{{ option.description }}</span>
+    </button>
+  </div>
 
   <!--
     The three modes as three buttons, one of them lit. A radio group rather than a set of pressed
