@@ -19,7 +19,7 @@ use sevenshell_error::ShellError;
 use sevenshell_types::{
     AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout,
     TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_ui_scale, sidebar_on,
-    ui_scale_default,
+    tray_icon_on, ui_scale_default,
 };
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
@@ -58,6 +58,13 @@ struct StoredSettings {
     /// ships with — on — rather than as a monitor somebody switched off before it existed.
     #[serde(default = "monitor_on")]
     monitor_enabled: bool,
+    /// The two the shell itself obeys, absent in a file written before the shell had a tray. The
+    /// first is on for the same reason it is on in the wire type: a window that puts itself away
+    /// needs a way back, and an absent value means "nobody has chosen" rather than "chosen off".
+    #[serde(default = "tray_icon_on")]
+    show_tray_icon: bool,
+    #[serde(default)]
+    quit_on_close: bool,
     /// Absent in a file written before there was a packed transfer, which reads as off — the default
     /// the feature ships with. A file written by a build that has it cannot be read back by one that
     /// does not, but that is what the schema version is for.
@@ -130,6 +137,8 @@ impl StoredSettings {
             sidebar_width: settings.sidebar_width,
             sidebar_open: settings.sidebar_open,
             monitor_enabled: settings.monitor_enabled,
+            show_tray_icon: settings.show_tray_icon,
+            quit_on_close: settings.quit_on_close,
             packed_transfer: settings.packed_transfer,
             ui_scale: settings.ui_scale,
             corner_style: settings.corner_style.as_str().to_owned(),
@@ -159,6 +168,8 @@ impl StoredSettings {
             sidebar_width: self.sidebar_width,
             sidebar_open: self.sidebar_open,
             monitor_enabled: self.monitor_enabled,
+            show_tray_icon: self.show_tray_icon,
+            quit_on_close: self.quit_on_close,
             packed_transfer: self.packed_transfer,
             ui_scale: normalize_ui_scale(self.ui_scale),
             corner_style: CornerStyle::from_id(&self.corner_style).unwrap_or_default(),
@@ -274,6 +285,8 @@ mod tests {
             sidebar_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
+            show_tray_icon: tray_icon_on(),
+            quit_on_close: false,
             packed_transfer: false,
             theme_palette: ThemePalette::default(),
             ui_scale: ui_scale_default(),
@@ -439,6 +452,10 @@ mod tests {
             home_layout: HomeLayout::Intro,
             // Not the default, so the round trip proves a choice survives.
             app_layout: AppLayout::Classic,
+            // The same, for the two the shell reads: the icon off and the window quitting when it is
+            // closed, which are both the opposite of what a fresh install has.
+            show_tray_icon: false,
+            quit_on_close: true,
             // The same, for the rest of the words the bar is stored as.
             tab_layout: TabLayout::Wrap,
             tab_placement: TabPlacement::Right,

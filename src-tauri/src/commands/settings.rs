@@ -1,6 +1,6 @@
 use sevenshell_error::ShellError;
 use sevenshell_types::AppSettings;
-use tauri::WebviewWindow;
+use tauri::{Manager as _, WebviewWindow};
 
 use crate::window_chrome::window_theme_for;
 
@@ -20,6 +20,9 @@ pub fn settings_get() -> Result<AppSettings, ShellError> {
 pub fn settings_set(window: WebviewWindow, settings: AppSettings) -> Result<(), ShellError> {
     sevenshell_platform::save(&settings)?;
     apply_window_theme(&window, &settings);
+    // The two the shell itself obeys, which the window cannot apply by being restyled: whether there
+    // is an icon, and what closing does.
+    crate::apply_shell_settings(window.app_handle(), &settings);
     Ok(())
 }
 

@@ -127,12 +127,18 @@ async function askedToQuit(): Promise<void> {
   quitting.value = true;
 }
 
-/** Closing for real: the guard goes down first, so the same request passes through this time. */
+/**
+ * Closing for real, on the way out of the question above.
+ *
+ * The window's own close *asks* — the shell may put it away instead, or ask about unsaved work — so
+ * this is the answered close: one call that tells the shell the question is settled and closes the
+ * window. It used to be a disarmed guard followed by a plain close, which no longer means quit now
+ * that a close can mean "hide".
+ */
 async function quitNow(): Promise<void> {
   quitting.value = false;
   try {
-    await backend.window.quitGuard(false);
-    await backend.window.close();
+    await backend.window.quit();
   } catch {
     // A browser has no window to close, and a window that will not close is not something this
     // side can do anything about.

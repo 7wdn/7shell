@@ -15,6 +15,8 @@ import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/pre
 import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
+  DEFAULT_QUIT_ON_CLOSE,
+  DEFAULT_SHOW_TRAY_ICON,
   DEFAULT_TAB_LAYOUT,
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
@@ -53,6 +55,8 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     tabGroupMode: DEFAULT_TAB_GROUP_MODE,
     tabSortMode: DEFAULT_TAB_SORT_MODE,
     tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
+    showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
+    quitOnClose: DEFAULT_QUIT_ON_CLOSE,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -178,6 +182,8 @@ describe("preferences store", () => {
       tabGroupMode: DEFAULT_TAB_GROUP_MODE,
       tabSortMode: DEFAULT_TAB_SORT_MODE,
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
+      showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
+      quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -214,6 +220,8 @@ describe("preferences store", () => {
       tabGroupMode: DEFAULT_TAB_GROUP_MODE,
       tabSortMode: DEFAULT_TAB_SORT_MODE,
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
+      showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
+      quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -361,6 +369,8 @@ describe("the terminal palette", () => {
       tabGroupMode: DEFAULT_TAB_GROUP_MODE,
       tabSortMode: DEFAULT_TAB_SORT_MODE,
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
+      showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
+      quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -646,6 +656,27 @@ describe("the colour theme", () => {
       "manual",
       "unlimited",
     ]);
+  });
+
+  it("remembers the two the shell's own window obeys", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // The icon is on and closing the window does not end the application: both are what a fresh
+    // install gets, and the second is the one this build changed when it grew a tray.
+    expect([store.showTrayIcon, store.quitOnClose]).toEqual([true, false]);
+
+    store.setShowTrayIcon(false);
+    store.setQuitOnClose(true);
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ showTrayIcon: false, quitOnClose: true }),
+    );
+
+    await store.reset(["showTrayIcon", "quitOnClose"]);
+    expect([store.showTrayIcon, store.quitOnClose]).toEqual([true, false]);
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {
@@ -1035,6 +1066,8 @@ describe("restoring the defaults", () => {
       tabGroupMode: DEFAULT_TAB_GROUP_MODE,
       tabSortMode: DEFAULT_TAB_SORT_MODE,
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
+      showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
+      quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

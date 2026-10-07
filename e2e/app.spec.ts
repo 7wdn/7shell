@@ -1042,6 +1042,53 @@ test("the tab bar is told what to do when the tabs do not fit", async () => {
 });
 
 /**
+ * The two switches about the window itself: the tray icon, and what closing does.
+ *
+ * The settings half of them is what a run like this can see — that they exist, that they start the way
+ * a fresh install has them, and that what somebody chooses reaches the file the shell reads. What the
+ * shell then *does* with them is a window and a tray icon, which no page can be asked about: that is
+ * checked against the running binary itself, by hand, and the two predicates behind it have their own
+ * unit cases.
+ */
+test("the tray icon and the close behaviour are choices, written where the shell reads them", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    const tray = settings.getByRole("switch", { name: "Show tray/menu bar icon" });
+    const quit = settings.getByRole("switch", { name: "Quit when closing window" });
+
+    // What a fresh install has: an icon, and a window that puts itself away rather than ending the
+    // application — which is the one of the two this build changed when it grew a tray.
+    await expect(tray).toHaveAttribute("aria-checked", "true");
+    await expect(quit).toHaveAttribute("aria-checked", "false");
+
+    await tray.click();
+    await quit.click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).showTrayIcon).toBe(false);
+    await expect.poll(async () => (await writtenSettings()).quitOnClose).toBe(true);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-window-switches.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the shell it expects.
+    await tray.click();
+    await quit.click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).showTrayIcon).toBe(true);
+    await expect.poll(async () => (await writtenSettings()).quitOnClose).toBe(false);
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The tab bar's own four choices, which are the ones about the bar rather than about its tabs.
  *
  * What a real window is needed for: each of the four is a measurement rather than a colour — which way

@@ -5,9 +5,11 @@
 //! or an agent without going through a webview.
 
 mod clipboard;
+mod close;
 mod commands;
 mod dropped;
 mod state;
+mod tray;
 mod uploads;
 mod window_chrome;
 
@@ -28,6 +30,11 @@ pub fn run() {
             commands::terminal::pump_events(app.handle().clone(), events);
             app.manage(shell_state);
 
+            // After the state is managed rather than before: what the settings say about closing is
+            // recorded *in* that state, and a shell that read them into nothing would decide every
+            // close from the constructor's values instead of from the file.
+            apply_startup_shell_settings(app.handle());
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -35,16 +42,35 @@ pub fn run() {
                 report_drag(window, drag);
             }
 
-            // A close the interface asked to think about first. Only while it has said there is
-            // something to lose: an unarmed guard closes the window here and now, which is also what
-            // keeps a frontend that has died from leaving a window nobody can shut.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event
-                && window
-                    .try_state::<state::ShellState>()
-                    .is_some_and(|shell_state| shell_state.quit_guard())
-            {
-                api.prevent_close();
-                let _ = window.emit("quit-requested", ());
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let action = match window.try_state::<state::ShellState>() {
+                    Some(shell_state) => close::close_action(
+                        shell_state.quit_approved(),
+                        !shell_state.close_to_tray(),
+                        shell_state.tray_shown(),
+                        shell_state.quit_guard(),
+                    ),
+                    // No state means no window to reason about: whatever the shell is, a close that
+                    // nothing objects to is a close.
+                    None => close::CloseAction::Close,
+                };
+
+                log::info!("the window was asked to close: {action:?}");
+
+                match action {
+                    // Away and still running: the icon is what brings it back, and the sessions the
+                    // window was holding keep running while it is gone.
+                    close::CloseAction::Hide => {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                    // The interface is the only thing that can see what is unsaved, so it is asked.
+                    close::CloseAction::Ask => {
+                        api.prevent_close();
+                        let _ = window.emit("quit-requested", ());
+                    }
+                    close::CloseAction::Close => {}
+                }
             }
 
             // On the way out, tell the servers we are leaving rather than letting the sockets time
@@ -60,6 +86,7 @@ pub fn run() {
             commands::app::app_info,
             commands::app::app_ready,
             commands::app::window_quit_guard,
+            commands::app::window_quit,
             commands::fonts::system_fonts_list,
             commands::settings::settings_get,
             commands::settings::settings_set,
@@ -190,6 +217,28 @@ fn report_drag<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::Drag
 ///
 /// A settings file that cannot be read is not a reason to refuse to open a window: it is
 /// reported, and the window follows the system until the interface offers to fix it.
+/// Reads the settings once at start-up for the two things the shell itself obeys.
+///
+/// Not a second copy of the interface's settings: the same file, read at the one moment the interface
+/// has not read it yet. A file that cannot be read leaves the defaults, which are the icon on and the
+/// window closing the application — both of which are states a person can get out of.
+fn apply_startup_shell_settings(app: &tauri::AppHandle) {
+    match sevenshell_platform::load() {
+        Ok(settings) => apply_shell_settings(app, &settings),
+        Err(error) => {
+            log::warn!("settings could not be read at startup, so the shell keeps its defaults: {error}");
+        }
+    }
+}
+
+/// Puts the two settings the shell obeys into effect: the tray icon, and what closing does.
+pub fn apply_shell_settings(app: &tauri::AppHandle, settings: &sevenshell_types::AppSettings) {
+    tray::apply(app, settings);
+    if let Some(state) = app.try_state::<state::ShellState>() {
+        state.set_close_to_tray(!settings.quit_on_close);
+    }
+}
+
 fn apply_startup_window_theme(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
         return;

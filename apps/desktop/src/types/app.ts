@@ -203,8 +203,26 @@ export const TAB_MAX_WIDTH_PX: Record<TabMaxWidth, number | null> = {
   wide: 320,
 };
 
-/** No limit at all, which is the first step the list offers and what a fresh install gets. */
+/**
+ * No limit at all, which is the first step the list offers and what a fresh install gets.
+ */
 export const DEFAULT_TAB_MAX_WIDTH: TabMaxWidth = "unlimited";
+
+/**
+ * Whether the shell keeps an icon in the system tray.
+ *
+ * On unless somebody says otherwise: a window that puts itself away when it is closed needs somewhere
+ * to be picked up again, and the tray is that somewhere.
+ */
+export const DEFAULT_SHOW_TRAY_ICON = true;
+
+/**
+ * Whether closing the window ends the application rather than putting it away.
+ *
+ * Off unless somebody turns it on, which is a *change* from what this build did before the choice
+ * existed — closing used to end it, because there was no tray to put it away to.
+ */
+export const DEFAULT_QUIT_ON_CLOSE = false;
 
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";
@@ -278,6 +296,10 @@ export interface AppSettings {
   readonly tabSortMode: TabSortMode;
   /** How wide a horizontal tab may be drawn. */
   readonly tabMaxWidth: TabMaxWidth;
+  /** Whether the shell keeps an icon in the system tray. */
+  readonly showTrayIcon: boolean;
+  /** Whether closing the window ends the application rather than putting it away. */
+  readonly quitOnClose: boolean;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** The stack the terminal draws in, which is a choice of its own. */

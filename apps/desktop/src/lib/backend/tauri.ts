@@ -109,6 +109,16 @@ export function windowClose(): Promise<void> {
  * Armed, a close request comes back as `quit-requested` instead of closing; disarmed, the window
  * closes on the first request. The shell keeps no opinion of its own — see the command's own note.
  */
+/**
+ * Closes the window for real, on the interface's word that the close question is answered.
+ *
+ * Not the same as `windowClose` above it: that one *asks* — the shell may put the window away, or ask
+ * about unsaved work — while this one is the answer to what it asked.
+ */
+export function windowQuit(): Promise<void> {
+  return invoke<void>("window_quit");
+}
+
 export function windowQuitGuard(armed: boolean): Promise<void> {
   return invoke<void>("window_quit_guard", { armed });
 }

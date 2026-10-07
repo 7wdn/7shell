@@ -103,6 +103,8 @@ export const backend = {
      * `onQuitRequested` instead of closing the window.
      */
     quitGuard: (armed: boolean): Promise<void> => forward("window.quitGuard", () => desktop.windowQuitGuard(armed)),
+    /** Closes the window for real, on the interface's word that the close question is answered. */
+    quit: (): Promise<void> => forward("window.quit", () => desktop.windowQuit()),
 
     /**
      * Subscribes to window resizes so the maximize button can show the right glyph.

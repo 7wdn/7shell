@@ -214,6 +214,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             sidebar_width: Some(300),
             sidebar_open: false,
             monitor_enabled: true,
+            show_tray_icon: false,
+            quit_on_close: true,
             packed_transfer: true,
             theme_palette: ThemePalette::Sage,
             ui_scale: 125,

@@ -21,6 +21,8 @@ import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
+  DEFAULT_QUIT_ON_CLOSE,
+  DEFAULT_SHOW_TRAY_ICON,
   DEFAULT_TAB_GROUP_MODE,
   DEFAULT_TAB_LAYOUT,
   DEFAULT_TAB_MAX_WIDTH,
@@ -74,6 +76,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   tabGroupMode: DEFAULT_TAB_GROUP_MODE,
   tabSortMode: DEFAULT_TAB_SORT_MODE,
   tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
+  showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
+  quitOnClose: DEFAULT_QUIT_ON_CLOSE,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -232,6 +236,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const tabSortMode = ref<TabSortMode>(DEFAULT_TAB_SORT_MODE);
   /** How wide a horizontal tab may be drawn, as a step rather than as a number of pixels. */
   const tabMaxWidth = ref<TabMaxWidth>(DEFAULT_TAB_MAX_WIDTH);
+  /**
+   * Whether the shell keeps an icon in the system tray, and whether closing the window ends it.
+   *
+   * The two the shell itself obeys rather than the interface, which is why nothing here draws them:
+   * they are written to the settings file, and the shell reads them from there. The file is the whole
+   * of the handover — the interface never tells the shell what to do with its own window.
+   */
+  const showTrayIcon = ref(DEFAULT_SHOW_TRAY_ICON);
+  const quitOnClose = ref(DEFAULT_QUIT_ON_CLOSE);
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -421,6 +434,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       tabGroupMode.value = settings.tabGroupMode;
       tabSortMode.value = settings.tabSortMode;
       tabMaxWidth.value = settings.tabMaxWidth;
+      showTrayIcon.value = settings.showTrayIcon;
+      quitOnClose.value = settings.quitOnClose;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -495,6 +510,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         tabGroupMode: tabGroupMode.value,
         tabSortMode: tabSortMode.value,
         tabMaxWidth: tabMaxWidth.value,
+        showTrayIcon: showTrayIcon.value,
+        quitOnClose: quitOnClose.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -639,6 +656,17 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   function setTabMaxWidth(width: TabMaxWidth): void {
     tabMaxWidth.value = width;
+    dirty.value = true;
+  }
+
+  /** The two the shell obeys: taking effect on the way out of this page, like every other write. */
+  function setShowTrayIcon(shown: boolean): void {
+    showTrayIcon.value = shown;
+    dirty.value = true;
+  }
+
+  function setQuitOnClose(quit: boolean): void {
+    quitOnClose.value = quit;
     dirty.value = true;
   }
 
@@ -857,6 +885,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "tabMaxWidth":
           tabMaxWidth.value = FRESH.tabMaxWidth;
           break;
+        case "showTrayIcon":
+          showTrayIcon.value = FRESH.showTrayIcon;
+          break;
+        case "quitOnClose":
+          quitOnClose.value = FRESH.quitOnClose;
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -923,6 +957,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     tabGroupMode,
     tabSortMode,
     tabMaxWidth,
+    showTrayIcon,
+    quitOnClose,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -961,6 +997,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setTabGroupMode,
     setTabSortMode,
     setTabMaxWidth,
+    setShowTrayIcon,
+    setQuitOnClose,
     setUiFont,
     setTerminalFont,
     previewFont,

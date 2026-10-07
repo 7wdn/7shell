@@ -599,6 +599,22 @@ pub struct AppSettings {
     /// that went on running commands on the far side would be worse than one that is on screen.
     #[serde(default = "monitor_on")]
     pub monitor_enabled: bool,
+    /// Whether the shell keeps an icon in the system tray.
+    ///
+    /// Absent in a file written before this was a choice, which reads as on for the reason the default
+    /// above gives: with no icon and a window that hides, there would be nothing to bring it back.
+    #[serde(default = "tray_icon_on")]
+    pub show_tray_icon: bool,
+    /// Whether closing the window ends the application instead of putting it away.
+    ///
+    /// Off unless somebody turns it on, and this one default is a *change* to what this build did
+    /// before the choice existed: closing used to end the application because there was nowhere for it
+    /// to go. Now there is a tray, so closing puts the window away — which is what the setting's own
+    /// words describe — and this is the switch that gives the old behaviour back. A file written
+    /// before the choice therefore opens onto the new behaviour, deliberately: it is the one this
+    /// build ships with, and the other is one switch away.
+    #[serde(default)]
+    pub quit_on_close: bool,
     /// Whether a directory travels as one archive instead of file by file.
     ///
     /// Off unless somebody turns it on, unlike the monitor above: this one changes what a transfer
@@ -707,6 +723,16 @@ pub fn sidebar_on() -> bool {
     true
 }
 
+/// Whether the shell keeps an icon in the system tray.
+///
+/// A named function for the same reason as the two above: it is a default two readers have to agree
+/// on, and the default is "on" because a window that puts itself away when it is closed needs a way
+/// back — the tray is that way, and turning it off is a choice somebody makes with the other setting
+/// in view.
+pub fn tray_icon_on() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -719,6 +745,8 @@ impl Default for AppSettings {
             sidebar_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
+            show_tray_icon: tray_icon_on(),
+            quit_on_close: false,
             packed_transfer: false,
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
@@ -762,6 +790,8 @@ impl AppSettings {
             && self.sidebar_width.is_none()
             && self.sidebar_open
             && self.monitor_enabled
+            && self.show_tray_icon
+            && !self.quit_on_close
             && !self.packed_transfer
             && self.custom_colors.is_none()
             && self.custom_colors_dark.is_none()

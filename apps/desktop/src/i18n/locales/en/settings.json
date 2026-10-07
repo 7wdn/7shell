@@ -203,6 +203,16 @@
         "summary": "Limit the maximum width of horizontal tabs, truncating long titles with ellipsis. Hover to view the full title.",
         "help": "How wide a horizontal tab may be drawn. A step is a look rather than a measurement: the same window at the same size draws the same bar, and a name longer than the step is truncated with the whole of it on hover. Bars down one side are not affected — there, every tab is the width of the column."
       },
+      "showTrayIcon": {
+        "title": "Show tray/menu bar icon",
+        "summary": "When disabled, no icon is shown, but closing the window still hides 7Shell in the background as before.",
+        "help": "Whether the shell keeps an icon in the system tray. It is the way back to a window that has put itself away: closing the window hides it rather than ending the application, and this icon is how it comes back. Turning it off is a choice about the icon alone — the window still goes away when it is closed, and with nothing to come back from, a close then ends the application instead."
+      },
+      "quitOnClose": {
+        "title": "Quit when closing window",
+        "summary": "When enabled, clicking the close button exits 7Shell completely instead of hiding it to the tray.",
+        "help": "Off, closing the window puts it away and leaves everything running: the sessions stay connected and the next click on the tray icon brings the window back where it was. On, closing it ends the application, which is what a window's close button does in most programs — and what this build did before it had a tray. Either way, closing asks first when there is unsaved work in the window."
+      },
       "tabLayout": {
         "title": "Tab bar overflow",
         "summary": "What the tabs do when they no longer fit in one row.",

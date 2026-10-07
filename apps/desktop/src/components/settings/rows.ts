@@ -173,6 +173,10 @@ export interface SettingsRowDefinition {
    * word: cards that describe what they do are two hundred pixels each, and a row that puts them
    * beside a title squeezes the title to nothing.
    *
+   * `end` is for a card that belongs under everything else on the page: the two switches about the
+   * shell's own window are not about how anything is drawn, and a page is read down to them rather
+   * than past them.
+   *
    * `four` is the row the tab bar's own choices are drawn in — where it sits, how it groups, how it
    * orders and how wide it draws. Four answers to one question, so they are read together rather than
    * one per screenful, and each carries its one-line summary underneath: at that width a bare control
@@ -181,7 +185,7 @@ export interface SettingsRowDefinition {
    * take a share of the window that changes with their own settings. Below that they pair up: a
    * control too narrow to draw its own value is worse than a row that takes twice the height.
    */
-  readonly grid?: "settings" | "fonts" | "wide" | "four";
+  readonly grid?: "settings" | "fonts" | "wide" | "four" | "end";
 }
 
 /**
@@ -592,6 +596,26 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     titleKey: "settings.rows.packed.title",
     summaryKey: "settings.rows.packed.summary",
     helpKey: "settings.rows.packed.help",
+    control: { kind: "switch" },
+  },
+  {
+    id: "show-tray-icon",
+    category: "appearance",
+    field: "showTrayIcon",
+    titleKey: "settings.rows.showTrayIcon.title",
+    summaryKey: "settings.rows.showTrayIcon.summary",
+    helpKey: "settings.rows.showTrayIcon.help",
+    grid: "end",
+    control: { kind: "switch" },
+  },
+  {
+    id: "quit-on-close",
+    category: "appearance",
+    field: "quitOnClose",
+    titleKey: "settings.rows.quitOnClose.title",
+    summaryKey: "settings.rows.quitOnClose.summary",
+    helpKey: "settings.rows.quitOnClose.help",
+    grid: "end",
     control: { kind: "switch" },
   },
 ];

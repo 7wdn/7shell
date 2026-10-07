@@ -114,6 +114,15 @@ const wideFields = computed(() => fieldRows.value.filter((row) => row.grid === "
  * The explanation behind the question mark is there as it is everywhere else.
  */
 const tabFields = computed(() => fieldRows.value.filter((row) => row.grid === "four"));
+/**
+ * The cards that belong under everything else: the two the shell's own window obeys.
+ *
+ * Split from the other cards rather than reordered in the table, because a card's place on this page
+ * is a property of the page: the ones above are what the page is drawn *by*, and these two are what
+ * it is drawn *in*.
+ */
+const trailingCards = computed(() => cardRows.value.filter((row) => row.grid === "end"));
+const leadingCards = computed(() => cardRows.value.filter((row) => row.grid !== "end"));
 
 /**
  * The five colours being edited, when a custom palette is worn.
@@ -204,6 +213,10 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.tabSortMode;
     case "tabMaxWidth":
       return preferences.tabMaxWidth;
+    case "showTrayIcon":
+      return preferences.showTrayIcon;
+    case "quitOnClose":
+      return preferences.quitOnClose;
     case "uiFont":
       // Nothing chosen reads as the one this build ships with, because that is what is being drawn:
       // the picker shows a family, and "no answer" is not one.
@@ -265,6 +278,12 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "tabMaxWidth":
       void preferences.setTabMaxWidth(value as TabMaxWidth);
+      return;
+    case "showTrayIcon":
+      preferences.setShowTrayIcon(value === true);
+      return;
+    case "quitOnClose":
+      preferences.setQuitOnClose(value === true);
       return;
     case "uiFont":
       void preferences.setUiFont(String(value));
@@ -692,7 +711,7 @@ function translate(key: string, params?: Record<string, string>): string {
                   </div>
 
                   <SettingsRow
-                    v-for="row in cardRows"
+                    v-for="row in leadingCards"
                     :key="row.id"
                     :title="t(row.titleKey)"
                     :summary="t(row.summaryKey)"
@@ -760,6 +779,28 @@ function translate(key: string, params?: Record<string, string>): string {
                       />
                     </SettingsField>
                   </div>
+
+                  <!--
+                  The two the shell's own window obeys: last on the page, because they are not about
+                  how anything is drawn, and full-width cards because each one is a sentence — what
+                  the switch does, and what happens to the window either way.
+                -->
+                  <SettingsRow
+                    v-for="row in trailingCards"
+                    :key="row.id"
+                    :title="t(row.titleKey)"
+                    :summary="t(row.summaryKey)"
+                    :help="t(row.helpKey)"
+                  >
+                    <SettingsControl
+                      :row="row"
+                      :value="currentValue(row)"
+                      :label="t(row.titleKey)"
+                      @choose="(value) => choose(row, value)"
+                      @preview="(value: string) => preview(row, value)"
+                      @end-preview="endPreview(row)"
+                    />
+                  </SettingsRow>
                 </template>
               </section>
             </div>

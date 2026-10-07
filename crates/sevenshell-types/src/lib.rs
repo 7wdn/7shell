@@ -38,7 +38,7 @@ pub use session::{
 pub use settings::{
     AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout,
     TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS, monitor_on, normalize_ui_scale,
-    sidebar_on, ui_scale_default,
+    sidebar_on, tray_icon_on, ui_scale_default,
 };
 pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,

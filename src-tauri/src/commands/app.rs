@@ -32,3 +32,14 @@ pub fn app_ready(window: WebviewWindow) {
 pub fn window_quit_guard(state: State<'_, ShellState>, armed: bool) {
     state.set_quit_guard(armed);
 }
+
+/// Closes the window for real, on the interface's word that the question has been answered.
+///
+/// The window's own close request goes through the shell's decision — putting the window away, or
+/// asking — so an interface that has *already* asked needs a way past it. This is that way, and it is
+/// the only one: the flag it sets is what the decision reads.
+#[tauri::command]
+pub fn window_quit(window: WebviewWindow, state: State<'_, ShellState>) {
+    state.approve_quit();
+    let _ = window.close();
+}
