@@ -563,15 +563,16 @@ test("a setting can be found by name, and a category can be put back to its defa
         return `rgb(${r} ${g} ${b})`;
       });
 
-    const theme = settings.getByRole("combobox", { name: "Interface theme" });
-    await theme.click();
-    await page.getByRole("listbox").getByRole("option", { name: "Light" }).click();
+    // The three modes are three buttons rather than a dropdown: the two somebody switches between
+    // are one click each, and the one that hands the decision back is the third.
+    const light = settings.getByRole("radio", { name: "Light", exact: true });
+    const dark = settings.getByRole("radio", { name: "Dark", exact: true });
+    await light.click();
     await expect.poll(paintedBody, { message: "the light base is the reference's white" }).toBe("rgb(255 255 255)");
     // Kept as a picture, because the light half is the one nobody will look at twice: the window is
     // white, its accent is near-black, and every panel edge is one flat grey.
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-appearance-light.png"), fullPage: false });
-    await theme.click();
-    await page.getByRole("listbox").getByRole("option", { name: "Dark" }).click();
+    await dark.click();
     await expect.poll(paintedBody, { message: "and its dark base is the grey it declares" }).toBe("rgb(19 20 22)");
 
     // Looking at a colour is not choosing one. Resting the pointer on an option shows it at once and

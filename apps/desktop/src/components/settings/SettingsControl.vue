@@ -5,14 +5,21 @@
  * It exists so that the page draws a row once: search results and the category body show the same
  * rows, and a second copy of this switch would be a second place for the two to drift apart.
  *
- * The width on the dropdown is not decoration: the controls line up down the right edge of the
- * page, so two rows with different option lengths would otherwise put their arrows in two places.
+ * What a row gets is decided by what it is, not by where it is drawn: a switch for something that
+ * is on or off, three buttons for a mode with three answers, a dropdown for a list of values, and a
+ * font picker for a family. The table says which, and this is the only place that knows how to draw
+ * one — which is why the width is fixed on the dropdowns: they line up down the right edge of the
+ * page, and two rows with different option lengths would otherwise put their arrows in two places.
  */
+import type { Component } from "vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import { FONT_LABEL_KEYS, type SettingsRowDefinition } from "@/components/settings/rows";
+import { Sun, Moon, SunMoon } from "@lucide/vue";
+
+import { FONT_LABEL_KEYS, type SettingsChoiceIcon, type SettingsRowDefinition } from "@/components/settings/rows";
 import FontSelect from "@/components/ui/FontSelect.vue";
+import { cn } from "@/lib/utils";
 import Select from "@/components/ui/Select.vue";
 import Switch from "@/components/ui/Switch.vue";
 import {
@@ -83,6 +90,30 @@ function fontName(stack: string): string {
 
 // -- The rest ----------------------------------------------------------------
 
+/**
+ * Which glyph each name stands for.
+ *
+ * The table says `sun`, and this is what a sun is — a component cannot be written into a table of
+ * data without turning the table into code, and the set is closed so a name that has no glyph here
+ * is a compile error rather than an empty button.
+ */
+const CHOICE_ICONS: Record<SettingsChoiceIcon, Component> = {
+  sun: Sun,
+  moon: Moon,
+  "sun-moon": SunMoon,
+};
+
+/** A set of choices, ready to draw: what each is worth, what it says, and its glyph. */
+const choices = computed(() =>
+  props.row.control.kind === "choice"
+    ? props.row.control.options.map((option) => ({
+        value: option.value,
+        label: t(option.labelKey),
+        icon: CHOICE_ICONS[option.icon],
+      }))
+    : [],
+);
+
 const options = computed(() =>
   props.row.control.kind === "select"
     ? props.row.control.options.map((option) => ({
@@ -103,6 +134,38 @@ const options = computed(() =>
     :aria-label="props.label"
     @update:model-value="(value: boolean) => emit('choose', value)"
   />
+
+  <!--
+    The three modes as three buttons, one of them lit. A radio group rather than a set of pressed
+    buttons, because that is what it is: one of three, always one — and a reader who cannot see the
+    lit border hears which one it is.
+  -->
+  <div
+    v-else-if="props.row.control.kind === 'choice'"
+    role="radiogroup"
+    :aria-label="props.label"
+    class="flex flex-wrap gap-2"
+  >
+    <button
+      v-for="option in choices"
+      :key="option.value"
+      type="button"
+      role="radio"
+      :aria-checked="String(props.value) === option.value"
+      :class="
+        cn(
+          'flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors',
+          String(props.value) === option.value
+            ? 'border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/30'
+            : 'border-border text-foreground hover:bg-accent',
+        )
+      "
+      @click="emit('choose', option.value)"
+    >
+      <component :is="option.icon" :size="15" />
+      {{ option.label }}
+    </button>
+  </div>
 
   <FontSelect
     v-else-if="props.row.control.kind === 'font'"

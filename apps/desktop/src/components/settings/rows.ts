@@ -72,6 +72,24 @@ export type SettingsRowField = Exclude<
   "terminalPanelHeight" | "sidebarWidth" | "sidebarOpen" | "customColors" | "customColorsDark"
 >;
 
+/** The glyphs a choice may carry. A closed set, because the control has to know how to draw one. */
+export type SettingsChoiceIcon = "sun" | "moon" | "sun-moon";
+
+/**
+ * One of a small set of answers, drawn as a button.
+ *
+ * For the three settings that are modes rather than values — which theme, which terminal palette —
+ * because there are only ever three of them and they are worth one click each. A dropdown hides the
+ * two that were not chosen behind a click, which for "light, dark or follow the system" is a click
+ * to see something people switch between all day.
+ */
+export interface SettingsChoiceOption {
+  /** What the choice is worth, in the settings file's own spelling. */
+  readonly value: string;
+  readonly labelKey: string;
+  readonly icon: SettingsChoiceIcon;
+}
+
 export interface SettingsSelectOption {
   /** What the choice is worth, in the settings file's own spelling. */
   readonly value: string;
@@ -101,6 +119,7 @@ export interface SettingsRowDefinition {
   readonly control:
     | { readonly kind: "switch" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
+    | { readonly kind: "choice"; readonly options: readonly SettingsChoiceOption[] }
     /**
      * A font, which is not a dropdown of fixed choices: the options are this machine's families and
      * they are read when the list opens, and a name that is not among them can be typed and taken.
@@ -306,11 +325,13 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     summaryKey: "settings.rows.themeMode.summary",
     helpKey: "settings.rows.themeMode.help",
     control: {
-      kind: "select",
+      kind: "choice",
+      // Light, dark, and then the system: the two somebody switches between are first, and the one
+      // that hands the decision back is last — which is also the order the icons read in.
       options: [
-        { value: "system", labelKey: "settings.theme.system" },
-        { value: "dark", labelKey: "settings.theme.dark" },
-        { value: "light", labelKey: "settings.theme.light" },
+        { value: "light", labelKey: "settings.theme.light", icon: "sun" },
+        { value: "dark", labelKey: "settings.theme.dark", icon: "moon" },
+        { value: "system", labelKey: "settings.theme.system", icon: "sun-moon" },
       ],
     },
   },
@@ -322,11 +343,11 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     summaryKey: "settings.rows.terminalTheme.summary",
     helpKey: "settings.rows.terminalTheme.help",
     control: {
-      kind: "select",
+      kind: "choice",
       options: [
-        { value: "system", labelKey: "settings.terminal.follow" },
-        { value: "dark", labelKey: "settings.terminal.dark" },
-        { value: "light", labelKey: "settings.terminal.light" },
+        { value: "light", labelKey: "settings.terminal.light", icon: "sun" },
+        { value: "dark", labelKey: "settings.terminal.dark", icon: "moon" },
+        { value: "system", labelKey: "settings.terminal.follow", icon: "sun-moon" },
       ],
     },
   },

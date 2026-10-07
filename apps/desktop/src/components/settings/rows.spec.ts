@@ -56,7 +56,7 @@ function messages(language: string): Map<string, string> {
 /** Every key a row asks for, whichever kind of control it carries. */
 function keysOf(row: SettingsRowDefinition): string[] {
   const keys = [row.titleKey, row.summaryKey, row.helpKey];
-  if (row.control.kind === "select") {
+  if (row.control.kind === "select" || row.control.kind === "choice") {
     keys.push(...row.control.options.map((option) => option.labelKey));
   }
   return keys;
