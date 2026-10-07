@@ -62,6 +62,11 @@
       "claude": "Claude Code",
       "custom": "Custom"
     },
+    "corner": {
+      "none": "Square",
+      "small": "Small",
+      "large": "Large"
+    },
     "custom": {
       "editingLight": "Editing: light",
       "editingDark": "Editing: dark",
@@ -117,6 +122,11 @@
         "title": "Interface scale",
         "summary": "Draws the whole interface larger, inside the same window.",
         "help": "The window keeps its size and everything in it grows: text, borders, and the terminal's own grid of characters. It is meant for a display dense enough to make the default size hard to read, where the operating system's own scaling does not reach a window that is already open."
+      },
+      "cornerStyle": {
+        "title": "Corner style",
+        "summary": "How round the corners of everything are.",
+        "help": "One setting for the whole window rather than a radius per panel: a corner belongs to the way this build draws, and a panel that rounded its own would be the one thing that did not change when you asked for squarer corners. The buttons above are drawn with the corner each one stands for."
       },
       "uiFont": {
         "title": "Interface font",

@@ -19,12 +19,14 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
+  DEFAULT_CORNER_STYLE,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
   type AppSettings,
+  type CornerStyle,
   type CustomColors,
   type FilesLayout,
   type ResolvedTheme,
@@ -50,6 +52,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   themeMode: "system",
   themePalette: "default",
   uiScale: DEFAULT_UI_SCALE,
+  cornerStyle: DEFAULT_CORNER_STYLE,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -115,6 +118,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * cannot do for a window that is already open.
    */
   const uiScale = ref<number>(DEFAULT_UI_SCALE);
+  /**
+   * How round the corners are.
+   *
+   * It reaches the window the way the palette does — an attribute on the document — because the
+   * roundness is a handful of numbers the stylesheet declares and this only says which set: a
+   * component that rounded its own corners would be the one that ignored the choice.
+   */
+  const cornerStyle = ref<CornerStyle>(DEFAULT_CORNER_STYLE);
   /**
    * The stacks the interface and the terminal draw in, or null while nobody has chosen one.
    *
@@ -312,6 +323,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     document.documentElement.classList.toggle("dark", resolvedTheme.value === "dark");
     document.documentElement.dataset.theme = resolvedTheme.value;
     document.documentElement.dataset.palette = wornPalette.value;
+    document.documentElement.dataset.cornerStyle = cornerStyle.value;
     document.documentElement.lang = locale.value;
     i18n.global.locale.value = locale.value;
     applyCustomColors();
@@ -345,6 +357,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       themeMode.value = settings.themeMode;
       themePalette.value = settings.themePalette;
       uiScale.value = settings.uiScale;
+      cornerStyle.value = settings.cornerStyle;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -379,6 +392,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         themeMode: themeMode.value,
         themePalette: themePalette.value,
         uiScale: uiScale.value,
+        cornerStyle: cornerStyle.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -478,6 +492,13 @@ export const usePreferencesStore = defineStore("preferences", () => {
     }
     previewedFont.value = null;
     apply();
+  }
+
+  /** Chooses how round the corners are, which is felt at once — the whole window is redrawn. */
+  async function setCornerStyle(style: CornerStyle): Promise<void> {
+    cornerStyle.value = style;
+    apply();
+    await persist();
   }
 
   /** Chooses what the interface draws in, applied before it is written down. */
@@ -660,6 +681,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "uiScale":
           uiScale.value = FRESH.uiScale;
           break;
+        case "cornerStyle":
+          cornerStyle.value = FRESH.cornerStyle;
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -718,6 +742,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     themePalette,
     wornPalette,
     uiScale,
+    cornerStyle,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -745,6 +770,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     previewThemePalette,
     clearThemePalettePreview,
     setUiScale,
+    setCornerStyle,
     setUiFont,
     setTerminalFont,
     previewFont,

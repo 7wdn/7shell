@@ -242,6 +242,40 @@ impl ThemePalette {
     }
 }
 
+/// How round the interface's corners are.
+///
+/// One setting for the whole window rather than a radius per component: a corner is a property of
+/// the way this build draws, and a component that chose its own roundness would be the one thing
+/// that did not change when somebody asked for squarer corners. The scale itself lives in the
+/// stylesheet — three steps, and this says which one is worn.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CornerStyle {
+    /// Nothing is rounded: every corner is a right angle.
+    None,
+    /// A small radius, for somebody who wants the boxes to look like boxes.
+    Small,
+    /// What this build has always drawn, and therefore what a fresh install gets.
+    #[default]
+    Large,
+}
+
+impl CornerStyle {
+    pub const ALL: &'static [CornerStyle] = &[CornerStyle::None, CornerStyle::Small, CornerStyle::Large];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Small => "small",
+            Self::Large => "large",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|style| style.as_str() == id)
+    }
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -321,6 +355,10 @@ pub struct AppSettings {
     /// what it is given — rather than a measurement of anything.
     #[serde(default = "ui_scale_default")]
     pub ui_scale: u32,
+    /// How round the interface's corners are. Absent in a file written before this was a choice,
+    /// which reads as the roundness this build has always drawn.
+    #[serde(default)]
+    pub corner_style: CornerStyle,
     /// The family the interface draws its text in, as a `font-family` stack.
     ///
     /// The whole stack rather than one name, and absent means the one this build ships with: somebody
@@ -399,6 +437,7 @@ impl Default for AppSettings {
             monitor_enabled: monitor_on(),
             packed_transfer: false,
             ui_scale: ui_scale_default(),
+            corner_style: CornerStyle::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -415,6 +454,7 @@ impl AppSettings {
         self.theme_mode == ThemeMode::System
             && self.theme_palette == ThemePalette::Default
             && self.ui_scale == ui_scale_default()
+            && self.corner_style == CornerStyle::Large
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
@@ -453,6 +493,17 @@ mod tests {
             assert!(
                 !colours.is_drawable(),
                 "`{undrawable}` would reach a stylesheet that cannot use it"
+            );
+        }
+    }
+
+    #[test]
+    fn every_corner_style_round_trips_through_its_own_name() {
+        for style in CornerStyle::ALL {
+            assert_eq!(
+                CornerStyle::from_id(style.as_str()),
+                Some(*style),
+                "a corner style whose name does not read back is one the settings file cannot hold"
             );
         }
     }

@@ -138,6 +138,25 @@ export const FONT_PRESETS: readonly { readonly value: string; readonly labelKey:
   { value: "monospace", labelKey: "settings.font.presets.systemMonospace" },
 ];
 
+/** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
+export type CornerStyle = "none" | "small" | "large";
+
+/**
+ * The radius each step is worth, as the stylesheet declares it.
+ *
+ * Written here as well as in `styles/globals.css` because the buttons that choose a corner style are
+ * drawn with the corner they stand for — the button *is* the preview — and a button cannot read a
+ * token it is about to change.
+ */
+export const CORNER_STYLE_RADII: Record<CornerStyle, string> = {
+  none: "0px",
+  small: "0.375rem",
+  large: "0.625rem",
+};
+
+/** What the interface is drawn with until somebody chooses otherwise: the way it has always been. */
+export const DEFAULT_CORNER_STYLE: CornerStyle = "large";
+
 /** How the file browser is laid out, from `sevenshell_types::FilesLayout`. */
 export type FilesLayout = "tree" | "list";
 
@@ -175,6 +194,8 @@ export interface AppSettings {
    * One of `UI_SCALE_PERCENTS`; the Rust side reads anything else as the default.
    */
   readonly uiScale: number;
+  /** How round the corners are: nothing, a little, or what this build has always drawn. */
+  readonly cornerStyle: CornerStyle;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** The stack the terminal draws in, which is a choice of its own. */

@@ -109,7 +109,8 @@ const choices = computed(() =>
     ? props.row.control.options.map((option) => ({
         value: option.value,
         label: t(option.labelKey),
-        icon: CHOICE_ICONS[option.icon],
+        icon: option.icon ? CHOICE_ICONS[option.icon] : undefined,
+        radius: option.radius,
       }))
     : [],
 );
@@ -160,9 +161,10 @@ const options = computed(() =>
             : 'border-border text-foreground hover:bg-accent',
         )
       "
+      :style="option.radius ? { borderRadius: option.radius } : undefined"
       @click="emit('choose', option.value)"
     >
-      <component :is="option.icon" :size="15" />
+      <component :is="option.icon" v-if="option.icon" :size="15" />
       {{ option.label }}
     </button>
   </div>

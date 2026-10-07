@@ -87,7 +87,15 @@ export interface SettingsChoiceOption {
   /** What the choice is worth, in the settings file's own spelling. */
   readonly value: string;
   readonly labelKey: string;
-  readonly icon: SettingsChoiceIcon;
+  /** The glyph before the word, when a shape says it faster than the word does. */
+  readonly icon?: SettingsChoiceIcon;
+  /**
+   * A corner for the button itself, for a choice that is about roundness.
+   *
+   * The button then shows what it stands for rather than naming it: "large" and "small" are two
+   * words for a difference the eye reads instantly off the buttons themselves.
+   */
+  readonly radius?: string;
 }
 
 export interface SettingsSelectOption {
@@ -332,6 +340,24 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         { value: "light", labelKey: "settings.theme.light", icon: "sun" },
         { value: "dark", labelKey: "settings.theme.dark", icon: "moon" },
         { value: "system", labelKey: "settings.theme.system", icon: "sun-moon" },
+      ],
+    },
+  },
+  {
+    id: "corner-style",
+    category: "appearance",
+    field: "cornerStyle",
+    titleKey: "settings.rows.cornerStyle.title",
+    summaryKey: "settings.rows.cornerStyle.summary",
+    helpKey: "settings.rows.cornerStyle.help",
+    control: {
+      kind: "choice",
+      // Square first, then the two that are rounded — the same order as the theme's, where what
+      // changes least comes first. The values are the radii the stylesheet declares for each step.
+      options: [
+        { value: "none", labelKey: "settings.corner.none", radius: "0px" },
+        { value: "small", labelKey: "settings.corner.small", radius: "0.375rem" },
+        { value: "large", labelKey: "settings.corner.large", radius: "0.625rem" },
       ],
     },
   },

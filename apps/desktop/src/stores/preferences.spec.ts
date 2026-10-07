@@ -13,6 +13,7 @@ import { i18n } from "@/i18n";
 import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
 import {
+  DEFAULT_CORNER_STYLE,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
   DEFAULT_TERMINAL_FONT,
@@ -37,6 +38,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     themeMode: "system",
     themePalette: "default",
     uiScale: DEFAULT_UI_SCALE,
+    cornerStyle: DEFAULT_CORNER_STYLE,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -152,6 +154,7 @@ describe("preferences store", () => {
       themeMode: "dark",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      cornerStyle: DEFAULT_CORNER_STYLE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -178,6 +181,7 @@ describe("preferences store", () => {
       themeMode: "system",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      cornerStyle: DEFAULT_CORNER_STYLE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -276,6 +280,7 @@ describe("the terminal palette", () => {
       themeMode: "dark",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      cornerStyle: DEFAULT_CORNER_STYLE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -441,6 +446,25 @@ describe("the colour theme", () => {
     expect(settingsSetMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ customColorsDark: DEFAULT_CUSTOM_COLORS_DARK }),
     );
+  });
+
+  it("writes the corner style on the document, and puts it back", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // The roundness is a handful of numbers the stylesheet declares; what the store does is say
+    // which set, and an attribute is how it says it — the same handover the palette uses.
+    expect(document.documentElement.dataset.cornerStyle).toBe("large");
+
+    await store.setCornerStyle("none");
+
+    expect(document.documentElement.dataset.cornerStyle).toBe("none");
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ cornerStyle: "none" }));
+
+    await store.reset(["cornerStyle"]);
+    expect(store.cornerStyle).toBe(DEFAULT_CORNER_STYLE);
+    expect(document.documentElement.dataset.cornerStyle).toBe("large");
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {
@@ -810,6 +834,7 @@ describe("restoring the defaults", () => {
       themeMode: "system",
       themePalette: "default",
       uiScale: DEFAULT_UI_SCALE,
+      cornerStyle: DEFAULT_CORNER_STYLE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

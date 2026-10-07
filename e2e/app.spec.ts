@@ -34,6 +34,7 @@ async function writtenSettings(): Promise<{
   packedTransfer?: boolean;
   themePalette?: string;
   uiScale?: number;
+  cornerStyle?: string;
   uiFont?: string;
   terminalFont?: string;
   customColors?: { primary?: string };
@@ -43,6 +44,7 @@ async function writtenSettings(): Promise<{
     packedTransfer?: boolean;
     themePalette?: string;
     uiScale?: number;
+    cornerStyle?: string;
     uiFont?: string;
     terminalFont?: string;
     customColors?: { primary?: string };
@@ -632,6 +634,33 @@ test("a setting can be found by name, and a category can be put back to its defa
         return colour;
       });
     expect(await pane(), "the pane follows the colour the window is wearing").not.toBe(backgroundBefore);
+
+    // Corner style: one attribute, and every radius in the window moves with it. Read off probe
+    // elements rather than off a component, because the claim is about what a class means in the
+    // built stylesheet — including the bare `rounded`, which Tailwind gives a fixed value of its own
+    // and which several hundred elements carry.
+    const radiusOf = (className: string): Promise<string> =>
+      page.evaluate((name) => {
+        const probe = document.createElement("div");
+        probe.className = name;
+        document.body.append(probe);
+        const radius = getComputedStyle(probe).borderTopLeftRadius;
+        probe.remove();
+        return radius;
+      }, className);
+
+    expect(await radiusOf("rounded-lg"), "the largest step, as it has always been").toBe("10px");
+    expect(await radiusOf("rounded"), "and the smallest, which was Tailwind's own 4px").toBe("6px");
+
+    await settings.getByRole("radio", { name: "Square", exact: true }).click();
+
+    await expect(page.locator("html")).toHaveAttribute("data-corner-style", "none");
+    expect(await radiusOf("rounded-lg"), "square means square").toBe("0px");
+    expect(await radiusOf("rounded"), "everywhere, not only where the token was used").toBe("0px");
+    await expect.poll(async () => (await writtenSettings()).cornerStyle).toBe("none");
+
+    await settings.getByRole("radio", { name: "Large", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-corner-style", "large");
 
     // The two fonts. What a font setting is worth is a stack, and the family under the pointer is
     // shown before it is taken — through the token the stylesheet reads, which is why the whole

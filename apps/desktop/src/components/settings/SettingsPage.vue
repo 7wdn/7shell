@@ -65,6 +65,7 @@ import {
   CUSTOM_COLOR_KEYS,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
+  type CornerStyle,
   type CustomColors,
   type FilesLayout,
   type SessionLayout,
@@ -169,6 +170,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean {
       // A number in the store and a string in a dropdown: the value the settings file holds is the
       // number, so the conversion is here rather than in the store, which keeps it a number.
       return String(preferences.uiScale);
+    case "cornerStyle":
+      return preferences.cornerStyle;
     case "uiFont":
       // Nothing chosen reads as the one this build ships with, because that is what is being drawn:
       // the picker shows a family, and "no answer" is not one.
@@ -201,6 +204,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean): void {
       return;
     case "uiScale":
       void preferences.setUiScale(Number(value));
+      return;
+    case "cornerStyle":
+      void preferences.setCornerStyle(value as CornerStyle);
       return;
     case "uiFont":
       void preferences.setUiFont(String(value));
