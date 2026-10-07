@@ -21,12 +21,39 @@ pub const TRAY_ID: &str = "main-tray";
 /// The two words on the menu, in the language the interface is in.
 ///
 /// A prefix match rather than a lookup table: this build ships two languages, and everything that
-/// starts with `zh` is the one that is not English.
-fn labels(locale: &str) -> (&'static str, &'static str) {
+/// starts with `zh` is the one that is not English. Public within the crate so that the mapping can be
+/// checked without an application to put a menu on.
+pub(crate) fn labels(locale: &str) -> (&'static str, &'static str) {
     if locale.starts_with("zh") {
         ("显示 7Shell", "退出 7Shell")
     } else {
         ("Show 7Shell", "Quit 7Shell")
+    }
+}
+
+/// The two items the menu is made of, kept because the words on them change with the language.
+///
+/// A menu is built once and lives for as long as the process does, so a label written at build time is
+/// a label that never follows the language somebody picks afterwards — which is exactly what happened
+/// before this was kept: the interface switched to another language and the tray went on saying the
+/// old one until the next launch.
+pub struct TrayMenu {
+    show: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+}
+
+impl TrayMenu {
+    /// Rewrites both labels.
+    ///
+    /// Every settings write comes through here, so this is where the language of a running application
+    /// reaches the menu — and it is logged because that hand-over is invisible: the menu is drawn by
+    /// the system, and nothing in this process can read it back to check.
+    fn retitle(&self, locale: &str) {
+        let (show, quit) = labels(locale);
+        log::info!("the tray menu follows the language: `{locale}`");
+        if let Err(error) = self.show.set_text(show).and_then(|()| self.quit.set_text(quit)) {
+            log::warn!("the tray menu could not be translated: {error}");
+        }
     }
 }
 
@@ -37,16 +64,24 @@ fn labels(locale: &str) -> (&'static str, &'static str) {
 /// here rather than asked of the icon itself: it is what the close decision reads, and the decision is
 /// made in a place that has no icon to ask.
 pub fn apply(app: &AppHandle, settings: &AppSettings) {
+    let locale = settings.locale.as_deref().unwrap_or("en");
     let shown = if settings.show_tray_icon {
         match app.tray_by_id(TRAY_ID) {
             Some(tray) => match tray.set_visible(true) {
-                Ok(()) => true,
+                Ok(()) => {
+                    // The language may have changed since the menu was built, and a menu is not a
+                    // thing that redraws itself.
+                    if let Some(menu) = app.try_state::<TrayMenu>() {
+                        menu.retitle(locale);
+                    }
+                    true
+                }
                 Err(error) => {
                     log::warn!("the tray icon could not be shown: {error}");
                     false
                 }
             },
-            None => match build(app, settings.locale.as_deref().unwrap_or("en")) {
+            None => match build(app, locale) {
                 Ok(()) => true,
                 Err(error) => {
                     log::warn!("the tray icon could not be created: {error}");
@@ -101,6 +136,14 @@ fn build(app: &AppHandle, locale: &str) -> tauri::Result<()> {
         })
         .build(app)?;
 
+    // Managed rather than dropped: the labels have to be reachable from the next settings change.
+    let _ = app.manage(TrayMenu {
+        show: show_item,
+        quit: quit_item,
+    });
+
+    log::info!("the tray menu was built in `{locale}`");
+
     Ok(())
 }
 
@@ -141,4 +184,20 @@ pub fn quit(app: &AppHandle) {
         state.approve_quit();
     }
     let _ = window.close();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::labels;
+
+    #[test]
+    fn the_menu_is_written_in_the_language_the_interface_is_in() {
+        assert_eq!(labels("zh-CN"), ("显示 7Shell", "退出 7Shell"));
+        assert_eq!(labels("zh"), ("显示 7Shell", "退出 7Shell"));
+        assert_eq!(labels("en"), ("Show 7Shell", "Quit 7Shell"));
+        // Anything this build does not ship reads as English, which is what the interface does with an
+        // unknown language as well: it is the language of the code, and the one that is always there.
+        assert_eq!(labels("fr-FR"), ("Show 7Shell", "Quit 7Shell"));
+        assert_eq!(labels(""), ("Show 7Shell", "Quit 7Shell"));
+    }
 }
