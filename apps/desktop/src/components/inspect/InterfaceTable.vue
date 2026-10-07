@@ -14,6 +14,7 @@ import { useI18n } from "vue-i18n";
 
 import { formatSize } from "@/lib/files/format";
 import { UNKNOWN, perSecond } from "@/lib/monitor/format";
+import { TABLE, rowClass } from "@/lib/table";
 import { useMonitorStore } from "@/stores/monitor";
 
 const props = defineProps<{
@@ -37,26 +38,26 @@ function rate(name: string, direction: "received" | "transmitted"): string {
 </script>
 
 <template>
-  <table class="w-full border-collapse text-xs">
-    <thead>
-      <tr class="border-b border-border text-muted-foreground">
-        <th class="py-1 pr-2 text-left font-medium">{{ t("inspect.network.name") }}</th>
-        <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.network.sent") }}</th>
-        <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.network.received") }}</th>
-        <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.network.sentRate") }}</th>
-        <th class="py-1 text-right font-medium">{{ t("inspect.network.receivedRate") }}</th>
+  <table :class="TABLE.page.table" :aria-label="t('inspect.network.group')">
+    <thead :class="TABLE.page.head">
+      <tr :class="TABLE.page.headRow">
+        <th class="text-left" :class="TABLE.page.headCell">{{ t("inspect.network.name") }}</th>
+        <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.network.sent") }}</th>
+        <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.network.received") }}</th>
+        <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.network.sentRate") }}</th>
+        <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.network.receivedRate") }}</th>
       </tr>
     </thead>
     <tbody>
-      <tr v-for="entry in entries" :key="entry.name" class="border-b border-border/50">
-        <td class="truncate py-1 pr-2 font-mono">{{ entry.name }}</td>
-        <td class="py-1 pr-2 text-right font-mono">{{ formatSize(entry.transmittedBytes) }}</td>
-        <td class="py-1 pr-2 text-right font-mono">{{ formatSize(entry.receivedBytes) }}</td>
-        <td class="py-1 pr-2 text-right font-mono">{{ rate(entry.name, "transmitted") }}</td>
-        <td class="py-1 text-right font-mono">{{ rate(entry.name, "received") }}</td>
+      <tr v-for="entry in entries" :key="entry.name" :class="rowClass('page')">
+        <td class="truncate font-mono" :class="TABLE.page.cell">{{ entry.name }}</td>
+        <td class="text-right font-mono" :class="TABLE.page.cell">{{ formatSize(entry.transmittedBytes) }}</td>
+        <td class="text-right font-mono" :class="TABLE.page.cell">{{ formatSize(entry.receivedBytes) }}</td>
+        <td class="text-right font-mono" :class="TABLE.page.cell">{{ rate(entry.name, "transmitted") }}</td>
+        <td class="text-right font-mono" :class="TABLE.page.cell">{{ rate(entry.name, "received") }}</td>
       </tr>
       <tr v-if="props.live && entries.length === 0">
-        <td colspan="5" class="py-2 text-muted-foreground">{{ t("monitor.network.empty") }}</td>
+        <td colspan="5" :class="TABLE.page.emptyCell">{{ t("monitor.network.empty") }}</td>
       </tr>
     </tbody>
   </table>

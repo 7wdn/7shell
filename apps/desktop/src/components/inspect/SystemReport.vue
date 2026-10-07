@@ -15,6 +15,7 @@ import InterfaceTable from "@/components/inspect/InterfaceTable.vue";
 import { formatSize } from "@/lib/files/format";
 import { UNKNOWN, orUnknown, percentOf, uptime } from "@/lib/monitor/format";
 import { CPU_STATE_LABELS, memoryUsed, share, swapUsed } from "@/lib/monitor/rates";
+import { TABLE, rowClass } from "@/lib/table";
 import { useMonitorStore } from "@/stores/monitor";
 
 const props = defineProps<{
@@ -100,57 +101,62 @@ function diskUsed(size: number, available: number): { used: string; percent: str
       <h3 class="mb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         {{ t("monitor.cpu") }}
       </h3>
-      <table class="w-full table-fixed border-collapse text-xs">
-        <thead>
-          <tr class="border-b border-border text-muted-foreground">
-            <th class="py-1 pr-2 text-left font-medium">{{ t("inspect.cpu.name") }}</th>
-            <th class="w-20 py-1 pr-2 text-right font-medium">{{ t("inspect.cpu.cores") }}</th>
-            <th class="w-28 py-1 pr-2 text-right font-medium">{{ t("inspect.cpu.frequency") }}</th>
-            <th class="w-24 py-1 pr-2 text-right font-medium">{{ t("inspect.cpu.cache") }}</th>
-            <th class="w-24 py-1 text-right font-medium">{{ t("inspect.cpu.bogomips") }}</th>
+      <table :class="TABLE.page.table" :aria-label="t('monitor.cpu')">
+        <thead :class="TABLE.page.head">
+          <tr :class="TABLE.page.headRow">
+            <th class="text-left" :class="TABLE.page.headCell">{{ t("inspect.cpu.name") }}</th>
+            <th class="w-20 text-right" :class="TABLE.page.headCell">{{ t("inspect.cpu.cores") }}</th>
+            <th class="w-28 text-right" :class="TABLE.page.headCell">{{ t("inspect.cpu.frequency") }}</th>
+            <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.cpu.cache") }}</th>
+            <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.cpu.bogomips") }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td class="py-1 pr-2">{{ orUnknown(sample?.cpuModel?.name) }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ orUnknown(sample?.cores) }}</td>
-            <td class="py-1 pr-2 text-right font-mono">
+          <tr :class="rowClass('page')">
+            <td :class="TABLE.page.cell">{{ orUnknown(sample?.cpuModel?.name) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ orUnknown(sample?.cores) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">
               {{
                 sample?.cpuModel?.frequencyMhz === null || sample?.cpuModel?.frequencyMhz === undefined
                   ? UNKNOWN
                   : t("inspect.cpu.megahertz", { value: sample.cpuModel.frequencyMhz.toFixed(3) })
               }}
             </td>
-            <td class="py-1 pr-2 text-right font-mono">
+            <td class="text-right font-mono" :class="TABLE.page.cell">
               {{
                 sample?.cpuModel?.cacheKb === null || sample?.cpuModel?.cacheKb === undefined
                   ? UNKNOWN
                   : t("inspect.cpu.kilobytes", { value: sample.cpuModel.cacheKb })
               }}
             </td>
-            <td class="py-1 text-right font-mono">{{ orUnknown(sample?.cpuModel?.bogomips) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ orUnknown(sample?.cpuModel?.bogomips) }}</td>
           </tr>
         </tbody>
       </table>
 
       <p class="mt-2 mb-1 text-[11px] text-muted-foreground">{{ t("inspect.cpu.shareHint") }}</p>
-      <table class="w-full table-fixed border-collapse text-xs">
-        <thead>
-          <tr class="border-b border-border text-muted-foreground">
-            <th v-for="entry in cpuShares" :key="entry.share.state" class="py-1 pr-2 text-right font-medium last:pr-0">
+      <table :class="TABLE.page.table" :aria-label="t('inspect.cpu.share')">
+        <thead :class="TABLE.page.head">
+          <tr :class="TABLE.page.headRow">
+            <th v-for="entry in cpuShares" :key="entry.share.state" class="text-right" :class="TABLE.page.headCell">
               {{ t(entry.labelKey) }}
             </th>
-            <th v-if="cpuShares.length === 0" class="py-1 text-left font-medium">
+            <th v-if="cpuShares.length === 0" class="text-left" :class="TABLE.page.headCell">
               {{ t("inspect.cpu.noShare") }}
             </th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td v-for="entry in cpuShares" :key="entry.share.state" class="py-1 pr-2 text-right font-mono last:pr-0">
+          <tr :class="rowClass('page')">
+            <td
+              v-for="entry in cpuShares"
+              :key="entry.share.state"
+              class="text-right font-mono"
+              :class="TABLE.page.cell"
+            >
               {{ percentOf(entry.share.percent, 1) }}
             </td>
-            <td v-if="cpuShares.length === 0" class="py-1 text-muted-foreground">{{ UNKNOWN }}</td>
+            <td v-if="cpuShares.length === 0" class="text-muted-foreground" :class="TABLE.page.cell">{{ UNKNOWN }}</td>
           </tr>
         </tbody>
       </table>
@@ -201,34 +207,38 @@ function diskUsed(size: number, available: number): { used: string; percent: str
       <h3 class="mb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         {{ t("monitor.disks.title") }}
       </h3>
-      <table class="w-full border-collapse text-xs">
-        <thead>
-          <tr class="border-b border-border text-muted-foreground">
-            <th class="py-1 pr-2 text-left font-medium">{{ t("inspect.disk.name") }}</th>
-            <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.disk.size") }}</th>
-            <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.disk.used") }}</th>
-            <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.disk.percent") }}</th>
-            <th class="py-1 pr-2 text-right font-medium">{{ t("inspect.disk.available") }}</th>
-            <th class="py-1 text-right font-medium">{{ t("inspect.disk.mount") }}</th>
+      <table :class="TABLE.page.table" :aria-label="t('monitor.disks.title')">
+        <thead :class="TABLE.page.head">
+          <tr :class="TABLE.page.headRow">
+            <th class="text-left" :class="TABLE.page.headCell">{{ t("inspect.disk.name") }}</th>
+            <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.disk.size") }}</th>
+            <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.disk.used") }}</th>
+            <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.disk.percent") }}</th>
+            <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.disk.available") }}</th>
+            <th class="text-right" :class="TABLE.page.headCell">{{ t("inspect.disk.mount") }}</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="disk in sample?.disks ?? []"
             :key="`${disk.filesystem}:${disk.mountPoint}`"
-            class="border-b border-border/50"
+            :class="rowClass('page')"
           >
-            <td class="max-w-0 truncate py-1 pr-2 font-mono" :title="disk.filesystem">{{ disk.filesystem }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ formatSize(disk.sizeBytes) }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ diskUsed(disk.sizeBytes, disk.availableBytes).used }}</td>
-            <td class="py-1 pr-2 text-right font-mono">
+            <td class="max-w-0 truncate font-mono" :class="TABLE.page.cell" :title="disk.filesystem">
+              {{ disk.filesystem }}
+            </td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ formatSize(disk.sizeBytes) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">
+              {{ diskUsed(disk.sizeBytes, disk.availableBytes).used }}
+            </td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">
               {{ diskUsed(disk.sizeBytes, disk.availableBytes).percent }}
             </td>
-            <td class="py-1 pr-2 text-right font-mono">{{ formatSize(disk.availableBytes) }}</td>
-            <td class="py-1 text-right font-mono">{{ disk.mountPoint }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ formatSize(disk.availableBytes) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ disk.mountPoint }}</td>
           </tr>
           <tr v-if="live && (sample?.disks.length ?? 0) === 0">
-            <td colspan="6" class="py-2 text-muted-foreground">{{ t("monitor.disks.empty") }}</td>
+            <td colspan="6" :class="TABLE.page.emptyCell">{{ t("monitor.disks.empty") }}</td>
           </tr>
         </tbody>
       </table>

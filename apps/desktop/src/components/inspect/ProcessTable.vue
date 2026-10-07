@@ -31,6 +31,7 @@ import { MENU_TITLES } from "@/lib/menu/titles";
 import { UNKNOWN } from "@/lib/monitor/format";
 import type { ProcessSortKey } from "@/lib/monitor/processes";
 import { type SortDirection, startsDescending } from "@/lib/sort";
+import { TABLE, rowClass } from "@/lib/table";
 import { useMonitorStore } from "@/stores/monitor";
 import type { EnvironmentEntry, ProcessSample } from "@/types/monitor";
 
@@ -158,17 +159,17 @@ watch(rows, (current) => {
     </p>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <table class="w-full border-collapse text-xs" :aria-label="t('inspect.processes.title')">
-        <thead class="sticky top-0 bg-background">
-          <tr class="border-b border-border text-muted-foreground">
-            <th class="w-20 py-1 pr-2 text-right font-medium">
+      <table :class="TABLE.page.table" :aria-label="t('inspect.processes.title')">
+        <thead :class="TABLE.page.head">
+          <tr :class="TABLE.page.headRow">
+            <th class="w-20 text-right" :class="TABLE.page.headCell">
               <span class="flex items-center justify-end gap-1">
                 PID
                 <LoaderCircle v-if="monitor.readingProcesses" :size="10" class="animate-spin" />
               </span>
             </th>
-            <th class="w-20 py-1 pr-2 text-left font-medium">{{ t("inspect.process.user") }}</th>
-            <th class="w-24 py-1 pr-2 text-right font-medium">
+            <th class="w-20 text-left" :class="TABLE.page.headCell">{{ t("inspect.process.user") }}</th>
+            <th class="w-24 text-right" :class="TABLE.page.headCell">
               <SortHeader
                 :label="t('monitor.processes.memory')"
                 :sorted="monitor.processSort === 'memory'"
@@ -178,7 +179,8 @@ watch(rows, (current) => {
               />
             </th>
             <th
-              class="w-20 py-1 pr-2 text-right font-medium"
+              class="w-20 text-right"
+              :class="TABLE.page.headCell"
               :title="t('inspect.process.cpuSinceRead')"
               :aria-sort="
                 monitor.processSort === 'cpu' ? (monitor.processDescending ? 'descending' : 'ascending') : 'none'
@@ -193,7 +195,8 @@ watch(rows, (current) => {
               />
             </th>
             <th
-              class="w-40 py-1 pr-2 text-left font-medium"
+              class="w-40 text-left"
+              :class="TABLE.page.headCell"
               :aria-sort="
                 monitor.processSort === 'name' ? (monitor.processDescending ? 'descending' : 'ascending') : 'none'
               "
@@ -206,16 +209,15 @@ watch(rows, (current) => {
                 @sort="orderBy('name', 'ascending')"
               />
             </th>
-            <th class="py-1 pr-2 text-left font-medium">{{ t("inspect.process.command") }}</th>
-            <th class="w-56 py-1 text-left font-medium">{{ t("inspect.process.executable") }}</th>
+            <th class="text-left" :class="TABLE.page.headCell">{{ t("inspect.process.command") }}</th>
+            <th class="w-56 text-left" :class="TABLE.page.headCell">{{ t("inspect.process.executable") }}</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="row in rows"
             :key="row.sample.pid"
-            class="cursor-pointer border-b border-border/50 outline-none hover:bg-accent/40 focus-visible:bg-accent/60"
-            :class="selected === row.sample.pid ? 'bg-accent/60' : ''"
+            :class="rowClass('page', { clickable: true, selected: selected === row.sample.pid })"
             tabindex="0"
             :aria-selected="selected === row.sample.pid"
             @click="open(row.sample.pid, row.sample.name)"
@@ -223,20 +225,30 @@ watch(rows, (current) => {
             @keydown.enter.prevent="open(row.sample.pid, row.sample.name)"
             @keydown.space.prevent="open(row.sample.pid, row.sample.name)"
           >
-            <td class="py-1 pr-2 text-right font-mono">{{ row.sample.pid }}</td>
-            <td class="truncate py-1 pr-2 font-mono">{{ row.sample.user }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ formatSize(row.sample.residentBytes) }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ cpu(row) }}</td>
-            <td class="truncate py-1 pr-2 font-mono" :title="row.sample.name">{{ row.sample.name }}</td>
-            <td class="max-w-0 truncate py-1 pr-2 font-mono text-muted-foreground" :title="row.sample.command">
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ row.sample.pid }}</td>
+            <td class="truncate font-mono" :class="TABLE.page.cell">{{ row.sample.user }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ formatSize(row.sample.residentBytes) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ cpu(row) }}</td>
+            <td class="truncate font-mono" :class="TABLE.page.cell" :title="row.sample.name">
+              {{ row.sample.name }}
+            </td>
+            <td
+              class="max-w-0 truncate font-mono text-muted-foreground"
+              :class="TABLE.page.cell"
+              :title="row.sample.command"
+            >
               {{ row.sample.command }}
             </td>
-            <td class="max-w-0 truncate py-1 font-mono text-muted-foreground" :title="row.sample.executable ?? ''">
+            <td
+              class="max-w-0 truncate font-mono text-muted-foreground"
+              :class="TABLE.page.cell"
+              :title="row.sample.executable ?? ''"
+            >
               {{ row.sample.executable ?? UNKNOWN }}
             </td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="7" class="py-3 text-muted-foreground">{{ t("inspect.process.empty") }}</td>
+            <td colspan="7" :class="TABLE.page.emptyCell">{{ t("inspect.process.empty") }}</td>
           </tr>
         </tbody>
       </table>
@@ -319,21 +331,26 @@ watch(rows, (current) => {
             <h3 class="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
               {{ t("inspect.process.environment") }}
             </h3>
-            <table v-if="detail.environment.length > 0" class="w-full border-collapse text-[11px]">
+            <table
+              v-if="detail.environment.length > 0"
+              :class="TABLE.page.table"
+              :aria-label="t('inspect.process.environment')"
+            >
               <tbody>
                 <tr
                   v-for="entry in detail.environment"
                   :key="entry.name"
-                  class="border-b border-border/50"
+                  :class="rowClass('page')"
                   @contextmenu="openEnvironmentMenu($event, entry)"
                 >
                   <td
-                    class="max-w-48 truncate py-0.5 pr-3 align-top font-mono text-muted-foreground"
+                    class="max-w-48 truncate align-top font-mono text-muted-foreground"
+                    :class="TABLE.page.cell"
                     :title="entry.name"
                   >
                     {{ entry.name }}
                   </td>
-                  <td class="py-0.5 font-mono break-all">{{ entry.value }}</td>
+                  <td class="font-mono break-all" :class="TABLE.page.cell">{{ entry.value }}</td>
                 </tr>
               </tbody>
             </table>

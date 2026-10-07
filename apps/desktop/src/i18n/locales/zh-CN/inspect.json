@@ -22,6 +22,7 @@
       "megahertz": "{value} MHz",
       "kilobytes": "{value} KB",
       "shareHint": "两次采样之间，CPU 时间的去向：",
+      "share": "处理器时间去向",
       "noShare": "CPU 占用",
       "state": {
         "user": "用户",

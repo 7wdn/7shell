@@ -29,6 +29,7 @@ import { connectionMenu, listenerMenu } from "@/lib/menu/inspect";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { UNKNOWN } from "@/lib/monitor/format";
 import { type SortDirection, startsDescending } from "@/lib/sort";
+import { TABLE, rowClass } from "@/lib/table";
 import { type ListenerSort, connectionsFor, listenerRows, sortListeners } from "@/lib/monitor/sockets";
 import { useMonitorStore } from "@/stores/monitor";
 import type { SocketRow } from "@/types/monitor";
@@ -146,16 +147,17 @@ watch(rows, (current) => {
     </p>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <table class="w-full border-collapse text-xs" :aria-label="t('inspect.network.listeners')">
-        <thead class="sticky top-0 bg-background">
-          <tr class="border-b border-border text-muted-foreground">
-            <th class="w-20 py-1 pr-2 text-right font-medium">PID</th>
-            <th class="w-36 py-1 pr-2 text-left font-medium">{{ t("inspect.process.name") }}</th>
-            <th class="w-14 py-1 pr-2 text-left font-medium">{{ t("inspect.network.protocol") }}</th>
+      <table :class="TABLE.page.table" :aria-label="t('inspect.network.listeners')">
+        <thead :class="TABLE.page.head">
+          <tr :class="TABLE.page.headRow">
+            <th class="w-20 text-right" :class="TABLE.page.headCell">PID</th>
+            <th class="w-36 text-left" :class="TABLE.page.headCell">{{ t("inspect.process.name") }}</th>
+            <th class="w-14 text-left" :class="TABLE.page.headCell">{{ t("inspect.network.protocol") }}</th>
             <th
               v-for="column in columns"
               :key="column.key"
-              class="py-1 pr-2 text-left font-medium"
+              class="text-left"
+              :class="TABLE.page.headCell"
               :aria-sort="sort === column.key ? (descending ? 'descending' : 'ascending') : 'none'"
             >
               <SortHeader
@@ -166,9 +168,10 @@ watch(rows, (current) => {
                 @sort="orderBy(column.key, column.first)"
               />
             </th>
-            <th class="w-16 py-1 pr-2 text-right font-medium">{{ t("inspect.network.peers") }}</th>
+            <th class="w-16 text-right" :class="TABLE.page.headCell">{{ t("inspect.network.peers") }}</th>
             <th
-              class="w-20 py-1 pr-2 text-right font-medium"
+              class="w-20 text-right"
+              :class="TABLE.page.headCell"
               :aria-sort="sort === 'connections' ? (descending ? 'descending' : 'ascending') : 'none'"
             >
               <SortHeader
@@ -179,16 +182,15 @@ watch(rows, (current) => {
                 @sort="orderBy('connections', 'descending')"
               />
             </th>
-            <th class="w-24 py-1 pr-2 text-right font-medium">{{ t("inspect.network.sent") }}</th>
-            <th class="w-24 py-1 text-right font-medium">{{ t("inspect.network.received") }}</th>
+            <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.network.sent") }}</th>
+            <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.network.received") }}</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="row in rows"
             :key="`${row.socket.protocol}:${row.socket.address}:${row.socket.port}:${row.socket.pid}`"
-            class="cursor-pointer border-b border-border/50 outline-none hover:bg-accent/40 focus-visible:bg-accent/60"
-            :class="sameSocket(picked, row.socket) ? 'bg-accent/60' : ''"
+            :class="rowClass('page', { clickable: true, selected: sameSocket(picked, row.socket) })"
             tabindex="0"
             :aria-selected="sameSocket(picked, row.socket)"
             @click="pick(row.socket)"
@@ -196,20 +198,20 @@ watch(rows, (current) => {
             @keydown.enter.prevent="pick(row.socket)"
             @keydown.space.prevent="pick(row.socket)"
           >
-            <td class="py-1 pr-2 text-right font-mono">{{ row.socket.pid || UNKNOWN }}</td>
-            <td class="truncate py-1 pr-2 font-mono" :title="row.socket.process">
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ row.socket.pid || UNKNOWN }}</td>
+            <td class="truncate font-mono" :class="TABLE.page.cell" :title="row.socket.process">
               {{ row.socket.process || UNKNOWN }}
             </td>
-            <td class="py-1 pr-2 font-mono text-muted-foreground">{{ row.socket.protocol }}</td>
-            <td class="truncate py-1 pr-2 font-mono">{{ row.socket.address }}</td>
-            <td class="py-1 pr-2 font-mono">{{ row.socket.port }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ row.summary.peers }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ row.summary.connections }}</td>
-            <td class="py-1 pr-2 text-right font-mono">{{ bytes(row.summary.sentBytes) }}</td>
-            <td class="py-1 text-right font-mono">{{ bytes(row.summary.receivedBytes) }}</td>
+            <td class="font-mono text-muted-foreground" :class="TABLE.page.cell">{{ row.socket.protocol }}</td>
+            <td class="truncate font-mono" :class="TABLE.page.cell">{{ row.socket.address }}</td>
+            <td class="font-mono" :class="TABLE.page.cell">{{ row.socket.port }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ row.summary.peers }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ row.summary.connections }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ bytes(row.summary.sentBytes) }}</td>
+            <td class="text-right font-mono" :class="TABLE.page.cell">{{ bytes(row.summary.receivedBytes) }}</td>
           </tr>
           <tr v-if="rows.length === 0">
-            <td colspan="9" class="py-3 text-muted-foreground">
+            <td colspan="9" :class="TABLE.page.emptyCell">
               {{ props.live ? t("inspect.network.empty") : UNKNOWN }}
             </td>
           </tr>
@@ -242,31 +244,33 @@ watch(rows, (current) => {
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto">
-        <table class="w-full border-collapse text-xs" :aria-label="t('inspect.network.connections')">
-          <thead class="sticky top-0 bg-background">
-            <tr class="border-b border-border text-muted-foreground">
-              <th class="py-1 pr-2 text-left font-medium">{{ t("inspect.network.peer") }}</th>
-              <th class="w-24 py-1 pr-2 text-right font-medium">{{ t("inspect.network.port") }}</th>
-              <th class="w-28 py-1 pr-2 text-left font-medium">{{ t("inspect.network.state") }}</th>
-              <th class="w-24 py-1 pr-2 text-right font-medium">{{ t("inspect.network.sent") }}</th>
-              <th class="w-24 py-1 text-right font-medium">{{ t("inspect.network.received") }}</th>
+        <table :class="TABLE.page.table" :aria-label="t('inspect.network.connections')">
+          <thead :class="TABLE.page.head">
+            <tr :class="TABLE.page.headRow">
+              <th class="text-left" :class="TABLE.page.headCell">{{ t("inspect.network.peer") }}</th>
+              <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.network.port") }}</th>
+              <th class="w-28 text-left" :class="TABLE.page.headCell">{{ t("inspect.network.state") }}</th>
+              <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.network.sent") }}</th>
+              <th class="w-24 text-right" :class="TABLE.page.headCell">{{ t("inspect.network.received") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="connection in connections"
               :key="`${connection.peerAddress}:${connection.peerPort}`"
-              class="border-b border-border/50"
+              :class="rowClass('page')"
               @contextmenu="openConnectionMenu($event, connection)"
             >
-              <td class="truncate py-1 pr-2 font-mono">{{ connection.peerAddress }}</td>
-              <td class="py-1 pr-2 text-right font-mono">{{ connection.peerPort }}</td>
-              <td class="truncate py-1 pr-2 font-mono text-muted-foreground">{{ connection.state || UNKNOWN }}</td>
-              <td class="py-1 pr-2 text-right font-mono">{{ bytes(connection.sentBytes) }}</td>
-              <td class="py-1 text-right font-mono">{{ bytes(connection.receivedBytes) }}</td>
+              <td class="truncate font-mono" :class="TABLE.page.cell">{{ connection.peerAddress }}</td>
+              <td class="text-right font-mono" :class="TABLE.page.cell">{{ connection.peerPort }}</td>
+              <td class="truncate font-mono text-muted-foreground" :class="TABLE.page.cell">
+                {{ connection.state || UNKNOWN }}
+              </td>
+              <td class="text-right font-mono" :class="TABLE.page.cell">{{ bytes(connection.sentBytes) }}</td>
+              <td class="text-right font-mono" :class="TABLE.page.cell">{{ bytes(connection.receivedBytes) }}</td>
             </tr>
             <tr v-if="connections.length === 0">
-              <td colspan="5" class="py-2 text-muted-foreground">{{ t("inspect.network.connectionsEmpty") }}</td>
+              <td colspan="5" :class="TABLE.page.emptyCell">{{ t("inspect.network.connectionsEmpty") }}</td>
             </tr>
           </tbody>
         </table>

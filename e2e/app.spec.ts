@@ -206,6 +206,12 @@ test("the host monitor is on, and hiding it is one setting", async () => {
     // and with no host known there is nothing to copy either.
     await expect(panel.getByRole("button", { name: "Copy the host name" })).toBeDisabled();
 
+    // The panel is an instrument rather than a document: a drag across it selects nothing, and the
+    // pointer does not turn into an I-beam over the readings. One class is what makes that happen,
+    // and a class says nothing about how a browser treats the text inside it — the computed style is
+    // the half of it that only a real window settles.
+    await expect(panel).toHaveCSS("user-select", "none");
+
     // The three cards are the way in to the host's pages. With nothing connected there is no host
     // to open a page about, so they are drawn and refuse to be used rather than opening an empty
     // page — which is the state a person meets them in the first time they see the panel.
@@ -918,6 +924,79 @@ test("a batch runs on a real host and the row says what happened", async () => {
     await expect(page.getByText("load average", { exact: false })).toBeVisible({ timeout: 15_000 });
 
     await page.screenshot({ path: path.join(ARTIFACTS, "batch-result.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The panel's two small tables, with a real host's readings in them.
+ *
+ * What a window with nothing connected cannot show is what those tables are for: a row of readings,
+ * and what happens to it under the pointer. The hover is the part that only exists in a rendering —
+ * a class in the markup says nothing about what a browser paints — so this is the case that would
+ * notice the panel going back to plain lines of text.
+ *
+ * It needs a server, so it skips when the lab is not configured: the same four variables the Rust
+ * live tests and the other server cases here use. It sits immediately after the batch case for two
+ * reasons, and both are about the order these cases run in rather than about the subject: that one
+ * is the case that meets the host key question and says so in its own comment, so nothing may reach
+ * the host before it — and this one wants the window while it is still healthy, which it is here.
+ */
+test("the panel's tables draw a real host, and mark the row under the pointer", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `monitor-${stamp}`;
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+
+    const panel = page.getByRole("complementary", { name: "Host monitor" });
+    const readings = panel.getByRole("table", { name: "Processes" }).locator("tbody tr").first();
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+
+    // Two things can happen after the click, and which one depends on whether the host is new to
+    // this vault — the key is normally trusted by the case above, but this one is runnable on its
+    // own as well. Waited for together so neither has to be guessed at, and the question is only
+    // answered if it was actually asked.
+    await expect(question.or(readings).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+
+    // Both tables, in the order the panel draws them: a heading, a rule, and readings. The rows are
+    // waited for rather than assumed — the sample rides the connection the click just opened.
+    for (const table of ["Processes", "File systems"]) {
+      const sheet = panel.getByRole("table", { name: table });
+      const row = sheet.locator("tbody tr").first();
+      await expect(row, `${table}: the host's readings are drawn`).toBeVisible({ timeout: 30_000 });
+
+      // The row under the pointer is painted, which is the whole of what "a table" means here: a row
+      // is a right-click target rather than a click, so the band is the only thing saying so.
+      const shade = (): Promise<string> => row.evaluate((element) => getComputedStyle(element).backgroundColor);
+      const before = await shade();
+      await row.hover();
+      await expect.poll(shade, { message: `${table}: the row under the pointer is marked` }).not.toBe(before);
+    }
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "monitor-tables.png"), fullPage: false });
   } finally {
     await close();
   }

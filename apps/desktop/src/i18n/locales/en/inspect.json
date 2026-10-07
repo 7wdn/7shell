@@ -22,6 +22,7 @@
       "megahertz": "{value} MHz",
       "kilobytes": "{value} KB",
       "shareHint": "Where the processors spent the last interval, between two samples:",
+      "share": "Processor time",
       "noShare": "CPU usage",
       "state": {
         "user": "User",

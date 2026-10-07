@@ -33,6 +33,7 @@ import { diskMenu, monitorProcessMenu } from "@/lib/menu/monitor";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { perSecond, uptime } from "@/lib/monitor/format";
 import { memoryUsed, share, swapUsed } from "@/lib/monitor/rates";
+import { TABLE, rowClass } from "@/lib/table";
 import { useMonitorStore } from "@/stores/monitor";
 import { usePreferencesStore } from "@/stores/preferences";
 import { sessionOf, useTerminalsStore, type InspectView } from "@/stores/terminals";
@@ -181,8 +182,16 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
 </script>
 
 <template>
+  <!--
+    The panel is an instrument rather than a document, and it says so once: left to itself the
+    browser treats every reading and label as text — a drag across the panel smears a selection over
+    the rows, and the pointer turns into an I-beam over the numbers. Both are its default for
+    selectable content, and both are wrong here, where nothing is taken by hand: the host is copied
+    by the button in the header, a process or a file system by its own menu. The failure block below
+    is the one exception, because a code somebody has to quote is worth selecting.
+  -->
   <aside
-    class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card/20"
+    class="flex w-80 shrink-0 flex-col overflow-hidden border-l border-border bg-card/20 cursor-default select-none"
     :aria-label="t('monitor.title')"
   >
     <header class="shrink-0 border-b border-border px-3 py-2">
@@ -227,7 +236,11 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
       <p v-if="!monitor.target" class="text-[11px] leading-relaxed text-muted-foreground">
         <span class="text-foreground">{{ t("monitor.idle.title") }}</span> — {{ t("monitor.idle.hint") }}
       </p>
-      <div v-else-if="failure" class="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
+      <div
+        v-else-if="failure"
+        data-monitor-failure
+        class="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 select-text"
+      >
         <p class="flex items-start gap-1.5 text-[11px]">
           <CircleAlert :size="12" class="mt-0.5 shrink-0 text-destructive" />
           <span>{{ failure.message }}</span>
@@ -331,31 +344,40 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
           <span class="flex-1"></span>
           <ChevronRight :size="11" class="text-muted-foreground" />
         </button>
-        <table class="w-full table-fixed border-collapse text-[10px]">
+        <!--
+          The panel's surface of the shared table vocabulary (`lib/table.ts`), and the same table the
+          process page draws, at the size a 320px column can afford. What is said once for every table
+          in this application — the heading rule, the band under the pointer, the message row that
+          spans the columns — is said there; what is left here is which column is which.
+        -->
+        <table :class="TABLE.panel.table" :aria-label="t('inspect.processes.title')">
           <thead>
-            <tr class="bg-muted/70 text-muted-foreground">
-              <th class="w-16 px-1 py-0.5 text-right font-medium">{{ t("monitor.processes.memory") }}</th>
-              <th class="w-10 px-1 py-0.5 text-right font-medium" :title="t('monitor.processes.cpuSinceStart')">
+            <tr :class="TABLE.panel.headRow">
+              <th class="w-16 text-right" :class="TABLE.panel.headCell">{{ t("monitor.processes.memory") }}</th>
+              <th class="w-10 text-right" :class="TABLE.panel.headCell" :title="t('monitor.processes.cpuSinceStart')">
                 {{ t("monitor.processes.cpu") }}
               </th>
-              <th class="px-1 py-0.5 text-left font-medium">{{ t("monitor.processes.command") }}</th>
+              <th class="text-left" :class="TABLE.panel.headCell">{{ t("monitor.processes.command") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="process in sample?.processes ?? []"
               :key="process.pid"
+              :class="rowClass('panel')"
               @contextmenu="openProcessMenu($event, process)"
             >
-              <td class="truncate px-1 py-0.5 text-right font-mono">{{ formatSize(process.residentBytes) }}</td>
-              <td class="px-1 py-0.5 text-right font-mono">{{ process.cpuPercent.toFixed(1) }}</td>
-              <td class="truncate px-1 py-0.5 font-mono">{{ process.name }}</td>
+              <td class="truncate text-right font-mono" :class="TABLE.panel.cell">
+                {{ formatSize(process.residentBytes) }}
+              </td>
+              <td class="text-right font-mono" :class="TABLE.panel.cell">{{ process.cpuPercent.toFixed(1) }}</td>
+              <td class="truncate font-mono" :class="TABLE.panel.cell">{{ process.name }}</td>
+            </tr>
+            <tr v-if="sample && sample.processes.length === 0">
+              <td colspan="3" :class="TABLE.panel.emptyCell">{{ t("monitor.processes.empty") }}</td>
             </tr>
           </tbody>
         </table>
-        <p v-if="sample && sample.processes.length === 0" class="mt-1 text-[10px] text-muted-foreground">
-          {{ t("monitor.processes.empty") }}
-        </p>
       </section>
 
       <section>
@@ -410,29 +432,32 @@ function openDiskMenu(event: MouseEvent, disk: DiskUsage): void {
         <h3 class="mb-1 text-[10px] tracking-wide text-muted-foreground uppercase">
           {{ t("monitor.disks.title") }}
         </h3>
-        <table class="w-full table-fixed border-collapse text-[10px]">
+        <table :class="TABLE.panel.table" :aria-label="t('monitor.disks.title')">
           <thead>
-            <tr class="bg-muted/70 text-muted-foreground">
-              <th class="px-1 py-0.5 text-left font-medium">{{ t("monitor.disks.path") }}</th>
-              <th class="w-28 px-1 py-0.5 text-right font-medium">{{ t("monitor.disks.usage") }}</th>
+            <tr :class="TABLE.panel.headRow">
+              <th class="text-left" :class="TABLE.panel.headCell">{{ t("monitor.disks.path") }}</th>
+              <th class="w-28 text-right" :class="TABLE.panel.headCell">{{ t("monitor.disks.usage") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="disk in sample?.disks ?? []"
               :key="`${disk.filesystem}:${disk.mountPoint}`"
+              :class="rowClass('panel')"
               @contextmenu="openDiskMenu($event, disk)"
             >
-              <td class="truncate px-1 py-0.5 font-mono" :title="disk.filesystem">{{ disk.mountPoint }}</td>
-              <td class="truncate px-1 py-0.5 text-right font-mono">
+              <td class="truncate font-mono" :class="TABLE.panel.cell" :title="disk.filesystem">
+                {{ disk.mountPoint }}
+              </td>
+              <td class="truncate text-right font-mono" :class="TABLE.panel.cell">
                 {{ formatSize(disk.availableBytes) }}/{{ formatSize(disk.sizeBytes) }}
               </td>
             </tr>
+            <tr v-if="sample && sample.disks.length === 0">
+              <td colspan="2" :class="TABLE.panel.emptyCell">{{ t("monitor.disks.empty") }}</td>
+            </tr>
           </tbody>
         </table>
-        <p v-if="sample && sample.disks.length === 0" class="mt-1 text-[10px] text-muted-foreground">
-          {{ t("monitor.disks.empty") }}
-        </p>
       </section>
     </div>
 
