@@ -444,6 +444,27 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     },
   },
   {
+    id: "tab-layout",
+    category: "appearance",
+    field: "tabLayout",
+    titleKey: "settings.rows.tabLayout.title",
+    summaryKey: "settings.rows.tabLayout.summary",
+    helpKey: "settings.rows.tabLayout.help",
+    presentation: "field",
+    grid: "wide",
+    control: {
+      kind: "cards",
+      options: [
+        {
+          value: "scroll",
+          titleKey: "settings.tabLayout.scroll",
+          descriptionKey: "settings.tabLayout.scrollHint",
+        },
+        { value: "wrap", titleKey: "settings.tabLayout.wrap", descriptionKey: "settings.tabLayout.wrapHint" },
+      ],
+    },
+  },
+  {
     id: "session-layout",
     category: "workspace",
     field: "sessionLayout",

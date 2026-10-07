@@ -155,6 +155,17 @@ export type AppLayout = "separated" | "classic";
 /** The shape a fresh install gets: the one this build has always drawn. */
 export const DEFAULT_APP_LAYOUT: AppLayout = "classic";
 
+/**
+ * What the tab bar does when the tabs no longer fit in one row, from `sevenshell_types::TabLayout`.
+ *
+ * One row that scrolls, or rows that wrap: the two answer whether the bar may take height from the
+ * panel under it, which is why the choice is not a size like the panel height is.
+ */
+export type TabLayout = "scroll" | "wrap";
+
+/** One row that scrolls, which is what this build has always drawn. */
+export const DEFAULT_TAB_LAYOUT: TabLayout = "scroll";
+
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";
 
@@ -217,6 +228,8 @@ export interface AppSettings {
   readonly homeLayout: HomeLayout;
   /** How the chrome around the panels is drawn. */
   readonly appLayout: AppLayout;
+  /** What the tab bar does when the tabs no longer fit in one row. */
+  readonly tabLayout: TabLayout;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** The stack the terminal draws in, which is a choice of its own. */

@@ -54,6 +54,7 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     cornerStyle: "large",
     homeLayout: "workspace",
     appLayout: "separated",
+    tabLayout: "scroll",
     filesLayout: "tree",
     sessionLayout: "split",
     sidebarOpen: true,

@@ -248,6 +248,15 @@ function dotClass(tab: WorkspaceTab): string | null {
 const classic = computed(() => preferences.appLayout === "classic");
 
 /**
+ * Whether the bar wraps instead of scrolling.
+ *
+ * Read here rather than left to the stylesheet, because wrapping is not only a look: the bar stops
+ * being one row tall, and the panel underneath gives up the difference — which is the whole trade the
+ * setting makes, and it has to be decided where the bar is drawn.
+ */
+const wrapping = computed(() => preferences.tabLayout === "wrap");
+
+/**
  * What a tab wears: the layout's shape and the tab's own state together.
  *
  * One function rather than nested conditions in the template, because the two layouts disagree about
@@ -284,10 +293,13 @@ function tabClass(tab: WorkspaceTab): string {
       data-workspace-tabs
       :class="
         cn(
-          'flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-card/30 cursor-default select-none',
-          // The bar itself: a row of boxes with air around them, or one run of tabs joined to the top
-          // edge of the panel. The heights are close on purpose — the space this layout saves is in
-          // the headers, not in the bar.
+          // The bar itself. It is one row that scrolls sideways, or as many rows as the tabs need —
+          // and a bar that wraps has no fixed height and nothing to clip, because the rows it grew are
+          // the point, and the panel below is what gets shorter.
+          'flex shrink-0 border-b border-border bg-card/30 cursor-default select-none',
+          wrapping ? 'flex-wrap content-start overflow-visible' : 'items-stretch overflow-x-auto',
+          // The tabs themselves: boxes with air around them, or one run joined to the top edge. The
+          // heights are close on purpose — the room this layout saves is in the headers, not here.
           classic ? 'gap-0 px-0' : 'gap-1.5 px-2 py-1.5',
         )
       "

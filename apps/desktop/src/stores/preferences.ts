@@ -21,6 +21,7 @@ import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
+  DEFAULT_TAB_LAYOUT,
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
@@ -29,6 +30,7 @@ import {
   DEFAULT_UI_SCALE,
   type AppLayout,
   type AppSettings,
+  type TabLayout,
   type CornerStyle,
   type HomeLayout,
   type CustomColors,
@@ -59,6 +61,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   cornerStyle: DEFAULT_CORNER_STYLE,
   homeLayout: DEFAULT_HOME_LAYOUT,
   appLayout: DEFAULT_APP_LAYOUT,
+  tabLayout: DEFAULT_TAB_LAYOUT,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -200,6 +203,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * spread over the strip, the headers and the panel frames.
    */
   const appLayout = ref<AppLayout>(DEFAULT_APP_LAYOUT);
+  /**
+   * What the tab bar does when the tabs no longer fit in one row.
+   *
+   * A chrome question like the one above, and answered by the strip itself rather than by the
+   * stylesheet: wrapping changes how the bar measures, not only how it looks, and the panel under it
+   * gives up the height. The setting is read where the tabs are drawn, which is the only place the
+   * answer means anything.
+   */
+  const tabLayout = ref<TabLayout>(DEFAULT_TAB_LAYOUT);
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -384,6 +396,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       cornerStyle.value = settings.cornerStyle;
       homeLayout.value = settings.homeLayout;
       appLayout.value = settings.appLayout;
+      tabLayout.value = settings.tabLayout;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -453,6 +466,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         cornerStyle: cornerStyle.value,
         homeLayout: homeLayout.value,
         appLayout: appLayout.value,
+        tabLayout: tabLayout.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -564,6 +578,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setAppLayout(layout: AppLayout): Promise<void> {
     appLayout.value = layout;
     apply();
+    dirty.value = true;
+  }
+
+  /** Chooses what the tab bar does when the tabs do not fit, which the bar redraws itself into. */
+  function setTabLayout(layout: TabLayout): void {
+    tabLayout.value = layout;
     dirty.value = true;
   }
 
@@ -767,6 +787,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
           appLayout.value = FRESH.appLayout;
           apply();
           break;
+        case "tabLayout":
+          tabLayout.value = FRESH.tabLayout;
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -828,6 +851,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     cornerStyle,
     homeLayout,
     appLayout,
+    tabLayout,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -861,6 +885,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setCornerStyle,
     setHomeLayout,
     setAppLayout,
+    setTabLayout,
     setUiFont,
     setTerminalFont,
     previewFont,

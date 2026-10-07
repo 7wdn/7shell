@@ -84,6 +84,12 @@
       "classic": "Classic compact",
       "classicHint": "Continuous tab bar with compact panel headers."
     },
+    "tabLayout": {
+      "scroll": "Single row scroll",
+      "scrollHint": "Tabs scroll horizontally in one row when overflowing.",
+      "wrap": "Multi-row wrap",
+      "wrapHint": "Tabs wrap to multiple rows to show all at once."
+    },
     "corner": {
       "none": "Square",
       "small": "Small",
@@ -154,6 +160,11 @@
         "title": "Interface layout",
         "summary": "How much of the window is the thing being looked at.",
         "help": "Two shapes for the chrome around the panels. The separated one keeps the tabs as blocks of their own and gives every header room around what it says, so the parts of the window are read one at a time. The classic one joins the tabs into a single bar and tightens the headers, which hands a row or two back to the panel — the same information, in less of the window."
+      },
+      "tabLayout": {
+        "title": "Tab bar overflow",
+        "summary": "What the tabs do when they no longer fit in one row.",
+        "help": "One row that scrolls sideways, or rows that wrap until every tab is on screen. Wrapping keeps everything in sight — no tab is ever off the edge with no sign that it is there — and pays for it in height, which comes out of the panel underneath. Scrolling keeps the panel's height and puts the tabs past the edge, where the bar can be scrolled and the wheel works over it."
       },
       "cornerStyle": {
         "title": "Corner style",

@@ -999,6 +999,49 @@ test("the interface layout redraws the chrome, and the file hears about it", asy
 });
 
 /**
+ * What the bar does when the tabs do not fit in one row.
+ *
+ * The one chrome choice that is a measurement rather than a look: scrolling keeps the bar one row tall
+ * and puts the tabs past the edge, while wrapping gives every tab a place and takes the height from
+ * the panel below. What a run without a server can see is which rule the bar was drawn under — enough
+ * tabs to make it wrap needs terminals, which need a host, and those cases are the skipped ones. The
+ * files are what it reads for the choice itself.
+ */
+test("the tab bar is told what to do when the tabs do not fit", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    const strip = page.locator("[data-workspace-tabs]");
+
+    // One row that scrolls is what this build has always drawn, so it is where a fresh window is.
+    await expect(settings.getByRole("radio", { name: /^Single row scroll/ })).toBeChecked();
+    await expect(strip).toHaveCSS("flex-wrap", "nowrap");
+    await expect(strip).toHaveCSS("overflow-x", "auto");
+
+    await settings.getByRole("radio", { name: /^Multi-row wrap/ }).click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).tabLayout).toBe("wrap");
+    await expect(strip, "as many rows as there are tabs").toHaveCSS("flex-wrap", "wrap");
+    await expect(strip, "and nothing past the edge").toHaveCSS("overflow-x", "visible");
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-tab-layout.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the bar it expects.
+    await settings.getByRole("radio", { name: /^Single row scroll/ }).click();
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).tabLayout).toBe("scroll");
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The home page, which is one of two.
  *
  * The page is the surface with nothing open on it, and there are two of them: the introduction, for

@@ -18,7 +18,7 @@ use sevenshell_types::{
     FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward,
     MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
     Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
-    SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup, SocketRow, TerminalSettings, ThemeMode,
+    SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup, SocketRow, TabLayout, TerminalSettings, ThemeMode,
     ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
@@ -219,6 +219,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             corner_style: CornerStyle::Small,
             home_layout: HomeLayout::Intro,
             app_layout: AppLayout::Classic,
+            tab_layout: TabLayout::Scroll,
             ui_font: Some("Inter, sans-serif".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),
@@ -233,6 +234,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(&CornerStyle::Large, "CornerStyle");
     check(&HomeLayout::Workspace, "HomeLayout");
     check(&AppLayout::Classic, "AppLayout");
+    check(&TabLayout::Wrap, "TabLayout");
     check(&ThemeMode::System, "ThemeMode");
     // Both of the settings the interface offers as words rather than as numbers: a variant that
     // serialized as `default` when the interface expects `"default"` is the bug this file is for.

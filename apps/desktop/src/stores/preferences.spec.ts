@@ -15,6 +15,7 @@ import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/pre
 import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_CORNER_STYLE,
+  DEFAULT_TAB_LAYOUT,
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
@@ -43,6 +44,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     cornerStyle: DEFAULT_CORNER_STYLE,
     homeLayout: DEFAULT_HOME_LAYOUT,
     appLayout: DEFAULT_APP_LAYOUT,
+    tabLayout: DEFAULT_TAB_LAYOUT,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -163,6 +165,7 @@ describe("preferences store", () => {
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
+      tabLayout: DEFAULT_TAB_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -194,6 +197,7 @@ describe("preferences store", () => {
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
+      tabLayout: DEFAULT_TAB_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -336,6 +340,7 @@ describe("the terminal palette", () => {
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
+      tabLayout: DEFAULT_TAB_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -562,6 +567,25 @@ describe("the colour theme", () => {
     await store.reset(["appLayout"]);
     expect(store.appLayout).toBe(DEFAULT_APP_LAYOUT);
     expect(document.documentElement.dataset.appLayout).toBe("classic");
+  });
+
+  it("remembers what the tab bar does when the tabs do not fit", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // One row that scrolls is what this build has always drawn, and what a file written before the
+    // choice existed reads as.
+    expect(store.tabLayout).toBe("scroll");
+
+    store.setTabLayout("wrap");
+    expect(store.tabLayout).toBe("wrap");
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ tabLayout: "wrap" }));
+
+    await store.reset(["tabLayout"]);
+    expect(store.tabLayout).toBe(DEFAULT_TAB_LAYOUT);
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {
@@ -946,6 +970,7 @@ describe("restoring the defaults", () => {
       cornerStyle: DEFAULT_CORNER_STYLE,
       homeLayout: DEFAULT_HOME_LAYOUT,
       appLayout: DEFAULT_APP_LAYOUT,
+      tabLayout: DEFAULT_TAB_LAYOUT,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

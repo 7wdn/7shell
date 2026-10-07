@@ -67,6 +67,24 @@ function stripButton(label: string): HTMLElement {
   return found;
 }
 
+/** The first tab in the strip, which is the drawn box rather than the button inside it. */
+function firstTab(): HTMLElement {
+  const found = host.querySelector<HTMLElement>("[data-workspace-tabs] > div");
+  if (!found) {
+    throw new Error("the strip has no tab in it");
+  }
+  return found;
+}
+
+/** The strip the tabs are drawn in, which is what the bar's own shape is read off. */
+function strip(): HTMLElement {
+  const found = host.querySelector<HTMLElement>("[data-workspace-tabs]");
+  if (!found) {
+    throw new Error("the workspace has no tab strip");
+  }
+  return found;
+}
+
 /** What a button says about being the half on screen, which is what its own lit state means. */
 function pressed(button: HTMLElement): string | null {
   return button.getAttribute("aria-pressed");
@@ -163,23 +181,6 @@ describe("the half of the panel that is on screen", () => {
  * responsible for; the panels' and the headers' halves are the stylesheet's.
  */
 describe("the two interface layouts", () => {
-  /** The first tab in the strip, which is the drawn box rather than the button inside it. */
-  function firstTab(): HTMLElement {
-    const found = host.querySelector<HTMLElement>("[data-workspace-tabs] > div");
-    if (!found) {
-      throw new Error("the strip has no tab in it");
-    }
-    return found;
-  }
-
-  function strip(): HTMLElement {
-    const found = host.querySelector<HTMLElement>("[data-workspace-tabs]");
-    if (!found) {
-      throw new Error("the workspace has no tab strip");
-    }
-    return found;
-  }
-
   it("draws one run of tabs when the chrome is classic, which is the default", async () => {
     usePreferencesStore().setAppLayout("classic");
     await render(openPanel);
@@ -197,6 +198,32 @@ describe("the two interface layouts", () => {
 
     expect(firstTab().classList.contains("rounded-md"), "a box with rounded corners").toBe(true);
     expect(strip().classList.contains("gap-1.5"), "and air around it").toBe(true);
+  });
+});
+
+/**
+ * What the bar does when the tabs no longer fit in a row.
+ *
+ * It is a trade rather than a look: one row that scrolls keeps the bar's height and puts the tabs past
+ * the edge, while wrapping put every tab on screen and takes the height out of the panel below. What
+ * this file can see is which of the two the bar was drawn as; that the panel below gives up the room
+ * is a real window's measurement.
+ */
+describe("the tab bar when the tabs do not fit", () => {
+  it("wraps them onto as many rows as they need when it is told to", async () => {
+    usePreferencesStore().setTabLayout("wrap");
+    await render(openPanel);
+
+    expect(strip().classList.contains("flex-wrap"), "the tabs wrap").toBe(true);
+    expect(strip().classList.contains("content-start"), "and the rows start at the top").toBe(true);
+    expect(strip().classList.contains("overflow-visible"), "with nothing hidden past the edge").toBe(true);
+  });
+
+  it("keeps them in one row that scrolls by default", async () => {
+    await render(openPanel);
+
+    expect(strip().className, "no wrapping").not.toContain("flex-wrap");
+    expect(strip().classList.contains("overflow-x-auto"), "one row, scrolled sideways").toBe(true);
   });
 });
 

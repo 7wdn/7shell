@@ -345,6 +345,37 @@ impl AppLayout {
     }
 }
 
+/// What the tab bar does when the tabs no longer fit in one row.
+///
+/// Two answers rather than a number, because the two answer a question the panels' own sizes do not:
+/// whether the bar is allowed to take height from the panel underneath it. Scrolling keeps the bar one
+/// row tall and puts the rest out of sight; wrapping keeps every tab in sight and pays for it in
+/// vertical room.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TabLayout {
+    /// One row that scrolls sideways. What this build has always done, so a fresh install gets it.
+    #[default]
+    Scroll,
+    /// Rows that wrap until every tab is on screen.
+    Wrap,
+}
+
+impl TabLayout {
+    pub const ALL: &'static [TabLayout] = &[TabLayout::Scroll, TabLayout::Wrap];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Scroll => "scroll",
+            Self::Wrap => "wrap",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|layout| layout.as_str() == id)
+    }
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -436,6 +467,11 @@ pub struct AppSettings {
     /// which reads as the shape this build has always drawn.
     #[serde(default)]
     pub app_layout: AppLayout,
+
+    /// What the tab bar does when the tabs no longer fit in one row. Absent in a file written before
+    /// this was a choice, which reads as the one row that scrolls this build has always drawn.
+    #[serde(default)]
+    pub tab_layout: TabLayout,
     /// The family the interface draws its text in, as a `font-family` stack.
     ///
     /// The whole stack rather than one name, and absent means the one this build ships with: somebody
@@ -517,6 +553,7 @@ impl Default for AppSettings {
             corner_style: CornerStyle::default(),
             home_layout: HomeLayout::default(),
             app_layout: AppLayout::default(),
+            tab_layout: TabLayout::default(),
             ui_font: None,
             terminal_font: None,
             custom_colors: None,
@@ -536,6 +573,7 @@ impl AppSettings {
             && self.corner_style == CornerStyle::Large
             && self.home_layout == HomeLayout::Workspace
             && self.app_layout == AppLayout::Classic
+            && self.tab_layout == TabLayout::Scroll
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System
@@ -604,6 +642,17 @@ mod tests {
             "the default has to be the shape this build already draws, or a file written before the \
              choice existed would open onto a different interface than the one that wrote it"
         );
+    }
+
+    #[test]
+    fn every_tab_layout_round_trips_through_its_own_name() {
+        for layout in TabLayout::ALL {
+            assert_eq!(
+                TabLayout::from_id(layout.as_str()),
+                Some(*layout),
+                "a tab bar whose name does not read back is one the settings file cannot hold"
+            );
+        }
     }
 
     #[test]
