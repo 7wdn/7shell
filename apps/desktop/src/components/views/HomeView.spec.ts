@@ -122,6 +122,10 @@ beforeEach(() => {
   // The panel under a terminal is not this page's business: a click here opens the terminal, and
   // the store's own suite already says what it does about the file panel afterwards.
   usePreferencesStore().sessionLayout = "terminal";
+  // Most of these cases are about the working page — the list, the counters, the shortcuts — and a fresh
+  // install opens on the introduction instead. Each of the two pages has its own case below, and both
+  // say which one they are about rather than relying on which one happens to be the default.
+  usePreferencesStore().setHomeLayout("workspace");
 });
 
 afterEach(() => {
@@ -224,7 +228,8 @@ describe("the home page", () => {
  * hosts are one answer, not two.
  */
 describe("the two home pages", () => {
-  it("opens on the working one: what the library holds, the hosts, the actions and what was run", () => {
+  it("draws the working page: what the library holds, the hosts, the actions and what was run", () => {
+    usePreferencesStore().setHomeLayout("workspace");
     render();
 
     expect(card("Quick start")).toBeTruthy();

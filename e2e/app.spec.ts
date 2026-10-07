@@ -57,6 +57,22 @@ async function writtenSettings(): Promise<{
 }
 
 /**
+ * Chooses which of the two home pages is drawn, through the settings page, and writes it.
+ *
+ * The cases either side of this one are about different pages, and neither should depend on which one a
+ * fresh install happens to open on: each says which page it is about, out loud, through the interface a
+ * person would use.
+ */
+async function chooseHomePage(page: Page, which: "Introduction" | "Workspace overview"): Promise<void> {
+  await settingsButton(page).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+  await settings.getByRole("radio", { name: new RegExp(`^${which}`) }).click();
+  await applySettings(page);
+  await page.getByRole("button", { name: "Close settings" }).click();
+}
+
+/**
  * The settings page's Apply: writes down everything chosen since the last one.
  *
  * A choice takes effect at once and the file is told when somebody says so — that is what the bar at
@@ -188,6 +204,9 @@ test("a vault can be created and the shell opens", async () => {
 test("the home page opens a session from its own list, and says so when it cannot", async () => {
   const { page, close } = await openApp();
   try {
+    // The working page, asked for rather than assumed: a fresh install opens on the introduction.
+    await chooseHomePage(page, "Workspace overview");
+
     const board = home(page);
     await expect(board.getByRole("heading", { name: "Quick start" })).toBeVisible();
     await expect(board.getByText("No sessions yet", { exact: false })).toBeVisible();
@@ -225,6 +244,11 @@ test("the home page opens a session from its own list, and says so when it canno
     await expect(page.getByRole("region", { name: "Settings" })).toBeVisible();
     await page.getByRole("button", { name: "Close settings" }).click();
     await expect(board.getByRole("heading", { name: "Quick start" })).toBeVisible();
+
+    // Put back the page a fresh install has, since that is the state the cases after this one were
+    // written against and this one chose the other page to work with.
+    await chooseHomePage(page, "Introduction");
+    await expect(board.getByRole("heading", { name: "Getting started" })).toBeVisible();
   } finally {
     await close();
   }
@@ -960,24 +984,10 @@ test("the interface layout redraws the chrome, and the file hears about it", asy
     const radius = async (): Promise<number> =>
       tab.evaluate((el) => parseFloat(getComputedStyle(el).borderTopLeftRadius));
 
-    // Classic is the shape this build has always drawn: square, flush, panels divided by single lines.
-    await expect(settings.getByRole("radio", { name: /^Classic compact/ })).toBeChecked();
-    expect(await radius(), "a tab with no rounding, in a bar with no gaps").toBe(0);
-    await expect(panel.locator("header").first(), "and a header that gave the row back").toHaveCSS(
-      "padding-top",
-      "4px",
-    );
-    await expect(panel, "panels flush against each other").toHaveCSS("border-top-left-radius", "0px");
-
-    await mkdir(ARTIFACTS, { recursive: true });
-    await page.screenshot({ path: path.join(ARTIFACTS, "settings-layout-classic.png"), fullPage: false });
-
-    await settings.getByRole("radio", { name: /^Modern separated/ }).click();
-    await applySettings(page);
-
-    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("separated");
-    expect(await radius(), "the tab is a box of its own").toBeGreaterThan(0);
-    await expect(panel.locator("header").first(), "and a header with room around its title").toHaveCSS(
+    // Separated is what a fresh install gets: boxes with air around them, and panels floating as cards.
+    await expect(settings.getByRole("radio", { name: /^Modern separated/ })).toBeChecked();
+    expect(await radius(), "a tab drawn as a box of its own").toBeGreaterThan(0);
+    await expect(panel.locator("header").first(), "a header with room around its title").toHaveCSS(
       "padding-top",
       "8px",
     );
@@ -987,13 +997,27 @@ test("the interface layout redraws the chrome, and the file hears about it", asy
       })
       .toBeGreaterThan(0);
 
+    await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-layout-separated.png"), fullPage: false });
+
+    await settings.getByRole("radio", { name: /^Classic compact/ }).click();
+    await applySettings(page);
+
+    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("classic");
+    await expect.poll(radius, { message: "no rounding, in a bar with no gaps" }).toBe(0);
+    await expect(panel.locator("header").first(), "and a header that gave the row back").toHaveCSS(
+      "padding-top",
+      "4px",
+    );
+    await expect(panel, "panels flush against each other").toHaveCSS("border-top-left-radius", "0px");
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-layout-classic.png"), fullPage: false });
 
     // Put back, so that the rest of the run meets the window it expects: the shape is a property of
     // the whole window, and every case after this one draws its own chrome in it.
-    await settings.getByRole("radio", { name: /^Classic compact/ }).click();
+    await settings.getByRole("radio", { name: /^Modern separated/ }).click();
     await applySettings(page);
-    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("classic");
+    await expect.poll(async () => (await writtenSettings()).appLayout).toBe("separated");
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();
@@ -1279,47 +1303,48 @@ test("the tab bar is drawn where it was put, grouped, ordered and no wider than 
 test("the home page is the one somebody chose", async () => {
   const { page, close } = await openApp();
   try {
-    // Nothing open is the home page, which is what the case before this one left behind.
+    // The page this case is about, asked for rather than inherited from whichever case ran last.
+    await chooseHomePage(page, "Introduction");
+
     const board = home(page);
-    await expect(board.getByText("Sessions saved")).toBeVisible();
+    await expect(board.getByRole("heading", { name: "Getting started" })).toBeVisible();
+    await expect(board.getByText("Sessions saved"), "nothing here counts a session").toHaveCount(0);
+    // Including the one thing this page promises about itself, and the way back to the other one.
+    await expect(board.getByText("no host key and no history", { exact: false })).toBeVisible();
+    await expect(board.getByRole("button", { name: "Home page settings" })).toBeVisible();
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "home-intro.png"), fullPage: false });
 
     await settingsButton(page).click();
     const settings = page.getByRole("region", { name: "Settings" });
     await settings.getByRole("button", { name: "Appearance", exact: true }).click();
 
-    // The cards say what each page is, so the radio a reader finds is the card whose line begins
-    // with its name — and the working page is the one a fresh install is on.
+    // The cards say what each page is, so the radio a reader finds is the card whose line begins with
+    // its name — and the one that is lit is the introduction, which is where a fresh install is.
     const intro = settings.getByRole("radio", { name: /^Introduction/ });
     const workspace = settings.getByRole("radio", { name: /^Workspace overview/ });
-    await expect(workspace).toBeChecked();
+    await expect(intro).toBeChecked();
 
     // Kept as a picture: two cards, each with the line that tells them apart, one of them lit.
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-home-content.png"), fullPage: false });
 
-    await intro.click();
-    await expect(intro).toBeChecked();
+    await workspace.click();
+    await expect(workspace).toBeChecked();
     await applySettings(page);
-    await expect.poll(async () => (await writtenSettings()).homeLayout).toBe("intro");
+    await expect.poll(async () => (await writtenSettings()).homeLayout).toBe("workspace");
 
     await page.getByRole("button", { name: "Close settings" }).click();
 
-    // The page it is about: nothing names or counts a connection, and what this is takes their place.
-    await expect(board.getByText("Sessions saved"), "nothing on this page counts a session").toHaveCount(0);
+    // The page it is about: the library's own numbers, and the hosts it holds.
+    await expect(board.getByText("Sessions saved"), "this page counts what the library holds").toBeVisible();
+    await expect(board.getByRole("heading", { name: "Getting started" })).toHaveCount(0);
+
+    // Put back, so that the rest of the run meets the page it expects — which is the one a fresh
+    // install has, since that is what every other case was written against.
+    await chooseHomePage(page, "Introduction");
     await expect(board.getByRole("heading", { name: "Getting started" })).toBeVisible();
-    // Including the one thing it promises about itself, and the way back to the other page.
-    await expect(board.getByText("no host key and no history", { exact: false })).toBeVisible();
-    await expect(board.getByRole("button", { name: "Home page settings" })).toBeVisible();
-    await page.screenshot({ path: path.join(ARTIFACTS, "home-intro.png"), fullPage: false });
-
-    // Put back, so that the rest of the run meets the page it expects.
-    await settingsButton(page).click();
-    const again = page.getByRole("region", { name: "Settings" });
-    await again.getByRole("button", { name: "Appearance", exact: true }).click();
-    await again.getByRole("radio", { name: /^Workspace overview/ }).click();
-    await applySettings(page);
-    await page.getByRole("button", { name: "Close settings" }).click();
-    await expect(board.getByText("Sessions saved")).toBeVisible();
   } finally {
     await close();
   }

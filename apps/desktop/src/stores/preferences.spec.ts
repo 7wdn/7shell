@@ -550,8 +550,8 @@ describe("the colour theme", () => {
     store.initialize();
     await store.load();
 
-    // The working page is what this build has always drawn, so a fresh install opens on it.
-    expect(store.homeLayout).toBe("workspace");
+    // The introduction, because a fresh install is a window with nothing connected in it.
+    expect(store.homeLayout).toBe("intro");
 
     store.setHomeLayout("intro");
 
@@ -560,7 +560,7 @@ describe("the colour theme", () => {
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ homeLayout: "intro" }));
 
     await store.reset(["homeLayout"]);
-    expect(store.homeLayout).toBe("workspace");
+    expect(store.homeLayout).toBe("intro");
   });
 
   it("writes the corner style on the document, and puts it back", async () => {
@@ -591,17 +591,17 @@ describe("the colour theme", () => {
     // The shape of the chrome is two answers to "how much of the window is the thing I am looking
     // at", and it reaches the stylesheet as an attribute for the same reason the palette does: what
     // it changes is spread over the strip, the headers and the frames rather than being one class.
-    expect(document.documentElement.dataset.appLayout).toBe("classic");
-
-    await store.setAppLayout("separated");
-
     expect(document.documentElement.dataset.appLayout).toBe("separated");
+
+    await store.setAppLayout("classic");
+
+    expect(document.documentElement.dataset.appLayout).toBe("classic");
     await store.commit();
-    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ appLayout: "separated" }));
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ appLayout: "classic" }));
 
     await store.reset(["appLayout"]);
     expect(store.appLayout).toBe(DEFAULT_APP_LAYOUT);
-    expect(document.documentElement.dataset.appLayout).toBe("classic");
+    expect(document.documentElement.dataset.appLayout).toBe("separated");
   });
 
   it("remembers what the tab bar does when the tabs do not fit", async () => {

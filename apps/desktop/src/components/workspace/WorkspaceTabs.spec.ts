@@ -276,14 +276,14 @@ describe("the bar's own choices", () => {
 /**
  * The two interface layouts, as the strip draws them.
  *
- * The classic one is what this build has always drawn: one run of tabs joined to the top edge, told
+ * The classic one: one run of tabs joined to the top edge, told
  * apart by the line along the bottom of the one on screen. The separated one floats every tab as a box
  * with air around it and marks the lit one by a brighter edge, because a gap has no bottom line to
  * draw. What each tab *says* does not change, so this is the whole of the difference the component is
  * responsible for; the panels' and the headers' halves are the stylesheet's.
  */
 describe("the two interface layouts", () => {
-  it("draws one run of tabs when the chrome is classic, which is the default", async () => {
+  it("draws one run of tabs when the chrome is classic", async () => {
     usePreferencesStore().setAppLayout("classic");
     await render(openPanel);
 

@@ -8,6 +8,10 @@
  * watches the element they sit in rather than being told a number the window could invalidate a
  * moment later.
  *
+ * The strip is *inside* the panel's own edge rather than straddling it. In the separated layout the
+ * panels are rounded cards that clip themselves, and a handle hanging over the edge would be half
+ * clipped with it — visible, and impossible to grab where it used to be grabbed.
+ *
  * It carries a mark: three dots in the middle of the edge. An edge that can be moved has to say so,
  * because the alternative — a line that appears when the pointer happens to be over it — is a
  * control only the people who already know about it can find.
@@ -137,7 +141,7 @@ onBeforeUnmount(() => observer?.disconnect());
   <div
     ref="handle"
     data-sidebar-divider
-    class="group absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none select-none outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+    class="group absolute inset-y-0 right-0 z-20 w-2 cursor-col-resize touch-none select-none outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
     role="separator"
     aria-orientation="vertical"
     tabindex="0"

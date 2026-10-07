@@ -141,8 +141,13 @@ export const FONT_PRESETS: readonly { readonly value: string; readonly labelKey:
 /** What the home page is for, from `sevenshell_types::HomeLayout`. */
 export type HomeLayout = "intro" | "workspace";
 
-/** The page a fresh install opens on: the one this build has always drawn. */
-export const DEFAULT_HOME_LAYOUT: HomeLayout = "workspace";
+/**
+ * The page a fresh install opens on: the introduction.
+ *
+ * A fresh install is a window with nothing connected in it, which is exactly who that page is written
+ * for; somebody with hosts in the library is one setting away from the working page.
+ */
+export const DEFAULT_HOME_LAYOUT: HomeLayout = "intro";
 
 /**
  * How the chrome around the panels is drawn, from `sevenshell_types::AppLayout`.
@@ -152,8 +157,8 @@ export const DEFAULT_HOME_LAYOUT: HomeLayout = "workspace";
  */
 export type AppLayout = "separated" | "classic";
 
-/** The shape a fresh install gets: the one this build has always drawn. */
-export const DEFAULT_APP_LAYOUT: AppLayout = "classic";
+/** The shape a fresh install gets: panels floating with the window showing between them. */
+export const DEFAULT_APP_LAYOUT: AppLayout = "separated";
 
 /**
  * What the tab bar does when the tabs no longer fit in one row, from `sevenshell_types::TabLayout`.

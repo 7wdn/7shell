@@ -287,10 +287,14 @@ impl CornerStyle {
 #[serde(rename_all = "lowercase")]
 pub enum HomeLayout {
     /// What this build is, and the steps of a first connection: no names, no counts, no history.
+    ///
+    /// What a fresh install opens on, because a fresh install is a window with nothing connected in it,
+    /// and that is who this page is for. Somebody with hosts in the library is one setting away from
+    /// the working page.
+    #[default]
     Intro,
     /// The working page: what the library holds, the hosts used last, and the actions that start
-    /// something. What this build has always drawn, so a fresh install opens on it.
-    #[default]
+    /// something.
     Workspace,
 }
 
@@ -321,12 +325,14 @@ impl HomeLayout {
 pub enum AppLayout {
     /// Panels floating as cards with the window showing between them, tabs as boxes of their own, and
     /// headers with room around what they say.
+    ///
+    /// What a fresh install gets. Both of these shapes are this build's own — neither is a leftover —
+    /// and the choice exists because which one somebody wants depends on whether they work in one panel
+    /// or move between several.
+    #[default]
     Separated,
     /// Panels flush against each other with a single line between them, one continuous tab bar, and
-    /// tighter headers: the same information in fewer pixels. The panels have been drawn this way all
-    /// along — the floating ones are the newer half of the choice — so this is what a fresh install
-    /// gets, and what a settings file written before the choice existed reads as.
-    #[default]
+    /// tighter headers: the same information in fewer pixels.
     Classic,
 }
 
@@ -878,8 +884,8 @@ impl AppSettings {
             && self.theme_palette == ThemePalette::Default
             && self.ui_scale == ui_scale_default()
             && self.corner_style == CornerStyle::Large
-            && self.home_layout == HomeLayout::Workspace
-            && self.app_layout == AppLayout::Classic
+            && self.home_layout == HomeLayout::Intro
+            && self.app_layout == AppLayout::Separated
             && self.tab_layout == TabLayout::Scroll
             && self.tab_placement == TabPlacement::Top
             && self.tab_group_mode == TabGroupMode::None
@@ -955,9 +961,13 @@ mod tests {
         }
         assert_eq!(
             AppLayout::default(),
-            AppLayout::Classic,
-            "the default has to be the shape this build already draws, or a file written before the \
-             choice existed would open onto a different interface than the one that wrote it"
+            AppLayout::Separated,
+            "the default is the floating one, which is what a fresh install is meant to open onto"
+        );
+        assert_eq!(
+            HomeLayout::default(),
+            HomeLayout::Intro,
+            "and the page it opens on is the one written for somebody with nothing connected yet"
         );
     }
 
