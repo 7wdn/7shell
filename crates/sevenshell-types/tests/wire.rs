@@ -235,6 +235,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             tab_max_width: TabMaxWidth::Compact,
             ui_font: Some("Inter, sans-serif".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
+            terminal_font_size: 16,
             custom_colors: Some(CustomColors::light_default()),
             custom_colors_dark: Some(CustomColors::dark_default()),
             locale: Some("zh-CN".to_owned()),

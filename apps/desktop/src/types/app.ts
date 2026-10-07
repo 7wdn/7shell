@@ -230,6 +230,16 @@ export const BACKGROUND_BLUR_MAX = 20;
 /** Where the transparency slider starts: a fifth of the way to the picture. */
 export const DEFAULT_BACKGROUND_TRANSPARENCY = 20;
 
+/**
+ * The sizes the terminal may be drawn at, in pixels, and the one a fresh install has.
+ *
+ * From `sevenshell_types`: a closed range with its ends on the slider, because a terminal is measured
+ * in columns and lines and a size nobody offers is one nobody could get back to.
+ */
+export const TERMINAL_FONT_SIZE_MIN = 10;
+export const TERMINAL_FONT_SIZE_MAX = 24;
+export const DEFAULT_TERMINAL_FONT_SIZE = 13;
+
 /** The picture drawn behind the whole window, from `sevenshell_types::BackgroundImage`. */
 export interface BackgroundImage {
   /** What the picture is called, as the person who chose it knows it. No picture when absent. */
@@ -354,6 +364,8 @@ export interface AppSettings {
   readonly quitOnClose: boolean;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
+  /** How large the terminal draws its text, in pixels. */
+  readonly terminalFontSize: number;
   /** The stack the terminal draws in, which is a choice of its own. */
   readonly terminalFont?: string;
   /** What a `custom` palette is drawn from. Absent means nobody has picked any yet. */

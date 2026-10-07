@@ -105,6 +105,14 @@ const settingsFields = computed(() =>
   fieldRows.value.filter((row) => row.grid === undefined || row.grid === "settings"),
 );
 const fontFields = computed(() => fieldRows.value.filter((row) => row.grid === "fonts"));
+/**
+ * The block a page is drawn around, before everything else on it.
+ *
+ * The terminal's own preview is the one row that uses it: what is under the preview is about what the
+ * preview looks like, so reading the page downwards means meeting it first.
+ */
+const topFields = computed(() => fieldRows.value.filter((row) => row.grid === "top"));
+
 /** The fields that are a block rather than a word: one to a line, label above. */
 const wideFields = computed(() => fieldRows.value.filter((row) => row.grid === "wide"));
 /**
@@ -177,7 +185,8 @@ function selectCategory(id: SettingsCategoryId): void {
  * way it came, so the category that owns them names them here.
  */
 function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
-  const fields: PreferenceField[] = rowsOfCategory(id).map((row) => row.field);
+  // Rows that write nothing — the terminal's preview — are not among the fields a category restores.
+  const fields: PreferenceField[] = rowsOfCategory(id).flatMap((row) => (row.field ? [row.field] : []));
   if (id === "workspace") {
     fields.push("terminalPanelHeight", "sidebarWidth", "sidebarOpen");
   }
@@ -189,6 +198,11 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
 
 /** What a row's control currently shows. */
 function currentValue(row: SettingsRowDefinition): string | boolean | readonly string[] {
+  // A row that writes nothing has no value: the control it draws is a picture of the settings around
+  // it, and it reads what it needs from the store itself.
+  if (!row.field) {
+    return "";
+  }
   switch (row.field) {
     case "themeMode":
       return preferences.themeMode;
@@ -218,6 +232,11 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       // The block reads and writes the picture itself, because it is five answers to one question and
       // only one of them — the mode — is a value this page's contract could hand over.
       return preferences.backgroundImage.displayMode;
+    case "terminalFontSize":
+      // A number in the store and a string through this contract, for the same reason the interface
+      // scale is: the value the settings file holds is a number, and the slider is the only thing here
+      // that reads it as text.
+      return String(preferences.terminalFontSize);
     case "showTrayIcon":
       return preferences.showTrayIcon;
     case "quitOnClose":
@@ -250,6 +269,9 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
  * the difference the two buttons there are about.
  */
 function choose(row: SettingsRowDefinition, value: string | boolean | readonly string[]): void {
+  if (!row.field) {
+    return;
+  }
   switch (row.field) {
     case "themeMode":
       void preferences.setThemeMode(value as ThemeMode);
@@ -286,6 +308,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "backgroundImage":
       void preferences.setBackgroundDisplayMode(value as BackgroundDisplayMode);
+      return;
+    case "terminalFontSize":
+      preferences.setTerminalFontSize(Number(value));
       return;
     case "showTrayIcon":
       preferences.setShowTrayIcon(value === true);
@@ -632,6 +657,29 @@ function translate(key: string, params?: Record<string, string>): string {
                 </div>
 
                 <template v-else>
+                  <!--
+                  The block the page is drawn around, before the fields: what sits under it is about what
+                  it looks like.
+                -->
+                  <div v-if="topFields.length > 0" class="grid gap-y-4 pb-1">
+                    <SettingsField
+                      v-for="row in topFields"
+                      :key="row.id"
+                      :title="t(row.titleKey)"
+                      :help="t(row.helpKey)"
+                    >
+                      <SettingsControl
+                        :row="row"
+                        :value="currentValue(row)"
+                        :label="t(row.titleKey)"
+                        stretch
+                        @choose="(value) => choose(row, value)"
+                        @preview="(value: string) => preview(row, value)"
+                        @end-preview="endPreview(row)"
+                      />
+                    </SettingsField>
+                  </div>
+
                   <!--
                   The category's fields first, in one grid: a language, a colour and a size are each
                   a name and a control, and three cards for them would push the settings somebody

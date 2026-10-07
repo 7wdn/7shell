@@ -37,9 +37,10 @@ pub use session::{
 };
 pub use settings::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
-    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
-    TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS, monitor_on, normalize_ui_scale, sidebar_on,
-    tray_icon_on, ui_scale_default,
+    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN,
+    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS,
+    monitor_on, normalize_terminal_font_size, normalize_ui_scale, sidebar_on, terminal_font_size_default, tray_icon_on,
+    ui_scale_default,
 };
 pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,

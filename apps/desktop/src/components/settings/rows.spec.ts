@@ -133,7 +133,8 @@ describe("the settings table", () => {
   });
 
   it("writes each preference field exactly once", () => {
-    const fields = SETTINGS_ROWS.map((row) => row.field);
+    // The rows that write nothing — the preview is a picture — are not fields and cannot collide.
+    const fields = SETTINGS_ROWS.flatMap((row) => (row.field ? [row.field] : []));
     expect(new Set(fields).size, `two rows writing one field: ${fields.join(", ")}`).toBe(fields.length);
   });
 

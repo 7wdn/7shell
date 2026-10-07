@@ -7,7 +7,8 @@
       "workspace": "Workspace",
       "files": "Files",
       "about": "About",
-      "security": "Security"
+      "security": "Security",
+      "terminal": "SSH terminal"
     },
     "tab": {
       "close": "Close settings"
@@ -37,14 +38,14 @@
       "dark": "Dark",
       "light": "Light"
     },
-    "terminal": {
-      "follow": "Follow the interface",
-      "dark": "Always dark",
-      "light": "Always light"
-    },
     "session": {
       "split": "Terminal and files",
       "terminal": "Terminal only"
+    },
+    "terminal": {
+      "light": "Always light",
+      "dark": "Always dark",
+      "follow": "Follow the interface"
     },
     "files": {
       "tree": "Tree and list",
@@ -238,6 +239,16 @@
         "summary": "The family the terminal's text is drawn in.",
         "help": "A terminal is read in a fixed-width face, so the list offers the ones people bring with them before this machine's own. Choosing one takes effect at once, in the terminals that are already open: the grid a terminal is made of is as wide as the face it is drawn in, so a new font is a new grid."
       },
+      "terminalPreview": {
+        "title": "Live preview",
+        "summary": "The terminal, as the settings on this page make it.",
+        "help": "A terminal drawn with the face, the size and the colours this page is about, so that a choice can be seen rather than imagined. The two surfaces and the sixteen colours come from the palette the terminal is wearing, and the lines are there to be compared against each other: a face whose digits and letters look alike, or a colour that cannot be read on its own background, shows up here rather than in a shell."
+      },
+      "terminalFontSize": {
+        "title": "Text size",
+        "summary": "How large the terminal draws its text, in pixels.",
+        "help": "Measured in pixels rather than as a share of the interface scale, because a terminal is read in columns and lines: the size trades how many of them fit against how easy they are to read, and that trade is nobody's business but the person at the window. A terminal that is already open is redrawn at the new size at once, and the columns it reports are the ones that fit now."
+      },
       "sessionLayout": {
         "title": "Opening a session",
         "summary": "A terminal on its own, or with the files under it.",
@@ -257,6 +268,16 @@
         "title": "Packed transfer",
         "summary": "Move a folder as one archive, made and opened on the way.",
         "help": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
+      }
+    },
+    "terminalPreview": {
+      "lines": {
+        "prompt": "lab{'@'}web:~$",
+        "command": "systemctl status nginx --no-pager",
+        "output": "● nginx.service — A high performance web server",
+        "warning": "warning: 3 restarts in the last hour",
+        "error": "error: unit nginx.service entered failed state",
+        "plain": "3 sessions · 12 files · 1 forward"
       }
     },
     "background": {

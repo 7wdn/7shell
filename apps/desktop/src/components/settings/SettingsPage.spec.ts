@@ -55,6 +55,7 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     homeLayout: "workspace",
     appLayout: "separated",
     tabLayout: "scroll",
+    terminalFontSize: 13,
     showTrayIcon: true,
     quitOnClose: false,
     backgroundImage: { displayMode: "fill", transparency: 20, blur: 0 },

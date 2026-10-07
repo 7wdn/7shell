@@ -641,6 +641,28 @@ impl BackgroundImage {
     }
 }
 
+/// The sizes the terminal may be drawn at, in pixels, and the one a fresh install has.
+///
+/// A closed range with a default inside it rather than a free number, for the reason the interface
+/// scale is a list: the size is chosen by looking at the window, the two ends are what the slider
+/// offers, and a file naming something outside them is read as the default rather than as a terminal
+/// nobody can read.
+pub const TERMINAL_FONT_SIZE_MIN: u8 = 10;
+pub const TERMINAL_FONT_SIZE_MAX: u8 = 24;
+
+/// The size this build draws a terminal at until somebody says otherwise.
+///
+/// Thirteen, which is small enough for a hundred columns and large enough to read: a terminal is read
+/// in lines, and the number of lines is what the size trades against.
+pub fn terminal_font_size_default() -> u8 {
+    13
+}
+
+/// Keeps a size inside the range the slider offers.
+pub fn normalize_terminal_font_size(size: u8) -> u8 {
+    size.clamp(TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX)
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -775,6 +797,13 @@ pub struct AppSettings {
     /// interface stays readable when that family turns out not to be installed after all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_font: Option<String>,
+    /// How large the terminal draws its text, in pixels.
+    ///
+    /// Its own setting rather than a share of the interface scale: a terminal is measured in columns
+    /// and lines rather than in legs of a form, and the size somebody wants their shell at has nothing
+    /// to do with the size they want the window's own text at.
+    #[serde(default = "terminal_font_size_default")]
+    pub terminal_font_size: u8,
     /// The same for the terminal, which is a choice of its own: a window is read in a proportional
     /// face and a terminal in a fixed-width one, and somebody who wants their editor's font under the
     /// shell prompt rarely wants it in the file listing beside it.
@@ -869,6 +898,7 @@ impl Default for AppSettings {
             tab_max_width: TabMaxWidth::default(),
             ui_font: None,
             terminal_font: None,
+            terminal_font_size: terminal_font_size_default(),
             custom_colors: None,
             custom_colors_dark: None,
             locale: None,
@@ -893,6 +923,7 @@ impl AppSettings {
             && self.tab_max_width == TabMaxWidth::Unlimited
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
+            && self.terminal_font_size == terminal_font_size_default()
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
@@ -916,6 +947,18 @@ impl AppSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_terminal_size_is_one_the_slider_offers() {
+        let size = terminal_font_size_default();
+        assert!(
+            (TERMINAL_FONT_SIZE_MIN..=TERMINAL_FONT_SIZE_MAX).contains(&size),
+            "a default past the end of its own slider is one nobody could leave"
+        );
+        assert_eq!(normalize_terminal_font_size(0), TERMINAL_FONT_SIZE_MIN);
+        assert_eq!(normalize_terminal_font_size(200), TERMINAL_FONT_SIZE_MAX);
+        assert_eq!(normalize_terminal_font_size(16), 16);
+    }
 
     #[test]
     fn the_default_scale_is_one_the_menu_offers() {

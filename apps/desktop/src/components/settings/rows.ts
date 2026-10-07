@@ -23,11 +23,12 @@ import {
   type ThemePalette,
 } from "@/types/app";
 
-export type SettingsCategoryId = "appearance" | "workspace" | "files" | "security" | "about";
+export type SettingsCategoryId = "appearance" | "terminal" | "workspace" | "files" | "security" | "about";
 
 /** The categories, in the order the navigation draws them. */
 export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [
   "appearance",
+  "terminal",
   "workspace",
   "files",
   "security",
@@ -51,6 +52,7 @@ export const LIST_CATEGORIES: readonly SettingsCategoryId[] = ["security"];
  */
 export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = {
   appearance: "settings.nav.appearance",
+  terminal: "settings.nav.terminal",
   workspace: "settings.nav.workspace",
   files: "settings.nav.files",
   security: "settings.nav.security",
@@ -132,8 +134,14 @@ export interface SettingsRowDefinition {
   /** Stable identity: the search index, the tests and the DOM all name a row by it. */
   readonly id: string;
   readonly category: SettingsCategoryId;
-  /** Which field the control writes — and what restoring this category's defaults sets back. */
-  readonly field: SettingsRowField;
+  /**
+   * Which field the control writes — and what restoring this category's defaults sets back.
+   *
+   * Absent for a row that is a picture rather than a setting: the terminal's preview writes nothing and
+   * has nothing to restore, and giving it a field of somebody else's would make the table claim two
+   * rows write one setting.
+   */
+  readonly field?: SettingsRowField;
   readonly titleKey: string;
   /** One line under the title: what the setting is, said short enough to sit in a row. */
   readonly summaryKey: string;
@@ -146,6 +154,23 @@ export interface SettingsRowDefinition {
      * itself because only one of the five is a value a row could carry. See `BackgroundSettings.vue`.
      */
     | { readonly kind: "background" }
+    /**
+     * A number on a slider, drawn with its own ends labelled and its value read out above the track.
+     *
+     * A slider rather than a dropdown of sizes because the size is chosen by looking at the thing it
+     * changes — the preview above it — and a list would hide the two sizes either side of the one
+     * somebody is on.
+     */
+    | {
+        readonly kind: "slider";
+        readonly min: number;
+        readonly max: number;
+        readonly step: number;
+        /** What the number is measured in, drawn beside it: `px`, `%`, or nothing at all. */
+        readonly unit?: string;
+      }
+    /** The live preview a page is drawn around: the terminal, as the rest of the page will make it. */
+    | { readonly kind: "terminal-preview" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
     | { readonly kind: "choice"; readonly options: readonly SettingsChoiceOption[] }
     | { readonly kind: "cards"; readonly options: readonly SettingsCardOption[] }
@@ -178,6 +203,9 @@ export interface SettingsRowDefinition {
    * word: cards that describe what they do are two hundred pixels each, and a row that puts them
    * beside a title squeezes the title to nothing.
    *
+   * `top` is for the block a page is drawn *around* rather than under: the terminal's own preview
+   * comes first because everything under it is about what that preview looks like.
+   *
    * `end` is for a card that belongs under everything else on the page: the two switches about the
    * shell's own window are not about how anything is drawn, and a page is read down to them rather
    * than past them.
@@ -190,7 +218,7 @@ export interface SettingsRowDefinition {
    * take a share of the window that changes with their own settings. Below that they pair up: a
    * control too narrow to draw its own value is worse than a row that takes twice the height.
    */
-  readonly grid?: "settings" | "fonts" | "wide" | "four" | "end";
+  readonly grid?: "settings" | "fonts" | "wide" | "four" | "end" | "top";
 }
 
 /**
@@ -294,6 +322,27 @@ export const CUSTOM_COLOR_LABEL_KEYS: Record<keyof CustomColors, string> = {
 
 export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
   {
+    id: "terminal-preview",
+    category: "terminal",
+    titleKey: "settings.rows.terminalPreview.title",
+    summaryKey: "settings.rows.terminalPreview.summary",
+    helpKey: "settings.rows.terminalPreview.help",
+    presentation: "field",
+    grid: "top",
+    control: { kind: "terminal-preview" },
+  },
+  {
+    id: "terminal-font-size",
+    category: "terminal",
+    field: "terminalFontSize",
+    titleKey: "settings.rows.terminalFontSize.title",
+    summaryKey: "settings.rows.terminalFontSize.summary",
+    helpKey: "settings.rows.terminalFontSize.help",
+    presentation: "field",
+    grid: "wide",
+    control: { kind: "slider", min: 10, max: 24, step: 1, unit: "px" },
+  },
+  {
     id: "language",
     category: "appearance",
     field: "locale",
@@ -353,7 +402,7 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
   },
   {
     id: "terminal-font",
-    category: "appearance",
+    category: "terminal",
     field: "terminalFont",
     titleKey: "settings.rows.terminalFont.title",
     summaryKey: "settings.rows.terminalFont.summary",
@@ -400,7 +449,7 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
   },
   {
     id: "terminal-theme",
-    category: "appearance",
+    category: "terminal",
     field: "terminalTheme",
     titleKey: "settings.rows.terminalTheme.title",
     summaryKey: "settings.rows.terminalTheme.summary",

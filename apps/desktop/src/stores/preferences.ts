@@ -20,6 +20,8 @@ import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
   BACKGROUND_BLUR_MAX,
+  TERMINAL_FONT_SIZE_MIN,
+  TERMINAL_FONT_SIZE_MAX,
   BACKGROUND_TRANSPARENCY_MAX,
   DEFAULT_APP_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE,
@@ -35,6 +37,7 @@ import {
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
   DEFAULT_TERMINAL_FONT,
+  DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
   type AppLayout,
@@ -86,6 +89,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   backgroundImage: DEFAULT_BACKGROUND_IMAGE,
   uiFont: undefined,
   terminalFont: undefined,
+  terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
   customColors: DEFAULT_CUSTOM_COLORS,
   customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
@@ -318,6 +322,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
     previewedFont.value?.field === "uiFont" ? previewedFont.value.value : (uiFont.value ?? DEFAULT_UI_FONT),
   );
 
+  /**
+   * How large the terminal draws its text.
+   *
+   * Its own setting rather than a share of the interface scale: the two are read for different
+   * reasons, and somebody who wants their shell at sixteen pixels has not said anything about the size
+   * of the window's own text.
+   */
+  const terminalFontSize = ref(DEFAULT_TERMINAL_FONT_SIZE);
+
   /** The same for the terminal, which is a choice of its own. */
   const wornTerminalFont = computed(() =>
     previewedFont.value?.field === "terminalFont"
@@ -454,6 +467,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       backgroundImage.value = settings.backgroundImage;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
+      terminalFontSize.value = settings.terminalFontSize;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
       customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
@@ -531,6 +545,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         backgroundImage: backgroundImage.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
+        terminalFontSize: terminalFontSize.value,
         customColors: customColors.value,
         customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
@@ -731,6 +746,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
     // The preview has served its purpose: what is on screen from here is the choice.
     previewedFont.value = null;
     apply();
+    dirty.value = true;
+  }
+
+  /** Chooses how large the terminal draws, kept inside the range its own slider offers. */
+  function setTerminalFontSize(size: number): void {
+    terminalFontSize.value = Math.min(Math.max(Math.round(size), TERMINAL_FONT_SIZE_MIN), TERMINAL_FONT_SIZE_MAX);
     dirty.value = true;
   }
 
@@ -948,6 +969,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalFont":
           terminalFont.value = null;
           break;
+        case "terminalFontSize":
+          terminalFontSize.value = DEFAULT_TERMINAL_FONT_SIZE;
+          break;
         case "customColors":
           customColors.value = { ...DEFAULT_CUSTOM_COLORS };
           break;
@@ -1013,6 +1037,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     backgroundImage,
     uiFont,
     terminalFont,
+    terminalFontSize,
     wornUiFont,
     wornTerminalFont,
     customColors,
@@ -1057,6 +1082,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setBackgroundBlur,
     setUiFont,
     setTerminalFont,
+    setTerminalFontSize,
     previewFont,
     clearFontPreview,
     setCustomColor,

@@ -19,8 +19,8 @@ use sevenshell_error::ShellError;
 use sevenshell_types::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
     CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
-    TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_ui_scale, sidebar_on, tray_icon_on,
-    ui_scale_default,
+    TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_terminal_font_size, normalize_ui_scale,
+    sidebar_on, terminal_font_size_default, tray_icon_on, ui_scale_default,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -164,6 +164,10 @@ struct StoredSettings {
     ui_font: Option<String>,
     #[serde(default)]
     terminal_font: Option<String>,
+    /// Absent in a file written before the terminal's size was a choice, and clamped on the way back in:
+    /// a hand-edited file asking for a two-point terminal reads as the default.
+    #[serde(default = "terminal_font_size_default")]
+    terminal_font_size: u8,
     /// Absent in a file written before the interface could be coloured by hand, which reads as
     /// "nobody has picked any" — the defaults a fresh install starts from.
     #[serde(default)]
@@ -202,6 +206,7 @@ impl StoredSettings {
             tab_max_width: settings.tab_max_width.as_str().to_owned(),
             ui_font: settings.ui_font.clone(),
             terminal_font: settings.terminal_font.clone(),
+            terminal_font_size: settings.terminal_font_size,
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
@@ -236,6 +241,7 @@ impl StoredSettings {
             // falls through to what follows it, which is exactly why the whole stack is stored.
             ui_font: self.ui_font.filter(|font| !font.trim().is_empty()),
             terminal_font: self.terminal_font.filter(|font| !font.trim().is_empty()),
+            terminal_font_size: normalize_terminal_font_size(self.terminal_font_size),
             // A hand-coloured set that cannot be drawn is dropped whole rather than per colour: half
             // of somebody's palette with defaults filled in for the rest is a window nobody asked
             // for, and there is nothing in it they could recognise to fix.
@@ -353,6 +359,7 @@ mod tests {
             tab_max_width: TabMaxWidth::default(),
             ui_font: None,
             terminal_font: None,
+            terminal_font_size: terminal_font_size_default(),
             custom_colors: None,
             custom_colors_dark: None,
             locale: locale.map(str::to_owned),
@@ -509,6 +516,8 @@ mod tests {
             // closed, which are both the opposite of what a fresh install has.
             show_tray_icon: false,
             quit_on_close: true,
+            // Not the default, so the round trip proves a choice survives.
+            terminal_font_size: 20,
             // And one with a picture behind it, written at the far end of every slider.
             background_image: BackgroundImage {
                 file_name: Some("wallpaper.png".to_owned()),

@@ -7,7 +7,8 @@
       "workspace": "工作区",
       "files": "文件",
       "about": "关于",
-      "security": "安全"
+      "security": "安全",
+      "terminal": "SSH 终端"
     },
     "tab": {
       "close": "关闭设置"
@@ -37,14 +38,14 @@
       "dark": "深色",
       "light": "浅色"
     },
-    "terminal": {
-      "follow": "跟随界面",
-      "dark": "始终深色",
-      "light": "始终浅色"
-    },
     "session": {
       "split": "终端 + 文件",
       "terminal": "仅终端"
+    },
+    "terminal": {
+      "light": "始终浅色",
+      "dark": "始终深色",
+      "follow": "跟随界面"
     },
     "files": {
       "tree": "目录树 + 列表",
@@ -238,6 +239,16 @@
         "summary": "终端里的文字所用的字体。",
         "help": "终端读的是等宽字体，所以列表先给出大家常带着的那几款，再列这台机器自己的。选中立刻生效——已经打开的终端会跟着换，因为终端的字符网格有多宽，取决于它用什么字体画。"
       },
+      "terminalPreview": {
+        "title": "实时预览",
+        "summary": "这个页面上的设置会把终端画成什么样。",
+        "help": "用这个页面所管的字体、字号和配色画出来的一个终端，让选择可以被看见而不只是被想象。两个底色与十六种颜色都来自终端当前穿的配色；几行文字的长度是拿来相互比较的：分不清 l 和 1 的字体、在自己背景上读不出来的颜色，会在这里露出来，而不是在 shell 里。"
+      },
+      "terminalFontSize": {
+        "title": "字号",
+        "summary": "终端把文字画多大，单位是像素。",
+        "help": "用像素量，而不是按界面缩放的比例——终端是按列和行读的：字号换的是「能放下多少行」和「读起来多轻松」，这笔账只有坐在窗口前的人能算。已经打开的终端会立刻按新字号重画，它上报的列数就是现在放得下的列数。"
+      },
       "sessionLayout": {
         "title": "打开会话",
         "summary": "只开终端，还是连同下方的文件面板一起。",
@@ -257,6 +268,16 @@
         "title": "打包传输",
         "summary": "整个文件夹打成一个包传输，两端自动压缩与还原。",
         "help": "下载目录时，远端先把目录压成一个包，传到本地后自动解压到你选的文件夹；上传时，本地把选中的多个文件压成一个包，传到远端后自动解压。两端最后拿到的都是文件本身——压缩包只是路上用一下。打包由主机自己的 tar 完成，所以没有 tar 的主机无法传输目录。单个文件仍按原来的方式直传。"
+      }
+    },
+    "terminalPreview": {
+      "lines": {
+        "prompt": "lab{'@'}web:~$",
+        "command": "systemctl status nginx --no-pager",
+        "output": "● nginx.service — A high performance web server",
+        "warning": "warning: 3 restarts in the last hour",
+        "error": "error: unit nginx.service entered failed state",
+        "plain": "3 个会话 · 12 个文件 · 1 条转发"
       }
     },
     "background": {

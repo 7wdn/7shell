@@ -27,6 +27,7 @@ import {
   DEFAULT_TAB_PLACEMENT,
   DEFAULT_TAB_SORT_MODE,
   DEFAULT_TERMINAL_FONT,
+  DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
   type AppSettings,
@@ -59,6 +60,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
     quitOnClose: DEFAULT_QUIT_ON_CLOSE,
     backgroundImage: DEFAULT_BACKGROUND_IMAGE,
+    terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -187,6 +189,7 @@ describe("preferences store", () => {
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
+      terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -226,6 +229,7 @@ describe("preferences store", () => {
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
+      terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -376,6 +380,7 @@ describe("the terminal palette", () => {
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
+      terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -661,6 +666,29 @@ describe("the colour theme", () => {
       "manual",
       "unlimited",
     ]);
+  });
+
+  it("remembers how large the terminal draws, inside the range its slider offers", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.terminalFontSize).toBe(DEFAULT_TERMINAL_FONT_SIZE);
+
+    // A number past either end is a terminal nobody could read or nobody could fit, so it is kept in.
+    store.setTerminalFontSize(20);
+    expect(store.terminalFontSize).toBe(20);
+    store.setTerminalFontSize(2);
+    expect(store.terminalFontSize).toBe(10);
+    store.setTerminalFontSize(60);
+    expect(store.terminalFontSize).toBe(24);
+
+    store.setTerminalFontSize(16);
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ terminalFontSize: 16 }));
+
+    await store.reset(["terminalFontSize"]);
+    expect(store.terminalFontSize).toBe(DEFAULT_TERMINAL_FONT_SIZE);
   });
 
   it("remembers the two the shell's own window obeys", async () => {
@@ -1107,6 +1135,7 @@ describe("restoring the defaults", () => {
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
+      terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

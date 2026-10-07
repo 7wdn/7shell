@@ -21,6 +21,7 @@ import { FONT_LABEL_KEYS, type SettingsChoiceIcon, type SettingsRowDefinition } 
 import FontSelect from "@/components/ui/FontSelect.vue";
 import { cn } from "@/lib/utils";
 import BackgroundSettings from "@/components/settings/BackgroundSettings.vue";
+import TerminalPreview from "@/components/settings/TerminalPreview.vue";
 import Select from "@/components/ui/Select.vue";
 import Switch from "@/components/ui/Switch.vue";
 import {
@@ -150,6 +151,29 @@ const options = computed(() =>
     which is why this branch hands it nothing but the row it came from.
   -->
   <BackgroundSettings v-if="props.row.control.kind === 'background'" />
+  <TerminalPreview v-else-if="props.row.control.kind === 'terminal-preview'" />
+  <div v-else-if="props.row.control.kind === 'slider'" class="min-w-0 space-y-1.5">
+    <div class="flex items-center justify-end gap-2">
+      <span class="font-mono text-xs text-muted-foreground tabular-nums"
+        >{{ props.value }}{{ props.row.control.unit ?? "" }}</span
+      >
+    </div>
+    <input
+      type="range"
+      class="w-full accent-primary"
+      :min="props.row.control.min"
+      :max="props.row.control.max"
+      :step="props.row.control.step"
+      :value="Number(props.value)"
+      :aria-label="props.label"
+      @input="emit('choose', String(($event.target as HTMLInputElement).value))"
+    />
+    <div class="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <span>{{ props.row.control.min }}{{ props.row.control.unit ?? "" }}</span>
+      <span class="flex-1 border-b border-dashed border-muted-foreground/30"></span>
+      <span>{{ props.row.control.max }}{{ props.row.control.unit ?? "" }}</span>
+    </div>
+  </div>
 
   <Switch
     v-else-if="props.row.control.kind === 'switch'"

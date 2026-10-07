@@ -40,6 +40,7 @@ async function writtenSettings(): Promise<{
   terminalFont?: string;
   customColors?: { primary?: string };
   backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
+  terminalFontSize?: number;
   customColorsDark?: { primary?: string };
 }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
@@ -52,6 +53,7 @@ async function writtenSettings(): Promise<{
     terminalFont?: string;
     customColors?: { primary?: string };
     backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
+    terminalFontSize?: number;
     customColorsDark?: { primary?: string };
   };
 }
@@ -721,9 +723,11 @@ test("a setting can be found by name, and a category can be put back to its defa
 
     const interfaceFont = settings.getByRole("button", { name: "Interface font", exact: true });
     const interfaceBefore = await sans();
-    await interfaceFont.click();
     const fontList = page.getByRole("listbox");
+
+    await interfaceFont.click();
     await expect(fontList).toBeVisible();
+
     // Two rows answer to "Consolas": the preset, which carries the fallbacks this build gives it, and
     // the machine's own spelling of the same family. The first is the one a person finds first, and
     // the one a list led by the fixed-width families puts in front of them.
@@ -748,6 +752,11 @@ test("a setting can be found by name, and a category can be put back to its defa
     // through the stylesheet, and "the open pane follows" is asserted in that pane's own spec. What
     // is asked here is the half a page can see — hovering the terminal's list dresses nothing on
     // this page, which is the failure worth catching: a preview that dresses the wrong thing.
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    // The terminal's own two rows live on the terminal's own page now, which is where a family for it
+    // is chosen — so this case walks over there and back.
+    await settings.getByRole("button", { name: "SSH terminal", exact: true }).click();
     const terminalFont = settings.getByRole("button", { name: "Terminal font", exact: true });
     await terminalFont.click();
     await expect(fontList).toBeVisible();
@@ -838,8 +847,14 @@ test("a setting can be found by name, and a category can be put back to its defa
     await page.getByRole("listbox").getByRole("option", { name: "100%" }).click();
     await interfaceFont.click();
     await page.getByRole("listbox").getByRole("option", { name: "App default" }).click();
-    await terminalFont.click();
+
+    // The terminal's own family is on the terminal's own page, so putting it back means going there —
+    // and coming back, since the rest of this case is about the appearance page.
+    await settings.getByRole("button", { name: "SSH terminal", exact: true }).click();
+    await settings.getByRole("button", { name: "Terminal font", exact: true }).click();
     await page.getByRole("listbox").getByRole("option", { name: "App default" }).click();
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
     await expect(page.locator("html")).toHaveAttribute("data-palette", "default");
     await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe("");
 
@@ -881,6 +896,11 @@ test("a setting can be found by name, and a category can be put back to its defa
         message: "and the default reached the settings file as well",
       })
       .toBe(false);
+
+    // Closed on the way out, so that the case after this one meets a page that has nothing pending —
+    // it asserts that first, and a page left open with a choice in it would fail on somebody else's
+    // behalf.
+    await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     // Whatever this case left open, it is not left open for the next one. A listbox is an overlay
     // over the whole window: a case that failed with one standing does not fail on its own, it takes
@@ -910,6 +930,14 @@ test("a choice is applied at once, written on Apply, and dropped only when asked
     // The category the last case left behind is not this one: the theme is in the appearance page,
     // and the page opens on whichever category it was closed on.
     await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    // Whatever the case before this one left pending is written down first: this case is about what
+    // happens when nothing is, and asserting that on somebody else's leftovers is a case about the
+    // order the file happens to run in.
+    if (await apply.isEnabled()) {
+      await apply.click();
+      await expect(apply).toBeDisabled();
+    }
 
     // Nothing has been chosen, so there is nothing to write and the button says so.
     await expect(apply).toBeDisabled();
@@ -2397,6 +2425,53 @@ test("hovering a session row offers the tick and the session's details", async (
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-hover.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The SSH terminal's own page: the preview, the face, the colours and the size.
+ *
+ * What a real window adds to the unit cases is the preview being *drawn*: it is a block of text in the
+ * terminal's own face and at the terminal's own size, so the size slider can be checked by reading the
+ * pixels back rather than by reading the settings file twice. The face and the colours are rows on this
+ * page rather than on the appearance one — they are what the preview above them is made of.
+ */
+test("the terminal's page previews what its settings do, and writes them down", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "SSH terminal", exact: true }).click();
+
+    // The page opens on its own preview, drawn at the size a fresh install has.
+    const preview = page.locator("[data-terminal-preview]");
+    const text = preview.locator("pre");
+    await expect(preview).toBeVisible();
+    await expect(text, "the preview is drawn at the size the settings hold").toHaveCSS("font-size", "13px");
+
+    // The face and the colours are this page's rows, rather than the appearance page's.
+    await expect(settings.getByRole("button", { name: "Terminal font", exact: true })).toBeVisible();
+    await expect(settings.getByRole("radiogroup", { name: "Terminal colours" })).toBeVisible();
+
+    // The size, moved the way somebody moves it: the preview follows at once, and the file is told on
+    // Apply — the same two halves every choice on this page has.
+    await settings.getByRole("slider", { name: "Text size" }).fill("18");
+    await expect(text, "the picture follows the slider").toHaveCSS("font-size", "18px");
+    expect((await writtenSettings()).terminalFontSize ?? 0, "and the file has not been told yet").not.toBe(18);
+
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).terminalFontSize).toBe(18);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-terminal.png"), fullPage: false });
+
+    // Put back, so that the rest of the run meets the terminal it expects.
+    await settings.getByRole("slider", { name: "Text size" }).fill("13");
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).terminalFontSize).toBe(13);
+    await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();
   }

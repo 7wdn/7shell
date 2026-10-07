@@ -261,7 +261,7 @@ onMounted(() => {
   const instance = new Terminal({
     cursorBlink: true,
     fontFamily: preferences.wornTerminalFont,
-    fontSize: 13,
+    fontSize: preferences.terminalFontSize,
     scrollback: 5000,
     theme: terminalTheme(),
     // The menu that opens on a right-click works on the selection somebody made before opening it,
@@ -329,6 +329,20 @@ watch(
     void nextTick(() => {
       if (terminal) {
         terminal.options.theme = terminalTheme();
+      }
+    });
+  },
+);
+
+watch(
+  () => preferences.terminalFontSize,
+  () => {
+    // The size is what the grid is measured in, so a new one is a new number of columns and rows —
+    // which is why this hands the size over and then fits, in that order.
+    void nextTick(() => {
+      if (terminal) {
+        terminal.options.fontSize = preferences.terminalFontSize;
+        applySize();
       }
     });
   },
