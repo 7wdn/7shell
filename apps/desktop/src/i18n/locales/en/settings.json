@@ -100,10 +100,11 @@
       "title": "Tab name"
     },
     "tabMaxWidth": {
-      "unlimited": "Unlimited (fit the name)",
-      "wide": "240 px",
-      "medium": "200 px",
-      "narrow": "160 px"
+      "unlimited": "Unlimited (adaptive)",
+      "compact": "Compact (160px)",
+      "medium": "Medium (200px)",
+      "standard": "Standard (240px)",
+      "wide": "Wide (320px)"
     },
     "tabLayout": {
       "scroll": "Single row scroll",
@@ -198,8 +199,8 @@
         "help": "The order the tabs are drawn in. The manual order is the one the tabs were opened in until somebody drags one, and it is the only order a drag can write to — dragging under a sort would move a tab into a list that is not the one on screen. The other two orders are read off the tabs rather than written into them: by when each was opened, and by its name in the interface's own language."
       },
       "tabMaxWidth": {
-        "title": "Tab width limit",
-        "summary": "Limits how wide a horizontal tab is drawn; a longer name is truncated and shown in full on hover.",
+        "title": "Maximum tab width",
+        "summary": "Limit the maximum width of horizontal tabs, truncating long titles with ellipsis. Hover to view the full title.",
         "help": "How wide a horizontal tab may be drawn. A step is a look rather than a measurement: the same window at the same size draws the same bar, and a name longer than the step is truncated with the whole of it on hover. Bars down one side are not affected — there, every tab is the width of the column."
       },
       "tabLayout": {

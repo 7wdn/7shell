@@ -619,7 +619,7 @@ describe("the colour theme", () => {
       "top",
       "none",
       "manual",
-      "wide",
+      "unlimited",
     ]);
 
     // None of them touches the document, unlike the palette and the layout: these are read where the
@@ -627,7 +627,7 @@ describe("the colour theme", () => {
     store.setTabPlacement("left");
     store.setTabGroupMode("session");
     store.setTabSortMode("title-asc");
-    store.setTabMaxWidth("narrow");
+    store.setTabMaxWidth("compact");
 
     await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(
@@ -635,7 +635,7 @@ describe("the colour theme", () => {
         tabPlacement: "left",
         tabGroupMode: "session",
         tabSortMode: "title-asc",
-        tabMaxWidth: "narrow",
+        tabMaxWidth: "compact",
       }),
     );
 
@@ -644,7 +644,7 @@ describe("the colour theme", () => {
       "top",
       "none",
       "manual",
-      "wide",
+      "unlimited",
     ]);
   });
 

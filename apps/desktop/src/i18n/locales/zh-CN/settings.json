@@ -101,9 +101,10 @@
     },
     "tabMaxWidth": {
       "unlimited": "不限制（完整自适应）",
-      "wide": "240 px",
-      "medium": "200 px",
-      "narrow": "160 px"
+      "compact": "紧凑 (160px)",
+      "medium": "中等 (200px)",
+      "standard": "标准 (240px)",
+      "wide": "宽松 (320px)"
     },
     "tabLayout": {
       "scroll": "单行滚动",

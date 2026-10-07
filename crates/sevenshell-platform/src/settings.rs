@@ -444,7 +444,7 @@ mod tests {
             tab_placement: TabPlacement::Right,
             tab_group_mode: TabGroupMode::Session,
             tab_sort_mode: TabSortMode::TitleAsc,
-            tab_max_width: TabMaxWidth::Narrow,
+            tab_max_width: TabMaxWidth::Compact,
             ui_font: Some("'JetBrains Mono', monospace".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             custom_colors: Some(CustomColors::light_default()),

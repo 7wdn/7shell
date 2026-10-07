@@ -254,9 +254,9 @@ describe("the bar's own choices", () => {
   });
 
   it("draws a tab no wider than the step it was given", async () => {
-    usePreferencesStore().setTabMaxWidth("narrow");
+    usePreferencesStore().setTabMaxWidth("compact");
     await render(openPanel);
-    expect(firstTab().style.maxWidth, "the narrowest step").toBe("160px");
+    expect(firstTab().style.maxWidth, "the narrowest step the list offers").toBe("160px");
 
     usePreferencesStore().setTabMaxWidth("unlimited");
     await renderTabs([{ kind: "terminal", id: "tab-1", session, panel: openPanel }]);

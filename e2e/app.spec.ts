@@ -1068,11 +1068,17 @@ test("the tab bar is drawn where it was put, grouped, ordered and no wider than 
     await expect(section, "with the pane under it").toHaveCSS("flex-direction", "column");
 
     // How wide a tab may be: a step of the horizontal bar, which is what a tab's own box answers for.
-    await settings.getByRole("combobox", { name: "Tab width limit" }).click();
-    await page.getByRole("listbox").getByRole("option", { name: "160 px" }).click();
+    await settings.getByRole("combobox", { name: "Maximum tab width" }).click();
+
+    // The five steps, as they are offered: kept as a picture because the list is copied from the
+    // interface this build follows, and a step that drifted by a word is what nobody would notice.
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-tab-width-steps.png"), fullPage: false });
+
+    await page.getByRole("listbox").getByRole("option", { name: "Compact (160px)" }).click();
     await applySettings(page);
 
-    await expect.poll(async () => (await writtenSettings()).tabMaxWidth).toBe("narrow");
+    await expect.poll(async () => (await writtenSettings()).tabMaxWidth).toBe("compact");
     await expect(page.locator("[data-tab]").first(), "the narrowest step, in pixels").toHaveCSS("max-width", "160px");
 
     // Down the left: the section becomes a row — the bar beside the panes — and the bar a column with
@@ -1118,7 +1124,7 @@ test("the tab bar is drawn where it was put, grouped, ordered and no wider than 
       ["Tab bar position", "Top"],
       ["Group by", "No grouping"],
       ["Sort by", "Manual order"],
-      ["Tab width limit", "240 px"],
+      ["Maximum tab width", "Unlimited (adaptive)"],
     ] as const) {
       await settings.getByRole("combobox", { name }).click();
       await page.getByRole("listbox").getByRole("option", { name: value }).click();
@@ -1126,7 +1132,7 @@ test("the tab bar is drawn where it was put, grouped, ordered and no wider than 
     await applySettings(page);
 
     await expect.poll(async () => (await writtenSettings()).tabPlacement).toBe("top");
-    await expect.poll(async () => (await writtenSettings()).tabMaxWidth).toBe("wide");
+    await expect.poll(async () => (await writtenSettings()).tabMaxWidth).toBe("unlimited");
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();

@@ -173,7 +173,7 @@ describe("the settings page", () => {
     await mount();
     await openCategory("Appearance");
 
-    for (const title of ["Tab bar position", "Group by", "Sort by", "Tab width limit"]) {
+    for (const title of ["Tab bar position", "Group by", "Sort by", "Maximum tab width"]) {
       expect(host.textContent, `${title} is on the page`).toContain(title);
     }
 

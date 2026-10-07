@@ -497,31 +497,36 @@ impl TabSortMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TabMaxWidth {
-    /// As wide as the name asks for, up to what the bar can give it.
-    Unlimited,
-    /// The step this build has always drawn at: fifteen rem.
+    /// As wide as the name asks for, up to what the bar can give it. A fresh install gets this, and so
+    /// does a file written before the width was a choice.
     #[default]
-    Wide,
-    /// A step narrower, for a bar holding many tabs.
+    Unlimited,
+    /// Ten rem: a name read by its first word.
+    Compact,
+    /// Twelve and a half rem.
     Medium,
-    /// The narrowest step, where a name is read by its first word.
-    Narrow,
+    /// Fifteen rem.
+    Standard,
+    /// Twenty rem, for names that are sentences.
+    Wide,
 }
 
 impl TabMaxWidth {
     pub const ALL: &'static [TabMaxWidth] = &[
         TabMaxWidth::Unlimited,
-        TabMaxWidth::Wide,
+        TabMaxWidth::Compact,
         TabMaxWidth::Medium,
-        TabMaxWidth::Narrow,
+        TabMaxWidth::Standard,
+        TabMaxWidth::Wide,
     ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Unlimited => "unlimited",
-            Self::Wide => "wide",
+            Self::Compact => "compact",
             Self::Medium => "medium",
-            Self::Narrow => "narrow",
+            Self::Standard => "standard",
+            Self::Wide => "wide",
         }
     }
 
@@ -747,7 +752,7 @@ impl AppSettings {
             && self.tab_placement == TabPlacement::Top
             && self.tab_group_mode == TabGroupMode::None
             && self.tab_sort_mode == TabSortMode::Manual
-            && self.tab_max_width == TabMaxWidth::Wide
+            && self.tab_max_width == TabMaxWidth::Unlimited
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_theme == ThemeMode::System

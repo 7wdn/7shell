@@ -185,7 +185,7 @@ export type TabSortMode = "manual" | "created-asc" | "title-asc";
 export const DEFAULT_TAB_SORT_MODE: TabSortMode = "manual";
 
 /** How wide a horizontal tab may be, from `sevenshell_types::TabMaxWidth`. */
-export type TabMaxWidth = "unlimited" | "wide" | "medium" | "narrow";
+export type TabMaxWidth = "unlimited" | "compact" | "medium" | "standard" | "wide";
 
 /**
  * The pixels each step of the tab width stands for, or null where the name sets the width.
@@ -197,13 +197,14 @@ export type TabMaxWidth = "unlimited" | "wide" | "medium" | "narrow";
  */
 export const TAB_MAX_WIDTH_PX: Record<TabMaxWidth, number | null> = {
   unlimited: null,
-  wide: 240,
+  compact: 160,
   medium: 200,
-  narrow: 160,
+  standard: 240,
+  wide: 320,
 };
 
-/** The step this build has always drawn at. */
-export const DEFAULT_TAB_MAX_WIDTH: TabMaxWidth = "wide";
+/** No limit at all, which is the first step the list offers and what a fresh install gets. */
+export const DEFAULT_TAB_MAX_WIDTH: TabMaxWidth = "unlimited";
 
 /** How round the interface's corners are, from `sevenshell_types::CornerStyle`. */
 export type CornerStyle = "none" | "small" | "large";

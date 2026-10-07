@@ -539,9 +539,10 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
       kind: "select",
       options: [
         { value: "unlimited", labelKey: "settings.tabMaxWidth.unlimited" },
-        { value: "wide", labelKey: "settings.tabMaxWidth.wide" },
+        { value: "compact", labelKey: "settings.tabMaxWidth.compact" },
         { value: "medium", labelKey: "settings.tabMaxWidth.medium" },
-        { value: "narrow", labelKey: "settings.tabMaxWidth.narrow" },
+        { value: "standard", labelKey: "settings.tabMaxWidth.standard" },
+        { value: "wide", labelKey: "settings.tabMaxWidth.wide" },
       ],
     },
   },
