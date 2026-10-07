@@ -17,10 +17,57 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_ui_scale, sidebar_on,
-    tray_icon_on, ui_scale_default,
+    AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
+    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
+    TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_ui_scale, sidebar_on, tray_icon_on,
+    ui_scale_default,
 };
+
+/// The picture behind the window, as the file holds it.
+///
+/// Its own struct rather than a field of the settings, because it is a group of four values that only
+/// mean anything together: a file name with a mode and two numbers. Stored as written, and normalised
+/// on the way back in — a hand-edited file naming another mode, or a transparency past the end of its
+/// slider, reads as the default rather than as a window nobody can work on.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredBackgroundImage {
+    #[serde(default)]
+    file_name: Option<String>,
+    #[serde(default)]
+    display_mode: String,
+    #[serde(default)]
+    transparency: u8,
+    #[serde(default)]
+    blur: u8,
+}
+
+impl StoredBackgroundImage {
+    fn from_settings(image: &BackgroundImage) -> Self {
+        Self {
+            file_name: image.file_name.clone(),
+            display_mode: image.display_mode.as_str().to_owned(),
+            transparency: image.transparency,
+            blur: image.blur,
+        }
+    }
+
+    fn to_settings(&self) -> BackgroundImage {
+        BackgroundImage {
+            // A name the machine cannot use is dropped rather than kept: the interface would otherwise
+            // draw a picture that is not there, which is worse than drawing none.
+            file_name: self
+                .file_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned),
+            display_mode: BackgroundDisplayMode::from_id(&self.display_mode).unwrap_or_default(),
+            transparency: self.transparency.min(BACKGROUND_TRANSPARENCY_MAX),
+            blur: self.blur.min(BACKGROUND_BLUR_MAX),
+        }
+    }
+}
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -58,6 +105,9 @@ struct StoredSettings {
     /// ships with — on — rather than as a monitor somebody switched off before it existed.
     #[serde(default = "monitor_on")]
     monitor_enabled: bool,
+    /// Absent in a file written before there was a picture behind the window.
+    #[serde(default)]
+    background_image: StoredBackgroundImage,
     /// The two the shell itself obeys, absent in a file written before the shell had a tray. The
     /// first is on for the same reason it is on in the wire type: a window that puts itself away
     /// needs a way back, and an absent value means "nobody has chosen" rather than "chosen off".
@@ -137,6 +187,7 @@ impl StoredSettings {
             sidebar_width: settings.sidebar_width,
             sidebar_open: settings.sidebar_open,
             monitor_enabled: settings.monitor_enabled,
+            background_image: StoredBackgroundImage::from_settings(&settings.background_image),
             show_tray_icon: settings.show_tray_icon,
             quit_on_close: settings.quit_on_close,
             packed_transfer: settings.packed_transfer,
@@ -168,6 +219,7 @@ impl StoredSettings {
             sidebar_width: self.sidebar_width,
             sidebar_open: self.sidebar_open,
             monitor_enabled: self.monitor_enabled,
+            background_image: self.background_image.to_settings(),
             show_tray_icon: self.show_tray_icon,
             quit_on_close: self.quit_on_close,
             packed_transfer: self.packed_transfer,
@@ -285,6 +337,7 @@ mod tests {
             sidebar_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
+            background_image: BackgroundImage::default(),
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
             packed_transfer: false,
@@ -456,6 +509,13 @@ mod tests {
             // closed, which are both the opposite of what a fresh install has.
             show_tray_icon: false,
             quit_on_close: true,
+            // And one with a picture behind it, written at the far end of every slider.
+            background_image: BackgroundImage {
+                file_name: Some("wallpaper.png".to_owned()),
+                display_mode: BackgroundDisplayMode::Tile,
+                transparency: BACKGROUND_TRANSPARENCY_MAX,
+                blur: BACKGROUND_BLUR_MAX,
+            },
             // The same, for the rest of the words the bar is stored as.
             tab_layout: TabLayout::Wrap,
             tab_placement: TabPlacement::Right,

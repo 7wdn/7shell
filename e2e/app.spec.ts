@@ -39,6 +39,7 @@ async function writtenSettings(): Promise<{
   uiFont?: string;
   terminalFont?: string;
   customColors?: { primary?: string };
+  backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
   customColorsDark?: { primary?: string };
 }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
@@ -50,6 +51,7 @@ async function writtenSettings(): Promise<{
     uiFont?: string;
     terminalFont?: string;
     customColors?: { primary?: string };
+    backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
     customColorsDark?: { primary?: string };
   };
 }
@@ -1037,6 +1039,84 @@ test("the tab bar is told what to do when the tabs do not fit", async () => {
     await expect.poll(async () => (await writtenSettings()).tabLayout).toBe("scroll");
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
+    await close();
+  }
+});
+
+/**
+ * The picture behind the window, from the settings file to the pixels.
+ *
+ * The choosing half cannot be driven from here: picking a file opens the system's own dialog, which is
+ * a window no page can press a button in — that half is checked by hand, and the shell's own cases hold
+ * the copying and the limits. What this drives is everything after it: a picture in the place the shell
+ * keeps its own copy, a settings file that names it, and a window that has read both.
+ *
+ * A one-pixel PNG, written where the shell would have copied it to, is enough for that: what is being
+ * asked is whether the layer is there, how it is painted, and whether the surfaces in front of it were
+ * told to let it through.
+ */
+test("the window draws the background picture the settings name, and lets it through", async () => {
+  const { page, close } = await openApp();
+  // A 1x1 PNG, which is a picture as far as every step of this is concerned.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const config = path.dirname(SETTINGS_FILE);
+  const before = await writtenSettings();
+
+  try {
+    await mkdir(config, { recursive: true });
+    await writeFile(path.join(config, "background-image.png"), png);
+    await writeFile(
+      SETTINGS_FILE,
+      JSON.stringify({
+        ...before,
+        backgroundImage: { fileName: "wallpaper.png", displayMode: "fill", transparency: 25, blur: 6 },
+      }),
+      "utf8",
+    );
+
+    // The interface reads the settings when it starts, so the window has to be brought up again for a
+    // file written from outside to be the one it is wearing — which is what a restart does, and what a
+    // reload of the page is here.
+    await page.reload();
+    await expect(page.locator("[data-wallpaper]"), "the layer is there").toBeVisible();
+
+    const painted = page.locator("[data-wallpaper] > div");
+    await expect(painted, "filled into the window").toHaveCSS("background-size", "cover");
+    await expect(painted, "with the blur the settings ask for").toHaveCSS("filter", "blur(6px)");
+
+    // The surfaces between the picture and the work became translucent, by the transparency the
+    // settings hold: what is left of an opaque colour is what shows through.
+    const surface = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--background").trim(),
+    );
+    expect(surface, "the window's own surface was told to let the picture through").toContain("/ 0.75");
+
+    // And the block that chose it, in the page somebody meets it on: the picture's name, the five
+    // ways of fitting it and the two sliders, drawn over the picture itself.
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+    await expect(settings.getByText("wallpaper.png"), "the picture is named where it was chosen").toBeVisible();
+    await expect(settings.getByRole("slider", { name: "Transparency" })).toHaveValue("25");
+    await expect(settings.getByRole("slider", { name: "Blur" })).toHaveValue("6");
+
+    // Scrolled to the block rather than left at the top of the page: the picture's row is the last of
+    // the things a page is drawn *by*, and a screenshot of the top of the page would not have it in it.
+    await settings.getByText("wallpaper.png").scrollIntoViewIfNeeded();
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-background.png"), fullPage: false });
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    // Put back, so that the rest of the run meets the window it expects: a settings file with a picture
+    // in it would follow every case after this one around.
+    if (before.backgroundImage === undefined) {
+      delete (before as { backgroundImage?: unknown }).backgroundImage;
+    }
+    await writeFile(SETTINGS_FILE, JSON.stringify(before), "utf8");
+    await page.reload().catch(() => undefined);
     await close();
   }
 });

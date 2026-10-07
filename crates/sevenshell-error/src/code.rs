@@ -88,6 +88,10 @@ error_catalog! {
     StoreIo => "STORE-IO", "errors.store.io";
     #[doc = "The stored data was written by a newer version of the application."]
     StoreSchemaNewer => "STORE-SCHEMA-NEWER", "errors.store.schemaNewer";
+    #[doc = "The picture chosen as the window's background is a kind this build cannot draw."]
+    StoreBackgroundUnsupported => "STORE-BACKGROUND-UNSUPPORTED", "errors.store.backgroundUnsupported";
+    #[doc = "The picture chosen as the window's background is larger than this build will copy."]
+    StoreBackgroundTooLarge => "STORE-BACKGROUND-TOO-LARGE", "errors.store.backgroundTooLarge";
     #[doc = "The session being opened is no longer saved."]
     SessionNotFound => "SESSION-NOT-FOUND", "errors.session.notFound";
     #[doc = "Somebody called off a connection attempt before it finished."]

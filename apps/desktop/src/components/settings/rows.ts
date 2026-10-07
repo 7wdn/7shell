@@ -141,6 +141,11 @@ export interface SettingsRowDefinition {
   readonly helpKey: string;
   readonly control:
     | { readonly kind: "switch" }
+    /**
+     * The picture behind the window: five answers in one block, which reads and writes the settings
+     * itself because only one of the five is a value a row could carry. See `BackgroundSettings.vue`.
+     */
+    | { readonly kind: "background" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
     | { readonly kind: "choice"; readonly options: readonly SettingsChoiceOption[] }
     | { readonly kind: "cards"; readonly options: readonly SettingsCardOption[] }
@@ -597,6 +602,17 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     summaryKey: "settings.rows.packed.summary",
     helpKey: "settings.rows.packed.help",
     control: { kind: "switch" },
+  },
+  {
+    id: "background-image",
+    category: "appearance",
+    field: "backgroundImage",
+    titleKey: "settings.rows.background.title",
+    summaryKey: "settings.rows.background.summary",
+    helpKey: "settings.rows.background.help",
+    presentation: "field",
+    grid: "wide",
+    control: { kind: "background" },
   },
   {
     id: "show-tray-icon",

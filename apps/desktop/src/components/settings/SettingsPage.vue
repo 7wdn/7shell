@@ -67,6 +67,7 @@ import {
   DEFAULT_TERMINAL_FONT,
   DEFAULT_UI_FONT,
   type AppLayout,
+  type BackgroundDisplayMode,
   type CornerStyle,
   type TabGroupMode,
   type TabLayout,
@@ -213,6 +214,10 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.tabSortMode;
     case "tabMaxWidth":
       return preferences.tabMaxWidth;
+    case "backgroundImage":
+      // The block reads and writes the picture itself, because it is five answers to one question and
+      // only one of them — the mode — is a value this page's contract could hand over.
+      return preferences.backgroundImage.displayMode;
     case "showTrayIcon":
       return preferences.showTrayIcon;
     case "quitOnClose":
@@ -278,6 +283,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "tabMaxWidth":
       void preferences.setTabMaxWidth(value as TabMaxWidth);
+      return;
+    case "backgroundImage":
+      void preferences.setBackgroundDisplayMode(value as BackgroundDisplayMode);
       return;
     case "showTrayIcon":
       preferences.setShowTrayIcon(value === true);

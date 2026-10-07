@@ -9,6 +9,7 @@
 //! error detail.
 
 pub mod app;
+pub mod background;
 pub mod batch;
 pub mod clipboard;
 pub mod files;

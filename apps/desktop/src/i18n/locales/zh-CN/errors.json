@@ -30,7 +30,9 @@
     },
     "store": {
       "io": "无法写入应用状态。",
-      "schemaNewer": "这份数据由更新的版本写入（格式 {found}；当前版本最高支持 {supported}）。"
+      "schemaNewer": "这份数据由更新的版本写入（格式 {found}；当前版本最高支持 {supported}）。",
+      "backgroundUnsupported": "这种格式不能作为背景图片（{extension}）。请选择 PNG、JPEG、WebP、BMP 或 GIF。",
+      "backgroundTooLarge": "这张图片有 {megabytes} MB，而这个构建最多复制 {limit} MB。"
     },
     "session": {
       "openCancelled": "连接已被取消。",

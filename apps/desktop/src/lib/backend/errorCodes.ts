@@ -33,6 +33,8 @@ export const ERROR_CATALOG = {
   // Persistence
   "STORE-IO": "errors.store.io",
   "STORE-SCHEMA-NEWER": "errors.store.schemaNewer",
+  "STORE-BACKGROUND-UNSUPPORTED": "errors.store.backgroundUnsupported",
+  "STORE-BACKGROUND-TOO-LARGE": "errors.store.backgroundTooLarge",
   "SESSION-NOT-FOUND": "errors.session.notFound",
   "SESSION-OPEN-CANCELLED": "errors.session.openCancelled",
   "SESSION-BUNDLE-INVALID": "errors.session.bundleInvalid",

@@ -14,6 +14,7 @@ import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
 import {
   DEFAULT_APP_LAYOUT,
+  DEFAULT_BACKGROUND_IMAGE,
   DEFAULT_CORNER_STYLE,
   DEFAULT_QUIT_ON_CLOSE,
   DEFAULT_SHOW_TRAY_ICON,
@@ -57,6 +58,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
     showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
     quitOnClose: DEFAULT_QUIT_ON_CLOSE,
+    backgroundImage: DEFAULT_BACKGROUND_IMAGE,
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -184,6 +186,7 @@ describe("preferences store", () => {
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
+      backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -222,6 +225,7 @@ describe("preferences store", () => {
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
+      backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -371,6 +375,7 @@ describe("the terminal palette", () => {
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
+      backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -677,6 +682,39 @@ describe("the colour theme", () => {
 
     await store.reset(["showTrayIcon", "quitOnClose"]);
     expect([store.showTrayIcon, store.quitOnClose]).toEqual([true, false]);
+  });
+
+  it("remembers the picture behind the window, and keeps its sliders inside their ends", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // A fresh install has no picture, and the two numbers say where the sliders would start.
+    expect(store.backgroundImage.fileName).toBeUndefined();
+    expect(store.backgroundImage.displayMode).toBe("fill");
+    expect(store.backgroundImage.transparency).toBe(20);
+    expect(store.backgroundImage.blur).toBe(0);
+
+    store.setBackgroundImageName("holiday.jpg");
+    store.setBackgroundDisplayMode("tile");
+    store.setBackgroundTransparency(400);
+    store.setBackgroundBlur(-3);
+
+    // A number past the end of its own slider is a window nobody could put back, so it is kept inside.
+    expect(store.backgroundImage).toMatchObject({
+      fileName: "holiday.jpg",
+      displayMode: "tile",
+      transparency: 95,
+      blur: 0,
+    });
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ backgroundImage: expect.objectContaining({ fileName: "holiday.jpg" }) }),
+    );
+
+    await store.reset(["backgroundImage"]);
+    expect(store.backgroundImage.fileName).toBeUndefined();
   });
 
   it("writes both stacks onto the document, and shows one before it is chosen", async () => {
@@ -1068,6 +1106,7 @@ describe("restoring the defaults", () => {
       tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
       showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
       quitOnClose: DEFAULT_QUIT_ON_CLOSE,
+      backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

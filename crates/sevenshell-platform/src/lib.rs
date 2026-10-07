@@ -5,6 +5,7 @@
 //! machine, and that is only true if the rule lives in one place that does not depend on a
 //! window existing.
 
+pub mod background;
 pub mod fonts;
 pub mod paths;
 pub mod settings;

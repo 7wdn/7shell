@@ -57,6 +57,7 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     tabLayout: "scroll",
     showTrayIcon: true,
     quitOnClose: false,
+    backgroundImage: { displayMode: "fill", transparency: 20, blur: 0 },
     filesLayout: "tree",
     sessionLayout: "split",
     sidebarOpen: true,

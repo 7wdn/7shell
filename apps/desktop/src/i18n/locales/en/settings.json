@@ -203,6 +203,11 @@
         "summary": "Limit the maximum width of horizontal tabs, truncating long titles with ellipsis. Hover to view the full title.",
         "help": "How wide a horizontal tab may be drawn. A step is a look rather than a measurement: the same window at the same size draws the same bar, and a name longer than the step is truncated with the whole of it on hover. Bars down one side are not affected — there, every tab is the width of the column."
       },
+      "background": {
+        "title": "Background image",
+        "summary": "Set an image behind the whole app. Cards and dialogs stay opaque for readability.",
+        "help": "The picture is copied into this installation's own directory when it is chosen, so moving or deleting the original does not empty the window's background. The window's own surfaces turn translucent by the transparency below — the panels and the frame, not the cards and dialogs on top of them, which stay opaque so that their text can be read whatever is behind them."
+      },
       "showTrayIcon": {
         "title": "Show tray/menu bar icon",
         "summary": "When disabled, no icon is shown, but closing the window still hides 7Shell in the background as before.",
@@ -253,6 +258,20 @@
         "summary": "Move a folder as one archive, made and opened on the way.",
         "help": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
       }
+    },
+    "background": {
+      "choose": "Choose image…",
+      "clear": "Clear",
+      "none": "No image set",
+      "displayMode": "Display mode",
+      "modeFill": "Fill",
+      "modeFit": "Fit",
+      "modeStretch": "Stretch",
+      "modeCenter": "Center",
+      "modeTile": "Tile",
+      "transparency": "Transparency",
+      "blur": "Blur",
+      "filterName": "Image"
     },
     "security": {
       "keys": "Keys this device holds",

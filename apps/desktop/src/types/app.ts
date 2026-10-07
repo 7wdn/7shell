@@ -209,6 +209,51 @@ export const TAB_MAX_WIDTH_PX: Record<TabMaxWidth, number | null> = {
 export const DEFAULT_TAB_MAX_WIDTH: TabMaxWidth = "unlimited";
 
 /**
+ * How the picture behind the window is painted when it does not match the window's shape.
+ *
+ * From `sevenshell_types::BackgroundDisplayMode`: the five the desktop has taught everybody.
+ */
+export type BackgroundDisplayMode = "fill" | "fit" | "stretch" | "center" | "tile";
+
+/** The modes, in the order the list offers them. */
+export const BACKGROUND_DISPLAY_MODES: readonly BackgroundDisplayMode[] = ["fill", "fit", "stretch", "center", "tile"];
+
+/** The most the window's surfaces may let through, in percent, and the most blur this build paints. */
+export const BACKGROUND_TRANSPARENCY_MAX = 95;
+export const BACKGROUND_BLUR_MAX = 20;
+
+/** Where the transparency slider starts: a fifth of the way to the picture. */
+export const DEFAULT_BACKGROUND_TRANSPARENCY = 20;
+
+/** The picture drawn behind the whole window, from `sevenshell_types::BackgroundImage`. */
+export interface BackgroundImage {
+  /** What the picture is called, as the person who chose it knows it. No picture when absent. */
+  readonly fileName?: string;
+  readonly displayMode: BackgroundDisplayMode;
+  /** How much the window's own surfaces let it through, in percent. */
+  readonly transparency: number;
+  readonly blur: number;
+}
+
+/** The picture a fresh install has: none, with the sliders saying where they would start. */
+export const DEFAULT_BACKGROUND_IMAGE: BackgroundImage = {
+  displayMode: "fill",
+  transparency: DEFAULT_BACKGROUND_TRANSPARENCY,
+  blur: 0,
+};
+
+/**
+ * Whether there is a picture at all.
+ *
+ * An empty name is no picture — the same rule as in Rust, where an optional field and a name of
+ * spaces both mean the same thing. Written once here so that the interface has one answer rather than
+ * three truthiness checks that could drift apart.
+ */
+export function backgroundIsSet(image: BackgroundImage): boolean {
+  return (image.fileName ?? "").trim().length > 0;
+}
+
+/**
  * Whether the shell keeps an icon in the system tray.
  *
  * On unless somebody says otherwise: a window that puts itself away when it is closed needs somewhere
@@ -296,6 +341,8 @@ export interface AppSettings {
   readonly tabSortMode: TabSortMode;
   /** How wide a horizontal tab may be drawn. */
   readonly tabMaxWidth: TabMaxWidth;
+  /** The picture drawn behind the whole window, if any. */
+  readonly backgroundImage: BackgroundImage;
   /** Whether the shell keeps an icon in the system tray. */
   readonly showTrayIcon: boolean;
   /** Whether closing the window ends the application rather than putting it away. */

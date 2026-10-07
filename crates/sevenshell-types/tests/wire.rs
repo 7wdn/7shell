@@ -13,14 +13,14 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sevenshell_types::{
-    AppLayout, AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest,
-    CommandHistoryEntry, CornerStyle, CpuCounters, CpuModel, CpuStates, CustomColors, DiskUsage, EnvironmentEntry,
-    FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward,
-    MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
-    Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
-    SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup, SocketRow, TabGroupMode, TabLayout, TabMaxWidth,
-    TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome,
-    VaultState,
+    AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
+    BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CornerStyle, CpuCounters, CpuModel, CpuStates,
+    CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, KeyInfo,
+    KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey,
+    ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure,
+    SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup,
+    SocketRow, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
+    ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -216,6 +216,12 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             monitor_enabled: true,
             show_tray_icon: false,
             quit_on_close: true,
+            background_image: BackgroundImage {
+                file_name: Some("wallpaper.png".to_owned()),
+                display_mode: BackgroundDisplayMode::Tile,
+                transparency: 40,
+                blur: 8,
+            },
             packed_transfer: true,
             theme_palette: ThemePalette::Sage,
             ui_scale: 125,
@@ -246,6 +252,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(&TabGroupMode::Session, "TabGroupMode");
     check(&TabSortMode::CreatedAsc, "TabSortMode");
     check(&TabMaxWidth::Wide, "TabMaxWidth");
+    check(&BackgroundDisplayMode::Center, "BackgroundDisplayMode");
+    check(&BackgroundImage::default(), "BackgroundImage");
     check(&ThemeMode::System, "ThemeMode");
     // Both of the settings the interface offers as words rather than as numbers: a variant that
     // serialized as `default` when the interface expects `"default"` is the bug this file is for.

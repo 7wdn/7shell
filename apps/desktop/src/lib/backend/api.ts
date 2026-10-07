@@ -285,6 +285,21 @@ export const backend = {
   },
 
   /**
+   * The picture behind the window.
+   *
+   * None of the three takes a path, and that is the point of them: the picture is copied into this
+   * installation's own directory when it is chosen, and read back through a command that names no file
+   * at all — so there is no path for the interface to hold, to write into a settings file, or to get
+   * wrong.
+   */
+  background: {
+    choose: (title: string): Promise<string | null> =>
+      forward("background_image_choose", () => desktop.backgroundImageChoose(title)),
+    read: (): Promise<string> => forward("background_image_read", () => desktop.backgroundImageRead()),
+    clear: (): Promise<void> => forward("background_image_clear", () => desktop.backgroundImageClear()),
+  },
+
+  /**
    * One command, many hosts.
    *
    * The verdict is asked for separately from the run — while somebody types, not when they press —

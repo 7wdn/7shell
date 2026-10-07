@@ -81,6 +81,27 @@ export function settingsSet(settings: AppSettings): Promise<void> {
 }
 
 /** Every font family this machine has, for the two settings that choose one. */
+/**
+ * Opens the system's file picker and copies what comes back into this installation's own directory.
+ *
+ * The title is passed in for the same reason every dialog title in this build is: it is a word
+ * somebody reads, and the words live with the interface's translations. `null` is somebody closing the
+ * picker, which is not a failure and not a change.
+ */
+export function backgroundImageChoose(title: string): Promise<string | null> {
+  return invoke<string | null>("background_image_choose", { title });
+}
+
+/** The stored picture, base64-encoded. Takes no path: the interface does not know one. */
+export function backgroundImageRead(): Promise<string> {
+  return invoke<string>("background_image_read");
+}
+
+/** Takes the stored picture away. */
+export function backgroundImageClear(): Promise<void> {
+  return invoke<void>("background_image_clear");
+}
+
 export function systemFontsList(): Promise<string[]> {
   return invoke<string[]>("system_fonts_list");
 }

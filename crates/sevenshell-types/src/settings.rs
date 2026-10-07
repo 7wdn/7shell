@@ -535,6 +535,106 @@ impl TabMaxWidth {
     }
 }
 
+/// How the picture behind the window is painted when it does not match the window's shape.
+///
+/// The five the desktop has taught everybody: fill crops it to cover, fit keeps all of it and leaves
+/// bars, stretch distorts it, center paints it at its own size, and tile repeats it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackgroundDisplayMode {
+    #[default]
+    Fill,
+    Fit,
+    Stretch,
+    Center,
+    Tile,
+}
+
+impl BackgroundDisplayMode {
+    pub const ALL: &'static [BackgroundDisplayMode] = &[
+        BackgroundDisplayMode::Fill,
+        BackgroundDisplayMode::Fit,
+        BackgroundDisplayMode::Stretch,
+        BackgroundDisplayMode::Center,
+        BackgroundDisplayMode::Tile,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Fill => "fill",
+            Self::Fit => "fit",
+            Self::Stretch => "stretch",
+            Self::Center => "center",
+            Self::Tile => "tile",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|mode| mode.as_str() == id)
+    }
+}
+
+/// The most the surfaces are allowed to let through, in percent.
+///
+/// Not all of it: a window whose own surfaces are entirely transparent is a window whose text floats
+/// over a photograph, and the point of the setting is a picture you can still work on.
+pub const BACKGROUND_TRANSPARENCY_MAX: u8 = 95;
+
+/// The most blur this build will paint behind a window, in pixels.
+pub const BACKGROUND_BLUR_MAX: u8 = 20;
+
+/// The transparency a fresh install gets: a fifth of the way to the picture.
+pub fn background_transparency_default() -> u8 {
+    20
+}
+
+/// The picture drawn behind the whole window.
+///
+/// The file itself is not named here. It is copied into this installation's own directory when it is
+/// chosen — so that moving or deleting the original does not empty the background — and the interface
+/// reads it back through a command that takes no path at all: see `fileName`, which is a name to show
+/// and nothing more.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundImage {
+    /// What the picture is called, as the person who chose it knows it. Absent or empty means there is
+    /// no picture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name: Option<String>,
+    #[serde(default)]
+    pub display_mode: BackgroundDisplayMode,
+    /// How much the window's own surfaces let the picture through, in percent: 0 is an opaque window
+    /// and [`BACKGROUND_TRANSPARENCY_MAX`] the most this build offers. The slider is labelled with this
+    /// number, which is why the *transparency* is stored rather than the opacity it is the complement
+    /// of: a settings file that says 20 and a label that says 20% are the same thing.
+    #[serde(default = "background_transparency_default")]
+    pub transparency: u8,
+    /// How far the picture is blurred, in pixels.
+    #[serde(default)]
+    pub blur: u8,
+}
+
+impl Default for BackgroundImage {
+    fn default() -> Self {
+        Self {
+            file_name: None,
+            display_mode: BackgroundDisplayMode::default(),
+            transparency: background_transparency_default(),
+            blur: 0,
+        }
+    }
+}
+
+impl BackgroundImage {
+    /// Whether there is a picture at all.
+    ///
+    /// An empty name is no picture: the field is optional on the wire, and a name that is only spaces is
+    /// not one this build will try to read a file for.
+    pub fn is_set(&self) -> bool {
+        self.file_name.as_deref().is_some_and(|name| !name.trim().is_empty())
+    }
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -599,6 +699,9 @@ pub struct AppSettings {
     /// that went on running commands on the far side would be worse than one that is on screen.
     #[serde(default = "monitor_on")]
     pub monitor_enabled: bool,
+    /// The picture drawn behind the whole window, if any.
+    #[serde(default)]
+    pub background_image: BackgroundImage,
     /// Whether the shell keeps an icon in the system tray.
     ///
     /// Absent in a file written before this was a choice, which reads as on for the reason the default
@@ -747,6 +850,7 @@ impl Default for AppSettings {
             monitor_enabled: monitor_on(),
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
+            background_image: BackgroundImage::default(),
             packed_transfer: false,
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
@@ -792,6 +896,10 @@ impl AppSettings {
             && self.monitor_enabled
             && self.show_tray_icon
             && !self.quit_on_close
+            && !self.background_image.is_set()
+            && self.background_image.display_mode == BackgroundDisplayMode::Fill
+            && self.background_image.transparency == background_transparency_default()
+            && self.background_image.blur == 0
             && !self.packed_transfer
             && self.custom_colors.is_none()
             && self.custom_colors_dark.is_none()
@@ -903,6 +1011,37 @@ mod tests {
                 "an order whose name does not read back is one the settings file cannot hold"
             );
         }
+    }
+
+    #[test]
+    fn every_display_mode_round_trips_through_its_own_name() {
+        for mode in BackgroundDisplayMode::ALL {
+            assert_eq!(
+                BackgroundDisplayMode::from_id(mode.as_str()),
+                Some(*mode),
+                "a mode whose name does not read back is one the settings file cannot hold"
+            );
+        }
+    }
+
+    #[test]
+    fn the_defaults_for_the_picture_are_ones_the_sliders_offer() {
+        let image = BackgroundImage::default();
+        assert_eq!(image.transparency, background_transparency_default());
+        assert!(
+            image.transparency <= BACKGROUND_TRANSPARENCY_MAX,
+            "a default past the end of its own slider is one nobody could leave"
+        );
+        assert_eq!(image.blur, 0, "a fresh install has no picture, so nothing to blur");
+        assert!(!image.is_set(), "and nothing to draw");
+        assert!(
+            !BackgroundImage {
+                file_name: Some("   ".to_owned()),
+                ..image.clone()
+            }
+            .is_set(),
+            "a name of spaces is not a name"
+        );
     }
 
     #[test]

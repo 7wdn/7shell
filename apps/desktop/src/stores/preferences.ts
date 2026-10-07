@@ -19,7 +19,10 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import {
+  BACKGROUND_BLUR_MAX,
+  BACKGROUND_TRANSPARENCY_MAX,
   DEFAULT_APP_LAYOUT,
+  DEFAULT_BACKGROUND_IMAGE,
   DEFAULT_CORNER_STYLE,
   DEFAULT_QUIT_ON_CLOSE,
   DEFAULT_SHOW_TRAY_ICON,
@@ -36,6 +39,8 @@ import {
   DEFAULT_UI_SCALE,
   type AppLayout,
   type AppSettings,
+  type BackgroundDisplayMode,
+  type BackgroundImage,
   type TabGroupMode,
   type TabLayout,
   type TabMaxWidth,
@@ -78,6 +83,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   tabMaxWidth: DEFAULT_TAB_MAX_WIDTH,
   showTrayIcon: DEFAULT_SHOW_TRAY_ICON,
   quitOnClose: DEFAULT_QUIT_ON_CLOSE,
+  backgroundImage: DEFAULT_BACKGROUND_IMAGE,
   uiFont: undefined,
   terminalFont: undefined,
   customColors: DEFAULT_CUSTOM_COLORS,
@@ -245,6 +251,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   const showTrayIcon = ref(DEFAULT_SHOW_TRAY_ICON);
   const quitOnClose = ref(DEFAULT_QUIT_ON_CLOSE);
+  /**
+   * The picture behind the window.
+   *
+   * One value rather than four fields, because the four only mean anything together: a name, a mode and
+   * two numbers. Nothing here *reads* the picture — that is the wallpaper's own business — and the rule
+   * is the one every choice on this page follows: it takes effect in the window at once and is written
+   * when somebody says so.
+   */
+  const backgroundImage = ref<BackgroundImage>({ ...DEFAULT_BACKGROUND_IMAGE });
   /**
    * Whether the host monitor is drawn beside the workspace.
    *
@@ -436,6 +451,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       tabMaxWidth.value = settings.tabMaxWidth;
       showTrayIcon.value = settings.showTrayIcon;
       quitOnClose.value = settings.quitOnClose;
+      backgroundImage.value = settings.backgroundImage;
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
@@ -512,6 +528,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         tabMaxWidth: tabMaxWidth.value,
         showTrayIcon: showTrayIcon.value,
         quitOnClose: quitOnClose.value,
+        backgroundImage: backgroundImage.value,
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         customColors: customColors.value,
@@ -656,6 +673,37 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   function setTabMaxWidth(width: TabMaxWidth): void {
     tabMaxWidth.value = width;
+    dirty.value = true;
+  }
+
+  /** Names the picture the shell has just copied in, or clears the name when it is taken away. */
+  function setBackgroundImageName(name: string | null): void {
+    const trimmed = (name ?? "").trim();
+    backgroundImage.value = { ...backgroundImage.value, fileName: trimmed.length > 0 ? trimmed : undefined };
+    dirty.value = true;
+  }
+
+  /** How the picture is fitted into a window it does not match. */
+  function setBackgroundDisplayMode(mode: BackgroundDisplayMode): void {
+    backgroundImage.value = { ...backgroundImage.value, displayMode: mode };
+    dirty.value = true;
+  }
+
+  /** How much of the picture the surfaces let through, in percent, kept inside its slider's ends. */
+  function setBackgroundTransparency(percent: number): void {
+    backgroundImage.value = {
+      ...backgroundImage.value,
+      transparency: Math.min(Math.max(Math.round(percent), 0), BACKGROUND_TRANSPARENCY_MAX),
+    };
+    dirty.value = true;
+  }
+
+  /** How far the picture is blurred, in pixels, kept inside its slider's ends. */
+  function setBackgroundBlur(pixels: number): void {
+    backgroundImage.value = {
+      ...backgroundImage.value,
+      blur: Math.min(Math.max(Math.round(pixels), 0), BACKGROUND_BLUR_MAX),
+    };
     dirty.value = true;
   }
 
@@ -891,6 +939,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "quitOnClose":
           quitOnClose.value = FRESH.quitOnClose;
           break;
+        case "backgroundImage":
+          backgroundImage.value = { ...FRESH.backgroundImage };
+          break;
         case "uiFont":
           uiFont.value = null;
           break;
@@ -959,6 +1010,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     tabMaxWidth,
     showTrayIcon,
     quitOnClose,
+    backgroundImage,
     uiFont,
     terminalFont,
     wornUiFont,
@@ -999,6 +1051,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setTabMaxWidth,
     setShowTrayIcon,
     setQuitOnClose,
+    setBackgroundImageName,
+    setBackgroundDisplayMode,
+    setBackgroundTransparency,
+    setBackgroundBlur,
     setUiFont,
     setTerminalFont,
     previewFont,

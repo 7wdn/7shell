@@ -32,6 +32,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import ContextMenu from "@/components/shell/ContextMenu.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
 import ToastViewport from "@/components/shell/ToastViewport.vue";
+import Wallpaper from "@/components/shell/Wallpaper.vue";
 import UnlockScreen from "@/components/vault/UnlockScreen.vue";
 import HomeView from "@/components/views/HomeView.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
@@ -318,6 +319,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-full flex-col overflow-hidden">
+    <!--
+      The picture, first in the markup and last in the stack: behind every panel and in front of the
+      window's own painted background, which is what lets a translucent surface show it through.
+    -->
+    <Wallpaper />
+
     <TitleBar />
 
     <div

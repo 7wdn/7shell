@@ -392,6 +392,21 @@ impl ShellError {
         Self::new(ErrorCode::SessionOpenCancelled, Origin::new(Subsystem::Ssh)).with_outcome(OperationOutcome::NotSent)
     }
 
+    /// A picture this build cannot draw: the file is of a kind it does not paint.
+    pub fn store_background_unsupported(extension: &str) -> Self {
+        Self::new(ErrorCode::StoreBackgroundUnsupported, Origin::new(Subsystem::Store))
+            .with_param("extension", extension)
+    }
+
+    /// A picture larger than the copy limit, with both numbers, because "too large" alone leaves
+    /// somebody guessing which of their files is acceptable.
+    pub fn store_background_too_large(megabytes: u64, limit: u64) -> Self {
+        Self::new(ErrorCode::StoreBackgroundTooLarge, Origin::new(Subsystem::Store))
+            .with_param("megabytes", megabytes.to_string())
+            .with_param("limit", limit.to_string())
+    }
+
+    #[allow(dead_code)]
     pub fn store_io(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::StoreIo, Origin::new(Subsystem::Store)).with_detail(detail)
     }

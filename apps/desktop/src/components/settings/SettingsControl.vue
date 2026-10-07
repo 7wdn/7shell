@@ -20,6 +20,7 @@ import { Sun, Moon, SunMoon } from "@lucide/vue";
 import { FONT_LABEL_KEYS, type SettingsChoiceIcon, type SettingsRowDefinition } from "@/components/settings/rows";
 import FontSelect from "@/components/ui/FontSelect.vue";
 import { cn } from "@/lib/utils";
+import BackgroundSettings from "@/components/settings/BackgroundSettings.vue";
 import Select from "@/components/ui/Select.vue";
 import Switch from "@/components/ui/Switch.vue";
 import {
@@ -143,8 +144,15 @@ const options = computed(() =>
 </script>
 
 <template>
+  <!--
+    The block that is about one thing in five answers: a picture, how it is fitted, how much of it
+    shows through and how far it is blurred. It reads and writes the store itself — see its own note —
+    which is why this branch hands it nothing but the row it came from.
+  -->
+  <BackgroundSettings v-if="props.row.control.kind === 'background'" />
+
   <Switch
-    v-if="props.row.control.kind === 'switch'"
+    v-else-if="props.row.control.kind === 'switch'"
     :model-value="props.value === true"
     :aria-label="props.label"
     @update:model-value="(value: boolean) => emit('choose', value)"

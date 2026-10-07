@@ -30,7 +30,9 @@
     },
     "store": {
       "io": "Application state could not be written.",
-      "schemaNewer": "This data was written by a newer version (format {found}; this build understands up to {supported})."
+      "schemaNewer": "This data was written by a newer version (format {found}; this build understands up to {supported}).",
+      "backgroundUnsupported": "A picture of this kind cannot be used as the background ({extension}). Choose a PNG, JPEG, WebP, BMP or GIF.",
+      "backgroundTooLarge": "That picture is {megabytes} MB, and the most this build copies is {limit} MB."
     },
     "session": {
       "openCancelled": "The connection attempt was called off.",
