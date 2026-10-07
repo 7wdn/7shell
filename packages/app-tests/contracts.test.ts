@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 
 import { ERROR_CATALOG } from "@/lib/backend/errorCodes";
 import type { ErrorEnvelope, ErrorOrigin } from "@/lib/backend/errors";
+import { DEFAULT_UI_SCALE, UI_SCALE_PERCENTS } from "@/types/app";
 import type { AppInfo } from "@/types/app";
 import type { HostMetrics } from "@/types/monitor";
 
@@ -77,6 +78,12 @@ function tsKindUnion(source: string, typeName: string): string[] {
   return [...body.matchAll(/kind: "([a-zA-Z]+)"/g)].map((match) => match[1] as string);
 }
 
+/** Numbers in a Rust const list such as `pub const UI_SCALE_PERCENTS: &[u32] = &[1, 2];`. */
+function rustNumberList(source: string, constName: string): number[] {
+  const body = new RegExp(`pub const ${constName}:[^=]*=\\s*&\\[([^\\]]*)\\]`).exec(source)?.[1] ?? "";
+  return [...body.matchAll(/\d+/g)].map((match) => Number(match[0]));
+}
+
 /** String members of a TypeScript union type. */
 function tsStringUnion(source: string, typeName: string): string[] {
   const body = new RegExp(`export type ${typeName} =([\\s\\S]*?);`).exec(source)?.[1] ?? "";
@@ -128,6 +135,22 @@ describe("settings types", () => {
 
     expect(sorted(rustModes)).toEqual(["dark", "light", "system"]);
     expect(sorted(typescriptModes)).toEqual(sorted(rustModes));
+  });
+
+  it("declares the same theme palettes on both sides", () => {
+    const rustPalettes = rustEnumVariants(rustSettings, "ThemePalette");
+    const typescriptPalettes = tsStringUnion(interfaceTypes, "ThemePalette");
+
+    expect(rustPalettes.length).toBeGreaterThan(0);
+    expect(sorted(typescriptPalettes)).toEqual(sorted(rustPalettes));
+  });
+
+  it("offers the same interface scales on both sides", () => {
+    const rustScales = rustNumberList(rustSettings, "UI_SCALE_PERCENTS");
+
+    expect(rustScales.length).toBeGreaterThan(0);
+    expect(rustScales).toContain(DEFAULT_UI_SCALE);
+    expect(sorted(rustScales.map(String))).toEqual(sorted(UI_SCALE_PERCENTS.map(String)));
   });
 });
 

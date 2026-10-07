@@ -39,14 +39,20 @@ const REFUSING = [
   { file: "files/FileBrowser.vue", what: "the directory listing" },
   { file: "files/DirectoryTree.vue", what: "the tree beside the listing" },
   { file: "monitor/MonitorPanel.vue", what: "the monitor panel" },
+  { file: "settings/SettingsPage.vue", what: "the settings page, which is a page of controls" },
 ];
 
 /** The surfaces that hold readings, which must stay selectable. */
 const READINGS = [
   { file: "inspect/ProcessTable.vue", what: "the process page and its detail pane" },
   { file: "inspect/InterfaceTable.vue", what: "the interface table" },
-  { file: "settings/SettingsPage.vue", what: "the settings page" },
   { file: "batch/BatchPanel.vue", what: "the batch panel, whose output is copied out of" },
+  // The readings a page of settings holds, which are exempted from the rule above: fingerprints and
+  // host names are checked by eye against another machine and pasted into a terminal. That they are
+  // exempted *and* that the page refuses selection is the element-level case in `SettingsPage.spec.ts`
+  // — a file-level check cannot see which half of one file is which.
+  { file: "settings/KnownKeys.vue", what: "the fingerprints of the keys this device holds" },
+  { file: "settings/TrustedKeys.vue", what: "the hosts this device trusts" },
 ];
 
 const source = ({ file }) => readFileSync(path.join(COMPONENTS, file), "utf8");

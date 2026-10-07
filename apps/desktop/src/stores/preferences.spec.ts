@@ -2,15 +2,21 @@ import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
-vi.mock("@/lib/backend/tauri", () => ({ appInfo: vi.fn(), settingsGet: vi.fn(), settingsSet: vi.fn() }));
+vi.mock("@/lib/backend/tauri", () => ({
+  appInfo: vi.fn(),
+  settingsGet: vi.fn(),
+  settingsSet: vi.fn(),
+  webviewSetZoom: vi.fn(),
+}));
 
 import { i18n } from "@/i18n";
-import { settingsGet, settingsSet } from "@/lib/backend/tauri";
+import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
-import type { AppSettings } from "@/types/app";
+import { DEFAULT_CUSTOM_COLORS, DEFAULT_CUSTOM_COLORS_DARK, DEFAULT_UI_SCALE, type AppSettings } from "@/types/app";
 
 const settingsGetMock = vi.mocked(settingsGet);
 const settingsSetMock = vi.mocked(settingsSet);
+const webviewSetZoomMock = vi.mocked(webviewSetZoom);
 
 /**
  * What the backend answers when nothing has been chosen.
@@ -22,6 +28,10 @@ const settingsSetMock = vi.mocked(settingsSet);
 function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     themeMode: "system",
+    themePalette: "default",
+    uiScale: DEFAULT_UI_SCALE,
+    customColors: DEFAULT_CUSTOM_COLORS,
+    customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
     terminalTheme: "system",
     filesLayout: "tree",
     sessionLayout: "split",
@@ -131,6 +141,10 @@ describe("preferences store", () => {
 
     expect(settingsSetMock).toHaveBeenCalledWith({
       themeMode: "dark",
+      themePalette: "default",
+      uiScale: DEFAULT_UI_SCALE,
+      customColors: DEFAULT_CUSTOM_COLORS,
+      customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
       filesLayout: "tree",
       sessionLayout: "split",
@@ -151,6 +165,10 @@ describe("preferences store", () => {
 
     expect(settingsSetMock).toHaveBeenCalledWith({
       themeMode: "system",
+      themePalette: "default",
+      uiScale: DEFAULT_UI_SCALE,
+      customColors: DEFAULT_CUSTOM_COLORS,
+      customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
       filesLayout: "tree",
       sessionLayout: "split",
@@ -243,6 +261,10 @@ describe("the terminal palette", () => {
     expect(store.resolvedTerminalTheme).toBe("light");
     expect(settingsSetMock).toHaveBeenLastCalledWith({
       themeMode: "dark",
+      themePalette: "default",
+      uiScale: DEFAULT_UI_SCALE,
+      customColors: DEFAULT_CUSTOM_COLORS,
+      customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "light",
       filesLayout: "tree",
       sessionLayout: "split",
@@ -262,6 +284,206 @@ describe("the terminal palette", () => {
     await store.load();
 
     expect(store.resolvedTerminalTheme).toBe("dark");
+  });
+});
+
+describe("the colour theme", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    stubSystemTheme(true);
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+    delete document.documentElement.dataset.palette;
+  });
+
+  it("wears the palette the file names, on top of the theme the file names", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ themeMode: "dark", themePalette: "sage" }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.themePalette).toBe("sage");
+    expect(document.documentElement.dataset.palette).toBe("sage");
+    // The palette is a tint over the theme rather than a third theme: it says nothing about
+    // whether the lights are on, and the theme's own answer is untouched.
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("changes the colour without changing whether the lights are on", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setThemePalette("claude");
+
+    expect(document.documentElement.dataset.palette).toBe("claude");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ themePalette: "claude" }));
+  });
+
+  it("wears a colour the pointer is on without choosing it", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.previewThemePalette("cobalt");
+
+    expect(document.documentElement.dataset.palette, "the window shows it").toBe("cobalt");
+    expect(store.themePalette, "and nothing has been chosen").toBe("default");
+    // A preview is not a choice, so it is not a write either: the file keeps what was chosen until
+    // somebody chooses something else.
+    expect(settingsSetMock).not.toHaveBeenCalled();
+  });
+
+  it("puts the chosen colour back when the pointer leaves the list", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.previewThemePalette("cobalt");
+    store.clearThemePalettePreview();
+
+    expect(document.documentElement.dataset.palette).toBe("default");
+    expect(store.wornPalette).toBe("default");
+  });
+
+  it("stops previewing the moment the colour is actually chosen", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.previewThemePalette("cobalt");
+    await store.setThemePalette("cobalt");
+
+    // The choice and the preview are the same value from here on, which is what makes letting go of
+    // the list afterwards a no-op rather than a jump back to what used to be chosen.
+    expect(store.wornPalette).toBe("cobalt");
+    store.clearThemePalettePreview();
+    expect(document.documentElement.dataset.palette).toBe("cobalt");
+  });
+
+  it("shows the chosen colour again when the pointer comes back over it", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.previewThemePalette("cobalt");
+    // Back onto the option that is actually chosen: there is nothing left to preview, so what is on
+    // screen is the choice again — which is what somebody comparing two colours is looking for.
+    store.previewThemePalette("default");
+
+    expect(document.documentElement.dataset.palette).toBe("default");
+    expect(store.themePalette).toBe("default");
+  });
+
+  it("writes a hand-picked palette as tokens on the document, and takes them back", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setThemePalette("custom");
+
+    // The window's own tokens, for the theme on screen…
+    expect(document.documentElement.style.getPropertyValue("--background")).toBe("rgb(19 20 22)");
+    // …and both halves of the pane's, because the terminal draws in whichever it was told to and
+    // that is not always the theme of the window around it.
+    expect(document.documentElement.style.getPropertyValue("--terminal-dark-background")).toBe("rgb(25 25 28)");
+    expect(document.documentElement.style.getPropertyValue("--terminal-light-background")).toBe("rgb(250 250 250)");
+
+    await store.setThemePalette("default");
+
+    // Named palettes are the stylesheet's again: the inline tokens are removed rather than
+    // overwritten, or the last hand-picked colour would go on winning over every palette after it.
+    expect(document.documentElement.style.getPropertyValue("--background")).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--terminal-dark-background")).toBe("");
+  });
+
+  it("changes one colour of the set the theme on screen is in", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await store.setThemePalette("custom");
+
+    await store.setCustomColor("primary", "#4f9cf0");
+
+    expect(document.documentElement.style.getPropertyValue("--primary")).toBe("rgb(79 156 240)");
+    expect(store.customColorsDark.primary).toBe("#4f9cf0");
+    expect(store.customColors.primary, "the light set is the other half of the palette").toBe("#171717");
+  });
+
+  it("puts the hand-picked colours back to what a fresh install starts from", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await store.setThemePalette("custom");
+    await store.setCustomColor("background", "#101820");
+
+    await store.resetCustomColors();
+
+    expect(store.customColorsDark.background).toBe(DEFAULT_CUSTOM_COLORS_DARK.background);
+    expect(document.documentElement.style.getPropertyValue("--background")).toBe("rgb(19 20 22)");
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ customColorsDark: DEFAULT_CUSTOM_COLORS_DARK }),
+    );
+  });
+});
+
+describe("the interface scale", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    stubSystemTheme(true);
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+    webviewSetZoomMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("draws the interface at the size the last run was left at", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ uiScale: 125 }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.uiScale).toBe(125);
+    // The file holds a percentage and the shell takes a factor: the conversion happens here, once.
+    expect(webviewSetZoomMock).toHaveBeenCalledWith(1.25);
+  });
+
+  it("asks the window for the new size, and writes it down", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    webviewSetZoomMock.mockClear();
+
+    await store.setUiScale(150);
+
+    expect(webviewSetZoomMock).toHaveBeenCalledWith(1.5);
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 150 }));
+  });
+
+  it("does not ask again for a size the window already has", async () => {
+    // Applying runs whenever the system's own preference moves, and the scale has nothing to do
+    // with that: a window following the operating system must not become a call per change.
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    webviewSetZoomMock.mockClear();
+
+    await store.setThemeMode("light");
+
+    expect(webviewSetZoomMock).not.toHaveBeenCalled();
+  });
+
+  it("says so when the window refuses the size, rather than looking stuck at the old one", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    webviewSetZoomMock.mockRejectedValue(new Error("the window said no"));
+
+    await store.setUiScale(150);
+
+    await vi.waitFor(() => expect(store.problem?.code).toBe("APP-INTERNAL"));
   });
 });
 
@@ -477,6 +699,8 @@ describe("the file panel under a terminal", () => {
 describe("restoring the defaults", () => {
   const CHOSEN = defaults({
     themeMode: "dark",
+    themePalette: "jetbrains",
+    uiScale: 150,
     terminalTheme: "light",
     filesLayout: "list",
     sessionLayout: "terminal",
@@ -500,9 +724,19 @@ describe("restoring the defaults", () => {
     store.initialize();
     await store.load();
 
-    await store.reset(["themeMode", "terminalTheme", "filesLayout", "sessionLayout", "packedTransfer"]);
+    await store.reset([
+      "themeMode",
+      "themePalette",
+      "uiScale",
+      "terminalTheme",
+      "filesLayout",
+      "sessionLayout",
+      "packedTransfer",
+    ]);
 
     expect(store.themeMode).toBe("system");
+    expect(store.themePalette).toBe("default");
+    expect(store.uiScale).toBe(DEFAULT_UI_SCALE);
     expect(store.terminalTheme).toBe("system");
     expect(store.filesLayout).toBe("tree");
     expect(store.sessionLayout).toBe("split");
@@ -510,6 +744,10 @@ describe("restoring the defaults", () => {
     expect(settingsSetMock).toHaveBeenCalledTimes(1);
     expect(settingsSetMock).toHaveBeenLastCalledWith({
       themeMode: "system",
+      themePalette: "default",
+      uiScale: DEFAULT_UI_SCALE,
+      customColors: DEFAULT_CUSTOM_COLORS,
+      customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
       filesLayout: "tree",
       sessionLayout: "split",

@@ -14,12 +14,12 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use sevenshell_types::{
     AppSettings, AuthMethod, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest,
-    CommandHistoryEntry, CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode,
-    HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters,
-    OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment,
-    RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup,
-    SessionLayout, Snippet, SnippetGroup, SocketRow, TerminalSettings, ThemeMode, TunnelFailure, UploadAnswer,
-    UploadOutcome, VaultState,
+    CommandHistoryEntry, CpuCounters, CpuModel, CpuStates, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout,
+    ForwardMode, HostFailure, HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage,
+    NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol,
+    RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
+    SessionGroup, SessionLayout, Snippet, SnippetGroup, SocketRow, TerminalSettings, ThemeMode, ThemePalette,
+    TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -214,11 +214,20 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             sidebar_open: false,
             monitor_enabled: true,
             packed_transfer: true,
+            theme_palette: ThemePalette::Sage,
+            ui_scale: 125,
+            custom_colors: Some(CustomColors::light_default()),
+            custom_colors_dark: Some(CustomColors::dark_default()),
             locale: Some("zh-CN".to_owned()),
         },
         "AppSettings",
     );
+    check(&CustomColors::light_default(), "CustomColors");
     check(&ThemeMode::System, "ThemeMode");
+    // Both of the settings the interface offers as words rather than as numbers: a variant that
+    // serialized as `default` when the interface expects `"default"` is the bug this file is for.
+    check(&ThemePalette::Claude, "ThemePalette");
+    check(&ThemePalette::Default, "ThemePalette");
     check(&VaultState::Unlocked, "VaultState");
     check(
         &SessionGroup {

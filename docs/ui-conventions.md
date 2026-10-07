@@ -31,7 +31,10 @@ somebody paste this somewhere?
    surface that takes typing is a document while the keyboard is in it.
 5. **An error is text.** Banners and toasts are quoted into bug reports, so they are selectable, and
    the ones without a copy button are still selectable by hand. The monitor panel refuses selection
-   everywhere *except* its failure block, which is the same rule seen from the other side.
+   everywhere *except* its failure block, which is the same rule seen from the other side. The
+   settings page is the same shape: it is chrome, so it refuses selection as a whole, and the few
+   readings it holds — the build's own facts, the keys and hosts this device holds, an error, and the
+   two fields somebody types in — carry an exemption of their own.
 6. **The terminal is its own world.** xterm draws to a canvas and keeps its own selection: dragging
    selects, the right-click menu copies, and the DOM takes no part. That is the terminal behaving
    like a terminal, and the rules above do not apply inside its screen.
@@ -50,7 +53,8 @@ somebody paste this somewhere?
 | Sidebar search, rename fields, command bar, file editor | yes | text being typed |
 | Terminal screen | yes, its own way | xterm's selection and menu, not the DOM's |
 | Host pages: system, processes, network | yes | readings, paths and command lines — the surfaces people copy from |
-| Settings, dialogs, the home page, the batch panel, the command library | yes | values, and the labels beside them where the row is not a form control |
+| The settings page | no | a page of controls: the readings inside it — the build's facts, the keys and hosts, an error, the search field — are exempted one by one |
+| Dialogs, the home page, the batch panel, the command library | yes | values, and the labels beside them where the row is not a form control |
 | Error banners and toasts | yes | an error is quoted somewhere |
 
 Measured in a real window rather than asserted from the markup: a selection over the monitor panel,
@@ -61,7 +65,9 @@ the readings.
 `scripts/tests/selection.test.mjs` keeps both halves honest — every shell component still refuses
 selection, and the surfaces that hold readings never do — and the elements a component draws for
 itself are asserted in that component's own spec, where they can be named (`WorkspaceTabs.spec.ts`,
-`ContextMenu.spec.ts`).
+`ContextMenu.spec.ts`, `NetworkReport.spec.ts`). Where one file holds both halves, that spec is the
+only place the difference is visible: `SettingsPage.spec.ts` names the exemption each reading
+carries, because "the settings page refuses selection" and "the search field does not" are one file.
 
 ## Tables
 

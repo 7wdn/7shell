@@ -10,6 +10,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppInfo, AppSettings } from "@/types/app";
@@ -115,6 +116,17 @@ export async function onQuitRequested(listener: () => void): Promise<Unlisten> {
 /** Calls `listener` whenever the window is resized, and resolves with the unsubscribe. */
 export async function onWindowResized(listener: () => void): Promise<Unlisten> {
   return getCurrentWindow().onResized(() => listener());
+}
+
+/**
+ * Draws the interface at `scale` times its own size, inside a window of the same size.
+ *
+ * The webview's business rather than the document's: a CSS transform or a root font size would
+ * leave the terminal's canvas, the scrollbars and the hit testing behind, each in its own way. The
+ * zoom factor moves all of it together, which is what "the interface is bigger" has to mean.
+ */
+export function webviewSetZoom(scale: number): Promise<void> {
+  return getCurrentWebview().setZoom(scale);
 }
 
 // -- Vault -------------------------------------------------------------------

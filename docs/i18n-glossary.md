@@ -35,6 +35,9 @@ next reads as two different features.
 | **filter** | Narrowing the list by a value it already has — for example how a session authenticates. | search (that is typed, this is chosen) |
 | **export / import** | Writing the library to a file, and adding what a file holds. | save, load, backup |
 | **envelope** | The structured error that crosses a boundary. | error object, payload |
+| **interface theme** | Whether the interface is drawn light or dark: system, dark or light. | mode, appearance |
+| **colour theme** | The colour the interface is made of, worn on top of the theme. Not a third theme — a tint. | skin, scheme, dark mode |
+| **interface scale** | How much larger the interface is drawn inside a window of the same size, in percent. | zoom (that is what the window does), font size |
 
 ## 简体中文
 
@@ -67,6 +70,9 @@ next reads as two different features.
 | filter | 筛选 | 过滤、搜索（搜索是打字的，筛选是选的） |
 | export / import | 导出／导入 | 保存、加载、备份 |
 | envelope | 错误信封 | 错误对象 |
+| interface theme | 界面主题 | 模式、外观 |
+| colour theme | 配色主题 | 皮肤、方案、深色模式（那是界面主题） |
+| interface scale | 界面缩放 | 缩放倍数、字号（那是另一件事） |
 
 ## Rules
 

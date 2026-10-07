@@ -89,6 +89,16 @@ export const backend = {
     close: (): Promise<void> => forward("window.close", () => desktop.windowClose()),
 
     /**
+     * Draws the interface at `scale` times its own size, inside a window of the same size.
+     *
+     * Answered rather than refused where there is no shell: a browser tab is drawn by the browser
+     * and has its own zoom, so "there is nothing here to scale" is the whole truth there and not a
+     * failure the settings page should report.
+     */
+    setZoom: (scale: number): Promise<void> =>
+      isDesktopRuntime() ? forward("webview.setZoom", () => desktop.webviewSetZoom(scale)) : Promise.resolve(),
+
+    /**
      * Says whether closing would throw something away. Armed, the close comes back as
      * `onQuitRequested` instead of closing the window.
      */

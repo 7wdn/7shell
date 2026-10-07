@@ -46,6 +46,35 @@
       "english": "English",
       "simplifiedChinese": "简体中文"
     },
+    "palette": {
+      "default": "White",
+      "mist": "Mist grey",
+      "graphite": "Titanium grey",
+      "cobalt": "Cobalt blue",
+      "sage": "Sage green",
+      "amber": "Warm yellow",
+      "blush": "Sakura pink",
+      "vscode": "VS Code",
+      "idea": "IDEA",
+      "xcode": "Xcode",
+      "jetbrains": "JetBrains",
+      "cursor": "Cursor",
+      "claude": "Claude Code",
+      "custom": "Custom"
+    },
+    "custom": {
+      "editingLight": "Editing: light",
+      "editingDark": "Editing: dark",
+      "background": "Background",
+      "foreground": "Foreground",
+      "primary": "Accent",
+      "border": "Border",
+      "card": "Panels",
+      "reset": "Reset the colours"
+    },
+    "uiScale": {
+      "percent": "{percent}%"
+    },
     "rows": {
       "themeMode": {
         "title": "Interface theme",
@@ -61,6 +90,16 @@
         "title": "Language",
         "summary": "The language the interface is written in.",
         "help": "Until a language is chosen the system's applies. Once one is chosen it stays — even on a machine that is set to something else."
+      },
+      "colorTheme": {
+        "title": "Colour theme",
+        "summary": "The colour the interface is made of, in either of the two themes.",
+        "help": "A colour theme is not a third theme: light and dark are what the interface theme decides, and any of these can be worn with either. It moves the page, the borders and the accent together onto one hue, so the window reads as one piece rather than as a grey page with a coloured button on it."
+      },
+      "uiScale": {
+        "title": "Interface scale",
+        "summary": "Draws the whole interface larger, inside the same window.",
+        "help": "The window keeps its size and everything in it grows: text, borders, and the terminal's own grid of characters. It is meant for a display dense enough to make the default size hard to read, where the operating system's own scaling does not reach a window that is already open."
       },
       "sessionLayout": {
         "title": "Opening a session",

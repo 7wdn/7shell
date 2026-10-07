@@ -46,6 +46,35 @@
       "english": "English",
       "simplifiedChinese": "简体中文"
     },
+    "palette": {
+      "default": "洁白",
+      "mist": "雾灰",
+      "graphite": "钛灰",
+      "cobalt": "钴蓝",
+      "sage": "青绿",
+      "amber": "暖黄",
+      "blush": "樱粉",
+      "vscode": "VS Code",
+      "idea": "IDEA",
+      "xcode": "Xcode",
+      "jetbrains": "JetBrains",
+      "cursor": "Cursor",
+      "claude": "Claude Code",
+      "custom": "自定义"
+    },
+    "custom": {
+      "editingLight": "正在编辑：浅色配色",
+      "editingDark": "正在编辑：深色配色",
+      "background": "背景",
+      "foreground": "前景文字",
+      "primary": "主色",
+      "border": "边框",
+      "card": "面板",
+      "reset": "恢复默认颜色"
+    },
+    "uiScale": {
+      "percent": "{percent}%"
+    },
     "rows": {
       "themeMode": {
         "title": "界面主题",
@@ -61,6 +90,16 @@
         "title": "语言",
         "summary": "界面所使用的语言。",
         "help": "没有选过语言时，跟随系统语言。一旦选了就一直用它——即使这台机器设成了别的语言。"
+      },
+      "colorTheme": {
+        "title": "配色主题",
+        "summary": "界面整体所用的颜色，深浅两种模式下都适用。",
+        "help": "配色主题不是第三种主题：深浅由「界面主题」决定，这里的每一种颜色都能穿在两种主题上。它把页面、边框和强调色一起挪到同一个色相，窗口因此是一个整体，而不是一页灰底配一个彩色按钮。"
+      },
+      "uiScale": {
+        "title": "界面缩放",
+        "summary": "在同一个窗口里，把整个界面画得更大。",
+        "help": "窗口大小不变，里面的东西一起变大：文字、边框，以及终端自己的字符网格。它是给密度高到看不清默认字号的屏幕准备的——系统自带的缩放管不到一个已经打开的窗口。"
       },
       "sessionLayout": {
         "title": "打开会话",

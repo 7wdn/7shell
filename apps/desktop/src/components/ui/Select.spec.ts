@@ -216,6 +216,56 @@ describe("the keyboard", () => {
 });
 
 /**
+ * What the list says about itself while somebody is reading it.
+ *
+ * A dropdown has nothing to do with this; a caller whose options are things you have to see — a
+ * colour — has. One case checks that the report arrives at all, and the other is the one that
+ * matters most: a preview left standing after the list closes is a window wearing something nobody
+ * can see the reason for.
+ */
+describe("the option under the pointer", () => {
+  function mountListening(): { hovered: string[]; leave: () => number } {
+    const hovered: string[] = [];
+    let left = 0;
+    app = createApp({
+      render: () =>
+        h(Select, {
+          modelValue: "prod",
+          options: OPTIONS,
+          onOptionHover: (value: string) => hovered.push(value),
+          onOptionLeave: () => {
+            left += 1;
+          },
+        }),
+    });
+    host = document.createElement("div");
+    document.body.append(host);
+    app.mount(host);
+    return { hovered, leave: () => left };
+  }
+
+  it("reports the option the pointer came to rest on", async () => {
+    const { hovered } = mountListening();
+    await open();
+
+    options()[2]?.dispatchEvent(new PointerEvent("pointerenter"));
+
+    expect(hovered).toEqual(["lab"]);
+  });
+
+  it("says the pointer is off the list when the list closes", async () => {
+    const { leave } = mountListening();
+    await open();
+    options()[1]?.dispatchEvent(new PointerEvent("pointerenter"));
+
+    list()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle();
+
+    expect(leave(), "a preview must not outlive the list it came from").toBeGreaterThan(0);
+  });
+});
+
+/**
  * The one thing that would undo all of the above: somebody reaching for the platform control again
  * because it is one line shorter. The interface has one dropdown, and this is it.
  */

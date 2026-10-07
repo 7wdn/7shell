@@ -38,31 +38,48 @@ const REQUIRED = [
   "--terminal-bright-white",
 ];
 
-function paletteBlock(stylesheet: string, className: string): string {
-  const start = stylesheet.indexOf(`.${className} {`);
-  expect(start, `${className} is missing from the stylesheet`).toBeGreaterThan(-1);
-  const end = stylesheet.indexOf("}", start);
-  return stylesheet.slice(start, end);
+function block(stylesheet: string, selector: string): string {
+  const start = stylesheet.indexOf(`${selector} {`);
+  expect(start, `${selector} is missing from the stylesheet`).toBeGreaterThan(-1);
+  return stylesheet.slice(start, stylesheet.indexOf("\n}", start));
 }
 
 describe("terminal palettes", () => {
   const stylesheet = readFileSync(STYLESHEET, "utf8");
 
   for (const className of ["terminal-dark", "terminal-light"]) {
-    it(`${className} defines every colour the terminal reads`, () => {
-      const block = paletteBlock(stylesheet, className);
-      const missing = REQUIRED.filter((name) => !block.includes(`${name}:`));
+    it(`.${className} defines every colour the terminal reads`, () => {
+      const body = block(stylesheet, `.${className}`);
+      const missing = REQUIRED.filter((name) => !body.includes(`${name}:`));
 
-      expect(missing, `${className} does not define ${missing.join(", ")}`).toEqual([]);
+      expect(missing, `.${className} does not define ${missing.join(", ")}`).toEqual([]);
     });
   }
 
-  it("gives the two palettes different backgrounds", () => {
-    const dark = paletteBlock(stylesheet, "terminal-dark");
-    const light = paletteBlock(stylesheet, "terminal-light");
+  /**
+   * The two panes read their own half of the colour theme, and both halves are written down.
+   *
+   * There is no colour in either class, by design: the pane's four surfaces come from the palette —
+   * for the pane's own theme rather than the window's, so a dark pane is dark beside a light window
+   * — and the palette that draws no block of its own puts them in `:root`. A half that was never
+   * declared would leave the pane with a value that is not a colour, which is what these two cases
+   * together are for.
+   */
+  it("reads its own half of the colour theme in each pane", () => {
+    expect(block(stylesheet, ".terminal-dark"), "the dark pane reads the dark half").toContain(
+      "var(--terminal-dark-background)",
+    );
+    expect(block(stylesheet, ".terminal-light"), "the light pane reads the light half").toContain(
+      "var(--terminal-light-background)",
+    );
+  });
 
-    expect(dark).not.toBe(light);
-    expect(dark).toMatch(/--terminal-background: oklch\(0\.[12]/);
-    expect(light).toMatch(/--terminal-background: oklch\(0\.9/);
+  it("finds both halves declared, for the palette that has no block of its own", () => {
+    const root = block(stylesheet, ":root");
+    for (const theme of ["dark", "light"]) {
+      for (const part of ["background", "foreground", "cursor", "selection"]) {
+        expect(root, `the base palette dresses the ${theme} pane too`).toContain(`--terminal-${theme}-${part}:`);
+      }
+    }
   });
 });

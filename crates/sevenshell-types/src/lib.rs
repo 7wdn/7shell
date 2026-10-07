@@ -35,7 +35,10 @@ pub use session::{
     SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo, TransferState, TunnelFailure,
     UploadAnswer, UploadOutcome, VaultState,
 };
-pub use settings::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on, sidebar_on};
+pub use settings::{
+    AppSettings, CustomColors, FilesLayout, SessionLayout, ThemeMode, ThemePalette, UI_SCALE_PERCENTS, monitor_on,
+    normalize_ui_scale, sidebar_on, ui_scale_default,
+};
 pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,
     SendTarget, Snippet, SnippetGroup,

@@ -16,7 +16,10 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
-use sevenshell_types::{AppSettings, FilesLayout, SessionLayout, ThemeMode, monitor_on, sidebar_on};
+use sevenshell_types::{
+    AppSettings, CustomColors, FilesLayout, SessionLayout, ThemeMode, ThemePalette, monitor_on, normalize_ui_scale,
+    sidebar_on, ui_scale_default,
+};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -32,6 +35,10 @@ struct StoredSettings {
     schema_version: u32,
     #[serde(default)]
     theme_mode: String,
+    /// Absent in a file written before the interface had more than one palette, which reads as the
+    /// one it has always drawn in.
+    #[serde(default)]
+    theme_palette: String,
     /// Absent in a file written before the terminal had a palette of its own, which reads as
     /// "follow the interface" — the honest answer for somebody who never chose.
     #[serde(default)]
@@ -63,6 +70,16 @@ struct StoredSettings {
     /// ships with — on — rather than as a sidebar somebody closed before it could be closed.
     #[serde(default = "sidebar_on")]
     sidebar_open: bool,
+    /// Absent in a file written before the interface could be scaled, which reads as the size it
+    /// has always been drawn at rather than as somebody having asked for something else.
+    #[serde(default = "ui_scale_default")]
+    ui_scale: u32,
+    /// Absent in a file written before the interface could be coloured by hand, which reads as
+    /// "nobody has picked any" — the defaults a fresh install starts from.
+    #[serde(default)]
+    custom_colors: Option<CustomColors>,
+    #[serde(default)]
+    custom_colors_dark: Option<CustomColors>,
     #[serde(default)]
     locale: Option<String>,
 }
@@ -72,6 +89,7 @@ impl StoredSettings {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
             theme_mode: settings.theme_mode.as_str().to_owned(),
+            theme_palette: settings.theme_palette.as_str().to_owned(),
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
             files_layout: settings.files_layout.as_str().to_owned(),
             session_layout: settings.session_layout.as_str().to_owned(),
@@ -80,6 +98,9 @@ impl StoredSettings {
             sidebar_open: settings.sidebar_open,
             monitor_enabled: settings.monitor_enabled,
             packed_transfer: settings.packed_transfer,
+            ui_scale: settings.ui_scale,
+            custom_colors: settings.custom_colors.clone(),
+            custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
         }
     }
@@ -87,6 +108,7 @@ impl StoredSettings {
     fn into_settings(self) -> AppSettings {
         AppSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
+            theme_palette: ThemePalette::from_id(&self.theme_palette).unwrap_or_default(),
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
@@ -95,6 +117,12 @@ impl StoredSettings {
             sidebar_open: self.sidebar_open,
             monitor_enabled: self.monitor_enabled,
             packed_transfer: self.packed_transfer,
+            ui_scale: normalize_ui_scale(self.ui_scale),
+            // A hand-coloured set that cannot be drawn is dropped whole rather than per colour: half
+            // of somebody's palette with defaults filled in for the rest is a window nobody asked
+            // for, and there is nothing in it they could recognise to fix.
+            custom_colors: self.custom_colors.filter(CustomColors::is_drawable),
+            custom_colors_dark: self.custom_colors_dark.filter(CustomColors::is_drawable),
             locale: self.locale.filter(|locale| !locale.is_empty()),
         }
     }
@@ -192,6 +220,10 @@ mod tests {
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
             packed_transfer: false,
+            theme_palette: ThemePalette::default(),
+            ui_scale: ui_scale_default(),
+            custom_colors: None,
+            custom_colors_dark: None,
             locale: locale.map(str::to_owned),
         }
     }
@@ -227,7 +259,89 @@ mod tests {
             !loaded.packed_transfer,
             "a file written before packed transfers existed is not a person asking for one"
         );
+        assert_eq!(
+            loaded.theme_palette,
+            ThemePalette::Default,
+            "a file written before there was a choice of palette reads as the one that was always there"
+        );
+        assert_eq!(
+            loaded.ui_scale,
+            ui_scale_default(),
+            "and the interface is the size it has always been"
+        );
+        assert_eq!(
+            loaded.custom_colors, None,
+            "a file written before colours could be picked by hand has picked none"
+        );
         assert_eq!(loaded.locale.as_deref(), Some("zh-CN"));
+    }
+
+    #[test]
+    fn a_palette_this_build_does_not_know_falls_back_instead_of_failing() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"themeMode":"dark","themePalette":"aubergine","uiScale":125}"#,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("a palette from a newer build is not a hard failure");
+
+        assert_eq!(loaded.theme_palette, ThemePalette::Default);
+        assert_eq!(
+            loaded.ui_scale, 125,
+            "the fields either side of the unknown one are still read"
+        );
+    }
+
+    #[test]
+    fn a_hand_coloured_set_is_read_back_and_a_broken_one_is_dropped() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        let chosen = CustomColors {
+            background: "#101820".to_owned(),
+            foreground: "#e8e8e8".to_owned(),
+            primary: "#4f9cf0".to_owned(),
+            border: "#2a3340".to_owned(),
+            card: "#161f2b".to_owned(),
+        };
+        let written = AppSettings {
+            theme_palette: ThemePalette::Custom,
+            custom_colors: Some(chosen.clone()),
+            ..AppSettings::default()
+        };
+        save_to(&path, &written).expect("save");
+        assert_eq!(
+            load_from(&path).expect("load").custom_colors,
+            Some(chosen),
+            "a colour somebody picked comes back as it was picked"
+        );
+
+        // One colour that is not a colour takes the whole set with it: half a palette with defaults
+        // filled in is a window nobody chose and nothing in it to recognise.
+        std::fs::write(
+            &path,
+            // `r##` rather than `r#`: every colour in this JSON opens with `"#`, which is where the
+            // shorter delimiter ends.
+            r##"{"schemaVersion":1,"themePalette":"custom","customColors":{"background":"rebeccapurple","foreground":"#e8e8e8","primary":"#4f9cf0","border":"#2a3340","card":"#161f2b"}}"##,
+        )
+        .expect("write");
+        assert_eq!(load_from(&path).expect("load").custom_colors, None);
+    }
+
+    #[test]
+    fn a_scale_no_menu_offers_reads_as_the_default() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        // The interface cannot reach a scale outside the list, so one in the file was either typed
+        // by hand or written by a build with a different list — and either way it is not a choice
+        // this build can show or take back.
+        std::fs::write(&path, r#"{"schemaVersion":1,"uiScale":400}"#).expect("write");
+
+        let loaded = load_from(&path).expect("an unusable scale is not a hard failure");
+
+        assert_eq!(loaded.ui_scale, ui_scale_default());
     }
 
     #[test]
@@ -250,6 +364,12 @@ mod tests {
             monitor_enabled: false,
             // On, for the same reason in the other direction: the default is off.
             packed_transfer: true,
+            // Neither is the default, for the same reason again: a palette and a size both have to
+            // come back as the ones that were chosen.
+            theme_palette: ThemePalette::Claude,
+            ui_scale: 150,
+            custom_colors: Some(CustomColors::light_default()),
+            custom_colors_dark: Some(CustomColors::dark_default()),
             ..settings(ThemeMode::Light, ThemeMode::System, Some("zh-CN"))
         };
 

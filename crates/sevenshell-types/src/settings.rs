@@ -96,6 +96,160 @@ impl std::fmt::Display for ThemeMode {
     }
 }
 
+/// The colour the interface is made of, on top of whichever of the two themes it is in.
+///
+/// A palette is not a third theme: light and dark are decided by the operating system or by the
+/// person, and either can be worn in any of these. What a palette changes is the tint — the
+/// background, the borders and the accent all move together to one hue — so the two settings are
+/// orthogonal on purpose and are chosen in the interface as two separate fields.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThemePalette {
+    /// The palette this build has always drawn in, and what a fresh install wears.
+    #[default]
+    Default,
+    /// Cool grey-blue, softer than the greys of the default palette.
+    Mist,
+    /// Almost colourless, and the darkest of the light palettes — grey with the blue taken out.
+    Graphite,
+    /// Blue, saturated: the default palette's own family, taken further.
+    Cobalt,
+    /// Green-grey.
+    Sage,
+    /// Warm, for a window that should not read as a terminal at midnight.
+    Amber,
+    /// Rose.
+    Blush,
+    /// The editor's palette, for somebody who has been looking at it all day.
+    Vscode,
+    /// The other editor's palette.
+    Idea,
+    /// The Xcode palette: a bright blue accent on near-white.
+    Xcode,
+    /// The JetBrains palette: violet-leaning.
+    Jetbrains,
+    /// The Cursor palette.
+    Cursor,
+    /// Warm sand, for a window that reads as paper rather than as a screen.
+    Claude,
+    /// Whatever the person picked: the five colours in [`CustomColors`], drawn in place of one of
+    /// the palettes above.
+    Custom,
+}
+
+/// The five colours a custom palette is built from.
+///
+/// Deliberately few. Everything else a window is made of — its panels, its hovered rows, its muted
+/// text, whether the text on the accent is white or black — is derived from these, so that a person
+/// choosing colours cannot arrive at a combination nobody can read. The derivation lives in the
+/// interface, in `apps/desktop/src/lib/settings/customColors.ts`, because that is what has to draw
+/// it; this side only remembers what was picked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomColors {
+    /// `#rrggbb`, which is the only shape a colour picker hands out and the only one accepted here.
+    pub background: String,
+    pub foreground: String,
+    pub primary: String,
+    pub border: String,
+    pub card: String,
+}
+
+impl CustomColors {
+    /// Whether every one of the five is a colour this build can draw.
+    ///
+    /// Six hex digits and nothing else: a name like `red` or a fourth channel would reach a
+    /// stylesheet that cannot use it, and the window would come out half-drawn rather than wrong.
+    pub fn is_drawable(&self) -> bool {
+        [
+            &self.background,
+            &self.foreground,
+            &self.primary,
+            &self.border,
+            &self.card,
+        ]
+        .iter()
+        .all(|colour| is_hex_colour(colour))
+    }
+
+    /// What a custom palette is before anybody has chosen one, in the light theme.
+    pub fn light_default() -> Self {
+        Self {
+            background: "#ffffff".to_owned(),
+            foreground: "#0a0a0a".to_owned(),
+            primary: "#171717".to_owned(),
+            border: "#e5e5e5".to_owned(),
+            card: "#fafafa".to_owned(),
+        }
+    }
+
+    /// The same in the dark one, which is a different set rather than a darkening: the two are
+    /// chosen apart, so one custom palette is really two.
+    pub fn dark_default() -> Self {
+        Self {
+            background: "#131416".to_owned(),
+            foreground: "#d7d7db".to_owned(),
+            primary: "#d0d0d6".to_owned(),
+            border: "#6e6e72".to_owned(),
+            card: "#19191c".to_owned(),
+        }
+    }
+}
+
+fn is_hex_colour(value: &str) -> bool {
+    value.len() == 7 && value.starts_with('#') && value[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+impl ThemePalette {
+    pub const ALL: &'static [ThemePalette] = &[
+        ThemePalette::Default,
+        ThemePalette::Mist,
+        ThemePalette::Graphite,
+        ThemePalette::Cobalt,
+        ThemePalette::Sage,
+        ThemePalette::Amber,
+        ThemePalette::Blush,
+        ThemePalette::Vscode,
+        ThemePalette::Idea,
+        ThemePalette::Xcode,
+        ThemePalette::Jetbrains,
+        ThemePalette::Cursor,
+        ThemePalette::Claude,
+        ThemePalette::Custom,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Mist => "mist",
+            Self::Graphite => "graphite",
+            Self::Cobalt => "cobalt",
+            Self::Sage => "sage",
+            Self::Amber => "amber",
+            Self::Blush => "blush",
+            Self::Vscode => "vscode",
+            Self::Idea => "idea",
+            Self::Xcode => "xcode",
+            Self::Jetbrains => "jetbrains",
+            Self::Cursor => "cursor",
+            Self::Claude => "claude",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|palette| palette.as_str() == id)
+    }
+}
+
+/// The interface scales this build offers, in percent of its own size.
+///
+/// A closed list rather than a free number, because the setting is a choice made by looking at the
+/// window: a scale nobody offers cannot be arrived at by using the interface, and honouring one
+/// found in the file would leave the menu showing a value it does not contain. A file naming one of
+/// these is honoured; anything else reads as the default.
+pub const UI_SCALE_PERCENTS: &[u32] = &[75, 90, 100, 110, 125, 150, 175, 200];
+
 /// Everything the settings file holds.
 ///
 /// Both fields are optional in effect: absent means "not chosen yet", which is different
@@ -106,6 +260,12 @@ impl std::fmt::Display for ThemeMode {
 pub struct AppSettings {
     #[serde(default)]
     pub theme_mode: ThemeMode,
+    /// The tint worn on top of the theme above.
+    ///
+    /// Absent in a file written before there was more than one way for the interface to look, which
+    /// reads as the palette this build has always drawn in.
+    #[serde(default)]
+    pub theme_palette: ThemePalette,
     /// Which palette the terminal draws in.
     ///
     /// The same three values as the interface's theme, with one meaning changed: `system` here is
@@ -153,8 +313,48 @@ pub struct AppSettings {
     /// by itself would surprise somebody who only wanted their folder.
     #[serde(default)]
     pub packed_transfer: bool,
+    /// How much the whole interface is scaled, in percent of the size it was drawn at.
+    ///
+    /// The window is the same size either way: this is the interface inside it growing, which is
+    /// what a high-density display needs and what the operating system's own scaling cannot know
+    /// about a window that is already open. A wish like the panel height above — the webview clamps
+    /// what it is given — rather than a measurement of anything.
+    #[serde(default = "ui_scale_default")]
+    pub ui_scale: u32,
+    /// The five colours the `custom` palette is drawn from, for the light theme. Absent means
+    /// nobody has picked any, and the ones a fresh install starts from apply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_colors: Option<CustomColors>,
+    /// The same for the dark theme. Two sets rather than one because the two are chosen apart: a
+    /// custom palette that only held one would be unreadable in whichever theme it was not made for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_colors_dark: Option<CustomColors>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+}
+
+/// The interface's own size when nobody has changed it.
+///
+/// A named function rather than a constant because `serde` wants a path, like the two below. It is
+/// 100 — the size the interface is drawn at by the code that draws it — and it is deliberately
+/// written out rather than derived from the list above: "the middle of the menu" would be a
+/// different number every time the menu grew. That it is one of the choices is a test's business,
+/// not arithmetic's.
+pub fn ui_scale_default() -> u32 {
+    100
+}
+
+/// Reads a scale out of a settings file, refusing one no menu offers.
+///
+/// Garbage is not an error here any more than an unknown theme is: the interface opens at its own
+/// size and says nothing, because a display preference nobody can have chosen is not worth a
+/// message that a user cannot act on.
+pub fn normalize_ui_scale(percent: u32) -> u32 {
+    if UI_SCALE_PERCENTS.contains(&percent) {
+        percent
+    } else {
+        ui_scale_default()
+    }
 }
 
 /// The monitor's default, which is "on".
@@ -177,6 +377,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             theme_mode: ThemeMode::default(),
+            theme_palette: ThemePalette::default(),
             terminal_theme: ThemeMode::default(),
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
@@ -185,6 +386,9 @@ impl Default for AppSettings {
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
             packed_transfer: false,
+            ui_scale: ui_scale_default(),
+            custom_colors: None,
+            custom_colors_dark: None,
             locale: None,
         }
     }
@@ -195,6 +399,8 @@ impl AppSettings {
     /// system language and theme still apply.
     pub fn is_untouched(&self) -> bool {
         self.theme_mode == ThemeMode::System
+            && self.theme_palette == ThemePalette::Default
+            && self.ui_scale == ui_scale_default()
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
@@ -203,6 +409,46 @@ impl AppSettings {
             && self.sidebar_open
             && self.monitor_enabled
             && !self.packed_transfer
+            && self.custom_colors.is_none()
+            && self.custom_colors_dark.is_none()
             && self.locale.is_none()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_scale_is_one_the_menu_offers() {
+        assert!(
+            UI_SCALE_PERCENTS.contains(&ui_scale_default()),
+            "a default the interface cannot show or take back is one nobody could leave"
+        );
+    }
+
+    #[test]
+    fn a_custom_colour_this_build_cannot_draw_is_refused() {
+        let mut colours = CustomColors::light_default();
+        assert!(colours.is_drawable(), "the defaults are drawable");
+
+        for undrawable in ["red", "#fff", "#12345g", "#1234567", ""] {
+            colours.background = undrawable.to_owned();
+            assert!(
+                !colours.is_drawable(),
+                "`{undrawable}` would reach a stylesheet that cannot use it"
+            );
+        }
+    }
+
+    #[test]
+    fn every_palette_round_trips_through_its_own_name() {
+        for palette in ThemePalette::ALL {
+            assert_eq!(
+                ThemePalette::from_id(palette.as_str()),
+                Some(*palette),
+                "a palette whose name does not read back is one the settings file cannot hold"
+            );
+        }
     }
 }

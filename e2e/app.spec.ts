@@ -30,8 +30,20 @@ async function openApp(): Promise<{ page: Page; close: () => Promise<void> }> {
 }
 
 /** The settings file as the application last wrote it, which is what a restart would read. */
-async function writtenSettings(): Promise<{ packedTransfer?: boolean }> {
-  return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as { packedTransfer?: boolean };
+async function writtenSettings(): Promise<{
+  packedTransfer?: boolean;
+  themePalette?: string;
+  uiScale?: number;
+  customColors?: { primary?: string };
+  customColorsDark?: { primary?: string };
+}> {
+  return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
+    packedTransfer?: boolean;
+    themePalette?: string;
+    uiScale?: number;
+    customColors?: { primary?: string };
+    customColorsDark?: { primary?: string };
+  };
 }
 
 /**
@@ -509,6 +521,167 @@ test("a setting can be found by name, and a category can be put back to its defa
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-appearance.png"), fullPage: false });
 
+    // The appearance category opens with three settings drawn as fields rather than as cards — a
+    // language, a colour and a size — because none of them needs a paragraph to be understood.
+    await expect(settings.getByRole("combobox", { name: "Language" })).toBeVisible();
+    const colour = settings.getByRole("combobox", { name: "Colour theme" });
+    const scale = settings.getByRole("combobox", { name: "Interface scale" });
+    await expect(colour).toBeVisible();
+    await expect(scale).toBeVisible();
+
+    // The page is chrome: a drag across it takes nothing away. The few readings it holds keep an
+    // exemption of their own, and the search field is one of them — a surface that takes typing is a
+    // document while the keyboard is in it, whatever the page around it says.
+    await expect(settings).toHaveCSS("user-select", "none");
+    await expect(settings.getByRole("searchbox")).toHaveCSS("user-select", "text");
+
+    // The palette the list calls 洁白 / White is the base theme, and its two halves are the ones the
+    // window is drawn in before anybody has chosen anything — white with near-black text, and the
+    // near-black grey with light text. Named here as the colours they are rather than as "some dark
+    // grey": a base palette that drifted by a shade is exactly the kind of thing nobody notices.
+    //
+    // Painted onto a canvas and read back rather than compared as text: these colours are written in
+    // oklch, so the computed value is the spelling rather than the pixels it stands for, and
+    // comparing the two would be comparing spellings. What is asked here is what the window is
+    // actually painted with, which is the only form "the same colour as theirs" takes.
+    const paintedBody = (): Promise<string> =>
+      page.evaluate(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          throw new Error("no 2d context to read a colour through");
+        }
+        context.fillStyle = getComputedStyle(document.body).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+        return `rgb(${r} ${g} ${b})`;
+      });
+
+    const theme = settings.getByRole("combobox", { name: "Interface theme" });
+    await theme.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Light" }).click();
+    await expect.poll(paintedBody, { message: "the light base is the reference's white" }).toBe("rgb(255 255 255)");
+    // Kept as a picture, because the light half is the one nobody will look at twice: the window is
+    // white, its accent is near-black, and every panel edge is one flat grey.
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-appearance-light.png"), fullPage: false });
+    await theme.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Dark" }).click();
+    await expect.poll(paintedBody, { message: "and its dark base is the grey it declares" }).toBe("rgb(19 20 22)");
+
+    // Looking at a colour is not choosing one. Resting the pointer on an option shows it at once and
+    // writes nothing; letting go of the list puts back whatever was actually chosen. This is the
+    // whole reason the list of colours is worth having: a colour says what it is by being worn.
+    //
+    // The option hovered is one that is on screen when the list opens, which is not a detail: the
+    // list is longer than it is tall, and hovering something near the end scrolls it — and a scroll
+    // moves the items under a pointer that has not moved, so what is previewed is whatever lands
+    // there. That is the list behaving correctly and a case that would be measuring the wrong thing.
+    const committed = (await page.locator("html").getAttribute("data-palette")) ?? "default";
+    await colour.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Mist grey" }).hover();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "mist");
+    expect((await writtenSettings()).themePalette ?? "default", "a look is not a choice").toBe(committed);
+
+    // The list while the pointer is on an option: the palettes with their own colours beside them,
+    // and the window already wearing the one under the pointer rather than the one it has chosen.
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-colour-themes.png"), fullPage: false });
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("html"), "letting go of the list puts the chosen colour back").toHaveAttribute(
+      "data-palette",
+      committed,
+    );
+
+    // A colour that is chosen is written down, worn by the document, and actually drawn: the file is
+    // what the next run reads, the attribute is what the stylesheet selects on, and the background
+    // is the proof that the second one reached the first. The attribute alone would pass while every
+    // palette block in the stylesheet was misspelled.
+    const backgroundBefore = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await colour.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Cobalt blue" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "cobalt");
+    await expect
+      .poll(async () => (await writtenSettings()).themePalette, { message: "the colour reached the file" })
+      .toBe("cobalt");
+    expect(
+      await page.evaluate(() => getComputedStyle(document.body).backgroundColor),
+      "the palette's own tokens are the ones being drawn",
+    ).not.toBe(backgroundBefore);
+    // And it is a tint over the theme rather than a third theme: choosing a colour says nothing
+    // about which of the two the window is drawn in.
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    // The pane is dressed from the same palette: a cobalt window with a grey terminal in the middle
+    // of it was the one thing on screen that did not belong to the colour somebody chose. Read
+    // through a probe carrying the pane's class rather than through an open terminal — what is being
+    // checked is the stylesheet reaching the pane, and an open terminal needs a server to be reached.
+    const pane = (): Promise<string> =>
+      page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.className = "terminal-dark";
+        document.body.append(probe);
+        const colour = getComputedStyle(probe).getPropertyValue("--terminal-background").trim();
+        probe.remove();
+        return colour;
+      });
+    expect(await pane(), "the pane follows the colour the window is wearing").not.toBe(backgroundBefore);
+
+    // Custom: five colours, and everything else derived from them — the panels, the hovered rows,
+    // the text written on the accent, and the pane. Two halves of that are checked here, the one the
+    // pickers write straight onto the document and the one it derives.
+    await colour.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Custom" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "custom");
+
+    const accent = settings.getByLabel("Accent");
+    await expect(accent).toBeVisible();
+    await accent.evaluate((input: HTMLInputElement) => {
+      input.value = "#4f9cf0";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--primary")), {
+        message: "the picker's colour is what the window is drawn from",
+      })
+      .toBe("rgb(79 156 240)");
+    await expect
+      .poll(async () => {
+        // The pickers are about the set for the theme on screen; the other half of the palette is
+        // not being edited, and reading it would be reading the wrong answer.
+        const written = await writtenSettings();
+        const dark = (await page.locator("html").getAttribute("data-theme")) === "dark";
+        return dark ? written.customColorsDark?.primary : written.customColors?.primary;
+      })
+      .toBe("#4f9cf0");
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-custom-colours.png"), fullPage: false });
+
+    // The scale is the one preference here that changes the page every case after this one is driven
+    // in, so it is checked by what it does to the window rather than by the file alone: the window
+    // keeps its size and the interface inside it is drawn larger, which is the same window holding
+    // fewer of its own pixels across.
+    const widthBefore = await page.evaluate(() => window.innerWidth);
+    await scale.click();
+    await page.getByRole("listbox").getByRole("option", { name: "125%" }).click();
+    await expect
+      .poll(async () => (await page.evaluate(() => window.innerWidth)) / widthBefore, {
+        message: "the interface was drawn larger inside the same window",
+      })
+      .toBeCloseTo(1 / 1.25, 2);
+    await expect.poll(async () => (await writtenSettings()).uiScale).toBe(125);
+
+    // Both put back, so that the rest of the run meets the page it expects. Leaving a hand-picked
+    // palette would do it too, and it would be the wrong kind of leaving: its tokens are written on
+    // the document rather than selected in the stylesheet, and every palette after it would be drawn
+    // underneath them.
+    await colour.click();
+    await page.getByRole("listbox").getByRole("option", { name: "White" }).click();
+    await scale.click();
+    await page.getByRole("listbox").getByRole("option", { name: "100%" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "default");
+    await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue("--primary"))).toBe("");
+
     await settings.getByRole("button", { name: "Files", exact: true }).click();
 
     // Away from its default first, so that restoring has something to do.
@@ -544,6 +717,11 @@ test("a setting can be found by name, and a category can be put back to its defa
       })
       .toBe(false);
   } finally {
+    // Whatever this case left open, it is not left open for the next one. A listbox is an overlay
+    // over the whole window: a case that failed with one standing does not fail on its own, it takes
+    // every case after it down with it — eight of them, each waiting out its full timeout, which is
+    // twelve minutes of run for one wrong assertion. Escape is what a person would press.
+    await page.keyboard.press("Escape").catch(() => undefined);
     await close();
   }
 });
@@ -562,19 +740,37 @@ test("a setting can be found by name, and a category can be put back to its defa
 test("the backend can read the clipboard the terminal pastes", async () => {
   const { page, close } = await openApp();
   try {
-    const answer = await page.evaluate(async () => {
+    const wrote = await page.evaluate(async () => {
       const internals = (
         window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> } }
       ).__TAURI_INTERNALS__;
       if (!internals) {
-        return { wrote: false, text: null };
+        return false;
       }
       await navigator.clipboard.writeText("seven-shell-e2e");
-      return { wrote: true, text: await internals.invoke("clipboard_text") };
+      return true;
     });
 
-    expect(answer.wrote, "the webview can still write a clipboard, which the copy entries rely on").toBe(true);
-    expect(answer.text).toBe("seven-shell-e2e");
+    expect(wrote, "the webview can still write a clipboard, which the copy entries rely on").toBe(true);
+
+    // Read back through the backend, waiting for the operating system to have it.
+    //
+    // The clipboard is not the page's: the write is handed to the browser process, and on Windows a
+    // reader that arrives while it — or anything else on the machine — holds the clipboard open gets
+    // no text rather than the text. Reading exactly once, immediately, is reading a shared resource
+    // before it settles, and the case then fails for a reason that has nothing to do with this
+    // build. Polled rather than slept on, so a quiet machine is quick and a busy one still arrives.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() =>
+            (
+              window as unknown as { __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> } }
+            ).__TAURI_INTERNALS__?.invoke("clipboard_text"),
+          ),
+        { message: "the text the webview copied is the text the backend reads" },
+      )
+      .toBe("seven-shell-e2e");
   } finally {
     await close();
   }

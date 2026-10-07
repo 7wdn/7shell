@@ -7,6 +7,12 @@
  * beside this one is where that is seen. It is also where the settings will keep being added —
  * each new one is a row in `rows.ts` and nothing else.
  *
+ * The page is two columns. The categories run down the left for the whole height of the page, and
+ * everything else is the column beside them: the search at the top of it, the category's settings
+ * under that. The search belongs to that column rather than to the page, because it narrows what is
+ * under it — the categories beside it are not filtered by it, they are the other way of getting to
+ * the same rows, and they say how many hits each one holds while a search is on.
+ *
  * Three things sit above the rows on purpose:
  *
  * 1. **The search.** It looks through every category rather than the one on screen, because
@@ -19,34 +25,50 @@
  *    rather than a single row, and doing it per category is what keeps it from being a button that
  *    silently changes six things at once.
  *
+ * A setting is drawn in one of two shapes, decided by `rows.ts` rather than by the category it is
+ * in: a card of its own, or a field in the grid at the top of the body. Both are the same row of the
+ * same table, so the search finds either kind and "restore the defaults" puts either kind back.
+ *
  * A write that failed is shown at the top of the body rather than swallowed: the store applies a
  * choice before it writes it, so a failure means what is on screen and what is on disk disagree —
  * which is exactly the thing a settings page should not be quiet about.
  */
 import { RotateCcw, Search, X } from "@lucide/vue";
 import { TooltipProvider } from "reka-ui";
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SettingsControl from "@/components/settings/SettingsControl.vue";
+import SettingsField from "@/components/settings/SettingsField.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
+  CUSTOM_COLOR_LABEL_KEYS,
   LIST_CATEGORIES,
   SETTINGS_CATEGORIES,
   SETTINGS_CATEGORY_LABEL_KEYS,
   SETTINGS_ROWS,
+  cardRowsOfCategory,
+  fieldRowsOfCategory,
   type SettingsCategoryId,
   type SettingsRowDefinition,
   rowMatches,
   rowsOfCategory,
 } from "@/components/settings/rows";
+import { createDelayedPreview } from "@/lib/settings/delayedPreview";
 import { describeShellError } from "@/i18n/errors";
 import type { SupportedLocale } from "@/i18n";
 import { useAppStore } from "@/stores/app";
 import { type PreferenceField, usePreferencesStore } from "@/stores/preferences";
-import type { FilesLayout, SessionLayout, ThemeMode } from "@/types/app";
+import {
+  CUSTOM_COLOR_KEYS,
+  type CustomColors,
+  type FilesLayout,
+  type SessionLayout,
+  type ThemeMode,
+  type ThemePalette,
+} from "@/types/app";
 
 const { t } = useI18n();
 const app = useAppStore();
@@ -57,6 +79,29 @@ const category = ref<SettingsCategoryId>("appearance");
 
 /** Whether the category on screen is a list of things rather than a set of choices to restore. */
 const isListCategory = computed(() => LIST_CATEGORIES.includes(category.value));
+
+/** The settings this category draws as fields, and the ones it draws as cards under them. */
+const fieldRows = computed(() => fieldRowsOfCategory(category.value));
+const cardRows = computed(() => cardRowsOfCategory(category.value));
+
+/**
+ * The five colours being edited, when a custom palette is worn.
+ *
+ * Two answers in one: *whether* the pickers are drawn at all, and *which* set they are about. A
+ * hand-picked palette is two palettes that share a name, one per theme, so the pickers follow the
+ * theme on screen rather than a choice of their own — a light page showing the dark set's colours
+ * would be a form about something nobody can see.
+ */
+const editingCustomColors = computed<CustomColors | null>(() =>
+  preferences.wornPalette === "custom"
+    ? preferences.resolvedTheme === "dark"
+      ? preferences.customColorsDark
+      : preferences.customColors
+    : null,
+);
+
+/** Which set the pickers are about, named in the heading above them. */
+const customThemeKey = computed(() => (preferences.resolvedTheme === "dark" ? "editingDark" : "editingLight"));
 
 const searching = computed(() => query.value.trim() !== "");
 
@@ -95,6 +140,9 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
   if (id === "workspace") {
     fields.push("terminalPanelHeight", "sidebarWidth", "sidebarOpen");
   }
+  if (id === "appearance") {
+    fields.push("customColors", "customColorsDark");
+  }
   return fields;
 }
 
@@ -103,6 +151,12 @@ function currentValue(row: SettingsRowDefinition): string | boolean {
   switch (row.field) {
     case "themeMode":
       return preferences.themeMode;
+    case "themePalette":
+      return preferences.themePalette;
+    case "uiScale":
+      // A number in the store and a string in a dropdown: the value the settings file holds is the
+      // number, so the conversion is here rather than in the store, which keeps it a number.
+      return String(preferences.uiScale);
     case "terminalTheme":
       return preferences.terminalTheme;
     case "locale":
@@ -124,6 +178,12 @@ function choose(row: SettingsRowDefinition, value: string | boolean): void {
     case "themeMode":
       void preferences.setThemeMode(value as ThemeMode);
       return;
+    case "themePalette":
+      void preferences.setThemePalette(value as ThemePalette);
+      return;
+    case "uiScale":
+      void preferences.setUiScale(Number(value));
+      return;
     case "terminalTheme":
       void preferences.setTerminalTheme(value as ThemeMode);
       return;
@@ -144,6 +204,48 @@ function choose(row: SettingsRowDefinition, value: string | boolean): void {
       return;
   }
 }
+
+/**
+ * How long the pointer rests on a colour before it is shown.
+ *
+ * Short enough to read as instant, long enough that crossing the list on the way to another option
+ * does not repaint the window on every one it passes.
+ */
+const PALETTE_PREVIEW_DELAY_MS = 80;
+
+/**
+ * Showing a setting's option before it is taken.
+ *
+ * Only a colour has anything to show: every other setting here is a word, and a word says what it
+ * is without being worn. A colour is the one whose whole content is what it looks like, so it is
+ * the one that can be looked at before it is chosen — nothing is written, and letting go of the
+ * list puts back whatever was actually chosen.
+ */
+const showPaletteOption = createDelayedPreview<string>((palette) => {
+  preferences.previewThemePalette(palette as ThemePalette);
+}, PALETTE_PREVIEW_DELAY_MS);
+
+function preview(row: SettingsRowDefinition, value: string): void {
+  if (row.field === "themePalette") {
+    showPaletteOption.schedule(value);
+  }
+}
+
+function endPreview(row: SettingsRowDefinition): void {
+  if (row.field === "themePalette") {
+    showPaletteOption.cancel();
+    preferences.clearThemePalettePreview();
+  }
+}
+
+/**
+ * A page that is closed mid-look leaves nothing behind.
+ *
+ * The list is drawn outside this component, so closing the tab while an option is under the pointer
+ * is a way out of the page that never reaches `endPreview` — and the window would go on wearing a
+ * colour nobody can see the reason for, since the list it came from is gone.
+ */
+onBeforeUnmount(() => preferences.clearThemePalettePreview());
 
 /**
  * What the About category lists: the build's own facts, which nobody chooses and nobody restores.
@@ -180,38 +282,14 @@ function translate(key: string, params?: Record<string, string>): string {
     than one that answers on hover.
   -->
   <TooltipProvider :delay-duration="200">
-    <section class="@container flex h-full min-h-0 flex-col" :aria-label="t('settings.title')">
-      <header class="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
-        <div class="relative w-full max-w-sm">
-          <Search
-            :size="14"
-            class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
-          />
-          <!--
-            A real search field, so the role comes from the markup rather than from an override —
-            with the platform's own clear button turned off in the stylesheet, because this window
-            draws that button itself and a second one in the same field would be one too many.
-          -->
-          <input
-            v-model="query"
-            type="search"
-            class="h-9 w-full rounded-lg border border-border bg-muted/30 pr-8 pl-9 text-sm transition-colors hover:bg-muted/40 focus-visible:border-primary focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
-            :placeholder="t('settings.search.placeholder')"
-            :aria-label="t('settings.search.placeholder')"
-            @keydown.esc="query = ''"
-          />
-          <button
-            v-if="searching"
-            type="button"
-            class="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :aria-label="t('settings.search.clear')"
-            @click="query = ''"
-          >
-            <X :size="13" />
-          </button>
-        </div>
-      </header>
-
+    <!--
+      The page is chrome: a drag across it means reaching for a control, not taking a reading away,
+      so the selection is refused once here — the same answer the monitor panel gives, and for the
+      same reason. The readings a page of settings does hold are the ones exempted below: what the
+      build is, the keys this device holds and trusts, an error somebody has to quote, and the two
+      fields somebody types in.
+    -->
+    <section class="@container flex h-full min-h-0 flex-col select-none" :aria-label="t('settings.title')">
       <div class="flex min-h-0 flex-1">
         <nav
           class="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2"
@@ -239,105 +317,224 @@ function translate(key: string, params?: Record<string, string>): string {
           </button>
         </nav>
 
-        <div class="min-h-0 flex-1 overflow-y-auto">
-          <div class="mx-auto w-full max-w-3xl space-y-6 px-6 py-5">
-            <p v-if="problem" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
-              <span>{{ problem.message }}</span>
-              <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
-            </p>
-
-            <template v-if="searching">
-              <section v-for="group in groups" :key="group.id" class="space-y-2">
-                <h3 class="text-sm font-medium text-muted-foreground">
-                  {{ t(SETTINGS_CATEGORY_LABEL_KEYS[group.id]) }}
-                </h3>
-                <SettingsRow
-                  v-for="row in group.rows"
-                  :key="row.id"
-                  :title="t(row.titleKey)"
-                  :summary="t(row.summaryKey)"
-                  :help="t(row.helpKey)"
-                  found
-                >
-                  <SettingsControl
-                    :row="row"
-                    :value="currentValue(row)"
-                    :label="t(row.titleKey)"
-                    @choose="(value: string | boolean) => choose(row, value)"
-                  />
-                </SettingsRow>
-              </section>
-
-              <p
-                v-if="groups.length === 0"
-                class="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground"
+        <div class="flex min-w-0 flex-1 flex-col">
+          <!--
+            The search is drawn at the top of the column the settings are read in, not across the
+            whole page above the categories: it narrows what is under it, and the categories beside
+            it are the other way to reach the same rows. The whole column is the field's, because
+            the answer to a search is a page of results rather than a list hanging under a box.
+          -->
+          <div class="shrink-0 px-5 pt-4 pb-3">
+            <div class="relative mx-auto w-full max-w-3xl">
+              <Search
+                :size="14"
+                class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+              />
+              <!--
+                A real search field, so the role comes from the markup rather than from an override —
+                with the platform's own clear button turned off in the stylesheet, because this
+                window draws that button itself and a second one in the same field would be one too
+                many.
+              -->
+              <input
+                v-model="query"
+                type="search"
+                class="h-10 w-full rounded-lg border border-border bg-muted/30 pr-8 pl-9 text-sm transition-colors select-text hover:bg-muted/40 focus-visible:border-primary focus-visible:bg-background focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+                :placeholder="t('settings.search.placeholder')"
+                :aria-label="t('settings.search.placeholder')"
+                @keydown.esc="query = ''"
+              />
+              <button
+                v-if="searching"
+                type="button"
+                class="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                :aria-label="t('settings.search.clear')"
+                @click="query = ''"
               >
-                {{ t("settings.search.empty", { query: query.trim() }) }}
+                <X :size="13" />
+              </button>
+            </div>
+          </div>
+
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <div class="mx-auto w-full max-w-3xl space-y-6 px-5 pb-5">
+              <!-- An error is quoted somewhere, so it is the page's text and not the page's chrome. -->
+              <p
+                v-if="problem"
+                data-settings-problem
+                class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs select-text"
+              >
+                <span>{{ problem.message }}</span>
+                <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
               </p>
-            </template>
 
-            <section v-else class="space-y-2">
-              <h3 class="text-sm font-medium text-muted-foreground">{{ t(SETTINGS_CATEGORY_LABEL_KEYS[category]) }}</h3>
-
-              <template v-if="category === 'about'">
-                <dl v-if="aboutFacts.length > 0" class="space-y-2">
-                  <div
-                    v-for="fact in aboutFacts"
-                    :key="fact.id"
-                    class="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5"
+              <template v-if="searching">
+                <section v-for="group in groups" :key="group.id" class="space-y-2">
+                  <h3 class="text-sm font-medium text-muted-foreground">
+                    {{ t(SETTINGS_CATEGORY_LABEL_KEYS[group.id]) }}
+                  </h3>
+                  <SettingsRow
+                    v-for="row in group.rows"
+                    :key="row.id"
+                    :title="t(row.titleKey)"
+                    :summary="t(row.summaryKey)"
+                    :help="t(row.helpKey)"
+                    found
                   >
-                    <dt class="text-sm">{{ t(fact.labelKey) }}</dt>
-                    <dd class="font-mono text-xs text-muted-foreground">{{ fact.value }}</dd>
-                  </div>
-                </dl>
-                <p v-else class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
+                    <SettingsControl
+                      :row="row"
+                      :value="currentValue(row)"
+                      :label="t(row.titleKey)"
+                      @choose="(value: string | boolean) => choose(row, value)"
+                      @preview="(value: string) => preview(row, value)"
+                      @end-preview="endPreview(row)"
+                    />
+                  </SettingsRow>
+                </section>
+
+                <p
+                  v-if="groups.length === 0"
+                  class="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground"
+                >
+                  {{ t("settings.search.empty", { query: query.trim() }) }}
+                </p>
               </template>
 
-              <!--
+              <section v-else class="space-y-2">
+                <h3 class="text-sm font-medium text-muted-foreground">
+                  {{ t(SETTINGS_CATEGORY_LABEL_KEYS[category]) }}
+                </h3>
+
+                <template v-if="category === 'about'">
+                  <!-- The build's own facts: a version and a platform are pasted into bug reports. -->
+                  <dl v-if="aboutFacts.length > 0" class="space-y-2 select-text">
+                    <div
+                      v-for="fact in aboutFacts"
+                      :key="fact.id"
+                      class="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5"
+                    >
+                      <dt class="text-sm">{{ t(fact.labelKey) }}</dt>
+                      <dd class="font-mono text-xs text-muted-foreground">{{ fact.value }}</dd>
+                    </div>
+                  </dl>
+                  <p v-else class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
+                </template>
+
+                <!--
                 A category that is a list rather than a set of choices: there is nothing in it to
                 search for and nothing to restore, so it draws its own content —
                 `LIST_CATEGORIES` is the same list this branch answers to.
               -->
-              <div v-else-if="category === 'security'" class="space-y-5">
-                <div class="space-y-2">
-                  <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>
-                  <KnownKeys />
+                <div v-else-if="category === 'security'" class="space-y-5">
+                  <div class="space-y-2">
+                    <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>
+                    <KnownKeys />
+                  </div>
+                  <div class="space-y-2">
+                    <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.hosts") }}</h4>
+                    <TrustedKeys />
+                  </div>
                 </div>
-                <div class="space-y-2">
-                  <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.security.hosts") }}</h4>
-                  <TrustedKeys />
-                </div>
-              </div>
 
-              <template v-else>
-                <SettingsRow
-                  v-for="row in rowsOfCategory(category)"
-                  :key="row.id"
-                  :title="t(row.titleKey)"
-                  :summary="t(row.summaryKey)"
-                  :help="t(row.helpKey)"
-                >
-                  <SettingsControl
-                    :row="row"
-                    :value="currentValue(row)"
-                    :label="t(row.titleKey)"
-                    @choose="(value: string | boolean) => choose(row, value)"
-                  />
-                </SettingsRow>
+                <template v-else>
+                  <!--
+                  The category's fields first, in one grid: a language, a colour and a size are each
+                  a name and a control, and three cards for them would push the settings somebody
+                  actually reads down the page. What they give up is the summary line — the question
+                  mark still opens the whole explanation, and the search still finds them by either
+                  line, because both are in the table rather than in the drawing.
+                -->
+                  <div v-if="fieldRows.length > 0" class="grid gap-x-3 gap-y-4 pb-1 sm:grid-cols-3">
+                    <SettingsField
+                      v-for="row in fieldRows"
+                      :key="row.id"
+                      :title="t(row.titleKey)"
+                      :help="t(row.helpKey)"
+                    >
+                      <SettingsControl
+                        :row="row"
+                        :value="currentValue(row)"
+                        :label="t(row.titleKey)"
+                        stretch
+                        @choose="(value: string | boolean) => choose(row, value)"
+                        @preview="(value: string) => preview(row, value)"
+                        @end-preview="endPreview(row)"
+                      />
+                    </SettingsField>
 
-                <div v-if="!isListCategory" class="flex justify-end pt-1">
-                  <button
-                    type="button"
-                    class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    :aria-label="t('settings.reset.for', { category: t(SETTINGS_CATEGORY_LABEL_KEYS[category]) })"
-                    @click="preferences.reset(fieldsOf(category))"
+                    <!--
+                    A hand-picked palette is edited in the same grid, one field per colour: the
+                    five are the same kind of thing as the three above them — a name and a control —
+                    and they appear only once the one that says so has been chosen. Which set they
+                    are about is the heading, because a person switching themes has to be able to
+                    see which half of their palette they are looking at.
+                  -->
+                    <template v-if="editingCustomColors">
+                      <div class="flex items-end justify-between gap-2 sm:col-span-3">
+                        <span class="text-xs font-medium text-muted-foreground">
+                          {{ t(`settings.custom.${customThemeKey}`) }}
+                        </span>
+                        <button
+                          type="button"
+                          class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          @click="preferences.resetCustomColors()"
+                        >
+                          <RotateCcw :size="12" />
+                          {{ t("settings.custom.reset") }}
+                        </button>
+                      </div>
+                      <div
+                        v-for="key in CUSTOM_COLOR_KEYS"
+                        :key="key"
+                        class="flex min-w-0 items-center justify-between gap-2"
+                      >
+                        <label :for="`custom-colour-${key}`" class="truncate text-xs font-medium text-muted-foreground">
+                          {{ t(CUSTOM_COLOR_LABEL_KEYS[key]) }}
+                        </label>
+                        <input
+                          :id="`custom-colour-${key}`"
+                          type="color"
+                          class="h-6 w-10 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0.5 select-text"
+                          :value="editingCustomColors[key]"
+                          @input="
+                            preferences.setCustomColor(key, ($event.target as HTMLInputElement).value.toLowerCase())
+                          "
+                        />
+                      </div>
+                    </template>
+                  </div>
+
+                  <SettingsRow
+                    v-for="row in cardRows"
+                    :key="row.id"
+                    :title="t(row.titleKey)"
+                    :summary="t(row.summaryKey)"
+                    :help="t(row.helpKey)"
                   >
-                    <RotateCcw :size="12" />
-                    {{ t("settings.reset.label") }}
-                  </button>
-                </div>
-              </template>
-            </section>
+                    <SettingsControl
+                      :row="row"
+                      :value="currentValue(row)"
+                      :label="t(row.titleKey)"
+                      @choose="(value: string | boolean) => choose(row, value)"
+                      @preview="(value: string) => preview(row, value)"
+                      @end-preview="endPreview(row)"
+                    />
+                  </SettingsRow>
+
+                  <div v-if="!isListCategory" class="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      :aria-label="t('settings.reset.for', { category: t(SETTINGS_CATEGORY_LABEL_KEYS[category]) })"
+                      @click="preferences.reset(fieldsOf(category))"
+                    >
+                      <RotateCcw :size="12" />
+                      {{ t("settings.reset.label") }}
+                    </button>
+                  </div>
+                </template>
+              </section>
+            </div>
           </div>
         </div>
       </div>

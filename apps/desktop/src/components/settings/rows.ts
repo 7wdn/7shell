@@ -13,6 +13,7 @@
  */
 import { SUPPORTED_LOCALES, type SupportedLocale } from "@/i18n";
 import type { PreferenceField } from "@/stores/preferences";
+import { UI_SCALE_PERCENTS, type CustomColors, type ThemePalette } from "@/types/app";
 
 export type SettingsCategoryId = "appearance" | "workspace" | "files" | "security" | "about";
 
@@ -51,16 +52,31 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 /**
  * The fields a row can write.
  *
- * Four settings have no row: the file panel's height and the sidebar's width are dividers somebody
- * drags, and whether the sidebar is open is a button in the sidebar's own header. They are reset
- * with the workspace — `SettingsPage.fieldsOf` is where that is said — rather than listed here.
+ * Six settings have no row of their own. The file panel's height and the sidebar's width are
+ * dividers somebody drags; whether the sidebar is open is a button in the sidebar's own header; and
+ * the two hand-picked colour sets are five pickers that appear inside the colour-theme row once it
+ * says `custom` — a row of their own would be a row that means nothing until another row is set.
+ * They are reset with the category they belong to — `SettingsPage.fieldsOf` is where that is said —
+ * rather than listed here.
  */
-export type SettingsRowField = Exclude<PreferenceField, "terminalPanelHeight" | "sidebarWidth" | "sidebarOpen">;
+export type SettingsRowField = Exclude<
+  PreferenceField,
+  "terminalPanelHeight" | "sidebarWidth" | "sidebarOpen" | "customColors" | "customColorsDark"
+>;
 
 export interface SettingsSelectOption {
   /** What the choice is worth, in the settings file's own spelling. */
   readonly value: string;
   readonly labelKey: string;
+  /** What the label needs filled in — a percentage, for instance. */
+  readonly params?: Readonly<Record<string, string | number>>;
+  /**
+   * A colour to draw beside the label, for a choice that is a colour.
+   *
+   * The value is the palette's own accent in its light theme, which is what the swatch is for:
+   * telling six otherwise-similar words apart at a glance.
+   */
+  readonly swatch?: string;
 }
 
 export interface SettingsRowDefinition {
@@ -77,6 +93,16 @@ export interface SettingsRowDefinition {
   readonly control:
     | { readonly kind: "switch" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] };
+  /**
+   * Drawn as a bare labelled control in the grid at the top of its category, rather than as a card
+   * of its own.
+   *
+   * The three that carry it are the ones nobody reads a paragraph about before touching: a language,
+   * a colour and a size are each a word and a control. Everything a card adds — the summary, the
+   * explanation behind the question mark — is still in the table, which is what the search and the
+   * tooltip go on using.
+   */
+  readonly presentation?: "field";
 }
 
 /**
@@ -92,7 +118,125 @@ const LANGUAGE_LABEL_KEYS: Record<SupportedLocale, string> = {
   "zh-CN": "settings.language.simplifiedChinese",
 };
 
+/**
+ * What each palette is called, and the dot drawn beside the name.
+ *
+ * Keyed by the wire type, so a palette added on the Rust side fails to compile here until it has a
+ * name in both languages — which is the check that would otherwise have to be a test.
+ */
+const PALETTE_LABEL_KEYS: Record<ThemePalette, string> = {
+  default: "settings.palette.default",
+  mist: "settings.palette.mist",
+  graphite: "settings.palette.graphite",
+  cobalt: "settings.palette.cobalt",
+  sage: "settings.palette.sage",
+  amber: "settings.palette.amber",
+  blush: "settings.palette.blush",
+  vscode: "settings.palette.vscode",
+  idea: "settings.palette.idea",
+  xcode: "settings.palette.xcode",
+  jetbrains: "settings.palette.jetbrains",
+  cursor: "settings.palette.cursor",
+  claude: "settings.palette.claude",
+  custom: "settings.palette.custom",
+};
+
+/**
+ * The dot drawn beside each name.
+ *
+ * The palettes' own dots, as the reference draws them: for the plain palettes that is the colour of
+ * the page each one makes — near-white, then a grey, then a series of tints — and for the ones named
+ * after an editor it is that editor's own accent, because there is no mistaking those for anything
+ * else. A dot taken from the palette's accent instead would show six near-identical blues for the
+ * six tints, which is the one thing the dot is for.
+ */
+const PALETTE_SWATCHES: Record<ThemePalette, string> = {
+  default: "#ffffff",
+  mist: "#e4eaf2",
+  graphite: "#d8dce4",
+  cobalt: "#d8e6f7",
+  sage: "#dbe9e2",
+  amber: "#f4e4b8",
+  blush: "#f4d9e6",
+  vscode: "#007acc",
+  idea: "#4b6eaf",
+  xcode: "#0a84ff",
+  jetbrains: "#7b61ff",
+  cursor: "#6ba4ff",
+  claude: "#c47a50",
+  custom: "#171717",
+};
+
+/**
+ * The palettes, in the order the dropdown lists them: the order the names above are declared in.
+ *
+ * Read off the record rather than written out again, so that a palette added to the wire type has
+ * exactly one place to be given a name — and cannot be given a name and then left out of the list.
+ */
+const PALETTES = Object.keys(PALETTE_LABEL_KEYS) as readonly ThemePalette[];
+
+/**
+ * The five colours a hand-picked palette is made of, as the labels of the pickers that set them.
+ *
+ * The keys are the wire type's, so a colour added to a custom palette fails to compile until it has
+ * a name in both languages.
+ */
+export const CUSTOM_COLOR_LABEL_KEYS: Record<keyof CustomColors, string> = {
+  background: "settings.custom.background",
+  foreground: "settings.custom.foreground",
+  primary: "settings.custom.primary",
+  border: "settings.custom.border",
+  card: "settings.custom.card",
+};
+
 export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
+  {
+    id: "language",
+    category: "appearance",
+    field: "locale",
+    titleKey: "settings.rows.language.title",
+    summaryKey: "settings.rows.language.summary",
+    helpKey: "settings.rows.language.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: SUPPORTED_LOCALES.map((locale) => ({ value: locale, labelKey: LANGUAGE_LABEL_KEYS[locale] })),
+    },
+  },
+  {
+    id: "color-theme",
+    category: "appearance",
+    field: "themePalette",
+    titleKey: "settings.rows.colorTheme.title",
+    summaryKey: "settings.rows.colorTheme.summary",
+    helpKey: "settings.rows.colorTheme.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: PALETTES.map((palette) => ({
+        value: palette,
+        labelKey: PALETTE_LABEL_KEYS[palette],
+        swatch: PALETTE_SWATCHES[palette],
+      })),
+    },
+  },
+  {
+    id: "ui-scale",
+    category: "appearance",
+    field: "uiScale",
+    titleKey: "settings.rows.uiScale.title",
+    summaryKey: "settings.rows.uiScale.summary",
+    helpKey: "settings.rows.uiScale.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: UI_SCALE_PERCENTS.map((percent) => ({
+        value: String(percent),
+        labelKey: "settings.uiScale.percent",
+        params: { percent },
+      })),
+    },
+  },
   {
     id: "theme-mode",
     category: "appearance",
@@ -123,18 +267,6 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         { value: "dark", labelKey: "settings.terminal.dark" },
         { value: "light", labelKey: "settings.terminal.light" },
       ],
-    },
-  },
-  {
-    id: "language",
-    category: "appearance",
-    field: "locale",
-    titleKey: "settings.rows.language.title",
-    summaryKey: "settings.rows.language.summary",
-    helpKey: "settings.rows.language.help",
-    control: {
-      kind: "select",
-      options: SUPPORTED_LOCALES.map((locale) => ({ value: locale, labelKey: LANGUAGE_LABEL_KEYS[locale] })),
     },
   },
   {
@@ -190,6 +322,21 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
 /** The rows of one category, in the order they are drawn. */
 export function rowsOfCategory(category: SettingsCategoryId): readonly SettingsRowDefinition[] {
   return SETTINGS_ROWS.filter((row) => row.category === category);
+}
+
+/**
+ * The rows of a category that are drawn as fields, and the ones that are drawn as cards.
+ *
+ * A category draws its fields first, in one grid, and its cards under them — which is why the two
+ * are asked for separately rather than the page deciding row by row where each one goes.
+ */
+export function fieldRowsOfCategory(category: SettingsCategoryId): readonly SettingsRowDefinition[] {
+  return rowsOfCategory(category).filter((row) => row.presentation === "field");
+}
+
+/** The rest of a category's rows: the ones that get a card of their own. */
+export function cardRowsOfCategory(category: SettingsCategoryId): readonly SettingsRowDefinition[] {
+  return rowsOfCategory(category).filter((row) => row.presentation !== "field");
 }
 
 /**

@@ -17,7 +17,19 @@ import { computed, ref } from "vue";
 import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveLocale } from "@/i18n";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
-import type { AppSettings, FilesLayout, ResolvedTheme, SessionLayout, ThemeMode } from "@/types/app";
+import { deriveCustomColors } from "@/lib/settings/customColors";
+import {
+  DEFAULT_CUSTOM_COLORS,
+  DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_UI_SCALE,
+  type AppSettings,
+  type CustomColors,
+  type FilesLayout,
+  type ResolvedTheme,
+  type SessionLayout,
+  type ThemeMode,
+  type ThemePalette,
+} from "@/types/app";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -34,6 +46,10 @@ export type PreferenceField = keyof AppSettings;
  */
 const FRESH: Omit<AppSettings, "locale"> = {
   themeMode: "system",
+  themePalette: "default",
+  uiScale: DEFAULT_UI_SCALE,
+  customColors: DEFAULT_CUSTOM_COLORS,
+  customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
   filesLayout: "tree",
   sessionLayout: "split",
@@ -62,6 +78,39 @@ export const DEFAULT_TERMINAL_PANEL_HEIGHT = 280;
 
 export const usePreferencesStore = defineStore("preferences", () => {
   const themeMode = ref<ThemeMode>("system");
+  /**
+   * What colour the interface is made of.
+   *
+   * Orthogonal to the theme above, and chosen as its own field: the theme says whether the lights
+   * are on, the palette says what colour they are. Every palette is drawn in both themes, so the
+   * two never have to be reconciled.
+   */
+  const themePalette = ref<ThemePalette>("default");
+  /**
+   * A palette that is being looked at rather than chosen: the one under the pointer in the list.
+   *
+   * Kept apart from the choice because it is not one — it is written nowhere, it survives no
+   * restart, and letting go of the list puts the chosen one back. A colour is the one setting whose
+   * whole content is what it looks like, so it is the one setting worth showing before it is taken.
+   */
+  const previewedPalette = ref<ThemePalette | null>(null);
+  /**
+   * The five colours a custom palette is drawn from, in each theme.
+   *
+   * Two sets rather than one, because the two themes are chosen apart: a set made for a white
+   * window is unreadable on a black one, so "custom" is really two palettes that happen to share a
+   * name. What the other twelve palettes do not need — each of them is written for both.
+   */
+  const customColors = ref<CustomColors>({ ...DEFAULT_CUSTOM_COLORS });
+  const customColorsDark = ref<CustomColors>({ ...DEFAULT_CUSTOM_COLORS_DARK });
+  /**
+   * How much the interface is scaled, in percent of the size it is drawn at.
+   *
+   * The window keeps its size — this is the interface inside it growing, which is what a display
+   * dense enough to make 12px text unreadable needs and what the operating system's own scaling
+   * cannot do for a window that is already open.
+   */
+  const uiScale = ref<number>(DEFAULT_UI_SCALE);
   /** Which palette the terminal draws in; `system` means "follow the interface theme". */
   const terminalTheme = ref<ThemeMode>("system");
   /** Two panes or one, in the file browser. */
@@ -142,17 +191,99 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return terminalTheme.value;
   });
 
+  /**
+   * What colour the interface is drawn in: the option under the pointer, or the chosen one.
+   *
+   * One answer rather than two, so that nothing else in the store has to know a preview is on —
+   * `apply` writes this, and the choice itself is left exactly where it was.
+   */
+  const wornPalette = computed<ThemePalette>(() => previewedPalette.value ?? themePalette.value);
+
   /** What the divider is drawn at: the height somebody chose, or the starting one. */
   const resolvedPanelHeight = computed(() => terminalPanelHeight.value ?? DEFAULT_TERMINAL_PANEL_HEIGHT);
 
   /** The same answer for the sidebar's width. */
   const resolvedSidebarWidth = computed(() => sidebarWidth.value ?? DEFAULT_SIDEBAR_WIDTH);
 
+  /**
+   * What the shell was last asked to draw the interface at, or null when it never was.
+   *
+   * Kept so that applying is not a call across the boundary per theme change: `apply` runs whenever
+   * the system's own preference moves, and the scale has nothing to do with that.
+   */
+  let appliedScale: number | null = null;
+
+  /**
+   * Hands the scale to the shell, which draws the whole webview at it.
+   *
+   * A failure here is the one thing a person can see and cannot explain — the interface simply
+   * stays small after being told to grow — so it is reported the same way a failed write is.
+   */
+  function applyScale(): void {
+    const scale = uiScale.value / 100;
+    if (scale === appliedScale) {
+      return;
+    }
+    appliedScale = scale;
+    void backend.window.setZoom(scale).catch((error: unknown) => {
+      appliedScale = null;
+      problem.value = asShellError(error, "window_set_zoom");
+    });
+  }
+
+  /** The tokens the last custom palette wrote inline, so the next one can take them back. */
+  let writtenCustomTokens: string[] = [];
+
+  /**
+   * Writes a hand-picked palette as tokens on the document, or takes the last one back.
+   *
+   * The twelve named palettes are stylesheet blocks selected by an attribute; this one cannot be,
+   * because its colours are whatever somebody picked a moment ago. Inline custom properties are the
+   * same mechanism one step further along — they win over the stylesheet, and removing them is how
+   * the named palettes become visible again.
+   *
+   * Both sets are written, not only the one on screen: the pane's own palettes are named by theme
+   * (`--terminal-dark-*`, `--terminal-light-*`) and the terminal draws in whichever it was told to,
+   * which is not always the theme of the window around it.
+   */
+  function applyCustomColors(): void {
+    const root = document.documentElement;
+    for (const name of writtenCustomTokens) {
+      root.style.removeProperty(name);
+    }
+    writtenCustomTokens = [];
+
+    if (wornPalette.value !== "custom") {
+      return;
+    }
+
+    // Derived one per theme rather than one per the theme on screen: each call names its own half
+    // of the pane's tokens, and the window's tokens only come from the half that is in force.
+    const light = deriveCustomColors(customColors.value, "light");
+    const dark = deriveCustomColors(customColorsDark.value, "dark");
+    const inForce = resolvedTheme.value === "dark" ? dark : light;
+
+    for (const [name, value] of Object.entries(inForce).filter(([name]) => !name.startsWith("--terminal-"))) {
+      root.style.setProperty(name, value);
+      writtenCustomTokens.push(name);
+    }
+    for (const [name, value] of Object.entries({ ...light, ...dark })) {
+      if (!name.startsWith("--terminal-")) {
+        continue;
+      }
+      root.style.setProperty(name, value);
+      writtenCustomTokens.push(name);
+    }
+  }
+
   function apply(): void {
     document.documentElement.classList.toggle("dark", resolvedTheme.value === "dark");
     document.documentElement.dataset.theme = resolvedTheme.value;
+    document.documentElement.dataset.palette = wornPalette.value;
     document.documentElement.lang = locale.value;
     i18n.global.locale.value = locale.value;
+    applyCustomColors();
+    applyScale();
   }
 
   /** Follows the operating system while the theme mode is "system". */
@@ -173,9 +304,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   async function load(): Promise<void> {
     problem.value = null;
+    // Whatever was being shown belongs to the settings that were on screen before this read.
+    previewedPalette.value = null;
     try {
       const settings = await backend.settings.get();
       themeMode.value = settings.themeMode;
+      themePalette.value = settings.themePalette;
+      uiScale.value = settings.uiScale;
+      customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
+      customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
       filesLayout.value = settings.filesLayout;
       sessionLayout.value = settings.sessionLayout;
@@ -204,6 +341,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     try {
       await backend.settings.set({
         themeMode: themeMode.value,
+        themePalette: themePalette.value,
+        uiScale: uiScale.value,
+        customColors: customColors.value,
+        customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
         filesLayout: filesLayout.value,
         sessionLayout: sessionLayout.value,
@@ -223,6 +364,91 @@ export const usePreferencesStore = defineStore("preferences", () => {
     themeMode.value = mode;
     apply();
     await persist();
+  }
+
+  /**
+   * Changes what colour the interface is made of, and writes it down.
+   *
+   * Applied before it is written, like the theme above: the palette is a set of tokens the
+   * stylesheet already holds, so choosing one shows it — waiting for a file to be written first
+   * would be waiting for nothing a person can see.
+   */
+  async function setThemePalette(palette: ThemePalette): Promise<void> {
+    themePalette.value = palette;
+    // The preview has served its purpose: what is on screen from here is the choice, and leaving
+    // the preview standing would mean the list and the window disagreed about which was in force.
+    previewedPalette.value = null;
+    apply();
+    await persist();
+  }
+
+  /**
+   * Shows a palette without choosing it: the option the pointer is on.
+   *
+   * Nothing is written and nothing is remembered. Hovering the one already chosen is not a preview
+   * at all — there would be nothing to show — so it clears whatever was being shown instead.
+   */
+  function previewThemePalette(palette: ThemePalette): void {
+    if (palette === wornPalette.value) {
+      return;
+    }
+    previewedPalette.value = palette === themePalette.value ? null : palette;
+    apply();
+  }
+
+  /** Puts down what was being shown, which is what a pointer leaving the list means. */
+  function clearThemePalettePreview(): void {
+    if (previewedPalette.value === null) {
+      return;
+    }
+    previewedPalette.value = null;
+    apply();
+  }
+
+  /**
+   * Changes one colour of the hand-picked set, in the theme that is on screen.
+   *
+   * Which set is being edited follows the theme rather than being asked for: the pickers are drawn
+   * beside the page they are changing, and a light window showing the dark set's colours would be a
+   * form about something nobody can see.
+   */
+  async function setCustomColor(key: keyof CustomColors, colour: string): Promise<void> {
+    const dark = resolvedTheme.value === "dark";
+    const current = dark ? customColorsDark.value : customColors.value;
+    const next = { ...current, [key]: colour };
+    if (dark) {
+      customColorsDark.value = next;
+    } else {
+      customColors.value = next;
+    }
+    apply();
+    await persist();
+  }
+
+  /** Puts the set being edited back to what a fresh install starts from. */
+  async function resetCustomColors(): Promise<void> {
+    if (resolvedTheme.value === "dark") {
+      customColorsDark.value = { ...DEFAULT_CUSTOM_COLORS_DARK };
+    } else {
+      customColors.value = { ...DEFAULT_CUSTOM_COLORS };
+    }
+    apply();
+    await persist();
+  }
+
+  /**
+   * Scales the interface, which is felt the moment it is chosen.
+   *
+   * The write comes first and the window second — the opposite order to every other setting here.
+   * Not for speed: the file takes a millisecond. It is what a failure leaves behind. A write clears
+   * the page's problem banner on its way in, so a size that was written down and then refused by the
+   * window would have its message wiped by the very write that succeeded. Applying last means the
+   * last word on screen is about the thing the person is looking at.
+   */
+  async function setUiScale(percent: number): Promise<void> {
+    uiScale.value = percent;
+    await persist();
+    apply();
   }
 
   async function setTerminalTheme(mode: ThemeMode): Promise<void> {
@@ -328,10 +554,24 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * system's language apply again.
    */
   async function reset(fields: readonly PreferenceField[]): Promise<void> {
+    // A preview is not a field and is not restored: it is something the pointer was doing.
+    previewedPalette.value = null;
     for (const field of fields) {
       switch (field) {
         case "themeMode":
           themeMode.value = FRESH.themeMode;
+          break;
+        case "themePalette":
+          themePalette.value = FRESH.themePalette;
+          break;
+        case "uiScale":
+          uiScale.value = FRESH.uiScale;
+          break;
+        case "customColors":
+          customColors.value = { ...DEFAULT_CUSTOM_COLORS };
+          break;
+        case "customColorsDark":
+          customColorsDark.value = { ...DEFAULT_CUSTOM_COLORS_DARK };
           break;
         case "terminalTheme":
           terminalTheme.value = FRESH.terminalTheme;
@@ -376,6 +616,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   return {
     themeMode,
+    themePalette,
+    wornPalette,
+    uiScale,
+    customColors,
+    customColorsDark,
     terminalTheme,
     filesLayout,
     sessionLayout,
@@ -393,6 +638,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
     initialize,
     load,
     setThemeMode,
+    setThemePalette,
+    previewThemePalette,
+    clearThemePalettePreview,
+    setUiScale,
+    setCustomColor,
+    resetCustomColors,
     setTerminalTheme,
     setFilesLayout,
     setSessionLayout,

@@ -41,7 +41,12 @@ onMounted(() => void keys.load());
 </script>
 
 <template>
-  <div class="space-y-2">
+  <!--
+    Readings, inside a page that is otherwise chrome: a fingerprint is checked against another
+    machine's by eye, and a host and port are pasted into a terminal — so this list keeps its text
+    where the settings page around it refuses selection. The forgetting buttons are still buttons.
+  -->
+  <div class="space-y-2 select-text">
     <p v-if="problem" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
       <span>{{ problem.message }}</span>
       <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>

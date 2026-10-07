@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  CUSTOM_COLOR_LABEL_KEYS,
   SETTINGS_CATEGORIES,
   LIST_CATEGORIES,
   SETTINGS_CATEGORY_LABEL_KEYS,
@@ -83,6 +84,28 @@ describe("the settings table", () => {
     expect(missing).toEqual([]);
   });
 
+  it("names every colour a hand-picked palette is made of, in every language", () => {
+    const missing: string[] = [];
+    // Nothing here comes from a row: the five pickers appear inside the colour-theme row once it
+    // says `custom`, and the heading above them is built from a key and a theme name. Neither is a
+    // literal `t("…")` a checker can read, so this is where they are held to being translated.
+    const keys = [
+      ...Object.values(CUSTOM_COLOR_LABEL_KEYS),
+      "settings.custom.reset",
+      "settings.custom.editingLight",
+      "settings.custom.editingDark",
+    ];
+    for (const language of languages) {
+      const translations = messages(language);
+      for (const key of keys) {
+        if (!translations.has(key)) {
+          missing.push(`${language}: ${key}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
   it("writes each preference field exactly once", () => {
     const fields = SETTINGS_ROWS.map((row) => row.field);
     expect(new Set(fields).size, `two rows writing one field: ${fields.join(", ")}`).toBe(fields.length);
@@ -114,6 +137,121 @@ describe("the settings table", () => {
   it("puts every row in a category the navigation names", () => {
     const unknown = SETTINGS_ROWS.filter((row) => !SETTINGS_CATEGORIES.includes(row.category));
     expect(unknown.map((row) => row.id)).toEqual([]);
+  });
+});
+
+/**
+ * The colour themes, against the stylesheet that draws them.
+ *
+ * A palette the list offers and the stylesheet does not know is a choice that does nothing: the
+ * attribute is set, no block matches, and the window wears the default — which reads as "this option
+ * is broken" rather than as "the CSS is missing". The two files are the guard's whole subject, so
+ * both halves are read here rather than one being trusted.
+ *
+ * The second half is the rule `styles/globals.css` states in its own comment and cannot enforce:
+ * `[data-palette="…"]` comes before `.dark` in source order, so a dark block that set fewer tokens
+ * than its light one would quietly keep the light value — a white border across a dark window, in
+ * whichever palettes were affected, and only visible if somebody looked at both themes in both.
+ */
+describe("the colour themes the page offers", () => {
+  const STYLESHEET = readFileSync(path.resolve(LOCALES, "../../styles/globals.css"), "utf8");
+
+  const themes = SETTINGS_ROWS.find((row) => row.id === "color-theme");
+  if (!themes || themes.control.kind !== "select") {
+    throw new Error("the table has no colour-theme row to check");
+  }
+  const offered = themes.control.options;
+
+  /** The body of one palette block, or null when the stylesheet has no such block. */
+  function block(palette: string, suffix: string): string | null {
+    const start = STYLESHEET.indexOf(`[data-palette="${palette}"]${suffix} {`);
+    if (start < 0) {
+      return null;
+    }
+    return STYLESHEET.slice(start, STYLESHEET.indexOf("\n}", start));
+  }
+
+  /** The tokens a block sets, which is what has to match between the two themes. */
+  function tokens(body: string): string[] {
+    return [...body.matchAll(/^\s*(--[a-z-]+):/gm)].map((match) => match[1] as string).sort();
+  }
+
+  /** A palette the stylesheet is not expected to draw: see the case below. */
+  const WITHOUT_A_BLOCK = ["default", "custom"];
+
+  it("draws every palette it offers, in both themes", () => {
+    const missing: string[] = [];
+    for (const option of offered) {
+      // Two palettes have no block here, for two different reasons. The default is `:root` itself.
+      // A custom palette is five colours somebody picked a moment ago: it cannot be in a stylesheet
+      // at all, and the store writes it as custom properties on the document instead.
+      if (WITHOUT_A_BLOCK.includes(option.value)) {
+        continue;
+      }
+      for (const suffix of ["", ".dark"]) {
+        if (block(option.value, suffix) === null) {
+          missing.push(`${option.value}${suffix}`);
+        }
+      }
+    }
+    expect(missing, "a palette with no block is a choice that looks broken").toEqual([]);
+  });
+
+  it("sets the same tokens in both of a palette's blocks", () => {
+    const lopsided: string[] = [];
+    for (const option of offered) {
+      if (WITHOUT_A_BLOCK.includes(option.value)) {
+        continue;
+      }
+      const light = block(option.value, "");
+      const dark = block(option.value, ".dark");
+      if (!light || !dark) {
+        continue;
+      }
+      // The pane's own tokens are excepted, and they are the reason this case is written at all:
+      // they are named by theme (`--terminal-dark-…`, `--terminal-light-…`) and both halves are set
+      // in one block, because a dark pane beside a light window still has to wear the palette.
+      const themed = (body: string): string =>
+        tokens(body)
+          .filter((name) => !name.startsWith("--terminal-"))
+          .join(" ");
+      if (themed(light) !== themed(dark)) {
+        lopsided.push(option.value);
+      }
+    }
+    expect(lopsided, "a token set in one theme and not the other leaks between them").toEqual([]);
+  });
+
+  it("dresses the terminal from every palette, in both of its own themes", () => {
+    const missing: string[] = [];
+    // A custom palette is five colours the store writes as custom properties, and
+    // `customColors.spec.ts` is where that half is held. Everything else is here — the base palette
+    // included, and it is the case worth having: it has no block of its own, so its tokens are
+    // `:root` itself, which is exactly where somebody adding a palette would forget to look.
+    const plain = (selector: string): string | null => {
+      const start = STYLESHEET.indexOf(`${selector} {`);
+      return start < 0 ? null : STYLESHEET.slice(start, STYLESHEET.indexOf("\n}", start));
+    };
+    for (const option of offered) {
+      const body = option.value === "default" ? plain(":root") : block(option.value, "");
+      if (body === null) {
+        continue;
+      }
+      const names = tokens(body);
+      for (const theme of ["dark", "light"]) {
+        for (const part of ["background", "foreground", "cursor", "selection"]) {
+          if (!names.includes(`--terminal-${theme}-${part}`)) {
+            missing.push(`${option.value}: --terminal-${theme}-${part}`);
+          }
+        }
+      }
+    }
+    expect(missing, "a palette the terminal cannot wear leaves the pane in the build's own greys").toEqual([]);
+  });
+
+  it("gives every palette a dot, so the list says what it is before it is worn", () => {
+    const missing = offered.filter((option) => !option.swatch).map((option) => option.value);
+    expect(missing, "a colour with no swatch is one you have to choose to see").toEqual([]);
   });
 });
 

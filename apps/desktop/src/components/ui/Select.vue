@@ -54,6 +54,13 @@ export interface SelectOption {
    */
   detail?: string;
   disabled?: boolean;
+  /**
+   * A colour to draw before the label, for a choice that is a colour.
+   *
+   * A dot rather than a swatch of the label itself: six palettes are told apart at a glance this
+   * way, and the line a reader chooses by stays ordinary text that a screen reader can say.
+   */
+  swatch?: string;
 }
 
 const props = withDefaults(
@@ -83,7 +90,21 @@ const props = withDefaults(
   },
 );
 
-const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+const emit = defineEmits<{
+  "update:modelValue": [value: string];
+  /**
+   * The pointer came to rest on an option.
+   *
+   * Reported rather than used: a dropdown has nothing of its own to do with this, but a caller
+   * whose options are things you have to see — a colour — can show one before it is taken. It is
+   * the pointer and not the highlight because the highlight is the library's: an arrow key moves it
+   * without moving focus, and there is no event here that says where it went. A second mechanism
+   * watching the attribute would be this component inventing a hook its library does not have.
+   */
+  "option-hover": [value: string];
+  /** The pointer left the list, or the list closed: whatever was under it no longer is. */
+  "option-leave": [];
+}>();
 
 /**
  * What a caller puts on the component goes on the trigger, because the trigger is the control.
@@ -120,9 +141,19 @@ const triggerClass = computed(() =>
   ),
 );
 
+/**
+ * How tall the list may be: as tall as its options, and no taller than the window allows.
+ *
+ * There is deliberately no second limit. A short list is a short list — the fourteen colour themes
+ * are all on screen at once, so nothing is folded away behind a scrollbar — and a long one is
+ * bounded by the room it has rather than by a number picked here, which would be that number's
+ * guess about every list in the interface rather than this one's answer. Past that bound the
+ * viewport scrolls, and the scroll buttons above and below it appear only while there is something
+ * in that direction to reach.
+ */
 const contentClass = computed(() =>
   cn(
-    "z-50 max-h-[min(20rem,var(--reka-select-content-available-height))] overflow-hidden rounded-lg border border-border bg-card shadow-xl",
+    "z-50 max-h-[var(--reka-select-content-available-height)] overflow-hidden rounded-lg border border-border bg-card shadow-xl",
     "min-w-[var(--reka-select-trigger-width)]",
     props.contentClass,
   ),
@@ -152,6 +183,7 @@ const scrollButtonClass = "flex cursor-default items-center justify-center py-1 
     :model-value="inner(props.modelValue)"
     :disabled="props.disabled"
     @update:model-value="(value: string) => emit('update:modelValue', outer(value))"
+    @update:open="(open: boolean) => (open ? undefined : emit('option-leave'))"
   >
     <SelectTrigger
       v-bind="passthrough"
@@ -161,15 +193,22 @@ const scrollButtonClass = "flex cursor-default items-center justify-center py-1 
       :title="props.ariaLabel"
       :disabled="props.disabled"
     >
-      <span class="min-w-0 flex-1 truncate" :class="chosen ? '' : 'text-muted-foreground'">
-        {{ chosen?.label ?? props.placeholder }}
-        <span v-if="chosen?.detail" class="text-muted-foreground">— {{ chosen.detail }}</span>
+      <span class="flex min-w-0 flex-1 items-center gap-1.5">
+        <span
+          v-if="chosen?.swatch"
+          class="size-3.5 shrink-0 rounded-full border border-border"
+          :style="{ background: chosen.swatch }"
+        />
+        <span class="min-w-0 flex-1 truncate" :class="chosen ? '' : 'text-muted-foreground'">
+          {{ chosen?.label ?? props.placeholder }}
+          <span v-if="chosen?.detail" class="text-muted-foreground">— {{ chosen.detail }}</span>
+        </span>
       </span>
       <ChevronDown :size="compact ? 11 : 14" class="shrink-0 text-muted-foreground" />
     </SelectTrigger>
 
     <SelectPortal>
-      <SelectContent position="popper" :side-offset="4" :class="contentClass">
+      <SelectContent position="popper" :side-offset="4" :class="contentClass" @pointerleave="emit('option-leave')">
         <SelectScrollUpButton :class="scrollButtonClass">
           <ChevronUp :size="14" />
         </SelectScrollUpButton>
@@ -182,10 +221,16 @@ const scrollButtonClass = "flex cursor-default items-center justify-center py-1 
             :text-value="option.label"
             :disabled="option.disabled"
             :class="itemClass"
+            @pointerenter="emit('option-hover', option.value)"
           >
             <SelectItemIndicator :class="checkClass">
               <Check :size="compact ? 11 : 13" />
             </SelectItemIndicator>
+            <span
+              v-if="option.swatch"
+              class="size-3.5 shrink-0 rounded-full border border-border"
+              :style="{ background: option.swatch }"
+            />
             <SelectItemText class="min-w-0 flex-1 truncate">
               {{ option.label }}
               <span v-if="option.detail" class="font-mono text-[11px] text-muted-foreground">

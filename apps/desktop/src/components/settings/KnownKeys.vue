@@ -51,7 +51,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="space-y-2">
+  <!--
+    Readings, inside a page that is otherwise chrome: an algorithm and a fingerprint are what a key
+    is identified by, and both are copied out of here. The import field is text for the same reason
+    every field is — it is taking typing — and the buttons stay buttons.
+  -->
+  <div class="space-y-2 select-text">
     <p v-if="problem" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
       <span>{{ problem.message }}</span>
       <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
@@ -62,7 +67,7 @@ onMounted(async () => {
         v-model="passphrase"
         type="password"
         autocomplete="off"
-        class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+        class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs select-text focus:border-primary focus:outline-none"
         :placeholder="t('keys.passphrase')"
         :aria-label="t('keys.passphrase')"
       />
