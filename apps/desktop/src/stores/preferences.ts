@@ -385,6 +385,38 @@ export const usePreferencesStore = defineStore("preferences", () => {
     apply();
   }
 
+  /**
+   * Whether the window is showing something the settings file has not been told about yet.
+   *
+   * The two are not the same thing and this is the difference: a choice is *applied* the moment it is
+   * made — a colour nobody can see before choosing it is not a choice — and it is *written* when
+   * somebody says so, or when the page is left. That is what the button under the page is about, and
+   * it is also why dragging the native colour picker no longer writes the file on every mouse move.
+   */
+  const dirty = ref(false);
+
+  /** Writes down what is on screen, and says whether it worked. */
+  async function commit(): Promise<boolean> {
+    await persist();
+    if (problem.value === null) {
+      dirty.value = false;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Throws away what has been chosen since the last write.
+   *
+   * Reading the file again rather than keeping a copy of it: there is one answer to "what has been
+   * written down", and it is the file.
+   */
+  async function discard(): Promise<void> {
+    await load();
+    // What is on screen is the file again, so there is nothing left to write.
+    dirty.value = false;
+  }
+
   async function persist(): Promise<void> {
     problem.value = null;
     try {
@@ -415,7 +447,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setThemeMode(mode: ThemeMode): Promise<void> {
     themeMode.value = mode;
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -431,7 +463,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     // the preview standing would mean the list and the window disagreed about which was in force.
     previewedPalette.value = null;
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -498,7 +530,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setCornerStyle(style: CornerStyle): Promise<void> {
     cornerStyle.value = style;
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /** Chooses what the interface draws in, applied before it is written down. */
@@ -507,7 +539,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     // The preview has served its purpose: what is on screen from here is the choice.
     previewedFont.value = null;
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /** The same for the terminal, whose choice is its own. */
@@ -515,7 +547,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalFont.value = stack;
     previewedFont.value = null;
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -535,7 +567,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       customColors.value = next;
     }
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /** Puts the set being edited back to what a fresh install starts from. */
@@ -546,37 +578,35 @@ export const usePreferencesStore = defineStore("preferences", () => {
       customColors.value = { ...DEFAULT_CUSTOM_COLORS };
     }
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /**
    * Scales the interface, which is felt the moment it is chosen.
    *
-   * The write comes first and the window second — the opposite order to every other setting here.
-   * Not for speed: the file takes a millisecond. It is what a failure leaves behind. A write clears
-   * the page's problem banner on its way in, so a size that was written down and then refused by the
-   * window would have its message wiped by the very write that succeeded. Applying last means the
-   * last word on screen is about the thing the person is looking at.
+   * It used to write before it applied, so that a window refusing the size would have the last word
+   * over the write that had just succeeded. Nothing is written here any more — the page's Apply is
+   * what writes — so the two cannot race at all.
    */
-  async function setUiScale(percent: number): Promise<void> {
+  function setUiScale(percent: number): void {
     uiScale.value = percent;
-    await persist();
     apply();
+    dirty.value = true;
   }
 
   async function setTerminalTheme(mode: ThemeMode): Promise<void> {
     terminalTheme.value = mode;
-    await persist();
+    dirty.value = true;
   }
 
   async function setFilesLayout(layout: FilesLayout): Promise<void> {
     filesLayout.value = layout;
-    await persist();
+    dirty.value = true;
   }
 
   async function setSessionLayout(layout: SessionLayout): Promise<void> {
     sessionLayout.value = layout;
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -588,7 +618,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   async function setMonitorEnabled(enabled: boolean): Promise<void> {
     monitorEnabled.value = enabled;
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -599,7 +629,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   async function setPackedTransfer(enabled: boolean): Promise<void> {
     packedTransfer.value = enabled;
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -613,15 +643,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalPanelHeight.value = Math.round(height);
   }
 
-  /** Writes down the height the divider was left at. */
+  /**
+   * Writes down the height the divider was left at.
+   *
+   * A drag is a gesture rather than a choice waiting to be applied — there is nothing on the page to
+   * press afterwards — so this writes, and writing takes what else has been applied with it.
+   */
   async function rememberPanelHeight(): Promise<void> {
-    await persist();
+    await commit();
   }
 
   /** Puts the divider back where it started, and forgets the height: nothing has been chosen. */
   async function resetPanelHeight(): Promise<void> {
     terminalPanelHeight.value = null;
-    await persist();
+    await commit();
   }
 
   /** Moves the sidebar's divider, applied at once and written down when the drag ends. */
@@ -629,15 +664,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sidebarWidth.value = Math.round(width);
   }
 
-  /** Writes down the width the sidebar's divider was left at. */
+  /** Writes down the width the sidebar's divider was left at, for the reason the height does. */
   async function rememberSidebarWidth(): Promise<void> {
-    await persist();
+    await commit();
   }
 
   /** Puts the divider back where it started, and forgets the width: nothing has been chosen. */
   async function resetSidebarWidth(): Promise<void> {
     sidebarWidth.value = null;
-    await persist();
+    await commit();
   }
 
   /**
@@ -648,14 +683,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   async function setSidebarOpen(open: boolean): Promise<void> {
     sidebarOpen.value = open;
-    await persist();
+    dirty.value = true;
   }
 
   async function setLocale(next: SupportedLocale): Promise<void> {
     localeChosen.value = true;
     locale.value = next;
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /**
@@ -727,7 +762,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       }
     }
     apply();
-    await persist();
+    dirty.value = true;
   }
 
   /** Applies the environment's preference and starts following the system. */
@@ -763,8 +798,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
     resolvedSidebarWidth,
     locale,
     problem,
+    dirty,
     initialize,
     load,
+    commit,
+    discard,
     setThemeMode,
     setThemePalette,
     previewThemePalette,

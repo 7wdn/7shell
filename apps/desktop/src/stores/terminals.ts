@@ -471,6 +471,19 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
+   * Closes the settings page.
+   *
+   * Here rather than in the page for the same reason opening is: the page is drawn by the strip that
+   * draws every other page and does not know which tab it is.
+   */
+  async function closeSettings(): Promise<void> {
+    const showing = tabs.value.find((entry): entry is SettingsTab => entry.kind === "settings");
+    if (showing) {
+      await closeTab(showing.id);
+    }
+  }
+
+  /**
    * Opens the batch panel, or brings it forward if it is already open.
    *
    * One panel, like the settings page and for the same reason: two of them would be two sets of
@@ -1018,6 +1031,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openFiles,
     openInspect,
     openSettings,
+    closeSettings,
     openBatch,
     writableHandles,
     activeTerminalHandle,

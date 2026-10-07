@@ -53,6 +53,20 @@ async function writtenSettings(): Promise<{
 }
 
 /**
+ * The settings page's Apply: writes down everything chosen since the last one.
+ *
+ * A choice takes effect at once and the file is told when somebody says so — that is what the bar at
+ * the foot of the page is for, and why every case that reads the file presses it first. It checks the
+ * button itself on the way past: enabled while there is something to write, disabled after.
+ */
+async function applySettings(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Apply", exact: true });
+  await expect(button, "there is something to write").toBeEnabled();
+  await button.click();
+  await expect(button, "and now there is not").toBeDisabled();
+}
+
+/**
  * The three regions the same words appear in.
  *
  * The home page offers the sessions that were used last and buttons with the same names as the
@@ -481,6 +495,8 @@ test("the packed-transfer switch is written down, not just remembered", async ()
     // Polled rather than read once: the interface applies a choice at once and writes it afterwards,
     // so what is being checked is that the file catches up rather than that it was written in the
     // same instant as the click.
+    await applySettings(page);
+
     await expect
       .poll(async () => (await writtenSettings()).packedTransfer, {
         message: "the choice reached the settings file",
@@ -609,6 +625,8 @@ test("a setting can be found by name, and a category can be put back to its defa
     await colour.click();
     await page.getByRole("listbox").getByRole("option", { name: "Cobalt blue" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-palette", "cobalt");
+    await applySettings(page);
+
     await expect
       .poll(async () => (await writtenSettings()).themePalette, { message: "the colour reached the file" })
       .toBe("cobalt");
@@ -657,6 +675,8 @@ test("a setting can be found by name, and a category can be put back to its defa
     await expect(page.locator("html")).toHaveAttribute("data-corner-style", "none");
     expect(await radiusOf("rounded-lg"), "square means square").toBe("0px");
     expect(await radiusOf("rounded"), "everywhere, not only where the token was used").toBe("0px");
+    await applySettings(page);
+
     await expect.poll(async () => (await writtenSettings()).cornerStyle).toBe("none");
 
     await settings.getByRole("radio", { name: "Large", exact: true }).click();
@@ -688,6 +708,8 @@ test("a setting can be found by name, and a category can be put back to its defa
 
     await interfaceFont.click();
     await fontList.getByRole("option", { name: "Consolas" }).first().click();
+    await applySettings(page);
+
     await expect.poll(async () => (await writtenSettings()).uiFont ?? "").toBe("'Consolas', 'Courier New', monospace");
 
     // The terminal's list is the other setting, and what it changes goes to the panes: a terminal is
@@ -707,6 +729,8 @@ test("a setting can be found by name, and a category can be put back to its defa
 
     await terminalFont.click();
     await fontList.getByRole("option", { name: "JetBrains Mono" }).click();
+    await applySettings(page);
+
     await expect
       .poll(async () => (await writtenSettings()).terminalFont ?? "")
       .toBe("'JetBrains Mono', 'Fira Code', monospace");
@@ -744,6 +768,8 @@ test("a setting can be found by name, and a category can be put back to its defa
         message: "the picker's colour is what the window is drawn from",
       })
       .toBe("rgb(79 156 240)");
+    await applySettings(page);
+
     await expect
       .poll(async () => {
         // The pickers are about the set for the theme on screen; the other half of the palette is
@@ -767,6 +793,8 @@ test("a setting can be found by name, and a category can be put back to its defa
         message: "the interface was drawn larger inside the same window",
       })
       .toBeCloseTo(1 / 1.25, 2);
+    await applySettings(page);
+
     await expect.poll(async () => (await writtenSettings()).uiScale).toBe(125);
 
     // Both put back, so that the rest of the run meets the page it expects. Leaving a hand-picked
@@ -789,6 +817,8 @@ test("a setting can be found by name, and a category can be put back to its defa
     // Away from its default first, so that restoring has something to do.
     const packedSwitch = settings.getByRole("switch", { name: "Packed transfer" });
     await packedSwitch.click();
+    await applySettings(page);
+
     await expect
       .poll(async () => (await writtenSettings()).packedTransfer, {
         message: "the choice is on disk before anything is restored",
@@ -813,6 +843,8 @@ test("a setting can be found by name, and a category can be put back to its defa
     await settings.getByRole("button", { name: "Restore the defaults for Files" }).click();
     await expect(packedSwitch).toHaveAttribute("aria-checked", "false");
 
+    await applySettings(page);
+
     await expect
       .poll(async () => (await writtenSettings()).packedTransfer, {
         message: "and the default reached the settings file as well",
@@ -824,6 +856,70 @@ test("a setting can be found by name, and a category can be put back to its defa
     // every case after it down with it — eight of them, each waiting out its full timeout, which is
     // twelve minutes of run for one wrong assertion. Escape is what a person would press.
     await page.keyboard.press("Escape").catch(() => undefined);
+    await close();
+  }
+});
+
+/**
+ * The bar at the foot of the settings page: apply, close, and the one way out that throws something
+ * away.
+ *
+ * A choice takes effect the moment it is made, because these are settings whose whole content is what
+ * they look like — and the *file* is written when somebody says so. So there are two things to check
+ * and they are not the same thing: that choosing changes the window without touching the disk, and
+ * that leaving with something unwritten asks rather than deciding on its own.
+ */
+test("a choice is applied at once, written on Apply, and dropped only when asked", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    const apply = page.getByRole("button", { name: "Apply", exact: true });
+
+    // The category the last case left behind is not this one: the theme is in the appearance page,
+    // and the page opens on whichever category it was closed on.
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    // Nothing has been chosen, so there is nothing to write and the button says so.
+    await expect(apply).toBeDisabled();
+
+    await settings.getByRole("radio", { name: "Light", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(apply, "a choice is something to write").toBeEnabled();
+    expect((await writtenSettings()).themeMode ?? "system", "the window is ahead of the file").not.toBe("light");
+
+    // Closing is the way out that throws things away, so it asks — with three answers, because two
+    // would have to leave one of "write it", "drop it" and "stay" unnamed.
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    const question = page.getByRole("dialog");
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: "Drop them" }).click();
+
+    await expect(settings).toHaveCount(0);
+    await expect(page.locator("html"), "the window goes back to what was written").toHaveAttribute(
+      "data-theme",
+      "dark",
+    );
+    expect((await writtenSettings()).themeMode ?? "system").not.toBe("light");
+
+    // The other answer: write it on the way out.
+    await settingsButton(page).click();
+    const reopened = page.getByRole("region", { name: "Settings" });
+    await reopened.getByRole("button", { name: "Appearance", exact: true }).click();
+    await reopened.getByRole("radio", { name: "Light", exact: true }).click();
+    await page.getByRole("region", { name: "Settings" }).getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Write them and close" }).click();
+
+    await expect.poll(async () => (await writtenSettings()).themeMode ?? "system").toBe("light");
+
+    // Put back, so that the rest of the run meets a dark window: the choice is applied and then
+    // written, which is the pair this case is about.
+    await settingsButton(page).click();
+    const again = page.getByRole("region", { name: "Settings" });
+    await again.getByRole("radio", { name: "Dark", exact: true }).click();
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).themeMode ?? "light").toBe("dark");
+  } finally {
     await close();
   }
 });

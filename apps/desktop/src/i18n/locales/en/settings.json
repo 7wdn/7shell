@@ -12,6 +12,14 @@
     "tab": {
       "close": "Close settings"
     },
+    "apply": "Apply",
+    "applyAndClose": "Apply and close",
+    "leaving": {
+      "title": "Close the settings?",
+      "message": "Choices made since the last time they were written down are not in the file yet. They can be written on the way out, dropped, or left alone — leaving the page alone keeps them on screen, where they already are.",
+      "write": "Write them and close",
+      "drop": "Drop them"
+    },
     "search": {
       "placeholder": "Search settings",
       "clear": "Clear the search",

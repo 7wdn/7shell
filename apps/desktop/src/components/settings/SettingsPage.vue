@@ -41,11 +41,11 @@ import { useI18n } from "vue-i18n";
 import SettingsControl from "@/components/settings/SettingsControl.vue";
 import SettingsField from "@/components/settings/SettingsField.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
   CUSTOM_COLOR_LABEL_KEYS,
-  LIST_CATEGORIES,
   SETTINGS_CATEGORIES,
   SETTINGS_CATEGORY_LABEL_KEYS,
   SETTINGS_ROWS,
@@ -60,6 +60,7 @@ import { createDelayedPreview } from "@/lib/settings/delayedPreview";
 import { describeShellError } from "@/i18n/errors";
 import type { SupportedLocale } from "@/i18n";
 import { useAppStore } from "@/stores/app";
+import { useTerminalsStore } from "@/stores/terminals";
 import { type PreferenceField, usePreferencesStore } from "@/stores/preferences";
 import {
   CUSTOM_COLOR_KEYS,
@@ -75,13 +76,11 @@ import {
 
 const { t } = useI18n();
 const app = useAppStore();
+const terminals = useTerminalsStore();
 const preferences = usePreferencesStore();
 
 const query = ref("");
 const category = ref<SettingsCategoryId>("appearance");
-
-/** Whether the category on screen is a list of things rather than a set of choices to restore. */
-const isListCategory = computed(() => LIST_CATEGORIES.includes(category.value));
 
 /** The settings this category draws as fields, and the ones it draws as cards under them. */
 const fieldRows = computed(() => fieldRowsOfCategory(category.value));
@@ -286,6 +285,58 @@ function endPreview(row: SettingsRowDefinition): void {
 }
 
 /**
+ * What the bar at the foot of the page does.
+ *
+ * A choice is applied the moment it is made — a colour nobody can see before choosing it is not a
+ * choice — and the settings *file* is written when somebody says so. That is the difference the two
+ * buttons on the right are about, and it is why the colour picker no longer writes the file on every
+ * mouse move of a drag.
+ *
+ * Leaving is the awkward one, and it has an answer rather than a rule: the tab can be closed from
+ * four places (this bar, its own cross, the tab's menu, the window), so every route out has to keep
+ * what was chosen rather than drop it silently. This page therefore writes on its way out — and the
+ * one way out that *does* throw something away is the Close button here, which asks first.
+ */
+const leaving = ref(false);
+
+/** Puts the category on screen back the way a fresh install has it. */
+function restoreDefaults(): void {
+  void preferences.reset(fieldsOf(category.value));
+}
+
+/** Writes down what is on screen. Nothing changes; the file catches up. */
+function apply(): void {
+  void preferences.commit();
+}
+
+async function applyAndClose(): Promise<void> {
+  if (await preferences.commit()) {
+    await terminals.closeSettings();
+  }
+}
+
+function askToLeave(): void {
+  if (!preferences.dirty) {
+    void terminals.closeSettings();
+    return;
+  }
+  leaving.value = true;
+}
+
+async function writeAndClose(): Promise<void> {
+  // The close only happens if the write did: a page that vanished with the choices still unwritten
+  // would be the one thing this bar exists to prevent.
+  await applyAndClose();
+  leaving.value = false;
+}
+
+async function discardAndClose(): Promise<void> {
+  await preferences.discard();
+  leaving.value = false;
+  await terminals.closeSettings();
+}
+
+/**
  * A page that is closed mid-look leaves nothing behind.
  *
  * The list is drawn outside this component, so closing the tab while an option is under the pointer
@@ -295,6 +346,11 @@ function endPreview(row: SettingsRowDefinition): void {
 onBeforeUnmount(() => {
   preferences.clearThemePalettePreview();
   preferences.clearFontPreview();
+  // The window is showing choices the file has not been told about, and this page is going away: the
+  // point of applying as you go is that nothing is lost, so the last thing the page does is write.
+  if (preferences.dirty) {
+    void preferences.commit();
+  }
 });
 
 /**
@@ -592,24 +648,74 @@ function translate(key: string, params?: Record<string, string>): string {
                       @end-preview="endPreview(row)"
                     />
                   </SettingsRow>
-
-                  <div v-if="!isListCategory" class="flex justify-end pt-1">
-                    <button
-                      type="button"
-                      class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                      :aria-label="t('settings.reset.for', { category: t(SETTINGS_CATEGORY_LABEL_KEYS[category]) })"
-                      @click="preferences.reset(fieldsOf(category))"
-                    >
-                      <RotateCcw :size="12" />
-                      {{ t("settings.reset.label") }}
-                    </button>
-                  </div>
                 </template>
               </section>
             </div>
           </div>
+
+          <!--
+            The bar at the foot of the page, and the only place any of it can be said: restoring a
+            category is about the whole group rather than a row, and writing is about the page rather
+            than a setting. Reset is on the left because it is about the page's contents, and the
+            three on the right are about leaving — the same shape the reference puts them in.
+          -->
+          <footer class="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-5 py-3">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              :disabled="fieldsOf(category).length === 0"
+              :aria-label="t('settings.reset.for', { category: t(SETTINGS_CATEGORY_LABEL_KEYS[category]) })"
+              @click="restoreDefaults()"
+            >
+              <RotateCcw :size="13" />
+              {{ t("settings.reset.label") }}
+            </button>
+
+            <span class="flex-1" />
+
+            <button
+              type="button"
+              class="rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+              @click="askToLeave()"
+            >
+              {{ t("common.action.close") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              :disabled="!preferences.dirty"
+              @click="apply()"
+            >
+              {{ t("settings.apply") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              :disabled="!preferences.dirty"
+              @click="applyAndClose()"
+            >
+              {{ t("settings.applyAndClose") }}
+            </button>
+          </footer>
         </div>
       </div>
     </section>
+
+    <!--
+      The one way out that throws something away, and it asks first. Three answers rather than two:
+      the choices can be written, dropped, or left where they are — and "Cancel" would have to mean
+      one of those without saying which.
+    -->
+    <ConfirmDialog
+      v-if="leaving"
+      :open="true"
+      :title="t('settings.leaving.title')"
+      :message="t('settings.leaving.message')"
+      :confirm-label="t('settings.leaving.write')"
+      :discard-label="t('settings.leaving.drop')"
+      @confirm="writeAndClose()"
+      @discard="discardAndClose()"
+      @update:open="leaving = false"
+    />
   </TooltipProvider>
 </template>

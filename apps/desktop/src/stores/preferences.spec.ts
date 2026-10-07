@@ -150,6 +150,8 @@ describe("preferences store", () => {
 
     await store.setThemeMode("dark");
 
+    await store.commit();
+
     expect(settingsSetMock).toHaveBeenCalledWith({
       themeMode: "dark",
       themePalette: "default",
@@ -176,6 +178,8 @@ describe("preferences store", () => {
     await store.load();
 
     await store.setLocale("zh-CN");
+
+    await store.commit();
 
     expect(settingsSetMock).toHaveBeenCalledWith({
       themeMode: "system",
@@ -218,10 +222,50 @@ describe("preferences store", () => {
     await store.load();
 
     await store.setThemeMode("light");
+    await store.commit();
 
     expect(store.themeMode).toBe("light");
     expect(store.resolvedTheme).toBe("light");
     expect(store.problem?.code).toBe("APP-INTERNAL");
+    // Still unwritten, so the page still has something to apply: a failed write that cleared the
+    // flag would leave a choice that is on screen and nowhere else, with the button greyed out.
+    expect(store.dirty).toBe(true);
+  });
+
+  it("applies a choice at once and writes it only when asked", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setThemeMode("light");
+
+    // What a person sees, the moment they choose: the window is already light…
+    expect(store.resolvedTheme).toBe("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    // …and the file knows nothing about it yet.
+    expect(store.dirty).toBe(true);
+    expect(settingsSetMock, "the write is the page's Apply, not the choice").not.toHaveBeenCalled();
+
+    await store.commit();
+
+    expect(store.dirty).toBe(false);
+    expect(settingsSetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws away what was chosen since the last write, and puts the window back", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await store.setThemeMode("light");
+
+    await store.discard();
+
+    // Reading the file again is what "throw it away" means: there is one answer to what has been
+    // written down, and it is the file.
+    expect(store.themeMode).toBe("system");
+    expect(store.resolvedTheme).toBe("dark");
+    expect(store.dirty).toBe(false);
+    expect(settingsSetMock, "nothing was written on the way out").not.toHaveBeenCalled();
   });
 
   it("stops listening to the system when the interface goes away", async () => {
@@ -276,6 +320,7 @@ describe("the terminal palette", () => {
     // The interface is dark again; the terminal keeps the palette it was given.
     expect(store.resolvedTheme).toBe("dark");
     expect(store.resolvedTerminalTheme).toBe("light");
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith({
       themeMode: "dark",
       themePalette: "default",
@@ -339,6 +384,7 @@ describe("the colour theme", () => {
 
     expect(document.documentElement.dataset.palette).toBe("claude");
     expect(document.documentElement.dataset.theme).toBe("dark");
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ themePalette: "claude" }));
   });
 
@@ -443,6 +489,7 @@ describe("the colour theme", () => {
 
     expect(store.customColorsDark.background).toBe(DEFAULT_CUSTOM_COLORS_DARK.background);
     expect(document.documentElement.style.getPropertyValue("--background")).toBe("rgb(19 20 22)");
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ customColorsDark: DEFAULT_CUSTOM_COLORS_DARK }),
     );
@@ -460,6 +507,7 @@ describe("the colour theme", () => {
     await store.setCornerStyle("none");
 
     expect(document.documentElement.dataset.cornerStyle).toBe("none");
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ cornerStyle: "none" }));
 
     await store.reset(["cornerStyle"]);
@@ -480,6 +528,7 @@ describe("the colour theme", () => {
 
     expect(document.documentElement.style.getPropertyValue("--font-sans")).toBe("'Fira Code', monospace");
     expect(store.wornTerminalFont, "the terminal's own choice is not the interface's font").toBe(DEFAULT_TERMINAL_FONT);
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ uiFont: "'Fira Code', monospace" }));
   });
 
@@ -547,6 +596,7 @@ describe("the interface scale", () => {
     await store.setUiScale(150);
 
     expect(webviewSetZoomMock).toHaveBeenCalledWith(1.5);
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ uiScale: 150 }));
   });
 
@@ -598,6 +648,7 @@ describe("the file layout", () => {
     await store.setFilesLayout("list");
 
     expect(store.filesLayout).toBe("list");
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ filesLayout: "list" }));
   });
 
@@ -635,6 +686,7 @@ describe("how a session opens", () => {
     await store.setSessionLayout("terminal");
 
     expect(store.sessionLayout).toBe("terminal");
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ sessionLayout: "terminal" }));
   });
 
@@ -672,6 +724,7 @@ describe("the host monitor", () => {
     await store.setMonitorEnabled(false);
 
     expect(store.monitorEnabled).toBe(false);
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ monitorEnabled: false }));
   });
 
@@ -707,6 +760,8 @@ describe("the packed-transfer switch", () => {
     await store.load();
 
     await store.setPackedTransfer(true);
+
+    await store.commit();
 
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ packedTransfer: true }));
   });
@@ -758,6 +813,8 @@ describe("the file panel under a terminal", () => {
     store.setPanelHeight(412);
     await store.rememberPanelHeight();
 
+    await store.commit();
+
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ terminalPanelHeight: 412 }));
   });
 
@@ -780,6 +837,7 @@ describe("the file panel under a terminal", () => {
     await store.resetPanelHeight();
 
     expect(store.resolvedPanelHeight).toBe(DEFAULT_TERMINAL_PANEL_HEIGHT);
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ terminalPanelHeight: undefined }));
   });
 });
@@ -829,7 +887,9 @@ describe("restoring the defaults", () => {
     expect(store.filesLayout).toBe("tree");
     expect(store.sessionLayout).toBe("split");
     expect(store.packedTransfer).toBe(false);
+    await store.commit();
     expect(settingsSetMock).toHaveBeenCalledTimes(1);
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith({
       themeMode: "system",
       themePalette: "default",
@@ -874,6 +934,7 @@ describe("restoring the defaults", () => {
     expect(store.locale).toBe("en");
     expect(document.documentElement.lang).toBe("en");
     // Not written down: an absent locale is what leaves the system's language applying.
+    await store.commit();
     expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ locale: undefined }));
   });
 
