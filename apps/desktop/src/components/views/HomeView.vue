@@ -24,7 +24,6 @@ import {
   ListChecks,
   LoaderCircle,
   MousePointerClick,
-  Network,
   Plus,
   Server,
   Settings,
@@ -81,17 +80,17 @@ const claimed = computed(() => claimedCapabilities());
 const unclaimed = computed(() => unclaimedCapabilities());
 
 /**
- * What the library holds, in three numbers, across the top of the working page.
+ * What is here, in three numbers, across the top of the working page.
  *
  * Three rather than five because a row of five is a table and a row of three is a heading: the two
- * the row gave up — what this build claims and how many ways it can authenticate — are properties of
- * the build rather than of somebody's library, and they are on the introduction page, where what
- * this build is has a place of its own.
+ * the row gave up were properties of the build rather than of somebody's library, and this row is
+ * about the library and the shells running out of it — what is saved, how it is grouped, and how
+ * much is open at this moment.
  */
 const tiles = computed(() => [
   { key: "sessions", icon: markRaw(Server), label: t("home.tile.sessions"), value: library.sessions.length },
   { key: "groups", icon: markRaw(FolderTree), label: t("home.tile.groups"), value: library.groups.length },
-  { key: "protocols", icon: markRaw(Network), label: t("home.tile.protocols"), value: app.info?.protocolCount ?? 0 },
+  { key: "open", icon: markRaw(SquareTerminal), label: t("home.tile.open"), value: terminals.openSessionCount },
 ]);
 
 /** The commands sent most recently, newest first — the working page's third panel. */
@@ -210,13 +209,14 @@ function translate(key: string, params?: Record<string, string>): string {
         <div
           v-for="tile in tiles"
           :key="tile.key"
+          :data-tile="tile.key"
           class="min-w-0 overflow-hidden rounded-lg border border-border bg-card px-4 py-3"
         >
           <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <component :is="tile.icon" :size="14" class="shrink-0" />
             <span class="min-w-0 truncate">{{ tile.label }}</span>
           </div>
-          <div class="mt-2 font-mono text-2xl leading-tight">{{ tile.value }}</div>
+          <div data-tile-value class="mt-2 font-mono text-2xl leading-tight">{{ tile.value }}</div>
         </div>
       </section>
 

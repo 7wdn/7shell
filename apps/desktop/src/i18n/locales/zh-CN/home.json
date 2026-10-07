@@ -1,9 +1,9 @@
 {
   "home": {
     "tile": {
-      "protocols": "已声明协议",
       "sessions": "已保存会话",
-      "groups": "会话分组"
+      "groups": "会话分组",
+      "open": "已打开会话"
     },
     "intro": {
       "badge": "SSH 运维客户端",

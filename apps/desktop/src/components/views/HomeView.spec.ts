@@ -95,6 +95,15 @@ function quickRow(sessionId: string): HTMLElement {
   return found;
 }
 
+/** The number a tile of the row across the top draws, by the key that row was built with. */
+function tileReading(key: string): string {
+  const found = host.querySelector<HTMLElement>(`[data-tile="${key}"] [data-tile-value]`);
+  if (!found) {
+    throw new Error(`the page has no ${key} tile`);
+  }
+  return found.textContent?.trim() ?? "";
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
   host = document.createElement("div");
@@ -190,6 +199,18 @@ describe("the home page", () => {
     render();
 
     await vi.waitFor(() => expect(card("History").textContent).toContain("Nothing sent yet."));
+  });
+
+  it("counts only the sessions that have a shell running", () => {
+    useTerminalsStore().tabs = [
+      { kind: "terminal", id: "tab-1", session: alpha, handle: "h-alpha", status: "open", failure: null, panel: null },
+      { kind: "terminal", id: "tab-2", session: beta, handle: "h-beta", status: "ended", failure: null, panel: null },
+    ];
+    render();
+
+    // Two tabs and one answer: a shell that ended is a session somebody had, not one they have.
+    expect(tileReading("open")).toBe("1");
+    expect(tileReading("sessions")).toBe("3");
   });
 });
 

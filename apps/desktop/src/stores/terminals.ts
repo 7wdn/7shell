@@ -516,6 +516,17 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
+   * How many sessions have a shell running right now.
+   *
+   * A reading rather than a list: what is open is a tab whose status is open, so a connection still
+   * being made, one that ended and one that failed are not counted — the number answers "how much is
+   * running", which is the question the home page asks it.
+   */
+  const openSessionCount = computed(
+    () => tabs.value.filter((tab): tab is TerminalTab => tab.kind === "terminal" && tab.status === "open").length,
+  );
+
+  /**
    * The handles a command can be written into: every terminal that is open.
    *
    * Not the sessions in the vault — only a shell that is already running can be typed into — and
@@ -1021,6 +1032,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     activeTab,
     activeTabId,
     connectingSessionIds,
+    openSessionCount,
     failures,
     decision,
     tunnels,

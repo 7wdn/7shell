@@ -263,6 +263,36 @@ describe("terminals store", () => {
     expect(terminalTab(store)?.reason).toBe("connection closed by remote host");
   });
 
+  it("counts a session as open only once its shell is running, and not after it ends", async () => {
+    let answer: (outcome: ReturnType<typeof opened>) => void = () => {};
+    sessionOpenMock.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const store = useTerminalsStore();
+    open();
+    const attempt = store.open(session);
+
+    // A connection being made is not a session that is open: there is nothing to type into yet, and
+    // the reading the home page draws is about shells rather than about attempts.
+    expect(store.openSessionCount).toBe(0);
+
+    answer(opened());
+    await attempt;
+    expect(store.openSessionCount).toBe(1);
+
+    // A page about no host in particular is an open tab and not an open session.
+    store.openSettings();
+    expect(store.openSessionCount).toBe(1);
+
+    for (const listener of endedListeners) {
+      listener("handle-1", "connection closed by remote host");
+    }
+    expect(store.openSessionCount).toBe(0);
+  });
+
   it("shows a terminal that died before its tab existed as already ended", async () => {
     endedTerminalMock.mockReturnValue({ reason: "the server refused the channel" });
     sessionOpenMock.mockResolvedValue(opened());

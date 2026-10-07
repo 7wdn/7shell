@@ -1,9 +1,9 @@
 {
   "home": {
     "tile": {
-      "protocols": "Declared protocols",
       "sessions": "Sessions saved",
-      "groups": "Session groups"
+      "groups": "Session groups",
+      "open": "Open sessions"
     },
     "intro": {
       "badge": "SSH operations client",
