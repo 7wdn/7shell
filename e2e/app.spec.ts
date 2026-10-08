@@ -2845,6 +2845,9 @@ test("a command can be added in the settings and reached by its trigger", async 
     await command.getByRole("button", { name: "Save", exact: true }).click();
     await expect(command, "the dialog goes once the command is written").toHaveCount(0);
     await expect(settings.getByText(name).first(), "it is in the library now").toBeVisible();
+    // At the end of its group, which is where somebody who just wrote one looks for it: the list has
+    // the lines this build ships in it already, and a new one goes below them rather than above.
+    await expect(settings.locator("[data-command-row]").last(), "a new command lands at the end").toContainText(name);
 
     // And editing it changes it. The trigger is the field that made this case necessary: it is written
     // with the rest of the command, and a field that is not written is a field that goes back to what
