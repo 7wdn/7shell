@@ -116,9 +116,28 @@ function lastUsedValues(snippet: Snippet): string[] {
   return values;
 }
 
+/**
+ * A line with one word in it is a word.
+ *
+ * `uptime` taken out of the library leaves a space after it and opens what can follow, exactly as
+ * `uptime` taken out of the catalogue does; `cd /srv/app` does neither, because a line is not half
+ * of anything. The rule is about what is being inserted rather than about where it came from, and
+ * the two sources meet in the same place: three letters should leave the line ready for the next
+ * word, and a whole line should be left alone.
+ */
+function oneWordOnly(line: string): boolean {
+  return !/\s/.test(line);
+}
+
 function fromSaved(saved: readonly Snippet[], site: CompletionSite): CompletionCandidate[] {
   const candidates: CompletionCandidate[] = [];
   for (const [index, snippet] of saved.entries()) {
+    // Switched off is out of the list and still in the library: what somebody stopped using is not
+    // the same as what they deleted.
+    if (!snippet.enabled) {
+      continue;
+    }
+
     // Three things answer for a saved command: the trigger somebody typed to reach it, its name, and
     // the line itself. The best of them decides the row.
     const byTrigger = matchText(snippet.prefix, site.prefix);
@@ -158,8 +177,8 @@ function fromSaved(saved: readonly Snippet[], site: CompletionSite): CompletionC
       kind: "saved",
       from: site.start,
       score: best.score + SOURCE_BOOST.saved - index + triggered,
-      wholeLine: true,
-      trailingSpace: false,
+      wholeLine: !oneWordOnly(insert),
+      trailingSpace: oneWordOnly(insert),
       labelRanges: byName.ranges,
       detailRanges,
     });
@@ -184,8 +203,10 @@ function fromHistory(history: readonly CommandHistoryEntry[], site: CompletionSi
       // Newer first: the history arrives newest first, and what somebody ran a minute ago is a better
       // guess than what they ran last week.
       score: match.score + SOURCE_BOOST.history - index,
-      wholeLine: true,
-      trailingSpace: false,
+      // A line somebody ran is taken as it stands, unless it is one word: `uptime` from last week is
+      // the same word the catalogue offers, and it should behave the same way.
+      wholeLine: !oneWordOnly(entry.command),
+      trailingSpace: oneWordOnly(entry.command),
       labelRanges: match.ranges,
       detailRanges: [],
     });

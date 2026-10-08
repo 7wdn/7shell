@@ -17,6 +17,8 @@ import { defineStore } from "pinia";
 
 import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
+import { BUILTIN_COMMANDS } from "@/lib/commands/builtin";
+import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { fillSlots, slotsIn, SLOTS } from "@/lib/commands/slots";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { RiskAssessment } from "@/types/batch";
@@ -35,6 +37,8 @@ export interface SnippetDraft {
   prefix: string;
   command: string;
   appendCr: boolean;
+  /** Whether the completion offers it. */
+  enabled: boolean;
 }
 
 export const useCommandsStore = defineStore("commands", () => {
@@ -62,12 +66,44 @@ export const useCommandsStore = defineStore("commands", () => {
   const slots = computed(() => (draft.value ? slotsIn(draft.value.command) : []));
   const filled = computed(() => (draft.value ? fillSlots(draft.value.command, values.value) : ""));
 
+  /**
+   * Fills a library that has nothing in it with the commands this build ships.
+   *
+   * Which is what "a fresh install" looks like from here, and the rule is the one a shipped default
+   * list usually has: nothing stored means nothing was ever written, so the defaults go in. Somebody
+   * who deletes every command gets them back — the cost of not keeping a marker of our own, and the
+   * smaller surprise of the two. They arrive as ordinary commands: editable, switchable, deletable.
+   */
+  async function seedBuiltins(): Promise<void> {
+    const empty = groups.value.every((group) => group.commands.length === 0);
+    const group = groups.value.find((entry) => entry.id === DEFAULT_GROUP_ID);
+    if (!empty || group === undefined) {
+      return;
+    }
+
+    for (const builtin of BUILTIN_COMMANDS) {
+      await backend.commands.save({
+        id: "",
+        groupId: group.id,
+        name: builtin.name,
+        prefix: builtin.prefix,
+        command: builtin.command,
+        appendCr: true,
+        enabled: true,
+        order: 0,
+        slotHistory: [],
+      });
+    }
+    groups.value = await backend.commands.library();
+  }
+
   async function load(): Promise<void> {
     try {
       groups.value = await backend.commands.library();
       history.value = await backend.commands.history();
       failure.value = null;
       loaded.value = true;
+      await seedBuiltins();
     } catch (error) {
       failure.value = asShellError(error, "snippets_open");
     }
@@ -81,6 +117,7 @@ export const useCommandsStore = defineStore("commands", () => {
       prefix: snippet.prefix,
       command: snippet.command,
       appendCr: snippet.appendCr,
+      enabled: snippet.enabled,
     };
     approval.value = null;
     acknowledged.value = false;
@@ -89,7 +126,7 @@ export const useCommandsStore = defineStore("commands", () => {
   }
 
   function startNew(groupId: string): void {
-    draft.value = { id: "", groupId, name: "", prefix: "", command: "", appendCr: true };
+    draft.value = { id: "", groupId, name: "", prefix: "", command: "", appendCr: true, enabled: true };
     values.value = Array.from({ length: SLOTS }, () => "");
     approval.value = null;
     acknowledged.value = false;
@@ -125,6 +162,7 @@ export const useCommandsStore = defineStore("commands", () => {
         prefix: current.prefix.trim(),
         command: current.command,
         appendCr: current.appendCr,
+        enabled: current.enabled,
         order: 0,
         slotHistory: current.id
           ? (groups.value.flatMap((group) => group.commands).find((entry) => entry.id === current.id)?.slotHistory ??
@@ -229,6 +267,22 @@ export const useCommandsStore = defineStore("commands", () => {
     }
   }
 
+  /**
+   * Switches one command off or on.
+   *
+   * A write of the command rather than a flag kept beside it: what the library holds is what is
+   * stored, and a switch that lived somewhere else would be a second answer to what the list says.
+   */
+  async function setEnabled(snippet: Snippet, enabled: boolean): Promise<void> {
+    try {
+      await backend.commands.save({ ...snippet, enabled });
+      await load();
+      failure.value = null;
+    } catch (error) {
+      failure.value = asShellError(error, "snippet_save");
+    }
+  }
+
   /** Puts a line from the history into the editor, without slots of its own to fill. */
   function editFromHistory(entry: CommandHistoryEntry): void {
     draft.value = {
@@ -238,6 +292,7 @@ export const useCommandsStore = defineStore("commands", () => {
       prefix: "",
       command: entry.command,
       appendCr: true,
+      enabled: true,
     };
     values.value = Array.from({ length: SLOTS }, () => "");
   }
@@ -382,6 +437,7 @@ export const useCommandsStore = defineStore("commands", () => {
     removeGroup,
     clearHistory,
     editFromHistory,
+    setEnabled,
     send,
     sendLiteral,
   };

@@ -11,8 +11,14 @@ import { subcommandsOf } from "@/lib/commands/subcommands";
 import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
 import type { SftpEntry } from "@/types/session";
 
-function saved(name: string, command: string, slotHistory: readonly (readonly string[])[] = [], prefix = ""): Snippet {
-  return { id: name, groupId: "default", name, prefix, command, appendCr: true, order: 0, slotHistory };
+function saved(
+  name: string,
+  command: string,
+  slotHistory: readonly (readonly string[])[] = [],
+  prefix = "",
+  enabled = true,
+): Snippet {
+  return { id: name, groupId: "default", name, prefix, command, appendCr: true, enabled, order: 0, slotHistory };
 }
 
 function ran(command: string, at = 1_000): CommandHistoryEntry {
@@ -344,6 +350,29 @@ describe("what somebody has taken before", () => {
   });
 });
 
+describe("what a row leaves behind when it is taken", () => {
+  it("leaves a space after a saved line that is one word", () => {
+    // The library holds whole lines, and one of them can be a word — `uptime` is a line somebody
+    // saved and the same word as the catalogue's, and three letters should leave the line ready for
+    // the next word either way.
+    const candidates = build("upt", { saved: [saved("看开机时长", "uptime")] });
+
+    expect(candidates[0]).toMatchObject({ insert: "uptime", trailingSpace: true, wholeLine: false });
+  });
+
+  it("leaves a saved line of more than one word alone", () => {
+    const candidates = build("res", { saved: [saved("重启服务", "systemctl restart #1")] });
+
+    expect(candidates[0]).toMatchObject({ insert: "systemctl restart #1", trailingSpace: false, wholeLine: true });
+  });
+
+  it("does the same for one word out of the history", () => {
+    const candidates = build("upt", { history: [ran("uptime")] });
+
+    expect(candidates[0]).toMatchObject({ insert: "uptime", trailingSpace: true, wholeLine: false });
+  });
+});
+
 describe("the trigger a saved command was given", () => {
   it("finds the command, and the row says what it was found by", () => {
     const candidates = build("res", { saved: [saved("重启", "systemctl restart #1", [], "res")] });
@@ -374,5 +403,20 @@ describe("the trigger a saved command was given", () => {
     const candidates = build("upt", { saved: [saved("开机时长", "uptime")] });
 
     expect(candidates[0]?.detail).toBe("uptime");
+  });
+
+  it("answers nothing while it is switched off, by trigger or by its own words", () => {
+    const off = saved("重启", "systemctl restart #1", [], "res", false);
+
+    expect(build("res", { saved: [off] })).toEqual([]);
+    expect(build("restart", { saved: [off] })).toEqual([]);
+  });
+
+  it("is left out of the list an empty word asks for as well", () => {
+    // The switch is about the menu in every shape it takes: a command somebody stopped using should
+    // not be in the way of the one they are reaching for, and an empty word is the widest list there is.
+    const off = saved("重启", "systemctl restart #1", [], "res", false);
+
+    expect(build("", { saved: [off] })).toEqual([]);
   });
 });

@@ -23,7 +23,17 @@ let app: App | undefined;
 let host: HTMLDivElement;
 
 function snippet(name: string, command: string, prefix = ""): Snippet {
-  return { id: name, groupId: "default", name, prefix, command, appendCr: true, order: 0, slotHistory: [] };
+  return {
+    id: name,
+    groupId: "default",
+    name,
+    prefix,
+    command,
+    appendCr: true,
+    enabled: true,
+    order: 0,
+    slotHistory: [],
+  };
 }
 
 function ran(...commands: string[]): CommandHistoryEntry[] {
@@ -141,9 +151,21 @@ describe("the command bar offering what it knows", () => {
     press("Tab");
     await nextTick();
 
-    expect(field().value).toBe("uptime");
-    expect(field().selectionStart).toBe(6);
+    // One word out of the history is a word, not a line: it is left ready for the next word, the same
+    // way the catalogue's `uptime` is.
+    expect(field().value).toBe("uptime ");
+    expect(field().selectionStart).toBe(7);
     expect(rows()).toHaveLength(0);
+  });
+
+  it("takes a line of more than one word as it stands, with nothing after it", async () => {
+    await mount([], ran("uptime -p"));
+    await type("uptim");
+    press("Tab");
+    await nextTick();
+
+    expect(field().value).toBe("uptime -p");
+    expect(field().selectionStart).toBe(9);
   });
 
   it("takes the row a click lands on", async () => {
@@ -152,7 +174,7 @@ describe("the command bar offering what it knows", () => {
     rows()[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
 
-    expect(field().value).toBe("uptime");
+    expect(field().value).toBe("uptime ");
   });
 
   it("runs the line somebody typed when Enter is pressed, not the row the list is on", async () => {

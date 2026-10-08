@@ -2829,12 +2829,19 @@ test("a command can be added in the settings and reached by its trigger", async 
     const settings = page.getByRole("region", { name: "Settings" });
     await settings.getByRole("button", { name: "Command library", exact: true }).click();
 
+    // A first install starts with the lines this build ships, so the list is not empty — and what is
+    // written below is added beside them rather than into an empty page. The dialog is drawn beside
+    // the page rather than inside it (a portal), which is why it is looked for on the window.
+    await expect(settings.getByText("df -h").first(), "the shipped commands are in the library").toBeVisible();
     await settings.getByRole("button", { name: "Add a command" }).click();
-    await settings.getByLabel("What it is called").fill(name);
-    await settings.getByLabel("Type to bring it up").fill(trigger);
-    await settings.getByLabel(/The line, with/).fill(line);
-    await settings.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(settings.getByText(name).first(), "it is in the table now").toBeVisible();
+    const command = page.getByRole("dialog");
+    await expect(command, "adding is a dialog, not a form in the page").toBeVisible();
+    await command.getByLabel("What it is called").fill(name);
+    await command.getByLabel("Type to bring it up").fill(trigger);
+    await command.getByLabel(/The line, with/).fill(line);
+    await command.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(command, "the dialog goes once the command is written").toHaveCount(0);
+    await expect(settings.getByText(name).first(), "it is in the library now").toBeVisible();
 
     await page.getByRole("button", { name: "Close settings" }).click();
 

@@ -1513,6 +1513,7 @@ mod tests {
             prefix: String::new(),
             command: command.to_owned(),
             append_cr: true,
+            enabled: true,
             order: 0,
             slot_history: Vec::new(),
         }

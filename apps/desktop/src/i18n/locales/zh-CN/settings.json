@@ -310,7 +310,14 @@
       "add": "添加命令",
       "edit": "编辑",
       "none": "没有触发键",
-      "actions": "操作"
+      "addTitle": "添加命令",
+      "editTitle": "编辑命令",
+      "namePlaceholder": "例如 重启 nginx",
+      "linePlaceholder": "systemctl restart #1",
+      "enabled": "已启用",
+      "disabled": "已关闭",
+      "saveFailed": "命令库没有写成功。",
+      "prefixInvalid": "触发键是一个词，不能包含空格。"
     },
     "shortcuts": {
       "hint": "点「更改」，然后按下你想换成的那组键。按 Esc 保持原样；某个键不想要了可以解绑。",

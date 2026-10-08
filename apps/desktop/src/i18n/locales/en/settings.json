@@ -310,7 +310,14 @@
       "add": "Add a command",
       "edit": "Edit",
       "none": "No trigger",
-      "actions": "Actions"
+      "addTitle": "Add a command",
+      "editTitle": "Edit the command",
+      "namePlaceholder": "e.g. restart nginx",
+      "linePlaceholder": "systemctl restart #1",
+      "enabled": "Enabled",
+      "disabled": "Switched off",
+      "saveFailed": "The library could not be written.",
+      "prefixInvalid": "A trigger is one word, so it cannot contain a space."
     },
     "shortcuts": {
       "hint": "Click Change, then press the combination you want instead. Escape leaves the key as it is, and a key somebody does not want can be unbound.",

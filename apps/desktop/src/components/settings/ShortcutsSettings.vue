@@ -132,33 +132,35 @@ function unbind(definition: ShortcutDefinition): void {
   <div class="space-y-5">
     <p class="text-xs text-muted-foreground">{{ t("settings.shortcuts.hint") }}</p>
 
-    <section v-for="group in scopes" :key="group.scope" class="space-y-1.5">
-      <h4 class="text-sm font-medium text-muted-foreground">{{ t(`settings.shortcuts.scope.${group.scope}`) }}</h4>
+    <section v-for="group in scopes" :key="group.scope" class="space-y-2">
+      <h4 class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        {{ t(`settings.shortcuts.scope.${group.scope}`) }}
+      </h4>
 
       <div
         v-for="definition in group.actions"
         :key="definition.id"
-        class="flex flex-wrap items-center gap-2 rounded-md border border-border px-2 py-1.5"
+        class="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2"
       >
-        <span class="min-w-0 flex-1 truncate text-xs">{{ t(definition.labelKey) }}</span>
+        <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ t(definition.labelKey) }}</span>
 
-        <span v-if="conflicts[definition.id]" class="truncate text-[11px] text-warning">
+        <span v-if="conflicts[definition.id]" class="truncate text-xs text-warning">
           {{ t("settings.shortcuts.conflict", { action: t(conflicts[definition.id] as string) }) }}
         </span>
 
         <kbd
           v-if="keyFor(definition) !== ''"
-          class="shrink-0 rounded-sm border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+          class="shrink-0 rounded-sm border border-border bg-background px-1.5 py-0.5 font-mono text-xs"
         >
           {{ keyFor(definition) }}
         </kbd>
-        <span v-else class="shrink-0 text-[11px] text-muted-foreground">
+        <span v-else class="shrink-0 text-xs text-muted-foreground">
           {{ t("settings.shortcuts.unbound") }}
         </span>
 
         <button
           type="button"
-          class="shrink-0 rounded-md border px-2 py-0.5 text-[11px] transition-colors"
+          class="shrink-0 rounded-md border px-2.5 py-1 text-xs transition-colors"
           :class="
             recording === definition.id
               ? 'border-primary text-primary'
@@ -174,7 +176,7 @@ function unbind(definition: ShortcutDefinition): void {
         <button
           v-if="changed(definition)"
           type="button"
-          class="shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-accent hover:text-foreground"
+          class="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs transition-colors hover:bg-accent hover:text-foreground"
           @click="reset(definition)"
         >
           {{ t("settings.shortcuts.reset") }}
@@ -183,7 +185,7 @@ function unbind(definition: ShortcutDefinition): void {
         <button
           v-if="changed(definition) && keyFor(definition) !== ''"
           type="button"
-          class="shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          class="shrink-0 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           @click="unbind(definition)"
         >
           {{ t("settings.shortcuts.unbind") }}

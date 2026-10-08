@@ -642,6 +642,7 @@ fn a_saved_command_serializes_with_camel_case_fields() {
             prefix: "res".to_owned(),
             command: "systemctl restart #1".to_owned(),
             append_cr: true,
+            enabled: false,
             order: 3,
             slot_history: vec![vec!["nginx".to_owned(), "apache2".to_owned()], Vec::new()],
         },

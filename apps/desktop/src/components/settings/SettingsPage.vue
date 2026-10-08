@@ -201,9 +201,30 @@ const groups = computed(() =>
   ),
 );
 
+/**
+ * The command library the search is about.
+ *
+ * A list like the shortcuts page rather than a set of rows, so the search reaches it by name: the
+ * library's own name, or the trigger a command is reached by — which is the word somebody who has
+ * one of these and cannot find the page would type.
+ */
+const commandHits = computed(() => {
+  if (!searching.value) {
+    return false;
+  }
+
+  const needle = query.value.trim().toLowerCase();
+  return [t("settings.nav.commands"), t("commands.trigger.label"), t("commands.command")].some((name) =>
+    name.toLowerCase().includes(needle),
+  );
+});
+
 function hitsIn(id: SettingsCategoryId): number {
   if (id === "shortcuts") {
     return shortcutHits.value.length;
+  }
+  if (id === "commands") {
+    return commandHits.value ? 1 : 0;
   }
   return hits.value.filter((row) => row.category === id).length;
 }
@@ -664,8 +685,13 @@ function translate(key: string, params?: Record<string, string>): string {
                   <ShortcutsSettings />
                 </section>
 
+                <section v-if="commandHits" class="space-y-2">
+                  <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.nav.commands") }}</h3>
+                  <CommandsLibrary />
+                </section>
+
                 <p
-                  v-if="groups.length === 0 && shortcutHits.length === 0"
+                  v-if="groups.length === 0 && shortcutHits.length === 0 && !commandHits"
                   class="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   {{ t("settings.search.empty", { query: query.trim() }) }}

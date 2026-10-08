@@ -307,6 +307,10 @@ async function renameGroup(): Promise<void> {
             <input v-model="commands.draft.appendCr" type="checkbox" class="size-3.5 accent-primary" />
             {{ t("commands.appendCr") }}
           </label>
+          <label class="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            <input v-model="commands.draft.enabled" type="checkbox" class="size-3.5 accent-primary" />
+            {{ t("settings.commands.enabled") }}
+          </label>
         </div>
 
         <textarea

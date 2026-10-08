@@ -35,6 +35,11 @@ export interface Snippet {
   readonly command: string;
   /** Whether sending it presses Enter afterwards. */
   readonly appendCr: boolean;
+  /**
+   * Whether the completion offers it. Off keeps a line somebody is not using right now out of the
+   * list without deleting it; a command saved before this existed is on.
+   */
+  readonly enabled: boolean;
   readonly order: number;
   /** Values used in each slot before, newest first: index 0 belongs to `#1`. */
   readonly slotHistory: readonly (readonly string[])[];

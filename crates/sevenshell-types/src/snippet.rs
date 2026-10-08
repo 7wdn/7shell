@@ -14,6 +14,12 @@ use serde::{Deserialize, Serialize};
 /// How many `#n` slots a saved command may use: `#1` through `#5`.
 pub const SNIPPET_SLOTS: usize = 5;
 
+/// Whether a command is offered by the completion, for a library written before it could be turned
+/// off: absent means on, because a command somebody saved is one they meant to use.
+fn enabled_by_default() -> bool {
+    true
+}
+
 /// The group a command lands in when nobody has made one yet.
 ///
 /// It exists from the start — a library with no group is a library with nowhere to put the first
@@ -57,6 +63,13 @@ pub struct Snippet {
     /// Whether sending it presses Enter afterwards. Off means the line is placed in the shell
     /// without running it — which is how a saved `cd /srv/app` gets to be amended before it runs.
     pub append_cr: bool,
+    /// Whether the completion offers it.
+    ///
+    /// Off keeps a line somebody is not using right now out of the list without deleting it, which is
+    /// what a library of shipped and half-forgotten commands needs. A command saved before this
+    /// existed is on: that is what the default below means.
+    #[serde(default = "enabled_by_default")]
+    pub enabled: bool,
     pub order: u32,
     /// Values used in each slot before, newest first: index 0 belongs to `#1`.
     ///
