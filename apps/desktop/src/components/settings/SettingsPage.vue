@@ -60,6 +60,8 @@ import {
 import { createDelayedPreview } from "@/lib/settings/delayedPreview";
 import { describeShellError } from "@/i18n/errors";
 import type { SupportedLocale } from "@/i18n";
+import { formatShortcutDisplay } from "@/lib/shortcuts/display";
+import { resolveBindings, SHORTCUT_DEFINITIONS } from "@/lib/shortcuts/registry";
 import { useAppStore } from "@/stores/app";
 import { useTerminalsStore } from "@/stores/terminals";
 import { type PreferenceField, usePreferencesStore } from "@/stores/preferences";
@@ -160,6 +162,37 @@ const hits = computed(() =>
   searching.value ? SETTINGS_ROWS.filter((row) => rowMatches(row, query.value, (key) => t(key))) : [],
 );
 
+/**
+ * The shortcut actions the search is about.
+ *
+ * The page that holds them is not made of rows, so the search reaches it by name: its own name, the
+ * name of any action in it, or the key one of them answers to — somebody who knows the key and not
+ * what it is called is exactly who a search is for. Everything it finds draws the page, because the
+ * page is what holds them.
+ */
+const shortcutHits = computed(() => {
+  if (!searching.value) {
+    return [];
+  }
+
+  const needle = query.value.trim().toLowerCase();
+  if (t("settings.nav.shortcuts").toLowerCase().includes(needle)) {
+    return SHORTCUT_DEFINITIONS;
+  }
+
+  const bindings = resolveBindings(preferences.keybindings);
+  // The key is compared with its spaces taken out of both sides: a person typing the key they know
+  // types `ctrl+f`, and the page draws `Ctrl + F`.
+  const typed = needle.replace(/\s+/g, "");
+  return SHORTCUT_DEFINITIONS.filter((definition) => {
+    if (t(definition.labelKey).toLowerCase().includes(needle)) {
+      return true;
+    }
+    const key = formatShortcutDisplay(bindings[definition.id], app.platform).toLowerCase().replace(/\s+/g, "");
+    return key !== "" && key.includes(typed);
+  });
+});
+
 /** The hits, grouped under the category each one came from — the page it would be found on. */
 const groups = computed(() =>
   SETTINGS_CATEGORIES.map((id) => ({ id, rows: hits.value.filter((row) => row.category === id) })).filter(
@@ -168,6 +201,9 @@ const groups = computed(() =>
 );
 
 function hitsIn(id: SettingsCategoryId): number {
+  if (id === "shortcuts") {
+    return shortcutHits.value.length;
+  }
   return hits.value.filter((row) => row.category === id).length;
 }
 
@@ -622,8 +658,13 @@ function translate(key: string, params?: Record<string, string>): string {
                   </SettingsRow>
                 </section>
 
+                <section v-if="shortcutHits.length > 0" class="space-y-2">
+                  <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.nav.shortcuts") }}</h3>
+                  <ShortcutsSettings />
+                </section>
+
                 <p
-                  v-if="groups.length === 0"
+                  v-if="groups.length === 0 && shortcutHits.length === 0"
                   class="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   {{ t("settings.search.empty", { query: query.trim() }) }}

@@ -79,6 +79,13 @@ export interface CompletionRequest {
   readonly kindLabel: (kind: CatalogKind | "subcommand" | "path") => string;
   /** Where an argument that is a path is read from. Left out when there is no host to ask. */
   readonly paths?: PathSource;
+  /**
+   * What taking a row before is worth, for a row somebody has taken before.
+   *
+   * A hint, not a judgement: the value is small enough that a better match still wins, and the one
+   * place it comes from is the caller — the engine keeps nothing between calls.
+   */
+  readonly acceptance?: (insert: string) => number;
   readonly limit?: number;
 }
 
@@ -313,11 +320,14 @@ export function buildCommandCompletions(request: CompletionRequest): readonly Co
   }
 
   const candidates = site.commandPosition ? atCommandWord(request, site) : atArgument(request, site);
-  const boosted = candidates.map((candidate) =>
-    candidate.label === site.prefix || candidate.insert === site.prefix
-      ? { ...candidate, score: candidate.score + EXACT_BOOST }
-      : candidate,
-  );
+  const boost = request.acceptance ?? (() => 0);
+  const boosted = candidates.map((candidate) => {
+    const remembered = boost(candidate.insert);
+    const score = candidate.score + remembered;
+    return candidate.label === site.prefix || candidate.insert === site.prefix
+      ? { ...candidate, score: score + EXACT_BOOST }
+      : { ...candidate, score };
+  });
 
   return dedupe(boosted)
     .sort(compare)

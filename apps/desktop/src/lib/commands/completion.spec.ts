@@ -46,6 +46,7 @@ function build(
   sources: Partial<CompletionSources>,
   describe: Readonly<Record<string, string>> = {},
   paths?: PathSource,
+  acceptance?: (insert: string) => number,
 ): readonly CompletionCandidate[] {
   return buildCommandCompletions({
     line,
@@ -56,6 +57,7 @@ function build(
     describeSubcommand: (command, word) => describe[`${command} ${word}`] ?? null,
     kindLabel: (kind) => kind,
     paths,
+    acceptance,
   });
 }
 
@@ -319,5 +321,25 @@ describe("a path on the host", () => {
     const candidates = build("cd /va", {}, {}, { cwd: null, entries: () => null });
 
     expect(candidates).toEqual([]);
+  });
+});
+
+describe("what somebody has taken before", () => {
+  it("is put above a row they have not, when both answer equally", () => {
+    const candidates = build("gr", { catalog: [command("grep"), command("grok")] }, {}, undefined, (insert) =>
+      insert === "grok" ? 200 : 0,
+    );
+
+    expect(candidates.map((candidate) => candidate.insert)).toEqual(["grok", "grep"]);
+  });
+
+  it("cannot outrank a better match", () => {
+    // The first candidate answers the prefix and the second only answers inside the word: a hint is
+    // worth less than that difference, which is what keeps the list showing what somebody typed.
+    const candidates = build("gr", { catalog: [command("grep"), command("algrep")] }, {}, undefined, (insert) =>
+      insert === "algrep" ? 300 : 0,
+    );
+
+    expect(candidates[0]?.insert).toBe("grep");
   });
 });

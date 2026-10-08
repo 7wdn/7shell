@@ -24,6 +24,7 @@ import CompletionMenu from "@/components/commands/CompletionMenu.vue";
 import { useCommandCompletion } from "@/components/commands/useCommandCompletion";
 import { useRemotePaths } from "@/components/commands/useRemotePaths";
 import { describeErrorFields } from "@/i18n/errors";
+import { acceptanceBoost, recordAccepted } from "@/lib/commands/acceptance";
 import { COMMAND_CATALOG, descriptionKeyFor } from "@/lib/commands/catalog";
 import { buildCommandCompletions } from "@/lib/commands/completion";
 import { subcommandKeyFor, subcommandsOf } from "@/lib/commands/subcommands";
@@ -105,6 +106,7 @@ const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move,
         return te(key) ? t(key) : null;
       },
       kindLabel: (kind) => t(`commands.completion.kind.${kind}`),
+      acceptance: acceptanceBoost,
       paths: {
         cwd: remote.base,
         entries: (directory) => {
@@ -218,6 +220,13 @@ function takeRow(index: number): void {
   const applied = take(caretOf());
   if (applied === null) {
     return;
+  }
+
+  // Taken is remembered: the row somebody reaches for is the row they are likely to reach for again,
+  // and the memory is what puts it higher the next time. Taking it also hides the list, so nothing is
+  // redrawn with the new score until the next keystroke — which is the moment it is worth having.
+  if (row !== undefined) {
+    recordAccepted(row.insert);
   }
 
   line.value = applied.text;

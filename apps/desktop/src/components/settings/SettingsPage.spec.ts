@@ -202,3 +202,26 @@ describe("the settings page", () => {
     expect(lists.length, "both lists are drawn under the page's refusal").toBe(2);
   });
 });
+
+it("finds the shortcuts page by an action's name, or by the key it answers to", async () => {
+  await mount();
+
+  const field = searchField() as HTMLInputElement;
+  const search = async (query: string): Promise<void> => {
+    field.value = query;
+    field.dispatchEvent(new Event("input"));
+    await nextTick();
+  };
+
+  await search("find in the terminal");
+  expect(host.textContent, "the page that holds it is drawn, since a key is not a row").toContain(
+    "Find in the terminal",
+  );
+  expect(host.textContent).toContain("Ctrl + F");
+
+  await search("ctrl+f");
+  expect(host.textContent, "somebody who knows the key and not its name").toContain("Find in the terminal");
+
+  await search("nothing says this");
+  expect(host.textContent).not.toContain("Find in the terminal");
+});

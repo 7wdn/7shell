@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import { i18n } from "@/i18n";
+import { acceptanceBoost, forgetAccepted } from "@/lib/commands/acceptance";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
@@ -73,6 +74,7 @@ async function mount(library: readonly Snippet[] = [], history: readonly Command
 beforeEach(() => {
   setActivePinia(createPinia());
   document.body.innerHTML = "";
+  forgetAccepted();
 });
 
 afterEach(() => {
@@ -306,5 +308,16 @@ describe("the command bar offering what it knows", () => {
     press("Tab");
     await nextTick();
     expect(field().value, "Tab is the browser's again while the list is off").toBe("upt");
+  });
+});
+
+describe("what the bar remembers", () => {
+  it("notes a row somebody took, so the next list can put it higher", async () => {
+    await mount([], ran("uptime"));
+    await type("upt");
+    press("Tab");
+    await nextTick();
+
+    expect(acceptanceBoost("uptime")).toBeGreaterThan(0);
   });
 });
