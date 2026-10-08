@@ -16,7 +16,8 @@
 
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    CommandHistoryEntry, RiskAssessment, SendFailure, SendOutcome, SendReport, SendTarget, Snippet, SnippetGroup,
+    CommandHistoryEntry, CompletionWord, RiskAssessment, SendFailure, SendOutcome, SendReport, SendTarget, Snippet,
+    SnippetGroup,
 };
 
 use crate::Core;
@@ -46,6 +47,20 @@ impl Core {
 
     pub fn delete_snippet(&self, id: &str) -> Result<(), ShellError> {
         self.vault.delete_snippet(id)
+    }
+
+    /// The words somebody added to what follows a command, in the order they added them.
+    pub fn completion_words(&self) -> Result<Vec<CompletionWord>, ShellError> {
+        self.vault.completion_words()
+    }
+
+    /// Adds or updates one word, and answers with what was stored. A word with no id is a new one.
+    pub fn save_completion_word(&self, word: CompletionWord) -> Result<CompletionWord, ShellError> {
+        self.vault.save_completion_word(word)
+    }
+
+    pub fn delete_completion_word(&self, id: &str) -> Result<(), ShellError> {
+        self.vault.delete_completion_word(id)
     }
 
     /// What was sent, newest first.

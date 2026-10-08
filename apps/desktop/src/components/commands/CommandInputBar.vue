@@ -17,7 +17,7 @@
  * answers to "what did I just run".
  */
 import { History, Send } from "@lucide/vue";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import CompletionMenu from "@/components/commands/CompletionMenu.vue";
@@ -28,6 +28,7 @@ import { acceptanceBoost, recordAccepted } from "@/lib/commands/acceptance";
 import { COMMAND_CATALOG, descriptionKeyFor } from "@/lib/commands/catalog";
 import { buildCommandCompletions } from "@/lib/commands/completion";
 import { subcommandKeyFor, subcommandsOf } from "@/lib/commands/subcommands";
+import { noteFor, wordsFor } from "@/lib/commands/words";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { bindingFor } from "@/lib/shortcuts/registry";
 import { useAppStore } from "@/stores/app";
@@ -35,6 +36,7 @@ import { useCommandsStore } from "@/stores/commands";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore, type TerminalTab } from "@/stores/terminals";
+import { useWordsStore } from "@/stores/words";
 
 const { t, te } = useI18n();
 const app = useAppStore();
@@ -42,6 +44,7 @@ const commands = useCommandsStore();
 const files = useFilesStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
+const words = useWordsStore();
 
 const line = ref("");
 const showHistory = ref(false);
@@ -100,8 +103,14 @@ const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move,
         catalog: COMMAND_CATALOG,
       },
       describe: (name) => (te(descriptionKeyFor(name)) ? t(descriptionKeyFor(name)) : null),
-      subcommands: subcommandsOf,
+      // What somebody added comes before what we ship, and their own line about a word wins over
+      // ours: this is where the two halves of "what comes after this command" become one list.
+      subcommands: (command) => wordsFor(command, words.words, subcommandsOf(command)),
       describeSubcommand: (command, word) => {
+        const own = noteFor(command, word, words.words);
+        if (own !== null) {
+          return own;
+        }
         const key = subcommandKeyFor(command, word);
         return te(key) ? t(key) : null;
       },
@@ -267,6 +276,23 @@ watch(
 watch(visible, (up) => {
   if (!up) {
     pointed.value = null;
+  }
+});
+
+/**
+ * What the list offers is read when the first line that could use it is drawn.
+ *
+ * The library and the words live in the vault, so a terminal opened before either was ever read
+ * would offer nothing and say nothing about why — which is what happened when the only readers were
+ * the panel and the settings page. The `loaded` flag is what keeps this from being one read per
+ * terminal: the second terminal finds it already true.
+ */
+onMounted(async () => {
+  if (!commands.loaded) {
+    await commands.load();
+  }
+  if (!words.loaded) {
+    await words.load();
   }
 });
 

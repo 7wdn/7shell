@@ -14,13 +14,13 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
-    BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CornerStyle, CpuCounters, CpuModel, CpuStates,
-    CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, KeyInfo,
-    KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey,
-    ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure,
-    SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup, SessionLayout, Snippet, SnippetGroup,
-    SocketRow, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
-    ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionWord, CornerStyle, CpuCounters,
+    CpuModel, CpuStates, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure,
+    HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
+    OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
+    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup, SessionLayout,
+    Snippet, SnippetGroup, SocketRow, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -702,4 +702,26 @@ fn a_saved_command_serializes_with_camel_case_fields() {
     );
     assert_eq!(target["kind"], serde_json::json!("terminals"));
     assert_eq!(target["handles"][1], serde_json::json!("t2"));
+}
+
+/// One word somebody added, once it has been through JSON.
+///
+/// The note is checked as text rather than only for its key: it is the one field here somebody
+/// writes in their own words, and a shape that renamed it would be a row whose explanation had
+/// gone missing in the interface and nowhere else.
+#[test]
+fn a_completion_word_serializes_with_camel_case_fields() {
+    let word = check(
+        &CompletionWord {
+            id: "word-1".to_owned(),
+            command: "kubectl".to_owned(),
+            word: "apply".to_owned(),
+            note: "put the manifest on the cluster".to_owned(),
+        },
+        "CompletionWord",
+    );
+
+    assert_eq!(word["id"], serde_json::json!("word-1"));
+    assert_eq!(word["note"], serde_json::json!("put the manifest on the cluster"));
+    assert_eq!(word.as_object().expect("an object").len(), 4);
 }

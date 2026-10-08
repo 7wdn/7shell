@@ -44,6 +44,7 @@ import SettingsRow from "@/components/settings/SettingsRow.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
 import CommandsLibrary from "@/components/settings/CommandsLibrary.vue";
+import WordsSettings from "@/components/settings/WordsSettings.vue";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
@@ -219,12 +220,32 @@ const commandHits = computed(() => {
   );
 });
 
+/**
+ * The words page the search is about.
+ *
+ * A list like the two above, reached by name: what somebody is looking for here is a word they added
+ * or want to add, and the words they typed are in the page, not in a row this search could read.
+ */
+const wordHits = computed(() => {
+  if (!searching.value) {
+    return false;
+  }
+
+  const needle = query.value.trim().toLowerCase();
+  return [t("settings.nav.words"), t("settings.words.columns.word"), t("settings.words.columns.note")].some((name) =>
+    name.toLowerCase().includes(needle),
+  );
+});
+
 function hitsIn(id: SettingsCategoryId): number {
   if (id === "shortcuts") {
     return shortcutHits.value.length;
   }
   if (id === "commands") {
     return commandHits.value ? 1 : 0;
+  }
+  if (id === "words") {
+    return wordHits.value ? 1 : 0;
   }
   return hits.value.filter((row) => row.category === id).length;
 }
@@ -690,8 +711,13 @@ function translate(key: string, params?: Record<string, string>): string {
                   <CommandsLibrary />
                 </section>
 
+                <section v-if="wordHits" class="space-y-2">
+                  <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.nav.words") }}</h3>
+                  <WordsSettings />
+                </section>
+
                 <p
-                  v-if="groups.length === 0 && shortcutHits.length === 0 && !commandHits"
+                  v-if="groups.length === 0 && shortcutHits.length === 0 && !commandHits && !wordHits"
                   class="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   {{ t("settings.search.empty", { query: query.trim() }) }}
@@ -729,6 +755,7 @@ function translate(key: string, params?: Record<string, string>): string {
                 <ShortcutsSettings v-else-if="category === 'shortcuts'" />
 
                 <CommandsLibrary v-else-if="category === 'commands'" />
+                <WordsSettings v-else-if="category === 'words'" />
 
                 <div v-else-if="category === 'security'" class="space-y-5">
                   <div class="space-y-2">

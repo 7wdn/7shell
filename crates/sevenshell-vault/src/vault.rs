@@ -31,7 +31,8 @@ use std::sync::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    CommandHistoryEntry, KeyInfo, KnownHostEntry, Session, SessionGroup, SessionImportSummary, Snippet, SnippetGroup,
+    CommandHistoryEntry, CompletionWord, KeyInfo, KnownHostEntry, Session, SessionGroup, SessionImportSummary, Snippet,
+    SnippetGroup,
 };
 use zeroize::Zeroizing;
 
@@ -539,6 +540,30 @@ impl Vault {
         let state = guard.open()?;
 
         state.document.delete_snippet(id);
+        state.write_to(&self.path)
+    }
+
+    /// The words somebody added to what follows a command, in the order they were added.
+    pub fn completion_words(&self) -> Result<Vec<CompletionWord>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.completion_words())
+    }
+
+    /// Adds or updates one word. A word with no id is a new one.
+    pub fn save_completion_word(&self, word: CompletionWord) -> Result<CompletionWord, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let saved = state.document.save_completion_word(word);
+        state.write_to(&self.path)?;
+        Ok(saved)
+    }
+
+    pub fn delete_completion_word(&self, id: &str) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.delete_completion_word(id);
         state.write_to(&self.path)
     }
 
@@ -1560,6 +1585,65 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["uptime", "restart nginx"]
         );
+    }
+
+    fn word_of(command: &str, word: &str, note: &str) -> CompletionWord {
+        CompletionWord {
+            id: String::new(),
+            command: command.to_owned(),
+            word: word.to_owned(),
+            note: note.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_word_somebody_adds_lands_at_the_end_and_survives_a_lock() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let first = vault
+            .save_completion_word(word_of("kubectl", "apply", "put the manifest on the cluster"))
+            .expect("save");
+        let second = vault
+            .save_completion_word(word_of("kubectl", "drain", ""))
+            .expect("save");
+
+        assert!(!first.id.is_empty(), "a word with no id is a new one");
+        assert_eq!(
+            vault
+                .completion_words()
+                .expect("read")
+                .iter()
+                .map(|word| word.word.as_str())
+                .collect::<Vec<_>>(),
+            ["apply", "drain"],
+            "a word somebody adds goes at the end, where they will look for it"
+        );
+
+        // The same command and word again is the same row: saving it changes what that row says
+        // rather than adding a second one nobody can tell apart from the first.
+        let changed = vault
+            .save_completion_word(word_of("kubectl", "apply", "one file, one namespace"))
+            .expect("save");
+        assert_eq!(changed.id, first.id, "the row keeps the id the interface holds");
+        let words = vault.completion_words().expect("read");
+        assert_eq!(words.len(), 2, "not a third row");
+        assert_eq!(words[0].id, first.id);
+        assert_eq!(words[0].note, "one file, one namespace");
+
+        // Through the file, since what is stored is the answer that lasts.
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        let words = vault.completion_words().expect("read");
+        assert_eq!(words.len(), 2);
+        assert_eq!(words[1].word, "drain");
+        assert!(words[1].note.is_empty(), "a word with no note is stored without one");
+
+        vault.delete_completion_word(&second.id).expect("delete");
+        let words = vault.completion_words().expect("read");
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].word, "apply");
     }
 
     #[test]

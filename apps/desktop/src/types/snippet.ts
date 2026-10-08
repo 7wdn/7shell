@@ -1,7 +1,8 @@
 import type { RiskAssessment } from "@/types/batch";
 
 /**
- * Hand-written mirror of the Rust wire types for saved commands and for what sending one reported.
+ * Hand-written mirror of the Rust wire types for saved commands, the words somebody adds to what
+ * follows one, and what sending a command reported.
  *
  * `packages/app-tests/contracts.test.ts` compares these field names with their Rust counterparts in
  * both directions, so a rename on one side fails the test suite rather than a release.
@@ -11,6 +12,20 @@ import type { RiskAssessment } from "@/types/batch";
  * nothing to do with `#1` of a log command — which is why the values are stored per command rather
  * than in one list of "things typed into boxes".
  */
+
+/** One word somebody added to what follows a command, and the command it follows. */
+export interface CompletionWord {
+  readonly id: string;
+  /** The command the word follows, as it is typed: `kubectl`. */
+  readonly command: string;
+  /** The word itself, offered after that command and a space. */
+  readonly word: string;
+  /**
+   * What it means, in the words of whoever added it — their own text rather than a translation.
+   * Empty means the list shows what kind of word it is.
+   */
+  readonly note: string;
+}
 
 /** One group of saved commands, in the order the interface lists them. */
 export interface SnippetGroup {

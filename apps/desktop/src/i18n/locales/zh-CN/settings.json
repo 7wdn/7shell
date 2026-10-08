@@ -10,6 +10,7 @@
       "security": "安全",
       "shortcuts": "快捷键",
       "commands": "命令库",
+      "words": "联想词",
       "terminal": "SSH 终端"
     },
     "tab": {
@@ -57,7 +58,26 @@
       "english": "English",
       "simplifiedChinese": "简体中文"
     },
-    "palette": {
+      "words": {
+      "hint": "命令后面联想出来的词。本次发布自带的那些每个安装都有；这里加的是我们没收录的工具，你自己加的排在前面。",
+      "add": "添加词",
+      "editTitle": "编辑词",
+      "addTitle": "添加词",
+      "empty": "还没有添加过。",
+      "commandPlaceholder": "例如 kubectl",
+      "wordPlaceholder": "例如 apply",
+      "notePlaceholder": "这个词是什么意思",
+      "noteHint": "用你自己的话写：它显示在词后面，而不是本次发布自带的那句话。",
+      "spaceInvalid": "命令和词各自都是一个词：命令行是按空格切开之后才去查的。",
+      "saveFailed": "这个词没有写成功。",
+      "columns": {
+        "command": "命令",
+        "word": "词",
+        "note": "说明",
+        "actions": "操作"
+      }
+    },
+  "palette": {
       "default": "洁白",
       "mist": "雾灰",
       "graphite": "钛灰",

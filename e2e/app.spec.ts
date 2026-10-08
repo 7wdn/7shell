@@ -2910,3 +2910,94 @@ test("a command can be added in the settings and reached by its trigger", async 
     await close();
   }
 });
+
+/**
+ * A word added in the settings, offered by the command line after its command.
+ *
+ * The build ships a table of what each command is usually followed by, and it is the same table for
+ * everybody: the tools a machine has that nobody's table knows are what this page is for. The word is
+ * asked for through a terminal as well as stored, because "it is written down" and "the line offers
+ * it" are two different claims and only the second one is why somebody added it.
+ */
+test("a word added in the settings is offered after its command", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `word-${stamp}`;
+    // A command this build has never heard of: the case is about the table it does not ship.
+    const command = `acme-${stamp.slice(-3)}`;
+    const word = `drain${stamp.slice(-3)}`;
+    const note = `what they mean by it ${stamp.slice(-3)}`;
+
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Suggested words", exact: true }).click();
+
+    await settings.getByRole("button", { name: "Add a word" }).click();
+    const editor = page.getByRole("dialog");
+    await expect(editor, "adding a word is a dialog").toBeVisible();
+    await editor.getByLabel("Command", { exact: true }).fill(command);
+    await editor.getByLabel("Word", { exact: true }).fill(word);
+    await editor.getByLabel("Note", { exact: true }).fill(note);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor, "the dialog goes once the word is written").toHaveCount(0);
+    await expect(settings.locator("[data-word-row]").first(), "it is in the list now").toContainText(word);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-words.png"), fullPage: false });
+    await page.getByRole("button", { name: "Close settings" }).click();
+
+    // A terminal to type in, since the claim is about what the command line offers.
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const session = page.getByRole("dialog");
+    await session.getByPlaceholder("Production web server").fill(name);
+    await session.getByPlaceholder("example.com").fill(host as string);
+    await session.locator("#session-port").fill(port);
+    await session.getByPlaceholder("root").fill(user as string);
+    await session.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await session.getByRole("button", { name: "Save" }).click();
+    await expect(session).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const bar = page.getByLabel("Command input");
+    const search = page.getByLabel("Search sessions");
+    await search.fill(name);
+    await sessionRow(page, name).click();
+    await search.fill("");
+    await expect(question.or(bar).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+
+    // Three letters of the word, after the command: what is offered is the word that was added, with
+    // the line its author wrote about it rather than the kind of word it is.
+    await bar.fill(`${command} dra`);
+    const suggestions = page.getByRole("listbox", { name: "Completions" });
+    await expect(suggestions).toBeVisible();
+    await expect(suggestions.getByRole("option").first()).toContainText(word);
+    await expect(suggestions.getByRole("option").first(), "the note that was written for it").toContainText(note);
+
+    // And taking it writes it into the line, which is what the word is for.
+    await bar.press("Tab");
+    await expect(bar).toHaveValue(`${command} ${word} `);
+
+    await bar.press("Escape");
+    await page.getByRole("button", { name: "Close terminal" }).click();
+
+    // Put it back: a word left behind is a word the next case would meet.
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    await settings.getByRole("button", { name: "Suggested words", exact: true }).click();
+    await settings.getByRole("button", { name: `Delete: ${command} ${word}` }).click();
+    await expect(settings.getByText(note)).toHaveCount(0);
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});

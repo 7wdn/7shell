@@ -31,6 +31,7 @@ export type SettingsCategoryId =
   | "security"
   | "shortcuts"
   | "commands"
+  | "words"
   | "about";
 
 /** The categories, in the order the navigation draws them. */
@@ -42,6 +43,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [
   "security",
   "shortcuts",
   "commands",
+  "words",
   "about",
 ];
 
@@ -51,7 +53,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [
  * Their rows are not preferences — nobody sets a trusted key to a value — so they draw their own
  * content and the search does not look inside them.
  */
-export const LIST_CATEGORIES: readonly SettingsCategoryId[] = ["security", "shortcuts", "commands"];
+export const LIST_CATEGORIES: readonly SettingsCategoryId[] = ["security", "shortcuts", "commands", "words"];
 
 /**
  * What each category is called, as a key rather than as a resolved string.
@@ -68,6 +70,7 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
   security: "settings.nav.security",
   shortcuts: "settings.nav.shortcuts",
   commands: "settings.nav.commands",
+  words: "settings.nav.words",
   about: "settings.nav.about",
 };
 

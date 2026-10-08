@@ -334,6 +334,20 @@ describe("wire types", () => {
     expect(sorted(tsKindUnion(typescript, "SendTarget"))).toEqual(sorted(rustBracedEnumVariants(rust, "SendTarget")));
   });
 
+  it("declares the same completion-word fields on both sides", () => {
+    // Its own module on the Rust side, because it is not a saved command: it is a word somebody adds
+    // to what a command is followed by.
+    const rust = read("crates/sevenshell-types/src/words.rs");
+    const typescript = read("apps/desktop/src/types/snippet.ts");
+
+    const rustFields = rustStructFields(rust, "CompletionWord").map(camelCase);
+
+    expect(rustFields.length, "CompletionWord has no fields, so the comparison proves nothing").toBeGreaterThan(0);
+    expect(sorted(rustFields), "CompletionWord differs between Rust and the interface").toEqual(
+      sorted(interfaceFields(typescript, "CompletionWord")),
+    );
+  });
+
   it("keeps the compiled interfaces aligned with the Rust structs", () => {
     // These assignments exist so `tsc` fails if a field is renamed in one language only.
     const envelope: ErrorEnvelope = {

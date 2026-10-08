@@ -1,12 +1,15 @@
-//! Saved commands, the history of what was sent, and sending one.
+//! Saved commands, the words somebody adds to what follows one, the history of what was sent, and
+//! sending one.
 //!
-//! The library and the history live in the vault, so every command here goes through the core
+//! The library, the words and the history live in the vault, so every command here goes through the core
 //! rather than touching storage directly — and so the same operations are available to a command
 //! line or an agent later without going through a window.
 
 use sevenshell_core::Core;
 use sevenshell_error::ShellError;
-use sevenshell_types::{CommandHistoryEntry, RiskAssessment, SendOutcome, SendTarget, Snippet, SnippetGroup};
+use sevenshell_types::{
+    CommandHistoryEntry, CompletionWord, RiskAssessment, SendOutcome, SendTarget, Snippet, SnippetGroup,
+};
 use tauri::State;
 
 use crate::state::ShellState;
@@ -37,6 +40,23 @@ pub fn snippet_save(state: State<'_, ShellState>, snippet: Snippet) -> Result<Sn
 #[tauri::command]
 pub fn snippet_delete(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
     state.core().delete_snippet(&id)
+}
+
+/// The words somebody added to what follows a command, in the order they added them.
+#[tauri::command]
+pub fn completion_words(state: State<'_, ShellState>) -> Result<Vec<CompletionWord>, ShellError> {
+    state.core().completion_words()
+}
+
+/// Adds or updates one word. A word with no id is a new one.
+#[tauri::command]
+pub fn completion_word_save(state: State<'_, ShellState>, word: CompletionWord) -> Result<CompletionWord, ShellError> {
+    state.core().save_completion_word(word)
+}
+
+#[tauri::command]
+pub fn completion_word_delete(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().delete_completion_word(&id)
 }
 
 /// What was sent, newest first.

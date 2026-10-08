@@ -12,6 +12,7 @@ mod risk;
 mod session;
 mod settings;
 mod snippet;
+mod words;
 
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
@@ -47,3 +48,4 @@ pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,
     SendTarget, Snippet, SnippetGroup,
 };
+pub use words::CompletionWord;

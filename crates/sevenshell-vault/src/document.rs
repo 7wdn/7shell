@@ -17,8 +17,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AuthMethod, CommandHistoryEntry, DEFAULT_GROUP_ID, KeyInfo, KnownHostEntry, Session, SessionGroup, Snippet,
-    SnippetGroup,
+    AuthMethod, CommandHistoryEntry, CompletionWord, DEFAULT_GROUP_ID, KeyInfo, KnownHostEntry, Session, SessionGroup,
+    Snippet, SnippetGroup,
 };
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
@@ -30,8 +30,10 @@ use zeroize::{Zeroize, Zeroizing};
 /// *local* one — a tunnel to the wrong place rather than a missing line. Version 4 added a session's
 /// agent forwarding, which such a build would drop on its next write — a setting changed without
 /// anybody saying so, in the direction of "off", which is the safe way round but still not a thing
-/// to do quietly. Version 5 added session recording, for the same reason.
-pub const VAULT_SCHEMA_VERSION: u32 = 5;
+/// to do quietly. Version 5 added session recording, for the same reason. Version 6 added the words
+/// somebody adds to what follows a command: a build that predates it would parse the document, drop
+/// the list and write it back empty.
+pub const VAULT_SCHEMA_VERSION: u32 = 6;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -59,6 +61,9 @@ pub struct Document {
     /// What was sent, newest first.
     #[serde(default)]
     pub command_history: Vec<CommandHistoryEntry>,
+    /// The words somebody added to what follows a command, in the order they added them.
+    #[serde(default)]
+    pub completion_words: Vec<CompletionWord>,
 }
 
 impl Document {
@@ -73,6 +78,7 @@ impl Document {
             known_hosts: Vec::new(),
             snippet_groups: vec![default_group()],
             command_history: Vec::new(),
+            completion_words: Vec::new(),
         }
     }
 
@@ -276,6 +282,51 @@ impl Document {
         for group in &mut self.snippet_groups {
             group.commands.retain(|command| command.id != id);
         }
+    }
+
+    /// The words somebody added to what follows a command.
+    ///
+    /// In the order they were added, because that is the only order there is: nothing drags these
+    /// around, and all the order decides is which of two equally good words is offered first.
+    pub(crate) fn completion_words(&self) -> Vec<CompletionWord> {
+        self.completion_words.clone()
+    }
+
+    /// Adds or updates one word. A word with no id is a new one.
+    ///
+    /// The whole word is taken as it arrived: a field copied one at a time is a field that can be
+    /// forgotten here, and a forgotten one is a field nobody can edit.
+    ///
+    /// The pair of command and word is what a row *is*, so saving a pair that is already there
+    /// changes that row rather than adding a second one — two rows saying `kubectl apply` would be
+    /// two rows somebody has to work out between.
+    pub(crate) fn save_completion_word(&mut self, mut word: CompletionWord) -> CompletionWord {
+        if word.id.is_empty() {
+            word.id = format!("word-{}", Uuid::new_v4());
+        }
+
+        let existing = self
+            .completion_words
+            .iter()
+            .position(|entry| entry.id == word.id || (entry.command == word.command && entry.word == word.word));
+
+        match existing {
+            Some(index) => {
+                // The row keeps the id the interface is already holding, and its place in the list:
+                // changing what a word says is not the same as moving it to the end.
+                word.id = self.completion_words[index].id.clone();
+                self.completion_words[index] = word.clone();
+                word
+            }
+            None => {
+                self.completion_words.push(word.clone());
+                word
+            }
+        }
+    }
+
+    pub(crate) fn delete_completion_word(&mut self, id: &str) {
+        self.completion_words.retain(|word| word.id != id);
     }
 
     /// What was sent, newest first.
@@ -569,7 +620,8 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     }
 
     // 2 → 3: forwards gained a mode. 3 → 4: a session gained agent forwarding. 4 → 5: a session
-    // gained recording. None of them has anything to rewrite — the defaults are what every document
+    // gained recording. 5 → 6: a document gained the list of words somebody added, which an older one
+    // simply has none of. None of them has anything to rewrite — the defaults are what every document
     // meant — so the steps are the version number alone.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
@@ -728,6 +780,18 @@ mod tests {
             "the default label is a translation"
         );
         assert!(document.command_history.is_empty());
+    }
+
+    #[test]
+    fn a_document_written_before_the_words_existed_reads_as_having_none() {
+        // Version 5 is the shape from before somebody could add their own words to what follows a
+        // command. An absent list has to read as none rather than as a document that will not open.
+        let raw = br#"{"schemaVersion":5,"sessions":[],"groups":[],"keys":[],"secrets":[],"knownHosts":[]}"#;
+
+        let document = from_slice(raw).expect("a version 5 document is readable");
+
+        assert_eq!(document.schema_version, VAULT_SCHEMA_VERSION);
+        assert!(document.completion_words.is_empty());
     }
 
     #[test]

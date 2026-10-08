@@ -16,7 +16,14 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
-import type { CommandHistoryEntry, SendOutcome, SendTarget, Snippet, SnippetGroup } from "@/types/snippet";
+import type {
+  CommandHistoryEntry,
+  CompletionWord,
+  SendOutcome,
+  SendTarget,
+  Snippet,
+  SnippetGroup,
+} from "@/types/snippet";
 import type {
   KeyInfo,
   KnownHostEntry,
@@ -470,6 +477,18 @@ export function snippetSave(snippet: Snippet): Promise<Snippet> {
 
 export function snippetDelete(id: string): Promise<void> {
   return invoke<void>("snippet_delete", { id });
+}
+
+export function completionWords(): Promise<CompletionWord[]> {
+  return invoke<CompletionWord[]>("completion_words");
+}
+
+export function completionWordSave(word: CompletionWord): Promise<CompletionWord> {
+  return invoke<CompletionWord>("completion_word_save", { word });
+}
+
+export function completionWordDelete(id: string): Promise<void> {
+  return invoke<void>("completion_word_delete", { id });
 }
 
 export function commandHistory(): Promise<CommandHistoryEntry[]> {

@@ -10,6 +10,7 @@
       "security": "Security",
       "shortcuts": "Shortcuts",
       "commands": "Command library",
+      "words": "Suggested words",
       "terminal": "SSH terminal"
     },
     "tab": {
@@ -57,7 +58,26 @@
       "english": "English",
       "simplifiedChinese": "简体中文"
     },
-    "palette": {
+      "words": {
+      "hint": "The words the command line offers after a command. What this build already offers is in every installation; what you add here is for the tools it has never heard of, and yours come first.",
+      "add": "Add a word",
+      "editTitle": "Edit the word",
+      "addTitle": "Add a word",
+      "empty": "Nothing added yet.",
+      "commandPlaceholder": "e.g. kubectl",
+      "wordPlaceholder": "e.g. apply",
+      "notePlaceholder": "What it means",
+      "noteHint": "Your own words: it is shown beside the word instead of the description this build ships.",
+      "spaceInvalid": "A command and a word are one word each: the command line is split on spaces before anything is looked up.",
+      "saveFailed": "The word could not be written.",
+      "columns": {
+        "command": "Command",
+        "word": "Word",
+        "note": "Note",
+        "actions": "Actions"
+      }
+    },
+  "palette": {
       "default": "White",
       "mist": "Mist grey",
       "graphite": "Titanium grey",

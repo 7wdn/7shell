@@ -10,7 +10,14 @@
 import { isDesktopRuntime } from "@/lib/runtime";
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
-import type { CommandHistoryEntry, SendOutcome, SendTarget, Snippet, SnippetGroup } from "@/types/snippet";
+import type {
+  CommandHistoryEntry,
+  CompletionWord,
+  SendOutcome,
+  SendTarget,
+  Snippet,
+  SnippetGroup,
+} from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
   KeyInfo,
@@ -326,6 +333,17 @@ export const backend = {
     deleteGroup: (id: string): Promise<void> => forward("snippet_group_delete", () => desktop.snippetGroupDelete(id)),
     save: (snippet: Snippet): Promise<Snippet> => forward("snippet_save", () => desktop.snippetSave(snippet)),
     delete: (id: string): Promise<void> => forward("snippet_delete", () => desktop.snippetDelete(id)),
+    /**
+     * The words somebody added to what follows a command.
+     *
+     * A list of its own rather than part of the library: what a command *keeps* is a line, and what
+     * a command *knows* is a word, and the two are edited in different places.
+     */
+    words: (): Promise<CompletionWord[]> => forward("completion_words", () => desktop.completionWords()),
+    saveWord: (word: CompletionWord): Promise<CompletionWord> =>
+      forward("completion_word_save", () => desktop.completionWordSave(word)),
+    deleteWord: (id: string): Promise<void> =>
+      forward("completion_word_delete", () => desktop.completionWordDelete(id)),
     history: (): Promise<CommandHistoryEntry[]> => forward("command_history", () => desktop.commandHistory()),
     clearHistory: (): Promise<void> => forward("command_history_clear", () => desktop.commandHistoryClear()),
     /** What the classifier makes of a command. Sends nothing. */
