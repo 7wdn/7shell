@@ -66,6 +66,8 @@ import {
 } from "@/lib/files/selection";
 import { fileAreaMenu, fileEntryMenu } from "@/lib/menu/files";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import { formatShortcutDisplay } from "@/lib/shortcuts/display";
+import { bindingFor } from "@/lib/shortcuts/registry";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -109,6 +111,9 @@ const { t } = useI18n();
 const files = useFilesStore();
 const { openMenu } = useContextMenu();
 const app = useAppStore();
+
+/** How the clipboard key is spelled on this platform, for the button that tells somebody about it. */
+const pasteShortcut = computed(() => formatShortcutDisplay(bindingFor("global.uploadClipboard"), app.platform));
 
 const browser = computed(() => files.browser(props.handle));
 const problem = computed(() => (browser.value?.failure ? describeShellError(translate, browser.value.failure) : null));
@@ -789,7 +794,7 @@ function openAreaMenu(event: MouseEvent): void {
         <button
           type="button"
           class="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-          :title="t('files.paste.title')"
+          :title="t('files.paste.title', { shortcut: pasteShortcut })"
           @click="pasteFiles()"
         >
           <ClipboardPaste :size="11" />

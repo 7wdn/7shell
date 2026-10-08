@@ -16,6 +16,8 @@ import type { Component } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type { MenuEntry } from "@/lib/menu/types";
+import { formatShortcutDisplay } from "@/lib/shortcuts/display";
+import { useAppStore } from "@/stores/app";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{
@@ -32,6 +34,18 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const app = useAppStore();
+
+/**
+ * The key a row prints, spelled for the platform it is drawn on.
+ *
+ * An entry carries a binding (`Mod+V`) rather than a sentence, because the same key reads `Ctrl + V`
+ * on one platform and `⌘ V` on another — a menu that said Ctrl on a Mac would be advertising a key
+ * that does nothing there.
+ */
+function accelFor(entry: MenuEntry): string {
+  return entry.kind === "action" && entry.accel ? formatShortcutDisplay(entry.accel, app.platform) : "";
+}
 
 function rowId(entry: MenuEntry): string {
   return `${props.prefix}-${entry.id}`;
@@ -99,7 +113,7 @@ function iconFor(entry: MenuEntry): Component | undefined {
         v-else-if="entry.kind === 'action' && entry.accel"
         class="shrink-0 font-mono text-[10px] text-muted-foreground"
       >
-        {{ entry.accel }}
+        {{ accelFor(entry) }}
       </span>
     </button>
   </template>

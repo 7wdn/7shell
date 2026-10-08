@@ -250,10 +250,10 @@ describe("the directory's own menu", () => {
     expect(ids(submenu(entries, "new"))).toEqual(["new-folder", "new-file"]);
   });
 
-  it("prints the one shortcut that really works here", () => {
+  it("prints the one shortcut that really works here, as a binding the menu layer spells out", () => {
     const entries = fileAreaMenu({ path: "/var/log", packed: false }, areaActions());
 
-    expect(pick(entries, "paste").accel).toBe("Ctrl+V");
+    expect(pick(entries, "paste").accel).toBe("Mod+V");
   });
 
   it("says whether packing is on, and turns it over when pressed", () => {

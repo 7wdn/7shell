@@ -221,8 +221,10 @@ export function fileAreaMenu(state: FileAreaState, actions: FileAreaActions): Me
       labelKey: "files.paste.label",
       icon: ClipboardPaste,
       // The one accelerator worth printing anywhere in this menu: the shell really does register it,
-      // and only while a browser is on screen — which is exactly when this menu can be opened.
-      accel: "Ctrl+V",
+      // and only while a browser is on screen — which is exactly when this menu can be opened. It is
+      // written as a binding rather than as a sentence, so the platform it is drawn on decides
+      // whether that reads `Ctrl + V` or `⌘ V`.
+      accel: "Mod+V",
       run: () => actions.paste(),
     },
     {

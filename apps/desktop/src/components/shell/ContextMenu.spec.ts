@@ -9,6 +9,7 @@
  * The menu is drawn through `openMenu` rather than by clicking a region, because that is the whole
  * interface between the two halves: any region that calls it gets everything below.
  */
+import { createPinia, setActivePinia } from "pinia";
 import { type App, createApp, h, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +17,7 @@ import ContextMenu from "@/components/shell/ContextMenu.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
 import type { MenuEntry } from "@/lib/menu/types";
+import { useAppStore } from "@/stores/app";
 
 let app: App | undefined;
 let host: HTMLDivElement;
@@ -98,6 +100,7 @@ async function pointAt(row: HTMLButtonElement | undefined): Promise<void> {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   document.body.innerHTML = "";
   host = document.createElement("div");
   document.body.append(host);
@@ -345,5 +348,32 @@ describe("a menu as text", () => {
       expect(box.classList.contains("select-none"), `${what} is not selectable`).toBe(true);
       expect(box.classList.contains("cursor-default"), `${what} shows no I-beam`).toBe(true);
     }
+  });
+});
+
+/**
+ * The key hint beside a row is spelled by this layer, not by the table that built the row.
+ *
+ * The table carries a binding (`Mod+V`) because the same key reads differently per platform; this is
+ * the layer that knows which platform it is drawing on, so this is where the two are put together.
+ */
+describe("a row's key hint", () => {
+  it("is spelled for the platform the menu is drawn on", async () => {
+    await open([{ kind: "action", id: "paste", labelKey: "menu.paste", accel: "Mod+V", run: () => {} }]);
+
+    expect(items()[0]?.textContent).toContain("Ctrl + V");
+
+    useAppStore().info = {
+      name: "7Shell",
+      version: "0.1.0",
+      os: "macos",
+      arch: "aarch64",
+      debugBuild: false,
+      protocolCount: 1,
+      descriptorSchemaVersion: 1,
+    };
+    await nextTick();
+
+    expect(items()[0]?.textContent).toContain("⌘ V");
   });
 });

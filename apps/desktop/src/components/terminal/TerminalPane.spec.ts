@@ -123,6 +123,7 @@ import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { clipboardText, filesList, filesOpen, sessionOpen, transfersOpen, tunnelsOpen } from "@/lib/backend/tauri";
 import type { MenuAction } from "@/lib/menu/types";
+import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
@@ -403,16 +404,55 @@ describe("the keys the terminal keeps for itself", () => {
     await mountPane();
   });
 
+  /** A key press carrying every modifier flag, the way a real event does. */
+  function key(held: {
+    key: string;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    shiftKey?: boolean;
+    altKey?: boolean;
+  }): KeyboardEvent {
+    return {
+      type: "keydown",
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+      ...held,
+    } as KeyboardEvent;
+  }
+
   it("keeps Ctrl+F for the find bar instead of sending it to the shell", () => {
-    const kept = keyHandler?.({ type: "keydown", ctrlKey: true, metaKey: false, key: "f" } as KeyboardEvent);
+    const kept = keyHandler?.(key({ key: "f", ctrlKey: true }));
 
     // `false` is xterm's "do not handle this": without it the shell receives ^F, which on some
     // hosts is a real control character and not a search.
     expect(kept).toBe(false);
   });
 
+  it("takes Command+F on a Mac, and leaves Ctrl+F to the shell there", () => {
+    useAppStore().info = {
+      name: "7Shell",
+      version: "0.1.0",
+      os: "macos",
+      arch: "aarch64",
+      debugBuild: false,
+      protocolCount: 1,
+      descriptorSchemaVersion: 1,
+    };
+
+    expect(keyHandler?.(key({ key: "f", metaKey: true }))).toBe(false);
+    expect(keyHandler?.(key({ key: "f", ctrlKey: true })), "Ctrl+F stays the shell's on a Mac").toBe(true);
+  });
+
+  it("leaves a combination the binding does not name alone", () => {
+    // Ctrl+F is the find key; Ctrl+Shift+F is not, and a combination the shell may want is not ours
+    // to take.
+    expect(keyHandler?.(key({ key: "f", ctrlKey: true, shiftKey: true }))).toBe(true);
+  });
+
   it("passes everything else through", () => {
-    expect(keyHandler?.({ type: "keydown", ctrlKey: false, metaKey: false, key: "c" } as KeyboardEvent)).toBe(true);
-    expect(keyHandler?.({ type: "keydown", ctrlKey: true, metaKey: false, key: "d" } as KeyboardEvent)).toBe(true);
+    expect(keyHandler?.(key({ key: "c" }))).toBe(true);
+    expect(keyHandler?.(key({ key: "d", ctrlKey: true }))).toBe(true);
   });
 });

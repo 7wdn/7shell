@@ -110,7 +110,7 @@
     },
     "paste": {
       "label": "Paste",
-      "title": "Upload the files on the clipboard (Ctrl+V)"
+      "title": "Upload the files on the clipboard ({shortcut})"
     }
   }
 }

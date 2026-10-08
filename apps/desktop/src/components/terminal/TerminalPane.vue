@@ -33,14 +33,18 @@ import { useI18n } from "vue-i18n";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { terminalMenu } from "@/lib/menu/terminal";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import { matchesShortcut } from "@/lib/shortcuts/binding";
+import { bindingFor } from "@/lib/shortcuts/registry";
 import { registerTerminalSink } from "@/lib/terminal/bus";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
+import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 
 import "@xterm/xterm/css/xterm.css";
 
 const { t } = useI18n();
+const app = useAppStore();
 const preferences = usePreferencesStore();
 
 /** Which of the two palettes this pane wears, from the person's choice rather than from the window. */
@@ -52,9 +56,9 @@ const paletteClass = computed(() =>
  * Find-in-terminal state.
  *
  * The bar belongs to the pane rather than to the workspace because the thing being searched is the
- * scrollback xterm holds, and only the pane has it. Ctrl+F opens it, Enter walks forward, Escape
- * closes it and hands the keyboard back to the shell — the terminal is a place where a lost
- * keystroke is a command that did not run.
+ * scrollback xterm holds, and only the pane has it. The find key (Ctrl+F by default) opens it, Enter
+ * walks forward, Escape closes it and hands the keyboard back to the shell — the terminal is a place
+ * where a lost keystroke is a command that did not run.
  */
 const searching = ref(false);
 const query = ref("");
@@ -277,9 +281,11 @@ onMounted(() => {
     results.value = { index: resultIndex, count: resultCount };
   });
   searchAddon = search;
-  // Ctrl+F is the terminal's own key combination to lose: without this the shell receives it.
+  // Find-in-terminal's key belongs to the terminal: without this the shell receives it. The key is
+  // read from the table rather than spelled out here, so whatever prints it and whatever listens for
+  // it cannot end up naming different keys.
   instance.attachCustomKeyEventHandler((event) => {
-    if (event.type === "keydown" && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+    if (event.type === "keydown" && matchesShortcut(event, bindingFor("terminal.find"), app.platform)) {
       openSearch();
       return false;
     }
