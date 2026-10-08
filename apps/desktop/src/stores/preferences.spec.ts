@@ -720,8 +720,8 @@ describe("the colour theme", () => {
     // A fresh install has no picture, and the two numbers say where the sliders would start.
     expect(store.backgroundImage.fileName).toBeUndefined();
     expect(store.backgroundImage.displayMode).toBe("fill");
-    expect(store.backgroundImage.transparency).toBe(20);
-    expect(store.backgroundImage.blur).toBe(0);
+    expect(store.backgroundImage.transparency).toBe(15);
+    expect(store.backgroundImage.blur).toBe(4);
 
     store.setBackgroundImageName("holiday.jpg");
     store.setBackgroundDisplayMode("tile");

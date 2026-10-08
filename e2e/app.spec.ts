@@ -725,7 +725,11 @@ test("a setting can be found by name, and a category can be put back to its defa
     const interfaceBefore = await sans();
     const fontList = page.getByRole("listbox");
 
-    await interfaceFont.click();
+    // Opened with the keyboard rather than with a pointer. A panel opens where the pointer is, and the
+    // click that opened it is still being delivered as it arrives: the release lands on the panel, the
+    // panel reads that as a dismissal, and the list is gone before anybody can look at it. The case is
+    // about the families in the list, and Enter is how somebody who cannot use a mouse opens it.
+    await interfaceFont.press("Enter");
     await expect(fontList).toBeVisible();
 
     // Two rows answer to "Consolas": the preset, which carries the fallbacks this build gives it, and
@@ -741,7 +745,7 @@ test("a setting can be found by name, and a category can be put back to its defa
     await page.keyboard.press("Escape");
     await expect.poll(sans, { message: "letting go of the list puts the chosen family back" }).toBe(interfaceBefore);
 
-    await interfaceFont.click();
+    await interfaceFont.press("Enter");
     await fontList.getByRole("option", { name: "Consolas" }).first().click();
     await applySettings(page);
 
@@ -758,7 +762,7 @@ test("a setting can be found by name, and a category can be put back to its defa
     // is chosen — so this case walks over there and back.
     await settings.getByRole("button", { name: "SSH terminal", exact: true }).click();
     const terminalFont = settings.getByRole("button", { name: "Terminal font", exact: true });
-    await terminalFont.click();
+    await terminalFont.press("Enter");
     await expect(fontList).toBeVisible();
     await fontList.getByRole("option", { name: "JetBrains Mono" }).hover();
     await expect
@@ -767,7 +771,7 @@ test("a setting can be found by name, and a category can be put back to its defa
     await page.keyboard.press("Escape");
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-fonts.png"), fullPage: false });
 
-    await terminalFont.click();
+    await terminalFont.press("Enter");
     await fontList.getByRole("option", { name: "JetBrains Mono" }).click();
     await applySettings(page);
 
@@ -780,7 +784,7 @@ test("a setting can be found by name, and a category can be put back to its defa
     // a file carries both spellings and picking one here would be this build guessing what language
     // the computer is set to. Typed into the field rather than scrolled to, which is what the field
     // is for: a list of two hundred families is a list nobody scrolls.
-    await interfaceFont.click();
+    await interfaceFont.press("Enter");
     // The panel's own search box, which is where the typing goes: the field beside the row shows the
     // chosen family and the search is inside the panel, which is the shape a list of two hundred
     // families asks for.
@@ -845,13 +849,13 @@ test("a setting can be found by name, and a category can be put back to its defa
     await page.getByRole("listbox").getByRole("option", { name: "White" }).click();
     await scale.click();
     await page.getByRole("listbox").getByRole("option", { name: "100%" }).click();
-    await interfaceFont.click();
+    await interfaceFont.press("Enter");
     await page.getByRole("listbox").getByRole("option", { name: "App default" }).click();
 
     // The terminal's own family is on the terminal's own page, so putting it back means going there —
     // and coming back, since the rest of this case is about the appearance page.
     await settings.getByRole("button", { name: "SSH terminal", exact: true }).click();
-    await settings.getByRole("button", { name: "Terminal font", exact: true }).click();
+    await settings.getByRole("button", { name: "Terminal font", exact: true }).press("Enter");
     await page.getByRole("listbox").getByRole("option", { name: "App default" }).click();
     await settings.getByRole("button", { name: "Appearance", exact: true }).click();
 

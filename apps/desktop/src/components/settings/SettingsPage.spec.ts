@@ -58,7 +58,7 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     terminalFontSize: 13,
     showTrayIcon: true,
     quitOnClose: false,
-    backgroundImage: { displayMode: "fill", transparency: 20, blur: 0 },
+    backgroundImage: { displayMode: "fill", transparency: 15, blur: 4 },
     filesLayout: "tree",
     sessionLayout: "split",
     sidebarOpen: true,

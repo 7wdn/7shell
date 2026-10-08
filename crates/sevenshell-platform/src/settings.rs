@@ -19,8 +19,9 @@ use sevenshell_error::ShellError;
 use sevenshell_types::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
     CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
-    TabPlacement, TabSortMode, ThemeMode, ThemePalette, monitor_on, normalize_terminal_font_size, normalize_ui_scale,
-    sidebar_on, terminal_font_size_default, tray_icon_on, ui_scale_default,
+    TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default, background_transparency_default,
+    monitor_on, normalize_terminal_font_size, normalize_ui_scale, sidebar_on, terminal_font_size_default, tray_icon_on,
+    ui_scale_default,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -36,9 +37,12 @@ struct StoredBackgroundImage {
     file_name: Option<String>,
     #[serde(default)]
     display_mode: String,
-    #[serde(default)]
+    /// The two the picture is drawn with, defaulting to the same numbers the wire type does: a file
+    /// that names a picture but not how much of it shows through reads as 15% rather than as an opaque
+    /// window nobody chose.
+    #[serde(default = "background_transparency_default")]
     transparency: u8,
-    #[serde(default)]
+    #[serde(default = "background_blur_default")]
     blur: u8,
 }
 

@@ -227,8 +227,14 @@ export const BACKGROUND_DISPLAY_MODES: readonly BackgroundDisplayMode[] = ["fill
 export const BACKGROUND_TRANSPARENCY_MAX = 95;
 export const BACKGROUND_BLUR_MAX = 20;
 
-/** Where the transparency slider starts: a fifth of the way to the picture. */
-export const DEFAULT_BACKGROUND_TRANSPARENCY = 20;
+/**
+ * Where the two picture sliders start: a seventh of the way to the picture, and four pixels of blur.
+ *
+ * Enough that the picture is clearly there, and little enough that the work is still what the window is
+ * for; the blur takes the edges off a photograph so that text over it stays the first thing read.
+ */
+export const DEFAULT_BACKGROUND_TRANSPARENCY = 15;
+export const DEFAULT_BACKGROUND_BLUR = 4;
 
 /**
  * The sizes the terminal may be drawn at, in pixels, and the one a fresh install has.
@@ -254,7 +260,7 @@ export interface BackgroundImage {
 export const DEFAULT_BACKGROUND_IMAGE: BackgroundImage = {
   displayMode: "fill",
   transparency: DEFAULT_BACKGROUND_TRANSPARENCY,
-  blur: 0,
+  blur: DEFAULT_BACKGROUND_BLUR,
 };
 
 /**

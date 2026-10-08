@@ -589,9 +589,20 @@ pub const BACKGROUND_TRANSPARENCY_MAX: u8 = 95;
 /// The most blur this build will paint behind a window, in pixels.
 pub const BACKGROUND_BLUR_MAX: u8 = 20;
 
-/// The transparency a fresh install gets: a fifth of the way to the picture.
+/// The transparency a fresh install gets: a seventh of the way to the picture.
+///
+/// Enough that the picture is clearly there behind the work and little enough that the work is still
+/// what the window is for — and a slider, so the first thing somebody does with it is move it.
 pub fn background_transparency_default() -> u8 {
-    20
+    15
+}
+
+/// How far a fresh install blurs the picture, in pixels.
+///
+/// Not none: a photograph behind a window of text is busy at its own sharpness, and four pixels takes
+/// the edges off it without turning it into a colour.
+pub fn background_blur_default() -> u8 {
+    4
 }
 
 /// The picture drawn behind the whole window.
@@ -616,7 +627,7 @@ pub struct BackgroundImage {
     #[serde(default = "background_transparency_default")]
     pub transparency: u8,
     /// How far the picture is blurred, in pixels.
-    #[serde(default)]
+    #[serde(default = "background_blur_default")]
     pub blur: u8,
 }
 
@@ -626,7 +637,7 @@ impl Default for BackgroundImage {
             file_name: None,
             display_mode: BackgroundDisplayMode::default(),
             transparency: background_transparency_default(),
-            blur: 0,
+            blur: background_blur_default(),
         }
     }
 }
@@ -936,7 +947,7 @@ impl AppSettings {
             && !self.background_image.is_set()
             && self.background_image.display_mode == BackgroundDisplayMode::Fill
             && self.background_image.transparency == background_transparency_default()
-            && self.background_image.blur == 0
+            && self.background_image.blur == background_blur_default()
             && !self.packed_transfer
             && self.custom_colors.is_none()
             && self.custom_colors_dark.is_none()
@@ -1085,7 +1096,11 @@ mod tests {
             image.transparency <= BACKGROUND_TRANSPARENCY_MAX,
             "a default past the end of its own slider is one nobody could leave"
         );
-        assert_eq!(image.blur, 0, "a fresh install has no picture, so nothing to blur");
+        assert_eq!(
+            image.blur,
+            background_blur_default(),
+            "and the picture it gets is softened"
+        );
         assert!(!image.is_set(), "and nothing to draw");
         assert!(
             !BackgroundImage {
