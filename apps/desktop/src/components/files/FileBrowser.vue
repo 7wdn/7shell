@@ -283,10 +283,21 @@ function rowId(path: string): string {
   return `file-row-${rows.value.indexOf(path)}`;
 }
 
+/** The path the field was last filled with, so that the field can tell typing from an answer. */
+let shownPath = "";
+
 watch(
   () => browser.value?.path,
   (path) => {
-    typedPath.value = path ?? "";
+    const answered = path ?? "";
+    // The field follows the panel while nobody has touched it, and stops following the moment
+    // somebody types into it. A read is a round trip, so the answer to the *previous* navigation can
+    // land after the next path has been typed — and putting the old one back under somebody's hands,
+    // mid-word, is what this is about.
+    if (typedPath.value === shownPath) {
+      typedPath.value = answered;
+    }
+    shownPath = answered;
   },
   { immediate: true },
 );
@@ -533,9 +544,13 @@ function startRemove(entries: readonly SftpEntry[]): void {
 
 function submitTypedPath(): void {
   const path = typedPath.value.trim();
-  if (path !== "") {
-    go(path);
+  if (path === "") {
+    return;
   }
+  // What was typed counts as what the field is showing again: the answer that comes back is the
+  // panel's to read out, and the field goes on showing where the panel went.
+  shownPath = path;
+  go(path);
 }
 
 function cancelPrompt(): void {

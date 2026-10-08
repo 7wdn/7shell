@@ -146,6 +146,37 @@ describe("files store", () => {
     expect(store.browser(handle)?.entries.map((item) => item.name)).toEqual(["one.jpg"]);
   });
 
+  it("keeps a slow answer from putting a directory nobody asked for back on screen", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user", ["notes.txt"])));
+
+    // Two reads in flight with the first answering last: that is somebody clicking through a tree, or
+    // a path bar driven faster than the host answers. Whichever answer lands last must not decide
+    // where the panel is — a file that was just made "disappearing" is what this cost.
+    let answerSlow: (value: SftpListing) => void = () => {};
+    let answerFast: (value: SftpListing) => void = () => {};
+    const slow = new Promise<SftpListing>((resolve) => {
+      answerSlow = resolve;
+    });
+    const fast = new Promise<SftpListing>((resolve) => {
+      answerFast = resolve;
+    });
+    filesListMock.mockReturnValueOnce(slow).mockReturnValueOnce(fast);
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+
+    const first = store.navigate(handle, "/home/user/photos");
+    const second = store.navigate(handle, "/home/user/videos");
+
+    answerFast(listing("/home/user/videos", ["clip.mp4"]));
+    await second;
+    answerSlow(listing("/home/user/photos", ["one.jpg"]));
+    await first;
+
+    expect(store.browser(handle)?.path).toBe("/home/user/videos");
+    expect(store.browser(handle)?.entries.map((entry) => entry.name)).toEqual(["clip.mp4"]);
+  });
+
   it("calls the transport for a change and re-reads the directory after it", async () => {
     filesOpenMock.mockResolvedValue(opened(listing("/home/user")));
     filesListMock.mockResolvedValue(listing("/home/user", ["made"]));

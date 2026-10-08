@@ -278,6 +278,24 @@ describe("the command bar offering what it knows", () => {
     expect(field().getAttribute("aria-activedescendant")).not.toBeNull();
   });
 
+  it("highlights the row under the pointer without letting Enter take it over", async () => {
+    const commands = useCommandsStore();
+    const send = vi.spyOn(commands, "sendLiteral").mockResolvedValue();
+    await mount([], ran("uptime"));
+
+    await type("upt");
+    rows()[0]?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    await nextTick();
+    expect(selected(), "the row under the pointer is the one named").toContain("uptime");
+
+    press("Enter");
+    await nextTick();
+
+    // A pointer rests over the list while somebody is typing at the line, so it is not a choice: the
+    // arrow keys are. `touch a b` becoming `touch a a` is what this cost once.
+    expect(send, "the line that was typed is what runs").toHaveBeenCalledWith("upt");
+  });
+
   it("stays away when somebody has turned the list off", async () => {
     await mount([], ran("uptime"));
     usePreferencesStore().commandCompletion = false;

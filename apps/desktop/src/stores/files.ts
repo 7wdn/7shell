@@ -498,8 +498,21 @@ export const useFilesStore = defineStore("files", () => {
     return worked;
   }
 
+  /**
+   * Which read each browser is waiting for.
+   *
+   * A read is a round trip, and two of them can be in flight at once — somebody clicking through a
+   * tree, or a case driving the path bar faster than the host answers. Without this the *slower*
+   * answer wins and the panel shows a directory nobody is looking at any more: that is how a file
+   * that was just created "disappears", and how a listing looks like it went backwards.
+   */
+  const reads = new Map<string, number>();
+
   /** Reads a directory into a browser's state. A failure is recorded and the old list stays. */
   async function read(handle: string, path: string, options: { quiet?: boolean } = {}): Promise<boolean> {
+    const ticket = (reads.get(handle) ?? 0) + 1;
+    reads.set(handle, ticket);
+
     const current = browsers.value[handle];
     if (current) {
       current.loading = true;
@@ -507,9 +520,10 @@ export const useFilesStore = defineStore("files", () => {
 
     try {
       const listing: SftpListing = await backend.files.list(handle, path);
-      // The browser can be closed while the read is in flight: then there is nothing to fill.
+      // The browser can be closed while the read is in flight: then there is nothing to fill. And a
+      // newer read has been asked for since: this answer is about a directory nobody is looking at.
       const open = browsers.value[handle];
-      if (!open) {
+      if (!open || reads.get(handle) !== ticket) {
         return false;
       }
       open.path = listing.path;
@@ -518,7 +532,7 @@ export const useFilesStore = defineStore("files", () => {
       return true;
     } catch (error) {
       const open = browsers.value[handle];
-      if (open) {
+      if (open && reads.get(handle) === ticket) {
         open.loading = false;
         // Quiet is for a read nobody asked for: the shell was already told the directory is not
         // there, and the panel repeating it would be the same complaint twice.

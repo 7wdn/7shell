@@ -47,6 +47,8 @@ const showHistory = ref(false);
 const field = ref<HTMLInputElement | null>(null);
 /** True while an input method is composing: those keys are writing, not choosing. */
 const composing = ref(false);
+/** The row the pointer is over, or `null` when it is over none. See `highlighted`. */
+const pointed = ref<number | null>(null);
 
 /** The id this instance's list carries, so the input can name the row it is on. */
 let opened = 0;
@@ -130,15 +132,18 @@ function caretOf(): number {
 }
 
 /**
- * Somebody is pointing at a row.
+ * The row to highlight: the one that was chosen with the arrow keys, or the one the pointer rests on.
  *
- * The arrow keys say it with the keyboard and the pointer says it by resting on a row; either way it
- * is a choice, and the highlight that follows is what Enter and Tab will act on. The list opens with
- * nothing pointed at, so a highlight on screen always means exactly that.
+ * Two states and not one, because they mean different things to Enter. The pointer is where a mouse
+ * is *passing* — it rests over the list while somebody types, and making that a choice would let
+ * whatever happens to be under it take over the line (`touch a b` becoming `touch a a` is what this
+ * cost once). Only the arrow keys choose: they are the gesture that says "this one, not what I typed".
  */
+const highlighted = computed(() => (chosen.value ? active.value : (pointed.value ?? -1)));
+
+/** Where the pointer is, or `null` when it is not over a row. */
 function pointAt(index: number): void {
-  active.value = index;
-  chosen.value = true;
+  pointed.value = index;
 }
 
 function onInput(): void {
@@ -248,6 +253,14 @@ watch(
   },
 );
 
+// A pointer that was over a row that is no longer there is not pointing at anything: the list changes
+// under it as somebody types, and a stale index would highlight the wrong row.
+watch(visible, (up) => {
+  if (!up) {
+    pointed.value = null;
+  }
+});
+
 function toggleHistory(): void {
   showHistory.value = !showHistory.value;
   if (showHistory.value) {
@@ -314,7 +327,7 @@ function reuse(entry: string): void {
       aria-autocomplete="list"
       :aria-expanded="visible"
       :aria-controls="listId"
-      :aria-activedescendant="visible && chosen ? `${listId}-${active}` : undefined"
+      :aria-activedescendant="highlighted >= 0 ? `${listId}-${highlighted}` : undefined"
       @input="onInput"
       @keydown="onKeydown"
       @keydown.enter.prevent="send"
@@ -367,7 +380,7 @@ function reuse(entry: string): void {
     <CompletionMenu
       v-if="visible"
       :candidates="candidates"
-      :active="chosen ? active : -1"
+      :active="highlighted"
       :list-id="listId"
       @hover="pointAt"
       @take="takeRow"

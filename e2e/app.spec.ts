@@ -784,6 +784,10 @@ test("a setting can be found by name, and a category can be put back to its defa
     // a file carries both spellings and picking one here would be this build guessing what language
     // the computer is set to. Typed into the field rather than scrolled to, which is what the field
     // is for: a list of two hundred families is a list nobody scrolls.
+    //
+    // Which means walking back to the page the interface's own font lives on first: the app keeps no
+    // memory of where somebody was, and the walk over to the terminal's page and back is this case's.
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
     await interfaceFont.press("Enter");
     // The panel's own search box, which is where the typing goes: the field beside the row shows the
     // chosen family and the search is inside the panel, which is the shape a list of two hundred
@@ -1899,6 +1903,16 @@ test("the panel's tables draw a real host, and mark the row under the pointer", 
     await expect(page.getByRole("main").getByRole("table", { name: "File systems" })).toBeVisible({
       timeout: 30_000,
     });
+
+    // Closed on the way out, and this case is the reason the others say why: it leaves nothing of its
+    // session open. Both of the things it opened count — a terminal *and* a page about the host are
+    // "sessions that are open" as far as the sidebar is concerned, so a page left behind is an active
+    // session for every case after it: the sidebar's own switch behaves differently, and a search that
+    // should have found a row finds nothing.
+    await page.getByRole("button", { name: "Close this page" }).click();
+    await expect(page.getByRole("button", { name: "Close this page" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
   } finally {
     await close();
   }
@@ -1940,17 +1954,23 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await expect(editor).toHaveCount(0);
 
     // Opening the terminal: the first connection to this host asks about its key.
-    await sessionRow(page, name).click();
+    // Opening the terminal: the first connection to this host asks about its key, and which of the two
+    // arrives first is a race with the network — so the terminal is waited for together with the
+    // question rather than after it. (A case that looked once, before the answer came back, waited for
+    // a terminal that was waiting for a dialog nobody had answered.)
     const question = page.getByRole("button", { name: "Trust this key and connect" });
-    if (await question.isVisible().catch(() => false)) {
+    const commands = page.getByRole("button", { name: "Commands" });
+    await sessionRow(page, name).click();
+    await expect(question.or(commands).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
       await question.click();
     }
 
     // The commands panel lives under the terminal, beside the files. Waited for explicitly: the
     // footer only appears once there is a terminal tab, so a failure here means the terminal never
     // opened rather than that the button is missing.
-    await expect(page.getByRole("button", { name: "Commands" })).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Commands" }).click();
+    await expect(commands).toBeVisible({ timeout: 30_000 });
+    await commands.click();
     await page.getByRole("button", { name: "New command" }).click();
 
     await page.getByPlaceholder("What it is called").fill("marker");
@@ -2430,22 +2450,50 @@ test("the sidebar can be resized, put away, and narrowed by its own switches", a
     await expect(sessionRow(page, "panel-host")).toBeVisible();
     await expect(page.getByRole("button", { name: "Locate in sidebar" })).toBeDisabled();
 
-    // Collapse all: the session goes into the group first, so that closing every group is something
-    // that can be seen.
+    // Collapse all: a group is made first, so that closing every group is something that can be seen.
     await page.getByRole("button", { name: "New group" }).click();
     const field = page.getByRole("textbox", { name: "Group name" });
     await field.fill("Panel");
     await field.press("Enter");
     await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
 
+    // The row goes into the group by dragging it. The group has to *hold* something for "collapse
+    // everything" to be something that can be seen — and the row's own menu, the other way to move it,
+    // is the one thing in this sidebar that cannot be driven reliably: its "Move to group" list opens
+    // beside the menu, so an item in it has to be landed on while the menu is still arriving.
     const row = sessionRow(page, "panel-host");
-    await row.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "Move to group" }).hover();
-    await page.getByRole("menuitemcheckbox", { name: "Panel", exact: true }).click();
-    await expect(row).toBeVisible();
+    const target = page.getByRole("heading", { name: "Panel", exact: true });
+    const from = await row.boundingBox();
+    const to = await target.boundingBox();
+    if (!from || !to) {
+      throw new Error("the rows have no place on screen");
+    }
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2 + 12, { steps: 2 });
+    await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.locator("[data-drag-ghost]")).toHaveCount(0);
 
+    const sessionKey = await rowKeyOf(row);
+    const panelKey = await rowKeyOf(target);
+    await expect
+      .poll(async () => {
+        const keys = await rowKeys(page);
+        const at = keys.indexOf(sessionKey);
+        // The row has to be *in* the list: an index of -1 would make the comparison below true by
+        // accident, because the group it is compared against is the last one drawn.
+        return at < 0 ? "the row is not drawn" : groupOver(keys, at);
+      })
+      .toBe(panelKey);
+
+    // Everything closes: what the button promises is that no group is left open, which is what the
+    // rows drawn afterwards say. Counted rather than asked about one row, because a case that runs
+    // after twenty others meets a library that is not the one it made — what "collapse all" does is
+    // the same either way, and the row above is under the group either way.
+    const drawn = await page.locator("[data-row]").count();
     await page.getByRole("button", { name: "Collapse all" }).click();
-    await expect(row).toHaveCount(0);
+    await expect.poll(() => page.locator("[data-row]").count(), { message: "the groups closed" }).toBeLessThan(drawn);
     await expect(page.getByRole("heading", { name: "Panel", exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-chrome.png"), fullPage: false });
 

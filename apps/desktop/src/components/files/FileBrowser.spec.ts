@@ -660,4 +660,29 @@ describe("selecting rows", () => {
     await clickRow(2, "meta");
     expect(selectedRows()).toEqual([0, 2]);
   });
+
+  it("leaves what somebody typed in the path bar alone when an answer lands", async () => {
+    await render(unsorted);
+
+    const field = host.querySelector<HTMLInputElement>('input[placeholder="Path"]');
+    if (field === null) {
+      throw new Error("the panel drew no path bar");
+    }
+    expect(field.value, "the field shows where the panel is").toBe("/home/user");
+
+    // Somebody starts typing the next path while the previous read is still in flight...
+    field.value = "/home/user/logs";
+    field.dispatchEvent(new Event("input"));
+    await nextTick();
+
+    // ...and the answer to the navigation before it lands.
+    const browser = useFilesStore().browsers[HANDLE];
+    if (browser === undefined) {
+      throw new Error("the browser went away");
+    }
+    browser.path = "/";
+    await nextTick();
+
+    expect(field.value, "an answer does not put the old path back under somebody's hands").toBe("/home/user/logs");
+  });
 });
