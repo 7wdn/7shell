@@ -20,8 +20,8 @@ use sevenshell_types::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
     CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
     TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default, background_transparency_default,
-    monitor_on, normalize_terminal_font_size, normalize_ui_scale, sidebar_on, terminal_font_size_default, tray_icon_on,
-    ui_scale_default,
+    command_completion_on, monitor_on, normalize_terminal_font_size, normalize_ui_scale, sidebar_on,
+    terminal_font_size_default, tray_icon_on, ui_scale_default,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -124,6 +124,10 @@ struct StoredSettings {
     /// does not, but that is what the schema version is for.
     #[serde(default)]
     packed_transfer: bool,
+    /// Absent in a file written before the command line completed, which reads as the default it ships
+    /// with — on — rather than as a list somebody switched off.
+    #[serde(default = "command_completion_on")]
+    command_completion: bool,
     /// Absent in a file written before the sidebar could be resized, which reads as "the divider
     /// has never been moved".
     #[serde(default)]
@@ -199,6 +203,7 @@ impl StoredSettings {
             show_tray_icon: settings.show_tray_icon,
             quit_on_close: settings.quit_on_close,
             packed_transfer: settings.packed_transfer,
+            command_completion: settings.command_completion,
             ui_scale: settings.ui_scale,
             corner_style: settings.corner_style.as_str().to_owned(),
             home_layout: settings.home_layout.as_str().to_owned(),
@@ -232,6 +237,7 @@ impl StoredSettings {
             show_tray_icon: self.show_tray_icon,
             quit_on_close: self.quit_on_close,
             packed_transfer: self.packed_transfer,
+            command_completion: self.command_completion,
             ui_scale: normalize_ui_scale(self.ui_scale),
             corner_style: CornerStyle::from_id(&self.corner_style).unwrap_or_default(),
             home_layout: HomeLayout::from_id(&self.home_layout).unwrap_or_default(),
@@ -351,6 +357,7 @@ mod tests {
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
             packed_transfer: false,
+            command_completion: command_completion_on(),
             theme_palette: ThemePalette::default(),
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
@@ -400,6 +407,10 @@ mod tests {
         assert!(
             !loaded.packed_transfer,
             "a file written before packed transfers existed is not a person asking for one"
+        );
+        assert!(
+            loaded.command_completion,
+            "a file written before the command line completed is not a person asking for it to be off"
         );
         assert_eq!(
             loaded.theme_palette,
@@ -506,6 +517,8 @@ mod tests {
             monitor_enabled: false,
             // On, for the same reason in the other direction: the default is off.
             packed_transfer: true,
+            // Off, for the same reason again: this one's default is on.
+            command_completion: false,
             // Neither is the default, for the same reason again: a palette and a size both have to
             // come back as the ones that were chosen.
             theme_palette: ThemePalette::Claude,

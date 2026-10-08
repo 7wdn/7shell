@@ -268,6 +268,11 @@
         "title": "Packed transfer",
         "summary": "Move a folder as one archive, made and opened on the way.",
         "help": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
+      },
+      "commandCompletion": {
+        "title": "Command completion",
+        "summary": "Offer what this application knows while a command is being typed.",
+        "help": "The line under a terminal draws a list beside itself: the commands this build has a word about, the lines you saved, the ones you have run, and — after a command — the words it is usually followed by, or the paths the host itself has. A row is taken in two ways: Tab takes the first one, and the arrow keys walk to one. Once a row is pointed at, Enter puts it **into the line** — a command name is usually not the whole line yet — and a second Enter runs it; with nothing pointed at, Enter runs exactly what was typed. Escape puts the list away for that line, and Alt+/ brings it back."
       }
     },
     "terminalPreview": {

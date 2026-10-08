@@ -223,6 +223,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
                 blur: 8,
             },
             packed_transfer: true,
+            command_completion: false,
             theme_palette: ThemePalette::Sage,
             ui_scale: 125,
             corner_style: CornerStyle::Small,

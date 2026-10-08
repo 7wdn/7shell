@@ -342,6 +342,12 @@ export interface AppSettings {
    */
   readonly packedTransfer: boolean;
   /**
+   * Whether the line under a terminal offers what the application knows while somebody types. On
+   * unless somebody turns it off: the list appears beside the line and never writes into it, so it
+   * does not type for anybody — while a build that had it off would be a feature nobody finds.
+   */
+  readonly commandCompletion: boolean;
+  /**
    * How much the interface is scaled, in percent of its own size — the same window, drawn larger.
    * One of `UI_SCALE_PERCENTS`; the Rust side reads anything else as the default.
    */

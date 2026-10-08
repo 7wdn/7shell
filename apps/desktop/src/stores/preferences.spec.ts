@@ -71,6 +71,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     sidebarOpen: true,
     monitorEnabled: true,
     packedTransfer: false,
+    commandCompletion: true,
     ...overrides,
   };
 }
@@ -201,6 +202,7 @@ describe("preferences store", () => {
       sidebarOpen: true,
       monitorEnabled: true,
       packedTransfer: false,
+      commandCompletion: true,
       locale: undefined,
     });
   });
@@ -241,6 +243,7 @@ describe("preferences store", () => {
       sidebarOpen: true,
       monitorEnabled: true,
       packedTransfer: false,
+      commandCompletion: true,
       locale: "zh-CN",
     });
     expect(document.documentElement.lang).toBe("zh-CN");
@@ -392,6 +395,7 @@ describe("the terminal palette", () => {
       sidebarOpen: true,
       monitorEnabled: true,
       packedTransfer: false,
+      commandCompletion: true,
       locale: undefined,
     });
   });
@@ -1147,6 +1151,7 @@ describe("restoring the defaults", () => {
       sidebarOpen: true,
       monitorEnabled: false,
       packedTransfer: false,
+      commandCompletion: true,
       locale: "zh-CN",
     });
   });

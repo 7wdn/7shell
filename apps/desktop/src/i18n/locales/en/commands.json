@@ -38,6 +38,136 @@
       "send": "Send to this session"
     },
     "historyEmpty": "Nothing sent yet.",
-    "default": "Default"
+    "default": "Default",
+    "completion": {
+      "label": "Completions",
+      "kind": {
+        "command": "command",
+        "builtin": "shell builtin",
+        "subcommand": "subcommand",
+        "path": "on the host"
+      },
+      "command": {
+        "alias": "Give a line a name of its own",
+        "apt": "Install and update Debian packages",
+        "awk": "Process text field by field",
+        "base64": "Encode or decode base64",
+        "cat": "Print a file's contents",
+        "cd": "Change the working directory",
+        "chmod": "Change permission bits",
+        "chown": "Change the owner and the group",
+        "cp": "Copy files or directories",
+        "curl": "Make an HTTP request",
+        "cut": "Print chosen columns of each line",
+        "date": "Print the date and time",
+        "df": "Show how much room is left on the filesystems",
+        "diff": "Show what changed between two files",
+        "dig": "Look up DNS records",
+        "docker": "Run and manage containers",
+        "du": "Show how much space files take",
+        "echo": "Print its arguments",
+        "exit": "Leave the shell",
+        "export": "Put a variable into the environment of child commands",
+        "find": "Walk a directory tree looking for files",
+        "free": "Show how much memory is free",
+        "git": "Version control",
+        "grep": "Search for text in files",
+        "gzip": "Compress a file",
+        "head": "Print the first lines of a file",
+        "history": "List the lines the shell has run",
+        "ip": "Show or change network interfaces and routes",
+        "journalctl": "Read the systemd journal",
+        "kill": "Send a signal to a process",
+        "kubectl": "Talk to a Kubernetes cluster",
+        "less": "Page through a file",
+        "ln": "Create a link to a file",
+        "ls": "List the entries of a directory",
+        "lsof": "List open files and sockets",
+        "make": "Build from a makefile",
+        "mkdir": "Create a directory",
+        "mv": "Move or rename",
+        "nohup": "Let a command outlive the session",
+        "openssl": "Work with keys, certificates and ciphers",
+        "ping": "Test whether a host answers",
+        "pkill": "Send a signal by process name",
+        "ps": "List the running processes",
+        "pwd": "Print the working directory",
+        "rm": "Remove files or directories",
+        "rsync": "Copy files, sending only what changed",
+        "scp": "Copy files over SSH",
+        "sed": "Edit a stream with substitutions and line rules",
+        "sort": "Sort lines",
+        "source": "Run a file in the shell that is already open",
+        "ss": "Show listening and open sockets",
+        "ssh": "Log in to another host",
+        "ssh-keygen": "Create or read an SSH key",
+        "sudo": "Run one command as another user",
+        "systemctl": "Control systemd services",
+        "tail": "Print the last lines of a file, or follow it as it grows",
+        "tar": "Pack or unpack an archive",
+        "tmux": "Keep shells alive in sessions of their own",
+        "top": "Watch the processes in a live list",
+        "touch": "Create an empty file, or update its timestamp",
+        "uname": "Print the kernel and machine information",
+        "uniq": "Drop repeated adjacent lines",
+        "unzip": "Unpack a zip archive",
+        "uptime": "Show the load and how long the host has been up",
+        "watch": "Run a command again and again on a timer",
+        "wc": "Count lines, words and bytes",
+        "wget": "Download a file from a URL",
+        "which": "Show which program a name would run",
+        "whoami": "Print the name of the current user",
+        "xargs": "Build one command's arguments from input lines"
+      },
+      "subcommand": {
+        "apt": {
+          "update": "Refresh the package index",
+          "upgrade": "Upgrade the installed packages",
+          "install": "Install a package"
+        },
+        "curl": {
+          "-X": "Name the HTTP method"
+        },
+        "docker": {
+          "ps": "List the containers",
+          "logs": "Read a container's logs",
+          "exec": "Run a command inside a container",
+          "run": "Start a new container",
+          "images": "List the images"
+        },
+        "git": {
+          "status": "Show what is changed and staged",
+          "pull": "Fetch the remote branch and merge it",
+          "push": "Send the local commits",
+          "commit": "Record a commit",
+          "checkout": "Switch branch, or restore files",
+          "log": "Read the commit history",
+          "diff": "Show what changed",
+          "stash": "Set the working tree aside"
+        },
+        "grep": {
+          "-r": "Search directories recursively",
+          "-i": "Ignore case"
+        },
+        "journalctl": {
+          "-u": "Only one unit's log",
+          "-f": "Follow new entries"
+        },
+        "kubectl": {
+          "get": "List resources",
+          "describe": "Show one resource in detail"
+        },
+        "ls": {
+          "-l": "Long listing"
+        },
+        "systemctl": {
+          "status": "Show a unit's state",
+          "start": "Start a unit",
+          "stop": "Stop a unit",
+          "restart": "Restart a unit",
+          "enable": "Start it at boot"
+        }
+      }
+    }
   }
 }

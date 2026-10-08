@@ -764,6 +764,13 @@ pub struct AppSettings {
     /// by itself would surprise somebody who only wanted their folder.
     #[serde(default)]
     pub packed_transfer: bool,
+    /// Whether the command line under a terminal offers what it knows while somebody types.
+    ///
+    /// On unless somebody turns it off, unlike the packing above: this one never writes into the line
+    /// by itself — it draws a list beside it and waits to be taken — so a build that has it on does
+    /// not type for anybody, while one that had it off would be a feature nobody finds.
+    #[serde(default = "command_completion_on")]
+    pub command_completion: bool,
     /// How much the whole interface is scaled, in percent of the size it was drawn at.
     ///
     /// The window is the same size either way: this is the interface inside it growing, which is
@@ -865,6 +872,14 @@ pub fn monitor_on() -> bool {
     true
 }
 
+/// The command line's completion, whose default is "on".
+///
+/// Here for the reason the helper above is: the type's own default and the settings file's default
+/// are two readers of one decision.
+pub fn command_completion_on() -> bool {
+    true
+}
+
 /// The sidebar's default, which is "on screen".
 ///
 /// A named function for the same reason as the monitor's above.
@@ -898,6 +913,7 @@ impl Default for AppSettings {
             quit_on_close: false,
             background_image: BackgroundImage::default(),
             packed_transfer: false,
+            command_completion: command_completion_on(),
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
             home_layout: HomeLayout::default(),
@@ -949,6 +965,7 @@ impl AppSettings {
             && self.background_image.transparency == background_transparency_default()
             && self.background_image.blur == background_blur_default()
             && !self.packed_transfer
+            && self.command_completion
             && self.custom_colors.is_none()
             && self.custom_colors_dark.is_none()
             && self.locale.is_none()

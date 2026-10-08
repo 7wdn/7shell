@@ -100,6 +100,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   sidebarOpen: true,
   monitorEnabled: true,
   packedTransfer: false,
+  commandCompletion: true,
 };
 
 /**
@@ -282,6 +283,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * would be right to be annoyed, so it is never decided for them.
    */
   const packedTransfer = ref(false);
+  /**
+   * Whether the command line completes. On by default, and the only switch in the settings that turns
+   * something in the interface *on*: it draws a list beside the line and waits to be taken, so somebody
+   * who never presses Tab never sees it do anything.
+   */
+  const commandCompletion = ref(true);
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -478,6 +485,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       sidebarOpen.value = settings.sidebarOpen;
       monitorEnabled.value = settings.monitorEnabled;
       packedTransfer.value = settings.packedTransfer;
+      commandCompletion.value = settings.commandCompletion;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -556,6 +564,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         sidebarOpen: sidebarOpen.value,
         monitorEnabled: monitorEnabled.value,
         packedTransfer: packedTransfer.value,
+        commandCompletion: commandCompletion.value,
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -845,6 +854,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
     dirty.value = true;
   }
 
+  /** Turns the command line's completion on or off. */
+  function setCommandCompletion(enabled: boolean): void {
+    commandCompletion.value = enabled;
+    dirty.value = true;
+  }
+
   /**
    * Moves the divider.
    *
@@ -1002,6 +1017,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "packedTransfer":
           packedTransfer.value = FRESH.packedTransfer;
           break;
+        case "commandCompletion":
+          commandCompletion.value = FRESH.commandCompletion;
+          break;
         case "locale":
           localeChosen.value = false;
           locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
@@ -1050,6 +1068,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sidebarOpen,
     monitorEnabled,
     packedTransfer,
+    commandCompletion,
     resolvedTheme,
     resolvedTerminalTheme,
     resolvedPanelHeight,
@@ -1092,6 +1111,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSessionLayout,
     setMonitorEnabled,
     setPackedTransfer,
+    setCommandCompletion,
     setPanelHeight,
     rememberPanelHeight,
     resetPanelHeight,

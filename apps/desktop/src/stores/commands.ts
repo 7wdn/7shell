@@ -17,38 +17,14 @@ import { defineStore } from "pinia";
 
 import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
+import { fillSlots, slotsIn, SLOTS } from "@/lib/commands/slots";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { RiskAssessment } from "@/types/batch";
 import type { CommandHistoryEntry, SendFailure, Snippet, SnippetGroup } from "@/types/snippet";
 
-/** How many `#n` slots a line may use. The same five the storage knows about. */
-export const SLOTS = 5;
-
-/** The slots a line uses, in order: `#1` in `service #1 restart` means `[1]`. */
-export function slotsIn(command: string): number[] {
-  const found = new Set<number>();
-  for (const match of command.matchAll(/#([1-9])/g)) {
-    const slot = Number(match[1]);
-    if (slot <= SLOTS) {
-      found.add(slot);
-    }
-  }
-  return [...found].sort((left, right) => left - right);
-}
-
-/**
- * The line with its slots filled in.
- *
- * Substituted raw, the way the value would have been typed: these are shell lines, and a value
- * somebody wants quoted is one they quote. Slots left empty stay as they are, so a half-filled
- * command is visibly not a finished one rather than quietly something else.
- */
-export function fillSlots(command: string, values: readonly string[]): string {
-  return command.replace(/#([1-9])/g, (whole, digit: string) => {
-    const value = values[Number(digit) - 1];
-    return value === undefined || value.trim() === "" ? whole : value;
-  });
-}
+// What a slot is lives in `lib/commands/slots.ts`, because the completion menu fills the same lines
+// the panel sends; these names stay here so a caller that has the store in hand needs one import.
+export { SLOTS, fillSlots, slotsIn };
 
 /** A draft being edited: the fields the form owns, before it is a saved command. */
 export interface SnippetDraft {

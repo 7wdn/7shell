@@ -1455,6 +1455,29 @@ function groupOver(keys: readonly string[], at: number): string | null {
 }
 
 /**
+ * Whether an element paints over what is behind it.
+ *
+ * Asked of the rendering and then painted onto a canvas and read back, because these colours are
+ * written in oklch: the computed value is the spelling rather than the pixels it stands for. A
+ * background class that names a token the sheet does not define paints nothing at all, and a list
+ * drawn over a terminal then reads as text on text.
+ */
+function paintsOver(element: Locator): Promise<boolean> {
+  return element.evaluate((node) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const context = canvas.getContext("2d");
+    if (context === null) {
+      return false;
+    }
+    context.fillStyle = getComputedStyle(node).backgroundColor;
+    context.fillRect(0, 0, 1, 1);
+    return context.getImageData(0, 0, 1, 1).data[3] === 255;
+  });
+}
+
+/**
  * The size an element's own text is drawn at, as the window computed it.
  *
  * Asked of the rendering rather than of the markup: a class only says what was intended, and any
@@ -2050,6 +2073,162 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // is open, and it was passing only because this one used to be skipped when the lab ran.
     await page.getByRole("button", { name: "Close terminal" }).click();
     await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The command bar offers the commands it knows, and Tab takes the row the keyboard is on.
+ *
+ * A case of its own rather than steps inside another one: it is about the bar, and a bar that was
+ * only exercised while somebody else's file panel happened to be showing would stop being tested the
+ * day that case changed.
+ */
+test("the command bar completes what somebody is typing", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `complete-${stamp}`;
+
+    // Whatever terminal an earlier case left behind is closed first. The panes stay mounted while
+    // another tab is on screen, so a second terminal means a second command bar in the page and no
+    // way to say which one this case is about. A case closes its own terminal on the way out; this
+    // one does not depend on that having happened.
+    const closeTerminal = page.getByRole("button", { name: "Close terminal" });
+    for (let attempt = 0; attempt < 8 && (await closeTerminal.count()) > 0; attempt += 1) {
+      await closeTerminal
+        .first()
+        .click({ timeout: 5_000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(100);
+    }
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    // The first connection to a host asks about its key, and which of the two arrives first is a race
+    // with the network — so the terminal and the question are waited for together. A look taken once,
+    // before the answer came back, left the case waiting for a terminal that was waiting for a dialog
+    // nobody had answered.
+    // The bar on screen: the panes stay mounted while another tab is in front, so a second terminal
+    // means a second bar in the page, and this case is about the one somebody is typing into.
+    const bar = page.locator('input[aria-label="Command input"]').filter({ visible: true });
+    const historyButton = page.getByRole("button", { name: "History" }).filter({ visible: true }).first();
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    await sessionRow(page, name).click();
+    await expect(question.or(bar).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+
+    // Typing draws the list of what this build knows, with the row the keyboard is on named for a
+    // screen reader — the caret never leaves the line while somebody is choosing.
+    await bar.fill("upt");
+    const suggestions = page.getByRole("listbox", { name: "Completions" });
+    await expect(suggestions).toBeVisible();
+    await expect(suggestions.getByRole("option").first()).toContainText("uptime");
+    // Nothing is chosen yet: the first row is what Tab would take, and the highlight — which is what
+    // Enter acts on — appears only on a row somebody walked to.
+    expect(await bar.getAttribute("aria-activedescendant"), "the list is up with nothing chosen").toBeNull();
+    // Drawn over a terminal, so it has to be a surface and not a window: a background that names a
+    // token the sheet does not define draws nothing at all, and then the terminal reads through it.
+    expect(await paintsOver(suggestions), "the list paints over the terminal").toBe(true);
+    // Kept as an artifact: what the list looks like is the thing a person asks about, and a run that
+    // changed how it is drawn should be looked at rather than only asserted on.
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "completion-command.png"), fullPage: false });
+
+    // Enter runs the line somebody typed rather than the row the list is on: what the history keeps
+    // afterwards is `upt`, which nobody completed, and not `uptime`. Read on screen — the same line
+    // can be sitting in a hidden tab's list, and a case that read one of those would be reading
+    // somebody else's row.
+    await bar.press("Enter");
+    await expect(suggestions, "running the line takes the list away").toHaveCount(0);
+    await historyButton.click();
+    await expect(page.getByText("upt", { exact: true }).filter({ visible: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await historyButton.click();
+
+    // Pointing at a row with the arrow keys and pressing Enter puts *that* row into the line, and does
+    // not run it: `chmod` chosen out of `ch` is half a command, and the line on screen is the answer to
+    // "what will run". The step above is the other half of the rule — no arrows, and Enter runs the
+    // line as it stands.
+    await bar.fill("hos");
+    await expect(suggestions).toBeVisible();
+    await bar.press("ArrowDown");
+    expect(await bar.getAttribute("aria-activedescendant"), "the row walked to is the one named").not.toBeNull();
+    await bar.press("Enter");
+    await expect(bar, "the row goes into the line").toHaveValue("hostname ");
+    await expect(suggestions, "and the list is out of the way").toHaveCount(0);
+
+    // The next Enter has nothing pointed at any more, so it runs what the line says.
+    await bar.press("Enter");
+    await expect(bar).toHaveValue("");
+    await historyButton.click();
+    await expect(page.getByText("hostname", { exact: true }).filter({ visible: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await historyButton.click();
+
+    // Tab takes the row, writes it into the line and closes the list. A command is left with a space
+    // after it, which is where the next word goes.
+    await bar.fill("upt");
+    await bar.press("Tab");
+    await expect(bar, "Tab takes the row").toHaveValue("uptime ");
+    await expect(suggestions, "and closes the list").toHaveCount(0);
+
+    // And what Tab wrote is what the shell gets.
+    await bar.press("Enter");
+    await historyButton.click();
+    await expect(page.getByText("uptime", { exact: true }).filter({ visible: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await historyButton.click();
+
+    // Taking a command opens what comes after it: `systemctl` is left with a space, and the words it
+    // is usually followed by are on offer without having to ask for them.
+    await bar.fill("systemctl");
+    await bar.press("Tab");
+    await expect(bar, "a command is left with a space after it").toHaveValue("systemctl ");
+    await expect(suggestions).toBeVisible();
+    await expect(suggestions.getByRole("option").first()).toContainText("status");
+    await page.screenshot({ path: path.join(ARTIFACTS, "completion-subcommands.png"), fullPage: false });
+    await bar.press("Escape");
+    await expect(suggestions, "and Escape puts the list away").toHaveCount(0);
+
+    // Paths are the host's own answer: `/tm` lists what is in `/`, read over the same channel the file
+    // panel under this terminal is holding. The row is the entry's name — the directory it sits in is
+    // already in the line — and the read is a round trip, so the first look is given longer to arrive.
+    await bar.fill("cd /tm");
+    await expect(suggestions, "the host's directory arrives after the round trip").toBeVisible({ timeout: 15_000 });
+    await expect(suggestions.getByRole("option").first()).toContainText("tmp/");
+    await bar.press("Tab");
+    await expect(bar, "and the token becomes the path the host actually has").toHaveValue("cd /tmp/");
+
+    // Taking a directory opens what is inside it, and that happens on the tick after the accept: a
+    // script that pressed Escape in the same tick would be racing the application's own next step, so
+    // the list is left to the terminal being closed below rather than dismissed here.
+    //
+    // Closed on the way out: "which sessions are active" is read from the tabs that are open.
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
+    await expect(suggestions, "the list went with the bar it belonged to").toHaveCount(0);
   } finally {
     await close();
   }

@@ -259,6 +259,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.filesLayout;
     case "packedTransfer":
       return preferences.packedTransfer;
+    case "commandCompletion":
+      return preferences.commandCompletion;
   }
 }
 
@@ -341,6 +343,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "packedTransfer":
       void preferences.setPackedTransfer(value === true);
+      return;
+    case "commandCompletion":
+      preferences.setCommandCompletion(value === true);
       return;
   }
 }
