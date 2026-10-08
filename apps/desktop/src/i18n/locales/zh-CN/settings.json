@@ -317,7 +317,14 @@
       "enabled": "已启用",
       "disabled": "已关闭",
       "saveFailed": "命令库没有写成功。",
-      "prefixInvalid": "触发键是一个词，不能包含空格。"
+      "prefixInvalid": "触发键是一个词，不能包含空格。",
+      "columns": {
+        "name": "显示名",
+        "trigger": "触发键",
+        "status": "状态",
+        "line": "命令行",
+        "actions": "操作"
+      }
     },
     "shortcuts": {
       "hint": "点「更改」，然后按下你想换成的那组键。按 Esc 保持原样；某个键不想要了可以解绑。",

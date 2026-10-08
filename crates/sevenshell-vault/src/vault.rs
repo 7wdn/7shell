@@ -1563,6 +1563,55 @@ mod tests {
     }
 
     #[test]
+    fn editing_a_command_changes_every_field_somebody_can_edit() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+
+        let saved = vault
+            .save_snippet(snippet_of("uptime", "uptime", DEFAULT_GROUP_ID))
+            .expect("save");
+
+        // Every field the editor writes is changed here, and every one of them has to come back. An
+        // update that copies most of them is an update where the rest cannot be changed at all: a
+        // trigger somebody edits and a switch somebody turns would both silently stay as they were.
+        let edited = vault
+            .save_snippet(Snippet {
+                id: saved.id.clone(),
+                group_id: DEFAULT_GROUP_ID.to_owned(),
+                name: "开机时长".to_owned(),
+                prefix: "up".to_owned(),
+                command: "uptime -p".to_owned(),
+                append_cr: false,
+                enabled: false,
+                order: 0,
+                slot_history: vec![vec!["-p".to_owned()]],
+            })
+            .expect("save");
+
+        assert_eq!(edited.name, "开机时长");
+        assert_eq!(edited.prefix, "up");
+        assert_eq!(edited.command, "uptime -p");
+        assert!(!edited.append_cr);
+        assert!(!edited.enabled);
+        assert_eq!(edited.slot_history, vec![vec!["-p".to_owned()]]);
+        assert_eq!(edited.order, saved.order, "an edit is not a move");
+
+        // And through the file, because what is stored is the answer that lasts.
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        let stored = vault
+            .snippet_groups()
+            .expect("read")
+            .into_iter()
+            .flat_map(|group| group.commands)
+            .find(|command| command.id == saved.id)
+            .expect("the command");
+        assert_eq!(stored.prefix, "up");
+        assert!(!stored.enabled);
+    }
+
+    #[test]
     fn a_command_whose_group_is_gone_lands_in_the_default_group() {
         let directory = tempdir().expect("temp dir");
         let vault = Vault::open_at(directory.path().join("vault.json"));

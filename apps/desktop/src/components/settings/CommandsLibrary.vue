@@ -18,6 +18,7 @@ import { useI18n } from "vue-i18n";
 
 import CommandDialog from "@/components/settings/CommandDialog.vue";
 import Switch from "@/components/ui/Switch.vue";
+import { TABLE, rowClass } from "@/lib/table";
 import { useCommandsStore } from "@/stores/commands";
 import type { Snippet } from "@/types/snippet";
 
@@ -100,63 +101,88 @@ async function remove(snippet: Snippet): Promise<void> {
       </button>
     </div>
 
-    <p v-if="(shown?.commands.length ?? 0) === 0" class="text-xs text-muted-foreground">
-      {{ t("commands.empty") }}
-    </p>
-
-    <ul class="space-y-2">
-      <li
-        v-for="snippet in shown?.commands ?? []"
-        :key="snippet.id"
-        data-command-row
-        class="flex items-start gap-3 rounded-md border border-border bg-muted/20 px-3 py-2.5"
-        :class="snippet.enabled ? '' : 'opacity-60'"
-      >
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <span class="truncate text-sm font-medium">{{ snippet.name }}</span>
-            <kbd
-              v-if="snippet.prefix !== ''"
-              class="rounded-sm border border-border bg-background px-1.5 py-0.5 font-mono text-xs"
-            >
+    <!--
+      A table, because the library is a list of records: four facts about every command, read down
+      their own columns — a name, the trigger that reaches it, whether it is on, and the line itself.
+      The fifth column is the pair of things somebody does to a row. Drawn from the table vocabulary
+      like every other table here, so a heading and a row read the same on this page as on the rest.
+    -->
+    <table class="table-fixed" :class="TABLE.page.table" :aria-label="t('settings.nav.commands')">
+      <thead :class="TABLE.page.head">
+        <tr :class="TABLE.page.headRow">
+          <th class="w-[26%] text-left" :class="TABLE.page.headCell">
+            {{ t("settings.commands.columns.name") }}
+          </th>
+          <th class="w-[12%] text-left" :class="TABLE.page.headCell">
+            {{ t("settings.commands.columns.trigger") }}
+          </th>
+          <th class="w-[20%] text-left" :class="TABLE.page.headCell">
+            {{ t("settings.commands.columns.status") }}
+          </th>
+          <th class="text-left" :class="TABLE.page.headCell">{{ t("settings.commands.columns.line") }}</th>
+          <th class="w-20" :class="TABLE.page.headCell">
+            <span class="sr-only">{{ t("settings.commands.columns.actions") }}</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          v-for="snippet in shown?.commands ?? []"
+          :key="snippet.id"
+          data-command-row
+          :class="[rowClass('page'), snippet.enabled ? '' : 'text-muted-foreground']"
+        >
+          <td class="truncate font-medium" :class="TABLE.page.cell" :title="snippet.name">{{ snippet.name }}</td>
+          <td :class="TABLE.page.cell">
+            <kbd v-if="snippet.prefix !== ''" class="rounded-sm border border-border bg-background px-1.5 font-mono">
               {{ snippet.prefix }}
             </kbd>
-            <span v-else class="text-xs text-muted-foreground">{{ t("settings.commands.none") }}</span>
-            <span v-if="!snippet.enabled" class="text-xs text-muted-foreground">
-              {{ t("settings.commands.disabled") }}
+            <span v-else>{{ t("settings.commands.none") }}</span>
+          </td>
+          <td :class="TABLE.page.cell">
+            <span class="flex items-center gap-2">
+              <Switch
+                :model-value="snippet.enabled"
+                :aria-label="`${t('settings.commands.enabled')}: ${snippet.name}`"
+                @update:model-value="(value: boolean) => setEnabled(snippet, value)"
+              />
+              <span class="truncate">
+                {{ snippet.enabled ? t("settings.commands.enabled") : t("settings.commands.disabled") }}
+              </span>
             </span>
-          </div>
-          <p class="mt-1 truncate font-mono text-xs text-muted-foreground" :title="snippet.command">
-            {{ snippet.command }}
-          </p>
-        </div>
+          </td>
+          <td :class="TABLE.page.cell">
+            <span class="block truncate font-mono" :title="snippet.command">{{ snippet.command }}</span>
+          </td>
+          <td :class="TABLE.page.cell">
+            <span class="flex items-center justify-end gap-1">
+              <button
+                type="button"
+                class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                :title="t('settings.commands.edit')"
+                :aria-label="`${t('settings.commands.edit')}: ${snippet.name}`"
+                @click="edit(snippet)"
+              >
+                <Pencil :size="12" />
+              </button>
+              <button
+                type="button"
+                class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
+                :title="t('commands.remove')"
+                :aria-label="`${t('commands.remove')}: ${snippet.name}`"
+                @click="remove(snippet)"
+              >
+                <Trash2 :size="12" />
+              </button>
+            </span>
+          </td>
+        </tr>
 
-        <Switch
-          :model-value="snippet.enabled"
-          :aria-label="`${t('settings.commands.enabled')}: ${snippet.name}`"
-          @update:model-value="(value: boolean) => setEnabled(snippet, value)"
-        />
-
-        <button
-          type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="t('settings.commands.edit')"
-          :aria-label="`${t('settings.commands.edit')}: ${snippet.name}`"
-          @click="edit(snippet)"
-        >
-          <Pencil :size="12" />
-        </button>
-        <button
-          type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive"
-          :title="t('commands.remove')"
-          :aria-label="`${t('commands.remove')}: ${snippet.name}`"
-          @click="remove(snippet)"
-        >
-          <Trash2 :size="12" />
-        </button>
-      </li>
-    </ul>
+        <tr v-if="(shown?.commands.length ?? 0) === 0">
+          <td colspan="5" :class="TABLE.page.emptyCell">{{ t("commands.empty") }}</td>
+        </tr>
+      </tbody>
+    </table>
 
     <CommandDialog v-model:open="open" />
   </div>

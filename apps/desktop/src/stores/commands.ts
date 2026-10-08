@@ -67,17 +67,22 @@ export const useCommandsStore = defineStore("commands", () => {
   const filled = computed(() => (draft.value ? fillSlots(draft.value.command, values.value) : ""));
 
   /**
-   * Fills a library that has nothing in it with the commands this build ships.
+   * Fills a library that holds none of the commands this build ships with the ones it ships.
    *
-   * Which is what "a fresh install" looks like from here, and the rule is the one a shipped default
-   * list usually has: nothing stored means nothing was ever written, so the defaults go in. Somebody
-   * who deletes every command gets them back — the cost of not keeping a marker of our own, and the
-   * smaller surprise of the two. They arrive as ordinary commands: editable, switchable, deletable.
+   * "Holds none of them" rather than "is empty": somebody who has been using the application for a
+   * while has lines of their own in it, and a shipped list that only ever reached an empty library
+   * would never reach them at all. A library that already has one of these keeps what it has — which
+   * is the whole of what makes deleting one stick, since a list that is put back on every read is a
+   * list nobody can prune. What counts as having one is its name: a name is what somebody reads, and
+   * it is what they would have changed if they meant to keep it under another word.
+   *
+   * They arrive as ordinary commands: editable, switchable, deletable. Nothing marks them as ours,
+   * which is what lets them be treated like anything else.
    */
   async function seedBuiltins(): Promise<void> {
-    const empty = groups.value.every((group) => group.commands.length === 0);
     const group = groups.value.find((entry) => entry.id === DEFAULT_GROUP_ID);
-    if (!empty || group === undefined) {
+    const names = new Set(groups.value.flatMap((entry) => entry.commands.map((command) => command.name)));
+    if (group === undefined || BUILTIN_COMMANDS.some((builtin) => names.has(builtin.name))) {
       return;
     }
 

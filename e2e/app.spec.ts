@@ -2832,7 +2832,10 @@ test("a command can be added in the settings and reached by its trigger", async 
     // A first install starts with the lines this build ships, so the list is not empty — and what is
     // written below is added beside them rather than into an empty page. The dialog is drawn beside
     // the page rather than inside it (a portal), which is why it is looked for on the window.
+    await expect(settings.getByRole("columnheader", { name: "Trigger" }), "the library is a table").toBeVisible();
     await expect(settings.getByText("df -h").first(), "the shipped commands are in the library").toBeVisible();
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-commands.png"), fullPage: false });
     await settings.getByRole("button", { name: "Add a command" }).click();
     const command = page.getByRole("dialog");
     await expect(command, "adding is a dialog, not a form in the page").toBeVisible();
@@ -2842,6 +2845,19 @@ test("a command can be added in the settings and reached by its trigger", async 
     await command.getByRole("button", { name: "Save", exact: true }).click();
     await expect(command, "the dialog goes once the command is written").toHaveCount(0);
     await expect(settings.getByText(name).first(), "it is in the library now").toBeVisible();
+
+    // And editing it changes it. The trigger is the field that made this case necessary: it is written
+    // with the rest of the command, and a field that is not written is a field that goes back to what
+    // it was — which is exactly what "the trigger cannot be saved" looked like from the outside.
+    const edited = `${trigger}z`;
+    await settings.getByRole("button", { name: `Edit: ${name}` }).click();
+    await command.getByLabel("Type to bring it up").fill(edited);
+    await command.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(command, "the dialog goes once the change is written").toHaveCount(0);
+    await expect(
+      settings.locator("[data-command-row]").filter({ hasText: name }),
+      "the trigger it now answers to",
+    ).toContainText(edited);
 
     await page.getByRole("button", { name: "Close settings" }).click();
 
@@ -2868,12 +2884,13 @@ test("a command can be added in the settings and reached by its trigger", async 
     }
     await expect(bar).toBeVisible({ timeout: 30_000 });
 
-    // The trigger is what brings it up, and the row says which trigger answered.
-    await bar.fill(trigger);
+    // The trigger is what brings it up, and the row says which trigger answered — the one it was
+    // given by the edit above, which is what proves the edit was stored and not only drawn.
+    await bar.fill(edited);
     const suggestions = page.getByRole("listbox", { name: "Completions" });
     await expect(suggestions).toBeVisible();
     await expect(suggestions.getByRole("option").first()).toContainText(name);
-    await expect(suggestions.getByRole("option").first()).toContainText(trigger);
+    await expect(suggestions.getByRole("option").first()).toContainText(edited);
 
     await bar.press("Tab");
     await expect(bar).toHaveValue(line);

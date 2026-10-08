@@ -141,6 +141,25 @@ describe("the command library page", () => {
     expect(saveMock, "they are written into the library rather than kept apart from it").toHaveBeenCalled();
   });
 
+  it("shows them beside what somebody saved themselves", async () => {
+    // Somebody who has been using the application has lines of their own, and the shipped list has to
+    // reach them too: a library is not "fresh" just because it is not empty.
+    const mine = snippet("重启 nginx", "res", "systemctl restart #1");
+    await mount([mine], [mine, snippet("df -h", "dfh", "df -h")]);
+    await rows(2);
+
+    expect(host.textContent).toContain("重启 nginx");
+    expect(host.textContent).toContain("df -h");
+  });
+
+  it("names the columns of its table", async () => {
+    await mount([snippet("重启 nginx", "res", "systemctl restart #1")]);
+    await rows();
+
+    const headings = [...host.querySelectorAll("thead th")].map((cell) => cell.textContent?.trim());
+    expect(headings).toEqual(["Name", "Trigger", "Status", "The line", "Actions"]);
+  });
+
   it("says a command is switched off on its own row", async () => {
     await mount([snippet("重启 nginx", "res", "systemctl restart #1", false)]);
     await rows();

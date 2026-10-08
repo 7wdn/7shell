@@ -250,16 +250,17 @@ impl Document {
 
         match group.commands.iter_mut().find(|existing| existing.id == snippet.id) {
             Some(existing) => {
-                existing.name = snippet.name.clone();
-                existing.command = snippet.command.clone();
-                existing.append_cr = snippet.append_cr;
-                existing.slot_history = snippet.slot_history.clone();
-                existing.group_id = snippet.group_id.clone();
-                // Zero means "leave it where it is": a caller editing a command's text has no
-                // opinion about its place in the list, and taking 0 literally would send it to the
-                // front. Moving one is the only caller that passes a real order.
-                if snippet.order != 0 {
-                    existing.order = snippet.order;
+                // The whole command, taken as it arrived: a field copied one at a time is a field that
+                // can be forgotten here, and a forgotten one is a field nobody can edit — the trigger
+                // and the switch were both exactly that until an edit of each was tested.
+                //
+                // The order is the one exception, because it is not part of an edit: zero means "leave
+                // it where it is", so a caller changing a command's text has no opinion about its place
+                // in the list, and moving one is the only caller that passes a real order.
+                let order = existing.order;
+                *existing = snippet;
+                if existing.order == 0 {
+                    existing.order = order;
                 }
                 existing.clone()
             }

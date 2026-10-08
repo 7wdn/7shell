@@ -42,6 +42,18 @@ function library(commands: Snippet[]): SnippetGroup[] {
   return [{ id: "default", name: "", order: 0, commands }];
 }
 
+/**
+ * One of the lines this build ships, as the library would hold it.
+ *
+ * A library that holds one of these is left alone by the seeding, which is what the tests that are
+ * not about the seeding want: their fixtures are about moving and switching, and twenty writes
+ * arriving behind their backs would be twenty writes their assertions have to look past.
+ */
+function shipped(): Snippet {
+  const line = BUILTIN_COMMANDS[0] ?? { name: "", prefix: "", command: "" };
+  return { ...snippet("shipped", line.name, 0, line.command), prefix: line.prefix };
+}
+
 describe("the command library", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -64,7 +76,7 @@ describe("the command library", () => {
 
   it("moves a command past its neighbour by swapping the order they are stored with", async () => {
     const commands = useCommandsStore();
-    listMock.mockResolvedValue(library([snippet("a", "first", 1), snippet("b", "second", 2)]));
+    listMock.mockResolvedValue(library([shipped(), snippet("a", "first", 1), snippet("b", "second", 2)]));
     saveMock.mockResolvedValue(snippet("b", "second", 1));
     await commands.load();
 
@@ -77,7 +89,7 @@ describe("the command library", () => {
 
   it("does not move what is already at the end it is being pushed towards", async () => {
     const commands = useCommandsStore();
-    listMock.mockResolvedValue(library([snippet("a", "first", 1), snippet("b", "second", 2)]));
+    listMock.mockResolvedValue(library([snippet("a", "first", 1), shipped(), snippet("b", "second", 2)]));
     await commands.load();
 
     await commands.move("a", -1);
@@ -86,15 +98,17 @@ describe("the command library", () => {
     expect(saveMock).not.toHaveBeenCalled();
   });
 
-  it("fills a library that has nothing in it with the commands this build ships", async () => {
+  it("fills a library that holds none of the shipped lines with the commands this build ships", async () => {
     const commands = useCommandsStore();
     listMock
-      .mockResolvedValueOnce(library([]))
-      .mockResolvedValueOnce(library([snippet("shipped", "df -h", 1, "df -h")]));
-    saveMock.mockResolvedValue(snippet("shipped", "df -h", 1, "df -h"));
+      .mockResolvedValueOnce(library([snippet("mine", "重启 nginx", 1)]))
+      .mockResolvedValueOnce(library([snippet("mine", "重启 nginx", 1), snippet("shipped", "df -h", 2, "df -h")]));
+    saveMock.mockResolvedValue(snippet("shipped", "df -h", 2, "df -h"));
 
     await commands.load();
 
+    // Having lines of one's own does not mean having the shipped list: somebody who has been using
+    // the application for a while would otherwise never see it at all.
     expect(saveMock).toHaveBeenCalledTimes(BUILTIN_COMMANDS.length);
     // Written as ordinary commands, into the group a fresh library has: nothing marks them as ours,
     // which is what lets them be edited and deleted like anything else.
@@ -102,21 +116,23 @@ describe("the command library", () => {
       expect.objectContaining({ id: "", groupId: "default", prefix: "dfh", command: "df -h", enabled: true }),
     );
     expect(listMock, "the list is read again, so what is on screen is what was written").toHaveBeenCalledTimes(2);
-    expect(commands.groups[0]?.commands).toHaveLength(1);
+    expect(commands.groups[0]?.commands).toHaveLength(2);
   });
 
-  it("leaves a library somebody has something in alone", async () => {
+  it("leaves a library that already holds one of the shipped lines alone", async () => {
     const commands = useCommandsStore();
-    listMock.mockResolvedValue(library([snippet("a", "开机时长", 1)]));
+    // The name is what says the list is already there, so one line somebody kept — with their own
+    // words for it, or with the shipped name — is enough to stop the rest being written in.
+    listMock.mockResolvedValue(library([snippet("mine", "重启 nginx", 1), shipped()]));
 
     await commands.load();
 
-    expect(saveMock, "the shipped list is a first-install list, not a sync").not.toHaveBeenCalled();
+    expect(saveMock, "a list that is put back on every read is a list nobody can prune").not.toHaveBeenCalled();
   });
 
   it("switches a command off by writing it, not by keeping a flag beside it", async () => {
     const commands = useCommandsStore();
-    const stored = snippet("a", "开机时长", 1);
+    const stored = shipped();
     listMock.mockResolvedValue(library([stored]));
     saveMock.mockResolvedValue({ ...stored, enabled: false });
 

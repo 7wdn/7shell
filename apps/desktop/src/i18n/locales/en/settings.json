@@ -317,7 +317,14 @@
       "enabled": "Enabled",
       "disabled": "Switched off",
       "saveFailed": "The library could not be written.",
-      "prefixInvalid": "A trigger is one word, so it cannot contain a space."
+      "prefixInvalid": "A trigger is one word, so it cannot contain a space.",
+      "columns": {
+        "name": "Name",
+        "trigger": "Trigger",
+        "status": "Status",
+        "line": "The line",
+        "actions": "Actions"
+      }
     },
     "shortcuts": {
       "hint": "Click Change, then press the combination you want instead. Escape leaves the key as it is, and a key somebody does not want can be unbound.",
