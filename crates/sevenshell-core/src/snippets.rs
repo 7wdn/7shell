@@ -231,6 +231,7 @@ mod tests {
                 id: String::new(),
                 group_id: DEFAULT_GROUP_ID.to_owned(),
                 name: "uptime".to_owned(),
+                prefix: String::new(),
                 command: "uptime".to_owned(),
                 append_cr: true,
                 order: 0,

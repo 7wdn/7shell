@@ -1510,6 +1510,7 @@ mod tests {
             id: String::new(),
             group_id: group_id.to_owned(),
             name: name.to_owned(),
+            prefix: String::new(),
             command: command.to_owned(),
             append_cr: true,
             order: 0,

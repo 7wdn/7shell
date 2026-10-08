@@ -9,6 +9,7 @@
       "about": "About",
       "security": "Security",
       "shortcuts": "Shortcuts",
+      "commands": "Command library",
       "terminal": "SSH terminal"
     },
     "tab": {
@@ -303,6 +304,13 @@
     "security": {
       "keys": "Keys this device holds",
       "hosts": "Host keys this device trusts"
+    },
+    "commands": {
+      "hint": "The lines you keep, and the short text that brings each one up in the command line. This is the same library the panel under a terminal edits.",
+      "add": "Add a command",
+      "edit": "Edit",
+      "none": "No trigger",
+      "actions": "Actions"
     },
     "shortcuts": {
       "hint": "Click Change, then press the combination you want instead. Escape leaves the key as it is, and a key somebody does not want can be unbound.",

@@ -44,6 +44,14 @@ pub struct Snippet {
     /// What the list shows. It may differ from the command itself: `restart nginx` is a better
     /// name than `systemctl restart nginx`, and the name is what somebody scans for.
     pub name: String,
+    /// The short text that brings the line up.
+    ///
+    /// Typing it in the command line offers this command, which is what makes three letters worth
+    /// more than a whole name: the trigger is what somebody reaches for, and it is shorter than
+    /// either the name or the line. Empty means none — the name and the line itself are what the
+    /// completion searches then, which is how a command saved before this existed still behaves.
+    #[serde(default)]
+    pub prefix: String,
     /// The line, with `#1`…`#5` where values go.
     pub command: String,
     /// Whether sending it presses Enter afterwards. Off means the line is placed in the shell

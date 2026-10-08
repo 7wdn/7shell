@@ -22,8 +22,8 @@ import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
 let app: App | undefined;
 let host: HTMLDivElement;
 
-function snippet(name: string, command: string): Snippet {
-  return { id: name, groupId: "default", name, command, appendCr: true, order: 0, slotHistory: [] };
+function snippet(name: string, command: string, prefix = ""): Snippet {
+  return { id: name, groupId: "default", name, prefix, command, appendCr: true, order: 0, slotHistory: [] };
 }
 
 function ran(...commands: string[]): CommandHistoryEntry[] {

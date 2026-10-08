@@ -11,8 +11,8 @@ import { subcommandsOf } from "@/lib/commands/subcommands";
 import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
 import type { SftpEntry } from "@/types/session";
 
-function saved(name: string, command: string, slotHistory: readonly (readonly string[])[] = []): Snippet {
-  return { id: name, groupId: "default", name, command, appendCr: true, order: 0, slotHistory };
+function saved(name: string, command: string, slotHistory: readonly (readonly string[])[] = [], prefix = ""): Snippet {
+  return { id: name, groupId: "default", name, prefix, command, appendCr: true, order: 0, slotHistory };
 }
 
 function ran(command: string, at = 1_000): CommandHistoryEntry {
@@ -341,5 +341,38 @@ describe("what somebody has taken before", () => {
     );
 
     expect(candidates[0]?.insert).toBe("grep");
+  });
+});
+
+describe("the trigger a saved command was given", () => {
+  it("finds the command, and the row says what it was found by", () => {
+    const candidates = build("res", { saved: [saved("重启", "systemctl restart #1", [], "res")] });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ label: "重启", detail: "res · systemctl restart #1" });
+    expect(candidates[0]?.detailRanges, "the trigger is what answered").toEqual([{ start: 0, end: 3 }]);
+  });
+
+  it("puts the command first when the trigger was typed out in full", () => {
+    const candidates = build("res", {
+      saved: [saved("重启", "systemctl restart #1", [], "res"), saved("清理", "systemctl reset-failed")],
+      catalog: [command("reset")],
+    });
+
+    expect(candidates[0]?.label, "the trigger is the question somebody asked").toBe("重启");
+  });
+
+  it("moves the line's own highlight along when the trigger is put in front of it", () => {
+    const candidates = build("restart", { saved: [saved("重启", "systemctl restart #1", [], "res")] });
+
+    expect(candidates[0]?.detail).toBe("res · systemctl restart #1");
+    // The matched word sits ten characters into the line, and six more are in front of it now.
+    expect(candidates[0]?.detailRanges).toEqual([{ start: 16, end: 23 }]);
+  });
+
+  it("is not shown for a command that has none", () => {
+    const candidates = build("upt", { saved: [saved("开机时长", "uptime")] });
+
+    expect(candidates[0]?.detail).toBe("uptime");
   });
 });

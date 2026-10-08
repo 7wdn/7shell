@@ -2803,3 +2803,83 @@ test("a key can be changed, and the window answers to the new one", async () => 
     await close();
   }
 });
+
+/**
+ * A command added in the settings, reached in a terminal by the trigger it was given.
+ *
+ * The library is the one the panel under a terminal edits, so this is the whole way round: written on
+ * the settings page, saved into the vault, matched by three letters in the command line, taken into
+ * the line, and removed again from the page it was written on.
+ */
+test("a command can be added in the settings and reached by its trigger", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `lib-${stamp}`;
+    const trigger = `lt${stamp.slice(-3)}`;
+    const line = `echo ${name}`;
+
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Command library", exact: true }).click();
+
+    await settings.getByRole("button", { name: "Add a command" }).click();
+    await settings.getByLabel("What it is called").fill(name);
+    await settings.getByLabel("Type to bring it up").fill(trigger);
+    await settings.getByLabel(/The line, with/).fill(line);
+    await settings.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(settings.getByText(name).first(), "it is in the table now").toBeVisible();
+
+    await page.getByRole("button", { name: "Close settings" }).click();
+
+    // A terminal to type in, since the claim is about what three letters do in the command line.
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const bar = page.getByLabel("Command input");
+    const search = page.getByLabel("Search sessions");
+    await search.fill(name);
+    await sessionRow(page, name).click();
+    await search.fill("");
+    await expect(question.or(bar).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+
+    // The trigger is what brings it up, and the row says which trigger answered.
+    await bar.fill(trigger);
+    const suggestions = page.getByRole("listbox", { name: "Completions" });
+    await expect(suggestions).toBeVisible();
+    await expect(suggestions.getByRole("option").first()).toContainText(name);
+    await expect(suggestions.getByRole("option").first()).toContainText(trigger);
+
+    await bar.press("Tab");
+    await expect(bar).toHaveValue(line);
+
+    await page.getByRole("button", { name: "Close terminal" }).click();
+
+    // Put it back: a run that leaves a command behind describes a different library to the next case.
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    await settings.getByRole("button", { name: "Command library", exact: true }).click();
+    await settings.getByRole("button", { name: `Delete: ${name}` }).click();
+    await expect(settings.getByText(name)).toHaveCount(0);
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});

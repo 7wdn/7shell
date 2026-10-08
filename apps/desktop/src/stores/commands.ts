@@ -31,6 +31,8 @@ export interface SnippetDraft {
   id: string;
   groupId: string;
   name: string;
+  /** The short text that brings it up in the command line; empty means none. */
+  prefix: string;
   command: string;
   appendCr: boolean;
 }
@@ -76,6 +78,7 @@ export const useCommandsStore = defineStore("commands", () => {
       id: snippet.id,
       groupId: snippet.groupId,
       name: snippet.name,
+      prefix: snippet.prefix,
       command: snippet.command,
       appendCr: snippet.appendCr,
     };
@@ -86,7 +89,7 @@ export const useCommandsStore = defineStore("commands", () => {
   }
 
   function startNew(groupId: string): void {
-    draft.value = { id: "", groupId, name: "", command: "", appendCr: true };
+    draft.value = { id: "", groupId, name: "", prefix: "", command: "", appendCr: true };
     values.value = Array.from({ length: SLOTS }, () => "");
     approval.value = null;
     acknowledged.value = false;
@@ -119,6 +122,7 @@ export const useCommandsStore = defineStore("commands", () => {
         id: current.id,
         groupId: current.groupId,
         name: current.name.trim(),
+        prefix: current.prefix.trim(),
         command: current.command,
         appendCr: current.appendCr,
         order: 0,
@@ -231,6 +235,7 @@ export const useCommandsStore = defineStore("commands", () => {
       id: "",
       groupId: groups.value[0]?.id ?? "default",
       name: entry.command.slice(0, 40),
+      prefix: "",
       command: entry.command,
       appendCr: true,
     };

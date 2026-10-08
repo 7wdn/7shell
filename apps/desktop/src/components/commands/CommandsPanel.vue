@@ -292,6 +292,17 @@ async function renameGroup(): Promise<void> {
             class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
             :placeholder="t('commands.name')"
           />
+          <!--
+            The trigger: the short text that brings this line up in the command line. Optional, and
+            shorter than the name on purpose — it is what somebody types, not what they read.
+          -->
+          <input
+            v-model="commands.draft.prefix"
+            spellcheck="false"
+            class="w-28 shrink-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:border-primary focus:outline-none"
+            :placeholder="t('commands.trigger.placeholder')"
+            :aria-label="t('commands.trigger.label')"
+          />
           <label class="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
             <input v-model="commands.draft.appendCr" type="checkbox" class="size-3.5 accent-primary" />
             {{ t("commands.appendCr") }}

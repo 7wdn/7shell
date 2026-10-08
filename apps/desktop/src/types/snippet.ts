@@ -26,6 +26,11 @@ export interface Snippet {
   readonly id: string;
   readonly groupId: string;
   readonly name: string;
+  /**
+   * The short text that brings the line up in the command line, or empty for none: what somebody
+   * reaches for is usually shorter than either the name or the line itself.
+   */
+  readonly prefix: string;
   /** The line, with `#1`…`#5` where values go. */
   readonly command: string;
   /** Whether sending it presses Enter afterwards. */

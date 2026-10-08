@@ -43,6 +43,7 @@ import SettingsField from "@/components/settings/SettingsField.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
+import CommandsLibrary from "@/components/settings/CommandsLibrary.vue";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
@@ -700,6 +701,8 @@ function translate(key: string, params?: Record<string, string>): string {
                 `LIST_CATEGORIES` is the same list this branch answers to.
               -->
                 <ShortcutsSettings v-else-if="category === 'shortcuts'" />
+
+                <CommandsLibrary v-else-if="category === 'commands'" />
 
                 <div v-else-if="category === 'security'" class="space-y-5">
                   <div class="space-y-2">

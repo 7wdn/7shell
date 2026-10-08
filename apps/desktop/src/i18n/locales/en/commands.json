@@ -7,6 +7,11 @@
     "name": "What it is called",
     "command": "The line, with #1… #5 where values go",
     "appendCr": "Press Enter after sending",
+    "trigger": {
+      "label": "Type to bring it up",
+      "placeholder": "e.g. res",
+      "hint": "Three letters are quicker than the whole name: typing this in the command line offers the line, and typing all of it puts it first."
+    },
     "save": "Save",
     "remove": "Delete",
     "empty": "Nothing saved in this group yet.",

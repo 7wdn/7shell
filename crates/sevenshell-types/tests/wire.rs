@@ -639,6 +639,7 @@ fn a_saved_command_serializes_with_camel_case_fields() {
             id: "snippet-1".to_owned(),
             group_id: "default".to_owned(),
             name: "restart nginx".to_owned(),
+            prefix: "res".to_owned(),
             command: "systemctl restart #1".to_owned(),
             append_cr: true,
             order: 3,

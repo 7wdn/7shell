@@ -28,6 +28,7 @@ function snippet(id: string, name: string, order: number, command = "uptime"): S
     id,
     groupId: "default",
     name,
+    prefix: "",
     command,
     appendCr: true,
     order,

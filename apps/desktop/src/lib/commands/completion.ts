@@ -119,9 +119,12 @@ function lastUsedValues(snippet: Snippet): string[] {
 function fromSaved(saved: readonly Snippet[], site: CompletionSite): CompletionCandidate[] {
   const candidates: CompletionCandidate[] = [];
   for (const [index, snippet] of saved.entries()) {
+    // Three things answer for a saved command: the trigger somebody typed to reach it, its name, and
+    // the line itself. The best of them decides the row.
+    const byTrigger = matchText(snippet.prefix, site.prefix);
     const byName = matchText(snippet.name, site.prefix);
     const byCommand = matchText(snippet.command, site.prefix);
-    const best = byName.score >= byCommand.score ? byName : byCommand;
+    const best = [byTrigger, byName, byCommand].reduce((left, right) => (right.score > left.score ? right : left));
     if (best.score === NO_MATCH) {
       continue;
     }
@@ -134,17 +137,31 @@ function fromSaved(saved: readonly Snippet[], site: CompletionSite): CompletionC
       continue;
     }
 
+    // A trigger typed out in full is the whole question: it is short on purpose, and somebody who
+    // typed all of it means this command and nothing that merely starts the same way.
+    const triggered =
+      snippet.prefix !== "" && snippet.prefix.toLowerCase() === site.prefix.toLowerCase() ? EXACT_BOOST : 0;
+
+    // The row shows the trigger it was reached by, and the line behind it: a match nobody can see is
+    // a match nobody trusts. The command's own highlight is moved along by what was put in front of it.
+    const offset = snippet.prefix === "" ? 0 : snippet.prefix.length + " · ".length;
+    const detail = snippet.prefix === "" ? snippet.command : `${snippet.prefix} · ${snippet.command}`;
+    const detailRanges =
+      byTrigger.score > byCommand.score
+        ? byTrigger.ranges
+        : byCommand.ranges.map((range) => ({ start: range.start + offset, end: range.end + offset }));
+
     candidates.push({
       label: snippet.name,
-      detail: snippet.command,
+      detail,
       insert,
       kind: "saved",
       from: site.start,
-      score: best.score + SOURCE_BOOST.saved - index,
+      score: best.score + SOURCE_BOOST.saved - index + triggered,
       wholeLine: true,
       trailingSpace: false,
       labelRanges: byName.ranges,
-      detailRanges: byCommand.ranges,
+      detailRanges,
     });
   }
   return candidates;
