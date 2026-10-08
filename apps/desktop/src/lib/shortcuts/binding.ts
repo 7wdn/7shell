@@ -132,3 +132,62 @@ export function matchesShortcut(event: ShortcutEventLike, binding: string, platf
   }
   return characterCode(parsed.key) === event.code;
 }
+
+/**
+ * A binding written the one way this application stores it.
+ *
+ * The modifiers in the table's order and a single character upper-cased, so that two spellings of one
+ * combination cannot sit in the settings file as if they were two keys. `null` for anything that
+ * cannot be read at all.
+ */
+export function normalizeBinding(binding: string): string | null {
+  const parsed = parseBinding(binding);
+  if (parsed === null) {
+    return null;
+  }
+
+  const parts = binding.trim().split("+");
+  const raw = (parts.pop() ?? "").trim();
+  const key = [...raw].length === 1 ? raw.toUpperCase() : raw;
+  return [...parsed.modifiers, key].join("+");
+}
+
+/** The keys a press can be made of without naming one: a modifier on its own is not a combination. */
+const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "AltGraph", "Meta", "OS", "Hyper", "Super"]);
+
+/**
+ * The binding a key press stands for, in this application's spelling — which is what recording a new
+ * key writes down.
+ *
+ * `Mod` is what is written for the platform's own modifier (Ctrl here, Command on a Mac): a stored
+ * binding then means the same key on every platform, and the file does not have to be healed when it
+ * travels between two of them. `null` for a press that names no key — a modifier on its own, or a
+ * dead key.
+ */
+export function eventToBinding(event: ShortcutEventLike, platform: string): string | null {
+  if (event.key === "" || MODIFIER_KEYS.has(event.key)) {
+    return null;
+  }
+
+  const mac = isMacPlatform(platform);
+  const modifiers: ShortcutModifier[] = [];
+  if (mac ? event.metaKey : event.ctrlKey) {
+    modifiers.push("Mod");
+  }
+  if (!mac && event.metaKey) {
+    modifiers.push("Meta");
+  }
+  if (mac && event.ctrlKey) {
+    modifiers.push("Ctrl");
+  }
+  if (event.altKey) {
+    modifiers.push("Alt");
+  }
+  if (event.shiftKey) {
+    modifiers.push("Shift");
+  }
+
+  modifiers.sort((left, right) => MODIFIERS.indexOf(left) - MODIFIERS.indexOf(right));
+  const key = [...event.key].length === 1 ? event.key.toUpperCase() : event.key;
+  return normalizeBinding([...modifiers, key].join("+"));
+}

@@ -4,6 +4,8 @@
 //! would not mind being read over their shoulder: how the interface looks, and what
 //! language it speaks.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// How the file browser is laid out.
@@ -771,6 +773,16 @@ pub struct AppSettings {
     /// not type for anybody, while one that had it off would be a feature nobody finds.
     #[serde(default = "command_completion_on")]
     pub command_completion: bool,
+    /// The keys somebody has changed, by the action they belong to.
+    ///
+    /// An action that is not in here keeps the default the build ships, which is what makes this a
+    /// map rather than a list of every action: a build that adds one does not have to migrate a file
+    /// written before it, and a file written by a build that knows an action reads the same in one
+    /// that does not. The value is a binding in the application's own spelling (`Mod+V`), not the
+    /// glyphs a platform draws — which physical key that means is decided where the key is listened
+    /// for.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub keybindings: BTreeMap<String, String>,
     /// How much the whole interface is scaled, in percent of the size it was drawn at.
     ///
     /// The window is the same size either way: this is the interface inside it growing, which is
@@ -914,6 +926,7 @@ impl Default for AppSettings {
             background_image: BackgroundImage::default(),
             packed_transfer: false,
             command_completion: command_completion_on(),
+            keybindings: BTreeMap::new(),
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
             home_layout: HomeLayout::default(),
@@ -966,6 +979,7 @@ impl AppSettings {
             && self.background_image.blur == background_blur_default()
             && !self.packed_transfer
             && self.command_completion
+            && self.keybindings.is_empty()
             && self.custom_colors.is_none()
             && self.custom_colors_dark.is_none()
             && self.locale.is_none()

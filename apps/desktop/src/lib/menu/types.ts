@@ -11,6 +11,8 @@
  */
 import type { Component } from "vue";
 
+import type { ShortcutActionId } from "@/lib/shortcuts/registry";
+
 /** One thing somebody can do, or one thing they can see but not do. */
 export interface MenuAction {
   readonly kind: "action";
@@ -20,12 +22,13 @@ export interface MenuAction {
   readonly params?: Readonly<Record<string, string>>;
   readonly icon?: Component;
   /**
-   * A shortcut hint, shown on the right.
+   * The action whose key is shown on the right, or nothing.
    *
-   * It is only ever set where the key really works: a menu that advertises a shortcut the
-   * application does not implement is worse than a menu that promises nothing.
+   * The action and not the key: a key is a string somebody can change in the settings, and the menu
+   * has to print the one in force. It is only ever set where the key really works — a menu that
+   * advertises a shortcut the application does not implement is worse than one that promises nothing.
    */
-  readonly accel?: string;
+  readonly shortcut?: ShortcutActionId;
   /** Drawn, but not runnable. Why is the caller's business — a menu is no place for reasons. */
   readonly disabled?: boolean;
   /** Destructive: drawn in the colour of something that cannot be undone. */

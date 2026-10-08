@@ -17,7 +17,9 @@ import { useI18n } from "vue-i18n";
 
 import type { MenuEntry } from "@/lib/menu/types";
 import { formatShortcutDisplay } from "@/lib/shortcuts/display";
+import { bindingFor } from "@/lib/shortcuts/registry";
 import { useAppStore } from "@/stores/app";
+import { usePreferencesStore } from "@/stores/preferences";
 import { cn } from "@/lib/utils";
 
 const props = defineProps<{
@@ -35,6 +37,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const app = useAppStore();
+const preferences = usePreferencesStore();
 
 /**
  * The key a row prints, spelled for the platform it is drawn on.
@@ -44,7 +47,13 @@ const app = useAppStore();
  * that does nothing there.
  */
 function accelFor(entry: MenuEntry): string {
-  return entry.kind === "action" && entry.accel ? formatShortcutDisplay(entry.accel, app.platform) : "";
+  if (entry.kind !== "action" || entry.shortcut === undefined) {
+    return "";
+  }
+  // The key in force, not the one the menu was written with: the settings decide what an action
+  // answers to, and a row that printed its own idea of it would be advertising a key that does
+  // nothing.
+  return formatShortcutDisplay(bindingFor(entry.shortcut, preferences.keybindings), app.platform);
 }
 
 function rowId(entry: MenuEntry): string {
@@ -110,7 +119,7 @@ function iconFor(entry: MenuEntry): Component | undefined {
       }}</span>
       <ChevronRight v-if="entry.kind === 'submenu'" :size="11" class="shrink-0 text-muted-foreground" />
       <span
-        v-else-if="entry.kind === 'action' && entry.accel"
+        v-else-if="entry.kind === 'action' && entry.shortcut"
         class="shrink-0 font-mono text-[10px] text-muted-foreground"
       >
         {{ accelFor(entry) }}

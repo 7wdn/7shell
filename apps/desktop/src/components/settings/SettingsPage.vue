@@ -43,6 +43,7 @@ import SettingsField from "@/components/settings/SettingsField.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
+import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
   CUSTOM_COLOR_LABEL_KEYS,
@@ -261,6 +262,10 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.packedTransfer;
     case "commandCompletion":
       return preferences.commandCompletion;
+    case "keybindings":
+      // No row writes it: the shortcuts page is a list of its own, and this case is the switch saying
+      // so rather than forgetting about it.
+      return "";
   }
 }
 
@@ -346,6 +351,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "commandCompletion":
       preferences.setCommandCompletion(value === true);
+      return;
+    case "keybindings":
+      // Written one action at a time by the page that lists them, never by a row.
       return;
   }
 }
@@ -650,6 +658,8 @@ function translate(key: string, params?: Record<string, string>): string {
                 search for and nothing to restore, so it draws its own content —
                 `LIST_CATEGORIES` is the same list this branch answers to.
               -->
+                <ShortcutsSettings v-else-if="category === 'shortcuts'" />
+
                 <div v-else-if="category === 'security'" class="space-y-5">
                   <div class="space-y-2">
                     <h4 class="text-sm font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { parseBinding } from "@/lib/shortcuts/binding";
-import { bindingFor, resolveBindings, SHORTCUT_DEFINITIONS } from "@/lib/shortcuts/registry";
+import { bindingFor, resolveBindings, SHORTCUT_DEFINITIONS, SHORTCUT_SCOPE_ORDER } from "@/lib/shortcuts/registry";
+
+import enSettings from "@/i18n/locales/en/settings.json";
+import zhSettings from "@/i18n/locales/zh-CN/settings.json";
 
 describe("the table of reserved keys", () => {
   it("names each action once", () => {
@@ -46,5 +49,27 @@ describe("reading a binding out of the table", () => {
 
   it("treats a cleared override as unbound rather than as the default again", () => {
     expect(bindingFor("terminal.find", { "terminal.find": "" })).toBe("");
+  });
+});
+
+/** What a locale file holds under a dotted key, or nothing when it is not there. */
+function named(source: unknown, path: string): unknown {
+  return path.split(".").reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], source);
+}
+
+describe("what each action is called", () => {
+  it("has a name in both languages, so the settings page has something to list", () => {
+    for (const definition of SHORTCUT_DEFINITIONS) {
+      expect(named(enSettings, definition.labelKey), definition.id + " in English").toEqual(expect.any(String));
+      expect(named(zhSettings, definition.labelKey), definition.id + " in Chinese").toEqual(expect.any(String));
+    }
+  });
+
+  it("names the surfaces it lists them under, in both languages", () => {
+    for (const scope of SHORTCUT_SCOPE_ORDER) {
+      const key = "settings.shortcuts.scope." + scope;
+      expect(named(enSettings, key), scope + " in English").toEqual(expect.any(String));
+      expect(named(zhSettings, key), scope + " in Chinese").toEqual(expect.any(String));
+    }
   });
 });

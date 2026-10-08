@@ -169,14 +169,14 @@ function onKeydown(event: KeyboardEvent): void {
     return;
   }
 
-  if (matchesShortcut(event, bindingFor("commands.completionTrigger"), app.platform)) {
+  if (matchesShortcut(event, bindingFor("commands.completionTrigger", preferences.keybindings), app.platform)) {
     event.preventDefault();
     showHistory.value = false;
     open(caretOf());
     return;
   }
 
-  if (matchesShortcut(event, bindingFor("commands.completionAccept"), app.platform)) {
+  if (matchesShortcut(event, bindingFor("commands.completionAccept", preferences.keybindings), app.platform)) {
     event.preventDefault();
     if (visible.value) {
       takeRow(active.value);

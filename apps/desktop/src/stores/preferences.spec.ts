@@ -203,6 +203,7 @@ describe("preferences store", () => {
       monitorEnabled: true,
       packedTransfer: false,
       commandCompletion: true,
+      keybindings: {},
       locale: undefined,
     });
   });
@@ -244,6 +245,7 @@ describe("preferences store", () => {
       monitorEnabled: true,
       packedTransfer: false,
       commandCompletion: true,
+      keybindings: {},
       locale: "zh-CN",
     });
     expect(document.documentElement.lang).toBe("zh-CN");
@@ -396,6 +398,7 @@ describe("the terminal palette", () => {
       monitorEnabled: true,
       packedTransfer: false,
       commandCompletion: true,
+      keybindings: {},
       locale: undefined,
     });
   });
@@ -1152,6 +1155,7 @@ describe("restoring the defaults", () => {
       monitorEnabled: false,
       packedTransfer: false,
       commandCompletion: true,
+      keybindings: {},
       locale: "zh-CN",
     });
   });

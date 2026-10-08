@@ -8,6 +8,7 @@
       "files": "Files",
       "about": "About",
       "security": "Security",
+      "shortcuts": "Shortcuts",
       "terminal": "SSH terminal"
     },
     "tab": {
@@ -302,6 +303,28 @@
     "security": {
       "keys": "Keys this device holds",
       "hosts": "Host keys this device trusts"
+    },
+    "shortcuts": {
+      "hint": "Click Change, then press the combination you want instead. Escape leaves the key as it is, and a key somebody does not want can be unbound.",
+      "change": "Change",
+      "changeFor": "Change the key for: {action}",
+      "press": "Press a key…",
+      "reset": "Reset",
+      "unbind": "Unbind",
+      "unbound": "None",
+      "conflict": "Also answers to this key: {action}",
+      "scope": {
+        "global": "Anywhere",
+        "terminal": "In the terminal",
+        "files": "In the file panels",
+        "commands": "In the command line"
+      },
+      "actions": {
+        "uploadClipboard": "Upload the files on the clipboard",
+        "terminalFind": "Find in the terminal",
+        "completionAccept": "Take the row the arrows are on",
+        "completionTrigger": "Open the completion list"
+      }
     }
   },
   "knownHosts": {

@@ -8,6 +8,7 @@
       "files": "文件",
       "about": "关于",
       "security": "安全",
+      "shortcuts": "快捷键",
       "terminal": "SSH 终端"
     },
     "tab": {
@@ -302,6 +303,28 @@
     "security": {
       "keys": "本机持有的密钥",
       "hosts": "本机信任的主机键"
+    },
+    "shortcuts": {
+      "hint": "点「更改」，然后按下你想换成的那组键。按 Esc 保持原样；某个键不想要了可以解绑。",
+      "change": "更改",
+      "changeFor": "更改这个动作的按键：{action}",
+      "press": "请按键…",
+      "reset": "恢复默认",
+      "unbind": "解绑",
+      "unbound": "未绑定",
+      "conflict": "与这项用了同一组键：{action}",
+      "scope": {
+        "global": "任何地方",
+        "terminal": "在终端里",
+        "files": "在文件面板里",
+        "commands": "在命令行里"
+      },
+      "actions": {
+        "uploadClipboard": "上传剪贴板中的文件",
+        "terminalFind": "在终端里查找",
+        "completionAccept": "取用方向键指到的那一行",
+        "completionTrigger": "打开联想列表"
+      }
     }
   },
   "knownHosts": {

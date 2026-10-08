@@ -253,7 +253,7 @@ describe("the directory's own menu", () => {
   it("prints the one shortcut that really works here, as a binding the menu layer spells out", () => {
     const entries = fileAreaMenu({ path: "/var/log", packed: false }, areaActions());
 
-    expect(pick(entries, "paste").accel).toBe("Mod+V");
+    expect(pick(entries, "paste").shortcut, "by action, so the settings decide the key").toBe("global.uploadClipboard");
   });
 
   it("says whether packing is on, and turns it over when pressed", () => {

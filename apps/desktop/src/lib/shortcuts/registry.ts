@@ -22,6 +22,8 @@ export type ShortcutActionId =
 export interface ShortcutDefinition {
   readonly id: ShortcutActionId;
   readonly scope: ShortcutScope;
+  /** What the action is called, as a key: the settings page is where a person reads it. */
+  readonly labelKey: string;
   /** `Mod` is Ctrl everywhere and Command on macOS; see `binding.ts`. */
   readonly defaultBinding: string;
 }
@@ -29,13 +31,36 @@ export interface ShortcutDefinition {
 /** The surfaces a binding can belong to. */
 export type ShortcutScope = "global" | "terminal" | "files" | "commands";
 
+/** The surfaces in the order the settings page lists them. */
+export const SHORTCUT_SCOPE_ORDER: readonly ShortcutScope[] = ["global", "terminal", "files", "commands"];
+
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
-  { id: "global.uploadClipboard", scope: "global", defaultBinding: "Mod+V" },
-  { id: "terminal.find", scope: "terminal", defaultBinding: "Mod+F" },
-  { id: "commands.completionAccept", scope: "commands", defaultBinding: "Tab" },
+  {
+    id: "global.uploadClipboard",
+    scope: "global",
+    labelKey: "settings.shortcuts.actions.uploadClipboard",
+    defaultBinding: "Mod+V",
+  },
+  {
+    id: "terminal.find",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.terminalFind",
+    defaultBinding: "Mod+F",
+  },
+  {
+    id: "commands.completionAccept",
+    scope: "commands",
+    labelKey: "settings.shortcuts.actions.completionAccept",
+    defaultBinding: "Tab",
+  },
   // Not Ctrl+Space: on Windows that combination belongs to the input method, and a key that switches
   // the IME instead of opening the list is a key nobody can use.
-  { id: "commands.completionTrigger", scope: "commands", defaultBinding: "Alt+/" },
+  {
+    id: "commands.completionTrigger",
+    scope: "commands",
+    labelKey: "settings.shortcuts.actions.completionTrigger",
+    defaultBinding: "Alt+/",
+  },
 ];
 
 export type ShortcutOverrides = Partial<Record<ShortcutActionId, string>>;

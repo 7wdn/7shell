@@ -224,7 +224,7 @@ export function fileAreaMenu(state: FileAreaState, actions: FileAreaActions): Me
       // and only while a browser is on screen — which is exactly when this menu can be opened. It is
       // written as a binding rather than as a sentence, so the platform it is drawn on decides
       // whether that reads `Ctrl + V` or `⌘ V`.
-      accel: "Mod+V",
+      shortcut: "global.uploadClipboard",
       run: () => actions.paste(),
     },
     {

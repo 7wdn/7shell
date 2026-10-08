@@ -224,6 +224,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             },
             packed_transfer: true,
             command_completion: false,
+            keybindings: BTreeMap::from([("commands.completionAccept".to_owned(), "Mod+Enter".to_owned())]),
             theme_palette: ThemePalette::Sage,
             ui_scale: 125,
             corner_style: CornerStyle::Small,

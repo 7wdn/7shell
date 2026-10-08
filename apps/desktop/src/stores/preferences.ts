@@ -18,6 +18,7 @@ import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveL
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
+import type { ShortcutActionId } from "@/lib/shortcuts/registry";
 import {
   BACKGROUND_BLUR_MAX,
   TERMINAL_FONT_SIZE_MIN,
@@ -101,6 +102,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   monitorEnabled: true,
   packedTransfer: false,
   commandCompletion: true,
+  keybindings: {},
 };
 
 /**
@@ -289,6 +291,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * who never presses Tab never sees it do anything.
    */
   const commandCompletion = ref(true);
+  /**
+   * The keys somebody has changed, by action. Empty means every action is the one the build ships,
+   * which is what a fresh install has and what dropping the whole map means.
+   */
+  const keybindings = ref<Record<string, string>>({});
   const systemPrefersDark = ref(true);
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
@@ -486,6 +493,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       monitorEnabled.value = settings.monitorEnabled;
       packedTransfer.value = settings.packedTransfer;
       commandCompletion.value = settings.commandCompletion;
+      keybindings.value = { ...settings.keybindings };
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -565,6 +573,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         monitorEnabled: monitorEnabled.value,
         packedTransfer: packedTransfer.value,
         commandCompletion: commandCompletion.value,
+        keybindings: { ...keybindings.value },
         locale: localeChosen.value ? locale.value : undefined,
       });
     } catch (error) {
@@ -861,6 +870,24 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * Changes what one action answers to.
+   *
+   * Passing nothing puts the action back to the default, which is stored as *not being in the map at
+   * all* rather than as a copy of a default that a later build might change. An empty string is a
+   * decision of its own — a key somebody does not want to keep answering to — and stays written down.
+   */
+  function setKeybinding(id: ShortcutActionId, binding: string | null): void {
+    const next = { ...keybindings.value };
+    if (binding === null) {
+      delete next[id];
+    } else {
+      next[id] = binding;
+    }
+    keybindings.value = next;
+    dirty.value = true;
+  }
+
+  /**
    * Moves the divider.
    *
    * Applied at once and written down separately: a drag is dozens of moves, and every write is a
@@ -1020,6 +1047,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "commandCompletion":
           commandCompletion.value = FRESH.commandCompletion;
           break;
+        case "keybindings":
+          keybindings.value = {};
+          break;
         case "locale":
           localeChosen.value = false;
           locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
@@ -1069,6 +1099,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     monitorEnabled,
     packedTransfer,
     commandCompletion,
+    keybindings,
     resolvedTheme,
     resolvedTerminalTheme,
     resolvedPanelHeight,
@@ -1112,6 +1143,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setMonitorEnabled,
     setPackedTransfer,
     setCommandCompletion,
+    setKeybinding,
     setPanelHeight,
     rememberPanelHeight,
     resetPanelHeight,

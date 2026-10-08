@@ -285,7 +285,10 @@ onMounted(() => {
   // read from the table rather than spelled out here, so whatever prints it and whatever listens for
   // it cannot end up naming different keys.
   instance.attachCustomKeyEventHandler((event) => {
-    if (event.type === "keydown" && matchesShortcut(event, bindingFor("terminal.find"), app.platform)) {
+    if (
+      event.type === "keydown" &&
+      matchesShortcut(event, bindingFor("terminal.find", preferences.keybindings), app.platform)
+    ) {
       openSearch();
       return false;
     }

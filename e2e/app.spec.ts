@@ -42,6 +42,7 @@ async function writtenSettings(): Promise<{
   backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
   terminalFontSize?: number;
   customColorsDark?: { primary?: string };
+  keybindings?: Record<string, string>;
 }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
     packedTransfer?: boolean;
@@ -55,6 +56,7 @@ async function writtenSettings(): Promise<{
     backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
     terminalFontSize?: number;
     customColorsDark?: { primary?: string };
+    keybindings?: Record<string, string>;
   };
 }
 
@@ -2702,6 +2704,100 @@ test("the terminal's page previews what its settings do, and writes them down", 
     await settings.getByRole("slider", { name: "Text size" }).fill("13");
     await applySettings(page);
     await expect.poll(async () => (await writtenSettings()).terminalFontSize).toBe(13);
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A key somebody changes is the key the application answers to.
+ *
+ * The change is made on the settings page and then *used* where the key belongs: the terminal's find
+ * key moves to Ctrl+Shift+F and is pressed in a real terminal, because "the settings file says so" and
+ * "the window does that" are two different claims. The key is put back on the way out — a run that
+ * leaves a changed binding behind describes a different application to the cases after it.
+ */
+test("a key can be changed, and the window answers to the new one", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `keys-${stamp}`;
+
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Shortcuts", exact: true }).click();
+
+    // Kept as an artifact: what the page looks like is the thing somebody asks about, and a run that
+    // changed how it is drawn should be looked at rather than only asserted on.
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-shortcuts.png"), fullPage: false });
+
+    const change = settings.getByRole("button", { name: "Change the key for: Find in the terminal" });
+    await change.click();
+    await expect(change, "the row says what it is waiting for").toHaveText("Press a key…");
+    await page.keyboard.press("Control+Shift+F");
+    await expect(settings.getByText("Ctrl + Shift + F")).toBeVisible();
+
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).keybindings ?? {}, { message: "the change is on disk" })
+      .toMatchObject({ "terminal.find": "Mod+Shift+F" });
+    await page.getByRole("button", { name: "Close settings" }).click();
+
+    // A terminal that is really connected, because the claim is about a key somebody presses.
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const bar = page.getByLabel("Command input");
+
+    // The sidebar may still have its groups closed from an earlier case — "collapse all" has no way
+    // back but one group at a time — and a row inside a closed group cannot be clicked. Searching is
+    // how this sidebar shows a row that is buried: what it finds, it opens.
+    const search = page.getByLabel("Search sessions");
+    await search.fill(name);
+    await sessionRow(page, name).click();
+    await search.fill("");
+
+    await expect(question.or(bar).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+
+    // The key it used to answer to now belongs to the shell, and the one it answers to opens the bar.
+    const findBar = page.getByLabel("Find in terminal");
+    await page.locator(".xterm").click();
+    await page.keyboard.press("Control+f");
+    await expect(findBar, "the key it used to answer to does nothing now").toHaveCount(0);
+
+    await page.keyboard.press("Control+Shift+F");
+    await expect(findBar, "and the key it answers to now opens it").toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Put back, so that the rest of the run meets the keys it expects.
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    await settings.getByRole("button", { name: "Shortcuts", exact: true }).click();
+    await settings.getByRole("button", { name: "Reset" }).first().click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).keybindings ?? {}, { message: "and gone again" })
+      .toEqual({});
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();

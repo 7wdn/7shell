@@ -113,7 +113,9 @@ const { openMenu } = useContextMenu();
 const app = useAppStore();
 
 /** How the clipboard key is spelled on this platform, for the button that tells somebody about it. */
-const pasteShortcut = computed(() => formatShortcutDisplay(bindingFor("global.uploadClipboard"), app.platform));
+const pasteShortcut = computed(() =>
+  formatShortcutDisplay(bindingFor("global.uploadClipboard", preferences.keybindings), app.platform),
+);
 
 const browser = computed(() => files.browser(props.handle));
 const problem = computed(() => (browser.value?.failure ? describeShellError(translate, browser.value.failure) : null));

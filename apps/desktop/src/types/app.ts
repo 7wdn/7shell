@@ -348,6 +348,13 @@ export interface AppSettings {
    */
   readonly commandCompletion: boolean;
   /**
+   * The keys somebody has changed, by the action they belong to. An action that is not in here keeps
+   * the default the build ships — which is what makes a build that adds one nothing to migrate for.
+   * The value is a binding in the application's own spelling (`Mod+V`), the same string on every
+   * platform: which physical key that means is decided where the key is listened for.
+   */
+  readonly keybindings?: Readonly<Record<string, string>>;
+  /**
    * How much the interface is scaled, in percent of its own size — the same window, drawn larger.
    * One of `UI_SCALE_PERCENTS`; the Rust side reads anything else as the default.
    */

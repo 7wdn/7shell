@@ -11,6 +11,7 @@
 //!    previous settings readable, which is invariant 5 applied to something less scary than
 //!    the vault but no less annoying to lose.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
 
@@ -128,6 +129,10 @@ struct StoredSettings {
     /// with — on — rather than as a list somebody switched off.
     #[serde(default = "command_completion_on")]
     command_completion: bool,
+    /// Changed keys, by action. Absent actions read as the default the build ships, which is what
+    /// makes adding an action in a later build nothing a file has to be migrated for.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    keybindings: BTreeMap<String, String>,
     /// Absent in a file written before the sidebar could be resized, which reads as "the divider
     /// has never been moved".
     #[serde(default)]
@@ -204,6 +209,7 @@ impl StoredSettings {
             quit_on_close: settings.quit_on_close,
             packed_transfer: settings.packed_transfer,
             command_completion: settings.command_completion,
+            keybindings: settings.keybindings.clone(),
             ui_scale: settings.ui_scale,
             corner_style: settings.corner_style.as_str().to_owned(),
             home_layout: settings.home_layout.as_str().to_owned(),
@@ -238,6 +244,7 @@ impl StoredSettings {
             quit_on_close: self.quit_on_close,
             packed_transfer: self.packed_transfer,
             command_completion: self.command_completion,
+            keybindings: self.keybindings,
             ui_scale: normalize_ui_scale(self.ui_scale),
             corner_style: CornerStyle::from_id(&self.corner_style).unwrap_or_default(),
             home_layout: HomeLayout::from_id(&self.home_layout).unwrap_or_default(),
@@ -358,6 +365,7 @@ mod tests {
             quit_on_close: false,
             packed_transfer: false,
             command_completion: command_completion_on(),
+            keybindings: BTreeMap::new(),
             theme_palette: ThemePalette::default(),
             ui_scale: ui_scale_default(),
             corner_style: CornerStyle::default(),
@@ -407,6 +415,10 @@ mod tests {
         assert!(
             !loaded.packed_transfer,
             "a file written before packed transfers existed is not a person asking for one"
+        );
+        assert!(
+            loaded.keybindings.is_empty(),
+            "a file written before keys could be changed has none changed"
         );
         assert!(
             loaded.command_completion,
@@ -519,6 +531,9 @@ mod tests {
             packed_transfer: true,
             // Off, for the same reason again: this one's default is on.
             command_completion: false,
+            // A key somebody changed, so the round trip proves a changed one survives — and that an
+            // action nobody touched is still the default rather than the default written down.
+            keybindings: BTreeMap::from([("terminal.find".to_owned(), "Mod+G".to_owned())]),
             // Neither is the default, for the same reason again: a palette and a size both have to
             // come back as the ones that were chosen.
             theme_palette: ThemePalette::Claude,

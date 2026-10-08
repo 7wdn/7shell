@@ -359,7 +359,9 @@ describe("a menu as text", () => {
  */
 describe("a row's key hint", () => {
   it("is spelled for the platform the menu is drawn on", async () => {
-    await open([{ kind: "action", id: "paste", labelKey: "menu.paste", accel: "Mod+V", run: () => {} }]);
+    await open([
+      { kind: "action", id: "paste", labelKey: "menu.paste", shortcut: "global.uploadClipboard", run: () => {} },
+    ]);
 
     expect(items()[0]?.textContent).toContain("Ctrl + V");
 
