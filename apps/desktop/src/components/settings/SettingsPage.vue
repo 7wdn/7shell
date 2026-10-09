@@ -359,6 +359,13 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       // No row writes it: the shortcuts page is a list of its own, and this case is the switch saying
       // so rather than forgetting about it.
       return "";
+    case "syncEndpoint":
+    case "syncUsername":
+    case "syncRemotePath":
+    case "syncIncludeSecrets":
+      // The same, for the sync page: its form is its own component, and these cases are the switch
+      // saying so rather than forgetting about four fields that are not rows anywhere.
+      return "";
   }
 }
 

@@ -189,6 +189,16 @@ struct StoredSettings {
     custom_colors_dark: Option<CustomColors>,
     #[serde(default)]
     locale: Option<String>,
+    /// The sync server's address, user name and remote path. Absent in a file written before this
+    /// application could talk to one, and read back as "no server configured".
+    #[serde(default)]
+    sync_endpoint: Option<String>,
+    #[serde(default)]
+    sync_username: Option<String>,
+    #[serde(default)]
+    sync_remote_path: Option<String>,
+    #[serde(default)]
+    sync_include_secrets: bool,
 }
 
 impl StoredSettings {
@@ -225,6 +235,10 @@ impl StoredSettings {
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
+            sync_endpoint: settings.sync_endpoint.clone(),
+            sync_username: settings.sync_username.clone(),
+            sync_remote_path: settings.sync_remote_path.clone(),
+            sync_include_secrets: settings.sync_include_secrets,
         }
     }
 
@@ -265,6 +279,10 @@ impl StoredSettings {
             custom_colors: self.custom_colors.filter(CustomColors::is_drawable),
             custom_colors_dark: self.custom_colors_dark.filter(CustomColors::is_drawable),
             locale: self.locale.filter(|locale| !locale.is_empty()),
+            sync_endpoint: self.sync_endpoint.filter(|endpoint| !endpoint.trim().is_empty()),
+            sync_username: self.sync_username.filter(|name| !name.trim().is_empty()),
+            sync_remote_path: self.sync_remote_path.filter(|path| !path.trim().is_empty()),
+            sync_include_secrets: self.sync_include_secrets,
         }
     }
 }
@@ -382,7 +400,58 @@ mod tests {
             custom_colors: None,
             custom_colors_dark: None,
             locale: locale.map(str::to_owned),
+            sync_endpoint: None,
+            sync_username: None,
+            sync_remote_path: None,
+            sync_include_secrets: false,
         }
+    }
+
+    #[test]
+    fn a_sync_server_survives_a_round_trip_and_a_cleared_field_is_no_server() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        let mut written = settings(ThemeMode::Dark, ThemeMode::System, None);
+        written.sync_endpoint = Some("https://dav.example.com/remote.php/dav/files/alice/".to_owned());
+        written.sync_username = Some("alice".to_owned());
+        written.sync_remote_path = Some("7shell/sync/backup.json".to_owned());
+        written.sync_include_secrets = true;
+        save_to(&path, &written).expect("write");
+
+        let loaded = load_from(&path).expect("read");
+
+        assert_eq!(
+            loaded.sync_endpoint.as_deref(),
+            Some("https://dav.example.com/remote.php/dav/files/alice/")
+        );
+        assert_eq!(loaded.sync_username.as_deref(), Some("alice"));
+        assert_eq!(loaded.sync_remote_path.as_deref(), Some("7shell/sync/backup.json"));
+        assert!(loaded.sync_include_secrets);
+
+        // A field somebody cleared is nobody having a server, not a server at the empty address: the
+        // panel's fields are filled in together or not at all, and a half-cleared form must not read
+        // as a configuration to dial. Whitespace counts as cleared for the same reason a font name
+        // does — it is what an empty text box leaves behind.
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"syncEndpoint":"   ","syncUsername":"","syncRemotePath":"x"}"#,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("read");
+
+        assert_eq!(loaded.sync_endpoint, None);
+        assert_eq!(loaded.sync_username, None);
+        assert_eq!(
+            loaded.sync_remote_path.as_deref(),
+            Some("x"),
+            "the fields are read one by one"
+        );
+        assert!(
+            !loaded.sync_include_secrets,
+            "a file written before this existed is not a person asking for it"
+        );
     }
 
     #[test]

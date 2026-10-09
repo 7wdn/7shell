@@ -393,4 +393,11 @@ export interface AppSettings {
   readonly customColorsDark?: CustomColors;
   /** Absent means nobody has chosen a language, so the system's applies. */
   readonly locale?: string;
+  /** Where a backup is sent. Absent means nobody has set a sync server up. */
+  readonly syncEndpoint?: string;
+  readonly syncUsername?: string;
+  /** Where the file goes inside the endpoint. Absent means the default path. */
+  readonly syncRemotePath?: string;
+  /** Whether an upload carries the stored passwords and keys, sealed under the sync passphrase. */
+  readonly syncIncludeSecrets: boolean;
 }

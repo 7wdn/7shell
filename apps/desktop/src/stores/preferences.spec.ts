@@ -72,6 +72,12 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     monitorEnabled: true,
     packedTransfer: false,
     commandCompletion: true,
+    // No sync server: what a fresh install has, and what every case here that is not about the sync
+    // page expects.
+    syncEndpoint: undefined,
+    syncUsername: undefined,
+    syncRemotePath: undefined,
+    syncIncludeSecrets: false,
     ...overrides,
   };
 }
@@ -205,6 +211,10 @@ describe("preferences store", () => {
       commandCompletion: true,
       keybindings: {},
       locale: undefined,
+      syncEndpoint: undefined,
+      syncUsername: undefined,
+      syncRemotePath: undefined,
+      syncIncludeSecrets: false,
     });
   });
 
@@ -247,6 +257,10 @@ describe("preferences store", () => {
       commandCompletion: true,
       keybindings: {},
       locale: "zh-CN",
+      syncEndpoint: undefined,
+      syncUsername: undefined,
+      syncRemotePath: undefined,
+      syncIncludeSecrets: false,
     });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
@@ -400,6 +414,10 @@ describe("the terminal palette", () => {
       commandCompletion: true,
       keybindings: {},
       locale: undefined,
+      syncEndpoint: undefined,
+      syncUsername: undefined,
+      syncRemotePath: undefined,
+      syncIncludeSecrets: false,
     });
   });
 
@@ -1157,6 +1175,10 @@ describe("restoring the defaults", () => {
       commandCompletion: true,
       keybindings: {},
       locale: "zh-CN",
+      syncEndpoint: undefined,
+      syncUsername: undefined,
+      syncRemotePath: undefined,
+      syncIncludeSecrets: false,
     });
   });
 

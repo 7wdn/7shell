@@ -103,6 +103,10 @@ const FRESH: Omit<AppSettings, "locale"> = {
   packedTransfer: false,
   commandCompletion: true,
   keybindings: {},
+  syncEndpoint: "",
+  syncUsername: "",
+  syncRemotePath: "",
+  syncIncludeSecrets: false,
 };
 
 /**
@@ -300,6 +304,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const locale = ref<SupportedLocale>(DEFAULT_LOCALE);
   /** True once a person has chosen a language, so the system's stops applying. */
   const localeChosen = ref(false);
+  /**
+   * Where a backup is sent: three fields and a switch, none of them a secret.
+   *
+   * The address, the user name and the path live in the settings file because that is where this
+   * installation's configuration lives — the *password* is the one part that has to be behind the
+   * vault's lock, and it is not in this store at all. An empty address is nobody having configured
+   * a server, which is the same state as a fresh install.
+   */
+  const syncEndpoint = ref("");
+  const syncUsername = ref("");
+  const syncRemotePath = ref("");
+  const syncIncludeSecrets = ref(false);
   const problem = ref<ShellError | null>(null);
 
   const resolvedTheme = computed<ResolvedTheme>(() => {
@@ -494,6 +510,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
       packedTransfer.value = settings.packedTransfer;
       commandCompletion.value = settings.commandCompletion;
       keybindings.value = { ...settings.keybindings };
+      syncEndpoint.value = settings.syncEndpoint ?? "";
+      syncUsername.value = settings.syncUsername ?? "";
+      syncRemotePath.value = settings.syncRemotePath ?? "";
+      syncIncludeSecrets.value = settings.syncIncludeSecrets;
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -575,6 +595,13 @@ export const usePreferencesStore = defineStore("preferences", () => {
         commandCompletion: commandCompletion.value,
         keybindings: { ...keybindings.value },
         locale: localeChosen.value ? locale.value : undefined,
+        // A field nobody filled in is written as absent rather than as an empty string, which is
+        // what "no server configured" means in the file and what a half-filled form must not stop
+        // meaning.
+        syncEndpoint: syncEndpoint.value.trim() || undefined,
+        syncUsername: syncUsername.value.trim() || undefined,
+        syncRemotePath: syncRemotePath.value.trim() || undefined,
+        syncIncludeSecrets: syncIncludeSecrets.value,
       });
     } catch (error) {
       problem.value = asShellError(error, "settings_set");
@@ -870,6 +897,39 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * Where a backup is sent: the address, the user name and the path inside it.
+   *
+   * Written with the rest of the settings — this page's Apply — rather than saved by its own button.
+   * The panel that uses them commits first, which is what makes "test this server" test the address
+   * that is on screen rather than the one that was last written down.
+   */
+  function setSyncEndpoint(endpoint: string): void {
+    syncEndpoint.value = endpoint;
+    dirty.value = true;
+  }
+
+  function setSyncUsername(name: string): void {
+    syncUsername.value = name;
+    dirty.value = true;
+  }
+
+  function setSyncRemotePath(path: string): void {
+    syncRemotePath.value = path;
+    dirty.value = true;
+  }
+
+  /**
+   * Whether an upload carries the stored passwords and keys.
+   *
+   * A preference rather than a promise: nothing is carried unless a passphrase is saved as well, and
+   * the file says what it actually holds either way.
+   */
+  function setSyncIncludeSecrets(included: boolean): void {
+    syncIncludeSecrets.value = included;
+    dirty.value = true;
+  }
+
+  /**
    * Changes what one action answers to.
    *
    * Passing nothing puts the action back to the default, which is stored as *not being in the map at
@@ -1105,6 +1165,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     resolvedPanelHeight,
     resolvedSidebarWidth,
     locale,
+    syncEndpoint,
+    syncUsername,
+    syncRemotePath,
+    syncIncludeSecrets,
     problem,
     dirty,
     initialize,
@@ -1143,6 +1207,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setMonitorEnabled,
     setPackedTransfer,
     setCommandCompletion,
+    setSyncEndpoint,
+    setSyncUsername,
+    setSyncRemotePath,
+    setSyncIncludeSecrets,
     setKeybinding,
     setPanelHeight,
     rememberPanelHeight,

@@ -400,6 +400,10 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             custom_colors: Some(CustomColors::light_default()),
             custom_colors_dark: Some(CustomColors::dark_default()),
             locale: Some("zh-CN".to_owned()),
+            sync_endpoint: Some("https://dav.example.com/dav/".to_owned()),
+            sync_username: Some("alice".to_owned()),
+            sync_remote_path: Some("7shell/sync/backup.json".to_owned()),
+            sync_include_secrets: true,
         },
         "AppSettings",
     );

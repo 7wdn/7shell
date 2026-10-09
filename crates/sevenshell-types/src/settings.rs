@@ -849,6 +849,26 @@ pub struct AppSettings {
     pub custom_colors_dark: Option<CustomColors>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
+    /// Where a backup is sent, when somebody has configured a server.
+    ///
+    /// The address and the user name are here rather than in the vault because they are not secrets
+    /// and because this is where this installation's configuration lives; the *password* is the one
+    /// part that has to be behind the vault's lock. Absent means nobody has set a server up, which
+    /// is what every one of these fields means on its own — a half-filled form is a form somebody
+    /// has not finished, not a broken configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_username: Option<String>,
+    /// Where the file goes inside the endpoint. Absent means the default path, which is what an
+    /// empty form field means to the person who left it alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_remote_path: Option<String>,
+    /// Whether an upload carries the stored passwords and keys, sealed under the sync passphrase.
+    ///
+    /// Off by default, and it cannot be on without a passphrase: the passphrase is what seals them,
+    /// and this flag is a preference rather than a promise about what a file contains.
+    pub sync_include_secrets: bool,
 }
 
 /// The interface's own size when nobody has changed it.
@@ -942,6 +962,10 @@ impl Default for AppSettings {
             custom_colors: None,
             custom_colors_dark: None,
             locale: None,
+            sync_endpoint: None,
+            sync_username: None,
+            sync_remote_path: None,
+            sync_include_secrets: false,
         }
     }
 }
