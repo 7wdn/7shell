@@ -206,6 +206,17 @@ address is not sent through a proxy (a company proxy that cannot resolve `127.0.
 setup into a mystery); and nothing hangs forever — a request that never answers is reported rather
 than leaving a page saying "working" until the window closes.
 
+A redirect loses **two** things, and finding the second one cost a real server. Several WebDAV
+implementations answer a read with a redirect to their object store — AList does, and so do several
+commercial NAS products — and the client was following that redirect with a `Referer` header naming
+the address it came from, which is the default behaviour of the HTTP library underneath. Two
+consequences, one annoying and one worse. The annoying one: a bucket sitting behind a referer
+allow-list refuses the request, so a file the server has just handed over a signed link to comes back
+as `403 AccessDenied`, which looks like a permissions problem and is not. The worse one: that address
+is somebody's private server, and a third-party CDN has no business learning it. The client is
+therefore built to send no `Referer` at all, and a test against two fake servers pins both halves —
+no credentials and no address on the redirected request.
+
 Two further properties are about *when* traffic leaves. A timed upload runs only while the window is
 open, because the timer lives in the interface and the vault it reads is locked when the window is
 closed — there is no service holding a key so that a background process could seal anything. And a

@@ -100,6 +100,15 @@ impl WebDav {
 
         let mut builder = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
+            // A redirect must not carry the address it came from.
+            //
+            // Two reasons, and neither is hypothetical. Several servers answer a read with a
+            // redirect to their own object store, and a bucket sitting behind a referer allow-list
+            // refuses a request that arrives with somebody else's address on it — a 403 on a file
+            // the server has just handed over a signed link to. The other reason is the one that
+            // makes it a rule rather than a workaround: that address is the private server somebody
+            // is backing up to, and a third-party CDN has no business being told it.
+            .referer(false)
             .user_agent(concat!("7Shell/", env!("CARGO_PKG_VERSION")));
         if is_private_host(&url) {
             builder = builder.no_proxy();
@@ -721,6 +730,12 @@ mod tests {
         assert!(
             !second[0].headers.contains_key("authorization"),
             "and the credentials were left at the first one"
+        );
+        assert!(
+            !second[0].headers.contains_key("referer"),
+            "nor was it told the address the request came from: a bucket behind a referer \
+             allow-list refuses a request carrying somebody else's address, which is how a read \
+             of a file the server just offered turns into a 403"
         );
     }
 }
