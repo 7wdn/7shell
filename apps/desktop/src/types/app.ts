@@ -246,6 +246,16 @@ export const TERMINAL_FONT_SIZE_MIN = 10;
 export const TERMINAL_FONT_SIZE_MAX = 24;
 export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 
+/**
+ * How often a timed upload may run, in minutes, and what a fresh install uses.
+ *
+ * From `sevenshell_types`, where the floor and the ceiling are reasoned about: a minute is the
+ * fastest anything may repeat, and a day is longer than anybody's backup deserves.
+ */
+export const SYNC_AUTO_UPLOAD_MINUTES_MIN = 1;
+export const SYNC_AUTO_UPLOAD_MINUTES_MAX = 1440;
+export const DEFAULT_SYNC_AUTO_UPLOAD_MINUTES = 30;
+
 /** The picture drawn behind the whole window, from `sevenshell_types::BackgroundImage`. */
 export interface BackgroundImage {
   /** What the picture is called, as the person who chose it knows it. No picture when absent. */
@@ -400,4 +410,12 @@ export interface AppSettings {
   readonly syncRemotePath?: string;
   /** Whether an upload carries the stored passwords and keys, sealed under the sync passphrase. */
   readonly syncIncludeSecrets: boolean;
+  /**
+   * Whether a backup is sent on a timer.
+   *
+   * It only runs while the window is open: there is no service and no daemon behind it.
+   */
+  readonly syncAutoUpload: boolean;
+  /** How often, in minutes. Between one minute and a day. */
+  readonly syncAutoUploadMinutes: number;
 }

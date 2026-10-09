@@ -67,6 +67,10 @@
     "restoreMessage": "{file} holds what is listed below. Nothing already here is replaced unless the box is ticked.",
     "sealed": "This file is sealed, so it carries credentials. The passphrase on the panel is what opened it.",
     "replace": "Replace items with the same id",
-    "replaceHint": "Off, an item whose id is already here arrives as a second copy. On, the file's version is written over it."
+    "replaceHint": "Off, an item whose id is already here arrives as a second copy. On, the file's version is written over it.",
+    "autoUpload": "Send a backup on a timer",
+    "autoUploadHint": "It runs only while this window is open, and it never downloads: a copy that overwrote this library without being asked to would be the worst surprise this feature could give.",
+    "autoUploadEvery": "Every",
+    "autoUploadMinutes": "minutes"
   }
 }

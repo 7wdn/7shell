@@ -67,6 +67,10 @@
     "restoreMessage": "{file} 中包含下面这些内容。本机已有的不会被覆盖，除非勾选下面这一项。",
     "sealed": "这个文件是密封的，里面有凭据；打开它的是面板上的那个口令。",
     "replace": "覆盖 id 相同的项",
-    "replaceHint": "不勾：id 已存在的项作为副本导入；勾上：用文件里的版本覆盖它。"
+    "replaceHint": "不勾：id 已存在的项作为副本导入；勾上：用文件里的版本覆盖它。",
+    "autoUpload": "定时上传备份",
+    "autoUploadHint": "只在窗口开着时运行，而且从不下载：一份未经询问就把本机库覆盖掉的副本，是这功能能给的最坏的意外。",
+    "autoUploadEvery": "每",
+    "autoUploadMinutes": "分钟"
   }
 }

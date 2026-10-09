@@ -177,8 +177,41 @@ What a backup deliberately cannot carry: the WebDAV password and the snippet tok
 the pending passphrase question, and anything the interface only holds in memory. The rules
 themselves live in `sevenshell-sync`, not in the host — the host picks files and moves bytes, and
 what a snapshot may contain is a rule of the format rather than a property of the dialog that
-started it. A cloud sync will be the same file in somebody else's storage, which is why the seal and
-the accounting were built before there was anywhere to send it.
+started it.
+
+**The same file in somebody else's storage.** A sync server is a place a backup is sent, and what
+goes there is the file described above — which is the whole reason it was built the way it was: the
+seal and the accounting existed before there was anywhere to send it, so nothing about the transport
+had to be trusted with a decision about credentials.
+
+The split a server forces is between two secrets that are easy to confuse and are not the same one:
+
+- **The server's password authenticates to the server.** It goes in exactly one header, never in a
+  URL (where it would reach a log on either side), never in a body, never in an error. A redirect to
+  another host drops it, so a `Warning: 301` cannot be used to collect one. It lives in the vault —
+  the settings file next to it holds the address and the user name, which are configuration rather
+  than secrets — and it is only ever read to build that header.
+- **The sync passphrase seals what is uploaded, and never reaches the server.** It is the only thing
+  standing between a file on somebody else's disk and the logins inside it, which is what makes
+  putting that file there a reasonable thing to do at all. What a server ends up holding is worth
+  nothing without it.
+
+Both may be *kept*, and both are kept for one reason: a timed upload cannot stop to ask. They are
+kept apart rather than as one value because they are separate decisions — a password that opens the
+door and a passphrase that seals the parcel, one of which may well be shared with a colleague.
+
+Four rules the transport holds itself to, each of them a bug somebody has already had: the password
+travels in one header and nowhere else; a cross-host redirect loses the credentials; a private
+address is not sent through a proxy (a company proxy that cannot resolve `127.0.0.1` turns a working
+setup into a mystery); and nothing hangs forever — a request that never answers is reported rather
+than leaving a page saying "working" until the window closes.
+
+Two further properties are about *when* traffic leaves. A timed upload runs only while the window is
+open, because the timer lives in the interface and the vault it reads is locked when the window is
+closed — there is no service holding a key so that a background process could seal anything. And a
+download is **never** automatic: a copy that overwrote this library without being asked to would be
+the worst thing this feature could do, so reading is always something a person pressed. What the
+timer sends is what a manual upload sends, decided the same way and counted the same way.
 
 **Secrets are scrubbed, not merely avoided.** `crates/sevenshell-error/src/redact.rs` removes
 private key blocks, credential assignments and bearer tokens from any string on its way into an

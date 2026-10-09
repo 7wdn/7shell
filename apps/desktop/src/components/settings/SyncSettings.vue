@@ -33,6 +33,7 @@ import { usePreferencesStore } from "@/stores/preferences";
 import { useSessionsStore } from "@/stores/sessions";
 import { useSyncStore, type ReadBackup } from "@/stores/sync";
 import { useWordsStore } from "@/stores/words";
+import { SYNC_AUTO_UPLOAD_MINUTES_MAX, SYNC_AUTO_UPLOAD_MINUTES_MIN } from "@/types/app";
 import type { SyncSelection } from "@/types/sync";
 
 const { t } = useI18n();
@@ -491,6 +492,41 @@ function restore(replace: boolean): void {
             <X :size="11" />
             {{ t("sync.forgetPassphrase") }}
           </button>
+        </div>
+      </div>
+
+      <!--
+        The timer. It is armed by the frame rather than by this page — a page is mounted while it is
+        open, and a timer that ran only while somebody was looking at the settings would never run.
+      -->
+      <div class="space-y-2 rounded-md border border-border px-3 py-3">
+        <label class="flex items-start gap-2">
+          <input
+            :checked="preferences.syncAutoUpload"
+            type="checkbox"
+            class="mt-0.5 size-3.5 shrink-0 accent-primary"
+            @change="preferences.setSyncAutoUpload(($event.target as HTMLInputElement).checked)"
+          />
+          <span class="min-w-0">
+            <span class="block text-xs">{{ t("sync.autoUpload") }}</span>
+            <span class="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+              {{ t("sync.autoUploadHint") }}
+            </span>
+          </span>
+        </label>
+
+        <div v-if="preferences.syncAutoUpload" class="flex items-center gap-2 text-xs">
+          <span>{{ t("sync.autoUploadEvery") }}</span>
+          <input
+            :value="preferences.syncAutoUploadMinutes"
+            type="number"
+            :min="SYNC_AUTO_UPLOAD_MINUTES_MIN"
+            :max="SYNC_AUTO_UPLOAD_MINUTES_MAX"
+            class="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm focus:outline-none"
+            :aria-label="t('sync.autoUploadMinutes')"
+            @input="preferences.setSyncAutoUploadMinutes(Number(($event.target as HTMLInputElement).value))"
+          />
+          <span>{{ t("sync.autoUploadMinutes") }}</span>
         </div>
       </div>
     </template>

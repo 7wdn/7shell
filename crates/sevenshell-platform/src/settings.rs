@@ -21,8 +21,9 @@ use sevenshell_types::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
     CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
     TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default, background_transparency_default,
-    command_completion_on, monitor_on, normalize_terminal_font_size, normalize_ui_scale, sidebar_on,
-    terminal_font_size_default, tray_icon_on, ui_scale_default,
+    command_completion_on, monitor_on, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
+    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
+    ui_scale_default,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -199,6 +200,10 @@ struct StoredSettings {
     sync_remote_path: Option<String>,
     #[serde(default)]
     sync_include_secrets: bool,
+    #[serde(default)]
+    sync_auto_upload: bool,
+    #[serde(default = "sync_auto_upload_minutes_default")]
+    sync_auto_upload_minutes: u32,
 }
 
 impl StoredSettings {
@@ -239,6 +244,8 @@ impl StoredSettings {
             sync_username: settings.sync_username.clone(),
             sync_remote_path: settings.sync_remote_path.clone(),
             sync_include_secrets: settings.sync_include_secrets,
+            sync_auto_upload: settings.sync_auto_upload,
+            sync_auto_upload_minutes: settings.sync_auto_upload_minutes,
         }
     }
 
@@ -283,6 +290,8 @@ impl StoredSettings {
             sync_username: self.sync_username.filter(|name| !name.trim().is_empty()),
             sync_remote_path: self.sync_remote_path.filter(|path| !path.trim().is_empty()),
             sync_include_secrets: self.sync_include_secrets,
+            sync_auto_upload: self.sync_auto_upload,
+            sync_auto_upload_minutes: normalize_sync_auto_upload_minutes(self.sync_auto_upload_minutes),
         }
     }
 }
@@ -404,6 +413,8 @@ mod tests {
             sync_username: None,
             sync_remote_path: None,
             sync_include_secrets: false,
+            sync_auto_upload: false,
+            sync_auto_upload_minutes: sync_auto_upload_minutes_default(),
         }
     }
 

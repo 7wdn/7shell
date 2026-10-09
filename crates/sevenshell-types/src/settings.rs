@@ -671,6 +671,27 @@ pub fn terminal_font_size_default() -> u8 {
     13
 }
 
+/// How often a timed upload may run, in minutes.
+///
+/// A floor of one minute because anything faster is a request loop somebody has accidentally asked
+/// for, and a ceiling of a day because a longer interval is a backup nobody remembers setting up.
+/// Bounded rather than free, like the terminal's size: a file naming a number outside the range
+/// reads as the nearest one that is a choice.
+pub const SYNC_AUTO_UPLOAD_MINUTES_MIN: u32 = 1;
+pub const SYNC_AUTO_UPLOAD_MINUTES_MAX: u32 = 1440;
+
+/// The interval a fresh install uploads on, when somebody turns the timer on.
+pub const SYNC_AUTO_UPLOAD_MINUTES_DEFAULT: u32 = 30;
+
+pub fn sync_auto_upload_minutes_default() -> u32 {
+    SYNC_AUTO_UPLOAD_MINUTES_DEFAULT
+}
+
+/// Keeps an interval inside the range this build offers.
+pub fn normalize_sync_auto_upload_minutes(minutes: u32) -> u32 {
+    minutes.clamp(SYNC_AUTO_UPLOAD_MINUTES_MIN, SYNC_AUTO_UPLOAD_MINUTES_MAX)
+}
+
 /// Keeps a size inside the range the slider offers.
 pub fn normalize_terminal_font_size(size: u8) -> u8 {
     size.clamp(TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX)
@@ -869,6 +890,16 @@ pub struct AppSettings {
     /// Off by default, and it cannot be on without a passphrase: the passphrase is what seals them,
     /// and this flag is a preference rather than a promise about what a file contains.
     pub sync_include_secrets: bool,
+    /// Whether a backup is sent on a timer.
+    ///
+    /// Off by default, and it only runs while the window is open — there is no service and no daemon
+    /// behind it. What it carries is what a manual upload carries: the same switches, decided the
+    /// same way.
+    #[serde(default)]
+    pub sync_auto_upload: bool,
+    /// How often, in minutes.
+    #[serde(default = "sync_auto_upload_minutes_default")]
+    pub sync_auto_upload_minutes: u32,
 }
 
 /// The interface's own size when nobody has changed it.
@@ -966,6 +997,8 @@ impl Default for AppSettings {
             sync_username: None,
             sync_remote_path: None,
             sync_include_secrets: false,
+            sync_auto_upload: false,
+            sync_auto_upload_minutes: sync_auto_upload_minutes_default(),
         }
     }
 }

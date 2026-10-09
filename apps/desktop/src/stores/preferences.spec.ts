@@ -12,6 +12,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 import { i18n } from "@/i18n";
 import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
 import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
+import { DEFAULT_SYNC_AUTO_UPLOAD_MINUTES } from "@/types/app";
 import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE,
@@ -78,6 +79,9 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     syncUsername: undefined,
     syncRemotePath: undefined,
     syncIncludeSecrets: false,
+    // No timer either: this spec is about choices somebody made, and nobody has made these.
+    syncAutoUpload: false,
+    syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
     ...overrides,
   };
 }
@@ -215,6 +219,8 @@ describe("preferences store", () => {
       syncUsername: undefined,
       syncRemotePath: undefined,
       syncIncludeSecrets: false,
+      syncAutoUpload: false,
+      syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
     });
   });
 
@@ -261,6 +267,8 @@ describe("preferences store", () => {
       syncUsername: undefined,
       syncRemotePath: undefined,
       syncIncludeSecrets: false,
+      syncAutoUpload: false,
+      syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
     });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
@@ -418,6 +426,8 @@ describe("the terminal palette", () => {
       syncUsername: undefined,
       syncRemotePath: undefined,
       syncIncludeSecrets: false,
+      syncAutoUpload: false,
+      syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
     });
   });
 
@@ -1179,6 +1189,8 @@ describe("restoring the defaults", () => {
       syncUsername: undefined,
       syncRemotePath: undefined,
       syncIncludeSecrets: false,
+      syncAutoUpload: false,
+      syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
     });
   });
 

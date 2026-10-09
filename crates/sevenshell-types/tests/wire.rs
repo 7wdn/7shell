@@ -451,6 +451,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             sync_username: Some("alice".to_owned()),
             sync_remote_path: Some("7shell/sync/backup.json".to_owned()),
             sync_include_secrets: true,
+            sync_auto_upload: true,
+            sync_auto_upload_minutes: 45,
         },
         "AppSettings",
     );

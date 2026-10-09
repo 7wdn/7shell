@@ -3094,6 +3094,16 @@ test("the sync page says what it can back up, and asks before it writes", async 
     await expect(settings.locator("#sync-password")).toHaveAttribute("type", "text");
     await reveal.click();
     await expect(settings.locator("#sync-password")).toHaveAttribute("type", "password");
+    // The timer: off until somebody asks, and its interval only drawn once it is on. Nothing in
+    // this run waits for a tick — an upload to a server that is not there is not a thing to test
+    // here — but the two controls have to be the ones they say they are.
+    const timer = settings.getByRole("checkbox", { name: /Send a backup on a timer/ });
+    await expect(timer).not.toBeChecked();
+    await expect(settings.getByRole("spinbutton", { name: "minutes" })).toHaveCount(0);
+    timer.check();
+    await expect(settings.getByRole("spinbutton", { name: "minutes" })).toHaveValue("30");
+    timer.uncheck();
+
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync.png"), fullPage: false });
 
     // Pressing an action with no address says so rather than dialling nothing.

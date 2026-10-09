@@ -38,6 +38,7 @@ import UnlockScreen from "@/components/vault/UnlockScreen.vue";
 import HomeView from "@/components/views/HomeView.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { describeShellError } from "@/i18n/errors";
+import { useSyncAutoUpload } from "@/composables/useSyncAutoUpload";
 import { useTransferNotices } from "@/composables/useTransferNotices";
 import { isTextEntry } from "@/lib/menu/editable";
 import { useAppStore } from "@/stores/app";
@@ -58,6 +59,15 @@ const terminals = useTerminalsStore();
 const batch = useBatchStore();
 const editor = useSessionEditorStore();
 const library = useSessionsStore();
+
+/**
+ * The timed backup, armed by the frame rather than by the page that configures it.
+ *
+ * A page is mounted while it is open; a timer that only ran while somebody was looking at the
+ * settings would be a timer that never runs. It arms itself when the vault opens and stops when it
+ * closes, and it does nothing at all until somebody turns it on.
+ */
+useSyncAutoUpload();
 const vault = useVaultStore();
 
 // Watches for transfers that failed while their list was not on screen. Registered here because the

@@ -21,6 +21,9 @@ import { deriveCustomColors } from "@/lib/settings/customColors";
 import type { ShortcutActionId } from "@/lib/shortcuts/registry";
 import {
   BACKGROUND_BLUR_MAX,
+  DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+  SYNC_AUTO_UPLOAD_MINUTES_MAX,
+  SYNC_AUTO_UPLOAD_MINUTES_MIN,
   TERMINAL_FONT_SIZE_MIN,
   TERMINAL_FONT_SIZE_MAX,
   BACKGROUND_TRANSPARENCY_MAX,
@@ -107,6 +110,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   syncUsername: "",
   syncRemotePath: "",
   syncIncludeSecrets: false,
+  syncAutoUpload: false,
+  syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
 };
 
 /**
@@ -316,6 +321,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const syncUsername = ref("");
   const syncRemotePath = ref("");
   const syncIncludeSecrets = ref(false);
+  /**
+   * Whether a backup is sent on a timer, and how often.
+   *
+   * The interval is kept inside the range the field offers rather than trusted: a number typed into
+   * a box is a number somebody can mistype, and a timer set to nought minutes is a request loop.
+   */
+  const syncAutoUpload = ref(false);
+  const syncAutoUploadMinutes = ref(DEFAULT_SYNC_AUTO_UPLOAD_MINUTES);
   const problem = ref<ShellError | null>(null);
 
   const resolvedTheme = computed<ResolvedTheme>(() => {
@@ -514,6 +527,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       syncUsername.value = settings.syncUsername ?? "";
       syncRemotePath.value = settings.syncRemotePath ?? "";
       syncIncludeSecrets.value = settings.syncIncludeSecrets;
+      syncAutoUpload.value = settings.syncAutoUpload;
+      syncAutoUploadMinutes.value = clampSyncMinutes(settings.syncAutoUploadMinutes);
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -602,6 +617,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         syncUsername: syncUsername.value.trim() || undefined,
         syncRemotePath: syncRemotePath.value.trim() || undefined,
         syncIncludeSecrets: syncIncludeSecrets.value,
+        syncAutoUpload: syncAutoUpload.value,
+        syncAutoUploadMinutes: clampSyncMinutes(syncAutoUploadMinutes.value),
       });
     } catch (error) {
       problem.value = asShellError(error, "settings_set");
@@ -930,6 +947,28 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * Whether a backup goes out on a timer, and how often.
+   *
+   * The timer itself lives in the frame, not here: it is a thing that runs, and this is a thing that
+   * is remembered. Setting either of these re-arms it through the watcher the frame puts on them.
+   */
+  function setSyncAutoUpload(sending: boolean): void {
+    syncAutoUpload.value = sending;
+    dirty.value = true;
+  }
+
+  function setSyncAutoUploadMinutes(minutes: number): void {
+    syncAutoUploadMinutes.value = clampSyncMinutes(minutes);
+    dirty.value = true;
+  }
+
+  /** An interval inside the range the field offers, for the same reason a font size is clamped. */
+  function clampSyncMinutes(minutes: number): number {
+    const rounded = Number.isFinite(minutes) ? Math.round(minutes) : DEFAULT_SYNC_AUTO_UPLOAD_MINUTES;
+    return Math.min(Math.max(rounded, SYNC_AUTO_UPLOAD_MINUTES_MIN), SYNC_AUTO_UPLOAD_MINUTES_MAX);
+  }
+
+  /**
    * Changes what one action answers to.
    *
    * Passing nothing puts the action back to the default, which is stored as *not being in the map at
@@ -1169,6 +1208,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     syncUsername,
     syncRemotePath,
     syncIncludeSecrets,
+    syncAutoUpload,
+    syncAutoUploadMinutes,
     problem,
     dirty,
     initialize,
@@ -1211,6 +1252,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSyncUsername,
     setSyncRemotePath,
     setSyncIncludeSecrets,
+    setSyncAutoUpload,
+    setSyncAutoUploadMinutes,
     setKeybinding,
     setPanelHeight,
     rememberPanelHeight,
