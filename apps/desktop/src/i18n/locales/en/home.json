@@ -8,7 +8,7 @@
     "intro": {
       "badge": "SSH operations client",
       "headline": "Your hosts, your keys, your history — all on this machine.",
-      "body": "Sessions, credentials and the commands you have run are kept here, encrypted with a passphrase only you hold. No account, no sync, no telemetry. Make a session, confirm the host key on the first connection, then work in a terminal or in the file workbench beside it.",
+      "body": "Sessions, credentials and the commands you have run are kept here, encrypted with a passphrase only you hold. No account, no telemetry, and no server unless you name one. Make a session, confirm the host key on the first connection, then work in a terminal or in the file workbench beside it.",
       "notice": "This page names no host and counts nothing: no session, no host key and no history is shown on it.",
       "settings": "Home page settings"
     },
