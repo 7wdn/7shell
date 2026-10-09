@@ -46,7 +46,7 @@ pub use snapshot::{
 };
 pub use snippets::{
     SNIPPET_ENVELOPE_FORMAT, SNIPPET_ENVELOPE_VERSION, SNIPPET_FILE_NAME, SNIPPET_TITLE, SnippetProvider,
-    SnippetRequest, SnippetSync, api_base, create_body, file_in, is_ours, open_snippet, read_request, response_id,
-    seal, snippet_url, test_request, write_request,
+    SnippetRequest, SnippetSync, Snippets, api_base, create_body, file_in, is_ours, open_snippet, read_request,
+    response_id, seal, snippet_url, test_request, write_request,
 };
 pub use webdav::{DEFAULT_REMOTE_PATH, SyncService, WebDav};

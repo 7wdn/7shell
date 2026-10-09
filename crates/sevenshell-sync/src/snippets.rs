@@ -442,6 +442,197 @@ fn request_for(
     Ok(SnippetRequest { method, url, headers })
 }
 
+/// How long one request to a code-hosting service may take.
+///
+/// The same budget as a WebDAV request: enough for a small file on a slow line, short enough that a
+/// person watching is told something is wrong while they are still looking at it.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// A client for one account.
+///
+/// The requests themselves are the functions above; this is the skin that sends them and reads the
+/// answers, so that the shapes can be checked without a network and this can be read as what it is —
+/// a request, a status, and a body.
+pub struct Snippets {
+    http: reqwest::Client,
+    sync: SnippetSync,
+    base: String,
+}
+
+impl Snippets {
+    pub fn new(sync: &SnippetSync) -> Result<Self, ShellError> {
+        let base = api_base(sync.provider, sync.instance_url.as_deref())?;
+        let mut builder = reqwest::Client::builder()
+            .timeout(REQUEST_TIMEOUT)
+            .user_agent(concat!("7Shell/", env!("CARGO_PKG_VERSION")));
+
+        if sync.provider == SnippetProvider::GitLab {
+            // A GitLab that does not accept the token answers with a redirect to its sign-in page,
+            // and following it would hand the token to whatever that page asks for.
+            builder = builder.redirect(reqwest::redirect::Policy::none());
+        }
+
+        let http = builder
+            .build()
+            .map_err(|error| ShellError::app_internal(format!("an HTTP client could not be built: {error}")))?;
+
+        Ok(Self {
+            http,
+            sync: sync.clone(),
+            base,
+        })
+    }
+
+    /// Asks the service whether the token — and, when there is one, the snippet — is good.
+    pub async fn probe(&self) -> Result<(), ShellError> {
+        let request = test_request(&self.sync)?;
+        self.send(request, None).await.map(|_| ())
+    }
+
+    /// Reads the file the snippet holds.
+    ///
+    /// The one shape difference that matters here is GitLab's: its answer lists files as an array
+    /// with a `path` rather than as an object keyed by name, and the raw address it gives is
+    /// preferred over one this build would construct — the branch a snippet repository uses is
+    /// `main` on current installations and `master` on older ones, and only the answer knows which.
+    pub async fn read(&self) -> Result<String, ShellError> {
+        let id = require_id(&self.sync)?;
+        let url = snippet_url(self.sync.provider, &self.base, Some(&id));
+        let body = self.send(read_request(&self.sync)?, None).await?;
+
+        if self.sync.provider == SnippetProvider::GitLab {
+            return self.read_gitlab(&url, &body).await;
+        }
+
+        let value: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|error| ShellError::sync_snapshot_invalid(format!("the answer: {error}")))?;
+        let (content, raw_url) = file_in(&value)?;
+
+        match content {
+            Some(text) => Ok(text),
+            // A file too long to come back with the answer: the raw address is fetched through the
+            // same authenticated request, because a private snippet's raw address needs the token
+            // exactly as much as the answer did.
+            None => {
+                let raw = raw_url.ok_or_else(|| {
+                    ShellError::sync_snapshot_invalid("the answer held neither the file nor an address for it")
+                })?;
+                self.fetch_raw(&raw).await
+            }
+        }
+    }
+
+    async fn read_gitlab(&self, url: &str, body: &str) -> Result<String, ShellError> {
+        let value: serde_json::Value = serde_json::from_str(body)
+            .map_err(|error| ShellError::sync_snapshot_invalid(format!("the answer: {error}")))?;
+        let files = value
+            .get("files")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| ShellError::sync_snapshot_invalid("the answer named no files"))?;
+        let file = files
+            .iter()
+            .find(|file| file.get("path").and_then(serde_json::Value::as_str) == Some(SNIPPET_FILE_NAME))
+            .ok_or_else(|| ShellError::sync_snapshot_invalid(format!("the snippet has no {SNIPPET_FILE_NAME}")))?;
+
+        let constructed = format!("{url}/files/main/{SNIPPET_FILE_NAME}/raw");
+        let raw = file
+            .get("raw_url")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| constructed.clone());
+
+        match self.fetch_raw(&raw).await {
+            Err(error) if error.code() == sevenshell_error::ErrorCode::SyncHttpFailed && raw == constructed => {
+                // The constructed address guessed `main`; an older installation keeps `master`.
+                let master = format!("{url}/files/master/{SNIPPET_FILE_NAME}/raw");
+                self.fetch_raw(&master).await
+            }
+            other => other,
+        }
+    }
+
+    /// Writes the file, creating the gist or snippet when there is none yet, and answers with the id.
+    ///
+    /// What is there is looked at first: content that is not this application's envelope is somebody
+    /// else's, and an id that was typed wrong should stop rather than destroy it.
+    pub async fn write(&self, content: &str) -> Result<String, ShellError> {
+        let updating = self.sync.snippet_id.as_deref().is_some_and(|id| !id.trim().is_empty());
+
+        if updating {
+            let existing = self.read().await?;
+            if !is_ours(&existing) {
+                return Err(ShellError::sync_snapshot_invalid(
+                    "the snippet at that id was not written by this application, so nothing was uploaded over it",
+                ));
+            }
+        }
+
+        let request = write_request(&self.sync, content)?;
+        let body = self
+            .send(request, Some(create_body(self.sync.provider, content, updating)))
+            .await?;
+
+        let value: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|error| ShellError::sync_snapshot_invalid(format!("the answer: {error}")))?;
+
+        // A service that answers without an id leaves this build with the one it already had, which
+        // is what an update does.
+        response_id(&value)
+            .or_else(|| self.sync.snippet_id.clone())
+            .filter(|id| !id.trim().is_empty())
+            .ok_or_else(|| ShellError::sync_snapshot_invalid("the answer named no gist or snippet"))
+    }
+
+    /// Fetches a raw address, with the credentials the service needs for one.
+    async fn fetch_raw(&self, url: &str) -> Result<String, ShellError> {
+        self.send(request_for(&self.sync, "GET", url.to_owned(), None)?, None)
+            .await
+    }
+
+    /// Sends one request and answers with its body, or says what went wrong.
+    ///
+    /// **What the service said is deliberately not in the error.** Gitee takes its token as a query
+    /// parameter, so an error body can echo the address it was asked for — and an envelope is a
+    /// thing people paste into bug reports. What travels instead is the status, which is what
+    /// somebody can act on.
+    async fn send(&self, request: SnippetRequest, body: Option<serde_json::Value>) -> Result<String, ShellError> {
+        let method = reqwest::Method::from_bytes(request.method.as_bytes())
+            .map_err(|error| ShellError::app_internal(format!("'{}': {error}", request.method)))?;
+        let mut builder = self.http.request(method, &request.url);
+        for (name, value) in &request.headers {
+            builder = builder.header(name.as_str(), value.as_str());
+        }
+        if let Some(body) = body {
+            // Serialized here rather than through a client feature: the content type is already one
+            // of the headers this request declares, and the body is the JSON those headers promise.
+            let text = serde_json::to_string(&body)
+                .map_err(|error| ShellError::app_internal(format!("the request body: {error}")))?;
+            builder = builder.body(text);
+        }
+
+        let response = builder.send().await.map_err(|error| {
+            if error.is_timeout() {
+                ShellError::sync_unreachable().with_detail("the service did not answer in time")
+            } else {
+                ShellError::sync_unreachable().with_detail("the request failed")
+            }
+        })?;
+
+        let status = response.status().as_u16();
+        let text = response.text().await.unwrap_or_default();
+
+        if status == 401 || status == 403 {
+            return Err(ShellError::sync_auth_failed());
+        }
+        if !(200..300).contains(&status) {
+            return Err(ShellError::sync_http_failed(status));
+        }
+
+        Ok(text)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
