@@ -63,6 +63,11 @@ impl Core {
         self.vault.delete_completion_word(id)
     }
 
+    /// Forgets every word somebody added, which is what restoring the defaults means for this list.
+    pub fn clear_completion_words(&self) -> Result<(), ShellError> {
+        self.vault.clear_completion_words()
+    }
+
     /// What was sent, newest first.
     pub fn command_history(&self) -> Result<Vec<CommandHistoryEntry>, ShellError> {
         self.vault.command_history()

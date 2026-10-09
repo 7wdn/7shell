@@ -25,6 +25,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 }));
 
 import CommandsLibrary from "@/components/settings/CommandsLibrary.vue";
+import { BUILTIN_COMMANDS } from "@/lib/commands/builtin";
 import { i18n } from "@/i18n";
 import { commandHistory, snippetSave, snippetsOpen } from "@/lib/backend/tauri";
 import { useCommandsStore } from "@/stores/commands";
@@ -43,6 +44,17 @@ function snippet(name: string, prefix: string, command: string, enabled = true):
 
 function library(commands: readonly Snippet[]): SnippetGroup[] {
   return [{ id: "default", name: "", order: 0, commands: [...commands] }];
+}
+
+/**
+ * One of the lines this build ships, so the library under test looks like one that already has them.
+ *
+ * Without it every read looks like a fresh install and the seeding writes twenty commands behind the
+ * test — which is a fact about the seeding, not about the switch a test is trying to press.
+ */
+function shipped(): Snippet {
+  const line = BUILTIN_COMMANDS[0] ?? { name: "", prefix: "", command: "" };
+  return snippet(line.name, line.prefix, line.command);
 }
 
 /**
@@ -218,14 +230,26 @@ describe("the command library page", () => {
   it("writes a command straight away when its switch is turned", async () => {
     const stored = snippet("重启 nginx", "res", "systemctl restart #1");
     saveMock.mockResolvedValue({ ...stored, enabled: false });
-    await mount([stored]);
-    await rows();
+    await mount([shipped(), stored]);
+    await rows(2);
 
     // The switch is the library's own: turning it is a change to the command, not a form to submit.
-    const control = host.querySelector<HTMLElement>('[role="switch"]');
+    // Found by the name it gives a screen reader, because the page carries another switch of its own.
+    const control = host.querySelector<HTMLElement>('[role="switch"][aria-label="Enabled: 重启 nginx"]');
     control?.click();
     await nextTick();
 
     expect(saveMock).toHaveBeenCalledWith({ ...stored, enabled: false });
+  });
+
+  it("carries the switch that governs the whole feature", async () => {
+    await mount([shipped()]);
+    await rows();
+
+    // It sat under the terminal's settings until it moved here: it switches the menu beside the
+    // command line, and this page is the one about that menu.
+    const control = host.querySelector<HTMLElement>('[role="switch"][aria-label="Command completion"]');
+
+    expect(control, "the completion switch is on the library's page").not.toBeNull();
   });
 });

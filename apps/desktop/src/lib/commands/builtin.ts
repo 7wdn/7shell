@@ -9,6 +9,8 @@
  * The names are what the line does rather than a sentence about it: a name is what somebody scans
  * for, and `tar czvf` reads the same in every language the interface speaks.
  */
+import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
+
 export interface BuiltinCommand {
   readonly name: string;
   /** The short text that brings it up in the command line. */
@@ -39,3 +41,42 @@ export const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
   { name: "docker exec -it", prefix: "dexec", command: "docker exec -it #1 sh" },
   { name: "git log --oneline", prefix: "glog", command: "git log --oneline -20" },
 ];
+
+/**
+ * Whether a library is still exactly what this build ships.
+ *
+ * What "restore the defaults" has to know before it offers to do anything: a button that is always
+ * available on a library nobody has touched is a button that does nothing. The comparison is by
+ * name, trigger, line and switch — the things a person can change — in order, because the order is
+ * part of what the shipped list is. A command's id and the values remembered for its slots are not:
+ * they are the storage's business, and a fresh install has neither.
+ */
+export function libraryIsShipped(
+  groups: readonly {
+    readonly id: string;
+    readonly commands: readonly {
+      readonly name: string;
+      readonly prefix: string;
+      readonly command: string;
+      readonly enabled: boolean;
+    }[];
+  }[],
+): boolean {
+  if (groups.length !== 1 || groups[0]?.id !== DEFAULT_GROUP_ID) {
+    return false;
+  }
+
+  const commands = groups[0]?.commands ?? [];
+  return (
+    commands.length === BUILTIN_COMMANDS.length &&
+    BUILTIN_COMMANDS.every((builtin, index) => {
+      const stored = commands[index];
+      return (
+        stored?.name === builtin.name &&
+        stored.prefix === builtin.prefix &&
+        stored.command === builtin.command &&
+        stored.enabled
+      );
+    })
+  );
+}

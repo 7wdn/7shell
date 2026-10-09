@@ -567,6 +567,15 @@ impl Vault {
         state.write_to(&self.path)
     }
 
+    /// Forgets every word somebody added.
+    pub fn clear_completion_words(&self) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.clear_completion_words();
+        state.write_to(&self.path)
+    }
+
     /// What was sent, newest first.
     pub fn command_history(&self) -> Result<Vec<CommandHistoryEntry>, ShellError> {
         let mut guard = self.slot();

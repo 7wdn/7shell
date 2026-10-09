@@ -58,22 +58,29 @@
       "english": "English",
       "simplifiedChinese": "简体中文"
     },
-      "words": {
+    "words": {
       "hint": "The words the command line offers after a command. What this build already offers is in every installation; what you add here is for the tools it has never heard of, and yours come first.",
+      "builtinHint": "The rows marked built in are what this build offers, and they are read-only. To say something different about one of them, add a word with the same command and word: yours is the one the command line will offer.",
       "add": "Add a word",
       "editTitle": "Edit the word",
       "addTitle": "Add a word",
-      "empty": "Nothing added yet.",
+      "restoreTitle": "Remove the words you added?",
+      "restoreMessage": "Every word you added is removed. The ones this build offers are untouched. This cannot be undone.",
       "commandPlaceholder": "e.g. kubectl",
       "wordPlaceholder": "e.g. apply",
       "notePlaceholder": "What it means",
       "noteHint": "Your own words: it is shown beside the word instead of the description this build ships.",
       "spaceInvalid": "A command and a word are one word each: the command line is split on spaces before anything is looked up.",
       "saveFailed": "The word could not be written.",
+      "source": {
+        "builtin": "Built in",
+        "mine": "Yours"
+      },
       "columns": {
         "command": "Command",
         "word": "Word",
         "note": "Note",
+        "source": "Source",
         "actions": "Actions"
       }
     },
@@ -338,6 +345,8 @@
       "disabled": "Switched off",
       "saveFailed": "The library could not be written.",
       "prefixInvalid": "A trigger is one word, so it cannot contain a space.",
+      "restoreTitle": "Restore the shipped commands?",
+      "restoreMessage": "Everything in the library is deleted — your own commands and groups along with it — and the lines this build ships are written again. This cannot be undone.",
       "columns": {
         "name": "Name",
         "trigger": "Trigger",

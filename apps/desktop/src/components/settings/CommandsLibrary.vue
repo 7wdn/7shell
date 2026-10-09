@@ -20,10 +20,14 @@ import CommandDialog from "@/components/settings/CommandDialog.vue";
 import Switch from "@/components/ui/Switch.vue";
 import { TABLE, rowClass } from "@/lib/table";
 import { useCommandsStore } from "@/stores/commands";
+import { usePreferencesStore } from "@/stores/preferences";
 import type { Snippet } from "@/types/snippet";
+
+const props = withDefaults(defineProps<{ control?: boolean }>(), { control: true });
 
 const { t } = useI18n();
 const commands = useCommandsStore();
+const preferences = usePreferencesStore();
 
 /** Which group the list is showing. */
 const openGroup = ref<string>("");
@@ -69,6 +73,26 @@ async function remove(snippet: Snippet): Promise<void> {
 <template>
   <div class="space-y-5">
     <p class="text-xs text-muted-foreground">{{ t("settings.commands.hint") }}</p>
+
+    <!--
+      The switch that governs the whole feature, on the page that is about it. It sat under the
+      terminal's settings until now, where it described something the terminal page does not draw: a
+      menu beside the command line rather than anything about the terminal itself.
+    -->
+    <div
+      v-if="props.control"
+      class="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2.5"
+    >
+      <div class="min-w-0">
+        <p class="text-sm font-medium">{{ t("settings.rows.commandCompletion.title") }}</p>
+        <p class="mt-0.5 text-xs text-muted-foreground">{{ t("settings.rows.commandCompletion.summary") }}</p>
+      </div>
+      <Switch
+        :model-value="preferences.commandCompletion"
+        :aria-label="t('settings.rows.commandCompletion.title')"
+        @update:model-value="(value: boolean) => preferences.setCommandCompletion(value)"
+      />
+    </div>
 
     <p
       v-if="problem || commands.failure"

@@ -69,6 +69,21 @@ export const useWordsStore = defineStore("words", () => {
     }
   }
 
+  /**
+   * Forgets every word somebody added.
+   *
+   * What this build ships is in the table rather than in the vault, so there is nothing to put back:
+   * restoring the defaults for this list is dropping what somebody added to it.
+   */
+  async function restoreDefaults(): Promise<void> {
+    try {
+      await backend.commands.clearWords();
+      await load();
+    } catch (error) {
+      failure.value = asShellError(error, "snippet_delete");
+    }
+  }
+
   async function remove(id: string): Promise<void> {
     try {
       await backend.commands.deleteWord(id);
@@ -78,5 +93,5 @@ export const useWordsStore = defineStore("words", () => {
     }
   }
 
-  return { words, loaded, failure, load, save, remove };
+  return { words, loaded, failure, load, save, remove, restoreDefaults };
 });

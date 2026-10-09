@@ -14,7 +14,7 @@
  * which is the same fallback the catalogue has.
  */
 
-interface SubcommandGroup {
+export interface SubcommandGroup {
   readonly command: string;
   /** In the order they are worth reading: the everyday ones first. */
   readonly words: readonly string[];
@@ -113,6 +113,12 @@ const GROUPS: readonly SubcommandGroup[] = [
     words: ["-xzf", "-czf", "-xzvf", "-czvf", "-tzf", "-cjf"],
   },
 ];
+
+/**
+ * The whole table, for the one place that reads it as a list rather than as an answer: the settings
+ * page that shows what this build ships, beside what somebody added.
+ */
+export const SUBCOMMAND_TABLE: readonly SubcommandGroup[] = GROUPS;
 
 export function subcommandsOf(command: string): readonly string[] {
   return GROUPS.find((group) => group.command === command.toLowerCase())?.words ?? [];

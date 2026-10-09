@@ -6,15 +6,17 @@ vi.mock("@/lib/backend/tauri", () => ({
   completionWords: vi.fn(),
   completionWordSave: vi.fn(),
   completionWordDelete: vi.fn(),
+  completionWordsClear: vi.fn(),
 }));
 
-import { completionWordDelete, completionWordSave, completionWords } from "@/lib/backend/tauri";
+import { completionWordDelete, completionWordSave, completionWords, completionWordsClear } from "@/lib/backend/tauri";
 import { useWordsStore } from "@/stores/words";
 import type { CompletionWord } from "@/types/snippet";
 
 const listMock = vi.mocked(completionWords);
 const saveMock = vi.mocked(completionWordSave);
 const deleteMock = vi.mocked(completionWordDelete);
+const clearMock = vi.mocked(completionWordsClear);
 
 function word(command: string, text: string, note = ""): CompletionWord {
   return { id: `word-${command}-${text}`, command, word: text, note };
@@ -65,6 +67,19 @@ describe("the words store", () => {
 
     expect(written, "the dialog stays open on the word that did not land").toBe(false);
     expect(words.failure).not.toBeNull();
+  });
+
+  it("forgets every word somebody added, and leaves what this build ships alone", async () => {
+    listMock.mockResolvedValueOnce([word("kubectl", "apply")]).mockResolvedValue([]);
+    clearMock.mockResolvedValue();
+    const words = useWordsStore();
+
+    await words.load();
+    await words.restoreDefaults();
+
+    expect(clearMock, "one call, because it is one thing being said").toHaveBeenCalledTimes(1);
+    expect(deleteMock, "not one call per word").not.toHaveBeenCalled();
+    expect(words.words).toHaveLength(0);
   });
 
   it("removes one by its id", async () => {

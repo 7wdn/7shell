@@ -479,15 +479,6 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     },
   },
   {
-    id: "command-completion",
-    category: "terminal",
-    field: "commandCompletion",
-    titleKey: "settings.rows.commandCompletion.title",
-    summaryKey: "settings.rows.commandCompletion.summary",
-    helpKey: "settings.rows.commandCompletion.help",
-    control: { kind: "switch" },
-  },
-  {
     id: "home-content",
     category: "appearance",
     field: "homeLayout",

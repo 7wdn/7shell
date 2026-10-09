@@ -65,7 +65,9 @@ import type { SupportedLocale } from "@/i18n";
 import { formatShortcutDisplay } from "@/lib/shortcuts/display";
 import { resolveBindings, SHORTCUT_DEFINITIONS } from "@/lib/shortcuts/registry";
 import { useAppStore } from "@/stores/app";
+import { useCommandsStore } from "@/stores/commands";
 import { useTerminalsStore } from "@/stores/terminals";
+import { useWordsStore } from "@/stores/words";
 import { type PreferenceField, usePreferencesStore } from "@/stores/preferences";
 import {
   CUSTOM_COLOR_KEYS,
@@ -215,9 +217,14 @@ const commandHits = computed(() => {
   }
 
   const needle = query.value.trim().toLowerCase();
-  return [t("settings.nav.commands"), t("commands.trigger.label"), t("commands.command")].some((name) =>
-    name.toLowerCase().includes(needle),
-  );
+  // The switch that governs the menu is on that page and has no row of its own, so its own words are
+  // part of how the page is found: "completion" is what somebody would type looking for it.
+  return [
+    t("settings.nav.commands"),
+    t("settings.rows.commandCompletion.title"),
+    t("commands.trigger.label"),
+    t("commands.command"),
+  ].some((name) => name.toLowerCase().includes(needle));
 });
 
 /**
@@ -242,7 +249,8 @@ function hitsIn(id: SettingsCategoryId): number {
     return shortcutHits.value.length;
   }
   if (id === "commands") {
-    return commandHits.value ? 1 : 0;
+    // The page and the rows that belong to it: the completion's own switch is one of those rows now.
+    return (commandHits.value ? 1 : 0) + hits.value.filter((row) => row.category === id).length;
   }
   if (id === "words") {
     return wordHits.value ? 1 : 0;
@@ -272,6 +280,11 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
   }
   if (id === "appearance") {
     fields.push("customColors", "customColorsDark");
+  }
+  if (id === "commands") {
+    // The completion switch has no row of its own: it is drawn on the library's page, which is the
+    // page it belongs to — the same shape the shortcuts page has for the keys nobody sets in a row.
+    fields.push("commandCompletion");
   }
   return fields;
 }
@@ -501,10 +514,76 @@ function endPreview(row: SettingsRowDefinition): void {
  * one way out that *does* throw something away is the Close button here, which asks first.
  */
 const leaving = ref(false);
+/** Whether the question about emptying a list is on screen. */
+const restoring = ref(false);
 
-/** Puts the category on screen back the way a fresh install has it. */
+const commands = useCommandsStore();
+const words = useWordsStore();
+
+/**
+ * The list a restore would empty, when the category on screen has one.
+ *
+ * Two of the categories are a list somebody has been filling in rather than a set of choices, and
+ * restoring those means dropping what they put there: the commands go back to the lines this build
+ * ships, the words go back to what it already offers. Neither can be undone, which is why this one
+ * asks first — a row is put back by choosing again, and a command somebody wrote is gone.
+ */
+const listRestore = computed<{ title: string; message: string; run: () => Promise<void> } | null>(() => {
+  if (category.value === "commands" && commands.needsRestore) {
+    return {
+      title: t("settings.commands.restoreTitle"),
+      message: t("settings.commands.restoreMessage"),
+      run: () => commands.restoreDefaults(),
+    };
+  }
+  if (category.value === "words" && words.words.length > 0) {
+    return {
+      title: t("settings.words.restoreTitle"),
+      message: t("settings.words.restoreMessage"),
+      run: () => words.restoreDefaults(),
+    };
+  }
+  return null;
+});
+
+/**
+ * Whether the category on screen has anything a restore would put back.
+ *
+ * Asked per category rather than as "does it have fields": a page whose list is already what this
+ * build ships, with the menu on, has nothing to restore, and a button that is always there is a
+ * button that does nothing.
+ */
+const canRestore = computed(() => {
+  if (category.value === "commands") {
+    return commands.needsRestore || !preferences.commandCompletion;
+  }
+  if (category.value === "words") {
+    return words.words.length > 0;
+  }
+  return fieldsOf(category.value).length > 0;
+});
+
+/** Puts the choices on screen back the way a fresh install has them. */
 function restoreDefaults(): void {
   void preferences.reset(fieldsOf(category.value));
+}
+
+/** The button: the rows go straight back, and a list asks first. */
+function askToRestore(): void {
+  if (listRestore.value !== null) {
+    restoring.value = true;
+    return;
+  }
+  restoreDefaults();
+}
+
+async function restoreList(): Promise<void> {
+  const pending = listRestore.value;
+  restoring.value = false;
+  // The rows of the category go back with the list: one button that puts the category back should
+  // put all of it back.
+  restoreDefaults();
+  await pending?.run();
 }
 
 /** Writes down what is on screen. Nothing changes; the file catches up. */
@@ -984,9 +1063,9 @@ function translate(key: string, params?: Record<string, string>): string {
             <button
               type="button"
               class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
-              :disabled="fieldsOf(category).length === 0"
+              :disabled="!canRestore"
               :aria-label="t('settings.reset.for', { category: t(SETTINGS_CATEGORY_LABEL_KEYS[category]) })"
-              @click="restoreDefaults()"
+              @click="askToRestore()"
             >
               <RotateCcw :size="13" />
               {{ t("settings.reset.label") }}
@@ -1037,6 +1116,18 @@ function translate(key: string, params?: Record<string, string>): string {
       @confirm="writeAndClose()"
       @discard="discardAndClose()"
       @update:open="leaving = false"
+    />
+
+    <!-- Emptying a list cannot be undone, so it is asked about rather than done. -->
+    <ConfirmDialog
+      v-if="restoring && listRestore"
+      :open="true"
+      :title="listRestore.title"
+      :message="listRestore.message"
+      :confirm-label="t('settings.reset.label')"
+      danger
+      @confirm="restoreList()"
+      @update:open="restoring = false"
     />
   </TooltipProvider>
 </template>

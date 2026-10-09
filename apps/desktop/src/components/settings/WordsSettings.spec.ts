@@ -90,19 +90,37 @@ describe("the words page", () => {
   it("lists a word with the command it follows and what it means", async () => {
     await mount([word("kubectl", "apply", "收起那份清单")]);
 
-    const rows = host.querySelectorAll("[data-word-row]");
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.textContent).toContain("kubectl");
-    expect(rows[0]?.textContent).toContain("apply");
-    expect(rows[0]?.textContent).toContain("收起那份清单");
+    const row = host.querySelector("[data-word-row]");
+    expect(row?.textContent).toContain("kubectl");
+    expect(row?.textContent).toContain("apply");
+    expect(row?.textContent).toContain("收起那份清单");
   });
 
-  it("says so when nothing has been added, as a row of its own table", async () => {
-    await mount();
+  it("lists what this build ships beside what somebody added", async () => {
+    // The page is also where somebody looks to see what is already offered, so the shipped words are
+    // in it — named as shipped, and with nothing to press on their rows.
+    await mount([word("acme", "drain", "my own")]);
 
-    const row = host.querySelector("tbody tr");
-    expect(row?.textContent).toContain("Nothing added yet");
-    expect(row?.querySelector("td")?.getAttribute("colspan"), "a heading over nothing spans it").toBe("4");
+    const rows = [...host.querySelectorAll("[data-word-row]")];
+    expect(rows.length, "the shipped table is longer than one row").toBeGreaterThan(10);
+    expect(rows[0]?.textContent, "their own row is first").toContain("acme");
+    expect(rows[0]?.textContent).toContain("Yours");
+    expect(rows[0]?.querySelector("button"), "it has actions").not.toBeNull();
+
+    const shipped = rows.find((row) => row.textContent?.includes("Yours") === false);
+    expect(shipped?.textContent).toContain("Built in");
+    expect(shipped?.querySelector("button"), "a shipped word has nothing to press").toBeNull();
+  });
+
+  it("leaves a shipped word out when somebody has their own row for it", async () => {
+    await mount([word("git", "status", "mine")]);
+
+    const rows = [...host.querySelectorAll("[data-word-row]")];
+    // Two words in the shipped table say `status` — `git status` and `systemctl status` — so the row
+    // is picked out by both halves of the pair it is about.
+    const status = rows.filter((row) => row.textContent?.includes("git") && row.textContent?.includes("status"));
+    expect(status, "one row for one word").toHaveLength(1);
+    expect(status[0]?.textContent).toContain("Yours");
   });
 
   it("writes what the dialog is given", async () => {

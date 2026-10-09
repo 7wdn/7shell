@@ -329,6 +329,12 @@ impl Document {
         self.completion_words.retain(|word| word.id != id);
     }
 
+    /// Forgets every word somebody added, which is what restoring the defaults means for this list:
+    /// what this build ships is not stored anywhere to put back.
+    pub(crate) fn clear_completion_words(&mut self) {
+        self.completion_words.clear();
+    }
+
     /// What was sent, newest first.
     pub(crate) fn command_history(&self) -> Vec<CommandHistoryEntry> {
         self.command_history.clone()

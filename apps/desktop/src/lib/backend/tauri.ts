@@ -491,6 +491,10 @@ export function completionWordDelete(id: string): Promise<void> {
   return invoke<void>("completion_word_delete", { id });
 }
 
+export function completionWordsClear(): Promise<void> {
+  return invoke<void>("completion_words_clear");
+}
+
 export function commandHistory(): Promise<CommandHistoryEntry[]> {
   return invoke<CommandHistoryEntry[]>("command_history");
 }

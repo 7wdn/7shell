@@ -59,6 +59,12 @@ pub fn completion_word_delete(state: State<'_, ShellState>, id: String) -> Resul
     state.core().delete_completion_word(&id)
 }
 
+/// Forgets every word somebody added.
+#[tauri::command]
+pub fn completion_words_clear(state: State<'_, ShellState>) -> Result<(), ShellError> {
+    state.core().clear_completion_words()
+}
+
 /// What was sent, newest first.
 #[tauri::command]
 pub fn command_history(state: State<'_, ShellState>) -> Result<Vec<CommandHistoryEntry>, ShellError> {

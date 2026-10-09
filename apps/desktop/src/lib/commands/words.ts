@@ -18,6 +18,53 @@
  */
 import type { CompletionWord } from "@/types/snippet";
 
+/** One row of the settings page: a word, and where it came from. */
+export interface WordRow {
+  /** Stable across a reload — what the list is keyed by. */
+  readonly key: string;
+  readonly command: string;
+  readonly word: string;
+  /** True for a word this build ships: read-only, and not stored anywhere. */
+  readonly builtin: boolean;
+  /** The stored entry, for the rows somebody can change. */
+  readonly stored: CompletionWord | null;
+}
+
+/**
+ * Everything the page lists: their words first, then the ones this build ships.
+ *
+ * Theirs first because those are the rows with something to do to them, and because that is the same
+ * order the completion offers them in. A shipped word somebody has their own row for is left out: it
+ * is one word, and their row is the one that answers.
+ */
+export function wordRows(
+  added: readonly CompletionWord[],
+  shipped: readonly { readonly command: string; readonly words: readonly string[] }[],
+): WordRow[] {
+  const overridden = new Set(added.map((entry) => `${entry.command}\u0000${entry.word}`));
+
+  return [
+    ...added.map((entry) => ({
+      key: entry.id,
+      command: entry.command,
+      word: entry.word,
+      builtin: false,
+      stored: entry,
+    })),
+    ...shipped.flatMap((group) =>
+      group.words
+        .filter((word) => !overridden.has(`${group.command}\u0000${word}`))
+        .map((word) => ({
+          key: `${group.command}\u0000${word}`,
+          command: group.command,
+          word,
+          builtin: true,
+          stored: null,
+        })),
+    ),
+  ];
+}
+
 /**
  * What follows `command`: the words somebody added, then the ones this build ships.
  *

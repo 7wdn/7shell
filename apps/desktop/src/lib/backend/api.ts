@@ -344,6 +344,8 @@ export const backend = {
       forward("completion_word_save", () => desktop.completionWordSave(word)),
     deleteWord: (id: string): Promise<void> =>
       forward("completion_word_delete", () => desktop.completionWordDelete(id)),
+    /** Forgets every word somebody added: what restoring the defaults means for this list. */
+    clearWords: (): Promise<void> => forward("completion_words_clear", () => desktop.completionWordsClear()),
     history: (): Promise<CommandHistoryEntry[]> => forward("command_history", () => desktop.commandHistory()),
     clearHistory: (): Promise<void> => forward("command_history_clear", () => desktop.commandHistoryClear()),
     /** What the classifier makes of a command. Sends nothing. */

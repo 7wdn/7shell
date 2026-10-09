@@ -8,12 +8,49 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { noteFor, wordsFor } from "@/lib/commands/words";
+import { noteFor, wordRows, wordsFor } from "@/lib/commands/words";
 import type { CompletionWord } from "@/types/snippet";
 
 function added(command: string, word: string, note = ""): CompletionWord {
   return { id: `word-${command}-${word}`, command, word, note };
 }
+
+const TABLE = [
+  { command: "git", words: ["status", "pull"] },
+  { command: "kubectl", words: ["apply", "get"] },
+];
+
+describe("what the page lists", () => {
+  it("lists their words first, then the ones this build ships", () => {
+    const rows = wordRows([added("kubectl", "drain")], TABLE);
+
+    expect(rows.map((row) => `${row.command} ${row.word}`)).toEqual([
+      "kubectl drain",
+      "git status",
+      "git pull",
+      "kubectl apply",
+      "kubectl get",
+    ]);
+    expect(rows[0]?.builtin, "the first row is the one with something to do to it").toBe(false);
+    expect(rows.slice(1).every((row) => row.builtin)).toBe(true);
+  });
+
+  it("leaves out a shipped word somebody has their own row for", () => {
+    // One word, offered once: their row is the one that answers, so a shipped row would be a second
+    // row saying the same thing with nothing anybody could do to it.
+    const rows = wordRows([added("git", "status", "what I mean by it")], TABLE);
+
+    expect(rows.filter((row) => row.word === "status")).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ builtin: false, stored: { note: "what I mean by it" } });
+  });
+
+  it("keeps a word that belongs to another command out of the way", () => {
+    const rows = wordRows([added("acme", "drain")], TABLE);
+
+    expect(rows[0]?.command).toBe("acme");
+    expect(rows.filter((row) => row.command === "acme")).toHaveLength(1);
+  });
+});
 
 describe("the words that come after a command", () => {
   it("puts what somebody added before what this build ships", () => {

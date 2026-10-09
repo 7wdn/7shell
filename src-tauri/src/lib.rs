@@ -122,6 +122,7 @@ pub fn run() {
             commands::snippets::completion_words,
             commands::snippets::completion_word_save,
             commands::snippets::completion_word_delete,
+            commands::snippets::completion_words_clear,
             commands::snippets::command_history,
             commands::snippets::command_history_clear,
             commands::snippets::command_classify,

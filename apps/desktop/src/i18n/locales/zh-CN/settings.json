@@ -58,22 +58,29 @@
       "english": "English",
       "simplifiedChinese": "简体中文"
     },
-      "words": {
+    "words": {
       "hint": "命令后面联想出来的词。本次发布自带的那些每个安装都有；这里加的是我们没收录的工具，你自己加的排在前面。",
+      "builtinHint": "标着「内置」的行是本次发布自带的，只读。想改其中一个的说法，就加一条同样命令、同样词的行：命令行会优先用你自己的那条。",
       "add": "添加词",
       "editTitle": "编辑词",
       "addTitle": "添加词",
-      "empty": "还没有添加过。",
+      "restoreTitle": "删掉你添加的词？",
+      "restoreMessage": "你添加的每一个词都会被删掉；本次发布自带的那些不受影响。此操作无法撤销。",
       "commandPlaceholder": "例如 kubectl",
       "wordPlaceholder": "例如 apply",
       "notePlaceholder": "这个词是什么意思",
       "noteHint": "用你自己的话写：它显示在词后面，而不是本次发布自带的那句话。",
       "spaceInvalid": "命令和词各自都是一个词：命令行是按空格切开之后才去查的。",
       "saveFailed": "这个词没有写成功。",
+      "source": {
+        "builtin": "内置",
+        "mine": "你加的"
+      },
       "columns": {
         "command": "命令",
         "word": "词",
         "note": "说明",
+        "source": "来源",
         "actions": "操作"
       }
     },
@@ -338,6 +345,8 @@
       "disabled": "已关闭",
       "saveFailed": "命令库没有写成功。",
       "prefixInvalid": "触发键是一个词，不能包含空格。",
+      "restoreTitle": "恢复为本次发布自带的命令？",
+      "restoreMessage": "库里的东西会全部删掉——你自己写的命令和分组也在内——然后重新写入本次发布自带的那几条。此操作无法撤销。",
       "columns": {
         "name": "显示名",
         "trigger": "触发键",

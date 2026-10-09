@@ -43,6 +43,7 @@ async function writtenSettings(): Promise<{
   terminalFontSize?: number;
   customColorsDark?: { primary?: string };
   keybindings?: Record<string, string>;
+  commandCompletion?: boolean;
 }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
     packedTransfer?: boolean;
@@ -2836,6 +2837,19 @@ test("a command can be added in the settings and reached by its trigger", async 
     await expect(settings.getByText("df -h").first(), "the shipped commands are in the library").toBeVisible();
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "settings-commands.png"), fullPage: false });
+
+    // The switch that governs the whole feature is on this page rather than under the terminal's
+    // settings, and it still writes: it is the same preference, moved to where what it describes is.
+    const completion = settings.getByRole("switch", { name: "Command completion" });
+    await completion.click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).commandCompletion, { message: "off is written down" })
+      .toBe(false);
+    await completion.click();
+    await applySettings(page);
+    await expect.poll(async () => (await writtenSettings()).commandCompletion, { message: "and on again" }).toBe(true);
+
     await settings.getByRole("button", { name: "Add a command" }).click();
     const command = page.getByRole("dialog");
     await expect(command, "adding is a dialog, not a form in the page").toBeVisible();
@@ -2900,11 +2914,17 @@ test("a command can be added in the settings and reached by its trigger", async 
 
     await page.getByRole("button", { name: "Close terminal" }).click();
 
-    // Put it back: a run that leaves a command behind describes a different library to the next case.
+    // Put it back the way the page says everything goes back: restore the defaults. Asked about
+    // first, because it drops the whole library rather than only the line this case added.
     await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
     await settings.getByRole("button", { name: "Command library", exact: true }).click();
-    await settings.getByRole("button", { name: `Delete: ${name}` }).click();
-    await expect(settings.getByText(name)).toHaveCount(0);
+    await expect(settings.getByRole("button", { name: `Delete: ${name}` }), "there is something to drop").toBeVisible();
+    await settings.getByRole("button", { name: "Restore the defaults for Command library" }).click();
+    const asking = page.getByRole("dialog");
+    await expect(asking, "the question says what is dropped").toContainText("Restore the shipped commands");
+    await asking.getByRole("button", { name: "Restore defaults", exact: true }).click();
+    await expect(settings.getByText(name), "their command is gone").toHaveCount(0);
+    await expect(settings.getByText("df -h").first(), "and the shipped lines are there, written again").toBeVisible();
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();
@@ -2938,6 +2958,11 @@ test("a word added in the settings is offered after its command", async () => {
     await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
     const settings = page.getByRole("region", { name: "Settings" });
     await settings.getByRole("button", { name: "Suggested words", exact: true }).click();
+
+    // What this build already offers is in the same list, marked as its own: the page is also where
+    // somebody looks to see what the command line will offer.
+    await expect(settings.getByText("Built in").first(), "the shipped words are listed").toBeVisible();
+    await expect(settings.getByText("git").first(), "with the command they follow").toBeVisible();
 
     await settings.getByRole("button", { name: "Add a word" }).click();
     const editor = page.getByRole("dialog");
@@ -2991,11 +3016,21 @@ test("a word added in the settings is offered after its command", async () => {
     await bar.press("Escape");
     await page.getByRole("button", { name: "Close terminal" }).click();
 
-    // Put it back: a word left behind is a word the next case would meet.
+    // Put it back the way the page says everything goes back: restore the defaults, which drops what
+    // was added and leaves what this build ships where it is. Asked about first, because it cannot
+    // be undone.
     await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
     await settings.getByRole("button", { name: "Suggested words", exact: true }).click();
-    await settings.getByRole("button", { name: `Delete: ${command} ${word}` }).click();
-    await expect(settings.getByText(note)).toHaveCount(0);
+    await expect(
+      settings.getByRole("button", { name: `Delete: ${command} ${word}` }),
+      "there is one to drop",
+    ).toBeVisible();
+    await settings.getByRole("button", { name: "Restore the defaults for Suggested words" }).click();
+    const asking = page.getByRole("dialog");
+    await expect(asking, "the question says what is dropped").toContainText("Remove the words you added");
+    await asking.getByRole("button", { name: "Restore defaults", exact: true }).click();
+    await expect(settings.getByText(note), "their row is gone").toHaveCount(0);
+    await expect(settings.getByText("Built in").first(), "and what this build ships is still listed").toBeVisible();
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();

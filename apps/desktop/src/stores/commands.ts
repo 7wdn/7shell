@@ -17,7 +17,7 @@ import { defineStore } from "pinia";
 
 import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
-import { BUILTIN_COMMANDS } from "@/lib/commands/builtin";
+import { BUILTIN_COMMANDS, libraryIsShipped } from "@/lib/commands/builtin";
 import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { fillSlots, slotsIn, SLOTS } from "@/lib/commands/slots";
 import { useTerminalsStore } from "@/stores/terminals";
@@ -288,6 +288,34 @@ export const useCommandsStore = defineStore("commands", () => {
     }
   }
 
+  /**
+   * Puts the library back to what this build ships.
+   *
+   * Everything goes: the commands somebody wrote, the groups they made, the values remembered for a
+   * shipped command's slots. Then the ordinary first-install rule writes the shipped list back —
+   * which is the same list, put back the same way, so there is only one answer to what a fresh
+   * library holds. The history is not touched: that is what was typed, not what is kept, and it is
+   * cleared from where it is drawn.
+   */
+  async function restoreDefaults(): Promise<void> {
+    try {
+      for (const command of groups.value.flatMap((group) => group.commands)) {
+        await backend.commands.delete(command.id);
+      }
+      for (const group of groups.value) {
+        if (group.id !== DEFAULT_GROUP_ID) {
+          await backend.commands.deleteGroup(group.id);
+        }
+      }
+      await load();
+    } catch (error) {
+      failure.value = asShellError(error, "snippet_delete");
+    }
+  }
+
+  /** Whether the library is anything other than what this build ships. */
+  const needsRestore = computed(() => !libraryIsShipped(groups.value));
+
   /** Puts a line from the history into the editor, without slots of its own to fill. */
   function editFromHistory(entry: CommandHistoryEntry): void {
     draft.value = {
@@ -443,6 +471,8 @@ export const useCommandsStore = defineStore("commands", () => {
     clearHistory,
     editFromHistory,
     setEnabled,
+    restoreDefaults,
+    needsRestore,
     send,
     sendLiteral,
   };

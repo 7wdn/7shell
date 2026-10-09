@@ -16,13 +16,15 @@ vi.mock("@/lib/backend/tauri", () => ({
   terminalWrite: vi.fn(),
 }));
 
-import { snippetsOpen, snippetSave } from "@/lib/backend/tauri";
+import { snippetDelete, snippetGroupDelete, snippetSave, snippetsOpen } from "@/lib/backend/tauri";
 import { BUILTIN_COMMANDS } from "@/lib/commands/builtin";
 import { fillSlots, slotsIn, useCommandsStore } from "@/stores/commands";
 import type { Snippet, SnippetGroup } from "@/types/snippet";
 
 const listMock = vi.mocked(snippetsOpen);
 const saveMock = vi.mocked(snippetSave);
+const deleteMock = vi.mocked(snippetDelete);
+const groupDeleteMock = vi.mocked(snippetGroupDelete);
 
 function snippet(id: string, name: string, order: number, command = "uptime", enabled = true): Snippet {
   return {
@@ -40,6 +42,14 @@ function snippet(id: string, name: string, order: number, command = "uptime", en
 
 function library(commands: Snippet[]): SnippetGroup[] {
   return [{ id: "default", name: "", order: 0, commands }];
+}
+
+/** The shipped list as it comes back from storage: same order, same words, nothing switched off. */
+function shippedRows(): Snippet[] {
+  return BUILTIN_COMMANDS.map((line, index) => ({
+    ...snippet(`snippet-${index}`, line.name, index + 1, line.command),
+    prefix: line.prefix,
+  }));
 }
 
 /**
@@ -128,6 +138,45 @@ describe("the command library", () => {
     await commands.load();
 
     expect(saveMock, "a list that is put back on every read is a list nobody can prune").not.toHaveBeenCalled();
+  });
+
+  it("puts the library back to the shipped list, dropping everything else", async () => {
+    const commands = useCommandsStore();
+    const mine = { ...snippet("mine", "重启 nginx", 21), groupId: "snippet-group-1" };
+    // One of the shipped lines is already in the library, so no read in this test seeds anything:
+    // what the restore does about the shipped list is what is being asked.
+    const kept = { ...snippet("kept", "df -h", 1), prefix: "dfh" };
+    listMock
+      .mockResolvedValueOnce([
+        { id: "default", name: "", order: 0, commands: [kept] },
+        { id: "snippet-group-1", name: "maintenance", order: 1, commands: [mine] },
+      ])
+      .mockResolvedValueOnce([{ id: "default", name: "", order: 0, commands: [] }])
+      .mockResolvedValue(library(shippedRows()));
+    deleteMock.mockResolvedValue();
+    groupDeleteMock.mockResolvedValue();
+
+    await commands.load();
+    expect(commands.needsRestore, "somebody has lines of their own").toBe(true);
+
+    await commands.restoreDefaults();
+
+    // Everything goes, the groups somebody made as well, and the shipped list comes back through the
+    // ordinary first-install rule: there is one answer to what a fresh library holds.
+    expect(deleteMock).toHaveBeenCalledWith("kept");
+    expect(deleteMock).toHaveBeenCalledWith("mine");
+    expect(groupDeleteMock).toHaveBeenCalledWith("snippet-group-1");
+    expect(saveMock, "and the shipped lines are written again").toHaveBeenCalled();
+    expect(commands.needsRestore, "and there is nothing left to restore").toBe(false);
+  });
+
+  it("has nothing to restore once the library is the shipped list", async () => {
+    const commands = useCommandsStore();
+    listMock.mockResolvedValue(library(shippedRows()));
+
+    await commands.load();
+
+    expect(commands.needsRestore, "a button that is always available on an untouched library does nothing").toBe(false);
   });
 
   it("switches a command off by writing it, not by keeping a flag beside it", async () => {
