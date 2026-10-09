@@ -172,7 +172,10 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
         },
       ),
     },
-    { title: MENU_TITLES.transfer, entries: transferMenu(transfer, { cancel: nothing }) },
+    {
+      title: MENU_TITLES.transfer,
+      entries: transferMenu(transfer, { cancel: nothing, setPaused: nothing, retry: nothing }),
+    },
     {
       title: MENU_TITLES.tab,
       entries: tabMenu(

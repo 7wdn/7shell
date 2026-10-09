@@ -43,7 +43,26 @@ pub struct TransferRecord {
     pub(crate) progress: Arc<sevenshell_sftp::TransferProgress>,
     /// The task driving it, so a cancellation can wait for the file handles to be released.
     pub(crate) task: tokio::task::JoinHandle<()>,
+    /// How to run this transfer again, for the retry button.
+    ///
+    /// The core is the only place that can hold this: the local end of a transfer was chosen in a
+    /// native dialog and deliberately never came back through the interface, so a transfer that
+    /// failed cannot be re-issued by the page that started it — it can only be asked for again here.
+    pub(crate) run: TransferRun,
 }
+
+/// One attempt at a transfer, as a future that a task can outlive the call that made it with.
+///
+/// Boxed because the four kinds of transfer have four different futures and the registry holds them
+/// all in one map.
+pub(crate) type TransferAttempt = std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ShellError>> + Send>>;
+
+/// One attempt at a transfer, as a closure that can be called more than once.
+///
+/// A `Fn` closure is what makes a retry the *same* transfer rather than a new one. Each call has to
+/// produce a fresh future that owns everything it uses — an `async` block borrowing the closure's
+/// captures would not outlive the call, which is why every call site clones what it needs.
+pub(crate) type TransferRun = Arc<dyn Fn(Arc<sevenshell_sftp::TransferProgress>) -> TransferAttempt + Send + Sync>;
 
 /// A forward that is up, and what it belongs to.
 struct TunnelRecord {

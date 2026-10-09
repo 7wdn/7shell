@@ -12,3 +12,10 @@ sevenshell-error = { workspace = true }
 sevenshell-types = { workspace = true }
 russh-sftp = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+# The live transfer tests talk to the SSH lab, and the channel to it comes from the ssh crate — the
+# same door the core opens a file browser through. Ranked below this one, so the dependency points
+# the way every other one does.
+sevenshell-ssh = { workspace = true }
+tempfile = { workspace = true }

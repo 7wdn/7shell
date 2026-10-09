@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::archive;
-use crate::sessions::{ConnectionOutcome, HostKeyDecision};
+use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
 use sevenshell_error::ShellError;
 use sevenshell_sftp::{SftpSession, TransferProgress};
@@ -111,6 +111,7 @@ impl Core {
         let name = file_name_of(remote);
         // Owned before the task takes it: the task outlives the borrow this call was given.
         let source = remote.to_owned();
+        let witness = Arc::new(SourceWitness::default());
 
         self.spawn_transfer(
             self.reserve_transfer_id(),
@@ -119,9 +120,22 @@ impl Core {
             source.clone(),
             size,
             false,
-            move |progress| async move {
-                // A download into a path that cannot be written is a failure the transfer reports.
-                files.download(&source, &local, &progress).await
+            move |progress| {
+                let files = Arc::clone(&files);
+                let source = source.clone();
+                let local = local.clone();
+                let witness = Arc::clone(&witness);
+
+                Box::pin(async move {
+                    // What is here is a part file from an attempt that did not finish. It is worth
+                    // continuing only if the file being copied is the one it came from.
+                    if !witness.resume_allowed(files.stamp_of(&source).await.ok()) {
+                        let _ = tokio::fs::remove_file(sevenshell_sftp::local_part_of(&local)).await;
+                    }
+
+                    // A download into a path that cannot be written is a failure the transfer reports.
+                    files.download(&source, &local, &progress).await
+                }) as TransferAttempt
             },
         )
         .await
@@ -171,6 +185,8 @@ impl Core {
             .len();
 
         let destination = remote.clone();
+        let witness = Arc::new(SourceWitness::default());
+
         self.spawn_transfer(
             self.reserve_transfer_id(),
             TransferDirection::Upload,
@@ -178,7 +194,22 @@ impl Core {
             remote,
             size,
             false,
-            move |progress| async move { files.upload(&local, &destination, &progress).await },
+            move |progress| {
+                let files = Arc::clone(&files);
+                let local = local.clone();
+                let destination = destination.clone();
+                let witness = Arc::clone(&witness);
+
+                Box::pin(async move {
+                    // The part file here is on the far side, and it is worth continuing into only if
+                    // the file being sent is the one it came from.
+                    if !witness.resume_allowed(local_stamp(&local).await) {
+                        let _ = files.remove_file(&sevenshell_sftp::part_of(&destination)).await;
+                    }
+
+                    files.upload(&local, &destination, &progress).await
+                }) as TransferAttempt
+            },
         )
         .await
     }
@@ -232,28 +263,44 @@ impl Core {
             origin,
             0,
             true,
-            move |progress| async move {
-                let taken = take_archive(
-                    &files,
-                    &connection,
-                    &staging,
-                    &label,
-                    &parent,
-                    &names,
-                    &archive_here,
-                    &progress,
-                )
-                .await;
-                let outcome = match taken {
-                    Ok(()) => unpack_local(archive_here.clone(), into).await,
-                    Err(error) => Err(error),
-                };
+            move |progress| {
+                let files = Arc::clone(&files);
+                let connection = connection.clone();
+                let staging = staging.clone();
+                let label = label.clone();
+                let parent = parent.clone();
+                let names = names.clone();
+                let archive_here = archive_here.clone();
+                let into = into.clone();
 
-                // Whether it worked or not, neither archive is left behind: one is as large as what
-                // was selected and the other is ours, and nobody else knows what either of them is.
-                let _ = files.remove_file(&staging).await;
-                let _ = std::fs::remove_file(&archive_here);
-                outcome
+                Box::pin(async move {
+                    // An archive made on the far side is a new file every attempt, so a part file from
+                    // the last one is not a prefix of this one: a packed transfer always starts clean.
+                    let _ = std::fs::remove_file(sevenshell_sftp::local_part_of(&archive_here));
+
+                    let taken = take_archive(
+                        &files,
+                        &connection,
+                        &staging,
+                        &label,
+                        &parent,
+                        &names,
+                        &archive_here,
+                        &progress,
+                    )
+                    .await;
+                    let outcome = match taken {
+                        Ok(()) => unpack_local(archive_here.clone(), into).await,
+                        Err(error) => Err(error),
+                    };
+
+                    // Whether it worked or not, neither archive is left behind: one is as large as
+                    // what was selected and the other is ours, and nobody else knows what either of
+                    // them is.
+                    let _ = files.remove_file(&staging).await;
+                    let _ = std::fs::remove_file(&archive_here);
+                    outcome
+                }) as TransferAttempt
             },
         )
         .await
@@ -305,20 +352,33 @@ impl Core {
             directory.clone(),
             0,
             true,
-            move |progress| async move {
-                let outcome = async {
-                    progress.set_total(pack_local(archive_here.clone(), sources).await?);
-                    files.upload(&archive_here, &staging, &progress).await?;
-                    if progress.is_cancelled() {
-                        return Err(cancelled(&directory));
-                    }
-                    archive::run(&archive::unpack_command(&staging, &directory), &connection, &directory).await
-                }
-                .await;
+            move |progress| {
+                let files = Arc::clone(&files);
+                let connection = connection.clone();
+                let staging = staging.clone();
+                let archive_here = archive_here.clone();
+                let sources = sources.clone();
+                let directory = directory.clone();
 
-                let _ = files.remove_file(&staging).await;
-                let _ = std::fs::remove_file(&archive_here);
-                outcome
+                Box::pin(async move {
+                    // The archive is made again for every attempt, so nothing left from the last one
+                    // is a prefix of this one.
+                    let _ = files.remove_file(&sevenshell_sftp::part_of(&staging)).await;
+
+                    let outcome = async {
+                        progress.set_total(pack_local(archive_here.clone(), sources).await?);
+                        files.upload(&archive_here, &staging, &progress).await?;
+                        if progress.is_cancelled() {
+                            return Err(cancelled(&directory));
+                        }
+                        archive::run(&archive::unpack_command(&staging, &directory), &connection, &directory).await
+                    }
+                    .await;
+
+                    let _ = files.remove_file(&staging).await;
+                    let _ = std::fs::remove_file(&archive_here);
+                    outcome
+                }) as TransferAttempt
             },
         )
         .await
@@ -353,6 +413,70 @@ impl Core {
 
         record.progress.cancel();
         let _ = record.task.await;
+        Ok(())
+    }
+
+    /// Asks a transfer to wait, keeping its connection and the part of the file it has.
+    ///
+    /// Only a running transfer can be paused, and a transfer that has stopped is left alone: the two
+    /// are different answers about the same row, and one of them is what the retry button is for.
+    pub async fn pause_transfer(&self, id: &str) -> Result<(), ShellError> {
+        let mut transfers = self.transfers.lock().await;
+        let Some(record) = transfers.get_mut(id) else {
+            return Ok(());
+        };
+        if record.info.state != TransferState::Running {
+            return Ok(());
+        }
+
+        record.progress.pause();
+        record.info.state = TransferState::Paused;
+        Ok(())
+    }
+
+    /// Lets a paused transfer go on from where it is.
+    pub async fn resume_transfer(&self, id: &str) -> Result<(), ShellError> {
+        let mut transfers = self.transfers.lock().await;
+        let Some(record) = transfers.get_mut(id) else {
+            return Ok(());
+        };
+        if record.info.state != TransferState::Paused {
+            return Ok(());
+        }
+
+        record.progress.resume();
+        record.info.state = TransferState::Running;
+        Ok(())
+    }
+
+    /// Runs a transfer that has stopped, from wherever it stopped.
+    ///
+    /// The same id, because it is the same transfer: the row somebody clicked is the row that starts
+    /// moving again, and a retry that appeared as a second row would leave them wondering which one
+    /// was real. How much has already been copied is not decided here — the transfer finds that out
+    /// from the part file when it opens it, which is also what makes a retry resume rather than
+    /// start again.
+    pub async fn retry_transfer(&self, id: &str) -> Result<(), ShellError> {
+        let (run, progress) = {
+            let mut transfers = self.transfers.lock().await;
+            let Some(record) = transfers.get_mut(id) else {
+                return Ok(());
+            };
+            // A transfer that is running, or waiting, is already doing what this would ask for.
+            if matches!(record.info.state, TransferState::Running | TransferState::Paused) {
+                return Ok(());
+            }
+
+            record.progress.restart();
+            record.info.state = TransferState::Running;
+            (Arc::clone(&record.run), Arc::clone(&record.progress))
+        };
+
+        let task = self.run_transfer(id.to_owned(), Arc::clone(&run), Arc::clone(&progress));
+
+        if let Some(record) = self.transfers.lock().await.get_mut(id) {
+            record.task = task;
+        }
         Ok(())
     }
 
@@ -405,7 +529,7 @@ impl Core {
         run: F,
     ) -> Result<String, ShellError>
     where
-        F: FnOnce(Arc<TransferProgress>) -> Fut + Send + 'static,
+        F: Fn(Arc<TransferProgress>) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<(), ShellError>> + Send + 'static,
     {
         let progress = TransferProgress::new(size);
@@ -421,11 +545,39 @@ impl Core {
             packed,
         };
 
+        // Boxed once, kept twice: the task that starts now and the retry button that may need it
+        // later are the same work, and a transfer that could only be run once would have nothing to
+        // retry.
+        let run: TransferRun = Arc::new(move |progress| Box::pin(run(progress)));
+        let task = self.run_transfer(id.clone(), Arc::clone(&run), Arc::clone(&progress));
+
+        self.transfers.lock().await.insert(
+            id.clone(),
+            TransferRecord {
+                info,
+                progress,
+                task,
+                run,
+            },
+        );
+        Ok(id)
+    }
+
+    /// Starts one attempt at a transfer and records what became of it.
+    ///
+    /// One implementation for the first attempt and every retry, because "what a finished transfer
+    /// says about itself" must not be decided twice — the second copy is the one that forgets the
+    /// cancelled case and leaves a row saying it worked.
+    fn run_transfer(
+        &self,
+        id: String,
+        run: TransferRun,
+        progress: Arc<TransferProgress>,
+    ) -> tokio::task::JoinHandle<()> {
         let shared = Arc::clone(&self.transfers);
-        let finished = id.clone();
         let running = Arc::clone(&progress);
 
-        let task = tokio::spawn(async move {
+        tokio::spawn(async move {
             let outcome = run(Arc::clone(&running)).await;
 
             let state = match outcome {
@@ -436,17 +588,54 @@ impl Core {
                 },
             };
 
-            if let Some(record) = shared.lock().await.get_mut(&finished) {
+            if let Some(record) = shared.lock().await.get_mut(&id) {
                 record.info.state = state;
             }
-        });
-
-        self.transfers
-            .lock()
-            .await
-            .insert(id.clone(), TransferRecord { info, progress, task });
-        Ok(id)
+        })
     }
+}
+
+/// What the file being copied looked like when this transfer last started.
+///
+/// A retry continues where the last attempt stopped, which is only correct for the *same* file:
+/// appending the rest of a file that has changed under a part file would join two versions and
+/// produce something with the right name and the wrong contents — the one failure a transfer must
+/// not have, because nothing about it looks wrong afterwards.
+///
+/// So the witness is asked once per attempt: it answers whether the part file left over is still
+/// this transfer's work. The first attempt never has an answer, which is what makes a stale part
+/// file from a previous run of the application start again rather than be trusted.
+#[derive(Default)]
+struct SourceWitness {
+    seen: std::sync::Mutex<Option<(u64, Option<u64>)>>,
+}
+
+impl SourceWitness {
+    /// Whether an unfinished part file may be continued into, given how the source looks now.
+    ///
+    /// `None` is a source that cannot be looked at, which is not a reason to trust what is on disk:
+    /// the transfer itself will report the failure properly a moment later.
+    fn resume_allowed(&self, now: Option<(u64, Option<u64>)>) -> bool {
+        let Ok(mut seen) = self.seen.lock() else {
+            return false;
+        };
+
+        let same = now.is_some() && *seen == now;
+        *seen = now;
+        same
+    }
+}
+
+/// How a local file looks now: its size, and when it last changed if the platform will say.
+async fn local_stamp(path: &std::path::Path) -> Option<(u64, Option<u64>)> {
+    let metadata = tokio::fs::metadata(path).await.ok()?;
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|since| since.as_secs());
+
+    Some((metadata.len(), modified))
 }
 
 /// The last segment of a remote path, which is what a person recognises.

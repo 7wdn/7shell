@@ -202,6 +202,11 @@ export const backend = {
   transfers: {
     list: (): Promise<TransferInfo[]> => forward("transfers_open", () => desktop.transfersOpen()),
     cancel: (id: string): Promise<void> => forward("transfer_cancel", () => desktop.transferCancel(id)),
+    /** Holds a running transfer where it is, keeping its connection and its part of the file. */
+    pause: (id: string): Promise<void> => forward("transfer_pause", () => desktop.transferPause(id)),
+    resume: (id: string): Promise<void> => forward("transfer_resume", () => desktop.transferResume(id)),
+    /** Runs a stopped transfer again, continuing from wherever it stopped. */
+    retry: (id: string): Promise<void> => forward("transfer_retry", () => desktop.transferRetry(id)),
   },
 
   sessions: {

@@ -454,8 +454,15 @@ pub struct TransferInfo {
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum TransferState {
     Running,
+    /// Waiting because somebody asked it to, with its connection and its part of the file intact.
+    ///
+    /// Not a kind of stopped: a paused transfer is still a transfer that is going to happen, and the
+    /// button beside it says "go on" rather than "start again".
+    Paused,
     Done,
-    Failed { detail: String },
+    Failed {
+        detail: String,
+    },
     Cancelled,
 }
 

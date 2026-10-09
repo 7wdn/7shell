@@ -15,6 +15,9 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesUploadAnswer: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
+  transferPause: vi.fn(),
+  transferResume: vi.fn(),
+  transferRetry: vi.fn(),
   transferCancel: vi.fn(),
 }));
 
@@ -30,6 +33,9 @@ import {
   filesUploadAnswer,
   transferCancel,
   transfersOpen,
+  transferPause,
+  transferResume,
+  transferRetry,
   droppedUpload,
   clipboardFiles,
 } from "@/lib/backend/tauri";
@@ -48,6 +54,9 @@ const filesUploadMock = vi.mocked(filesUpload);
 const filesUploadAnswerMock = vi.mocked(filesUploadAnswer);
 const filesCloseMock = vi.mocked(filesClose);
 const transfersOpenMock = vi.mocked(transfersOpen);
+const transferPauseMock = vi.mocked(transferPause);
+const transferResumeMock = vi.mocked(transferResume);
+const transferRetryMock = vi.mocked(transferRetry);
 const transferCancelMock = vi.mocked(transferCancel);
 
 const sessionId = "session-1";
@@ -75,6 +84,9 @@ const download: TransferInfo = {
   state: { kind: "running" },
   packed: false,
 };
+
+/** The same transfer, held: what the backend reports after a pause. */
+const paused: TransferInfo = { ...download, state: { kind: "paused" } };
 
 const upload: TransferInfo = {
   id: "x2",
@@ -111,6 +123,9 @@ describe("files store", () => {
     filesUploadMock.mockReset().mockResolvedValue({ kind: "cancelled" });
     filesCloseMock.mockReset().mockResolvedValue(undefined);
     transfersOpenMock.mockReset().mockResolvedValue([]);
+    transferPauseMock.mockReset().mockResolvedValue(undefined);
+    transferResumeMock.mockReset().mockResolvedValue(undefined);
+    transferRetryMock.mockReset().mockResolvedValue(undefined);
     transferCancelMock.mockReset().mockResolvedValue(undefined);
   });
 
@@ -322,6 +337,42 @@ describe("files store", () => {
 
     expect(transferCancelMock).toHaveBeenCalledWith(download.id);
     expect(store.transfers).toEqual([]);
+  });
+
+  it("holds a transfer and lets it go through the same call, one reading each", async () => {
+    transfersOpenMock
+      .mockResolvedValueOnce([download])
+      .mockResolvedValueOnce([paused])
+      .mockResolvedValueOnce([download]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+
+    await store.setTransferPaused(download.id, true);
+    expect(transferPauseMock).toHaveBeenCalledWith(download.id);
+    expect(store.transfers[0]?.state).toEqual({ kind: "paused" });
+
+    await store.setTransferPaused(download.id, false);
+    expect(transferResumeMock).toHaveBeenCalledWith(download.id);
+    expect(store.transfers[0]?.state).toEqual({ kind: "running" });
+  });
+
+  it("tries a stopped transfer again, and keeps the row it was on", async () => {
+    const failed: TransferInfo = { ...download, state: { kind: "failed", detail: "the channel failed" } };
+    transfersOpenMock
+      .mockResolvedValueOnce([failed])
+      .mockResolvedValueOnce([{ ...download, transferred: 0, state: { kind: "running" } }]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    await store.retryTransfer(download.id);
+
+    expect(transferRetryMock).toHaveBeenCalledWith(download.id);
+    // The same id, which is what keeps a retry from appearing as a second transfer beside the first
+    // — and a counter that starts again, because how much is already done is the part file's answer
+    // rather than the old row's.
+    expect(store.transfers.map((row) => row.id)).toEqual([download.id]);
+    expect(store.transfers[0]?.transferred).toBe(0);
   });
 
   it("clears a browser's state when it is closed", async () => {

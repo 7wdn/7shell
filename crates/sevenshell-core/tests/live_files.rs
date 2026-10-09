@@ -95,7 +95,9 @@ impl Lab {
                 .find(|transfer| transfer.id == id)
                 .expect("the transfer is remembered");
 
-            if !matches!(transfer.state, TransferState::Running) {
+            // Waiting counts as unfinished: a paused transfer has not stopped, it has been asked to
+            // hold, and a caller waiting for this one to settle would be waiting for a person.
+            if !matches!(transfer.state, TransferState::Running | TransferState::Paused) {
                 return transfer.state;
             }
 
@@ -697,4 +699,143 @@ async fn a_missing_file_says_what_is_missing() {
         error.message_params().get("path").map(String::as_str),
         Some("/definitely-not-here-7shell")
     );
+}
+
+/// Text long enough to cross several chunks, numbered so a run says where two halves were joined.
+fn payload(lines: usize) -> String {
+    (0..lines).map(|line| format!("line {line:06}\n")).collect()
+}
+
+/// One row of the transfer list, which is what the interface draws.
+async fn row(lab: &Lab, id: &str) -> sevenshell_types::TransferInfo {
+    lab.core
+        .transfers()
+        .await
+        .into_iter()
+        .find(|transfer| transfer.id == id)
+        .expect("the transfer is remembered")
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_transfer_that_failed_can_be_tried_again_from_the_row_it_left() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // A directory that is not there yet: the upload fails when it opens the far side, before any
+    // byte has been written anywhere.
+    let missing = format!("{workspace}/not-yet");
+    let scratch = tempdir().expect("temp dir");
+    let source = scratch.path().join("retry.txt");
+    std::fs::write(&source, "sent on the second try\n").expect("write the local file");
+
+    let id = lab
+        .core
+        .start_upload(&handle, source, &missing)
+        .await
+        .expect("start the upload");
+    let state = lab.settle(&id).await;
+    assert!(
+        matches!(state, TransferState::Failed { .. }),
+        "an upload into a directory that does not exist cannot have worked: {state:?}"
+    );
+
+    // What a person fixes before pressing retry, and then the retry itself.
+    lab.core
+        .create_folder(&handle, &missing)
+        .await
+        .expect("create the directory that was missing");
+    lab.core.retry_transfer(&id).await.expect("retry it");
+    assert_eq!(lab.settle(&id).await, TransferState::Done, "the retry finished");
+
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{missing}/retry.txt"))
+            .await
+            .expect("read it back"),
+        "sent on the second try\n"
+    );
+
+    // One row with the id it had: a retry is the same transfer rather than a second one beside it.
+    let rows: Vec<_> = lab
+        .core
+        .transfers()
+        .await
+        .into_iter()
+        .filter(|transfer| transfer.id == id)
+        .collect();
+    assert_eq!(rows.len(), 1, "the retry left one row, not two");
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_transfer_can_be_held_and_let_go_again() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // Big enough that a hold is worth having: at this size the transfer is hundreds of chunks, and
+    // holding it lands long before it is done.
+    let text = payload(120_000);
+    let remote = format!("{workspace}/held.txt");
+    lab.core
+        .write_text_file(&handle, &remote, &text)
+        .await
+        .expect("write the file to download");
+
+    let scratch = tempdir().expect("temp dir");
+    let target = scratch.path().join("held.txt");
+    let older = "the version that was here before\n";
+    std::fs::write(&target, older).expect("write the older local file");
+
+    // The hold has to land while the transfer is still moving. On a machine fast enough to finish
+    // before the next call is made, the attempt is simply made again — which is cheaper and more
+    // honest than a test that waits for a transfer to be slow enough.
+    let mut held = None;
+    for attempt in 0..3 {
+        let id = lab
+            .core
+            .start_download(&handle, &remote, target.clone())
+            .await
+            .expect("start the download");
+        lab.core.pause_transfer(&id).await.expect("hold it");
+
+        if row(&lab, &id).await.state == TransferState::Paused {
+            held = Some(id);
+            break;
+        }
+        assert!(
+            attempt < 2,
+            "three attempts in a row finished before they could be held"
+        );
+    }
+    let id = held.expect("the transfer was held");
+
+    // Held means held: the file that was already there is untouched, and the row says so.
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("read the local file"),
+        older,
+        "a held transfer had already written over the file it is replacing"
+    );
+
+    lab.core.resume_transfer(&id).await.expect("let it go");
+    assert_eq!(
+        lab.settle(&id).await,
+        TransferState::Done,
+        "it finished once it was let go"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("read the local file"),
+        text,
+        "the file it finished with is the whole file"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
 }

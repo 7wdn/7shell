@@ -4,9 +4,20 @@
 //! paths: a transfer is given where to read from or write to by whoever asked for it, and choosing
 //! that is the caller's business — which is what keeps a download from being told where to land by
 //! a script in a webview.
+//!
+//! Two rules shape a transfer, and both are about what is left behind when one does not finish:
+//!
+//! * **The name that was asked for is written last.** A transfer writes to a part file beside its
+//!   target and renames it into place once every byte has arrived. A half-written file wearing the
+//!   right name is the one kind of damage a file browser can do that is invisible afterwards — the
+//!   name is what people check, not the size.
+//! * **A part file is where a transfer stopped.** Its length is how much arrived, so a second
+//!   attempt continues from there rather than starting again. Cancelling removes it, because "stop"
+//!   is an answer about the file; failing keeps it, because a retry is the next thing somebody
+//!   tries.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -15,7 +26,7 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use sevenshell_error::ShellError;
 use sevenshell_types::{EntryKind, SftpEntry, SftpListing};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::OnceCell;
 
 /// The largest file the editor will open.
@@ -28,11 +39,35 @@ pub const MAX_EDIT_BYTES: u64 = 4 * 1024 * 1024;
 /// progress moves visibly and a cancellation is noticed quickly.
 const CHUNK_BYTES: usize = 64 * 1024;
 
+/// What a transfer appends to the name it was asked for while it is still working.
+///
+/// Long enough that a file a person made would never be called this by accident, and visible when
+/// one is left behind — which is what happens when a transfer fails and nobody retries it.
+pub const PART_SUFFIX: &str = ".7shell-part";
+
+/// The remote name a transfer writes to before it is finished.
+pub fn part_of(path: &str) -> String {
+    format!("{path}{PART_SUFFIX}")
+}
+
+/// The local name the same way, keeping the path's own encoding rather than going through a string.
+///
+/// Public because whoever starts a download is also whoever decides whether a part file left behind
+/// by an earlier attempt still belongs to the file being copied now.
+pub fn local_part_of(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(PART_SUFFIX);
+    PathBuf::from(name)
+}
+
+/// How often a paused transfer looks to see whether it may go on.
+const PAUSE_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
 /// Where a POSIX server keeps the names for the numbers it reports as ownership.
 const PASSWD_PATH: &str = "/etc/passwd";
 const GROUP_PATH: &str = "/etc/group";
 
-/// How far a transfer has come, and whether it has been asked to stop.
+/// How far a transfer has come, and whether it has been asked to stop or to wait.
 ///
 /// Shared with whoever started the transfer, which is why it is an `Arc` of atomics rather than a
 /// callback: the caller polls it or reads it back, and nothing has to be sent over a channel just
@@ -44,6 +79,9 @@ pub struct TransferProgress {
     total: AtomicU64,
     transferred: AtomicU64,
     cancelled: AtomicBool,
+    /// Set while somebody has asked the transfer to wait. The connection stays open and the part
+    /// file stays where it is: pausing is not cancelling with a different word.
+    paused: AtomicBool,
 }
 
 impl TransferProgress {
@@ -52,6 +90,7 @@ impl TransferProgress {
             total: AtomicU64::new(total),
             transferred: AtomicU64::new(0),
             cancelled: AtomicBool::new(false),
+            paused: AtomicBool::new(false),
         })
     }
 
@@ -68,14 +107,62 @@ impl TransferProgress {
         self.transferred.load(Ordering::Relaxed)
     }
 
+    /// Says how much has arrived, for a transfer that started with part of its work already done.
+    pub fn set_transferred(&self, bytes: u64) {
+        self.transferred.store(bytes, Ordering::Relaxed);
+    }
+
+    /// Puts the counter and the flags back for another attempt at the same transfer.
+    ///
+    /// The counter goes to zero rather than to wherever it stopped: how much has arrived is a fact
+    /// about the part file, and the transfer learns it when it opens one. Carrying the old number
+    /// over would double-count the bytes that are about to be counted again.
+    pub fn restart(&self) {
+        self.transferred.store(0, Ordering::Relaxed);
+        self.cancelled.store(false, Ordering::Relaxed);
+        self.paused.store(false, Ordering::Relaxed);
+    }
+
     /// Asks the transfer to stop. It stops at the next chunk boundary, so the caller sees a
     /// cancelled transfer rather than a half-written file with no explanation.
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
+        // A transfer waiting on a pause has to look up from that wait to notice this.
+        self.paused.store(false, Ordering::Relaxed);
     }
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
+    }
+
+    /// Asks the transfer to wait where it is, keeping its connection and its place.
+    pub fn pause(&self) {
+        self.paused.store(true, Ordering::Relaxed);
+    }
+
+    pub fn resume(&self) {
+        self.paused.store(false, Ordering::Relaxed);
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
+
+    /// Waits until this transfer may move another chunk, answering `false` when it was cancelled.
+    ///
+    /// Pausing waits here rather than stopping: the person asked for a hold, not for the transfer to
+    /// end, and everything about it — the connection, the part file, the row — is still there when
+    /// they let it go on.
+    async fn wait_until_allowed(&self) -> bool {
+        loop {
+            if self.is_cancelled() {
+                return false;
+            }
+            if !self.is_paused() {
+                return true;
+            }
+            tokio::time::sleep(PAUSE_POLL).await;
+        }
     }
 
     fn advance(&self, bytes: u64) {
@@ -314,6 +401,11 @@ impl SftpSession {
     }
 
     /// Copies a remote file to a local path, reporting progress and honouring cancellation.
+    ///
+    /// The local file that was named is **not** touched until the copy is complete: what this writes
+    /// is the part file beside it, which is renamed into place at the end. A download that resumes
+    /// therefore resumes into the part file, and the older local file — the one that is complete,
+    /// possibly a different version — is what a person still has if the transfer never finishes.
     pub async fn download(
         &self,
         remote: &str,
@@ -332,80 +424,171 @@ impl SftpSession {
                 "this is a directory, not a file",
             ));
         }
+        let total = attributes.size.unwrap_or(0);
+
+        let part = local_part_of(local);
+        let start = resume_offset(tokio::fs::metadata(&part).await.map(|found| found.len()).ok(), total);
 
         let mut file = self
             .inner
             .open(remote.to_owned())
             .await
             .map_err(|error| failure(&error, remote))?;
-
-        // The local end is written fresh: a partial download that resumed over an older file would
-        // mix two versions, and hiding that from the person is worse than starting over.
-        let mut destination = tokio::fs::File::create(local).await.map_err(|error| {
-            ShellError::sftp_transfer_failed(remote, format!("the local file could not be created: {error}"))
-        })?;
-
-        let mut buffer = vec![0_u8; CHUNK_BYTES];
-        loop {
-            if progress.is_cancelled() {
-                return Err(cancelled(remote));
-            }
-
-            let read = file
-                .read(&mut buffer)
+        if start > 0 {
+            file.seek(std::io::SeekFrom::Start(start))
                 .await
                 .map_err(|error| io_failure(&error, remote))?;
-            if read == 0 {
-                break;
-            }
+        }
 
-            destination.write_all(&buffer[..read]).await.map_err(|error| {
-                ShellError::sftp_transfer_failed(remote, format!("the local file could not be written: {error}"))
+        let mut destination = tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&part)
+            .await
+            .map_err(|error| {
+                ShellError::sftp_transfer_failed(remote, format!("the local file could not be created: {error}"))
             })?;
-            progress.advance(read as u64);
+
+        // The counter starts where the file does: a resumed transfer's bar is about the whole file,
+        // not about the second half of it.
+        progress.set_transferred(start);
+
+        if let Err(error) = self
+            .move_bytes(&mut file, &mut destination, progress, remote, "the local file")
+            .await
+        {
+            if progress.is_cancelled() {
+                let _ = tokio::fs::remove_file(&part).await;
+            }
+            return Err(error);
         }
 
         destination.flush().await.map_err(|error| {
             ShellError::sftp_transfer_failed(remote, format!("the local file could not be flushed: {error}"))
         })?;
+        // The handle has to be closed before the rename: Windows will not rename a file that is
+        // still open, and every platform wants the bytes on disk before the name changes.
+        drop(destination);
 
-        Ok(())
+        tokio::fs::rename(&part, local).await.map_err(|error| {
+            ShellError::sftp_transfer_failed(remote, format!("the finished file could not be put in place: {error}"))
+        })
     }
 
     /// Copies a local file to a remote path, reporting progress and honouring cancellation.
+    ///
+    /// The remote name that was asked for is written last, by the same rule as a download: what
+    /// travels is the part file, and a rename puts it in place once it is whole. A file on a server
+    /// that is half of what it should be is worse than a missing one, because the server will go on
+    /// using it.
     pub async fn upload(&self, local: &Path, remote: &str, progress: &Arc<TransferProgress>) -> Result<(), ShellError> {
+        let total = tokio::fs::metadata(local).await.map_err(|error| {
+            ShellError::sftp_transfer_failed(remote, format!("the local file could not be read: {error}"))
+        })?;
+        if total.is_dir() {
+            return Err(ShellError::sftp_transfer_failed(
+                remote,
+                "this is a directory, not a file",
+            ));
+        }
+        let total = total.len();
+
+        let part = part_of(remote);
+        let existing = self
+            .inner
+            .metadata(part.clone())
+            .await
+            .ok()
+            .and_then(|found| found.size);
+        let start = resume_offset(existing, total);
+
         let mut source = tokio::fs::File::open(local).await.map_err(|error| {
             ShellError::sftp_transfer_failed(remote, format!("the local file could not be read: {error}"))
         })?;
+        if start > 0 {
+            source.seek(std::io::SeekFrom::Start(start)).await.map_err(|error| {
+                ShellError::sftp_transfer_failed(remote, format!("the local file could not be read: {error}"))
+            })?;
+        }
 
+        // Append rather than write: what is already in the part file is the beginning of this file,
+        // and a resumed attempt has to go after it rather than over it.
         let mut file = self
             .inner
-            .create(remote.to_owned())
+            .open_with_flags(part.clone(), OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::APPEND)
             .await
             .map_err(|error| failure(&error, remote))?;
 
-        let mut buffer = vec![0_u8; CHUNK_BYTES];
-        loop {
+        progress.set_transferred(start);
+
+        if let Err(error) = self
+            .move_bytes(&mut source, &mut file, progress, remote, "the local file")
+            .await
+        {
             if progress.is_cancelled() {
-                return Err(cancelled(remote));
+                let _ = self.remove_file(&part).await;
             }
-
-            let read = source.read(&mut buffer).await.map_err(|error| {
-                ShellError::sftp_transfer_failed(remote, format!("the local file could not be read: {error}"))
-            })?;
-            if read == 0 {
-                break;
-            }
-
-            file.write_all(&buffer[..read])
-                .await
-                .map_err(|error| io_failure(&error, remote))?;
-            progress.advance(read as u64);
+            return Err(error);
         }
 
         file.shutdown().await.map_err(|error| io_failure(&error, remote))?;
 
-        Ok(())
+        self.replace_with(&part, remote).await
+    }
+
+    /// Moves bytes from one end of a transfer to the other until there are none left.
+    ///
+    /// One implementation for both directions, because everything that has to be true of the loop —
+    /// it notices a cancellation, it waits out a pause, it counts what it moved — is true of both,
+    /// and two copies of that would eventually be one copy and one bug. The `where` names the side
+    /// that is being read, so a failure says which end had the trouble.
+    async fn move_bytes<R, W>(
+        &self,
+        reader: &mut R,
+        writer: &mut W,
+        progress: &Arc<TransferProgress>,
+        remote: &str,
+        reading: &str,
+    ) -> Result<(), ShellError>
+    where
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
+    {
+        let mut buffer = vec![0_u8; CHUNK_BYTES];
+        loop {
+            if !progress.wait_until_allowed().await {
+                return Err(cancelled(remote));
+            }
+
+            let read = reader
+                .read(&mut buffer)
+                .await
+                .map_err(|error| io_failure(&error, reading))?;
+            if read == 0 {
+                return Ok(());
+            }
+
+            writer
+                .write_all(&buffer[..read])
+                .await
+                .map_err(|error| io_failure(&error, remote))?;
+            progress.advance(read as u64);
+        }
+    }
+
+    /// Puts a finished part file in place of the name that was asked for.
+    ///
+    /// Two steps on purpose. SFTP's own rename is specified to fail when the destination exists,
+    /// and servers differ about whether they honour that — doing the removal first means the outcome
+    /// is the same everywhere rather than "works on OpenSSH, quietly replaces an older file on this
+    /// other one". The gap is one instruction long, and what could be lost in it is a file that was
+    /// about to be replaced anyway.
+    async fn replace_with(&self, part: &str, remote: &str) -> Result<(), ShellError> {
+        if self.exists(remote).await.unwrap_or(false) {
+            self.remove_file(remote).await?;
+        }
+
+        self.rename(part, remote).await
     }
 
     /// The size of a remote file, for a progress bar that knows where it is going.
@@ -416,6 +599,34 @@ impl SftpSession {
             .await
             .map_err(|error| failure(&error, path))?;
         Ok(attributes.size.unwrap_or(0))
+    }
+
+    /// How big a remote file is and when it last changed, for deciding whether an unfinished part
+    /// file still belongs to it.
+    ///
+    /// The modification time in seconds, which is what SFTP reports. A server that does not say
+    /// leaves that half empty rather than refusing: the size is still worth comparing.
+    pub async fn stamp_of(&self, path: &str) -> Result<(u64, Option<u64>), ShellError> {
+        let attributes = self
+            .inner
+            .metadata(path.to_owned())
+            .await
+            .map_err(|error| failure(&error, path))?;
+
+        Ok((attributes.size.unwrap_or(0), attributes.mtime.map(u64::from)))
+    }
+}
+
+/// How much of a transfer is already done, and whether the part file can be trusted at all.
+///
+/// A part file longer than the thing being copied is not a prefix of it — the source changed, or
+/// the part is from something else entirely — so the answer is to start again rather than to append
+/// somebody else's bytes. `None` means there is no part file yet.
+fn resume_offset(part: Option<u64>, total: u64) -> u64 {
+    match part {
+        Some(bytes) if bytes <= total => bytes,
+        Some(_) => 0,
+        None => 0,
     }
 }
 

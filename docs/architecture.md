@@ -144,8 +144,22 @@ Two rules the interface depends on:
   its task; the interface polls the list while something is running, which costs a read of a few
   counters and saves a second event channel whose only job would be to move a number.
 
-A download writes a fresh local file rather than resuming over an older one: a half-resumed file
-that mixes two versions is worse than starting again, and the person would have no way to tell.
+**A transfer never writes the name it was asked for until it has the whole thing.** Both directions
+write beside their target — `notes.txt.7shell-part` — and rename it into place once every byte has
+arrived, so a half-written file never wears the name somebody checks, on either end. The same fact
+seen the other way round is what makes a retry worth pressing: the part file's length *is* how much
+arrived, so the next attempt continues from there rather than sending a gigabyte again.
+
+Two rules keep a resume from joining two versions of one file. A transfer's **first** attempt clears
+a part file it did not make, because a part file from an earlier run of the application cannot be
+checked against what it came from; only a retry within the same transfer continues. And a retry
+continues only while the source is unchanged — same size, same modification time — which the core
+watches because it is the layer that knows what the source was. Cancelling removes the part file
+(somebody said stop); failing keeps it, because the next thing they will try is the retry button.
+A failure nobody retries leaves one file, clearly named, that is theirs to delete.
+
+Three things can be done to a transfer — hold a running one, let a paused one go, try a stopped one
+again — and the row has one button that says which of the three it is.
 
 ### Two panes
 

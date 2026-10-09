@@ -231,6 +231,13 @@ export type TransferDirection = "download" | "upload";
 
 export type TransferState =
   | { readonly kind: "running" }
+  /**
+   * Waiting because somebody asked it to, with its connection and its part of the file intact.
+   *
+   * Not a kind of stopped: a paused transfer is still going to happen, and the button beside it says
+   * "continue" rather than "try again".
+   */
+  | { readonly kind: "paused" }
   | { readonly kind: "done" }
   | { readonly kind: "failed"; readonly detail: string }
   | { readonly kind: "cancelled" };

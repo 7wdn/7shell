@@ -451,6 +451,34 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
+  /**
+   * Holds a transfer where it is, or lets it go on again.
+   *
+   * One action for both, because they are one button with two readings: whatever the row says it
+   * will do next, this does it. The list is read back afterwards rather than the state being guessed
+   * here — the backend is what knows whether the transfer noticed.
+   */
+  async function setTransferPaused(id: string, paused: boolean): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await (paused ? backend.transfers.pause(id) : backend.transfers.resume(id));
+      await refreshTransfers();
+    } catch (error) {
+      transferFailure.value = asShellError(error, paused ? "transfer_pause" : "transfer_resume");
+    }
+  }
+
+  /** Runs a stopped transfer again, continuing from wherever it stopped. */
+  async function retryTransfer(id: string): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.transfers.retry(id);
+      await refreshTransfers();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "transfer_retry");
+    }
+  }
+
   function dismissTransferFailure(): void {
     transferFailure.value = null;
   }
@@ -611,6 +639,8 @@ export const useFilesStore = defineStore("files", () => {
     close,
     refreshTransfers,
     cancelTransfer,
+    setTransferPaused,
+    retryTransfer,
     dismissTransferFailure,
     stopPolling,
   };

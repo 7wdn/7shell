@@ -89,12 +89,16 @@
         "running": "进行中",
         "done": "已完成",
         "failed": "失败",
-        "cancelled": "已取消"
+        "cancelled": "已取消",
+        "paused": "已暂停"
       },
       "progress": "{transferred} / {size}",
       "unknownSize": "未知",
       "cancel": "取消",
       "dismiss": "关闭",
+      "pause": "暂停",
+      "resume": "继续",
+      "retry": "重试",
       "failedAway": "{direction}失败：{name}",
       "failedAwayCount": "{count} 个传输失败",
       "showList": "查看传输"

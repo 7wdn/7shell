@@ -11,7 +11,7 @@
  * removes the record, and the row goes with it. A second click on a transfer that is already gone
  * is deliberately not an error.
  */
-import { ArrowDownToLine, ArrowUpFromLine, CircleAlert, CircleCheck, CircleSlash, X } from "@lucide/vue";
+import { ArrowDownToLine, ArrowUpFromLine, CircleAlert, CircleCheck, CirclePause, CircleSlash, X } from "@lucide/vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -38,12 +38,40 @@ function stateLabel(state: TransferState): string {
   switch (state.kind) {
     case "running":
       return t("files.transfer.state.running");
+    case "paused":
+      return t("files.transfer.state.paused");
     case "done":
       return t("files.transfer.state.done");
     case "failed":
       return t("files.transfer.state.failed");
     case "cancelled":
       return t("files.transfer.state.cancelled");
+  }
+}
+
+/**
+ * What the one button on a row does, which is whatever that row needs next.
+ *
+ * A running transfer can be held; a paused one can be let go; one that stopped can be tried again
+ * from where it stopped; and one that finished is dismissed — the same call as stopping, because the
+ * backend drops the record either way. Working it out in one place is what keeps a row from offering
+ * "Cancel" on a transfer that stopped a minute ago.
+ */
+interface RowAction {
+  readonly label: string;
+  readonly run: () => void;
+}
+
+function rowAction(info: TransferInfo): RowAction {
+  switch (info.state.kind) {
+    case "running":
+      return { label: t("files.transfer.pause"), run: () => void files.setTransferPaused(info.id, true) };
+    case "paused":
+      return { label: t("files.transfer.resume"), run: () => void files.setTransferPaused(info.id, false) };
+    case "failed":
+      return { label: t("files.transfer.retry"), run: () => void files.retryTransfer(info.id) };
+    default:
+      return { label: t("files.transfer.dismiss"), run: () => void files.cancelTransfer(info.id) };
   }
 }
 
@@ -83,9 +111,17 @@ function indeterminate(info: TransferInfo): boolean {
   return info.state.kind === "running" && info.size === 0;
 }
 
-/** The row's menu, which is the same call the row's own button makes. */
+/** The row's menu, which offers the same things the row's own button does. */
 function openTransferMenu(event: MouseEvent, info: TransferInfo): void {
-  openMenu(event, { key: MENU_TITLES.transfer }, transferMenu(info, { cancel: (id) => void files.cancelTransfer(id) }));
+  openMenu(
+    event,
+    { key: MENU_TITLES.transfer },
+    transferMenu(info, {
+      cancel: (id) => void files.cancelTransfer(id),
+      setPaused: (id, paused) => void files.setTransferPaused(id, paused),
+      retry: (id) => void files.retryTransfer(id),
+    }),
+  );
 }
 </script>
 
@@ -130,14 +166,15 @@ function openTransferMenu(event: MouseEvent, info: TransferInfo): void {
           <CircleCheck v-if="info.state.kind === 'done'" :size="12" class="shrink-0 text-success" />
           <CircleSlash v-else-if="info.state.kind === 'cancelled'" :size="12" class="shrink-0 text-muted-foreground" />
           <CircleAlert v-else-if="info.state.kind === 'failed'" :size="12" class="shrink-0 text-destructive" />
+          <CirclePause v-else-if="info.state.kind === 'paused'" :size="12" class="shrink-0 text-muted-foreground" />
           <span v-else class="shrink-0 text-[10px] text-muted-foreground">{{ stateLabel(info.state) }}</span>
 
           <button
             type="button"
             class="shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            @click="files.cancelTransfer(info.id)"
+            @click="rowAction(info).run()"
           >
-            {{ info.state.kind === "running" ? t("files.transfer.cancel") : t("files.transfer.dismiss") }}
+            {{ rowAction(info).label }}
           </button>
         </div>
 

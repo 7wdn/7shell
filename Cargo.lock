@@ -4412,7 +4412,9 @@ version = "0.1.0"
 dependencies = [
  "russh-sftp",
  "sevenshell-error",
+ "sevenshell-ssh",
  "sevenshell-types",
+ "tempfile",
  "tokio",
 ]
 

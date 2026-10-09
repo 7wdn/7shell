@@ -590,6 +590,21 @@ export function transferCancel(id: string): Promise<void> {
   return invoke<void>("transfer_cancel", { id });
 }
 
+/** Holds a transfer where it is, keeping its connection and what it has already copied. */
+export function transferPause(id: string): Promise<void> {
+  return invoke<void>("transfer_pause", { id });
+}
+
+/** Lets a paused transfer go on. */
+export function transferResume(id: string): Promise<void> {
+  return invoke<void>("transfer_resume", { id });
+}
+
+/** Runs a transfer that stopped, from wherever it stopped. */
+export function transferRetry(id: string): Promise<void> {
+  return invoke<void>("transfer_retry", { id });
+}
+
 // -- Clipboard ---------------------------------------------------------------
 
 /**

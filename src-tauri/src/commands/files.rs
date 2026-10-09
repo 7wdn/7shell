@@ -99,6 +99,27 @@ pub async fn transfer_cancel(state: State<'_, ShellState>, id: String) -> Result
     state.core().cancel_transfer(&id).await
 }
 
+/// Holds a transfer where it is, keeping its connection and what it has already copied.
+#[tauri::command]
+pub async fn transfer_pause(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().pause_transfer(&id).await
+}
+
+/// Lets a paused transfer go on.
+#[tauri::command]
+pub async fn transfer_resume(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().resume_transfer(&id).await
+}
+
+/// Runs a transfer that stopped, from wherever it stopped.
+///
+/// The id is the same one, and the local end of the transfer never crossed this boundary: the core
+/// remembers what the transfer was, which is the only reason a failed one can be tried again at all.
+#[tauri::command]
+pub async fn transfer_retry(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().retry_transfer(&id).await
+}
+
 /// Asks where to put the chosen remote entries, then copies them there.
 ///
 /// Answers with the transfer ids, or none at all when a dialog was dismissed — which is a person

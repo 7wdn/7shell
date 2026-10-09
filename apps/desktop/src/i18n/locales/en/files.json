@@ -89,12 +89,16 @@
         "running": "Running",
         "done": "Finished",
         "failed": "Failed",
-        "cancelled": "Cancelled"
+        "cancelled": "Cancelled",
+        "paused": "Paused"
       },
       "progress": "{transferred} / {size}",
       "unknownSize": "unknown",
       "cancel": "Cancel",
       "dismiss": "Close",
+      "pause": "Hold",
+      "resume": "Continue",
+      "retry": "Try again",
       "failedAway": "{direction} failed: {name}",
       "failedAwayCount": "{count} transfers failed",
       "showList": "Show transfers"
