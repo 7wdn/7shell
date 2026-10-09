@@ -38,9 +38,10 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{AuthMethod, Session, SessionGroup};
 use uuid::Uuid;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
-use crate::crypto::{self, KdfParams};
+use crate::credential::{SecretEntry, SecretKind};
+use crate::crypto::{self, KdfParams, SealedPayload};
 use crate::document::{Document, SessionSecret};
 
 /// The `format` field this build writes, and the only one it reads.
@@ -73,53 +74,9 @@ pub const MIN_PASSPHRASE_LEN: usize = 4;
 /// is here so a mistyped path that lands on a disk image is refused before it is read into memory.
 pub const MAX_BUNDLE_BYTES: u64 = 8 * 1024 * 1024;
 
-/// Which secret an entry holds.
-///
-/// Written out rather than derived from the session on the way in: the file should say what it
-/// carries, so a reader — and a person looking at it — does not have to know the authentication
-/// rules to see that a password is in there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum BundleSecretKind {
-    Password,
-    KeyPassphrase,
-}
-
-/// One stored secret in a bundle.
-///
-/// No `Debug`: a derived one would print the value into any log line an unwary caller wrote. What
-/// this is *about* is safe to say, and that is all the manual implementation says.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BundleSecret {
-    /// The session the secret belongs to, by the id it had in the file.
-    pub session_id: String,
-    pub kind: BundleSecretKind,
-    pub value: String,
-}
-
-impl std::fmt::Debug for BundleSecret {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BundleSecret({:?}, <redacted>)", self.kind)
-    }
-}
-
-/// The value is wiped when the bundle is dropped.
-///
-/// The file is the one copy of a secret that leaves this process, and the copy that was held here
-/// while it was written has no reason to outlive the write — a `String` handed back to the
-/// allocator is a password the next allocation may find. This is also why the field cannot be moved
-/// out of the struct by value: taking the value out and leaving the struct behind is exactly the
-/// thing that would skip the wipe.
-impl Drop for BundleSecret {
-    fn drop(&mut self) {
-        self.value.zeroize();
-    }
-}
-
 /// A file of sessions, groups and — when they were asked for — the secrets that go with them.
 ///
-/// Not `Debug` for the same reason [`BundleSecret`] is not: this struct is mostly a list of them.
+/// Not `Debug` for the same reason [`SecretEntry`] is not: this struct is mostly a list of them.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionBundle {
@@ -133,7 +90,7 @@ pub struct SessionBundle {
     pub groups: Vec<SessionGroup>,
     /// Absent when the export was asked to leave credentials behind.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub secrets: Vec<BundleSecret>,
+    pub secrets: Vec<SecretEntry>,
 }
 
 impl std::fmt::Debug for SessionBundle {
@@ -201,11 +158,10 @@ pub struct BundleEnvelope {
     /// Written out rather than left to be inferred: a person who opens the file should be able to
     /// see that a passphrase stands between them and what is inside it.
     pub protection: String,
-    pub kdf: KdfParams,
-    /// Base64, 16 bytes, fresh for this file.
-    pub salt: String,
-    /// Base64 of `nonce || ciphertext || tag` around the plain bundle, as JSON.
-    pub payload: String,
+    /// Flattened, so the file's shape is the same as it was when these three fields were spelled
+    /// out here — and so a snapshot's envelope and this one stay one implementation.
+    #[serde(flatten)]
+    pub sealed: SealedPayload,
 }
 
 impl BundleEnvelope {
@@ -216,8 +172,7 @@ impl BundleEnvelope {
     /// reason. The caller that can act on it is the question being asked next, which keeps its
     /// field on screen and lets the person try again.
     pub fn unseal(&self, passphrase: &str) -> Result<SessionBundle, ShellError> {
-        let key = crypto::derive_key(passphrase, &self.salt, &self.kdf)?;
-        let payload = crypto::decrypt_bundle(&key, &self.payload)?;
+        let payload = crypto::open_payload(passphrase, crypto::PayloadPurpose::ExportBundle, &self.sealed)?;
 
         let bundle: SessionBundle = serde_json::from_slice(payload.as_slice())
             .map_err(|error| ShellError::session_bundle_invalid(format!("the file could not be read: {error}")))?;
@@ -369,18 +324,18 @@ pub(crate) fn build_sealed_bundle(
             .map_err(|error| ShellError::session_bundle_io(format!("the sessions could not be written: {error}")))?,
     );
 
-    let salt = crypto::random_salt()?;
-    let key = crypto::derive_key(passphrase, &salt, kdf)?;
     let envelope = BundleEnvelope {
         format: BUNDLE_FORMAT.to_owned(),
         version: BUNDLE_SEALED_VERSION,
         exported_at: now,
         protection: PROTECTION_PASSPHRASE.to_owned(),
-        kdf: kdf.clone(),
-        salt,
-        payload: crypto::encrypt(&key, payload.as_slice(), crypto::AAD_BUNDLE)?,
+        sealed: crypto::seal_payload(
+            passphrase,
+            crypto::PayloadPurpose::ExportBundle,
+            payload.as_slice(),
+            kdf,
+        )?,
     };
-
     Ok(ExportedBundle {
         text: envelope.to_json()?,
         sessions: counts.0,
@@ -403,10 +358,10 @@ fn assemble(document: &Document, with_secrets: bool, now: u64) -> SessionBundle 
             .filter_map(|session| {
                 let secret = document.secret_for_session(&session.id)?;
                 let (kind, value) = match &secret {
-                    SessionSecret::Password(value) => (BundleSecretKind::Password, value.clone()),
-                    SessionSecret::KeyPassphrase(value) => (BundleSecretKind::KeyPassphrase, value.clone()),
+                    SessionSecret::Password(value) => (SecretKind::Password, value.clone()),
+                    SessionSecret::KeyPassphrase(value) => (SecretKind::KeyPassphrase, value.clone()),
                 };
-                Some(BundleSecret {
+                Some(SecretEntry {
                     session_id: session.id.clone(),
                     kind,
                     value,
@@ -496,7 +451,7 @@ pub(crate) fn plan_import(bundle: SessionBundle, existing: &Document) -> ImportP
         session_ids.insert(session.id.clone(), id);
     }
 
-    let secrets: HashMap<&str, &BundleSecret> = bundle
+    let secrets: HashMap<&str, &SecretEntry> = bundle
         .secrets
         .iter()
         .map(|secret| (secret.session_id.as_str(), secret))
@@ -539,8 +494,8 @@ pub(crate) fn plan_import(bundle: SessionBundle, existing: &Document) -> ImportP
             PlannedSession {
                 session: imported,
                 secret: secrets.get(session.id.as_str()).map(|secret| match secret.kind {
-                    BundleSecretKind::Password => SessionSecret::Password(secret.value.clone()),
-                    BundleSecretKind::KeyPassphrase => SessionSecret::KeyPassphrase(secret.value.clone()),
+                    SecretKind::Password => SessionSecret::Password(secret.value.clone()),
+                    SecretKind::KeyPassphrase => SessionSecret::KeyPassphrase(secret.value.clone()),
                 }),
             }
         })
@@ -799,9 +754,9 @@ mod tests {
     #[test]
     fn a_secret_from_the_file_is_planned_against_the_session_it_came_with() {
         let mut bundle = bundle(vec![session("a", "web")], Vec::new());
-        bundle.secrets.push(BundleSecret {
+        bundle.secrets.push(SecretEntry {
             session_id: "a".to_owned(),
-            kind: BundleSecretKind::Password,
+            kind: SecretKind::Password,
             value: "hunter2".to_owned(),
         });
 
@@ -932,9 +887,9 @@ mod tests {
         // A file this build used to write: plain, with the passwords in it. It is somebody's only
         // copy of a library, so it reads — the rule that changed is about writing.
         let mut legacy = bundle(vec![session("a", "web")], Vec::new());
-        legacy.secrets.push(BundleSecret {
+        legacy.secrets.push(SecretEntry {
             session_id: "a".to_owned(),
-            kind: BundleSecretKind::Password,
+            kind: SecretKind::Password,
             value: "hunter2".to_owned(),
         });
         let text = legacy.to_json().expect("write");

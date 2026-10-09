@@ -456,6 +456,41 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    // -- Sync --------------------------------------------------------------
+
+    /// A file that was chosen as a backup and is not one.
+    ///
+    /// The detail is what the parser said, which for a truncated file is the only clue there is;
+    /// nothing of the file's own content is ever put there.
+    pub fn sync_snapshot_invalid(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SyncSnapshotInvalid, Origin::new(Subsystem::Store))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A backup file that could not be read from or written to the disk.
+    pub fn sync_io(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SyncIo, Origin::new(Subsystem::Store))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A backup whose sealed credentials the passphrase did not open.
+    ///
+    /// One code for a wrong passphrase, a truncated payload and one sealed for another purpose, for
+    /// the reason the vault gives for its own unlock: an error that tells those apart is an oracle
+    /// for whoever is holding the file.
+    pub fn sync_passphrase() -> Self {
+        Self::new(ErrorCode::SyncPassphrase, Origin::new(Subsystem::Store)).with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A passphrase below the length this build writes a backup under.
+    pub fn sync_passphrase_short(minimum: usize) -> Self {
+        Self::new(ErrorCode::SyncPassphraseShort, Origin::new(Subsystem::Store))
+            .with_param("minimum", minimum.to_string())
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     // -- Policy ------------------------------------------------------------
 
     pub fn policy_denied(action: &str) -> Self {

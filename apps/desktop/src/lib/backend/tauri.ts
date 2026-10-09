@@ -45,6 +45,7 @@ import type {
   UploadOutcome,
   VaultState,
 } from "@/types/session";
+import type { SyncApplySummary, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection } from "@/types/sync";
 
 /** Removes a subscription made by one of the `on…` functions below. */
 export type Unlisten = () => void;
@@ -258,6 +259,50 @@ export function sessionsImport(title: string, passphrase: string | null): Promis
   return invoke<SessionImportOutcome | null>("sessions_import", { title, passphrase }).then(
     (outcome) => outcome ?? undefined,
   );
+}
+
+// -- Sync and backups --------------------------------------------------------
+
+/** What this machine could put into a backup, as counts. */
+export function syncAvailable(): Promise<SyncContents> {
+  return invoke<SyncContents>("sync_available");
+}
+
+/**
+ * Writes a backup where the user says, with what they chose and under the passphrase they gave.
+ *
+ * `passphrase` is the whole of what the interface decides about credentials: with one the file
+ * carries the stored logins and key material sealed, without one it carries neither. The values
+ * themselves are read out of the vault and written by the other side. `undefined` means the file
+ * dialog was dismissed.
+ */
+export function syncBackupExport(
+  title: string,
+  fileName: string,
+  selection: SyncSelection,
+  passphrase: string | null,
+): Promise<SyncReceipt | undefined> {
+  return invoke<SyncReceipt | null>("sync_backup_export", { title, fileName, selection, passphrase }).then(
+    (receipt) => receipt ?? undefined,
+  );
+}
+
+/**
+ * Asks which file to read a backup out of, and says what it holds.
+ *
+ * `passphrase` is null on the first call, which either reads the file or answers that it is sealed
+ * and is now waiting; the second call carries the answer and reads that same file again, because
+ * the shell remembers which one it was. Resolves to `undefined` when the file dialog was dismissed.
+ */
+export function syncBackupInspect(title: string, passphrase: string | null): Promise<SyncInspectOutcome | undefined> {
+  return invoke<SyncInspectOutcome | null>("sync_backup_inspect", { title, passphrase }).then(
+    (outcome) => outcome ?? undefined,
+  );
+}
+
+/** Applies the backup that was read, with the passphrase it was read under. */
+export function syncBackupRestore(replace: boolean, passphrase: string | null): Promise<SyncApplySummary> {
+  return invoke<SyncApplySummary>("sync_backup_restore", { replace, passphrase });
 }
 
 // -- Keys --------------------------------------------------------------------

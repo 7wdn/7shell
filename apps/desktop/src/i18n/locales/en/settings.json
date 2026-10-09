@@ -11,6 +11,7 @@
       "shortcuts": "Shortcuts",
       "commands": "Command library",
       "words": "Suggested words",
+      "sync": "Sync",
       "terminal": "SSH terminal"
     },
     "tab": {

@@ -39,12 +39,13 @@ pub fn vault_unlock(state: State<'_, ShellState>, password: String) -> Result<Va
 /// Locks the vault. Open terminals are deliberately left alone: they are authenticated already,
 /// and closing someone's session because they locked the password store would lose their work.
 ///
-/// An import that was waiting for a passphrase is dropped with it. Nothing about the path is secret,
-/// but a question that can no longer be answered — the next call would write into a locked vault —
-/// should not be left standing.
+/// An import or a restore that was waiting for a passphrase is dropped with it. Nothing about the
+/// path is secret, but a question that can no longer be answered — the next call would write into a
+/// locked vault — should not be left standing.
 #[tauri::command]
 pub fn vault_lock(state: State<'_, ShellState>) -> VaultState {
     state.pending_import().clear();
+    state.pending_restore().clear();
     state.vault().lock();
     state_of(state.vault())
 }

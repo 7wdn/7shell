@@ -149,11 +149,36 @@ The bundle is built in `sevenshell-vault`, which already holds the secrets, rath
 that moves the bytes; what travels up is a summary. The values are wiped from memory when the bundle
 is dropped, and the type never implements `Debug`.
 
-**The same rule holds for what comes next.** A local backup and a cloud sync are both "a copy of the
-library leaving the machine", so they are held to the rule above: sessions and groups always,
-credentials only inside a payload sealed under a passphrase. `ExportProtection` is the shape to reuse
-— a `bool` would make "write the passwords into a file anyone can read" a thing a caller could ask
-for by getting one argument wrong.
+**A backup is that rule with more in it.** A local backup is one file holding what this installation
+knows — the session library, the command library, the words, the imported keys, the trusted host
+keys, the settings that describe how somebody works, and, only when asked for, the record of what
+they typed. It travels in the same two forms the export does: plain, which never contains a
+credential, or sealed under a passphrase. There is no third form here either, and the same builder
+discipline enforces it — the plain one never reads the vault's secrets at all. Four consequences are
+deliberate:
+
+- **The two that are off are off for different reasons.** The history is a record of what somebody
+  typed, host names and paths in it; the trusted host keys decide what *another* machine accepts
+  before it has ever connected anywhere. Both are one checkbox away, and neither is on.
+- **A restore adds, and never overwrites, unless somebody says so.** An id that is already here gets
+  a fresh one, so the same file restored twice makes a second copy. Replacement is a switch that
+  starts off every single time: a library written over by a remembered "yes" is unrecoverable, and a
+  duplicate is one keystroke away from being deleted.
+- **A restore is one write, or none.** The plan is worked out in full before anything is written,
+  and the vault applies it in a single document write — the alternative is hundreds of writes of a
+  growing file, and a failure in the middle of them leaves half a restore with no way to tell which
+  half. The settings file is written after it, which is the only thing left that can fail on its own.
+- **What could not be carried is counted.** A session naming a key the file did not bring, a hop the
+  file left out, an item that arrived as a copy: each is applied anyway and reported, because a
+  session that fails to connect later for a reason nobody can see is the failure all of this exists
+  to prevent.
+
+What a backup deliberately cannot carry: the WebDAV password and the snippet tokens still to come,
+the pending passphrase question, and anything the interface only holds in memory. The rules
+themselves live in `sevenshell-sync`, not in the host — the host picks files and moves bytes, and
+what a snapshot may contain is a rule of the format rather than a property of the dialog that
+started it. A cloud sync will be the same file in somebody else's storage, which is why the seal and
+the accounting were built before there was anywhere to send it.
 
 **Secrets are scrubbed, not merely avoided.** `crates/sevenshell-error/src/redact.rs` removes
 private key blocks, credential assignments and bearer tokens from any string on its way into an

@@ -20,8 +20,9 @@ use sevenshell_types::{
     OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
     RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
     SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet, SnippetGroup, SocketRow,
-    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette,
-    TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    SyncApplySummary, SyncCatalog, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection, TabGroupMode,
+    TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure,
+    UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -192,6 +193,115 @@ fn an_import_that_stopped_to_ask_serializes_with_camel_case_fields() {
     assert_eq!(imported["kind"], serde_json::json!("imported"));
     assert_eq!(imported["summary"]["missingKeys"], serde_json::json!(4));
     assert_eq!(imported["summary"]["droppedHops"], serde_json::json!(5));
+}
+
+#[test]
+fn a_backup_catalog_serializes_with_camel_case_fields() {
+    let contents = SyncContents {
+        sessions: 1,
+        groups: 2,
+        snippets: 3,
+        words: 4,
+        history: 5,
+        known_hosts: 6,
+        settings: 7,
+        secrets: 8,
+        keys: 9,
+    };
+
+    let catalog = check(
+        &SyncCatalog {
+            contents,
+            sealed: true,
+            exported_at: 1_700_000_000,
+            app_version: "0.1.0".to_owned(),
+        },
+        "SyncCatalog",
+    );
+    assert_eq!(catalog["contents"]["knownHosts"], serde_json::json!(6));
+    assert_eq!(catalog["appVersion"], serde_json::json!("0.1.0"));
+
+    let receipt = check(
+        &SyncReceipt {
+            contents,
+            sealed: false,
+            file_name: "library.json".to_owned(),
+        },
+        "SyncReceipt",
+    );
+    assert_eq!(receipt["fileName"], serde_json::json!("library.json"));
+    assert_eq!(receipt["sealed"], serde_json::json!(false));
+}
+
+#[test]
+fn reading_a_backup_that_stopped_to_ask_serializes_with_camel_case_fields() {
+    let asked = check(
+        &SyncInspectOutcome::NeedsPassphrase {
+            file_name: "library.json".to_owned(),
+        },
+        "NeedsPassphrase",
+    );
+    assert_eq!(asked["kind"], serde_json::json!("needsPassphrase"));
+    assert_eq!(asked["fileName"], serde_json::json!("library.json"));
+
+    let read = check(
+        &SyncInspectOutcome::Read {
+            catalog: SyncCatalog {
+                contents: SyncContents::default(),
+                sealed: true,
+                exported_at: 1,
+                app_version: "0.1.0".to_owned(),
+            },
+            file_name: "library.json".to_owned(),
+        },
+        "Read",
+    );
+    assert_eq!(read["kind"], serde_json::json!("read"));
+    assert_eq!(read["fileName"], serde_json::json!("library.json"));
+    assert_eq!(read["catalog"]["contents"]["knownHosts"], serde_json::json!(0));
+    assert_eq!(read["catalog"]["sealed"], serde_json::json!(true));
+}
+
+#[test]
+fn a_restore_summary_serializes_with_camel_case_fields() {
+    let applied = check(
+        &SyncApplySummary {
+            contents: SyncContents::default(),
+            replaced: 1,
+            copied: 2,
+            missing_keys: 4,
+            dropped_hops: 5,
+        },
+        "SyncApplySummary",
+    );
+
+    assert_eq!(applied["missingKeys"], serde_json::json!(4));
+    assert_eq!(applied["droppedHops"], serde_json::json!(5));
+    assert_eq!(applied["contents"]["knownHosts"], serde_json::json!(0));
+}
+
+#[test]
+fn a_selection_carries_its_switches_and_omits_the_lists_nobody_narrowed() {
+    // The lists are absent rather than empty, because the two mean different things: absent is
+    // "every one there is", and empty would be "none of them".
+    let standard = check(&SyncSelection::default(), "SyncSelection");
+
+    assert_eq!(standard["credentials"], serde_json::json!(false));
+    assert_eq!(standard["history"], serde_json::json!(false));
+    assert_eq!(standard["settings"], serde_json::json!(true));
+    assert!(
+        standard.get("sessions").is_none(),
+        "a list nobody narrowed is not written"
+    );
+
+    let narrowed = check(
+        &SyncSelection {
+            sessions: Some(vec!["session-1".to_owned()]),
+            ..SyncSelection::default()
+        },
+        "SyncSelection",
+    );
+    assert_eq!(narrowed["sessions"][0], serde_json::json!("session-1"));
 }
 
 #[test]

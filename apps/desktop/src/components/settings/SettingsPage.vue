@@ -46,6 +46,7 @@ import KnownKeys from "@/components/settings/KnownKeys.vue";
 import CommandsLibrary from "@/components/settings/CommandsLibrary.vue";
 import WordsSettings from "@/components/settings/WordsSettings.vue";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
+import SyncSettings from "@/components/settings/SyncSettings.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import {
   CUSTOM_COLOR_LABEL_KEYS,
@@ -835,6 +836,8 @@ function translate(key: string, params?: Record<string, string>): string {
 
                 <CommandsLibrary v-else-if="category === 'commands'" />
                 <WordsSettings v-else-if="category === 'words'" />
+
+                <SyncSettings v-else-if="category === 'sync'" />
 
                 <div v-else-if="category === 'security'" class="space-y-5">
                   <div class="space-y-2">

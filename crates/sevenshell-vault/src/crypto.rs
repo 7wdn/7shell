@@ -60,6 +60,92 @@ pub(crate) const AAD_PAYLOAD: &[u8] = b"sevenshell/vault-payload/v1";
 /// somebody's export, and an export must not open as a vault document.
 pub(crate) const AAD_BUNDLE: &[u8] = b"sevenshell/session-bundle/v1";
 
+/// Binds a sync snapshot to its role in the file it travels in.
+///
+/// Its own string rather than the export's: the two carry nearly the same things today, and a
+/// payload from one must not be replayable as the other precisely *because* they look alike.
+pub(crate) const AAD_SNAPSHOT: &[u8] = b"sevenshell/sync-snapshot/v1";
+
+/// What a sealed payload is for.
+///
+/// Part of the format rather than a label. The associated data a purpose carries is what keeps a
+/// payload sealed for one file from opening as another, and there is no way to spell an
+/// associated-data string from outside this crate — a caller that could choose one could seal
+/// something that opens as the vault's own document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadPurpose {
+    /// The session library, on its way to a file somebody picked.
+    ExportBundle,
+    /// Everything worth carrying, on its way to a backup file or a sync service.
+    SyncSnapshot,
+}
+
+impl PayloadPurpose {
+    fn aad(self) -> &'static [u8] {
+        match self {
+            Self::ExportBundle => AAD_BUNDLE,
+            Self::SyncSnapshot => AAD_SNAPSHOT,
+        }
+    }
+
+    /// What a payload of this kind that will not open is reported as.
+    ///
+    /// Every failure on the way in — a passphrase that does not match, a payload that was
+    /// truncated, parameters that are unusable — is this one answer. The vault keeps a broken KDF
+    /// apart from a wrong password because a vault is the only copy of what is inside it. A file
+    /// that arrived from somewhere is not, and "this file does not open" is the whole of what
+    /// whoever is holding it is owed.
+    fn refused(self) -> ShellError {
+        match self {
+            Self::ExportBundle => ShellError::session_bundle_passphrase(),
+            Self::SyncSnapshot => ShellError::sync_passphrase(),
+        }
+    }
+}
+
+/// The fields every sealed payload carries, whatever file it ends up in.
+///
+/// The file is the authority on how it was written: the derivation parameters travel with the
+/// ciphertext, so raising this build's defaults later cannot make an existing file unopenable.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SealedPayload {
+    pub kdf: KdfParams,
+    pub salt: String,
+    /// Base64 of `nonce || ciphertext || tag`.
+    pub payload: String,
+}
+
+/// Seals `plaintext` under a passphrase, for one of the files this build writes.
+pub fn seal_payload(
+    passphrase: &str,
+    purpose: PayloadPurpose,
+    plaintext: &[u8],
+    kdf: &KdfParams,
+) -> Result<SealedPayload, ShellError> {
+    let salt = random_salt()?;
+    let key = derive_key(passphrase, &salt, kdf)?;
+
+    Ok(SealedPayload {
+        kdf: kdf.clone(),
+        salt,
+        payload: encrypt(&key, plaintext, purpose.aad())?,
+    })
+}
+
+/// Opens a payload sealed by [`seal_payload`], for the purpose it was sealed for.
+pub fn open_payload(
+    passphrase: &str,
+    purpose: PayloadPurpose,
+    sealed: &SealedPayload,
+) -> Result<Zeroizing<Vec<u8>>, ShellError> {
+    let key = derive_key(passphrase, &sealed.salt, &sealed.kdf).map_err(|_| purpose.refused())?;
+
+    open_blob(&key, &sealed.payload, purpose.aad())
+        .map(Zeroizing::new)
+        .ok_or_else(|| purpose.refused())
+}
+
 /// What the verifier decrypts to when the password is right. Its value only has to be fixed:
 /// it is never stored anywhere an attacker can see it.
 const VERIFIER_PLAINTEXT: &[u8] = b"sevenshell-vault-verifier";
@@ -136,17 +222,6 @@ pub(crate) fn encrypt(key: &VaultKey, plaintext: &[u8], aad: &[u8]) -> Result<St
 /// for anyone holding a copy of the file.
 pub(crate) fn decrypt(key: &VaultKey, blob: &str, aad: &[u8]) -> Result<Vec<u8>, ShellError> {
     open_blob(key, blob, aad).ok_or_else(unlock_failed)
-}
-
-/// Decrypts the payload of an exported session library.
-///
-/// The same "everything that failed is one answer" rule as [`decrypt`], with the code this file
-/// format owns: nothing here writes to the vault, so `VAULT-UNLOCK-FAILED` would be a lie about
-/// what was being opened.
-pub(crate) fn decrypt_bundle(key: &VaultKey, blob: &str) -> Result<Zeroizing<Vec<u8>>, ShellError> {
-    open_blob(key, blob, AAD_BUNDLE)
-        .map(Zeroizing::new)
-        .ok_or_else(ShellError::session_bundle_passphrase)
 }
 
 /// The one place the blob layout lives: base64 of `nonce || ciphertext || tag`, opened under the

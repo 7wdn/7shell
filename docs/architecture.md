@@ -14,9 +14,9 @@ terminal, and an agent acting on someone's behalf. Everything below follows from
                               sevenshell-core          the only orchestration layer
         ┌──────────────┬──────────────────┼───────────────────┬──────────────────┐
   sevenshell-       sevenshell-      sevenshell-        sevenshell-        sevenshell-
-   session            sftp             vault              policy            profiles
-        │                                                  │
-  sevenshell-ssh ──────────────┬──────────────────┬─────────┘
+   session            sftp             vault              policy            sync
+        │                                                 │                   │
+  sevenshell-ssh ──────────────┬──────────────────┬───────┴─────────┬─────────┘
         │               sevenshell-types    sevenshell-error   sevenshell-platform
         └───────────────────────┴──────────────────┘
 ```
@@ -33,11 +33,19 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 
 **Current state:** the crates that exist are `sevenshell-error`, `sevenshell-types`,
 `sevenshell-platform` (where data lives, including the settings file), `sevenshell-vault` (the
-encrypted store), `sevenshell-ssh` (host key verification, authentication, a terminal channel),
-`sevenshell-session` (the registry of open terminals), `sevenshell-core` (the order of operations)
-and `sevenshell-desktop` (the window and the command surface). `sevenshell-policy` and the host
+encrypted store), `sevenshell-policy` (what may be run, and how dangerous it is), `sevenshell-ssh`
+(host key verification, authentication, a terminal channel), `sevenshell-session` (the registry of
+open terminals), `sevenshell-sftp` (the far side of the file workbench), `sevenshell-sync` (a copy
+of the library that travels: what a snapshot holds, and where it goes) and `sevenshell-core` (the
+order of operations), with `sevenshell-desktop` as the window and the command surface. The host
 crates for a command line and an agent interface arrive with the features that need them, so that
 nothing exists without a test.
+
+`sevenshell-sync` sits at rank 3, beside `sevenshell-ssh`, because it is the same kind of thing: a
+crate that deals with something outside this machine and takes what it carries from the vault. It is
+below the core so the core can drive a backup the way it drives a connection, and it knows nothing
+about a window — which is what will let a command line run `sshell backup` one day without a second
+implementation of the file format.
 
 ## Opening a session
 

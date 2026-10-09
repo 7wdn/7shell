@@ -34,6 +34,8 @@ next reads as two different features.
 | **search** | Narrowing the list by what a person types: name, address, user, port. | find, query |
 | **filter** | Narrowing the list by a value it already has — for example how a session authenticates. | search (that is typed, this is chosen) |
 | **export / import** | Writing the library to a file, and adding what a file holds. | save, load, backup |
+| **backup** | One file holding everything this installation knows, so another one can be brought to the same state. | export (that is the session library alone), copy |
+| **sync** | Keeping that file in a service, so another machine can pick it up. A place a backup is sent to, not a mode of the application. | backup (that one is a file you hold), account |
 | **envelope** | The structured error that crosses a boundary. | error object, payload |
 | **interface theme** | Whether the interface is drawn light or dark: system, dark or light. | mode, appearance |
 | **colour theme** | The colour the interface is made of, worn on top of the theme. Not a third theme — a tint. | skin, scheme, dark mode |
@@ -69,6 +71,8 @@ next reads as two different features.
 | search | 搜索 | 查找、查询 |
 | filter | 筛选 | 过滤、搜索（搜索是打字的，筛选是选的） |
 | export / import | 导出／导入 | 保存、加载、备份 |
+| backup | 备份 | 导出（那只把会话库写成文件）、拷贝 |
+| sync | 同步 | 备份（那份文件在你自己手里）、账号 |
 | envelope | 错误信封 | 错误对象 |
 | interface theme | 界面主题 | 模式、外观 |
 | colour theme | 配色主题 | 皮肤、方案、深色模式（那是界面主题） |

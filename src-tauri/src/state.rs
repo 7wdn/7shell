@@ -15,21 +15,21 @@ use sevenshell_vault::Vault;
 use crate::dropped::PendingDrops;
 use crate::uploads::PendingUploads;
 
-/// The session export an import is in the middle of.
+/// A file an operation is in the middle of, waiting for an answer about it.
 ///
-/// A sealed file has to be asked about — the passphrase is not in it — and the file has already
-/// been chosen by the time that is known. So the choice waits here between the two calls instead of
+/// A sealed file has to be asked about — the passphrase is not in it — and the file has already been
+/// chosen by the time that is known. So the choice waits here between the two calls instead of
 /// travelling out to the interface and back, for the reason every other path stays in this
-/// process: what the interface is told is a name, never somewhere on this disk. One slot, because
-/// only one import can be waiting for an answer at a time.
+/// process: what the interface is told is a name, never somewhere on this disk. One slot per
+/// operation, because only one of each can be waiting for an answer at a time.
 #[derive(Default)]
-pub struct PendingImport {
+pub struct PendingFile {
     path: Mutex<Option<PathBuf>>,
 }
 
-impl PendingImport {
-    /// Remembers the file an import is waiting on, replacing whatever was waiting before. A new
-    /// import starting is the end of the old one, whoever asked and however it ended.
+impl PendingFile {
+    /// Remembers the file an operation is waiting on, replacing whatever was waiting before. A new
+    /// operation starting is the end of the old one, whoever asked and however it ended.
     pub fn remember(&self, path: PathBuf) {
         *self.lock() = Some(path);
     }
@@ -39,10 +39,10 @@ impl PendingImport {
         self.lock().clone()
     }
 
-    /// Drops what was waiting. Called when the import finishes and when the vault locks: a path is
+    /// Drops what was waiting. Called when the operation finishes and when the vault locks: a path is
     /// not a secret, but a question nobody can answer any more should not be left on the table.
     ///
-    /// A question that was answered with nothing leaves this standing until the next import, and
+    /// A question that was answered with nothing leaves this standing until the next operation, and
     /// that is deliberate rather than an oversight: it can only be reached by a call carrying an
     /// answer, and there is no question open for one to be given to.
     pub fn clear(&self) {
@@ -66,7 +66,9 @@ pub struct ShellState {
     /// Uploads that stopped to ask about a name already on the far side, waiting for the answer.
     pending_uploads: PendingUploads,
     /// A session export that stopped to ask for its passphrase, waiting for the answer.
-    pending_import: PendingImport,
+    pending_import: PendingFile,
+    /// A backup that has been read and is waiting to be applied, or to be asked about.
+    pending_restore: PendingFile,
     /// Whether the interface has said that closing the window would throw something away.
     quit_guard: AtomicBool,
     /// Whether closing the window ends the application or puts it away.
@@ -103,7 +105,8 @@ impl ShellState {
                 core,
                 pending_drops: PendingDrops::default(),
                 pending_uploads: PendingUploads::default(),
-                pending_import: PendingImport::default(),
+                pending_import: PendingFile::default(),
+                pending_restore: PendingFile::default(),
                 quit_guard: AtomicBool::new(false),
                 close_to_tray: AtomicBool::new(true),
                 tray_shown: AtomicBool::new(false),
@@ -137,8 +140,13 @@ impl ShellState {
     }
 
     /// The export an import is waiting on a passphrase for.
-    pub fn pending_import(&self) -> &PendingImport {
+    pub fn pending_import(&self) -> &PendingFile {
         &self.pending_import
+    }
+
+    /// The backup that was read, waiting to be applied.
+    pub fn pending_restore(&self) -> &PendingFile {
+        &self.pending_restore
     }
 
     /// Whether the interface has something a close would throw away.
@@ -194,7 +202,7 @@ mod tests {
         // The second half of an import acts on what was remembered, so forgetting it has to be
         // enough to make that call refuse — a locked vault or a dismissed question must not leave a
         // file a later call would quietly import.
-        let pending = PendingImport::default();
+        let pending = PendingFile::default();
         pending.remember(PathBuf::from("library.json"));
 
         pending.clear();
@@ -204,7 +212,7 @@ mod tests {
 
     #[test]
     fn a_new_import_replaces_the_one_that_was_waiting() {
-        let pending = PendingImport::default();
+        let pending = PendingFile::default();
         pending.remember(PathBuf::from("first.json"));
         pending.remember(PathBuf::from("second.json"));
 

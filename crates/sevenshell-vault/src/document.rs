@@ -23,6 +23,8 @@ use sevenshell_types::{
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
+use crate::credential::{KeyEntry, SecretEntry, SecretKind};
+
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 ///
 /// Version 2 added the command library and its history. Version 3 added a forward's mode: a build
@@ -392,13 +394,39 @@ impl Document {
         &mut self,
         contents: String,
         passphrase: Option<String>,
+        info: KeyInfo,
+    ) -> Result<KeyInfo, ShellError> {
+        self.store_key(format!("key-{}", Uuid::new_v4()), contents, passphrase, info)
+    }
+
+    /// Stores key material under a handle it was given rather than a fresh one.
+    ///
+    /// The import path makes a handle because nobody has seen this key before. A file that carries
+    /// its own sessions is the other case: they point at the key by the handle it arrived with, and
+    /// a fresh one would leave every one of them pointing at nothing.
+    pub(crate) fn import_key_as(
+        &mut self,
+        key_ref: String,
+        contents: String,
+        passphrase: Option<String>,
+        info: KeyInfo,
+    ) -> Result<KeyInfo, ShellError> {
+        self.store_key(key_ref, contents, passphrase, info)
+    }
+
+    /// The one place a key is stored, so the two entry points cannot come to differ about what
+    /// storing one means.
+    fn store_key(
+        &mut self,
+        key_ref: String,
+        contents: String,
+        passphrase: Option<String>,
         mut info: KeyInfo,
     ) -> Result<KeyInfo, ShellError> {
         if contents.trim().is_empty() {
             return Err(ShellError::ssh_key_invalid("the key file is empty"));
         }
 
-        let key_ref = format!("key-{}", Uuid::new_v4());
         info.key_ref = Some(key_ref.clone());
         info.has_passphrase = passphrase.is_some();
         self.keys.push(StoredKey {
@@ -449,6 +477,48 @@ impl Document {
 
     fn stores_secret_for(&self, session_id: &str) -> bool {
         self.secrets.iter().any(|secret| secret.session_id == session_id)
+    }
+
+    /// Every stored secret, in the shape a file takes.
+    ///
+    /// The kind comes from the session's authentication method, and not from the stored row, for
+    /// the reason [`Document::secret_for_session`] gives: the row holds an id and a value, and
+    /// nothing that says what the value is for. A secret whose session is gone is still listed —
+    /// it is a value somebody stored, and dropping it here would be this listing deciding to lose
+    /// something.
+    pub(crate) fn secret_entries(&self) -> Vec<SecretEntry> {
+        self.secrets
+            .iter()
+            .map(|stored| SecretEntry {
+                session_id: stored.session_id.clone(),
+                kind: match self
+                    .sessions
+                    .iter()
+                    .find(|session| session.id == stored.session_id)
+                    .map(|session| session.auth.method)
+                {
+                    Some(AuthMethod::PublicKey) => SecretKind::KeyPassphrase,
+                    _ => SecretKind::Password,
+                },
+                value: stored.secret.expose().to_owned(),
+            })
+            .collect()
+    }
+
+    /// Every imported key, material and all, in the shape a file takes.
+    pub(crate) fn key_entries(&self) -> Vec<KeyEntry> {
+        self.keys
+            .iter()
+            .map(|stored| KeyEntry {
+                key_ref: stored.key_ref.clone(),
+                info: stored.info.clone(),
+                contents: stored.contents.expose().to_owned(),
+                passphrase: stored
+                    .passphrase
+                    .as_ref()
+                    .map(|passphrase| passphrase.expose().to_owned()),
+            })
+            .collect()
     }
 }
 

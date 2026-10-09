@@ -23,6 +23,7 @@ import enRisk from "./locales/en/risk.json";
 import enSessions from "./locales/en/sessions.json";
 import enSettings from "./locales/en/settings.json";
 import enShell from "./locales/en/shell.json";
+import enSync from "./locales/en/sync.json";
 import enTerminal from "./locales/en/terminal.json";
 import enVault from "./locales/en/vault.json";
 import zhCnApp from "./locales/zh-CN/app.json";
@@ -42,6 +43,7 @@ import zhCnRisk from "./locales/zh-CN/risk.json";
 import zhCnSessions from "./locales/zh-CN/sessions.json";
 import zhCnSettings from "./locales/zh-CN/settings.json";
 import zhCnShell from "./locales/zh-CN/shell.json";
+import zhCnSync from "./locales/zh-CN/sync.json";
 import zhCnTerminal from "./locales/zh-CN/terminal.json";
 import zhCnVault from "./locales/zh-CN/vault.json";
 
@@ -98,6 +100,7 @@ const messages = {
     ...enMonitor,
     ...enInspect,
     ...enMenu,
+    ...enSync,
   },
   "zh-CN": {
     ...zhCnCommands,
@@ -119,6 +122,7 @@ const messages = {
     ...zhCnMonitor,
     ...zhCnInspect,
     ...zhCnMenu,
+    ...zhCnSync,
   },
 };
 

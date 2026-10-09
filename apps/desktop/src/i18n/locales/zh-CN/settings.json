@@ -11,6 +11,7 @@
       "shortcuts": "快捷键",
       "commands": "命令库",
       "words": "联想词",
+      "sync": "同步",
       "terminal": "SSH 终端"
     },
     "tab": {

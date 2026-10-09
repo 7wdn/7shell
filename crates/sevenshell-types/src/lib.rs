@@ -12,6 +12,7 @@ mod risk;
 mod session;
 mod settings;
 mod snippet;
+mod sync;
 mod words;
 
 mod generated {
@@ -48,4 +49,5 @@ pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,
     SendTarget, Snippet, SnippetGroup,
 };
+pub use sync::{SyncApplySummary, SyncCatalog, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection};
 pub use words::CompletionWord;

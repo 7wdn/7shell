@@ -51,13 +51,17 @@
 //! payload sealed under a passphrase ([`ExportProtection`]). Reading is more forgiving than
 //! writing — a file written before that rule existed still imports.
 
+mod credential;
 mod crypto;
 mod document;
+mod restore;
 mod transfer;
 mod vault;
 
-pub use crypto::KdfParams;
+pub use credential::{KeyEntry, SecretEntry, SecretKind};
+pub use crypto::{KdfParams, PayloadPurpose, SealedPayload, open_payload, seal_payload};
 pub use document::{KeyMaterial, SessionSecret, VAULT_SCHEMA_VERSION};
+pub use restore::{Restore, RestoreCounts, RestoredSession};
 pub use transfer::{
     BUNDLE_FORMAT, BUNDLE_SEALED_VERSION, BUNDLE_VERSION, BundleEnvelope, ExportedBundle, MAX_BUNDLE_BYTES,
     MIN_PASSPHRASE_LEN, OpenedBundle, SessionBundle, open,

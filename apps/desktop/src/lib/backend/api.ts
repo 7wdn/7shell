@@ -40,6 +40,7 @@ import type {
   UploadOutcome,
   VaultState,
 } from "@/types/session";
+import type { SyncApplySummary, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection } from "@/types/sync";
 
 import { ShellError, normalizeShellError, noTransportError } from "./errors";
 import * as desktop from "./tauri";
@@ -217,6 +218,31 @@ export const backend = {
       save: (group: SessionGroup): Promise<SessionGroup> => forward("group_save", () => desktop.groupSave(group)),
       remove: (id: string): Promise<void> => forward("group_delete", () => desktop.groupDelete(id)),
     },
+  },
+
+  sync: {
+    /** What this machine could put into a backup, as counts. */
+    available: (): Promise<SyncContents> => forward("sync_available", () => desktop.syncAvailable()),
+
+    /**
+     * Writes a backup to a file the user picks, in Rust. The passphrase is the whole of what this
+     * side decides about credentials, and the values stay on the other side of the boundary.
+     */
+    backup: (
+      title: string,
+      fileName: string,
+      selection: SyncSelection,
+      passphrase: string | null,
+    ): Promise<SyncReceipt | undefined> =>
+      forward("sync_backup_export", () => desktop.syncBackupExport(title, fileName, selection, passphrase)),
+
+    /** Reads a backup the user picks and says what is inside it. `undefined` means dismissed. */
+    inspect: (title: string, passphrase: string | null): Promise<SyncInspectOutcome | undefined> =>
+      forward("sync_backup_inspect", () => desktop.syncBackupInspect(title, passphrase)),
+
+    /** Applies the backup that was read, in the shell. */
+    restore: (replace: boolean, passphrase: string | null): Promise<SyncApplySummary> =>
+      forward("sync_backup_restore", () => desktop.syncBackupRestore(replace, passphrase)),
   },
 
   keys: {

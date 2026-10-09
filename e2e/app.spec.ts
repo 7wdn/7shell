@@ -3056,3 +3056,55 @@ test("a word added in the settings is offered after its command", async () => {
     await close();
   }
 });
+
+/**
+ * The sync page, and the question a backup asks before it is written.
+ *
+ * What only a real window can settle here: the two tabs that have not landed are really disabled, a
+ * switch that needs a passphrase really is unavailable until one is typed, and the dialog that asks
+ * what goes into the file is on screen rather than inside the page. The file itself is the
+ * platform's dialog, so — as with the session export — this run stops at the question.
+ */
+test("the sync page says what it can back up, and asks before it writes", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Sync", exact: true }).click();
+
+    // Three tabs, and only the third one is a thing this build does.
+    const tabs = settings.getByRole("tab");
+    await expect(tabs).toHaveCount(3);
+    await expect(tabs.nth(0), "WebDAV is not here yet").toBeDisabled();
+    await expect(tabs.nth(1), "nor is snippet sync").toBeDisabled();
+    await expect(tabs.nth(2)).toBeEnabled();
+
+    // The passphrase field is on the panel, and a backup cannot carry the passwords without it: the
+    // switch is there but refuses until one is typed.
+    const passphrase = settings.locator("#sync-passphrase");
+    await expect(passphrase).toBeVisible();
+
+    await settings.getByRole("button", { name: "Write a backup" }).click();
+    const asking = page.getByRole("dialog");
+    await expect(asking.getByText("What goes into the backup?")).toBeVisible();
+    const credentials = asking.getByRole("checkbox", { name: /saved passwords and the imported keys/ });
+    await expect(credentials, "nothing to seal them under, so nothing to tick").toBeDisabled();
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync.png"), fullPage: false });
+
+    await asking.getByRole("button", { name: "Cancel" }).click();
+    await expect(asking).toHaveCount(0);
+
+    await passphrase.fill("correct horse");
+    await settings.getByRole("button", { name: "Write a backup" }).click();
+    await expect(
+      page.getByRole("dialog").getByRole("checkbox", { name: /saved passwords and the imported keys/ }),
+      "a passphrase is what makes them able to travel",
+    ).toBeEnabled();
+    await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});

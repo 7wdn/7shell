@@ -348,6 +348,26 @@ describe("wire types", () => {
     );
   });
 
+  it("declares the same sync fields on both sides", () => {
+    // A backup crosses the boundary as counts and switches, so the two halves have to agree on both
+    // — and on the one shape that is a question rather than a result.
+    const rust = read("crates/sevenshell-types/src/sync.rs");
+    const typescript = read("apps/desktop/src/types/sync.ts");
+
+    for (const name of ["SyncSelection", "SyncContents", "SyncCatalog", "SyncReceipt", "SyncApplySummary"]) {
+      const rustFields = rustStructFields(rust, name).map(camelCase);
+
+      expect(rustFields.length, `${name} has no fields, so the comparison proves nothing`).toBeGreaterThan(0);
+      expect(sorted(rustFields), `${name} differs between Rust and the interface`).toEqual(
+        sorted(interfaceFields(typescript, name)),
+      );
+    }
+
+    expect(sorted(tsKindUnion(typescript, "SyncInspectOutcome"))).toEqual(
+      sorted(rustBracedEnumVariants(rust, "SyncInspectOutcome")),
+    );
+  });
+
   it("keeps the compiled interfaces aligned with the Rust structs", () => {
     // These assignments exist so `tsc` fails if a field is renamed in one language only.
     const envelope: ErrorEnvelope = {

@@ -42,6 +42,12 @@
       "bundlePassphrase": "That passphrase did not open this file.",
       "bundlePassphraseShort": "A passphrase for an export needs at least {minimum} characters."
     },
+    "sync": {
+      "snapshotInvalid": "That file is not a backup from this application, or it has been damaged.",
+      "io": "The backup file could not be read or written.",
+      "passphrase": "That passphrase did not open this backup.",
+      "passphraseShort": "A passphrase for a backup needs at least {minimum} characters."
+    },
     "policy": {
       "denied": "The active policy does not allow {action}.",
       "approvalRequired": "{action} needs your approval first."

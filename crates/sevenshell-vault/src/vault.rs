@@ -36,8 +36,10 @@ use sevenshell_types::{
 };
 use zeroize::Zeroizing;
 
+use crate::credential::{KeyEntry, SecretEntry};
 use crate::crypto::{self, KdfParams, VaultKey};
 use crate::document::{self, Document, KeyMaterial, SessionSecret};
+use crate::restore::{Restore, RestoreCounts};
 use crate::transfer::{self, ExportedBundle, SessionBundle};
 
 /// The vault file name inside the platform configuration directory.
@@ -491,6 +493,22 @@ impl Vault {
         Ok(summary)
     }
 
+    /// Writes everything a restore carries, in one document write.
+    ///
+    /// One write rather than one per item: the vault seals its whole document on every mutation, so
+    /// applying a snapshot item by item would be hundreds of writes of a growing file — and a
+    /// failure half way through would leave somebody with half a restore and no way to tell which
+    /// half. What the restore contains has already been decided; see [`crate::restore`].
+    pub fn apply_restore(&self, restore: Restore) -> Result<RestoreCounts, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let counts = state.document.apply_restore(restore);
+        state.write_to(&self.path)?;
+
+        Ok(counts)
+    }
+
     pub fn known_hosts(&self) -> Result<Vec<KnownHostEntry>, ShellError> {
         let mut guard = self.slot();
         Ok(guard.open()?.document.known_hosts.clone())
@@ -641,6 +659,47 @@ impl Vault {
     pub fn keys(&self) -> Result<Vec<KeyInfo>, ShellError> {
         let mut guard = self.slot();
         Ok(guard.open()?.document.keys())
+    }
+
+    /// Every stored login, in the shape a file takes.
+    ///
+    /// This is the one door a login leaves the vault by that is not a live connection. What comes
+    /// back is redacted and zeroizing — a caller can seal it into a payload and cannot print it —
+    /// and it is read here rather than by the caller because `SessionSecret` deliberately has no
+    /// way to be serialized, which is what makes "a secret leaves only inside a file this crate
+    /// wrote" a fact about the types rather than a habit of the callers.
+    pub fn secret_entries(&self) -> Result<Vec<SecretEntry>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.secret_entries())
+    }
+
+    /// Every imported key, material and all, in the shape a file takes.
+    ///
+    /// The same rule as [`Vault::secret_entries`]: the material exists in this shape only long
+    /// enough for a caller to seal it into a payload.
+    pub fn key_entries(&self) -> Result<Vec<KeyEntry>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.key_entries())
+    }
+
+    /// Stores key material under the handle it arrived with.
+    ///
+    /// [`Vault::import_key`] makes a handle because nothing has seen that key before. A file that
+    /// carries its own sessions is the other case: they point at the key by the handle it arrived
+    /// with, and a fresh one would leave every one of them pointing at nothing.
+    pub fn import_key_as(
+        &self,
+        key_ref: String,
+        contents: String,
+        passphrase: Option<String>,
+        info: KeyInfo,
+    ) -> Result<KeyInfo, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let imported = state.document.import_key_as(key_ref, contents, passphrase, info)?;
+        state.write_to(&self.path)?;
+        Ok(imported)
     }
 
     pub fn key_material(&self, key_ref: &str) -> Result<Option<KeyMaterial>, ShellError> {

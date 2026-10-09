@@ -26,6 +26,7 @@ sevenshell-error = { workspace = true }
 sevenshell-platform = { workspace = true }
 sevenshell-session = { workspace = true }
 sevenshell-ssh = { workspace = true }
+sevenshell-sync = { workspace = true }
 sevenshell-types = { workspace = true }
 sevenshell-vault = { workspace = true }
 tauri-plugin-dialog = { workspace = true }

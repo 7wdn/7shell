@@ -41,6 +41,11 @@ export const ERROR_CATALOG = {
   "SESSION-BUNDLE-IO": "errors.session.bundleIo",
   "SESSION-BUNDLE-PASSPHRASE": "errors.session.bundlePassphrase",
   "SESSION-BUNDLE-PASSPHRASE-SHORT": "errors.session.bundlePassphraseShort",
+  // Sync
+  "SYNC-SNAPSHOT-INVALID": "errors.sync.snapshotInvalid",
+  "SYNC-IO": "errors.sync.io",
+  "SYNC-PASSPHRASE": "errors.sync.passphrase",
+  "SYNC-PASSPHRASE-SHORT": "errors.sync.passphraseShort",
   // Policy
   "POLICY-DENIED": "errors.policy.denied",
   "POLICY-APPROVAL-REQUIRED": "errors.policy.approvalRequired",

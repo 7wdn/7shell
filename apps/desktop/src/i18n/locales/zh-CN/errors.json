@@ -42,6 +42,12 @@
       "bundlePassphrase": "这个口令打不开这个文件。",
       "bundlePassphraseShort": "导出用的口令至少要 {minimum} 个字符。"
     },
+    "sync": {
+      "snapshotInvalid": "这个文件不是本应用的备份，或者已经损坏。",
+      "io": "无法读写这个备份文件。",
+      "passphrase": "这个口令打不开这个备份。",
+      "passphraseShort": "备份用的口令至少要 {minimum} 个字符。"
+    },
     "policy": {
       "denied": "当前策略不允许 {action}。",
       "approvalRequired": "{action} 需要你先确认。"

@@ -1,0 +1,20 @@
+[package]
+name = "sevenshell-sync"
+description = "A copy of the library that travels: a snapshot of everything worth carrying, and where it goes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+sevenshell-vault = { workspace = true }
+uuid = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

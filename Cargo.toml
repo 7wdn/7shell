@@ -60,6 +60,7 @@ sevenshell-policy = { version = "0.1.0", path = "crates/sevenshell-policy" }
 sevenshell-vault = { version = "0.1.0", path = "crates/sevenshell-vault" }
 sevenshell-core = { version = "0.1.0", path = "crates/sevenshell-core" }
 sevenshell-ssh = { version = "0.1.0", path = "crates/sevenshell-ssh" }
+sevenshell-sync = { version = "0.1.0", path = "crates/sevenshell-sync" }
 sevenshell-session = { version = "0.1.0", path = "crates/sevenshell-session" }
 sevenshell-sftp = { version = "0.1.0", path = "crates/sevenshell-sftp" }
 sevenshell-types = { version = "0.1.0", path = "crates/sevenshell-types" }

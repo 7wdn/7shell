@@ -105,6 +105,16 @@ error_catalog! {
     #[doc = "The passphrase offered for an export is below the length this build writes files with."]
     SessionBundlePassphraseShort => "SESSION-BUNDLE-PASSPHRASE-SHORT", "errors.session.bundlePassphraseShort";
 
+    // -- Sync --------------------------------------------------------------
+    #[doc = "The chosen file is not a backup from this application, or it has been damaged."]
+    SyncSnapshotInvalid => "SYNC-SNAPSHOT-INVALID", "errors.sync.snapshotInvalid";
+    #[doc = "A backup file could not be read or written."]
+    SyncIo => "SYNC-IO", "errors.sync.io";
+    #[doc = "The passphrase did not open a backup's sealed credentials."]
+    SyncPassphrase => "SYNC-PASSPHRASE", "errors.sync.passphrase";
+    #[doc = "The passphrase offered for a backup is below the length this build writes files with."]
+    SyncPassphraseShort => "SYNC-PASSPHRASE-SHORT", "errors.sync.passphraseShort";
+
     // -- Policy ------------------------------------------------------------
     #[doc = "The active policy forbids this action."]
     PolicyDenied => "POLICY-DENIED", "errors.policy.denied";

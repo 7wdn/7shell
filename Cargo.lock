@@ -4122,6 +4122,7 @@ dependencies = [
  "sevenshell-platform",
  "sevenshell-session",
  "sevenshell-ssh",
+ "sevenshell-sync",
  "sevenshell-types",
  "sevenshell-vault",
  "tauri",
@@ -4198,6 +4199,20 @@ dependencies = [
  "sevenshell-error",
  "sevenshell-types",
  "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "sevenshell-sync"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sevenshell-error",
+ "sevenshell-types",
+ "sevenshell-vault",
+ "tempfile",
+ "uuid",
  "zeroize",
 ]
 
