@@ -165,8 +165,8 @@ pub fn snippet_url(provider: SnippetProvider, api_base: &str, id: Option<&str>) 
 ///
 /// The question a person asks before trusting a setup, and the one that costs nothing: a read, of
 /// either the account or the file.
-pub fn test_request(sync: &SnippetSync) -> Result<SnippetRequest, ShellError> {
-    let base = api_base(sync.provider, sync.instance_url.as_deref())?;
+pub fn test_request(sync: &SnippetSync, api_base: &str) -> Result<SnippetRequest, ShellError> {
+    let base = api_base.to_owned();
     let has_id = sync.snippet_id.as_deref().is_some_and(|id| !id.trim().is_empty());
     let url = if has_id {
         snippet_url(sync.provider, &base, sync.snippet_id.as_deref())
@@ -180,9 +180,9 @@ pub fn test_request(sync: &SnippetSync) -> Result<SnippetRequest, ShellError> {
 }
 
 /// The request that reads the file.
-pub fn read_request(sync: &SnippetSync) -> Result<SnippetRequest, ShellError> {
+pub fn read_request(sync: &SnippetSync, api_base: &str) -> Result<SnippetRequest, ShellError> {
     let id = require_id(sync)?;
-    let base = api_base(sync.provider, sync.instance_url.as_deref())?;
+    let base = api_base.to_owned();
 
     // GitHub and Gitee answer with the file too, but a long one comes back with `truncated: true`
     // and no content at all. The raw address is asked for directly when that happens — and asking
@@ -196,8 +196,8 @@ pub fn read_request(sync: &SnippetSync) -> Result<SnippetRequest, ShellError> {
 /// The verb is the one difference between updating and creating that the three services agree on
 /// only partly: GitLab updates with `PUT` and creates with `POST`, the other two update with
 /// `PATCH`. A creation in a service that has no id yet is a `POST` everywhere.
-pub fn write_request(sync: &SnippetSync, content: &str) -> Result<SnippetRequest, ShellError> {
-    let base = api_base(sync.provider, sync.instance_url.as_deref())?;
+pub fn write_request(sync: &SnippetSync, api_base: &str, content: &str) -> Result<SnippetRequest, ShellError> {
+    let base = api_base.to_owned();
     let id = sync
         .snippet_id
         .as_deref()
@@ -462,6 +462,17 @@ pub struct Snippets {
 impl Snippets {
     pub fn new(sync: &SnippetSync) -> Result<Self, ShellError> {
         let base = api_base(sync.provider, sync.instance_url.as_deref())?;
+
+        Self::with_base(sync, base)
+    }
+
+    /// The same client against an address of the caller's choosing.
+    ///
+    /// Private, and the reason it exists is worth stating: two of the three services have their API
+    /// address compiled in, so a client that wants to be checked against a service standing on this
+    /// machine has nowhere else to point. The feature this is ported from grew the same door for the
+    /// same reason.
+    fn with_base(sync: &SnippetSync, base: String) -> Result<Self, ShellError> {
         let mut builder = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .user_agent(concat!("7Shell/", env!("CARGO_PKG_VERSION")));
@@ -485,7 +496,7 @@ impl Snippets {
 
     /// Asks the service whether the token — and, when there is one, the snippet — is good.
     pub async fn probe(&self) -> Result<(), ShellError> {
-        let request = test_request(&self.sync)?;
+        let request = test_request(&self.sync, &self.base)?;
         self.send(request, None).await.map(|_| ())
     }
 
@@ -498,7 +509,7 @@ impl Snippets {
     pub async fn read(&self) -> Result<String, ShellError> {
         let id = require_id(&self.sync)?;
         let url = snippet_url(self.sync.provider, &self.base, Some(&id));
-        let body = self.send(read_request(&self.sync)?, None).await?;
+        let body = self.send(read_request(&self.sync, &self.base)?, None).await?;
 
         if self.sync.provider == SnippetProvider::GitLab {
             return self.read_gitlab(&url, &body).await;
@@ -568,7 +579,7 @@ impl Snippets {
             }
         }
 
-        let request = write_request(&self.sync, content)?;
+        let request = write_request(&self.sync, &self.base, content)?;
         let body = self
             .send(request, Some(create_body(self.sync.provider, content, updating)))
             .await?;
@@ -741,7 +752,12 @@ mod tests {
 
     #[test]
     fn the_token_goes_where_each_service_reads_it() {
-        let github = write_request(&sync(SnippetProvider::GitHub, Some("abc")), "{}").expect("github");
+        let github = write_request(
+            &sync(SnippetProvider::GitHub, Some("abc")),
+            "https://api.github.com",
+            "{}",
+        )
+        .expect("github");
         assert_eq!(github.method, "PATCH");
         assert!(
             github
@@ -754,7 +770,12 @@ mod tests {
                 .contains(&("x-github-api-version".to_owned(), "2022-11-28".to_owned()))
         );
 
-        let gitee = write_request(&sync(SnippetProvider::Gitee, Some("abc")), "{}").expect("gitee");
+        let gitee = write_request(
+            &sync(SnippetProvider::Gitee, Some("abc")),
+            "https://gitee.com/api/v5",
+            "{}",
+        )
+        .expect("gitee");
         assert!(
             gitee.url.ends_with("?access_token=token-value"),
             "Gitee documents the token as a parameter: {}",
@@ -765,7 +786,12 @@ mod tests {
             "and not as a header"
         );
 
-        let gitlab = write_request(&sync(SnippetProvider::GitLab, Some("abc")), "{}").expect("gitlab");
+        let gitlab = write_request(
+            &sync(SnippetProvider::GitLab, Some("abc")),
+            "https://gitlab.example.com/api/v4",
+            "{}",
+        )
+        .expect("gitlab");
         assert!(
             gitlab
                 .headers
@@ -777,20 +803,24 @@ mod tests {
     fn creating_and_updating_are_different_verbs_and_different_bodies() {
         // No id yet: everything is created with a POST.
         for provider in SnippetProvider::ALL {
-            let request = write_request(&sync(*provider, None), "{}").expect("create");
+            let request = write_request(&sync(*provider, None), "https://example.test/api", "{}").expect("create");
             assert_eq!(request.method, "POST", "{provider:?}");
         }
 
         // One that exists: GitLab updates with PUT, the other two with PATCH.
         assert_eq!(
-            write_request(&sync(SnippetProvider::GitLab, Some("abc")), "{}")
-                .expect("update")
-                .method,
+            write_request(
+                &sync(SnippetProvider::GitLab, Some("abc")),
+                "https://gitlab.example.com/api/v4",
+                "{}"
+            )
+            .expect("update")
+            .method,
             "PUT"
         );
         for provider in [SnippetProvider::GitHub, SnippetProvider::Gitee] {
             assert_eq!(
-                write_request(&sync(provider, Some("abc")), "{}")
+                write_request(&sync(provider, Some("abc")), "https://example.test/api", "{}")
                     .expect("update")
                     .method,
                 "PATCH"
@@ -889,5 +919,341 @@ mod tests {
         let error = open_snippet(&text, "Correct Horse").expect_err("not the passphrase");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::SyncPassphrase);
+    }
+
+    // -- What the client sends, against a service answering on this machine -----------------------
+
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    /// One request a fake service received.
+    #[derive(Debug, Clone)]
+    struct Received {
+        method: String,
+        path: String,
+        headers: HashMap<String, String>,
+        body: String,
+    }
+
+    /// A code-hosting service with no TLS, on a port the operating system picks.
+    ///
+    /// Answers are keyed by `"METHOD /path"`; anything else is a 404, which is what a service says
+    /// about a gist that is not there.
+    struct Fake {
+        base: String,
+        seen: Arc<Mutex<Vec<Received>>>,
+    }
+
+    impl Fake {
+        async fn start(answers: Vec<(String, u16, String)>) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
+            let base = format!("http://{}", listener.local_addr().expect("an address"));
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            // An answer may name this service's own address — a raw file's is absolute — which is
+            // only known once it is listening, so `{BASE}` stands in for it.
+            let answers: HashMap<String, (u16, String)> = answers
+                .into_iter()
+                .map(|(key, status, body)| (key, (status, body.replace("{BASE}", &base))))
+                .collect();
+
+            let seen_for_task = Arc::clone(&seen);
+            tokio::spawn(async move {
+                loop {
+                    let Ok((stream, _)) = listener.accept().await else {
+                        return;
+                    };
+                    let seen = Arc::clone(&seen_for_task);
+                    let answers = answers.clone();
+                    tokio::spawn(async move {
+                        let _ = serve(stream, seen, answers).await;
+                    });
+                }
+            });
+
+            Self { base, seen }
+        }
+
+        fn requests(&self) -> Vec<Received> {
+            self.seen.lock().expect("seen").clone()
+        }
+    }
+
+    async fn serve(
+        mut stream: TcpStream,
+        seen: Arc<Mutex<Vec<Received>>>,
+        answers: HashMap<String, (u16, String)>,
+    ) -> std::io::Result<()> {
+        let mut buffer = Vec::new();
+        let mut chunk = [0u8; 4096];
+        loop {
+            let read = stream.read(&mut chunk).await?;
+            if read == 0 {
+                return Ok(());
+            }
+            buffer.extend_from_slice(&chunk[..read]);
+            if let Some(end) = header_end(&buffer) {
+                let head = String::from_utf8_lossy(&buffer[..end]).into_owned();
+                if buffer.len() >= end + 4 + content_length(&head) {
+                    break;
+                }
+            }
+        }
+
+        let end = header_end(&buffer).unwrap_or(buffer.len());
+        let head = String::from_utf8_lossy(&buffer[..end]).into_owned();
+        let body = String::from_utf8_lossy(&buffer[end + 4..]).into_owned();
+
+        let mut lines = head.lines();
+        let mut parts = lines.next().unwrap_or_default().split_whitespace();
+        let method = parts.next().unwrap_or_default().to_owned();
+        let path = parts.next().unwrap_or_default().to_owned();
+        let headers: HashMap<String, String> = lines
+            .filter_map(|line| line.split_once(':'))
+            .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
+            .collect();
+
+        seen.lock().expect("seen").push(Received {
+            method: method.clone(),
+            path: path.clone(),
+            headers,
+            body,
+        });
+
+        let route = path.split('?').next().unwrap_or(&path);
+        let (status, answer) = answers
+            .get(&format!("{method} {route}"))
+            .cloned()
+            .unwrap_or((404, String::new()));
+        let response = format!(
+            "HTTP/1.1 {status} x\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+            answer.len()
+        );
+        stream.write_all(response.as_bytes()).await?;
+        stream.flush().await
+    }
+
+    fn header_end(buffer: &[u8]) -> Option<usize> {
+        buffer.windows(4).position(|window| window == b"\r\n\r\n")
+    }
+
+    fn content_length(head: &str) -> usize {
+        head.lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.trim().eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, value)| value.trim().parse().ok())
+            .unwrap_or(0)
+    }
+
+    /// A client pointed at a service on this machine, for one provider.
+    fn pointed(sync: &SnippetSync, base: &str) -> Snippets {
+        Snippets::with_base(sync, base.to_owned()).expect("a client")
+    }
+
+    /// An account whose snippet id is `abc`.
+    fn account(provider: SnippetProvider, id: &str) -> SnippetSync {
+        SnippetSync {
+            provider,
+            instance_url: None,
+            token: ServicePassword::new("token-value".to_owned()),
+            snippet_id: Some(id.to_owned()),
+        }
+    }
+
+    /// What a gist looks like when it holds this application's envelope.
+    fn holding(content: &str) -> String {
+        serde_json::json!({ "files": { SNIPPET_FILE_NAME: { "content": content } } }).to_string()
+    }
+
+    #[tokio::test]
+    async fn creating_a_gist_sends_the_file_and_takes_the_id_from_the_answer() {
+        let server = Fake::start(vec![("POST /gists".to_owned(), 201, "{\"id\":\"abc123\"}".to_owned())]).await;
+        let sync = SnippetSync {
+            provider: SnippetProvider::GitHub,
+            instance_url: None,
+            token: ServicePassword::new("token-value".to_owned()),
+            snippet_id: None,
+        };
+
+        let id = pointed(&sync, &server.base).write("sealed").await.expect("created");
+
+        assert_eq!(id, "abc123", "the id comes back for the next upload to patch");
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1, "one creation, and nothing read first");
+        assert_eq!(requests[0].method, "POST");
+        assert_eq!(requests[0].path, "/gists");
+        assert_eq!(
+            requests[0].headers.get("authorization").map(String::as_str),
+            Some("Bearer token-value")
+        );
+        let body: serde_json::Value = serde_json::from_str(&requests[0].body).expect("the body is JSON");
+        assert_eq!(body["files"][SNIPPET_FILE_NAME]["content"], "sealed");
+        assert_eq!(body["public"], false, "never a public gist");
+    }
+
+    #[tokio::test]
+    async fn updating_reads_what_is_there_first_and_then_patches_it() {
+        let envelope = seal(&sample_snapshot(), "correct horse", &Default::default()).expect("sealed");
+        let server = Fake::start(vec![
+            ("GET /gists/abc".to_owned(), 200, holding(&envelope)),
+            ("PATCH /gists/abc".to_owned(), 200, "{\"id\":\"abc\"}".to_owned()),
+        ])
+        .await;
+        let sync = account(SnippetProvider::GitHub, "abc");
+
+        let id = pointed(&sync, &server.base)
+            .write("sealed again")
+            .await
+            .expect("updated");
+
+        assert_eq!(id, "abc");
+        let requests = server.requests();
+        let shape: Vec<(&str, &str)> = requests
+            .iter()
+            .map(|request| (request.method.as_str(), request.path.as_str()))
+            .collect();
+        assert_eq!(
+            shape,
+            vec![("GET", "/gists/abc"), ("PATCH", "/gists/abc")],
+            "what is there is read before it is written over"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_gist_this_application_did_not_write_is_refused_and_left_alone() {
+        // An id somebody typed wrong lands on content that belongs to another purpose entirely.
+        let server = Fake::start(vec![(
+            "GET /gists/abc".to_owned(),
+            200,
+            "{\"files\":{\"notes.txt\":{\"content\":\"somebody else's shopping list\"}}}".to_owned(),
+        )])
+        .await;
+        let sync = account(SnippetProvider::GitHub, "abc");
+
+        let error = pointed(&sync, &server.base)
+            .write("sealed")
+            .await
+            .expect_err("not ours");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SyncSnapshotInvalid);
+        let requests = server.requests();
+        assert_eq!(requests.len(), 1, "the read happened");
+        assert_eq!(requests[0].method, "GET");
+        assert!(
+            !requests.iter().any(|request| request.method == "PATCH"),
+            "and nothing was written over it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_truncated_file_is_fetched_from_its_raw_address_with_the_token() {
+        let body = serde_json::json!({
+            "files": { SNIPPET_FILE_NAME: { "truncated": true, "raw_url": "{BASE}/raw/gist-abc" } }
+        })
+        .to_string();
+        let server = Fake::start(vec![
+            ("GET /gists/abc".to_owned(), 200, body),
+            ("GET /raw/gist-abc".to_owned(), 200, "the whole file".to_owned()),
+        ])
+        .await;
+        let sync = account(SnippetProvider::GitHub, "abc");
+
+        let text = pointed(&sync, &server.base).read().await.expect("read");
+
+        assert_eq!(text, "the whole file", "the content came from the raw address");
+        let requests = server.requests();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].path, "/raw/gist-abc");
+        assert_eq!(
+            requests[1].headers.get("authorization").map(String::as_str),
+            Some("Bearer token-value"),
+            "a private gist's raw address needs the token as much as the answer did"
+        );
+    }
+
+    #[tokio::test]
+    async fn gitlab_is_read_through_its_own_shape_and_falls_back_to_master() {
+        // No raw address in the answer, so this build constructs one — and the branch it guesses is
+        // wrong, which is what the fallback is for.
+        let server = Fake::start(vec![
+            (
+                "GET /snippets/abc".to_owned(),
+                200,
+                serde_json::json!({
+                    "files": [{ "path": SNIPPET_FILE_NAME, "raw_url": "" }]
+                })
+                .to_string(),
+            ),
+            (
+                format!("GET /snippets/abc/files/main/{SNIPPET_FILE_NAME}/raw"),
+                404,
+                String::new(),
+            ),
+            (
+                format!("GET /snippets/abc/files/master/{SNIPPET_FILE_NAME}/raw"),
+                200,
+                "the whole file".to_owned(),
+            ),
+        ])
+        .await;
+        let sync = account(SnippetProvider::GitLab, "abc");
+
+        let text = pointed(&sync, &server.base).read().await.expect("read");
+
+        assert_eq!(text, "the whole file");
+        let requests = server.requests();
+        let paths: Vec<&str> = requests.iter().map(|request| request.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            vec![
+                "/snippets/abc",
+                &format!("/snippets/abc/files/main/{SNIPPET_FILE_NAME}/raw"),
+                &format!("/snippets/abc/files/master/{SNIPPET_FILE_NAME}/raw"),
+            ],
+            "main first, then master, which is what an older installation keeps"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_token_the_service_refuses_is_its_own_answer() {
+        let server = Fake::start(vec![("GET /user".to_owned(), 401, String::new())]).await;
+        let sync = SnippetSync {
+            provider: SnippetProvider::GitHub,
+            instance_url: None,
+            token: ServicePassword::new("stale".to_owned()),
+            snippet_id: None,
+        };
+
+        let error = pointed(&sync, &server.base).probe().await.expect_err("refused");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SyncAuthFailed);
+        assert_eq!(
+            server.requests()[0].path,
+            "/user",
+            "with no snippet yet, the account is what can be checked"
+        );
+    }
+
+    #[tokio::test]
+    async fn gitee_is_sent_its_token_as_a_parameter_and_the_rest_of_the_api_is_the_same() {
+        let server = Fake::start(vec![("POST /gists".to_owned(), 201, "[{\"id\":42}]".to_owned())]).await;
+        let sync = SnippetSync {
+            provider: SnippetProvider::Gitee,
+            instance_url: None,
+            token: ServicePassword::new("token-value".to_owned()),
+            snippet_id: None,
+        };
+
+        let id = pointed(&sync, &server.base).write("sealed").await.expect("created");
+
+        assert_eq!(id, "42", "Gitee answers with a list, and its ids are numbers");
+        let request = &server.requests()[0];
+        assert_eq!(request.path, "/gists?access_token=token-value");
+        assert!(
+            !request.headers.contains_key("authorization"),
+            "and the token is not also a header"
+        );
     }
 }
