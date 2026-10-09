@@ -388,10 +388,25 @@
     "forgetConfirm": "Forget it"
   },
   "keys": {
-    "empty": "No key has been imported yet.",
+    "empty": "No key yet. Import one, or make one here.",
     "import": "Import a key…",
     "importing": "Waiting for the file…",
-    "passphrase": "Passphrase, if the key has one",
+    "passphrase": "Passphrase (optional)",
+    "makeKind": "Kind",
+    "kind": {
+      "ed25519": "Ed25519",
+      "ecdsa": "ECDSA (P-256)",
+      "rsa": "RSA 3072"
+    },
+    "makeComment": "Comment",
+    "makeCommentPlaceholder": "you{'@'}laptop",
+    "make": "Make a key",
+    "making": "Making…",
+    "makeHint": "It is made on this machine and kept in the vault. The public line is the half that goes on a server.",
+    "publicKey": "Show the public key",
+    "copyPublic": "Copy",
+    "copiedPublic": "Copied",
+    "publicHint": "Paste it into authorized_keys on the server.",
     "forget": "Forget this key",
     "forgetTitle": "Forget this key?",
     "forgetMessage": "The key material for {name} is removed. The {count} session(s) using it cannot connect until another key or password is set.",

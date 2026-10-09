@@ -4425,6 +4425,7 @@ dependencies = [
  "serde",
  "sevenshell-error",
  "sevenshell-types",
+ "tempfile",
  "tokio",
  "zeroize",
 ]

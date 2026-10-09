@@ -126,6 +126,8 @@ pub fn run() {
             commands::sync::snippet_sync_apply,
             commands::keys::keys_list,
             commands::keys::key_import,
+            commands::keys::key_generate,
+            commands::keys::key_public,
             commands::keys::key_forget,
             commands::known_hosts::known_hosts_list,
             commands::known_hosts::known_host_trust,

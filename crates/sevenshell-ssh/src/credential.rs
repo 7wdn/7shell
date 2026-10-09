@@ -177,7 +177,7 @@ fn reject_certificate(contents: &str) -> Result<(), ShellError> {
 ///
 /// Only the OpenSSH container does. It is what makes a fingerprint available before a
 /// passphrase has been typed.
-fn public_half(contents: &str) -> Option<PrivateKey> {
+pub(crate) fn public_half(contents: &str) -> Option<PrivateKey> {
     if !contents.contains("-----BEGIN OPENSSH PRIVATE KEY-----") {
         return None;
     }

@@ -133,6 +133,81 @@ pub struct KeyInfo {
     pub has_passphrase: bool,
 }
 
+/// The kinds of key this build can make.
+///
+/// Three, which are the three OpenSSH itself offers a person on every platform. The names are short
+/// and lower case — `ed25519`, not `ssh-ed25519` — because they are what a dropdown stores and what
+/// a request carries, while the *key type* the wire and the vault hold is `ssh-ed25519`, and that
+/// comes back from reading the key rather than from this list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyAlgorithm {
+    Ed25519,
+    Ecdsa,
+    Rsa,
+}
+
+impl KeyAlgorithm {
+    /// Every kind, in the order a list offers them: the one to pick when in doubt first.
+    pub const ALL: &'static [KeyAlgorithm] = &[KeyAlgorithm::Ed25519, KeyAlgorithm::Ecdsa, KeyAlgorithm::Rsa];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ed25519 => "ed25519",
+            Self::Ecdsa => "ecdsa",
+            Self::Rsa => "rsa",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|algorithm| algorithm.as_str() == id)
+    }
+
+    /// What OpenSSH calls the key it writes, which is also what the vault ends up calling it.
+    ///
+    /// Here rather than in the crate that makes the key because this is the string a person sees in
+    /// the list afterwards — `describe_key` reads it back out of the key itself, and the two have to
+    /// be the same name.
+    pub const fn openssh_name(self) -> &'static str {
+        match self {
+            Self::Ed25519 => "ssh-ed25519",
+            Self::Ecdsa => "ecdsa-sha2-nistp256",
+            Self::Rsa => "ssh-rsa",
+        }
+    }
+}
+
+impl std::fmt::Display for KeyAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// The kind nobody has chosen is the first of the list.
+///
+/// Ed25519, because it is what a server made in the last decade is configured for and what OpenSSH
+/// itself offers first — so a form that opens on this one is a form that is right most of the time,
+/// and the person who needs RSA knows it.
+impl Default for KeyAlgorithm {
+    fn default() -> Self {
+        Self::Ed25519
+    }
+}
+
+/// A key that was just made, and the half of it that goes on a server.
+///
+/// The public line is here because that is the whole point of making a key in this application: the
+/// private half stays in the vault and authenticates from inside it, and what a person carries away
+/// is one line to paste into `authorized_keys`. A public key is not a secret — it is meant to be
+/// copied onto machines — which is why it is the one key-shaped thing that crosses this boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedKey {
+    pub info: KeyInfo,
+    /// The `authorized_keys` line: the type, the base64 key, and the comment.
+    pub public_key: String,
+}
+
 /// What a session asks of its terminal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -32,10 +32,10 @@ pub use monitor::{
 };
 pub use risk::{RiskAssessment, RiskLevel, RiskReason};
 pub use session::{
-    EntryKind, ForwardMode, KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey,
-    SecretInput, Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
-    SftpEntry, SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo, TransferState,
-    TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    CreatedKey, EntryKind, ForwardMode, KeyAlgorithm, KeyInfo, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel,
+    PresentedHostKey, SecretInput, Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome,
+    SessionImportSummary, SftpEntry, SftpListing, SftpOutcome, TerminalSettings, TransferDirection, TransferInfo,
+    TransferState, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 pub use settings::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,

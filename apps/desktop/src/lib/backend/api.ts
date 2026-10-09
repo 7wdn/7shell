@@ -20,6 +20,8 @@ import type {
 } from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type {
+  CreatedKey,
+  KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
   OpenOutcome,
@@ -301,6 +303,11 @@ export const backend = {
     /** Opens a native dialog in Rust; resolves to `undefined` when the person dismissed it. */
     import: (title: string, passphrase?: string): Promise<KeyInfo | undefined> =>
       forward("key_import", () => desktop.keyImport(title, passphrase)),
+    /** Makes one instead of asking for a file, and answers with the line to put on a server. */
+    generate: (algorithm: KeyAlgorithm, comment: string, passphrase: string | null): Promise<CreatedKey> =>
+      forward("key_generate", () => desktop.keyGenerate(algorithm, comment, passphrase)),
+    /** The public half of a stored key, which is the half that goes into `authorized_keys`. */
+    publicKey: (keyRef: string): Promise<string> => forward("key_public", () => desktop.keyPublic(keyRef)),
     forget: (keyRef: string): Promise<void> => forward("key_forget", () => desktop.keyForget(keyRef)),
   },
 

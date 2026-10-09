@@ -18,6 +18,29 @@ export interface KeyInfo {
   readonly hasPassphrase: boolean;
 }
 
+/**
+ * The kinds of key this build can make.
+ *
+ * Short and lower case — `ed25519`, not `ssh-ed25519` — because these are what the dropdown stores
+ * and what the request carries. The *key type* shown beside a key in the list is the OpenSSH name,
+ * and it comes back from reading the key itself rather than from this list.
+ */
+export type KeyAlgorithm = "ed25519" | "ecdsa" | "rsa";
+
+/** The order the dropdown offers them in: the one to pick when in doubt first. */
+export const KEY_ALGORITHMS: readonly [KeyAlgorithm, ...KeyAlgorithm[]] = ["ed25519", "ecdsa", "rsa"];
+
+/**
+ * A key that was just made, and the half of it that goes on a server.
+ *
+ * The public line is the one key-shaped thing that crosses this boundary, and it is meant to: a
+ * public key is not a secret, it is the thing somebody pastes into `authorized_keys`.
+ */
+export interface CreatedKey {
+  readonly info: KeyInfo;
+  readonly publicKey: string;
+}
+
 export interface SessionAuth {
   readonly method: AuthMethod;
   readonly key?: KeyInfo;

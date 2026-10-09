@@ -3160,3 +3160,45 @@ test("the sync page says what it can back up, and asks before it writes", async 
     await close();
   }
 });
+
+test("a key can be made in the settings, and the public line is what comes back", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Security", exact: true }).click();
+    await mkdir(ARTIFACTS, { recursive: true });
+
+    await expect(settings.getByText("Keys this device holds")).toBeVisible();
+
+    // Nothing is stored yet, so the page says how a key gets here at all.
+    await expect(settings.getByText("No key yet. Import one, or make one here.")).toBeVisible();
+
+    // Ed25519 is what the dropdown opens on, and the comment is what the server will show later.
+    await expect(settings.getByRole("combobox", { name: "Kind" })).toContainText("Ed25519");
+    await settings.locator("#key-comment").fill("e2e@laptop");
+    await settings.getByRole("button", { name: "Make a key" }).click();
+
+    // The key appears under the name OpenSSH would have given the file, and the line that goes into
+    // authorized_keys is on screen without asking for it — making a key here is for using it there.
+    await expect(settings.getByText("id_ed25519")).toBeVisible({ timeout: 15000 });
+    const line = settings.locator("code").filter({ hasText: "ssh-ed25519" });
+    await expect(line).toBeVisible();
+    await expect(line).toContainText("e2e@laptop");
+
+    // Copying says so, because the line under the button is the only other sign it worked.
+    await settings.getByRole("button", { name: "Copy", exact: true }).click();
+    await expect(settings.getByRole("button", { name: "Copied" })).toBeVisible();
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-keys-made.png"), fullPage: false });
+
+    // The whole run used an ed25519 key that did not exist a moment ago, and the fingerprint the page
+    // shows is the one `ssh-keygen -lf` would print for it — which is what the live test in
+    // `sevenshell-ssh` compares for real.
+    await expect(settings.getByText(/^SHA256:/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});

@@ -25,6 +25,8 @@ import type {
   SnippetGroup,
 } from "@/types/snippet";
 import type {
+  CreatedKey,
+  KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
   OpenOutcome,
@@ -402,6 +404,21 @@ export function keyImport(title: string, passphrase?: string): Promise<KeyInfo |
   return invoke<KeyInfo | null>("key_import", { title, passphrase: passphrase ?? null }).then(
     (info) => info ?? undefined,
   );
+}
+
+/**
+ * Makes a key and keeps it in the vault, answering with the line that goes on a server.
+ *
+ * The private half does not come back: this application is what uses it, and the public line is the
+ * only key-shaped thing that belongs in the interface.
+ */
+export function keyGenerate(algorithm: KeyAlgorithm, comment: string, passphrase: string | null): Promise<CreatedKey> {
+  return invoke<CreatedKey>("key_generate", { algorithm, comment, passphrase });
+}
+
+/** The `authorized_keys` line for a key the vault holds. */
+export function keyPublic(keyRef: string): Promise<string> {
+  return invoke<string>("key_public", { keyRef });
 }
 
 export function keyForget(keyRef: string): Promise<void> {

@@ -15,3 +15,8 @@ base64 = { workspace = true }
 russh = { workspace = true }
 tokio = { workspace = true }
 zeroize = { workspace = true }
+
+[dev-dependencies]
+# A key file on a real path, for the tests that hold one up against `ssh-keygen` — which reads files
+# and nothing else.
+tempfile = { workspace = true }

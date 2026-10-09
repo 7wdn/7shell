@@ -207,6 +207,7 @@ describe("wire types", () => {
       "Session",
       "SessionAuth",
       "KeyInfo",
+      "CreatedKey",
       "TerminalSettings",
       "SessionGroup",
       "KnownHostEntry",
@@ -237,6 +238,7 @@ describe("wire types", () => {
       "Session",
       "SessionAuth",
       "KeyInfo",
+      "CreatedKey",
       "TerminalSettings",
       "SessionGroup",
       "KnownHostEntry",
@@ -267,6 +269,24 @@ describe("wire types", () => {
 
     expect(sorted(rustStates)).toEqual(["locked", "missing", "unlocked"]);
     expect(sorted(tsStringUnion(read("apps/desktop/src/types/session.ts"), "VaultState"))).toEqual(sorted(rustStates));
+  });
+
+  it("declares the same kinds of key on both sides", () => {
+    // What a dropdown stores and what a request carries: short lower-case names, while the key type
+    // in the same list is the OpenSSH spelling that was read out of the key itself.
+    const rust = read("crates/sevenshell-types/src/session.rs");
+    const typescript = read("apps/desktop/src/types/session.ts");
+
+    expect(sorted(rustEnumVariants(rust, "KeyAlgorithm"))).toEqual(["ecdsa", "ed25519", "rsa"]);
+    expect(sorted(tsStringUnion(typescript, "KeyAlgorithm"))).toEqual(sorted(rustEnumVariants(rust, "KeyAlgorithm")));
+    expect(
+      /#\[serde\(rename_all = "([a-z]+)"\)\]\s*pub enum KeyAlgorithm/.exec(rust)?.[1],
+      "lower case is what makes these the short names rather than `ed25519` camel-cased",
+    ).toBe("lowercase");
+    expect(
+      sorted(interfaceFields(typescript, "CreatedKey")),
+      "the receipt carries the key's facts and one public line",
+    ).toEqual(["info", "publicKey"]);
   });
 
   it("declares the same envelope fields on both sides", () => {

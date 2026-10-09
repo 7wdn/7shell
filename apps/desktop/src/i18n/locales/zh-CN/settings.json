@@ -388,10 +388,25 @@
     "forgetConfirm": "忘记它"
   },
   "keys": {
-    "empty": "还没有导入任何密钥。",
+    "empty": "还没有密钥。可以导入一个，也可以在这里生成一个。",
     "import": "导入密钥…",
     "importing": "等待选择文件…",
-    "passphrase": "口令（密钥有口令时填写）",
+    "passphrase": "口令（可选）",
+    "makeKind": "类型",
+    "kind": {
+      "ed25519": "Ed25519",
+      "ecdsa": "ECDSA (P-256)",
+      "rsa": "RSA 3072"
+    },
+    "makeComment": "备注",
+    "makeCommentPlaceholder": "you{'@'}laptop",
+    "make": "生成密钥",
+    "making": "生成中…",
+    "makeHint": "密钥在本机生成、存进保险库；公钥那一行才是放到服务器上的东西。",
+    "publicKey": "显示公钥",
+    "copyPublic": "复制",
+    "copiedPublic": "已复制",
+    "publicHint": "把它贴进服务器的 authorized_keys。",
     "forget": "忘记这个密钥",
     "forgetTitle": "忘记这个密钥？",
     "forgetMessage": "会删除 {name} 的密钥材料。使用它的 {count} 个会话在改用其他密钥或密码之前无法连接。",

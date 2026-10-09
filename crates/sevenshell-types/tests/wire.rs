@@ -15,15 +15,15 @@ use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
     BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionWord, CornerStyle, CpuCounters,
-    CpuModel, CpuStates, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure,
-    HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
-    OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
-    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
-    SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet, SnippetGroup, SnippetProvider,
-    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
-    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer,
-    UploadOutcome, VaultState,
+    CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout,
+    HostFailure, HostMetrics, KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage,
+    NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol,
+    RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
+    SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet,
+    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
+    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
+    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
+    ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -456,6 +456,48 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
     assert_eq!(json["jump"], serde_json::json!(["hop-1"]));
     assert_eq!(json["forwards"][0]["targetPort"], serde_json::json!(5432));
     assert_eq!(json["auth"]["key"]["hasPassphrase"], serde_json::json!(true));
+}
+
+#[test]
+fn a_created_key_carries_its_fingerprint_and_one_public_line() {
+    // The one key-shaped thing that crosses this boundary, and only the half that is meant to be
+    // copied onto machines. The kind is a short lower-case word — `ed25519`, not `ssh-ed25519` —
+    // while the algorithm next to it is the key type OpenSSH spells, because that is what was read
+    // out of the key that was made.
+    for algorithm in KeyAlgorithm::ALL {
+        let json = check(algorithm, "KeyAlgorithm");
+        assert_eq!(json, serde_json::json!(algorithm.as_str()));
+        assert!(
+            json.as_str().is_some_and(|name| !name.contains('-')),
+            "the short name is what a dropdown stores: {json}"
+        );
+    }
+    assert_eq!(
+        KeyAlgorithm::default(),
+        KeyAlgorithm::ALL[0],
+        "the first kind is the one to pick"
+    );
+
+    let created = check(
+        &CreatedKey {
+            info: KeyInfo {
+                key_ref: Some("key-1".to_owned()),
+                display_name: "id_ed25519".to_owned(),
+                algorithm: "ssh-ed25519".to_owned(),
+                fingerprint: "SHA256:AAAA".to_owned(),
+                has_passphrase: false,
+            },
+            public_key: "ssh-ed25519 AAAA someone@example".to_owned(),
+        },
+        "CreatedKey",
+    );
+
+    assert_eq!(
+        created["publicKey"],
+        serde_json::json!("ssh-ed25519 AAAA someone@example")
+    );
+    assert_eq!(created["info"]["displayName"], serde_json::json!("id_ed25519"));
+    assert_eq!(created["info"]["hasPassphrase"], serde_json::json!(false));
 }
 
 #[test]
