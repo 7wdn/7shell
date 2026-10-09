@@ -2961,7 +2961,7 @@ test("a word added in the settings is offered after its command", async () => {
 
     // What this build already offers is in the same list, marked as its own: the page is also where
     // somebody looks to see what the command line will offer.
-    await expect(settings.getByText("Built in").first(), "the shipped words are listed").toBeVisible();
+    await expect(settings.getByText("Built-in").first(), "the shipped words are listed").toBeVisible();
     await expect(settings.getByText("git").first(), "with the command they follow").toBeVisible();
 
     await settings.getByRole("button", { name: "Add a word" }).click();
@@ -3027,10 +3027,10 @@ test("a word added in the settings is offered after its command", async () => {
     ).toBeVisible();
     await settings.getByRole("button", { name: "Restore the defaults for Suggested words" }).click();
     const asking = page.getByRole("dialog");
-    await expect(asking, "the question says what is dropped").toContainText("Remove the words you added");
+    await expect(asking, "the question says what is dropped").toContainText("Delete every added word");
     await asking.getByRole("button", { name: "Restore defaults", exact: true }).click();
     await expect(settings.getByText(note), "their row is gone").toHaveCount(0);
-    await expect(settings.getByText("Built in").first(), "and what this build ships is still listed").toBeVisible();
+    await expect(settings.getByText("Built-in").first(), "and what this build ships is still listed").toBeVisible();
     await page.getByRole("button", { name: "Close settings" }).click();
   } finally {
     await close();

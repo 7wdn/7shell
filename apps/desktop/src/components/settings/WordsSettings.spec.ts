@@ -104,11 +104,11 @@ describe("the words page", () => {
     const rows = [...host.querySelectorAll("[data-word-row]")];
     expect(rows.length, "the shipped table is longer than one row").toBeGreaterThan(10);
     expect(rows[0]?.textContent, "their own row is first").toContain("acme");
-    expect(rows[0]?.textContent).toContain("Yours");
+    expect(rows[0]?.textContent).toContain("Custom");
     expect(rows[0]?.querySelector("button"), "it has actions").not.toBeNull();
 
-    const shipped = rows.find((row) => row.textContent?.includes("Yours") === false);
-    expect(shipped?.textContent).toContain("Built in");
+    const shipped = rows.find((row) => row.textContent?.includes("Custom") === false);
+    expect(shipped?.textContent).toContain("Built-in");
     expect(shipped?.querySelector("button"), "a shipped word has nothing to press").toBeNull();
   });
 
@@ -120,7 +120,7 @@ describe("the words page", () => {
     // is picked out by both halves of the pair it is about.
     const status = rows.filter((row) => row.textContent?.includes("git") && row.textContent?.includes("status"));
     expect(status, "one row for one word").toHaveLength(1);
-    expect(status[0]?.textContent).toContain("Yours");
+    expect(status[0]?.textContent).toContain("Custom");
   });
 
   it("writes what the dialog is given", async () => {

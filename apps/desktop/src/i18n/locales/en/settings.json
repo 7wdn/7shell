@@ -59,22 +59,22 @@
       "simplifiedChinese": "简体中文"
     },
     "words": {
-      "hint": "The words the command line offers after a command. What this build already offers is in every installation; what you add here is for the tools it has never heard of, and yours come first.",
-      "builtinHint": "The rows marked built in are what this build offers, and they are read-only. To say something different about one of them, add a word with the same command and word: yours is the one the command line will offer.",
+      "hint": "The words the command line offers after a command. What this build ships is in every installation; this page is where the tools it has never heard of are added.",
+      "builtinHint": "Rows marked built-in come from this build, and they are read-only. To describe one differently, add a row with the same command and word: the command line takes the added one.",
       "add": "Add a word",
       "editTitle": "Edit the word",
       "addTitle": "Add a word",
-      "restoreTitle": "Remove the words you added?",
-      "restoreMessage": "Every word you added is removed. The ones this build offers are untouched. This cannot be undone.",
+      "restoreTitle": "Delete every added word?",
+      "restoreMessage": "Every added word is deleted. What this build ships is untouched. This cannot be undone.",
       "commandPlaceholder": "e.g. kubectl",
       "wordPlaceholder": "e.g. apply",
       "notePlaceholder": "What it means",
-      "noteHint": "Your own words: it is shown beside the word instead of the description this build ships.",
+      "noteHint": "Shown beside the word instead of the description this build ships.",
       "spaceInvalid": "A command and a word are one word each: the command line is split on spaces before anything is looked up.",
       "saveFailed": "The word could not be written.",
       "source": {
-        "builtin": "Built in",
-        "mine": "Yours"
+        "builtin": "Built-in",
+        "custom": "Custom"
       },
       "columns": {
         "command": "Command",
@@ -181,7 +181,7 @@
       "themeMode": {
         "title": "Interface theme",
         "summary": "Follow the system, or keep to one of the two palettes.",
-        "help": "Following the system keeps changing with it while the application is open. A theme chosen outright is written down at once, so a restart opens the way you left it."
+        "help": "Following the system keeps changing with it while the application is open. A theme chosen outright is written down at once, so a restart opens the way it was left."
       },
       "terminalTheme": {
         "title": "Terminal colours",
@@ -256,12 +256,12 @@
       "cornerStyle": {
         "title": "Corner style",
         "summary": "How round the corners of everything are.",
-        "help": "One setting for the whole window rather than a radius per panel: a corner belongs to the way this build draws, and a panel that rounded its own would be the one thing that did not change when you asked for squarer corners. The buttons above are drawn with the corner each one stands for."
+        "help": "One setting for the whole window rather than a radius per panel: a corner belongs to the way this build draws, and a panel that rounded its own would be the one thing that did not change when the corners were squared. The buttons above are drawn with the corner each one stands for."
       },
       "uiFont": {
         "title": "Interface font",
         "summary": "The family the rest of the window is drawn in.",
-        "help": "What is kept is the whole stack rather than one name: whatever follows the family you pick is what the interface falls back to when that family is not installed — on another machine, or after a font is renamed. The terminal's font is a choice of its own, beside this one."
+        "help": "What is kept is the whole stack rather than one name: whatever follows the chosen family is what the interface falls back to when that family is not installed — on another machine, or after a font is renamed. The terminal's font is a choice of its own, beside this one."
       },
       "terminalFont": {
         "title": "Terminal font",
@@ -291,17 +291,17 @@
       "filesLayout": {
         "title": "File browser",
         "summary": "A tree beside the list, or the list alone.",
-        "help": "The tree opens the branches leading to where you are, so the two panes never disagree about where that is."
+        "help": "The tree opens the branches leading to the current directory, so the two panes never disagree about where that is."
       },
       "packed": {
         "title": "Packed transfer",
         "summary": "Move a folder as one archive, made and opened on the way.",
-        "help": "A download of a folder is packed on the far side and opened into the folder you choose; an upload is packed here and opened on the far side. Either way the files themselves are what you end up with — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
+        "help": "A download of a folder is packed on the far side and opened into the destination folder; an upload is packed here and opened on the far side. Either way what arrives is the files themselves — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
       },
       "commandCompletion": {
         "title": "Command completion",
         "summary": "Offer what this application knows while a command is being typed.",
-        "help": "The line under a terminal draws a list beside itself: the commands this build has a word about, the lines you saved, the ones you have run, and — after a command — the words it is usually followed by, or the paths the host itself has. A row is taken in two ways: Tab takes the first one, and the arrow keys walk to one. Once a row is pointed at, Enter puts it **into the line** — a command name is usually not the whole line yet — and a second Enter runs it; with nothing pointed at, Enter runs exactly what was typed. Escape puts the list away for that line, and Alt+/ brings it back."
+        "help": "The line under a terminal draws a list beside itself: the commands this build has a word about, saved lines, recent history, and — after a command — the words it is usually followed by, or the paths the host itself has. A row is taken in two ways: Tab takes the first one, and the arrow keys walk to one. Once a row is pointed at, Enter puts it **into the line** — a command name is usually not the whole line yet — and a second Enter runs it; with nothing pointed at, Enter runs exactly what was typed. Escape puts the list away for that line, and Alt+/ brings it back."
       }
     },
     "terminalPreview": {
@@ -333,7 +333,7 @@
       "hosts": "Host keys this device trusts"
     },
     "commands": {
-      "hint": "The lines you keep, and the short text that brings each one up in the command line. This is the same library the panel under a terminal edits.",
+      "hint": "The lines that have been kept, and the short text that brings each one up in the command line. This is the same library the panel under a terminal edits.",
       "add": "Add a command",
       "edit": "Edit",
       "none": "No trigger",
@@ -346,7 +346,7 @@
       "saveFailed": "The library could not be written.",
       "prefixInvalid": "A trigger is one word, so it cannot contain a space.",
       "restoreTitle": "Restore the shipped commands?",
-      "restoreMessage": "Everything in the library is deleted — your own commands and groups along with it — and the lines this build ships are written again. This cannot be undone.",
+      "restoreMessage": "Everything in the library is deleted — added commands and groups along with it — and the lines this build ships are written again. This cannot be undone.",
       "columns": {
         "name": "Name",
         "trigger": "Trigger",
@@ -356,7 +356,7 @@
       }
     },
     "shortcuts": {
-      "hint": "Click Change, then press the combination you want instead. Escape leaves the key as it is, and a key somebody does not want can be unbound.",
+      "hint": "Click Change, then press the combination to use instead. Escape leaves the key as it is, and a key that is no longer wanted can be unbound.",
       "change": "Change",
       "changeFor": "Change the key for: {action}",
       "press": "Press a key…",

@@ -109,7 +109,7 @@ function edit(word: CompletionWord): void {
           <td class="truncate font-mono" :class="TABLE.page.cell" :title="row.word">{{ row.word }}</td>
           <td class="truncate" :class="TABLE.page.cell" :title="noteOf(row)">{{ noteOf(row) }}</td>
           <td class="truncate" :class="TABLE.page.cell">
-            {{ row.builtin ? t("settings.words.source.builtin") : t("settings.words.source.mine") }}
+            {{ row.builtin ? t("settings.words.source.builtin") : t("settings.words.source.custom") }}
           </td>
           <td :class="TABLE.page.cell">
             <span v-if="row.stored" class="flex items-center justify-end gap-1">
