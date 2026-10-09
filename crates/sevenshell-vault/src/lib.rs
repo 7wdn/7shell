@@ -58,7 +58,7 @@ mod restore;
 mod transfer;
 mod vault;
 
-pub use credential::{KeyEntry, SecretEntry, SecretKind};
+pub use credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 pub use crypto::{KdfParams, PayloadPurpose, SealedPayload, open_payload, seal_payload};
 pub use document::{KeyMaterial, SessionSecret, VAULT_SCHEMA_VERSION};
 pub use restore::{Restore, RestoreCounts, RestoredSession};

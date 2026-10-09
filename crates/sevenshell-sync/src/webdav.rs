@@ -25,7 +25,7 @@ use std::time::Duration;
 use reqwest::Method;
 use reqwest::header::CONTENT_TYPE;
 use sevenshell_error::ShellError;
-use zeroize::Zeroize;
+use sevenshell_vault::ServicePassword;
 
 /// How long one request may take before it is called unreachable.
 ///
@@ -38,48 +38,17 @@ pub const DEFAULT_REMOTE_PATH: &str = "7shell/sync/backup.json";
 
 /// The file a backup is written to, and who to authenticate as.
 ///
-/// The password is a [`WebDavPassword`] rather than a `String` for the reason every secret in this
+/// The password is a [`ServicePassword`] rather than a `String` for the reason every secret in this
 /// workspace is wrapped: this value goes into a header on its way to a server, and it must not be
-/// one `{:?}` away from a log line while it does.
+/// one `{:?}` away from a log line while it does. The type itself lives in the vault crate, which
+/// is where every secret type lives — one implementation of that discipline, not one per feature.
 #[derive(Clone, Default)]
 pub struct SyncService {
     pub endpoint: String,
     pub username: Option<String>,
-    pub password: Option<WebDavPassword>,
+    pub password: Option<ServicePassword>,
     /// Where the file goes inside the endpoint. Normalized on the way in.
     pub remote_path: String,
-}
-
-/// A password on its way to a server, wiped when it is dropped and never printed.
-#[derive(Clone, Default)]
-pub struct WebDavPassword(String);
-
-impl WebDavPassword {
-    pub fn new(value: String) -> Self {
-        Self(value)
-    }
-
-    /// Whether there is one at all, which is what decides whether a header is sent.
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    /// The value, for the one place that has to put it in a header.
-    pub(crate) fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Drop for WebDavPassword {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
-impl std::fmt::Debug for WebDavPassword {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("WebDavPassword(<redacted>)")
-    }
 }
 
 /// A WebDAV server this application can put a snapshot on.
@@ -87,7 +56,7 @@ pub struct WebDav {
     client: reqwest::Client,
     endpoint: reqwest::Url,
     username: Option<String>,
-    password: Option<WebDavPassword>,
+    password: Option<ServicePassword>,
     remote_path: String,
 }
 
@@ -243,7 +212,7 @@ impl WebDav {
     /// thing an error envelope must not carry, and a header is where the password lives.
     async fn send(&self, mut request: reqwest::RequestBuilder) -> Result<reqwest::Response, ShellError> {
         if let Some(username) = &self.username {
-            request = request.basic_auth(username, self.password.as_ref().map(WebDavPassword::expose));
+            request = request.basic_auth(username, self.password.as_ref().map(ServicePassword::expose));
         }
 
         request.send().await.map_err(|error| {
@@ -513,7 +482,7 @@ mod tests {
         SyncService {
             endpoint: format!("{base}/dav/"),
             username: Some("alice".to_owned()),
-            password: Some(WebDavPassword::new("hunter2".to_owned())),
+            password: Some(ServicePassword::new("hunter2".to_owned())),
             remote_path: "7shell/sync/backup.json".to_owned(),
         }
     }

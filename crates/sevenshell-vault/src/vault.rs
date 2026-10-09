@@ -36,7 +36,7 @@ use sevenshell_types::{
 };
 use zeroize::Zeroizing;
 
-use crate::credential::{KeyEntry, SecretEntry};
+use crate::credential::{KeyEntry, SecretEntry, ServicePassword};
 use crate::crypto::{self, KdfParams, VaultKey};
 use crate::document::{self, Document, KeyMaterial, SessionSecret};
 use crate::restore::{Restore, RestoreCounts};
@@ -680,6 +680,26 @@ impl Vault {
     pub fn key_entries(&self) -> Result<Vec<KeyEntry>, ShellError> {
         let mut guard = self.slot();
         Ok(guard.open()?.document.key_entries())
+    }
+
+    /// The password kept for the sync server, if one was.
+    ///
+    /// A sync configuration is split on the line this whole application is split on: the address and
+    /// the user name are not secrets and live in the settings file, and this is the one part that
+    /// has to be behind the vault's own lock. What comes back is wiped when it is dropped, and it
+    /// exists for one caller: the request that needs it in a header.
+    pub fn sync_password(&self) -> Result<Option<ServicePassword>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.sync_password())
+    }
+
+    /// Keeps a password for the sync server, or forgets the one that was kept.
+    pub fn set_sync_password(&self, password: Option<String>) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.set_sync_password(password);
+        state.write_to(&self.path)
     }
 
     /// Stores key material under the handle it arrived with.

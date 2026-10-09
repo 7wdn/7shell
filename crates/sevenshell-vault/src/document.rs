@@ -23,7 +23,7 @@ use sevenshell_types::{
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::credential::{KeyEntry, SecretEntry, SecretKind};
+use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 ///
@@ -34,8 +34,10 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind};
 /// anybody saying so, in the direction of "off", which is the safe way round but still not a thing
 /// to do quietly. Version 5 added session recording, for the same reason. Version 6 added the words
 /// somebody adds to what follows a command: a build that predates it would parse the document, drop
-/// the list and write it back empty.
-pub const VAULT_SCHEMA_VERSION: u32 = 6;
+/// the list and write it back empty. Version 7 added the password for a sync server — a value an
+/// older build would drop on its next write, which would look exactly like "the password was
+/// forgotten".
+pub const VAULT_SCHEMA_VERSION: u32 = 7;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -66,6 +68,14 @@ pub struct Document {
     /// The words somebody added to what follows a command, in the order they added them.
     #[serde(default)]
     pub completion_words: Vec<CompletionWord>,
+    /// The password for the sync server, when somebody asked for it to be kept.
+    ///
+    /// Here rather than in the settings file because it is a password, and the settings file is
+    /// read by anything that can read the configuration directory. The server's *address* and user
+    /// name are not secrets and live there instead — this is the one part of a sync configuration
+    /// that has to be behind the vault's own lock.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync_password: Option<SecretString>,
 }
 
 impl Document {
@@ -81,6 +91,7 @@ impl Document {
             snippet_groups: vec![default_group()],
             command_history: Vec::new(),
             completion_words: Vec::new(),
+            sync_password: None,
         }
     }
 
@@ -520,6 +531,21 @@ impl Document {
             })
             .collect()
     }
+
+    /// The password kept for the sync server, if one was.
+    pub(crate) fn sync_password(&self) -> Option<ServicePassword> {
+        self.sync_password
+            .as_ref()
+            .map(|password| ServicePassword::new(password.expose().to_owned()))
+    }
+
+    /// Keeps a password for the sync server, or forgets the one that was kept.
+    ///
+    /// `None` and an empty string are the same answer — nobody wants to keep an empty password —
+    /// so forgetting is one call rather than a separate path that could disagree with this one.
+    pub(crate) fn set_sync_password(&mut self, password: Option<String>) {
+        self.sync_password = password.filter(|value| !value.is_empty()).map(SecretString::new);
+    }
 }
 
 impl fmt::Debug for Document {
@@ -533,6 +559,7 @@ impl fmt::Debug for Document {
             .field("keys", &self.keys.len())
             .field("secrets", &self.secrets.len())
             .field("known_hosts", &self.known_hosts.len())
+            .field("sync_password", &self.sync_password.is_some())
             .finish()
     }
 }
@@ -875,6 +902,45 @@ mod tests {
         let error = from_slice(br#"{"sessions":[]}"#).expect_err("schemaVersion is required");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
+    }
+
+    #[test]
+    fn a_document_written_before_the_sync_password_reads_as_having_none() {
+        // Version 6 is the shape from before this application could keep a password for a sync
+        // server. An absent one has to read as "nobody asked to keep one" rather than as a document
+        // that will not open — and it must not be confused later with a password somebody forgot.
+        let raw = br#"{"schemaVersion":6,"sessions":[],"groups":[],"keys":[],"secrets":[],"knownHosts":[]}"#;
+
+        let mut document = from_slice(raw).expect("a version 6 document is readable");
+
+        assert_eq!(document.schema_version, VAULT_SCHEMA_VERSION);
+        assert!(document.sync_password().is_none());
+
+        // Keeping one and forgetting it again leaves nothing behind — the two are the same field,
+        // so there is no state where "forgotten" and "never kept" could differ.
+        document.set_sync_password(Some("hunter2".to_owned()));
+        assert_eq!(document.sync_password().expect("kept").expose(), "hunter2");
+
+        document.set_sync_password(None);
+        assert!(document.sync_password().is_none());
+        document.set_sync_password(Some(String::new()));
+        assert!(
+            document.sync_password().is_none(),
+            "an empty password is nobody keeping one"
+        );
+    }
+
+    #[test]
+    fn a_sync_password_is_never_printed() {
+        let mut document = Document::empty();
+        document.set_sync_password(Some("hunter2".to_owned()));
+
+        let rendered = format!("{document:?} {:?}", document.sync_password());
+
+        assert!(
+            !rendered.contains("hunter2"),
+            "a password reached Debug output: {rendered}"
+        );
     }
 
     #[test]

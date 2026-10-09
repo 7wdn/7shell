@@ -34,6 +34,48 @@ pub enum SecretKind {
     KeyPassphrase,
 }
 
+/// A password for a service this application talks to — a sync server today.
+///
+/// Not a file shape like the two above: this is a credential on its way to *one request*, held for
+/// as long as the request takes and wiped when it is dropped. The same discipline as everything else
+/// here, and the reason it is a type rather than a `String`: a value that goes into an
+/// authorization header must not be one `{:?}` away from a log line while it does.
+#[derive(Clone, Default)]
+pub struct ServicePassword(String);
+
+impl ServicePassword {
+    pub fn new(value: String) -> Self {
+        Self(value)
+    }
+
+    /// Whether there is one at all, which is what decides whether a header is sent.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The value, for the one place that has to put it in a header.
+    ///
+    /// Public because the crate that makes the request is not this one, and it is the whole of what
+    /// this type is for — unlike a *stored* secret, whose way out is a file this crate writes. The
+    /// rule travels with it: what this returns is never formatted, never logged, and never put in a
+    /// URL.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for ServicePassword {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl std::fmt::Debug for ServicePassword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ServicePassword(<redacted>)")
+    }
+}
+
 /// One stored secret in a file.
 ///
 /// No `Debug`: a derived one would print the value into any log line an unwary caller wrote. What
