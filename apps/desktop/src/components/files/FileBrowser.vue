@@ -30,7 +30,7 @@ import {
   Upload,
   X,
 } from "@lucide/vue";
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
@@ -51,6 +51,7 @@ import {
 } from "@/lib/files/format";
 import { INITIAL_ORDER, type ListingSort, type Order, orderEntries, pressed } from "@/lib/files/order";
 import { type Band, type Point, type RowBand, bandBetween, isDrag, rowsInBand, scrollStep } from "@/lib/files/marquee";
+import { rowBands, rowWindow } from "@/lib/files/window";
 import {
   NOTHING_SELECTED,
   type Selection,
@@ -147,6 +148,125 @@ const busy = ref(false);
 const listing = ref<HTMLDivElement | null>(null);
 /** A drag in progress over the empty space: where it started and what the rows measured. */
 let drag: { from: Point; rows: RowBand[]; moved: boolean } | null = null;
+
+/**
+ * How much of the listing is drawn, and what the layout says about the rest.
+ *
+ * A directory can hold fifty thousand entries and a screen shows thirty, so the rows that exist are
+ * the ones somebody can see — plus a few, so a fast scroll does not show a gap — and two spacers stand
+ * in for the others. The scrollbar then tells the truth about how long the listing is without the
+ * document having to hold every row of it.
+ *
+ * Everything here is in the listing's own coordinates: the distance from the top of its contents,
+ * which is the same space the marquee is drawn in. `scrolled` is what the browser reports, and
+ * `rowsStart` is where the first row actually begins inside that space — the headings and the
+ * padding are above it, and the difference is what the arithmetic wants.
+ */
+const OVERSCAN_ROWS = 6;
+const scrolled = ref(0);
+const viewportHeight = ref(0);
+/** The height of one row, and the y of the first row's top. Measured from the rows themselves. */
+const rowPitch = ref(0);
+const rowsStart = ref(0);
+/** How tall the sticky headings are, so a row brought into view is not brought in under them. */
+const headingsHeight = ref(0);
+
+const drawnWindow = computed(() =>
+  rowWindow({
+    scrolled: Math.max(0, scrolled.value - rowsStart.value),
+    viewport: viewportHeight.value,
+    pitch: rowPitch.value,
+    count: ordered.value.length,
+    overscan: OVERSCAN_ROWS,
+  }),
+);
+/** The rows that exist right now, which is what the listing draws. */
+const drawn = computed(() => ordered.value.slice(drawnWindow.value.first, drawnWindow.value.last));
+
+/** The rows the listing has drawn, in the order they are drawn in. */
+function drawnRows(): HTMLElement[] {
+  return [...(listing.value?.querySelectorAll<HTMLElement>("li[data-path]") ?? [])];
+}
+
+/**
+ * Reads the layout: how tall a row is, and where the rows begin.
+ *
+ * The height comes from the distance between two drawn rows rather than from one row's own height,
+ * because it can be fractional: a scaled interface draws rows 27.5 pixels tall, and half a pixel is
+ * twenty-five thousand over fifty thousand rows. Called when the layout can have changed — a new
+ * directory, a resized panel — never on scroll, where only the offset moves.
+ */
+function measureListing(): void {
+  const element = listing.value;
+  if (!element) {
+    return;
+  }
+  viewportHeight.value = element.clientHeight;
+  headingsHeight.value = element.querySelector<HTMLElement>("[data-listing-header]")?.offsetHeight ?? 0;
+
+  const rows = drawnRows();
+  if (rows.length === 0) {
+    return;
+  }
+
+  const [top, next] = rows;
+  if (!top) {
+    return;
+  }
+
+  const first = top.getBoundingClientRect();
+  const second = next?.getBoundingClientRect();
+  rowPitch.value = second ? second.top - first.top : first.height;
+  rowsStart.value = top.offsetTop - drawnWindow.value.first * rowPitch.value;
+}
+
+/** The listing scrolled. Only the offset moves: the rows under it have not changed size. */
+function onListingScroll(): void {
+  scrolled.value = listing.value?.scrollTop ?? 0;
+}
+
+/**
+ * Brings a row into view, for a keyboard that walks past the bottom of the screen.
+ *
+ * Worked out from the row's position in the list rather than from its element: the row being walked
+ * to is usually not drawn yet, which is the whole point of walking to it.
+ */
+function reveal(path: string): void {
+  const element = listing.value;
+  const index = ordered.value.findIndex((entry) => entry.path === path);
+  if (!element || index < 0 || rowPitch.value <= 0) {
+    return;
+  }
+
+  const top = rowsStart.value + index * rowPitch.value;
+  const bottom = top + rowPitch.value;
+  if (top - headingsHeight.value < element.scrollTop) {
+    element.scrollTop = top - headingsHeight.value;
+  } else if (bottom > element.scrollTop + element.clientHeight) {
+    element.scrollTop = bottom - element.clientHeight;
+  }
+  scrolled.value = element.scrollTop;
+}
+
+let resizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+  void nextTick(measureListing);
+  // The panel is resized by dragging a divider and by the window itself, and both change how many
+  // rows fit without changing how tall one is.
+  // Where the platform has one: a window that never reports a resize still draws, and the
+  // measurement is simply taken at the moments this component already knows about.
+  const element = listing.value;
+  if (element && typeof ResizeObserver !== "undefined") {
+    resizeObserver = new ResizeObserver(() => measureListing());
+    resizeObserver.observe(element);
+  }
+});
+
+onUnmounted(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
 
 /**
  * The order the rows are drawn in, held here rather than in the store for the same reason the
@@ -310,6 +430,22 @@ watch(rows, (current) => {
   selection.value = retain(selection.value, current);
 });
 
+// Walking into a directory starts at its top. Keeping the offset from the last one would drop
+// somebody into the middle of a listing they have never seen — and with the rows drawn in a window,
+// "the middle" is a position nothing else would explain.
+watch(
+  () => browser.value?.path,
+  () => {
+    void nextTick(() => {
+      if (listing.value) {
+        listing.value.scrollTop = 0;
+      }
+      scrolled.value = 0;
+      measureListing();
+    });
+  },
+);
+
 function enter(entry: SftpEntry): void {
   selection.value = selectOne(entry.path);
   open(entry);
@@ -381,22 +517,31 @@ function onListingKeydown(event: KeyboardEvent): void {
 
   const paths = rows.value;
 
+  // The row the keyboard lands on is usually not the row the eye is on: only a screenful is drawn,
+  // so following the lead means scrolling the listing to where that row would be.
+  const followed = (moved: Selection): Selection => {
+    if (moved.lead !== null) {
+      reveal(moved.lead);
+    }
+    return moved;
+  };
+
   switch (event.key) {
     case "ArrowDown":
       event.preventDefault();
-      selection.value = moveLead(selection.value, paths, 1, event.shiftKey);
+      selection.value = followed(moveLead(selection.value, paths, 1, event.shiftKey));
       return;
     case "ArrowUp":
       event.preventDefault();
-      selection.value = moveLead(selection.value, paths, -1, event.shiftKey);
+      selection.value = followed(moveLead(selection.value, paths, -1, event.shiftKey));
       return;
     case "Home":
       event.preventDefault();
-      selection.value = jumpLead(selection.value, paths, "first", event.shiftKey);
+      selection.value = followed(jumpLead(selection.value, paths, "first", event.shiftKey));
       return;
     case "End":
       event.preventDefault();
-      selection.value = jumpLead(selection.value, paths, "last", event.shiftKey);
+      selection.value = followed(jumpLead(selection.value, paths, "last", event.shiftKey));
       return;
     case "a":
     case "A":
@@ -447,17 +592,23 @@ function contentPoint(event: PointerEvent): Point {
 }
 
 /**
- * The rows as they are laid out right now.
+ * Where every row is, worked out from the layout rather than measured one element at a time.
  *
- * Measured once, when a drag begins: the rows do not move while a rectangle is drawn over them, and
+ * Taken once, when a drag begins: the rows do not move while a rectangle is drawn over them, and
  * measuring a directory's worth of rows on every pointer move is how a drag turns into a slideshow.
+ * It has to be arithmetic rather than elements because the listing draws only what is on screen —
+ * and a drag held past an edge scrolls, so the rows a rectangle should cover are exactly the ones
+ * that are not drawn yet. Where they would be is the only thing that knows about them.
+ *
+ * The drawn rows are the fallback for a listing that has never been laid out, where no row height is
+ * known and they are the only thing there is to go on.
  */
 function measureRows(): RowBand[] {
-  const element = listing.value;
-  if (!element) {
-    return [];
+  if (rowPitch.value > 0) {
+    return rowBands(rows.value, rowsStart.value, rowPitch.value);
   }
-  return [...element.querySelectorAll<HTMLElement>("li[data-path]")].map((row) => ({
+
+  return drawnRows().map((row) => ({
     path: row.dataset.path ?? "",
     top: row.offsetTop,
     bottom: row.offsetTop + row.offsetHeight,
@@ -928,6 +1079,7 @@ function openAreaMenu(event: MouseEvent): void {
           "
           @keydown="onListingKeydown"
           @pointerdown="onListingPointerDown"
+          @scroll.passive="onListingScroll"
           @contextmenu="openAreaMenu"
         >
           <!--
@@ -1002,8 +1154,13 @@ function openAreaMenu(event: MouseEvent): void {
             {{ t("files.empty") }}
           </p>
 
+          <!--
+            The rows that are drawn, and two spacers standing in for the ones that are not: the
+            listing is as tall as its whole contents, and only a screenful of it exists.
+          -->
           <ul class="p-1.5">
-            <li v-for="entry in ordered" :key="entry.path" :data-path="entry.path">
+            <li v-if="drawnWindow.before > 0" aria-hidden="true" :style="{ height: `${drawnWindow.before}px` }"></li>
+            <li v-for="entry in drawn" :key="entry.path" :data-path="entry.path">
               <div
                 :id="rowId(entry.path)"
                 role="option"
@@ -1039,6 +1196,7 @@ function openAreaMenu(event: MouseEvent): void {
                 >
               </div>
             </li>
+            <li v-if="drawnWindow.after > 0" aria-hidden="true" :style="{ height: `${drawnWindow.after}px` }"></li>
           </ul>
 
           <!--

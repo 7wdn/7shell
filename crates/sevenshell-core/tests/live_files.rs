@@ -839,3 +839,215 @@ async fn a_transfer_can_be_held_and_let_go_again() {
 
     clear_workspace(&lab, &handle, &workspace).await;
 }
+
+#[tokio::test]
+#[ignore = "needs the SSH lab with its fixtures: see deploy/lab/README.md"]
+async fn a_directory_with_fifty_thousand_entries_is_read_in_reasonable_time() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+
+    // The directory is made by the lab's own start-up script: fifty thousand files, because the
+    // panel's acceptance is about a listing nobody would scroll through by hand.
+    let started = Instant::now();
+    let listing = lab
+        .core
+        .list_files(&handle, "big-directory")
+        .await
+        .expect("the big directory lists");
+    let elapsed = started.elapsed();
+
+    assert_eq!(listing.entries.len(), 50_000, "the fixture is the fixture");
+    assert!(
+        listing.entries.iter().any(|entry| entry.name == "entry-050000.txt"),
+        "and it is the last of them, not fifty thousand of something else"
+    );
+
+    // Generous, because this is news rather than a budget: the reading is one SFTP listing and one
+    // serialization, and what would make it slow is doing something per entry that should not be
+    // done per entry. Seconds here would be a finding; milliseconds are what it costs.
+    println!("fifty thousand entries arrived in {elapsed:?}");
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "reading fifty thousand entries took {elapsed:?}"
+    );
+}
+
+/// How high this process's memory has been, in bytes, or `None` where the platform will not say.
+///
+/// Hand-rolled rather than dragged in as a dependency: it is a few lines of platform code on each of
+/// the two platforms the lab runs on, and a test that watches memory should not be the reason another
+/// crate joins the build. The *peak* is what matters — a transfer that held the whole file would show
+/// it while it happened and never again.
+fn peak_memory() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
+        let kibibytes: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+        return Some(kibibytes * 1024);
+    }
+
+    #[cfg(windows)]
+    {
+        use std::ffi::c_void;
+
+        #[repr(C)]
+        struct Counters {
+            size: u32,
+            page_faults: u32,
+            peak_working_set: usize,
+            working_set: usize,
+            quota_peak_paged: usize,
+            quota_paged: usize,
+            quota_peak_nonpaged: usize,
+            quota_nonpaged: usize,
+            pagefile: usize,
+            peak_pagefile: usize,
+        }
+
+        // `GetProcessMemoryInfo` lives in psapi rather than in the default libraries, which is what
+        // the link attribute is for.
+        #[link(name = "psapi")]
+        unsafe extern "system" {
+            fn GetCurrentProcess() -> *mut c_void;
+            fn GetProcessMemoryInfo(process: *mut c_void, counters: *mut Counters, size: u32) -> i32;
+        }
+
+        let mut counters = Counters {
+            size: size_of::<Counters>() as u32,
+            page_faults: 0,
+            peak_working_set: 0,
+            working_set: 0,
+            quota_peak_paged: 0,
+            quota_paged: 0,
+            quota_peak_nonpaged: 0,
+            quota_nonpaged: 0,
+            pagefile: 0,
+            peak_pagefile: 0,
+        };
+
+        // SAFETY: the handle is this process's own pseudo-handle — nothing to close, nothing to
+        // borrow — and the struct is the one `GetProcessMemoryInfo` documents for this size.
+        let asked = unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.size) };
+        (asked != 0).then_some(counters.peak_working_set as u64)
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        None
+    }
+}
+
+/// The bytes of a file, summed in a way that notices a reordering as well as a missing byte.
+///
+/// Not a cryptographic digest: what this is asked is whether two files hold the same bytes, and the
+/// answer has to be cheap enough to run over a gigabyte without becoming the thing being measured.
+/// The chunks are numbered so that content and its position both matter.
+const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+fn content_id(path: &std::path::Path) -> u64 {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path).expect("open the file");
+    let mut hash = FNV_OFFSET;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer).expect("read the file");
+        if read == 0 {
+            return hash;
+        }
+        for byte in &buffer[..read] {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab, and moves a gigabyte: see deploy/lab/README.md"]
+async fn a_gigabyte_crosses_without_being_held_in_memory() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // A gigabyte of numbered chunks, written a megabyte at a time so that *this* never holds it
+    // either: a peak measured afterwards would remember an allocation made during the setup.
+    let scratch = tempdir().expect("temp dir");
+    let source = scratch.path().join("gigabyte.bin");
+    {
+        use std::io::Write;
+
+        let mut file = std::fs::File::create(&source).expect("create the file");
+        for chunk in 0..1024_u32 {
+            // Each megabyte is filled with a byte of its own, which is what makes a file that came
+            // back rearranged a different file: a megabyte of zeroes would not.
+            let filled = vec![(chunk % 251) as u8; 1024 * 1024];
+            file.write_all(&filled).expect("write a megabyte");
+        }
+        file.sync_all().expect("flush it");
+    }
+    let expected = content_id(&source);
+
+    let before = peak_memory();
+    let started = Instant::now();
+
+    let up = lab
+        .core
+        .start_upload(&handle, source.clone(), &workspace)
+        .await
+        .expect("start the upload");
+    assert_eq!(lab.settle(&up).await, TransferState::Done, "the upload finished");
+
+    let landed = lab
+        .core
+        .list_files(&handle, &workspace)
+        .await
+        .expect("list the workspace")
+        .entries
+        .into_iter()
+        .find(|entry| entry.name == "gigabyte.bin")
+        .expect("the uploaded file is there");
+    assert_eq!(landed.size, 1024 * 1024 * 1024, "and it is a gigabyte");
+
+    let downloaded = scratch.path().join("downloaded.bin");
+    let down = lab
+        .core
+        .start_download(&handle, &format!("{workspace}/gigabyte.bin"), downloaded.clone())
+        .await
+        .expect("start the download");
+    assert_eq!(lab.settle(&down).await, TransferState::Done, "the download finished");
+
+    let elapsed = started.elapsed();
+    assert_eq!(
+        content_id(&downloaded),
+        expected,
+        "the gigabyte that came back is not the gigabyte that went"
+    );
+
+    // The claim this test exists for. The limit is not tight — a channel, a channel's buffers and the
+    // async runtime cost tens of megabytes — but it is far below the file, which is the whole point:
+    // what crosses is moved in chunks, and the file itself is never in memory on either side.
+    let Some(after) = peak_memory() else {
+        eprintln!("this platform will not say how much memory the process has used; the transfer itself is checked");
+        return;
+    };
+    let peak = after.saturating_sub(before.unwrap_or(0));
+    let mebibytes = peak / (1024 * 1024);
+    let held = after / (1024 * 1024);
+    println!(
+        "two gigabytes in both directions took {elapsed:?}; the transfer added {mebibytes} MiB to a peak of {held} MiB"
+    );
+
+    assert!(
+        peak < 256 * 1024 * 1024,
+        "moving a gigabyte in each direction used {mebibytes} MiB of memory, which means something held the file"
+    );
+
+    let _ = std::fs::remove_file(&downloaded);
+    clear_workspace(&lab, &handle, &workspace).await;
+}

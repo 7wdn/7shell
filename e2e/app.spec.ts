@@ -2070,6 +2070,11 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await pathBar.press("Enter");
     await expect(page.getByText(`${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
 
+    // Newest first, so the two files this case just made are in the part of the listing that is
+    // drawn: /tmp holds more rows than a screen after a few runs of this suite, and the panel draws
+    // the ones somebody can see.
+    await page.getByRole("button", { name: "Sort by Modified" }).click();
+
     // What the type column says about it: the type is read out of the name rather than the word
     // "File" being written on every file, which is what made sorting by it look like sorting by name.
     await expect(page.getByRole("option", { name: `${stamp}.tar.gz` })).toContainText("Archive");
@@ -2288,7 +2293,7 @@ test("a trusted host key can be read and taken back", async () => {
     // The other half of the page: the keys this device holds. Importing one opens a native file
     // dialog, which this run cannot drive, so what is asserted is that the section is there and
     // says what it has.
-    await expect(settings.getByText("No key has been imported yet.")).toBeVisible();
+    await expect(settings.getByText("No key yet. Import one, or make one here.")).toBeVisible();
 
     // The fingerprint, not just the address: comparing it is the whole reason to look at this list.
     await expect(settings.getByText(`${host}:${port}`, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
@@ -3194,10 +3199,99 @@ test("a key can be made in the settings, and the public line is what comes back"
 
     // The whole run used an ed25519 key that did not exist a moment ago, and the fingerprint the page
     // shows is the one `ssh-keygen -lf` would print for it — which is what the live test in
-    // `sevenshell-ssh` compares for real.
-    await expect(settings.getByText(/^SHA256:/)).toBeVisible();
+    // `sevenshell-ssh` compares for real. `.first()` because a case that ran before this one may have
+    // left a key of its own in the vault: this one is about the line being there at all.
+    await expect(settings.getByText(/^SHA256:/).first()).toBeVisible();
 
     await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await close();
+  }
+});
+
+test("a directory with fifty thousand entries does not draw fifty thousand rows", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    // A session of its own, like the batch case, so nothing another test did to the list matters.
+    const name = `lab-big-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+
+    // What has to be waited for here is a race and a memory, so both are waited for at once.
+    //
+    // The race: the terminal opening and the question about the host key arrive in whichever order
+    // the network feels like, so waiting for one and then the other fails whenever the other came
+    // first. The memory: the panel is remembered while the window lives, so a case that runs after
+    // another may find it already open — and then the button beside the terminal reads "Close", and
+    // the control that opens the files half is the toggle in the panel's own header.
+    const trust = page.getByRole("button", { name: "Trust this key and connect" });
+    const listing = page.getByRole("listbox", { name: "Files", exact: true });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    const openPanel = page.getByTitle("Open the file panel under this terminal");
+
+    await expect(trust.or(openPanel).or(filesToggle).or(listing).first()).toBeVisible({ timeout: 30_000 });
+    if (await trust.isVisible()) {
+      await trust.click();
+    }
+
+    // The files half of the panel under the terminal, opened if it is not already showing.
+    await expect(openPanel.or(filesToggle).or(listing).first()).toBeVisible({ timeout: 30_000 });
+    if (await openPanel.isVisible()) {
+      await openPanel.click();
+    } else if (!(await listing.isVisible())) {
+      await filesToggle.click();
+    }
+    await expect(listing).toBeVisible({ timeout: 30_000 });
+
+    // The directory the lab's own start-up script makes: fifty thousand entries, which is more than
+    // anybody lists and exactly what the plan asks about. Timed, because "does not lag" is a claim
+    // about a number — from walking into it to the first of its rows being on screen.
+    const walkedIn = Date.now();
+    await listing.getByRole("option", { name: /big-directory/ }).dblclick();
+    await expect(listing.getByRole("option", { name: /entry-000001\.txt/ })).toBeVisible({ timeout: 60_000 });
+    const openedIn = Date.now() - walkedIn;
+
+    // What the panel drew, which is the whole claim: a screenful is a screenful, and the number of
+    // rows in the document must not be the number of entries on the server.
+    const drawn = await listing.getByRole("option").count();
+    const scrolls = await listing.evaluate((element) => element.scrollHeight > element.clientHeight);
+    console.log(`the big directory opened in ${openedIn} ms, drew ${drawn} rows, and scrolls: ${scrolls}`);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    const beforeShot = Date.now();
+    await page.screenshot({ path: path.join(ARTIFACTS, "files-big-directory.png"), fullPage: false });
+    console.log(`  the screenshot took ${Date.now() - beforeShot} ms`);
+
+    expect(scrolls, "the listing is reachable to its end rather than clipped").toBe(true);
+    expect(drawn, `fifty thousand entries drew ${drawn} rows`).toBeLessThanOrEqual(400);
+    expect(openedIn, `the directory took ${openedIn} ms to open`).toBeLessThan(15_000);
+
+    // The end of the listing is reachable, and it is the end: the last entry the lab made.
+    const beforeScroll = Date.now();
+    await listing.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(listing.getByRole("option", { name: /entry-050000\.txt/ })).toBeVisible({ timeout: 30_000 });
+    console.log(`  the end of the listing took ${Date.now() - beforeScroll} ms to reach`);
+
+    // The panel is still the one under this terminal, and the case ends with it open: the next case
+    // copes with either state, and a click that only tidies up is a click that can only fail.
+    await expect(page.getByTitle("Close the file panel")).toBeVisible();
   } finally {
     await close();
   }

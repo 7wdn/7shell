@@ -22,5 +22,8 @@ services:
       # The image turns port forwarding off; a lab that cannot forward cannot test a jump host or
       # a tunnel, so the setting is turned back on here rather than by editing the container.
       - ./sshd_config.d:/config/sshd/sshd_config.d:ro
+      # The fixtures a test needs beyond the container itself. Same reasoning as the line above: a
+      # test that has to build its own fifty thousand files is testing the building.
+      - ./init.d:/custom-cont-init.d:ro
     # Keep it around between test runs; `make lab-down` removes it when it is not wanted.
     restart: unless-stopped
