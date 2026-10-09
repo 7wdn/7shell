@@ -50,6 +50,7 @@ import {
   terminalClose,
 } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry, MenuSubmenu } from "@/lib/menu/types";
+import { forgetExportPassphrase } from "@/lib/sessions/exportPassphrase";
 import { ShellError } from "@/lib/backend/errors";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
@@ -139,13 +140,48 @@ function dialogButton(text: string): HTMLElement | undefined {
   );
 }
 
-/** The export's own question: whether the passwords go into the file. */
-function exportCheckbox(): HTMLInputElement {
-  const box = confirmDialog().querySelector<HTMLInputElement>('input[type="checkbox"]');
-  if (!box) {
-    throw new Error("the export dialog has no question about passwords");
+/**
+ * The dialog that says something in particular.
+ *
+ * A question with a step of its own has two of them on screen for a moment — the first is still
+ * animating out when the second arrives — so the one under test is found by what it says.
+ */
+function dialogSaying(text: string): HTMLElement {
+  const dialog = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find((candidate) =>
+    candidate.textContent?.includes(text),
+  );
+  if (!dialog) {
+    throw new Error(`no dialog on screen says ${text}`);
   }
-  return box;
+  return dialog;
+}
+
+/**
+ * Waits for every question to be off screen.
+ *
+ * Reopening the export question while the last one is still animating out is how a case ends up
+ * reading the fields of a dialog that is on its way out — and passing for the wrong reason.
+ */
+async function questionsClosed(): Promise<void> {
+  await vi.waitFor(() => expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(0));
+}
+
+/** The export's own question: the passphrase the file would be sealed under. */
+function passphraseField(): HTMLInputElement {
+  const field = confirmDialog().querySelector<HTMLInputElement>("#export-passphrase");
+  if (!field) {
+    throw new Error("the export dialog has no passphrase field");
+  }
+  return field;
+}
+
+/** The same field a second time, because a passphrase nobody can retype is one nobody can use. */
+function passphraseConfirmation(): HTMLInputElement {
+  const field = confirmDialog().querySelector<HTMLInputElement>("#export-passphrase-confirm");
+  if (!field) {
+    throw new Error("the export dialog does not ask for the passphrase twice");
+  }
+  return field;
 }
 
 function rowElement(key: string): HTMLElement {
@@ -447,6 +483,9 @@ beforeEach(() => {
   document.body.append(host);
   resetBackend();
   collapseRequested.mockClear();
+  // The remembered export passphrase outlives a case the way it outlives a dialog, so a case that
+  // exported has to not be the reason the next one finds a field already filled in.
+  forgetExportPassphrase();
   // jsdom runs no animation frames unless it was asked to; the drag scrolls on them.
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 1));
   vi.stubGlobal("cancelAnimationFrame", (handle: number) => window.clearTimeout(handle));
@@ -1501,11 +1540,12 @@ describe("importing and exporting the library", () => {
     expect(pick(entries, "export-sessions").disabled).toBe(true);
   });
 
-  it("asks about the passwords before exporting, and writes with the answer that was given", async () => {
+  it("seals the file under the passphrase it was given", async () => {
     vi.mocked(sessionsExport).mockResolvedValue({
       sessions: 2,
       groups: 1,
-      secrets: 1,
+      secrets: 2,
+      encrypted: true,
       fileName: "7shell-sessions.json",
     });
     await render([work], [web, db]);
@@ -1514,25 +1554,154 @@ describe("importing and exporting the library", () => {
     pick(entries, "export-sessions").run();
     await nextTick();
 
-    // The question starts at the answer that gives nothing away, every time it is asked.
-    const ask = exportCheckbox();
-    expect(ask.checked).toBe(false);
-
-    ask.checked = true;
-    ask.dispatchEvent(new Event("change"));
-    await nextTick();
-    dialogButton("Export sessions")?.click();
+    // Empty because this session has not exported anything yet: what a successful export was
+    // sealed under comes back the next time this is asked.
+    expect(passphraseField().value).toBe("");
+    await typeInto(passphraseField(), "correct horse");
+    await typeInto(passphraseConfirmation(), "correct horse");
+    dialogButton("Export encrypted")?.click();
 
     await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
-    expect(vi.mocked(sessionsExport).mock.calls[0]).toEqual(["Export sessions", "7shell-sessions.json", true]);
-    await vi.waitFor(() => expect(toastMessage()).toContain("2 sessions written to 7shell-sessions.json"));
+    expect(vi.mocked(sessionsExport).mock.calls[0]).toEqual([
+      "Export sessions",
+      "7shell-sessions.json",
+      "correct horse",
+    ]);
+    await vi.waitFor(() => expect(toastMessage()).toContain("2 sessions written to 7shell-sessions.json, encrypted"));
   });
 
-  it("leaves the passwords behind when the question is left as it was asked", async () => {
+  it("offers the passphrase that worked last time, so a second export is not typed twice", async () => {
+    vi.mocked(sessionsExport).mockResolvedValue({
+      sessions: 2,
+      groups: 1,
+      secrets: 2,
+      encrypted: true,
+      fileName: "7shell-sessions.json",
+    });
+    await render([work], [web, db]);
+
+    const first = await clickMenu(transferButton());
+    pick(first, "export-sessions").run();
+    await nextTick();
+    await typeInto(passphraseField(), "correct horse");
+    await typeInto(passphraseConfirmation(), "correct horse");
+    dialogButton("Export encrypted")?.click();
+    await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
+    await questionsClosed();
+
+    const second = await clickMenu(transferButton());
+    pick(second, "export-sessions").run();
+    await nextTick();
+
+    expect(passphraseField().value).toBe("correct horse");
+    expect(passphraseConfirmation().value, "and the confirmation comes with it").toBe("correct horse");
+  });
+
+  it("remembers nothing from a file dialog that was dismissed", async () => {
+    vi.mocked(sessionsExport).mockResolvedValue(undefined);
+    await render([work], [web, db]);
+
+    const first = await clickMenu(transferButton());
+    pick(first, "export-sessions").run();
+    await nextTick();
+    await typeInto(passphraseField(), "correct horse");
+    await typeInto(passphraseConfirmation(), "correct horse");
+    dialogButton("Export encrypted")?.click();
+    await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
+    await questionsClosed();
+
+    const second = await clickMenu(transferButton());
+    pick(second, "export-sessions").run();
+    await nextTick();
+
+    expect(passphraseField().value, "a passphrase that wrote nothing is not one that worked").toBe("");
+  });
+
+  it("leaves what was remembered alone when an export carries no credentials", async () => {
+    vi.mocked(sessionsExport)
+      .mockResolvedValueOnce({
+        sessions: 2,
+        groups: 1,
+        secrets: 2,
+        encrypted: true,
+        fileName: "7shell-sessions.json",
+      })
+      .mockResolvedValueOnce({
+        sessions: 2,
+        groups: 1,
+        secrets: 0,
+        encrypted: false,
+        fileName: "7shell-sessions.json",
+      });
+    await render([work], [web, db]);
+
+    // One sealed export, which is what puts a passphrase in mind for this session.
+    const first = await clickMenu(transferButton());
+    pick(first, "export-sessions").run();
+    await nextTick();
+    await typeInto(passphraseField(), "correct horse");
+    await typeInto(passphraseConfirmation(), "correct horse");
+    dialogButton("Export encrypted")?.click();
+    await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
+    await questionsClosed();
+
+    // Then one that leaves the logins behind, which says nothing about the passphrase either way.
+    const second = await clickMenu(transferButton());
+    pick(second, "export-sessions").run();
+    await nextTick();
+    dialogButton("Export without a passphrase")?.click();
+    const warning = await vi.waitFor(() => dialogSaying("none of the saved passwords"));
+    [...warning.querySelectorAll<HTMLElement>("button")]
+      .find((button) => button.textContent?.trim() === "Export without a passphrase")
+      ?.click();
+    await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalledTimes(2));
+    await questionsClosed();
+
+    const third = await clickMenu(transferButton());
+    pick(third, "export-sessions").run();
+    await nextTick();
+
+    expect(passphraseField().value).toBe("correct horse");
+  });
+
+  it("will not seal anything under a passphrase too short to be one, and stays open to say so", async () => {
+    await render([work], [web, db]);
+
+    const entries = await clickMenu(transferButton());
+    pick(entries, "export-sessions").run();
+    await nextTick();
+
+    await typeInto(passphraseField(), "abc");
+    await typeInto(passphraseConfirmation(), "abc");
+    dialogButton("Export encrypted")?.click();
+    await nextTick();
+
+    expect(confirmDialog().textContent).toContain("at least 4 characters");
+    expect(vi.mocked(sessionsExport)).not.toHaveBeenCalled();
+  });
+
+  it("will not seal anything when the two passphrases differ, and says which two", async () => {
+    await render([work], [web, db]);
+
+    const entries = await clickMenu(transferButton());
+    pick(entries, "export-sessions").run();
+    await nextTick();
+
+    await typeInto(passphraseField(), "correct horse");
+    await typeInto(passphraseConfirmation(), "correct hosre");
+    dialogButton("Export encrypted")?.click();
+    await nextTick();
+
+    expect(confirmDialog().textContent).toContain("do not match");
+    expect(vi.mocked(sessionsExport)).not.toHaveBeenCalled();
+  });
+
+  it("writes the file without a passphrase once the cost of that is said out loud", async () => {
     vi.mocked(sessionsExport).mockResolvedValue({
       sessions: 2,
       groups: 1,
       secrets: 0,
+      encrypted: false,
       fileName: "7shell-sessions.json",
     });
     await render([work], [web, db]);
@@ -1540,26 +1709,33 @@ describe("importing and exporting the library", () => {
     const entries = await clickMenu(transferButton());
     pick(entries, "export-sessions").run();
     await nextTick();
-    dialogButton("Export sessions")?.click();
+
+    dialogButton("Export without a passphrase")?.click();
+
+    // What the second answer costs is said before it is given, rather than discovered on the other
+    // machine. Waited for, because the first question is still animating out when this one arrives.
+    const warning = await vi.waitFor(() => dialogSaying("none of the saved passwords"));
+
+    [...warning.querySelectorAll<HTMLElement>("button")]
+      .find((button) => button.textContent?.trim() === "Export without a passphrase")
+      ?.click();
 
     await vi.waitFor(() => expect(vi.mocked(sessionsExport)).toHaveBeenCalled());
-    expect(vi.mocked(sessionsExport).mock.calls[0]?.[2]).toBe(false);
+    expect(vi.mocked(sessionsExport).mock.calls[0]?.[2]).toBeNull();
+    await vi.waitFor(() => expect(toastMessage()).toContain("without any passwords"));
   });
 
   it("imports what a file holds and says what came with it, warnings and all", async () => {
     vi.mocked(sessionsImport).mockResolvedValue({
-      sessions: 3,
-      groups: 2,
-      secrets: 1,
-      missingKeys: 1,
-      droppedHops: 0,
+      kind: "imported",
+      summary: { sessions: 3, groups: 2, secrets: 1, missingKeys: 1, droppedHops: 0 },
     });
     await render([], []);
 
     const entries = await clickMenu(transferButton());
     pick(entries, "import-sessions").run();
 
-    await vi.waitFor(() => expect(vi.mocked(sessionsImport)).toHaveBeenCalledWith("Import sessions"));
+    await vi.waitFor(() => expect(vi.mocked(sessionsImport)).toHaveBeenCalledWith("Import sessions", null));
     await vi.waitFor(() =>
       expect(toastMessage()).toBe(
         "Imported 3 sessions, 2 groups, 1 saved password, 1 session names a key this device does not hold.",

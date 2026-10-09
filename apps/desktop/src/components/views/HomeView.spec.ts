@@ -185,7 +185,9 @@ describe("the home page", () => {
     render();
     buttonIn(card("Common operations"), "Import sessions…").click();
 
-    await vi.waitFor(() => expect(sessionsImportMock).toHaveBeenCalledWith("Import sessions"));
+    // The second argument is the passphrase, and there is none yet: a file that turns out to be
+    // sealed stops on the frame's own question and comes back here with the answer.
+    await vi.waitFor(() => expect(sessionsImportMock).toHaveBeenCalledWith("Import sessions", null));
   });
 
   it("lists the commands that were sent, newest first", async () => {

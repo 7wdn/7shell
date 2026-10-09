@@ -18,9 +18,10 @@ use sevenshell_types::{
     CpuModel, CpuStates, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure,
     HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
     OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
-    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionGroup, SessionLayout,
-    Snippet, SnippetGroup, SocketRow, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
+    SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet, SnippetGroup, SocketRow,
+    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette,
+    TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -160,6 +161,54 @@ fn an_upload_that_found_a_name_serializes_with_camel_case_fields() {
         serde_json::to_value(UploadAnswer::Cancel).expect("the answer serializes"),
         serde_json::json!("cancel")
     );
+}
+
+#[test]
+fn an_import_that_stopped_to_ask_serializes_with_camel_case_fields() {
+    // The shape the first half of this file is about: an enum whose variants carry fields, where
+    // `rename_all` alone would put `file_name` and `missing_keys` on the wire and the interface
+    // would read `undefined` for both.
+    let asked = check(
+        &SessionImportOutcome::NeedsPassphrase {
+            file_name: "library.json".to_owned(),
+        },
+        "NeedsPassphrase",
+    );
+    assert_eq!(asked["kind"], serde_json::json!("needsPassphrase"));
+    assert_eq!(asked["fileName"], serde_json::json!("library.json"));
+
+    let imported = check(
+        &SessionImportOutcome::Imported {
+            summary: SessionImportSummary {
+                sessions: 1,
+                groups: 2,
+                secrets: 3,
+                missing_keys: 4,
+                dropped_hops: 5,
+            },
+        },
+        "Imported",
+    );
+    assert_eq!(imported["kind"], serde_json::json!("imported"));
+    assert_eq!(imported["summary"]["missingKeys"], serde_json::json!(4));
+    assert_eq!(imported["summary"]["droppedHops"], serde_json::json!(5));
+}
+
+#[test]
+fn an_export_summary_says_whether_a_passphrase_stands_in_front_of_the_file() {
+    let written = check(
+        &SessionExportSummary {
+            sessions: 3,
+            groups: 1,
+            secrets: 3,
+            encrypted: true,
+            file_name: "library.json".to_owned(),
+        },
+        "SessionExportSummary",
+    );
+
+    assert_eq!(written["fileName"], serde_json::json!("library.json"));
+    assert_eq!(written["encrypted"], serde_json::json!(true));
 }
 
 #[test]

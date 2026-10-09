@@ -110,25 +110,50 @@ read it back without ceremony — and it is why `settings.json` may never grow a
 password, a key, or a path that names something private.
 
 **The one way a secret leaves this process is a file somebody asked for.** Exporting the session
-library writes a plain JSON file — sessions, groups, and, only when the checkbox was ticked, the
-stored passwords and key passphrases — through a native save dialog that runs in Rust. The dialog
-is the only moment the writing side learns a path, the file is never read back into the interface,
-and the interface is told a count and a file name. Three consequences are deliberate:
+library writes one JSON file through a native save dialog that runs in Rust. The dialog is the only
+moment the writing side learns a path, the file is never read back into the interface, and the
+interface is told a count and a file name. What that file may contain is a rule rather than a
+setting:
 
-- The checkbox starts every time unchecked, and the sentence beside it says the passwords will be
-  written in plain text. A remembered "yes" is how a password ends up in a file somebody meant to
-  share, so the answer is never inherited from last time.
-- An export without them carries no `secrets` array at all rather than an array of blanks: a file
-  that was asked to leave them behind reads as exactly that, not as a file whose passwords were
-  lost.
-- Importing is the same door in reverse and is narrower. A chosen file's ids are replaced with
-  fresh ones where they collide, references only ever point at things inside the same file, and
-  nothing already in the vault is modified or removed — a file that came from somewhere else can
-  add to the library but never rearrange it.
+- **Credentials travel sealed, or they do not travel.** With a passphrase, the stored passwords and
+  key passphrases go inside a payload encrypted under it (Argon2id, then XChaCha20-Poly1305, with the
+  derivation cost recorded in the file so a later release can raise it); without one, the file holds
+  the sessions and groups and not one credential. There is deliberately no third form: no argument to
+  `sessions_export`, and no shape the interface can send, produces a file with a password in the
+  clear. A file like that cannot be told apart from one that is safe to mail, by the only person who
+  could still stop it.
+- **A sealed file says nothing about what is inside it.** No session count, no group name, no user
+  name — a payload and the parameters needed to open it. The associated data binds it to this format,
+  so a ciphertext lifted out of a vault file does not open here, and this does not open as a document.
+- **A passphrase that worked is remembered for the session, in memory alone.** Exporting twice in one
+  sitting means typing it once, so the length rule is not quietly argued down by having to retype it.
+  What comes back is only ever the passphrase of a write that actually happened — a file dialog
+  somebody closed is not one — and it is held in a module variable: not the store, not
+  `localStorage` or `sessionStorage`, and never anywhere near the vault or the settings file. The
+  import question is never prefilled, in either direction.
+- **The export with no passphrase says what it is missing, before it is written.** The dialog's second
+  answer is confirmed once more with the consequence spelled out: the logins stay on this machine and
+  will have to be entered again on the other one.
+- **Reading is more forgiving than writing.** An export written before that rule existed — a plain
+  file with the passwords in it — still imports, secrets and all. It is the only copy of a library
+  somebody may no longer be able to reach, and refusing it would punish them for having used the
+  feature as it was.
+- Importing is the same door in reverse and is narrower. A chosen file's ids are replaced with fresh
+  ones where they collide, references only ever point at things inside the same file, and nothing
+  already in the vault is modified or removed — a file that came from somewhere else can add to the
+  library but never rearrange it. A file that is sealed stops the import on a question rather than
+  failing it: where that file is waits in the shell between the two calls, so the interface is still
+  never handed a path, and a wrong passphrase is said in the field it was typed in.
 
 The bundle is built in `sevenshell-vault`, which already holds the secrets, rather than in the host
-that moves the bytes; what travels up is a summary. The values are wiped from memory when the
-bundle is dropped, and the type never implements `Debug`.
+that moves the bytes; what travels up is a summary. The values are wiped from memory when the bundle
+is dropped, and the type never implements `Debug`.
+
+**The same rule holds for what comes next.** A local backup and a cloud sync are both "a copy of the
+library leaving the machine", so they are held to the rule above: sessions and groups always,
+credentials only inside a payload sealed under a passphrase. `ExportProtection` is the shape to reuse
+— a `bool` would make "write the passwords into a file anyone can read" a thing a caller could ask
+for by getting one argument wrong.
 
 **Secrets are scrubbed, not merely avoided.** `crates/sevenshell-error/src/redact.rs` removes
 private key blocks, credential assignments and bearer tokens from any string on its way into an

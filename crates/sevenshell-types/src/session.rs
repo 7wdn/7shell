@@ -421,8 +421,10 @@ pub struct SecretInput {
 pub struct SessionExportSummary {
     pub sessions: u32,
     pub groups: u32,
-    /// How many stored credentials travelled. Zero when the export was asked to leave them behind.
+    /// How many stored credentials travelled. Zero unless a passphrase sealed them into the file.
     pub secrets: u32,
+    /// Whether a passphrase stands between the file and what is in it.
+    pub encrypted: bool,
     /// The file's own name, never a path: the interface has no business knowing where it is.
     pub file_name: String,
 }
@@ -443,4 +445,23 @@ pub struct SessionImportSummary {
     pub missing_keys: u32,
     /// Imported sessions that jumped through a session the file did not carry.
     pub dropped_hops: u32,
+}
+
+/// What came of asking to import a file.
+///
+/// Two answers and neither is a failure: either the library was written, or the file is sealed and
+/// the passphrase is the next question. A dismissed file dialog is the third answer, and it is the
+/// absence of this value rather than a variant of it — nothing happened, and there is nothing to
+/// say about it.
+///
+/// `file_name` travels with the question because the person answering it chose that file a moment
+/// ago and is owed the reminder of which one it was; it is the file's name and never its path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// `rename_all` renames the variants; `rename_all_fields` renames the fields inside them.
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SessionImportOutcome {
+    /// The library was written, and this is what it added.
+    Imported { summary: SessionImportSummary },
+    /// The file is sealed under a passphrase this build has not been given yet.
+    NeedsPassphrase { file_name: String },
 }

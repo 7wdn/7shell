@@ -100,6 +100,10 @@ error_catalog! {
     SessionBundleInvalid => "SESSION-BUNDLE-INVALID", "errors.session.bundleInvalid";
     #[doc = "A session export file could not be read or written."]
     SessionBundleIo => "SESSION-BUNDLE-IO", "errors.session.bundleIo";
+    #[doc = "The passphrase did not open an encrypted session export."]
+    SessionBundlePassphrase => "SESSION-BUNDLE-PASSPHRASE", "errors.session.bundlePassphrase";
+    #[doc = "The passphrase offered for an export is below the length this build writes files with."]
+    SessionBundlePassphraseShort => "SESSION-BUNDLE-PASSPHRASE-SHORT", "errors.session.bundlePassphraseShort";
 
     // -- Policy ------------------------------------------------------------
     #[doc = "The active policy forbids this action."]

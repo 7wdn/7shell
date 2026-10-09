@@ -35,7 +35,7 @@ import type {
   Session,
   SessionExportSummary,
   SessionGroup,
-  SessionImportSummary,
+  SessionImportOutcome,
   SftpListing,
   SftpOutcome,
   TerminalClosed,
@@ -231,16 +231,17 @@ export function groupDelete(id: string): Promise<void> {
 /**
  * Asks for a file to write the library into, in Rust, and writes it.
  *
- * `includeSecrets` is the only thing the interface decides: the passwords themselves are read out
- * of the vault and written by the other side, so they never arrive here. Resolves to `undefined`
- * when the dialog was dismissed.
+ * `passphrase` is the only thing the interface decides about the credentials, and there is no value
+ * of it that writes one in the clear: with a passphrase the file carries the stored logins sealed,
+ * without one it carries none. The passwords themselves are read out of the vault and written by the
+ * other side, so they never arrive here. Resolves to `undefined` when the dialog was dismissed.
  */
 export function sessionsExport(
   title: string,
   fileName: string,
-  includeSecrets: boolean,
+  passphrase: string | null,
 ): Promise<SessionExportSummary | undefined> {
-  return invoke<SessionExportSummary | null>("sessions_export", { title, fileName, includeSecrets }).then(
+  return invoke<SessionExportSummary | null>("sessions_export", { title, fileName, passphrase }).then(
     (summary) => summary ?? undefined,
   );
 }
@@ -248,10 +249,15 @@ export function sessionsExport(
 /**
  * Asks which file to read a library out of, in Rust, and adds what it holds.
  *
- * Resolves to `undefined` when the dialog was dismissed.
+ * `passphrase` is null on the first call, which either imports what it read or answers that the file
+ * is sealed and is now waiting. The second call carries the answer and reads that same file again —
+ * the shell remembers which one, so no dialog re-opens. Resolves to `undefined` when the file dialog
+ * was dismissed.
  */
-export function sessionsImport(title: string): Promise<SessionImportSummary | undefined> {
-  return invoke<SessionImportSummary | null>("sessions_import", { title }).then((summary) => summary ?? undefined);
+export function sessionsImport(title: string, passphrase: string | null): Promise<SessionImportOutcome | undefined> {
+  return invoke<SessionImportOutcome | null>("sessions_import", { title, passphrase }).then(
+    (outcome) => outcome ?? undefined,
+  );
 }
 
 // -- Keys --------------------------------------------------------------------

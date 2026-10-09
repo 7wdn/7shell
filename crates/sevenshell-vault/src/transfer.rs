@@ -1,10 +1,22 @@
 //! A bundle of sessions, groups and their secrets, on its way to or from a file.
 //!
 //! Export and import live here rather than in the host that opens the file dialog, because this is
-//! where the secrets already are: a bundle written with `include_secrets` carries logins, and the
-//! code that can produce one should be the code that holds them and wipes them. The host moves
-//! bytes and picks a file; nothing above this crate sees a secret in either direction, and the file
-//! is the only copy of one that ever leaves.
+//! where the secrets already are: a file written under a passphrase carries logins, and the code
+//! that can produce one should be the code that holds them and wipes them. The host moves bytes and
+//! picks a file; nothing above this crate sees a secret in either direction, and the file is the
+//! only copy of one that ever leaves.
+//!
+//! **Credentials travel sealed, or they do not travel.** A file this build writes carries the
+//! stored passwords in one of exactly two ways: not at all, or inside a payload sealed under a
+//! passphrase whoever wrote the file chose. There is deliberately no third form. The one this crate
+//! used to have — a plain JSON file with the passwords sitting in it — is a file that cannot be told
+//! apart from one that is safe to mail, by the only person who could still stop it: the one tidying
+//! up their downloads folder a week later. So the two forms are two functions, and no way to write
+//! the third.
+//!
+//! Reading is more forgiving than writing. A file written before that rule existed still imports,
+//! secrets and all: it is the only copy of a library somebody may no longer be able to reach, and
+//! refusing it would punish them for having used the feature as it was.
 //!
 //! Three rules shape what an import does, and all three are about not surprising the person who
 //! asked for it:
@@ -26,16 +38,36 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{AuthMethod, Session, SessionGroup};
 use uuid::Uuid;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
+use crate::crypto::{self, KdfParams};
 use crate::document::{Document, SessionSecret};
 
 /// The `format` field this build writes, and the only one it reads.
 pub const BUNDLE_FORMAT: &str = "sevenshell-sessions";
 
-/// The bundle layout this build writes. A newer number is refused rather than guessed at, the same
-/// way a newer vault document is.
+/// The layout of an unsealed bundle: sessions and groups, and no credential anywhere in it.
+///
+/// Still the number this build writes for that form, and still the number the files it wrote
+/// before the rule above existed carry — those are read, not written.
 pub const BUNDLE_VERSION: u32 = 1;
+
+/// The layout of a sealed bundle: an envelope naming its KDF parameters, and one payload.
+///
+/// A separate number rather than a field on the old one, because a build that predates this cannot
+/// open a payload and must not be left thinking it read the whole file: `parse` refuses a version
+/// it does not know, which turns "the import silently dropped every password" into a sentence.
+pub const BUNDLE_SEALED_VERSION: u32 = 2;
+
+/// The only `protection` value this build writes or opens.
+pub const PROTECTION_PASSPHRASE: &str = "passphrase";
+
+/// The shortest passphrase this build will seal a file under.
+///
+/// Not a claim about strength — a four-character passphrase is not a secret worth deriving a key
+/// from. It is a floor against a slip, and the one thing it really rules out is an empty field
+/// accepted because nobody said no.
+pub const MIN_PASSPHRASE_LEN: usize = 4;
 
 /// A session file larger than this is not one. A bundle is a few kilobytes at its most; the limit
 /// is here so a mistyped path that lands on a disk image is refused before it is read into memory.
@@ -117,23 +149,16 @@ impl std::fmt::Debug for SessionBundle {
 }
 
 impl SessionBundle {
-    /// Reads a file's text as a bundle, refusing anything this build does not understand.
+    /// Reads a file's text as a plain bundle, refusing anything this build does not understand.
     ///
-    /// Both refusals are before any of it is applied: a wrong `format` is somebody else's file, and
-    /// a newer `version` is one this build would drop fields from on the way in. The detail carries
-    /// what the parser said, which for a truncated file is the only clue there is.
+    /// The plain form only: a sealed file read this way would parse — every field it does not have
+    /// is optional — and come back as a library with nothing in it. [`open`] is what tells the two
+    /// apart, and it is the door a chosen file goes through.
     pub fn parse(text: &str) -> Result<Self, ShellError> {
         let bundle: Self = serde_json::from_str(text)
             .map_err(|error| ShellError::session_bundle_invalid(format!("the file could not be read: {error}")))?;
 
-        if bundle.format != BUNDLE_FORMAT {
-            return Err(ShellError::session_bundle_invalid(
-                "the file is not a 7Shell session export",
-            ));
-        }
-        if bundle.version > BUNDLE_VERSION {
-            return Err(ShellError::store_schema_newer(bundle.version, BUNDLE_VERSION));
-        }
+        check_bundle(&bundle)?;
         Ok(bundle)
     }
 
@@ -144,14 +169,235 @@ impl SessionBundle {
     }
 }
 
+/// What a bundle's own fields promise about it, checked wherever one is read.
+fn check_bundle(bundle: &SessionBundle) -> Result<(), ShellError> {
+    if bundle.format != BUNDLE_FORMAT {
+        return Err(ShellError::session_bundle_invalid(
+            "the file is not a 7Shell session export",
+        ));
+    }
+    if bundle.version > BUNDLE_VERSION {
+        return Err(ShellError::store_schema_newer(bundle.version, BUNDLE_VERSION));
+    }
+    Ok(())
+}
+
+/// A sealed bundle: the parameters to open it with, and the payload itself.
+///
+/// Everything a reader needs is in here, including the derivation cost — the file is the authority
+/// on how it was written, so raising the defaults later cannot make an existing export unopenable.
+/// What is *not* in here is any hint about what the payload holds: not a session count, not a
+/// group name, not a user name. A file somebody finds learns nothing from being looked at.
+///
+/// `Debug` is derived because nothing here is a secret: the payload is ciphertext, and whoever is
+/// reading a log line with this in it is already holding the file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BundleEnvelope {
+    pub format: String,
+    pub version: u32,
+    /// Seconds since the Unix epoch, for whoever reads the file by hand.
+    pub exported_at: u64,
+    /// Written out rather than left to be inferred: a person who opens the file should be able to
+    /// see that a passphrase stands between them and what is inside it.
+    pub protection: String,
+    pub kdf: KdfParams,
+    /// Base64, 16 bytes, fresh for this file.
+    pub salt: String,
+    /// Base64 of `nonce || ciphertext || tag` around the plain bundle, as JSON.
+    pub payload: String,
+}
+
+impl BundleEnvelope {
+    /// Opens the payload with a passphrase, giving back the library that went in.
+    ///
+    /// A wrong passphrase, a payload truncated on the way here and one that was sealed under
+    /// another context are one answer, the same way they are for the vault and for the same
+    /// reason. The caller that can act on it is the question being asked next, which keeps its
+    /// field on screen and lets the person try again.
+    pub fn unseal(&self, passphrase: &str) -> Result<SessionBundle, ShellError> {
+        let key = crypto::derive_key(passphrase, &self.salt, &self.kdf)?;
+        let payload = crypto::decrypt_bundle(&key, &self.payload)?;
+
+        let bundle: SessionBundle = serde_json::from_slice(payload.as_slice())
+            .map_err(|error| ShellError::session_bundle_invalid(format!("the file could not be read: {error}")))?;
+
+        // What the payload says about itself, checked after it opens: a payload sealed by a future
+        // build under this same envelope would otherwise be read as this build's layout.
+        check_bundle(&bundle)?;
+        Ok(bundle)
+    }
+
+    /// The text to write into the file. Pretty-printed for the same reason the plain form is.
+    pub fn to_json(&self) -> Result<String, ShellError> {
+        serde_json::to_string_pretty(self).map_err(|error| ShellError::session_bundle_io(error.to_string()))
+    }
+}
+
+/// What a chosen file turned out to be.
+///
+/// The two forms are answered separately rather than as one "bundle with maybe a passphrase",
+/// because what happens next differs: one is imported now, the other is a question to ask first.
+///
+/// `Debug` is derived because neither variant can print a secret: a bundle prints its counts, and
+/// an envelope holds ciphertext.
+#[derive(Debug)]
+pub enum OpenedBundle {
+    /// Sessions and groups, readable as they are.
+    Plain(Box<SessionBundle>),
+    /// A payload and the parameters needed to open it.
+    Sealed(Box<BundleEnvelope>),
+}
+
+/// The part of a bundle that says what the file is, read before anything else is.
+///
+/// A header rather than a parse of the whole file, because the two layouts do not overlap in a way
+/// a single parse can survive: the fields a sealed file does not have are the optional ones.
+#[derive(Deserialize)]
+struct BundleHeader {
+    format: String,
+    version: u32,
+}
+
+/// Reads a chosen file's text, refusing anything this build does not understand.
+///
+/// Both refusals happen before any of it is applied: a wrong `format` is somebody else's file, and
+/// a newer `version` is one this build would drop fields from on the way in. The detail carries
+/// what the parser said, which for a truncated file is the only clue there is.
+pub fn open(text: &str) -> Result<OpenedBundle, ShellError> {
+    let header: BundleHeader = serde_json::from_str(text)
+        .map_err(|error| ShellError::session_bundle_invalid(format!("the file could not be read: {error}")))?;
+
+    if header.format != BUNDLE_FORMAT {
+        return Err(ShellError::session_bundle_invalid(
+            "the file is not a 7Shell session export",
+        ));
+    }
+    if header.version > BUNDLE_SEALED_VERSION {
+        return Err(ShellError::store_schema_newer(header.version, BUNDLE_SEALED_VERSION));
+    }
+
+    match header.version {
+        BUNDLE_VERSION => Ok(OpenedBundle::Plain(Box::new(SessionBundle::parse(text)?))),
+        BUNDLE_SEALED_VERSION => {
+            let envelope: BundleEnvelope = serde_json::from_str(text)
+                .map_err(|error| ShellError::session_bundle_invalid(format!("the file could not be read: {error}")))?;
+            if envelope.protection != PROTECTION_PASSPHRASE {
+                return Err(ShellError::session_bundle_invalid(format!(
+                    "the file is protected with '{}', which this build cannot open",
+                    envelope.protection
+                )));
+            }
+            Ok(OpenedBundle::Sealed(Box::new(envelope)))
+        }
+        other => Err(ShellError::session_bundle_invalid(format!(
+            "the file says it is version {other}, which is not one this application writes"
+        ))),
+    }
+}
+
+/// An export on its way out: the text for the file, and the counts the interface is told.
+///
+/// Counts rather than the bundle itself, because a sealed file's text is not a bundle anything
+/// above this crate could read back — the numbers are all that is left to say about it.
+pub struct ExportedBundle {
+    pub text: String,
+    pub sessions: u32,
+    pub groups: u32,
+    pub secrets: u32,
+    /// Whether a passphrase stands between the file and what is in it.
+    pub encrypted: bool,
+}
+
+/// Hand-written for the reason [`SessionBundle`]'s is: the text here is either a library with no
+/// credential in it or a sealed payload, and a future variant that carried a third thing must not
+/// be printable by default.
+impl std::fmt::Debug for ExportedBundle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExportedBundle")
+            .field("sessions", &self.sessions)
+            .field("groups", &self.groups)
+            .field("secrets", &self.secrets)
+            .field("encrypted", &self.encrypted)
+            .field("text", &format_args!("<{} bytes>", self.text.len()))
+            .finish()
+    }
+}
+
+/// The plain form: every saved session and group, and not one credential.
+///
+/// The values are left out entirely rather than blanked: a bundle that carries a `secrets` array of
+/// empty strings reads as a file whose passwords were lost, and one with no array at all reads as a
+/// file that was asked to leave them behind.
+pub(crate) fn build_plain_bundle(document: &Document, now: u64) -> Result<ExportedBundle, ShellError> {
+    let bundle = assemble(document, false, now);
+
+    Ok(ExportedBundle {
+        text: bundle.to_json()?,
+        sessions: bundle.sessions.len() as u32,
+        groups: bundle.groups.len() as u32,
+        secrets: bundle.secrets.len() as u32,
+        encrypted: false,
+    })
+}
+
+/// The sealed form: the same, plus every credential the library holds, under a passphrase.
+///
+/// The passphrase is checked before the secrets are read out of the document, so a slip in the
+/// dialog cannot be answered with a file that already has the logins in it.
+pub(crate) fn build_sealed_bundle(
+    document: &Document,
+    passphrase: &str,
+    kdf: &KdfParams,
+    now: u64,
+) -> Result<ExportedBundle, ShellError> {
+    if passphrase.chars().count() < MIN_PASSPHRASE_LEN {
+        return Err(ShellError::session_bundle_passphrase_short(MIN_PASSPHRASE_LEN));
+    }
+
+    let bundle = assemble(document, true, now);
+    let counts = (
+        bundle.sessions.len() as u32,
+        bundle.groups.len() as u32,
+        bundle.secrets.len() as u32,
+    );
+
+    // The one buffer here that holds a login in the clear: wiped when it goes out of scope, and
+    // never formatted anywhere.
+    let payload = Zeroizing::new(
+        serde_json::to_vec(&bundle)
+            .map_err(|error| ShellError::session_bundle_io(format!("the sessions could not be written: {error}")))?,
+    );
+
+    let salt = crypto::random_salt()?;
+    let key = crypto::derive_key(passphrase, &salt, kdf)?;
+    let envelope = BundleEnvelope {
+        format: BUNDLE_FORMAT.to_owned(),
+        version: BUNDLE_SEALED_VERSION,
+        exported_at: now,
+        protection: PROTECTION_PASSPHRASE.to_owned(),
+        kdf: kdf.clone(),
+        salt,
+        payload: crypto::encrypt(&key, payload.as_slice(), crypto::AAD_BUNDLE)?,
+    };
+
+    Ok(ExportedBundle {
+        text: envelope.to_json()?,
+        sessions: counts.0,
+        groups: counts.1,
+        secrets: counts.2,
+        encrypted: true,
+    })
+}
+
 /// What a bundle holds, read off a document.
 ///
-/// Passing `include_secrets: false` leaves the values out entirely rather than blanking them: a
-/// bundle that carries a `secrets` array of empty strings reads as a file whose passwords were
-/// lost, and one with no array at all reads as a file that was asked to leave them behind.
-pub(crate) fn build_bundle(document: &Document, include_secrets: bool, now: u64) -> SessionBundle {
+/// `with_secrets` is private to this module, which is the point: the plain form is built without
+/// the credentials and the sealed form with them, and there is no third call that could put them
+/// into a file that anyone can read.
+fn assemble(document: &Document, with_secrets: bool, now: u64) -> SessionBundle {
     let sessions = document.sessions();
-    let secrets = if include_secrets {
+    let secrets = if with_secrets {
         sessions
             .iter()
             .filter_map(|session| {
@@ -326,6 +572,17 @@ fn free_id(id: &str, used: &mut HashSet<String>) -> String {
 mod tests {
     use super::*;
     use sevenshell_types::{SessionAuth, TerminalSettings};
+
+    /// Derivation costs a file does not need to be a real one to be read back: the tests here are
+    /// about the layout and the rules, and a full-cost Argon2id per case would only make them slow.
+    fn fast_params() -> KdfParams {
+        KdfParams {
+            memory_kib: 8,
+            iterations: 1,
+            parallelism: 1,
+            ..KdfParams::default()
+        }
+    }
 
     fn session(id: &str, name: &str) -> Session {
         Session {
@@ -555,23 +812,141 @@ mod tests {
     }
 
     #[test]
-    fn an_export_without_secrets_carries_none_and_the_flag_still_reports_none() {
+    fn a_plain_export_carries_no_credential_and_the_flag_still_reports_one_is_stored() {
         let mut document = Document::empty();
         document.save_session(session("a", "web"), Some(SessionSecret::Password("hunter2".to_owned())));
 
-        let with = build_bundle(&document, true, 10);
-        let without = build_bundle(&document, false, 10);
+        let written = build_plain_bundle(&document, 10).expect("write");
+        let bundle = SessionBundle::parse(&written.text).expect("read");
 
-        assert_eq!(with.secrets.len(), 1);
-        assert_eq!(with.secrets[0].value, "hunter2");
-        assert!(with.sessions[0].auth.has_secret);
+        assert!(!written.encrypted);
+        assert_eq!(written.secrets, 0);
         assert!(
-            without.secrets.is_empty(),
+            bundle.secrets.is_empty(),
             "leaving secrets behind means no array at all"
         );
         assert!(
-            without.sessions[0].auth.has_secret,
+            bundle.sessions[0].auth.has_secret,
             "the flag describes this vault's secrets table, not the file"
+        );
+    }
+
+    #[test]
+    fn a_sealed_export_carries_the_credentials_and_opens_with_its_passphrase() {
+        let mut document = Document::empty();
+        document.save_session(session("a", "web"), Some(SessionSecret::Password("hunter2".to_owned())));
+
+        let written = build_sealed_bundle(&document, "correct horse", &fast_params(), 10).expect("seal");
+        let OpenedBundle::Sealed(envelope) = open(&written.text).expect("open") else {
+            panic!("a sealed file must be read as sealed");
+        };
+
+        assert!(written.encrypted);
+        assert_eq!((written.sessions, written.groups, written.secrets), (1, 0, 1));
+        let bundle = envelope.unseal("correct horse").expect("unseal");
+        assert_eq!(bundle.secrets[0].value, "hunter2");
+    }
+
+    #[test]
+    fn a_sealed_file_says_nothing_about_what_is_inside_it() {
+        let mut document = Document::empty();
+        document.save_session(session("a", "web"), Some(SessionSecret::Password("hunter2".to_owned())));
+
+        let written = build_sealed_bundle(&document, "correct horse", &fast_params(), 10).expect("seal");
+
+        for leak in ["hunter2", "web", "example.test", "root"] {
+            assert!(
+                !written.text.contains(leak),
+                "a sealed file must not name what it holds, and it spells out {leak}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_wrong_passphrase_opens_nothing() {
+        let mut document = Document::empty();
+        document.save_session(session("a", "web"), Some(SessionSecret::Password("hunter2".to_owned())));
+        let written = build_sealed_bundle(&document, "correct horse", &fast_params(), 10).expect("seal");
+        let OpenedBundle::Sealed(envelope) = open(&written.text).expect("open") else {
+            panic!("sealed");
+        };
+
+        let error = envelope.unseal("Correct Horse").expect_err("not the passphrase");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionBundlePassphrase);
+    }
+
+    #[test]
+    fn a_passphrase_too_short_to_be_one_is_refused_before_anything_is_read_out() {
+        let mut document = Document::empty();
+        document.save_session(session("a", "web"), Some(SessionSecret::Password("hunter2".to_owned())));
+
+        let error = build_sealed_bundle(&document, "abc", &fast_params(), 10).expect_err("too short");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionBundlePassphraseShort);
+        assert_eq!(error.message_params().get("minimum").map(String::as_str), Some("4"));
+    }
+
+    #[test]
+    fn a_sealed_file_is_not_read_as_a_plain_one_with_nothing_in_it() {
+        // The failure this guards against is silent: every field a sealed envelope does not have is
+        // optional, so a plain read of one would hand back an empty library rather than an error.
+        let document = Document::empty();
+        let written = build_sealed_bundle(&document, "correct horse", &fast_params(), 10).expect("seal");
+
+        let opened = open(&written.text).expect("open");
+
+        assert!(matches!(opened, OpenedBundle::Sealed(_)));
+    }
+
+    #[test]
+    fn a_sealed_file_from_a_future_build_is_refused_rather_than_guessed_at() {
+        let sealed = r#"{"format":"sevenshell-sessions","version":99,"exportedAt":0,"protection":"passphrase"}"#;
+
+        let error = open(sealed).expect_err("newer than this build");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::StoreSchemaNewer);
+    }
+
+    #[test]
+    fn a_protection_this_build_cannot_open_is_refused_by_name() {
+        let sealed = format!(
+            r#"{{"format":"sevenshell-sessions","version":{},"exportedAt":0,"protection":"age",
+                 "kdf":{{"name":"argon2id","memoryKib":65536,"iterations":3,"parallelism":1}},
+                 "salt":"AAAAAAAAAAAAAAAAAAAAAA==","payload":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}"#,
+            BUNDLE_SEALED_VERSION
+        );
+
+        let error = open(&sealed).expect_err("a protection this build does not implement");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionBundleInvalid);
+        assert!(
+            error.detail().is_some_and(|detail| detail.contains("age")),
+            "the refusal should name what the file asked for, and it said {:?}",
+            error.detail()
+        );
+    }
+
+    #[test]
+    fn an_export_written_before_credentials_ever_travelled_sealed_still_imports() {
+        // A file this build used to write: plain, with the passwords in it. It is somebody's only
+        // copy of a library, so it reads — the rule that changed is about writing.
+        let mut legacy = bundle(vec![session("a", "web")], Vec::new());
+        legacy.secrets.push(BundleSecret {
+            session_id: "a".to_owned(),
+            kind: BundleSecretKind::Password,
+            value: "hunter2".to_owned(),
+        });
+        let text = legacy.to_json().expect("write");
+
+        let OpenedBundle::Plain(read) = open(&text).expect("open") else {
+            panic!("a plain file must be read as plain");
+        };
+
+        let plan = plan_import(*read, &Document::empty());
+        assert_eq!(
+            plan.sessions[0].secret.as_ref().map(SessionSecret::expose),
+            Some("hunter2")
         );
     }
 
@@ -579,9 +954,13 @@ mod tests {
     fn a_secret_never_prints_and_neither_does_the_bundle() {
         let mut document = Document::empty();
         document.save_session(session("a", "web"), Some(SessionSecret::Password("hunter2".to_owned())));
-        let written = build_bundle(&document, true, 10);
+        let sealed = build_sealed_bundle(&document, "correct horse", &fast_params(), 10).expect("seal");
+        let OpenedBundle::Sealed(envelope) = open(&sealed.text).expect("open") else {
+            panic!("sealed");
+        };
+        let written = envelope.unseal("correct horse").expect("unseal");
 
-        let printed = format!("{written:?} {:?}", written.secrets[0]);
+        let printed = format!("{:?} {:?} {:?}", written, written.secrets[0], envelope);
 
         assert!(
             !printed.contains("hunter2"),

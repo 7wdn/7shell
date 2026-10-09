@@ -79,6 +79,7 @@ import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import type { MenuEntry } from "@/lib/menu/types";
 import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
+import { rememberExportPassphrase } from "@/lib/sessions/exportPassphrase";
 import { regexIsInvalid } from "@/lib/sessions/filter";
 import { drawOrder, groupPath, hasSibling } from "@/lib/sessions/groups";
 import { importReceipt } from "@/lib/sessions/receipt";
@@ -284,17 +285,34 @@ async function runImport(): Promise<void> {
   toast(importReceipt(summary, t), summary.missingKeys + summary.droppedHops > 0 ? "result" : "confirmation");
 }
 
-/** Writes the library to a file the user picks. */
-async function runExport(includeSecrets: boolean): Promise<void> {
+/**
+ * Writes the library to a file the user picks.
+ *
+ * `passphrase` is the whole of what was decided: with one the file carries the stored logins sealed,
+ * with `null` it carries none. The receipt says which of the two happened, because the two files go
+ * to different places and one of them needs the passphrase again on the other side.
+ *
+ * A passphrase is remembered only once a file has actually been written with it, so the next export
+ * in this sitting does not ask for it twice. A dismissed file dialog is not a passphrase that
+ * worked, and an export that carried nothing has nothing worth remembering.
+ */
+async function runExport(passphrase: string | null): Promise<void> {
   exportBusy.value = true;
-  const summary = await library.exportLibrary(t("sessions.list.exportTitle"), SESSION_FILE_NAME, includeSecrets);
+  const summary = await library.exportLibrary(t("sessions.list.exportTitle"), SESSION_FILE_NAME, passphrase);
   exportBusy.value = false;
   // Closed either way: a dismissed file dialog and a failed write are both "nothing more to decide
   // here", and a failure is already drawn in the list's own box.
   exportOpen.value = false;
   if (summary) {
+    if (passphrase !== null) {
+      rememberExportPassphrase(passphrase);
+    }
     toast(
-      t("sessions.list.exportDone", { count: summary.sessions, file: summary.fileName }, summary.sessions),
+      t(
+        summary.encrypted ? "sessions.list.exportDoneEncrypted" : "sessions.list.exportDone",
+        { count: summary.sessions, file: summary.fileName },
+        summary.sessions,
+      ),
       "receipt",
     );
   }
@@ -1485,6 +1503,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
       :open="exportOpen"
       :busy="exportBusy"
       @confirm="runExport($event)"
+      @unencrypted="runExport(null)"
       @update:open="exportOpen = $event"
     />
 

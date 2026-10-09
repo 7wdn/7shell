@@ -39,6 +39,8 @@ export const ERROR_CATALOG = {
   "SESSION-OPEN-CANCELLED": "errors.session.openCancelled",
   "SESSION-BUNDLE-INVALID": "errors.session.bundleInvalid",
   "SESSION-BUNDLE-IO": "errors.session.bundleIo",
+  "SESSION-BUNDLE-PASSPHRASE": "errors.session.bundlePassphrase",
+  "SESSION-BUNDLE-PASSPHRASE-SHORT": "errors.session.bundlePassphraseShort",
   // Policy
   "POLICY-DENIED": "errors.policy.denied",
   "POLICY-APPROVAL-REQUIRED": "errors.policy.approvalRequired",

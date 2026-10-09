@@ -6,19 +6,32 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionsList: vi.fn(),
   sessionSave: vi.fn(),
   sessionDelete: vi.fn(),
+  sessionsExport: vi.fn(),
+  sessionsImport: vi.fn(),
   groupsList: vi.fn(),
   groupSave: vi.fn(),
   groupDelete: vi.fn(),
 }));
 
-import { groupDelete, groupSave, groupsList, sessionDelete, sessionSave, sessionsList } from "@/lib/backend/tauri";
+import {
+  groupDelete,
+  groupSave,
+  groupsList,
+  sessionDelete,
+  sessionSave,
+  sessionsExport,
+  sessionsImport,
+  sessionsList,
+} from "@/lib/backend/tauri";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
-import type { Session, SessionGroup } from "@/types/session";
+import type { Session, SessionGroup, SessionImportOutcome } from "@/types/session";
 
 const sessionsListMock = vi.mocked(sessionsList);
 const sessionSaveMock = vi.mocked(sessionSave);
 const sessionDeleteMock = vi.mocked(sessionDelete);
+const sessionsExportMock = vi.mocked(sessionsExport);
+const sessionsImportMock = vi.mocked(sessionsImport);
 const groupsListMock = vi.mocked(groupsList);
 const groupSaveMock = vi.mocked(groupSave);
 const groupDeleteMock = vi.mocked(groupDelete);
@@ -612,5 +625,139 @@ describe("narrowing the list", () => {
 
     expect(worked).toBe(true);
     expect(sessionSaveMock.mock.calls[0]?.[0]).toMatchObject({ id: "session-1", groupId: "group-2" });
+  });
+});
+
+/** The receipt an import that worked comes back with. */
+const imported = (secrets: number): SessionImportOutcome => ({
+  kind: "imported",
+  summary: { sessions: 1, groups: 0, secrets, missingKeys: 0, droppedHops: 0 },
+});
+
+const sealed: SessionImportOutcome = { kind: "needsPassphrase", fileName: "library.json" };
+
+describe("importing a sealed file", () => {
+  beforeEach(() => {
+    sessionsExportMock.mockReset();
+    sessionsImportMock.mockReset();
+  });
+
+  it("stops on the question, and finishes it when the passphrase arrives", async () => {
+    sessionsImportMock.mockResolvedValueOnce(sealed).mockResolvedValueOnce(imported(1));
+    const store = useSessionsStore();
+
+    const running = store.importLibrary("Import sessions");
+
+    // Parked: the call has not come back, and what it is waiting for is on screen.
+    await vi.waitFor(() => expect(store.importQuestion).not.toBeNull());
+    expect(store.importQuestion).toMatchObject({ fileName: "library.json", busy: false, failure: null });
+
+    store.answerImportPassphrase("correct horse");
+
+    await expect(running).resolves.toMatchObject({ sessions: 1, secrets: 1 });
+    expect(store.importQuestion).toBeNull();
+    expect(sessionsImportMock.mock.calls[1]).toEqual(["Import sessions", "correct horse"]);
+  });
+
+  it("keeps the question open and says why when the passphrase is refused", async () => {
+    sessionsImportMock
+      .mockResolvedValueOnce(sealed)
+      .mockRejectedValueOnce(refusal("SESSION-BUNDLE-PASSPHRASE"))
+      .mockResolvedValueOnce(imported(1));
+    const store = useSessionsStore();
+
+    const running = store.importLibrary("Import sessions");
+    await vi.waitFor(() => expect(store.importQuestion).not.toBeNull());
+
+    store.answerImportPassphrase("rong");
+
+    // The same question, still open, now with the reason in it — not a closed dialog and an error
+    // somewhere else. The field the person just filled in is where they should read it.
+    await vi.waitFor(() => expect(store.importQuestion?.failure?.code).toBe("SESSION-BUNDLE-PASSPHRASE"));
+    expect(store.importQuestion?.busy).toBe(false);
+    expect(store.failure).toBeNull();
+
+    store.answerImportPassphrase("correct horse");
+
+    await expect(running).resolves.toMatchObject({ secrets: 1 });
+    expect(store.importQuestion).toBeNull();
+    expect(sessionsImportMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up when the question is dismissed, and imports nothing", async () => {
+    sessionsImportMock.mockResolvedValueOnce(sealed);
+    const store = useSessionsStore();
+
+    const running = store.importLibrary("Import sessions");
+    await vi.waitFor(() => expect(store.importQuestion).not.toBeNull());
+
+    store.answerImportPassphrase(null);
+
+    await expect(running).resolves.toBeNull();
+    expect(store.importQuestion).toBeNull();
+    expect(sessionsImportMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a file that cannot be read where the import's other failures go", async () => {
+    sessionsImportMock.mockResolvedValueOnce(sealed).mockRejectedValueOnce(refusal("SESSION-BUNDLE-INVALID"));
+    const store = useSessionsStore();
+
+    const running = store.importLibrary("Import sessions");
+    await vi.waitFor(() => expect(store.importQuestion).not.toBeNull());
+
+    store.answerImportPassphrase("correct horse");
+
+    await expect(running).resolves.toBeNull();
+    expect(store.failure?.code).toBe("SESSION-BUNDLE-INVALID");
+    expect(store.importQuestion).toBeNull();
+  });
+
+  it("imports a plain file without asking anything", async () => {
+    sessionsImportMock.mockResolvedValueOnce(imported(0));
+    const store = useSessionsStore();
+
+    await expect(store.importLibrary("Import sessions")).resolves.toMatchObject({ sessions: 1, secrets: 0 });
+
+    expect(store.importQuestion).toBeNull();
+    expect(sessionsImportMock.mock.calls[0]).toEqual(["Import sessions", null]);
+  });
+});
+
+describe("exporting the library", () => {
+  beforeEach(() => {
+    sessionsExportMock.mockReset();
+  });
+
+  it("hands the shell the passphrase, which is the whole of what this side decides", async () => {
+    sessionsExportMock.mockResolvedValue({
+      sessions: 2,
+      groups: 1,
+      secrets: 2,
+      encrypted: true,
+      fileName: "7shell-sessions.json",
+    });
+    const store = useSessionsStore();
+
+    const summary = await store.exportLibrary("Export sessions", "7shell-sessions.json", "correct horse");
+
+    expect(summary?.encrypted).toBe(true);
+    expect(sessionsExportMock.mock.calls[0]).toEqual(["Export sessions", "7shell-sessions.json", "correct horse"]);
+  });
+
+  it("says nothing travelled when the answer was no passphrase", async () => {
+    sessionsExportMock.mockResolvedValue({
+      sessions: 2,
+      groups: 1,
+      secrets: 0,
+      encrypted: false,
+      fileName: "7shell-sessions.json",
+    });
+    const store = useSessionsStore();
+
+    const summary = await store.exportLibrary("Export sessions", "7shell-sessions.json", null);
+
+    expect(summary?.secrets).toBe(0);
+    expect(summary?.encrypted).toBe(false);
+    expect(sessionsExportMock.mock.calls[0]?.[2]).toBeNull();
   });
 });

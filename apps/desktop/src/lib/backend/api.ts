@@ -33,7 +33,7 @@ import type {
   Session,
   SessionExportSummary,
   SessionGroup,
-  SessionImportSummary,
+  SessionImportOutcome,
   TerminalClosed,
   TerminalData,
   UploadAnswer,
@@ -198,15 +198,19 @@ export const backend = {
     remove: (id: string): Promise<void> => forward("session_delete", () => desktop.sessionDelete(id)),
 
     /**
-     * Writes the library to a file the user picks. The dialog runs in Rust and the secrets — when
-     * they were asked for — are read there too, so none of this crosses the boundary.
+     * Writes the library to a file the user picks. The dialog runs in Rust, and the secrets are read
+     * out of the vault and written there too, so none of this crosses the boundary — what crosses is
+     * the passphrase that decides whether they travel at all.
      */
-    export: (title: string, fileName: string, includeSecrets: boolean): Promise<SessionExportSummary | undefined> =>
-      forward("sessions_export", () => desktop.sessionsExport(title, fileName, includeSecrets)),
+    export: (title: string, fileName: string, passphrase: string | null): Promise<SessionExportSummary | undefined> =>
+      forward("sessions_export", () => desktop.sessionsExport(title, fileName, passphrase)),
 
-    /** Adds what a chosen file holds. `undefined` means the dialog was dismissed. */
-    import: (title: string): Promise<SessionImportSummary | undefined> =>
-      forward("sessions_import", () => desktop.sessionsImport(title)),
+    /**
+     * Adds what a chosen file holds. `undefined` means the dialog was dismissed; a sealed file
+     * answers that it needs a passphrase instead, and the second call carries it.
+     */
+    import: (title: string, passphrase: string | null): Promise<SessionImportOutcome | undefined> =>
+      forward("sessions_import", () => desktop.sessionsImport(title, passphrase)),
 
     groups: {
       list: (): Promise<SessionGroup[]> => forward("groups_list", () => desktop.groupsList()),

@@ -40,10 +40,16 @@
 //!   an interface never has to send a password back just to leave it alone.
 //!
 //! The file format (version 1) is documented on [`Vault`]: Argon2id with 64 MiB, three passes
-//! and one lane; XChaCha20-Poly1305 with a fresh 24-byte nonce per ciphertext; and two fixed
-//! associated-data strings, one for the verifier and one for the payload, which are part of the
-//! format rather than an implementation detail — changing them would strand every existing
-//! vault, so they change through the migration chain, never by edit.
+//! and one lane; XChaCha20-Poly1305 with a fresh 24-byte nonce per ciphertext; and fixed
+//! associated-data strings, one for the verifier, one for the payload and one for an exported
+//! library, which are part of the formats rather than an implementation detail — changing them
+//! would strand every existing vault and every existing export, so they change through the
+//! migration chain, never by edit.
+//!
+//! An export is the one file this crate writes that is meant to leave the machine, so what it may
+//! contain is a rule rather than a setting: sessions and groups always, credentials only inside a
+//! payload sealed under a passphrase ([`ExportProtection`]). Reading is more forgiving than
+//! writing — a file written before that rule existed still imports.
 
 mod crypto;
 mod document;
@@ -52,9 +58,12 @@ mod vault;
 
 pub use crypto::KdfParams;
 pub use document::{KeyMaterial, SessionSecret, VAULT_SCHEMA_VERSION};
-pub use transfer::{BUNDLE_FORMAT, BUNDLE_VERSION, MAX_BUNDLE_BYTES, SessionBundle};
+pub use transfer::{
+    BUNDLE_FORMAT, BUNDLE_SEALED_VERSION, BUNDLE_VERSION, BundleEnvelope, ExportedBundle, MAX_BUNDLE_BYTES,
+    MIN_PASSPHRASE_LEN, OpenedBundle, SessionBundle, open,
+};
 pub use vault::{
-    VAULT_FILE_NAME, Vault, VaultStatus, change_password, create, default_path, delete_group, delete_session,
-    find_known_host, forget_host, forget_key, groups, import_key, key_material, known_hosts, lock, save_group,
-    save_session, secret_for_session, sessions, status, trust_host, unlock,
+    ExportProtection, VAULT_FILE_NAME, Vault, VaultStatus, change_password, create, default_path, delete_group,
+    delete_session, find_known_host, forget_host, forget_key, groups, import_key, key_material, known_hosts, lock,
+    save_group, save_session, secret_for_session, sessions, status, trust_host, unlock,
 };

@@ -435,6 +435,27 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    /// An encrypted session export that the passphrase did not open.
+    ///
+    /// One code for a wrong passphrase, a truncated payload and a payload that belongs to another
+    /// file, for the reason the vault gives for its own unlock: an error that tells those apart is
+    /// an oracle for whoever is holding the file. The caller that can act on it is the dialog
+    /// asking for the passphrase, which says this much and lets the person try again.
+    pub fn session_bundle_passphrase() -> Self {
+        Self::new(ErrorCode::SessionBundlePassphrase, Origin::new(Subsystem::Store))
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A passphrase below the length this build writes an export under.
+    ///
+    /// The minimum is not a claim about strength — it is a floor against a slip, and the number
+    /// travels as a parameter so the sentence can say it without the interface repeating it.
+    pub fn session_bundle_passphrase_short(minimum: usize) -> Self {
+        Self::new(ErrorCode::SessionBundlePassphraseShort, Origin::new(Subsystem::Store))
+            .with_param("minimum", minimum.to_string())
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     // -- Policy ------------------------------------------------------------
 
     pub fn policy_denied(action: &str) -> Self {

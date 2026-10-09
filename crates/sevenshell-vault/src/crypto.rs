@@ -12,8 +12,9 @@
 //! * Randomness comes from the operating system through `getrandom`, not from a re-exported
 //!   `OsRng` whose version would have to track the cipher crate's.
 //!
-//! The two associated-data strings are fixed by the file format: an existing vault must keep
-//! opening after this crate is rewritten, so changing them is a migration, not an edit.
+//! The associated-data strings are fixed by the file formats: an existing vault, and an existing
+//! export, must keep opening after this crate is rewritten, so changing one is a migration, not an
+//! edit.
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -52,6 +53,12 @@ pub(crate) const AAD_VERIFIER: &[u8] = b"sevenshell/vault-verifier/v1";
 
 /// Binds the document ciphertext to its role in the envelope.
 pub(crate) const AAD_PAYLOAD: &[u8] = b"sevenshell/vault-payload/v1";
+
+/// Binds an exported session library to its role in the file it travels in.
+///
+/// Distinct from the vault's two on purpose: a payload lifted out of a vault file must not open as
+/// somebody's export, and an export must not open as a vault document.
+pub(crate) const AAD_BUNDLE: &[u8] = b"sevenshell/session-bundle/v1";
 
 /// What the verifier decrypts to when the password is right. Its value only has to be fixed:
 /// it is never stored anywhere an attacker can see it.
@@ -128,19 +135,34 @@ pub(crate) fn encrypt(key: &VaultKey, plaintext: &[u8], aad: &[u8]) -> Result<St
 /// are the same event to a caller, and telling them apart would turn the error into an oracle
 /// for anyone holding a copy of the file.
 pub(crate) fn decrypt(key: &VaultKey, blob: &str, aad: &[u8]) -> Result<Vec<u8>, ShellError> {
-    let raw = BASE64.decode(blob).map_err(|_| unlock_failed())?;
+    open_blob(key, blob, aad).ok_or_else(unlock_failed)
+}
+
+/// Decrypts the payload of an exported session library.
+///
+/// The same "everything that failed is one answer" rule as [`decrypt`], with the code this file
+/// format owns: nothing here writes to the vault, so `VAULT-UNLOCK-FAILED` would be a lie about
+/// what was being opened.
+pub(crate) fn decrypt_bundle(key: &VaultKey, blob: &str) -> Result<Zeroizing<Vec<u8>>, ShellError> {
+    open_blob(key, blob, AAD_BUNDLE)
+        .map(Zeroizing::new)
+        .ok_or_else(ShellError::session_bundle_passphrase)
+}
+
+/// The one place the blob layout lives: base64 of `nonce || ciphertext || tag`, opened under the
+/// context the caller names. `None` covers a blob that is not base64, one too short to hold a
+/// nonce, and one that fails authentication — deliberately indistinguishable to every caller.
+fn open_blob(key: &VaultKey, blob: &str, aad: &[u8]) -> Option<Vec<u8>> {
+    let raw = BASE64.decode(blob).ok()?;
     if raw.len() <= NONCE_LEN {
-        return Err(unlock_failed());
+        return None;
     }
 
     let (nonce_bytes, ciphertext) = raw.split_at(NONCE_LEN);
-    let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes()).map_err(|_| unlock_failed())?;
+    let cipher = XChaCha20Poly1305::new_from_slice(key.as_bytes()).ok()?;
     cipher
-        .decrypt(
-            &XNonce::try_from(nonce_bytes).map_err(|_| unlock_failed())?,
-            Payload { msg: ciphertext, aad },
-        )
-        .map_err(|_| unlock_failed())
+        .decrypt(&XNonce::try_from(nonce_bytes).ok()?, Payload { msg: ciphertext, aad })
+        .ok()
 }
 
 /// Decrypts the verifier and proves it says what a verifier says.

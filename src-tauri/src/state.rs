@@ -4,7 +4,9 @@
 //! terminals, plus the receiver their output arrives on). Both are created once, in `setup`, and
 //! handed to every command through managed state.
 
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sevenshell_core::Core;
@@ -12,6 +14,48 @@ use sevenshell_vault::Vault;
 
 use crate::dropped::PendingDrops;
 use crate::uploads::PendingUploads;
+
+/// The session export an import is in the middle of.
+///
+/// A sealed file has to be asked about — the passphrase is not in it — and the file has already
+/// been chosen by the time that is known. So the choice waits here between the two calls instead of
+/// travelling out to the interface and back, for the reason every other path stays in this
+/// process: what the interface is told is a name, never somewhere on this disk. One slot, because
+/// only one import can be waiting for an answer at a time.
+#[derive(Default)]
+pub struct PendingImport {
+    path: Mutex<Option<PathBuf>>,
+}
+
+impl PendingImport {
+    /// Remembers the file an import is waiting on, replacing whatever was waiting before. A new
+    /// import starting is the end of the old one, whoever asked and however it ended.
+    pub fn remember(&self, path: PathBuf) {
+        *self.lock() = Some(path);
+    }
+
+    /// The file waiting for an answer, or nothing when no question is outstanding.
+    pub fn path(&self) -> Option<PathBuf> {
+        self.lock().clone()
+    }
+
+    /// Drops what was waiting. Called when the import finishes and when the vault locks: a path is
+    /// not a secret, but a question nobody can answer any more should not be left on the table.
+    ///
+    /// A question that was answered with nothing leaves this standing until the next import, and
+    /// that is deliberate rather than an oversight: it can only be reached by a call carrying an
+    /// answer, and there is no question open for one to be given to.
+    pub fn clear(&self) {
+        *self.lock() = None;
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<PathBuf>> {
+        match self.path.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
 
 /// The application state commands borrow.
 pub struct ShellState {
@@ -21,6 +65,8 @@ pub struct ShellState {
     pending_drops: PendingDrops,
     /// Uploads that stopped to ask about a name already on the far side, waiting for the answer.
     pending_uploads: PendingUploads,
+    /// A session export that stopped to ask for its passphrase, waiting for the answer.
+    pending_import: PendingImport,
     /// Whether the interface has said that closing the window would throw something away.
     quit_guard: AtomicBool,
     /// Whether closing the window ends the application or puts it away.
@@ -57,6 +103,7 @@ impl ShellState {
                 core,
                 pending_drops: PendingDrops::default(),
                 pending_uploads: PendingUploads::default(),
+                pending_import: PendingImport::default(),
                 quit_guard: AtomicBool::new(false),
                 close_to_tray: AtomicBool::new(true),
                 tray_shown: AtomicBool::new(false),
@@ -87,6 +134,11 @@ impl ShellState {
     /// Uploads held while the interface answers the question about names already there.
     pub fn pending_uploads(&self) -> &PendingUploads {
         &self.pending_uploads
+    }
+
+    /// The export an import is waiting on a passphrase for.
+    pub fn pending_import(&self) -> &PendingImport {
+        &self.pending_import
     }
 
     /// Whether the interface has something a close would throw away.
@@ -130,5 +182,32 @@ impl ShellState {
 
     pub fn quit_approved(&self) -> bool {
         self.quit_approved.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_file_that_was_cleared_is_no_longer_waiting_for_an_answer() {
+        // The second half of an import acts on what was remembered, so forgetting it has to be
+        // enough to make that call refuse — a locked vault or a dismissed question must not leave a
+        // file a later call would quietly import.
+        let pending = PendingImport::default();
+        pending.remember(PathBuf::from("library.json"));
+
+        pending.clear();
+
+        assert_eq!(pending.path(), None);
+    }
+
+    #[test]
+    fn a_new_import_replaces_the_one_that_was_waiting() {
+        let pending = PendingImport::default();
+        pending.remember(PathBuf::from("first.json"));
+        pending.remember(PathBuf::from("second.json"));
+
+        assert_eq!(pending.path(), Some(PathBuf::from("second.json")));
     }
 }

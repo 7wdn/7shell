@@ -38,7 +38,9 @@
       "openCancelled": "The connection attempt was called off.",
       "notFound": "That session is no longer saved.",
       "bundleInvalid": "That file is not a session export from this application, or it has been damaged.",
-      "bundleIo": "The session file could not be read or written."
+      "bundleIo": "The session file could not be read or written.",
+      "bundlePassphrase": "That passphrase did not open this file.",
+      "bundlePassphraseShort": "A passphrase for an export needs at least {minimum} characters."
     },
     "policy": {
       "denied": "The active policy does not allow {action}.",

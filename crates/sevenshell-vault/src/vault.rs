@@ -38,7 +38,7 @@ use zeroize::Zeroizing;
 
 use crate::crypto::{self, KdfParams, VaultKey};
 use crate::document::{self, Document, KeyMaterial, SessionSecret};
-use crate::transfer::{self, SessionBundle};
+use crate::transfer::{self, ExportedBundle, SessionBundle};
 
 /// The vault file name inside the platform configuration directory.
 pub const VAULT_FILE_NAME: &str = "vault.json";
@@ -124,6 +124,18 @@ pub enum VaultStatus {
     Locked,
     /// The key and the document are in memory; document operations work.
     Unlocked,
+}
+
+/// What an export is allowed to write about logging in.
+///
+/// Two variants and no third, because the rule is that a credential either stays here or travels
+/// sealed: an enum with a `bool` in it would make "write the passwords into a file anyone can read"
+/// a thing a caller could ask for by getting one argument wrong.
+pub enum ExportProtection<'a> {
+    /// Sessions and groups only. No credential is read out of the vault, and the file has none.
+    WithoutCredentials,
+    /// Everything the library holds, under a passphrase whoever asked for the file chose.
+    Passphrase(&'a str),
 }
 
 /// A vault at an explicit path.
@@ -430,14 +442,24 @@ impl Vault {
         state.write_to(&self.path)
     }
 
-    /// Everything an export writes: the sessions, the groups, and — only when asked — the logins.
+    /// Everything an export writes: the sessions, the groups, and — under a passphrase — the logins.
     ///
     /// Built in one go, before the caller has asked anybody where to put it: a locked vault is
     /// refused here rather than after a file dialog has been opened and dismissed.
-    pub fn export_bundle(&self, include_secrets: bool, now: u64) -> Result<SessionBundle, ShellError> {
+    ///
+    /// The two answers are the whole rule about credentials, and they are two answers rather than a
+    /// flag because a flag would leave the third one writable: `WithoutCredentials` cannot reach the
+    /// secrets table at all, and `Passphrase` cannot write them anywhere but inside the seal.
+    pub fn export_bundle(&self, protection: ExportProtection<'_>, now: u64) -> Result<ExportedBundle, ShellError> {
         let mut guard = self.slot();
         let state = guard.open()?;
-        Ok(transfer::build_bundle(&state.document, include_secrets, now))
+
+        match protection {
+            ExportProtection::WithoutCredentials => transfer::build_plain_bundle(&state.document, now),
+            ExportProtection::Passphrase(passphrase) => {
+                transfer::build_sealed_bundle(&state.document, passphrase, &KdfParams::default(), now)
+            }
+        }
     }
 
     /// Adds everything a bundle carries, and changes nothing that was already here.
@@ -1815,7 +1837,7 @@ mod tests {
     }
 
     #[test]
-    fn a_library_travels_to_another_vault_with_the_passwords_it_was_asked_to_carry() {
+    fn a_library_travels_to_another_vault_with_the_passwords_sealed_under_its_passphrase() {
         let directory = tempdir().expect("temp dir");
         let source = Vault::open_at(directory.path().join("source.json"));
         source.create("master").expect("create");
@@ -1831,16 +1853,18 @@ mod tests {
             .expect("save");
 
         let written = source
-            .export_bundle(true, 1_700_000_000)
-            .expect("export")
-            .to_json()
-            .expect("write");
+            .export_bundle(ExportProtection::Passphrase("a passphrase"), 1_700_000_000)
+            .expect("export");
+        assert!(written.encrypted, "credentials only ever leave inside a sealed file");
+
+        let transfer::OpenedBundle::Sealed(envelope) = transfer::open(&written.text).expect("open") else {
+            panic!("a sealed export must read back as sealed");
+        };
+        let bundle = envelope.unseal("a passphrase").expect("unseal");
 
         let target = Vault::open_at(directory.path().join("target.json"));
         target.create("another password").expect("create");
-        let summary = target
-            .import_bundle(SessionBundle::parse(&written).expect("read"))
-            .expect("import");
+        let summary = target.import_bundle(bundle).expect("import");
 
         assert_eq!(summary.sessions, 1);
         assert_eq!(summary.groups, 1);
@@ -1860,20 +1884,57 @@ mod tests {
     }
 
     #[test]
+    fn an_export_without_a_passphrase_leaves_every_credential_behind() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+        vault
+            .save_session(
+                sample_session("a", "web"),
+                Some(SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+
+        let written = vault
+            .export_bundle(ExportProtection::WithoutCredentials, 0)
+            .expect("export");
+
+        assert!(!written.encrypted);
+        assert_eq!(written.secrets, 0);
+        assert!(
+            !written.text.contains("hunter2"),
+            "the password is in the vault, and the file must not be a way to read it out"
+        );
+        let transfer::OpenedBundle::Plain(bundle) = transfer::open(&written.text).expect("open") else {
+            panic!("a plain export must read back as plain");
+        };
+        assert!(
+            bundle.secrets.is_empty(),
+            "not one credential, and no empty array either"
+        );
+        assert!(
+            bundle.sessions[0].auth.has_secret,
+            "the flag describes this vault's secrets table, not the file"
+        );
+    }
+
+    #[test]
     fn importing_the_same_file_twice_adds_a_second_copy_instead_of_replacing_the_first() {
         let directory = tempdir().expect("temp dir");
         let vault = Vault::open_at(directory.path().join("vault.json"));
         vault.create("master").expect("create");
         vault.save_session(sample_session("a", "web"), None).expect("save");
 
-        let written = vault.export_bundle(false, 0).expect("export").to_json().expect("write");
+        let written = vault
+            .export_bundle(ExportProtection::WithoutCredentials, 0)
+            .expect("export");
+        let read = || match transfer::open(&written.text).expect("open") {
+            transfer::OpenedBundle::Plain(bundle) => *bundle,
+            transfer::OpenedBundle::Sealed(_) => panic!("a plain export must read back as plain"),
+        };
 
-        vault
-            .import_bundle(SessionBundle::parse(&written).expect("read"))
-            .expect("import");
-        vault
-            .import_bundle(SessionBundle::parse(&written).expect("read"))
-            .expect("import again");
+        vault.import_bundle(read()).expect("import");
+        vault.import_bundle(read()).expect("import again");
 
         let sessions = vault.sessions().expect("sessions");
         assert_eq!(sessions.len(), 3, "the original and two imported copies");
@@ -1890,8 +1951,14 @@ mod tests {
         vault.create("master").expect("create");
         vault.lock();
 
-        let error = vault.export_bundle(true, 0).expect_err("locked");
+        let plain = vault
+            .export_bundle(ExportProtection::WithoutCredentials, 0)
+            .expect_err("locked");
+        let sealed = vault
+            .export_bundle(ExportProtection::Passphrase("a passphrase"), 0)
+            .expect_err("locked");
 
-        assert_eq!(error.code(), ErrorCode::VaultLocked);
+        assert_eq!(plain.code(), ErrorCode::VaultLocked);
+        assert_eq!(sealed.code(), ErrorCode::VaultLocked);
     }
 }

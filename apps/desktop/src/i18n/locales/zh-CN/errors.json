@@ -38,7 +38,9 @@
       "openCancelled": "连接已被取消。",
       "notFound": "这个会话已经不存在了。",
       "bundleInvalid": "这个文件不是本应用导出的会话文件，或者已经损坏。",
-      "bundleIo": "无法读写这个会话文件。"
+      "bundleIo": "无法读写这个会话文件。",
+      "bundlePassphrase": "这个口令打不开这个文件。",
+      "bundlePassphraseShort": "导出用的口令至少要 {minimum} 个字符。"
     },
     "policy": {
       "denied": "当前策略不允许 {action}。",

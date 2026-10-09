@@ -25,6 +25,7 @@ import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 
 import { backend } from "@/lib/backend/api";
+import { type ErrorCode } from "@/lib/backend/errorCodes";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { NO_FILTER, type SessionFilter, filterIsOn, filterLibrary } from "@/lib/sessions/filter";
 import {
@@ -44,6 +45,25 @@ import type { Session, SessionExportSummary, SessionGroup, SessionImportSummary,
 
 export type LibraryStatus = "idle" | "loading" | "ready" | "failed";
 
+/** The one error code that means "the question is still open", rather than "the import failed". */
+const WRONG_PASSPHRASE: ErrorCode = "SESSION-BUNDLE-PASSPHRASE";
+
+/**
+ * A sealed file waiting for its passphrase.
+ *
+ * Held by the store rather than by the sidebar because the question is not the sidebar's: the panel
+ * can be put away while it is open, and the home page imports too — so the dialog is drawn once, by
+ * the frame, from this.
+ */
+export interface ImportQuestion {
+  /** The file's own name: what the person answering recognises, and never where it lives. */
+  readonly fileName: string;
+  /** Whether an answer is on its way to the shell: the dialog stays up and sends nothing twice. */
+  readonly busy: boolean;
+  /** Why the last answer was refused, said in the field that was just filled in. */
+  readonly failure: ShellError | null;
+}
+
 export const useSessionsStore = defineStore("sessions", () => {
   const sessions = ref<Session[]>([]);
   const groups = ref<SessionGroup[]>([]);
@@ -53,6 +73,14 @@ export const useSessionsStore = defineStore("sessions", () => {
   const filter = ref<SessionFilter>(NO_FILTER);
   const status = ref<LibraryStatus>("idle");
   const failure = ref<ShellError | null>(null);
+  /** A sealed file waiting for its passphrase, or nothing when no import is stopped on one. */
+  const importQuestion = ref<ImportQuestion | null>(null);
+
+  /**
+   * The parked import's way back in. Not reactive, because there is nothing here to draw: the
+   * question is what the dialog renders, and this is only the continuation behind it.
+   */
+  let answerImport: ((passphrase: string | null) => void) | null = null;
 
   /** Whether the list is narrowed at all, which is what the filter button's own state reports. */
   const filtering = computed(() => filterIsOn(filter.value));
@@ -259,6 +287,10 @@ export const useSessionsStore = defineStore("sessions", () => {
   /**
    * Writes the library to a file the user picks, in the shell.
    *
+   * `passphrase` is the whole of what this side decides about the credentials: given one the file
+   * carries the stored logins sealed, given `null` it carries none. There is no argument that writes
+   * one in the clear, which is why this is not a boolean.
+   *
    * `null` is "nothing was written": either the file dialog was dismissed, or the write failed and
    * the envelope is in `failure`. There is no way to tell those apart from the answer, and there
    * does not need to be — one is somebody changing their mind and the other is shown where they are
@@ -267,11 +299,11 @@ export const useSessionsStore = defineStore("sessions", () => {
   async function exportLibrary(
     title: string,
     fileName: string,
-    includeSecrets: boolean,
+    passphrase: string | null,
   ): Promise<SessionExportSummary | null> {
     failure.value = null;
     try {
-      return (await backend.sessions.export(title, fileName, includeSecrets)) ?? null;
+      return (await backend.sessions.export(title, fileName, passphrase)) ?? null;
     } catch (error) {
       failure.value = asShellError(error, "sessions_export");
       return null;
@@ -281,6 +313,12 @@ export const useSessionsStore = defineStore("sessions", () => {
   /**
    * Adds what a file holds, in the shell, and reads the library again afterwards.
    *
+   * A sealed file stops this half-way and turns it into a question, which is why the answer lives
+   * here rather than in the component that started the import: the sidebar can be put away while
+   * the question is open, and the home page is not the only place that imports. The call does not
+   * come back until the question is closed — answered until the file opens, or given up on — so the
+   * caller keeps one `await` and one receipt.
+   *
    * Read again rather than merged here: which ids the import had to replace is the backend's
    * answer, and a second implementation of that rule on this side is how the list and the vault
    * come to disagree about what is saved.
@@ -288,7 +326,16 @@ export const useSessionsStore = defineStore("sessions", () => {
   async function importLibrary(title: string): Promise<SessionImportSummary | null> {
     failure.value = null;
     try {
-      const summary = await backend.sessions.import(title);
+      const outcome = await backend.sessions.import(title, null);
+      if (!outcome) {
+        return null;
+      }
+      if (outcome.kind === "imported") {
+        await load();
+        return outcome.summary;
+      }
+
+      const summary = await askUntilItOpens(title, outcome.fileName);
       if (!summary) {
         return null;
       }
@@ -298,6 +345,69 @@ export const useSessionsStore = defineStore("sessions", () => {
       failure.value = asShellError(error, "sessions_import");
       return null;
     }
+  }
+
+  /**
+   * Asks for the passphrase of a sealed file until it opens or somebody gives up.
+   *
+   * The question never closes between attempts, so a wrong passphrase is said in the field that was
+   * just filled in rather than by the dialog disappearing and coming back. Everything that is not a
+   * refused passphrase is not a question any more, and lands in `failure` where the rest of the
+   * import's problems go.
+   */
+  async function askUntilItOpens(title: string, fileName: string): Promise<SessionImportSummary | null> {
+    let refused: ShellError | null = null;
+
+    for (;;) {
+      const passphrase = await askPassphrase(fileName, refused);
+      if (passphrase === null) {
+        importQuestion.value = null;
+        return null;
+      }
+
+      importQuestion.value = { fileName, busy: true, failure: null };
+      try {
+        const outcome = await backend.sessions.import(title, passphrase);
+        importQuestion.value = null;
+        // Only a dismissed file dialog can answer nothing here, and there is no dialog left to
+        // dismiss: the file was chosen before the question was asked.
+        return outcome?.kind === "imported" ? outcome.summary : null;
+      } catch (error) {
+        const envelope = asShellError(error, "sessions_import");
+        if (envelope.code !== WRONG_PASSPHRASE) {
+          importQuestion.value = null;
+          failure.value = envelope;
+          return null;
+        }
+        refused = envelope;
+      }
+    }
+  }
+
+  /**
+   * Puts the question on screen and waits for the answer. `null` is somebody closing it.
+   *
+   * The promise is what keeps the import parked: nothing else may clear `importQuestion` while it
+   * is set, because clearing it without resolving would leave an import that never comes back.
+   */
+  function askPassphrase(fileName: string, failureEnvelope: ShellError | null): Promise<string | null> {
+    importQuestion.value = { fileName, busy: false, failure: failureEnvelope };
+    return new Promise((resolve) => {
+      answerImport = (passphrase) => {
+        answerImport = null;
+        resolve(passphrase);
+      };
+    });
+  }
+
+  /**
+   * The answer to the question a sealed file stopped an import on. `null` means it was dismissed.
+   *
+   * The question is deliberately left standing here: whether it stays on screen is the parked
+   * import's decision — it knows whether the file opened — and this is only the answer arriving.
+   */
+  function answerImportPassphrase(passphrase: string | null): void {
+    answerImport?.(passphrase);
   }
 
   /**
@@ -543,5 +653,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     clearMethods,
     exportLibrary,
     importLibrary,
+    importQuestion,
+    answerImportPassphrase,
   };
 });

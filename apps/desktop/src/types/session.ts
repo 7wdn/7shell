@@ -262,8 +262,10 @@ export type UploadAnswer = "overwrite" | "skip" | "cancel";
 export interface SessionExportSummary {
   readonly sessions: number;
   readonly groups: number;
-  /** How many stored credentials travelled. Zero when the export was asked to leave them behind. */
+  /** How many stored credentials travelled. Zero unless a passphrase sealed them into the file. */
   readonly secrets: number;
+  /** Whether a passphrase stands between the file and what is in it. */
+  readonly encrypted: boolean;
   readonly fileName: string;
 }
 
@@ -282,3 +284,14 @@ export interface SessionImportSummary {
   /** Imported sessions that jumped through a session the file did not carry. */
   readonly droppedHops: number;
 }
+
+/**
+ * What came of asking to import a file.
+ *
+ * Two answers, and neither is a failure: the library was written, or the file is sealed and the
+ * passphrase is the next question. A dismissed file dialog is the absence of this value — nothing
+ * happened, so there is nothing to say.
+ */
+export type SessionImportOutcome =
+  | { readonly kind: "imported"; readonly summary: SessionImportSummary }
+  | { readonly kind: "needsPassphrase"; readonly fileName: string };

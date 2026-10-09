@@ -2363,15 +2363,35 @@ test("the list is searched, narrowed and exported from one menu", async () => {
     await expect(web).toBeVisible();
 
     // Exporting, from the library's own menu. The file dialog that follows is the platform's, so
-    // the question before it is what this run can hold the interface to.
+    // the question before it is what this run can hold the interface to: a passphrase field that
+    // starts empty, and a second answer that has to be given deliberately.
     await page.getByRole("button", { name: "Import / Export" }).click();
     await page.getByRole("menuitem", { name: /^Export sessions/ }).click();
 
-    const asked = page.getByRole("dialog");
-    await expect(asked.getByText(/Anyone who can read that file/)).toBeVisible();
-    await expect(asked.getByRole("checkbox")).not.toBeChecked();
+    // Two questions take turns on this screen, so each is found by what it says rather than by
+    // being the only dialog up.
+    const asked = page.getByRole("dialog").filter({ hasText: /Anyone who can read that file/ });
+    await expect(asked).toBeVisible();
+    await expect(asked.locator("#export-passphrase")).toHaveValue("");
+    // The field is ready to be typed in the moment the question is up, which is the only thing a
+    // real window can settle about focus: what the interface asks for and what the platform gives
+    // it are two different things.
+    await expect(asked.locator("#export-passphrase")).toBeFocused();
     await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-export.png"), fullPage: false });
 
+    // The other answer asks once more and says what it costs: the passwords stay behind, and the
+    // machine this file goes to will ask for them again.
+    await asked.getByRole("button", { name: "Export without a passphrase" }).click();
+    const warning = page.getByRole("dialog").filter({ hasText: /none of the saved passwords/ });
+    await expect(warning).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACTS, "sidebar-export-unencrypted.png"), fullPage: false });
+
+    // Backing out of that returns to the question rather than ending the export.
+    await warning.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator("#export-passphrase")).toBeVisible();
+
+    await page.locator("#export-passphrase").fill("correct horse");
+    await page.locator("#export-passphrase-confirm").fill("correct horse");
     await asked.getByRole("button", { name: "Cancel" }).click();
     await expect(asked).toHaveCount(0);
 
