@@ -34,6 +34,7 @@ mod backup;
 mod plan;
 mod settings;
 mod snapshot;
+mod webdav;
 
 pub use backup::{read, write};
 pub use plan::{Destination, RestorePlan, plan_restore};
@@ -42,3 +43,4 @@ pub use snapshot::{
     BuiltSnapshot, MAX_SNAPSHOT_BYTES, OpenedSnapshot, PROTECTION_PASSPHRASE, SNAPSHOT_FORMAT, SNAPSHOT_SEALED_VERSION,
     SNAPSHOT_VERSION, SnapshotEnvelope, SyncSnapshot, build, open,
 };
+pub use webdav::{DEFAULT_REMOTE_PATH, SyncService, WebDav, WebDavPassword};

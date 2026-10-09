@@ -46,6 +46,10 @@ export const ERROR_CATALOG = {
   "SYNC-IO": "errors.sync.io",
   "SYNC-PASSPHRASE": "errors.sync.passphrase",
   "SYNC-PASSPHRASE-SHORT": "errors.sync.passphraseShort",
+  "SYNC-NOT-CONFIGURED": "errors.sync.notConfigured",
+  "SYNC-UNREACHABLE": "errors.sync.unreachable",
+  "SYNC-AUTH-FAILED": "errors.sync.authFailed",
+  "SYNC-HTTP-FAILED": "errors.sync.httpFailed",
   // Policy
   "POLICY-DENIED": "errors.policy.denied",
   "POLICY-APPROVAL-REQUIRED": "errors.policy.approvalRequired",

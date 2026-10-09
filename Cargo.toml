@@ -49,6 +49,22 @@ uuid = { version = "1.26", features = ["v4", "serde"] }
 zeroize = { version = "1.9", features = ["derive"] }
 tempfile = "3"
 
+# Talking to a server that is not an SSH host: the sync service, and the snippet hosts later.
+#
+# The platform's own TLS stack rather than a bundled one: Schannel on Windows, Security.framework on
+# macOS, OpenSSL on Linux. Three reasons in order of weight. It trusts what the machine already
+# trusts, so an internal certificate authority works without this project shipping a copy of
+# anybody's root list — and nothing here has to be added to the licence allow-list to get it. It is
+# the stack the rest of the system uses, which is what makes a machine that can reach a server with
+# its browser able to reach it here. And it leaves out `aws-lc-rs`, which would put a C toolchain in
+# every build.
+reqwest = { version = "0.13", default-features = false, features = [
+  "native-tls",
+  "charset",
+  "http2",
+  "system-proxy",
+] }
+
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-build = { version = "2", features = [] }
 tauri-plugin-log = "2"

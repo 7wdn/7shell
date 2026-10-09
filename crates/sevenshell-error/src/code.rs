@@ -114,6 +114,14 @@ error_catalog! {
     SyncPassphrase => "SYNC-PASSPHRASE", "errors.sync.passphrase";
     #[doc = "The passphrase offered for a backup is below the length this build writes files with."]
     SyncPassphraseShort => "SYNC-PASSPHRASE-SHORT", "errors.sync.passphraseShort";
+    #[doc = "No sync server has been configured on this device yet."]
+    SyncNotConfigured => "SYNC-NOT-CONFIGURED", "errors.sync.notConfigured";
+    #[doc = "The sync server could not be reached at all."]
+    SyncUnreachable => "SYNC-UNREACHABLE", "errors.sync.unreachable";
+    #[doc = "The sync server refused the credentials."]
+    SyncAuthFailed => "SYNC-AUTH-FAILED", "errors.sync.authFailed";
+    #[doc = "The sync server answered with a status that is not success."]
+    SyncHttpFailed => "SYNC-HTTP-FAILED", "errors.sync.httpFailed";
 
     // -- Policy ------------------------------------------------------------
     #[doc = "The active policy forbids this action."]

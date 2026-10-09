@@ -46,7 +46,11 @@
       "snapshotInvalid": "That file is not a backup from this application, or it has been damaged.",
       "io": "The backup file could not be read or written.",
       "passphrase": "That passphrase did not open this backup.",
-      "passphraseShort": "A passphrase for a backup needs at least {minimum} characters."
+      "passphraseShort": "A passphrase for a backup needs at least {minimum} characters.",
+      "notConfigured": "No sync server is configured yet.",
+      "unreachable": "The sync server could not be reached.",
+      "authFailed": "The sync server refused that username or password.",
+      "httpFailed": "The sync server answered {status}."
     },
     "policy": {
       "denied": "The active policy does not allow {action}.",

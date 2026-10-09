@@ -491,6 +491,36 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    /// A sync asked for with no server to talk to.
+    pub fn sync_not_configured() -> Self {
+        Self::new(ErrorCode::SyncNotConfigured, Origin::new(Subsystem::Store)).with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A sync server that could not be reached at all: no answer, not a bad answer.
+    pub fn sync_unreachable() -> Self {
+        Self::new(ErrorCode::SyncUnreachable, Origin::new(Subsystem::Net)).with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// The server refused the credentials.
+    ///
+    /// `Sent`, because the answer to "did anything leave this process" is yes: a password was
+    /// offered and the server said no. The detail never names the account — a sync server's address
+    /// and user name are configuration, and an envelope is a thing people paste into bug reports.
+    pub fn sync_auth_failed() -> Self {
+        Self::new(ErrorCode::SyncAuthFailed, Origin::new(Subsystem::Net)).with_outcome(OperationOutcome::Sent)
+    }
+
+    /// The server answered with a status that is not success.
+    ///
+    /// The status travels as a parameter rather than in the detail, because it is the one thing
+    /// worth telling apart: 507 is "out of space", 409 is "the folder is not there", and a person
+    /// can act on either while "the request failed" tells them nothing.
+    pub fn sync_http_failed(status: u16) -> Self {
+        Self::new(ErrorCode::SyncHttpFailed, Origin::new(Subsystem::Net))
+            .with_param("status", status.to_string())
+            .with_outcome(OperationOutcome::Sent)
+    }
+
     // -- Policy ------------------------------------------------------------
 
     pub fn policy_denied(action: &str) -> Self {

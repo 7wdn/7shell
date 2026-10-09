@@ -8,11 +8,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sevenshell-error = { workspace = true }
 sevenshell-types = { workspace = true }
 sevenshell-vault = { workspace = true }
+tokio = { workspace = true }
 uuid = { workspace = true }
 zeroize = { workspace = true }
 

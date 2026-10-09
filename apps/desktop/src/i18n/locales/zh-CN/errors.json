@@ -46,7 +46,11 @@
       "snapshotInvalid": "这个文件不是本应用的备份，或者已经损坏。",
       "io": "无法读写这个备份文件。",
       "passphrase": "这个口令打不开这个备份。",
-      "passphraseShort": "备份用的口令至少要 {minimum} 个字符。"
+      "passphraseShort": "备份用的口令至少要 {minimum} 个字符。",
+      "notConfigured": "还没有配置同步服务器。",
+      "unreachable": "连不上同步服务器。",
+      "authFailed": "同步服务器不认这个用户名或密码。",
+      "httpFailed": "同步服务器返回了 {status}。"
     },
     "policy": {
       "denied": "当前策略不允许 {action}。",
