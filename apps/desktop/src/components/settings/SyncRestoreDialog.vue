@@ -82,7 +82,7 @@ const holds = computed(() => {
           </ul>
 
           <p v-if="props.read?.catalog.sealed" class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            {{ t("sync.restoreSealed") }}
+            {{ t("sync.sealed") }}
           </p>
 
           <label class="mt-3 flex items-start gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
@@ -114,7 +114,7 @@ const holds = computed(() => {
             @click="emit('confirm', replace)"
           >
             <LoaderCircle v-if="props.busy" :size="12" class="mr-1.5 inline animate-spin" />
-            {{ t("sync.restoreConfirm") }}
+            {{ t("sync.import") }}
           </button>
         </footer>
       </DialogContent>

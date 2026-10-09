@@ -156,13 +156,13 @@ describe("the sync page", () => {
     });
     await mount();
 
-    await press("Write a backup");
-    expect(toggle("A record of what you typed").checked).toBe(false);
+    await press("Export backup");
+    expect(toggle("Command history").checked).toBe(false);
 
-    toggle("A record of what you typed").checked = true;
-    toggle("A record of what you typed").dispatchEvent(new Event("change"));
+    toggle("Command history").checked = true;
+    toggle("Command history").dispatchEvent(new Event("change"));
     await nextTick();
-    await press("Write the backup", dialog() as HTMLElement);
+    await press("Export backup", dialog() as HTMLElement);
 
     await vi.waitFor(() => expect(exportMock).toHaveBeenCalled());
     expect(exportMock.mock.calls[0]?.[2]).toEqual({
@@ -178,10 +178,10 @@ describe("the sync page", () => {
   it("will not offer to seal the passwords when there is nothing to seal them under", async () => {
     await mount();
 
-    await press("Write a backup");
+    await press("Export backup");
 
-    expect(toggle("The saved passwords and the imported keys").disabled).toBe(true);
-    expect(dialog()?.textContent).toContain("Needs a passphrase");
+    expect(toggle("Saved passwords and imported keys").disabled).toBe(true);
+    expect(dialog()?.textContent).toContain("Needs the passphrase");
   });
 
   it("sends the passphrase that is on the panel, and expects the file to be sealed", async () => {
@@ -193,13 +193,13 @@ describe("the sync page", () => {
     await mount();
 
     await type("correct horse");
-    await press("Write a backup");
-    const box = toggle("The saved passwords and the imported keys");
+    await press("Export backup");
+    const box = toggle("Saved passwords and imported keys");
     expect(box.disabled).toBe(false);
     box.checked = true;
     box.dispatchEvent(new Event("change"));
     await nextTick();
-    await press("Write the backup", dialog() as HTMLElement);
+    await press("Export backup", dialog() as HTMLElement);
 
     await vi.waitFor(() => expect(exportMock).toHaveBeenCalled());
     expect(exportMock.mock.calls[0]?.[3]).toBe("correct horse");
@@ -217,7 +217,7 @@ describe("the sync page", () => {
     } satisfies SyncApplySummary);
     await mount();
 
-    await press("Restore from a file");
+    await press("Import backup");
 
     await vi.waitFor(() => expect(inspectMock).toHaveBeenCalled());
     expect(inspectMock.mock.calls[0]?.[1]).toBeNull();
@@ -226,11 +226,11 @@ describe("the sync page", () => {
     // The replacement switch starts off every time: a remembered "yes" is how a library is written
     // over a week later by somebody who meant to add to it.
     const replace = [...(dialog()?.querySelectorAll("label") ?? [])]
-      .find((label) => label.textContent?.includes("Replace what is already here"))
+      .find((label) => label.textContent?.includes("Replace items with the same id"))
       ?.querySelector<HTMLInputElement>("input[type=checkbox]");
     expect(replace?.checked).toBe(false);
 
-    await press("Restore", dialog() as HTMLElement);
+    await press("Import backup", dialog() as HTMLElement);
 
     await vi.waitFor(() => expect(restoreMock).toHaveBeenCalled());
     expect(restoreMock.mock.calls[0]?.[0]).toBe(false);
@@ -256,9 +256,9 @@ describe("the sync page", () => {
     sessionsMock.mockClear();
     settingsMock.mockClear();
 
-    await press("Restore from a file");
+    await press("Import backup");
     await vi.waitFor(() => expect(dialog()).not.toBeNull());
-    await press("Restore", dialog() as HTMLElement);
+    await press("Import backup", dialog() as HTMLElement);
 
     await vi.waitFor(() => expect(sessionsMock).toHaveBeenCalled());
     expect(settingsMock, "the file carried no settings, so none were read again").not.toHaveBeenCalled();
@@ -278,7 +278,7 @@ describe("the sync page", () => {
     await mount();
 
     await type("wrong horse");
-    await press("Restore from a file");
+    await press("Import backup");
 
     await vi.waitFor(() => expect(host.textContent).toContain("did not open this backup"));
     expect(dialog(), "and no question about what is inside a file that did not open").toBeNull();

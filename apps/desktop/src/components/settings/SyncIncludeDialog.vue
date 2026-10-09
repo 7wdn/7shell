@@ -93,9 +93,8 @@ function confirm(): void {
       >
         <div class="px-4 pt-4">
           <DialogTitle class="text-sm font-medium">{{ t("sync.includeTitle") }}</DialogTitle>
-          <DialogDescription class="mt-1 text-xs leading-relaxed text-muted-foreground">
-            {{ t("sync.includeMessage") }}
-            <span v-if="always" class="mt-1 block">{{ t("sync.includeAlways", { parts: always }) }}</span>
+          <DialogDescription v-if="always" class="mt-1 text-xs leading-relaxed text-muted-foreground">
+            {{ t("sync.includeAlways", { parts: always }) }}
           </DialogDescription>
 
           <div class="mt-3 space-y-2">
@@ -161,7 +160,7 @@ function confirm(): void {
             @click="confirm()"
           >
             <LoaderCircle v-if="props.busy" :size="12" class="mr-1.5 inline animate-spin" />
-            {{ t("sync.includeConfirm") }}
+            {{ t("sync.export") }}
           </button>
         </footer>
       </DialogContent>

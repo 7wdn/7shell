@@ -2,20 +2,21 @@
 /**
  * Sync, and the one half of it this build has: backups to a file.
  *
- * Three tabs, because the feature is three things and hiding two of them would make the page look
- * finished when it is not — the two that have not landed yet say so rather than opening onto
- * nothing.
+ * Three tabs, two of which say they are not here yet rather than opening onto nothing. The panel
+ * under them is one card: what a backup is, the passphrase it is sealed with, and the two things
+ * somebody does with one — the same three parts, in the same order, as the application this page is
+ * modelled on.
  *
- * The passphrase is on the panel rather than in the dialog behind it, because it answers two
- * questions: it is what seals a backup being written, and it is what opens a sealed one being read.
- * A wrong one lands beside the field that was typed in, and the shell is still holding the file, so
- * the answer is typed again rather than the file chosen again.
+ * The passphrase is on the panel rather than in a dialog, because it answers two questions: it is
+ * what seals a backup being written, and what opens a sealed one being read. A wrong one lands
+ * beside the field that was typed in, and the shell is still holding the file, so the answer is
+ * retyped rather than the file chosen again.
  *
- * After a restore this page reads the library again — the sessions, the commands, the words and the
- * settings, whichever of them changed. Only the shell knows which ids a restore had to replace, so
- * anything less than reading again would be a second guess at what is on disk.
+ * After an import this page reads the library again — the sessions, the commands, the words and,
+ * when the file carried them, the settings. Only the shell knows which ids an import had to
+ * replace, so anything less would be a second guess at what is on disk.
  */
-import { Loader2, Upload } from "@lucide/vue";
+import { Archive, Download, Loader2, Upload } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -82,8 +83,8 @@ function writeBackup(selection: SyncSelection): void {
  * Reads a backup, and either says what is inside it or asks for what is missing.
  *
  * An answer of "sealed" is not shown: the field that answers it is on this panel, so the press of
- * this button *is* the question. What comes back instead is either the dialog or, when the
- * passphrase was wrong, the line beside the field.
+ * this button *is* the question. What comes back is either the dialog or, when the passphrase was
+ * wrong, the line beside the field.
  */
 function readBackup(): void {
   void (async () => {
@@ -103,7 +104,7 @@ function restore(replace: boolean): void {
     }
     notice.value = restoreReceipt(summary, t);
 
-    // Everything a restore can have written, read again — the settings included, because a backup
+    // Everything an import can have written, read again — the settings included, because a backup
     // may carry them and this page would otherwise show the theme it had a moment ago.
     await Promise.all([library.load(), commands.load(), words.load()]);
     if (summary.contents.settings > 0) {
@@ -115,11 +116,6 @@ function restore(replace: boolean): void {
 
 <template>
   <section class="space-y-4">
-    <div class="space-y-1">
-      <h3 class="text-sm font-medium">{{ t("sync.title") }}</h3>
-      <p class="text-xs leading-relaxed text-muted-foreground">{{ t("sync.description") }}</p>
-    </div>
-
     <!--
       The three things a sync page is. Two of them are not here yet, and a tab that opens onto
       nothing would be a worse lie than a tab that says so.
@@ -155,12 +151,15 @@ function restore(replace: boolean): void {
       </button>
     </div>
 
-    <div class="space-y-3 rounded-md border border-border bg-muted/20 px-3 py-3">
+    <p class="text-[11px] leading-relaxed text-muted-foreground">{{ t("sync.notYet") }}</p>
+
+    <div class="space-y-3 rounded-md border border-border px-3 py-3">
       <div class="space-y-1">
-        <p class="text-xs">{{ t("sync.backupDescription") }}</p>
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
-          {{ t("sync.passphraseHint") }}
-        </p>
+        <h4 class="flex items-center gap-1.5 text-xs font-medium">
+          <Archive :size="13" class="text-muted-foreground" />
+          {{ t("sync.backupTitle") }}
+        </h4>
+        <p class="text-xs leading-relaxed text-muted-foreground">{{ t("sync.backupDescription") }}</p>
       </div>
 
       <div>
@@ -174,9 +173,25 @@ function restore(replace: boolean): void {
           :placeholder="t('sync.passphrasePlaceholder')"
           :disabled="working"
         />
+        <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">{{ t("sync.passphraseHint") }}</p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-2">
+      <p v-if="problem" class="text-[11px] text-destructive" role="alert">{{ problem }}</p>
+      <p v-else-if="notice" class="text-[11px] text-muted-foreground">{{ notice }}</p>
+
+      <!-- The two things somebody does with a backup, in the order the panel they are copied from
+           draws them: bringing one in first, writing one out second and louder. -->
+      <div class="flex justify-end gap-2">
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+          :disabled="working"
+          @click="readBackup()"
+        >
+          <Loader2 v-if="sync.busy === 'import'" :size="12" class="animate-spin" />
+          <Download v-else :size="12" />
+          {{ t("sync.import") }}
+        </button>
         <button
           type="button"
           class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
@@ -187,21 +202,7 @@ function restore(replace: boolean): void {
           <Upload v-else :size="12" />
           {{ t("sync.export") }}
         </button>
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="working"
-          @click="readBackup()"
-        >
-          <Loader2 v-if="sync.busy === 'import'" :size="12" class="animate-spin" />
-          {{ t("sync.import") }}
-        </button>
       </div>
-
-      <!-- The line under the buttons: a refusal beside the field that caused it, or what just
-           happened. One place, because a sentence here and a toast for the same thing is two. -->
-      <p v-if="problem" class="text-[11px] text-destructive" role="alert">{{ problem }}</p>
-      <p v-else-if="notice" class="text-[11px] text-muted-foreground">{{ notice }}</p>
     </div>
 
     <SyncIncludeDialog

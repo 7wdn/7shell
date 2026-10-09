@@ -3083,22 +3083,24 @@ test("the sync page says what it can back up, and asks before it writes", async 
     // switch is there but refuses until one is typed.
     const passphrase = settings.locator("#sync-passphrase");
     await expect(passphrase).toBeVisible();
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync.png"), fullPage: false });
 
-    await settings.getByRole("button", { name: "Write a backup" }).click();
+    await settings.getByRole("button", { name: "Export backup" }).click();
     const asking = page.getByRole("dialog");
-    await expect(asking.getByText("What goes into the backup?")).toBeVisible();
-    const credentials = asking.getByRole("checkbox", { name: /saved passwords and the imported keys/ });
+    await expect(asking.getByText("Choose what to back up")).toBeVisible();
+    const credentials = asking.getByRole("checkbox", { name: /Saved passwords and imported keys/ });
     await expect(credentials, "nothing to seal them under, so nothing to tick").toBeDisabled();
 
-    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync.png"), fullPage: false });
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync-include.png"), fullPage: false });
 
     await asking.getByRole("button", { name: "Cancel" }).click();
     await expect(asking).toHaveCount(0);
 
     await passphrase.fill("correct horse");
-    await settings.getByRole("button", { name: "Write a backup" }).click();
+    await settings.getByRole("button", { name: "Export backup" }).click();
     await expect(
-      page.getByRole("dialog").getByRole("checkbox", { name: /saved passwords and the imported keys/ }),
+      page.getByRole("dialog").getByRole("checkbox", { name: /Saved passwords and imported keys/ }),
       "a passphrase is what makes them able to travel",
     ).toBeEnabled();
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
