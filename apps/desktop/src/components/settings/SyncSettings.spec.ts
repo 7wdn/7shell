@@ -15,11 +15,19 @@ vi.mock("@/lib/backend/tauri", () => ({
   syncBackupExport: vi.fn(),
   syncBackupInspect: vi.fn(),
   syncBackupRestore: vi.fn(),
+  syncStatus: vi.fn(),
+  syncPassword: vi.fn(),
+  syncPassphrase: vi.fn(),
+  syncTest: vi.fn(),
+  syncUpload: vi.fn(),
+  syncDownload: vi.fn(),
+  syncApply: vi.fn(),
   sessionsList: vi.fn(),
   groupsList: vi.fn(),
   snippetsOpen: vi.fn(),
   completionWords: vi.fn(),
   settingsGet: vi.fn(),
+  settingsSet: vi.fn(),
 }));
 
 import SyncSettings from "@/components/settings/SyncSettings.vue";
@@ -30,11 +38,19 @@ import {
   groupsList,
   sessionsList,
   settingsGet,
+  settingsSet,
   snippetsOpen,
+  syncApply,
   syncAvailable,
   syncBackupExport,
   syncBackupInspect,
   syncBackupRestore,
+  syncDownload,
+  syncPassphrase,
+  syncPassword,
+  syncStatus,
+  syncTest,
+  syncUpload,
 } from "@/lib/backend/tauri";
 import type { SyncApplySummary, SyncCatalog, SyncContents } from "@/types/sync";
 
@@ -47,6 +63,14 @@ const groupsMock = vi.mocked(groupsList);
 const snippetsMock = vi.mocked(snippetsOpen);
 const wordsMock = vi.mocked(completionWords);
 const settingsMock = vi.mocked(settingsGet);
+const settingsSetMock = vi.mocked(settingsSet);
+const statusMock = vi.mocked(syncStatus);
+const passwordMock = vi.mocked(syncPassword);
+const passphraseMock = vi.mocked(syncPassphrase);
+const testMock = vi.mocked(syncTest);
+const uploadMock = vi.mocked(syncUpload);
+const downloadMock = vi.mocked(syncDownload);
+const applyMock = vi.mocked(syncApply);
 
 let app: App | undefined;
 let host: HTMLDivElement;
@@ -105,6 +129,16 @@ function toggle(label: string): HTMLInputElement {
   return box;
 }
 
+async function typeInto(id: string, value: string): Promise<void> {
+  const element = host.querySelector<HTMLInputElement>(id.startsWith("#") ? id : `#${id}`);
+  if (!element) {
+    throw new Error(`the panel has no field ${id}`);
+  }
+  element.value = value;
+  element.dispatchEvent(new Event("input"));
+  await nextTick();
+}
+
 async function type(value: string): Promise<void> {
   const element = host.querySelector<HTMLInputElement>("#sync-passphrase");
   if (!element) {
@@ -113,6 +147,22 @@ async function type(value: string): Promise<void> {
   element.value = value;
   element.dispatchEvent(new Event("input"));
   await nextTick();
+}
+
+/** Opens the file panel, because the page now opens on the server's. */
+async function openLocal(): Promise<void> {
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    (candidate) => candidate.textContent?.trim() === "Local backup",
+  );
+  candidate_or_throw(tab, "the local backup tab");
+  tab.click();
+  await nextTick();
+}
+
+function candidate_or_throw(tab: HTMLButtonElement | undefined, what: string): asserts tab is HTMLButtonElement {
+  if (!tab) {
+    throw new Error(`no ${what}`);
+  }
 }
 
 beforeEach(() => {
@@ -127,6 +177,26 @@ beforeEach(() => {
   // The settings are only ever *read again* by this page, never inspected: an empty object is
   // enough to see whether the call happened, and the shape of one is another spec's business.
   settingsMock.mockReset().mockResolvedValue({} as never);
+  settingsSetMock.mockReset().mockResolvedValue(undefined);
+  statusMock.mockReset().mockResolvedValue({ hasPassword: false, hasPassphrase: false });
+  passwordMock.mockReset().mockImplementation(async (password: string | null) => ({
+    hasPassword: password !== null,
+    hasPassphrase: false,
+  }));
+  passphraseMock.mockReset().mockImplementation(async (passphrase: string | null) => ({
+    hasPassword: false,
+    hasPassphrase: passphrase !== null,
+  }));
+  testMock.mockReset().mockResolvedValue(undefined);
+  uploadMock.mockReset().mockResolvedValue({ contents: contents(), sealed: false, remotePath: "sync/backup.json" });
+  downloadMock.mockReset().mockResolvedValue({ kind: "nothingYet" });
+  applyMock.mockReset().mockResolvedValue({
+    contents: contents(),
+    replaced: 0,
+    copied: 0,
+    missingKeys: 0,
+    droppedHops: 0,
+  });
 });
 
 afterEach(() => {
@@ -145,7 +215,10 @@ describe("the sync page", () => {
     expect(host.textContent).toContain("Local backup");
     // The two tabs that have not landed say so rather than opening onto nothing.
     const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-    expect(tabs.map((tab) => tab.disabled)).toEqual([true, true, false]);
+    expect(
+      tabs.map((tab) => tab.disabled),
+      "only snippet sync is missing",
+    ).toEqual([false, true, false]);
   });
 
   it("writes a backup with the switches that were ticked, and says what it wrote", async () => {
@@ -155,6 +228,7 @@ describe("the sync page", () => {
       fileName: "7shell-backup.json",
     });
     await mount();
+    await openLocal();
 
     await press("Export backup");
     expect(toggle("Command history").checked).toBe(false);
@@ -175,8 +249,71 @@ describe("the sync page", () => {
     await vi.waitFor(() => expect(host.textContent).toContain("without any passwords"));
   });
 
+  it("writes the address down before it dials it", async () => {
+    // The shell reads the server out of the settings file, so a test pressed with an unsaved
+    // address on screen would dial the saved one — the mistake somebody makes once and then
+    // distrusts the button for.
+    await mount();
+    await typeInto("#sync-endpoint", "https://dav.example.com/dav/");
+
+    await press("Test");
+
+    await vi.waitFor(() => expect(testMock).toHaveBeenCalled());
+    expect(settingsSetMock, "the address went into the file first").toHaveBeenCalled();
+    expect(settingsSetMock.mock.invocationCallOrder[0]!).toBeLessThan(testMock.mock.invocationCallOrder[0]!);
+    await vi.waitFor(() => expect(host.textContent).toContain("The server answered"));
+  });
+
+  it("keeps the password when the box asks for it, and forgets it when the box is cleared", async () => {
+    await mount();
+    await typeInto("#sync-endpoint", "https://dav.example.com/dav/");
+    await typeInto("#sync-password", "hunter2");
+
+    const box = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!box) {
+      throw new Error("the server panel has no box for keeping the password");
+    }
+    // Off by default, because a password nobody asked to keep is one this application has no
+    // business holding.
+    expect(box.checked).toBe(false);
+    box.checked = true;
+    box.dispatchEvent(new Event("change"));
+    await nextTick();
+
+    await press("Test");
+    await vi.waitFor(() => expect(passwordMock).toHaveBeenCalled());
+    expect(passwordMock.mock.calls[0]?.[0]).toBe("hunter2");
+    expect(host.querySelector<HTMLInputElement>("#sync-password")?.value, "and the field is cleared").toBe("");
+
+    // Unticking it is forgetting rather than leaving it alone: there is one control for this, and
+    // it has to mean something.
+    const again = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    if (!again) {
+      throw new Error("the box went missing");
+    }
+    again.checked = false;
+    again.dispatchEvent(new Event("change"));
+    await nextTick();
+    await press("Test");
+
+    await vi.waitFor(() => expect(passwordMock).toHaveBeenCalledTimes(2));
+    expect(passwordMock.mock.calls[1]?.[0]).toBeNull();
+  });
+
+  it("says a server with nothing on it is nothing to worry about", async () => {
+    downloadMock.mockResolvedValue({ kind: "nothingYet" });
+    await mount();
+    await typeInto("#sync-endpoint", "https://dav.example.com/dav/");
+
+    await press("Download");
+
+    await vi.waitFor(() => expect(host.textContent).toContain("has no backup there yet"));
+    expect(dialog(), "and nothing to decide about a file that is not there").toBeNull();
+  });
+
   it("will not offer to seal the passwords when there is nothing to seal them under", async () => {
     await mount();
+    await openLocal();
 
     await press("Export backup");
 
@@ -191,6 +328,7 @@ describe("the sync page", () => {
       fileName: "7shell-backup.json",
     });
     await mount();
+    await openLocal();
 
     await type("correct horse");
     await press("Export backup");
@@ -216,6 +354,7 @@ describe("the sync page", () => {
       droppedHops: 0,
     } satisfies SyncApplySummary);
     await mount();
+    await openLocal();
 
     await press("Import backup");
 
@@ -253,6 +392,7 @@ describe("the sync page", () => {
       droppedHops: 0,
     } satisfies SyncApplySummary);
     await mount();
+    await openLocal();
     sessionsMock.mockClear();
     settingsMock.mockClear();
 
@@ -276,6 +416,7 @@ describe("the sync page", () => {
       }),
     );
     await mount();
+    await openLocal();
 
     await type("wrong horse");
     await press("Import backup");

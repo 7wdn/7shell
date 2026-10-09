@@ -147,3 +147,46 @@ pub enum SyncInspectOutcome {
     /// The file is sealed under a passphrase this build has not been given yet.
     NeedsPassphrase { file_name: String },
 }
+
+/// What this installation has configured for a sync server.
+///
+/// The two booleans are all the interface is told about what is kept, and both are answers rather
+/// than values: `has_password` says the vault is holding one, which is what the box beside the field
+/// is drawn from, and nothing here ever carries the password or the passphrase itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncServiceStatus {
+    /// Whether the vault holds a password for the server.
+    pub has_password: bool,
+    /// Whether it holds the passphrase an upload is sealed under.
+    pub has_passphrase: bool,
+}
+
+/// What an upload to a server did.
+///
+/// Its own shape rather than [`SyncReceipt`], because a server has no file name to speak of: what a
+/// person wants to see is where it went, and the remote path is configuration rather than a secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncUploadReceipt {
+    pub contents: SyncContents,
+    /// Whether a passphrase stood between the file and what is in it.
+    pub sealed: bool,
+    pub remote_path: String,
+}
+
+/// What comes of asking a server for the file it holds.
+///
+/// Three answers rather than two: a server with nothing there yet is not a failure and not a
+/// question — it is the ordinary state of a sync that has never run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// `rename_all` renames the variants; `rename_all_fields` renames the fields inside them.
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum SyncDownloadOutcome {
+    /// The server has no file there yet.
+    NothingYet,
+    /// The file was read, and this is what it holds.
+    Read { catalog: SyncCatalog },
+    /// It is sealed under a passphrase this build has not been given.
+    NeedsPassphrase,
+}

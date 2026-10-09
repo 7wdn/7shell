@@ -40,7 +40,16 @@ import type {
   UploadOutcome,
   VaultState,
 } from "@/types/session";
-import type { SyncApplySummary, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection } from "@/types/sync";
+import type {
+  SyncApplySummary,
+  SyncContents,
+  SyncDownloadOutcome,
+  SyncInspectOutcome,
+  SyncReceipt,
+  SyncSelection,
+  SyncServiceStatus,
+  SyncUploadReceipt,
+} from "@/types/sync";
 
 import { ShellError, normalizeShellError, noTransportError } from "./errors";
 import * as desktop from "./tauri";
@@ -243,6 +252,25 @@ export const backend = {
     /** Applies the backup that was read, in the shell. */
     restore: (replace: boolean, passphrase: string | null): Promise<SyncApplySummary> =>
       forward("sync_backup_restore", () => desktop.syncBackupRestore(replace, passphrase)),
+
+    /**
+     * The server: what is kept for it, and the four things done with one.
+     *
+     * The address and the user name are not here at all — they are settings, and the shell reads
+     * them from the file. What crosses is the selection, the passphrase somebody typed, and answers.
+     */
+    status: (): Promise<SyncServiceStatus> => forward("sync_status", () => desktop.syncStatus()),
+    keepPassword: (password: string | null): Promise<SyncServiceStatus> =>
+      forward("sync_password", () => desktop.syncPassword(password)),
+    keepPassphrase: (passphrase: string | null): Promise<SyncServiceStatus> =>
+      forward("sync_passphrase", () => desktop.syncPassphrase(passphrase)),
+    test: (): Promise<void> => forward("sync_test", () => desktop.syncTest()),
+    upload: (selection: SyncSelection, passphrase: string | null): Promise<SyncUploadReceipt> =>
+      forward("sync_upload", () => desktop.syncUpload(selection, passphrase)),
+    download: (passphrase: string | null): Promise<SyncDownloadOutcome> =>
+      forward("sync_download", () => desktop.syncDownload(passphrase)),
+    apply: (replace: boolean, passphrase: string | null): Promise<SyncApplySummary> =>
+      forward("sync_apply", () => desktop.syncApply(replace, passphrase)),
   },
 
   keys: {

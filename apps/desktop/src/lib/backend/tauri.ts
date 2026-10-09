@@ -45,7 +45,16 @@ import type {
   UploadOutcome,
   VaultState,
 } from "@/types/session";
-import type { SyncApplySummary, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection } from "@/types/sync";
+import type {
+  SyncApplySummary,
+  SyncContents,
+  SyncDownloadOutcome,
+  SyncInspectOutcome,
+  SyncReceipt,
+  SyncSelection,
+  SyncServiceStatus,
+  SyncUploadReceipt,
+} from "@/types/sync";
 
 /** Removes a subscription made by one of the `on…` functions below. */
 export type Unlisten = () => void;
@@ -303,6 +312,43 @@ export function syncBackupInspect(title: string, passphrase: string | null): Pro
 /** Applies the backup that was read, with the passphrase it was read under. */
 export function syncBackupRestore(replace: boolean, passphrase: string | null): Promise<SyncApplySummary> {
   return invoke<SyncApplySummary>("sync_backup_restore", { replace, passphrase });
+}
+
+// -- The sync server ---------------------------------------------------------
+
+/** What this installation has for a server: whether a password and a passphrase are kept. */
+export function syncStatus(): Promise<SyncServiceStatus> {
+  return invoke<SyncServiceStatus>("sync_status");
+}
+
+/** Keeps the server's password, or forgets it. `null` is forgetting, not "leave it alone". */
+export function syncPassword(password: string | null): Promise<SyncServiceStatus> {
+  return invoke<SyncServiceStatus>("sync_password", { password });
+}
+
+/** Keeps the passphrase an upload is sealed under, or forgets it. */
+export function syncPassphrase(passphrase: string | null): Promise<SyncServiceStatus> {
+  return invoke<SyncServiceStatus>("sync_passphrase", { passphrase });
+}
+
+/** Asks the configured server whether it is a WebDAV one. Nothing is written. */
+export function syncTest(): Promise<void> {
+  return invoke<void>("sync_test");
+}
+
+/** Writes the library to the server. Resolves with what went and where it went. */
+export function syncUpload(selection: SyncSelection, passphrase: string | null): Promise<SyncUploadReceipt> {
+  return invoke<SyncUploadReceipt>("sync_upload", { selection, passphrase });
+}
+
+/** Reads the file the server holds and says what is inside it. */
+export function syncDownload(passphrase: string | null): Promise<SyncDownloadOutcome> {
+  return invoke<SyncDownloadOutcome>("sync_download", { passphrase });
+}
+
+/** Applies the file the server holds, fetching it again. */
+export function syncApply(replace: boolean, passphrase: string | null): Promise<SyncApplySummary> {
+  return invoke<SyncApplySummary>("sync_apply", { replace, passphrase });
 }
 
 // -- Keys --------------------------------------------------------------------

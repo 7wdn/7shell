@@ -702,6 +702,23 @@ impl Vault {
         state.write_to(&self.path)
     }
 
+    /// The passphrase an uploaded snapshot is sealed under, if one was kept.
+    ///
+    /// Kept so a timed upload can seal without asking. It is not the server's password and never
+    /// reaches the server: what a server ends up holding is a file worth nothing without this.
+    pub fn sync_passphrase(&self) -> Result<Option<ServicePassword>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.sync_passphrase())
+    }
+
+    pub fn set_sync_passphrase(&self, passphrase: Option<String>) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.set_sync_passphrase(passphrase);
+        state.write_to(&self.path)
+    }
+
     /// Stores key material under the handle it arrived with.
     ///
     /// [`Vault::import_key`] makes a handle because nothing has seen that key before. A file that

@@ -86,3 +86,34 @@ export interface SyncApplySummary {
 export type SyncInspectOutcome =
   | { readonly kind: "read"; readonly catalog: SyncCatalog; readonly fileName: string }
   | { readonly kind: "needsPassphrase"; readonly fileName: string };
+
+/**
+ * What this installation has configured for a sync server.
+ *
+ * Two answers about what is kept and nothing about what it is: the address and the user name come
+ * from the settings this side already holds, and neither the password nor the passphrase is ever
+ * sent anywhere but a header and a file.
+ */
+export interface SyncServiceStatus {
+  readonly hasPassword: boolean;
+  readonly hasPassphrase: boolean;
+}
+
+/** What an upload to a server did. */
+export interface SyncUploadReceipt {
+  readonly contents: SyncContents;
+  readonly sealed: boolean;
+  /** Where inside the endpoint the file went. Configuration rather than a secret. */
+  readonly remotePath: string;
+}
+
+/**
+ * What comes of asking a server for the file it holds.
+ *
+ * Three answers rather than two: a server with nothing there yet is not a failure and not a
+ * question — it is the ordinary state of a sync that has never run.
+ */
+export type SyncDownloadOutcome =
+  | { readonly kind: "nothingYet" }
+  | { readonly kind: "read"; readonly catalog: SyncCatalog }
+  | { readonly kind: "needsPassphrase" };

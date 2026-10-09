@@ -49,5 +49,8 @@ pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,
     SendTarget, Snippet, SnippetGroup,
 };
-pub use sync::{SyncApplySummary, SyncCatalog, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection};
+pub use sync::{
+    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
+    SyncServiceStatus, SyncUploadReceipt,
+};
 pub use words::CompletionWord;

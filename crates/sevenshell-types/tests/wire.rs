@@ -20,9 +20,9 @@ use sevenshell_types::{
     OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
     RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
     SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet, SnippetGroup, SocketRow,
-    SyncApplySummary, SyncCatalog, SyncContents, SyncInspectOutcome, SyncReceipt, SyncSelection, TabGroupMode,
-    TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure,
-    UploadAnswer, UploadOutcome, VaultState,
+    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
+    SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -278,6 +278,53 @@ fn a_restore_summary_serializes_with_camel_case_fields() {
     assert_eq!(applied["missingKeys"], serde_json::json!(4));
     assert_eq!(applied["droppedHops"], serde_json::json!(5));
     assert_eq!(applied["contents"]["knownHosts"], serde_json::json!(0));
+}
+
+#[test]
+fn a_sync_service_status_and_an_upload_receipt_serialize_with_camel_case_fields() {
+    let status = check(
+        &SyncServiceStatus {
+            has_password: true,
+            has_passphrase: false,
+        },
+        "SyncServiceStatus",
+    );
+    assert_eq!(status["hasPassword"], serde_json::json!(true));
+    assert_eq!(status["hasPassphrase"], serde_json::json!(false));
+
+    let receipt = check(
+        &SyncUploadReceipt {
+            contents: SyncContents::default(),
+            sealed: true,
+            remote_path: "7shell/sync/backup.json".to_owned(),
+        },
+        "SyncUploadReceipt",
+    );
+    assert_eq!(receipt["remotePath"], serde_json::json!("7shell/sync/backup.json"));
+    assert_eq!(receipt["contents"]["knownHosts"], serde_json::json!(0));
+}
+
+#[test]
+fn asking_a_server_for_its_file_answers_with_camel_case_fields() {
+    let nothing = check(&SyncDownloadOutcome::NothingYet, "NothingYet");
+    assert_eq!(nothing["kind"], serde_json::json!("nothingYet"));
+
+    let asked = check(&SyncDownloadOutcome::NeedsPassphrase, "NeedsPassphrase");
+    assert_eq!(asked["kind"], serde_json::json!("needsPassphrase"));
+
+    let read = check(
+        &SyncDownloadOutcome::Read {
+            catalog: SyncCatalog {
+                contents: SyncContents::default(),
+                sealed: false,
+                exported_at: 1,
+                app_version: "0.1.0".to_owned(),
+            },
+        },
+        "Read",
+    );
+    assert_eq!(read["kind"], serde_json::json!("read"));
+    assert_eq!(read["catalog"]["exportedAt"], serde_json::json!(1));
 }
 
 #[test]

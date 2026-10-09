@@ -127,6 +127,14 @@ impl WebDav {
             .to_owned()
     }
 
+    /// Where inside the endpoint the file goes, normalized.
+    ///
+    /// Safe to show: this is configuration rather than a secret — the address a person configured
+    /// themselves, and the path they chose inside it.
+    pub fn remote_path(&self) -> &str {
+        &self.remote_path
+    }
+
     /// Asks the server whether this address is a WebDAV one.
     ///
     /// `PROPFIND` with depth zero is the question every WebDAV server answers, and the one a plain

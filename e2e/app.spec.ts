@@ -3071,20 +3071,41 @@ test("the sync page says what it can back up, and asks before it writes", async 
     await settingsButton(page).click();
     const settings = page.getByRole("region", { name: "Settings" });
     await settings.getByRole("button", { name: "Sync", exact: true }).click();
+    await mkdir(ARTIFACTS, { recursive: true });
 
-    // Three tabs, and only the third one is a thing this build does.
+    // Three tabs, and only the middle one is a thing this build does not have yet.
     const tabs = settings.getByRole("tab");
     await expect(tabs).toHaveCount(3);
-    await expect(tabs.nth(0), "WebDAV is not here yet").toBeDisabled();
-    await expect(tabs.nth(1), "nor is snippet sync").toBeDisabled();
+    await expect(tabs.nth(0), "WebDAV is here now").toBeEnabled();
+    await expect(tabs.nth(1), "snippet sync is not").toBeDisabled();
     await expect(tabs.nth(2)).toBeEnabled();
 
-    // The passphrase field is on the panel, and a backup cannot carry the passwords without it: the
-    // switch is there but refuses until one is typed.
+    // The server panel: an address, a user name, a password and where the file goes. Two fields for
+    // two different secrets, and both are on screen before anything is dialled.
+    await expect(settings.locator("#sync-endpoint")).toBeVisible();
+    await expect(settings.locator("#sync-username")).toBeVisible();
+    await expect(settings.locator("#sync-password")).toHaveAttribute("type", "password");
+    await expect(settings.locator("#sync-remote-path")).toBeVisible();
+
+    // A password can be checked by eye without leaving the page, which is the only way to catch a
+    // typo in a field nobody can read.
+    const reveal = settings.locator("#sync-password").locator("xpath=following-sibling::button[1]");
+    await reveal.click();
+    await expect(settings.locator("#sync-password")).toHaveAttribute("type", "text");
+    await reveal.click();
+    await expect(settings.locator("#sync-password")).toHaveAttribute("type", "password");
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync.png"), fullPage: false });
+
+    // Pressing an action with no address says so rather than dialling nothing.
+    await settings.getByRole("button", { name: "Test", exact: true }).click();
+    await expect(settings.getByText("Set an address first.")).toBeVisible();
+
+    // The file panel, which is the same three parts with nothing to configure: its passphrase is on
+    // the panel, and a backup cannot carry the passwords without it — the switch refuses until one
+    // is typed.
+    await tabs.nth(2).click();
     const passphrase = settings.locator("#sync-passphrase");
     await expect(passphrase).toBeVisible();
-    await mkdir(ARTIFACTS, { recursive: true });
-    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync.png"), fullPage: false });
 
     await settings.getByRole("button", { name: "Export backup" }).click();
     const asking = page.getByRole("dialog");

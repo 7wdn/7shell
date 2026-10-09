@@ -20,10 +20,27 @@ import { ref } from "vue";
 
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
-import type { SyncApplySummary, SyncCatalog, SyncContents, SyncReceipt, SyncSelection } from "@/types/sync";
+import type {
+  SyncApplySummary,
+  SyncCatalog,
+  SyncContents,
+  SyncDownloadOutcome,
+  SyncReceipt,
+  SyncSelection,
+  SyncServiceStatus,
+  SyncUploadReceipt,
+} from "@/types/sync";
 
-/** Which of the two directions is running, for a panel that disables the other one. */
-export type SyncWork = "" | "export" | "import";
+/**
+ * Which of the things a page can be doing is running, for a panel that disables the rest.
+ *
+ * One field for all of them rather than one per panel: two syncs at once is not a thing anybody
+ * means, and a second one's sentence would arrive after the first's and overwrite it.
+ */
+export type SyncWork = "" | "export" | "import" | "test" | "upload" | "download" | "password" | "passphrase";
+
+/** The server actions, which share that field with the two file ones. */
+type ServiceWork = "test" | "upload" | "download" | "password" | "passphrase";
 
 /** A backup that was read and is waiting to be applied. */
 export interface ReadBackup {
@@ -127,5 +144,99 @@ export const useSyncStore = defineStore("sync", () => {
     read.value = null;
   }
 
-  return { available, busy, failure, notice, read, load, writeBackup, readBackup, applyBackup, forgetRead };
+  /**
+   * What this installation has for a server: whether a password and a passphrase are kept.
+   *
+   * Two booleans and no values. The address and the user name are on the settings side, and the two
+   * secrets are in the vault — this is only what the page needs to draw its boxes.
+   */
+  const service = ref<SyncServiceStatus | null>(null);
+
+  async function loadService(): Promise<void> {
+    try {
+      service.value = await backend.sync.status();
+    } catch (error) {
+      failure.value = asShellError(error, "sync_status");
+    }
+  }
+
+  /**
+   * Runs one of the four server actions under the shared shape: one busy kind, one failure, and the
+   * answer back to the caller.
+   *
+   * Reading a server and writing to one both take a network round trip, so the page disables
+   * everything while any of them runs — two syncs at once is not a thing anybody means, and the
+   * second one's result would arrive after the first's and overwrite its sentence.
+   */
+  async function runService<T>(kind: ServiceWork, action: () => Promise<T>): Promise<T | null> {
+    failure.value = null;
+    notice.value = "";
+    busy.value = kind satisfies SyncWork;
+    try {
+      return await action();
+    } catch (error) {
+      failure.value = asShellError(error, `sync_${kind}`);
+      return null;
+    } finally {
+      busy.value = "";
+    }
+  }
+
+  /** Keeps the server's password, or forgets it. `null` is forgetting. */
+  async function keepPassword(password: string | null): Promise<void> {
+    await runService("password", async () => {
+      service.value = await backend.sync.keepPassword(password);
+    });
+  }
+
+  /** Keeps the passphrase an upload is sealed under, or forgets it. */
+  async function keepPassphrase(passphrase: string | null): Promise<void> {
+    await runService("passphrase", async () => {
+      service.value = await backend.sync.keepPassphrase(passphrase);
+    });
+  }
+
+  /** Asks the configured server whether it is a WebDAV one. `true` is an answer. */
+  async function testServer(): Promise<boolean> {
+    return (await runService("test", () => backend.sync.test())) !== null;
+  }
+
+  /** Writes the library to the server. `null` is a refusal, already in `failure`. */
+  async function uploadToServer(
+    selection: SyncSelection,
+    passphrase: string | null,
+  ): Promise<SyncUploadReceipt | null> {
+    return runService("upload", () => backend.sync.upload(selection, passphrase));
+  }
+
+  /** Reads the file the server holds. `null` is a refusal, already in `failure`. */
+  async function downloadFromServer(passphrase: string | null): Promise<SyncDownloadOutcome | null> {
+    return runService("download", () => backend.sync.download(passphrase));
+  }
+
+  /** Applies the file the server holds, fetching it again. */
+  async function applyFromServer(replace: boolean, passphrase: string | null): Promise<SyncApplySummary | null> {
+    return runService("download", () => backend.sync.apply(replace, passphrase));
+  }
+
+  return {
+    available,
+    busy,
+    failure,
+    notice,
+    read,
+    service,
+    load,
+    writeBackup,
+    readBackup,
+    applyBackup,
+    forgetRead,
+    loadService,
+    keepPassword,
+    keepPassphrase,
+    testServer,
+    uploadToServer,
+    downloadFromServer,
+    applyFromServer,
+  };
 });

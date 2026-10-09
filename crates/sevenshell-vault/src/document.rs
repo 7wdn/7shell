@@ -76,6 +76,14 @@ pub struct Document {
     /// that has to be behind the vault's own lock.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sync_password: Option<SecretString>,
+    /// The passphrase an uploaded snapshot is sealed under, when somebody asked for it to be kept.
+    ///
+    /// Kept because a timed upload cannot ask: a timer that stops to prompt is a timer nobody has
+    /// set. Optional, and independent of the password above — a snapshot can be sealed without the
+    /// server needing anything but a login, and a server can need a login without anything being
+    /// sealed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync_passphrase: Option<SecretString>,
 }
 
 impl Document {
@@ -92,6 +100,7 @@ impl Document {
             command_history: Vec::new(),
             completion_words: Vec::new(),
             sync_password: None,
+            sync_passphrase: None,
         }
     }
 
@@ -546,6 +555,22 @@ impl Document {
     pub(crate) fn set_sync_password(&mut self, password: Option<String>) {
         self.sync_password = password.filter(|value| !value.is_empty()).map(SecretString::new);
     }
+
+    /// The passphrase an uploaded snapshot is sealed under, if one was kept.
+    ///
+    /// Not the same thing as the server's password, and kept apart on purpose: the server never
+    /// sees this one, and it is the only thing standing between a file on somebody else's disk and
+    /// the logins in it. A password that opens the door and a passphrase that seals the parcel are
+    /// two decisions, and one of them may well be shared with a colleague.
+    pub(crate) fn sync_passphrase(&self) -> Option<ServicePassword> {
+        self.sync_passphrase
+            .as_ref()
+            .map(|passphrase| ServicePassword::new(passphrase.expose().to_owned()))
+    }
+
+    pub(crate) fn set_sync_passphrase(&mut self, passphrase: Option<String>) {
+        self.sync_passphrase = passphrase.filter(|value| !value.is_empty()).map(SecretString::new);
+    }
 }
 
 impl fmt::Debug for Document {
@@ -560,6 +585,7 @@ impl fmt::Debug for Document {
             .field("secrets", &self.secrets.len())
             .field("known_hosts", &self.known_hosts.len())
             .field("sync_password", &self.sync_password.is_some())
+            .field("sync_passphrase", &self.sync_passphrase.is_some())
             .finish()
     }
 }
@@ -928,14 +954,29 @@ mod tests {
             document.sync_password().is_none(),
             "an empty password is nobody keeping one"
         );
+
+        // The passphrase that seals an upload is a second field, and keeping one is not keeping the
+        // other: a server can need a login with nothing sealed, and a file can be sealed for a
+        // server that takes anything from this address.
+        document.set_sync_passphrase(Some("correct horse".to_owned()));
+        assert_eq!(document.sync_passphrase().expect("kept").expose(), "correct horse");
+        assert!(document.sync_password().is_none(), "and the other one stayed empty");
+
+        document.set_sync_passphrase(None);
+        assert!(document.sync_passphrase().is_none());
     }
 
     #[test]
     fn a_sync_password_is_never_printed() {
         let mut document = Document::empty();
         document.set_sync_password(Some("hunter2".to_owned()));
+        document.set_sync_passphrase(Some("correct horse".to_owned()));
 
-        let rendered = format!("{document:?} {:?}", document.sync_password());
+        let rendered = format!(
+            "{document:?} {:?} {:?}",
+            document.sync_password(),
+            document.sync_passphrase()
+        );
 
         assert!(
             !rendered.contains("hunter2"),
