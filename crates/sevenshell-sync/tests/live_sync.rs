@@ -368,4 +368,14 @@ async fn a_real_code_host_takes_a_backup_and_gives_it_back() {
         id,
         "the second upload went to the same snippet"
     );
+
+    // And the file is still a file afterwards. An update that answered 200 and emptied the content
+    // would look exactly like a working sync until somebody needed to restore from it, which is the
+    // one moment a backup must not be wrong.
+    let after = reader.read().await.expect("the file came back again");
+    let snapshot = open_snippet(&after, passphrase).expect("still this application's envelope");
+    assert_eq!(
+        snapshot.sessions[0].name, "web",
+        "the update replaced the file rather than emptying it"
+    );
 }
