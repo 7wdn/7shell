@@ -719,6 +719,25 @@ impl Vault {
         state.write_to(&self.path)
     }
 
+    /// The access token kept for one code-hosting account, if one was.
+    ///
+    /// Keyed by an account name the caller decides: this vault stores tokens, it does not know which
+    /// services have them or how an installation is addressed. What comes back is wiped when it is
+    /// dropped, and it exists for the one caller that puts it in a header.
+    pub fn snippet_token(&self, account: &str) -> Result<Option<ServicePassword>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.snippet_token(account))
+    }
+
+    /// Keeps a token for one account, or forgets the one that was kept.
+    pub fn set_snippet_token(&self, account: &str, token: Option<String>) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.set_snippet_token(account, token);
+        state.write_to(&self.path)
+    }
+
     /// Stores key material under the handle it arrived with.
     ///
     /// [`Vault::import_key`] makes a handle because nothing has seen that key before. A file that

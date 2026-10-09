@@ -214,14 +214,16 @@ pub struct BuiltSnapshot {
 /// The credentials are the one thing that needs a passphrase, and asking for them without one is
 /// not an error: the snapshot is written without them and records that it does. The alternative
 /// would be a refusal for something a person may well mean — "back up everything except the
-/// passwords" is the ordinary case, not a mistake.
-pub fn build(
+/// passwords" is the ordinary case, not a mistake. **The passphrase is here only to make that
+/// decision**; the credentials themselves are read by [`with_credentials`], which every caller runs
+/// last.
+pub fn gather(
     vault: &Vault,
     settings: &AppSettings,
     selection: &SyncSelection,
     passphrase: Option<&str>,
     now: u64,
-) -> Result<BuiltSnapshot, ShellError> {
+) -> Result<SyncSnapshot, ShellError> {
     let mut carried = selection.clone();
     let sealing = match (selection.credentials, passphrase) {
         (true, Some(value)) if value.chars().count() < MIN_PASSPHRASE_LEN => {
@@ -269,7 +271,50 @@ pub fn build(
         snapshot.settings = Some(PortableSettings::of(settings));
     }
 
+    Ok(snapshot)
+}
+
+/// Adds the stored logins and key material to a snapshot that was asked to carry them.
+///
+/// Its own step rather than part of [`gather`], and it is the last thing every caller does: reading
+/// them is the last operation that can fail, so there is no path where they are in memory and then
+/// dropped because something else went wrong.
+pub fn with_credentials(vault: &Vault, snapshot: &mut SyncSnapshot) -> Result<(), ShellError> {
+    snapshot.secrets = Some(vault.secret_entries()?);
+    snapshot.keys = Some(vault.key_entries()?);
+    Ok(())
+}
+
+/// Refuses a snapshot that says it carries credentials and does not.
+///
+/// The flag is what a reader uses to decide whether to ask for a passphrase and what to tell somebody
+/// about the file, so a sealed snapshot claiming credentials it does not hold is a file that lies
+/// about itself — the one failure a backup must not have. Both sealers check it, which is what makes
+/// "read the credentials last" a rule a caller can forget without the mistake reaching a file: they
+/// get a loud internal error instead of a plausible-looking file.
+pub(crate) fn ensure_credentials_came(snapshot: &SyncSnapshot) -> Result<(), ShellError> {
+    if snapshot.selection.credentials && (snapshot.secrets.is_none() || snapshot.keys.is_none()) {
+        return Err(ShellError::app_internal(
+            "a snapshot was sealed as carrying credentials without them having been read",
+        ));
+    }
+    Ok(())
+}
+
+/// A snapshot in the form a file, a server or a snippet carries.
+pub fn build(
+    vault: &Vault,
+    settings: &AppSettings,
+    selection: &SyncSelection,
+    passphrase: Option<&str>,
+    now: u64,
+) -> Result<BuiltSnapshot, ShellError> {
+    let mut snapshot = gather(vault, settings, selection, passphrase, now)?;
     let contents = snapshot.contents();
+
+    // What `gather` decided about the credentials, which is the answer to whether this goes out
+    // sealed: the two can never disagree, because the flag it wrote is the one read here.
+    let sealing = passphrase.filter(|_| snapshot.selection.credentials);
     let Some(passphrase) = sealing else {
         return Ok(BuiltSnapshot {
             text: snapshot.to_json()?,
@@ -278,10 +323,8 @@ pub fn build(
         });
     };
 
-    // Read out of the vault last, and only now: nothing above this line can fail after the secrets
-    // are in memory, so there is no path where they are read and then dropped on the floor.
-    snapshot.secrets = Some(vault.secret_entries()?);
-    snapshot.keys = Some(vault.key_entries()?);
+    with_credentials(vault, &mut snapshot)?;
+    ensure_credentials_came(&snapshot)?;
 
     let payload = zeroize::Zeroizing::new(
         serde_json::to_vec(&snapshot)

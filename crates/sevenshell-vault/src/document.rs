@@ -12,6 +12,7 @@
 //! * **Absent means unchanged.** Saving a session without a secret keeps whatever secret that
 //!   session already had — the interface never has to send a password back to leave it alone.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -36,8 +37,9 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// somebody adds to what follows a command: a build that predates it would parse the document, drop
 /// the list and write it back empty. Version 7 added the password for a sync server — a value an
 /// older build would drop on its next write, which would look exactly like "the password was
-/// forgotten".
-pub const VAULT_SCHEMA_VERSION: u32 = 7;
+/// forgotten". Version 8 added the access tokens for code-hosting accounts, which an older build
+/// would drop in exactly the same way: the token that was kept would simply be gone.
+pub const VAULT_SCHEMA_VERSION: u32 = 8;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -84,6 +86,13 @@ pub struct Document {
     /// sealed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sync_passphrase: Option<SecretString>,
+    /// The access token kept for each code-hosting account, by account name.
+    ///
+    /// A table rather than a field per service, because the accounts are keyed by more than the
+    /// service: two GitLab installations are two accounts with two tokens, and a build that has to
+    /// learn a third service should not need the vault to change shape for it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    snippet_tokens: BTreeMap<String, SecretString>,
 }
 
 impl Document {
@@ -101,6 +110,7 @@ impl Document {
             completion_words: Vec::new(),
             sync_password: None,
             sync_passphrase: None,
+            snippet_tokens: BTreeMap::new(),
         }
     }
 
@@ -571,12 +581,41 @@ impl Document {
     pub(crate) fn set_sync_passphrase(&mut self, passphrase: Option<String>) {
         self.sync_passphrase = passphrase.filter(|value| !value.is_empty()).map(SecretString::new);
     }
+
+    /// The token kept for one code-hosting account, if one was.
+    ///
+    /// A token per account rather than one for the feature, because the accounts are not
+    /// interchangeable: a GitHub token means nothing to Gitee, and somebody who has both should not
+    /// have to type the one they are not using back in. The key is the account — what names it is
+    /// the caller's business, not the vault's, since this is a table of values it never interprets.
+    pub(crate) fn snippet_token(&self, account: &str) -> Option<ServicePassword> {
+        self.snippet_tokens
+            .get(account)
+            .map(|token| ServicePassword::new(token.expose().to_owned()))
+    }
+
+    /// Keeps a token for one account, or forgets the one that was kept.
+    ///
+    /// `None` and an empty string are the same answer, like the sync password above: nobody wants to
+    /// keep an empty token, and one path for forgetting cannot disagree with itself.
+    pub(crate) fn set_snippet_token(&mut self, account: &str, token: Option<String>) {
+        match token.filter(|value| !value.trim().is_empty()) {
+            Some(token) => {
+                self.snippet_tokens.insert(account.to_owned(), SecretString::new(token));
+            }
+            None => {
+                self.snippet_tokens.remove(account);
+            }
+        }
+    }
 }
 
 impl fmt::Debug for Document {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Counts only. A document is where every secret lives; a derived `Debug` here would put
-        // them one `{:?}` away from a log line.
+        // them one `{:?}` away from a log line. The accounts with tokens are named rather than
+        // counted, because which services have one is the whole of what a reader could want from
+        // this line and none of it is a secret — an account name is a provider and an address.
         f.debug_struct("Document")
             .field("schema_version", &self.schema_version)
             .field("sessions", &self.sessions.len())
@@ -586,6 +625,7 @@ impl fmt::Debug for Document {
             .field("known_hosts", &self.known_hosts.len())
             .field("sync_password", &self.sync_password.is_some())
             .field("sync_passphrase", &self.sync_passphrase.is_some())
+            .field("snippet_tokens", &self.snippet_tokens.keys().collect::<Vec<_>>())
             .finish()
     }
 }
@@ -971,6 +1011,7 @@ mod tests {
         let mut document = Document::empty();
         document.set_sync_password(Some("hunter2".to_owned()));
         document.set_sync_passphrase(Some("correct horse".to_owned()));
+        document.set_snippet_token("github", Some("ghp_secret".to_owned()));
 
         let rendered = format!(
             "{document:?} {:?} {:?}",
@@ -981,6 +1022,70 @@ mod tests {
         assert!(
             !rendered.contains("hunter2"),
             "a password reached Debug output: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_document_written_before_the_tokens_reads_as_having_none() {
+        // Version 7 is the shape from before this application could keep an access token for a code
+        // hosting account. An absent table has to read as "nothing kept" rather than as a document
+        // that will not open, and the two sync secrets have to survive the trip either way.
+        let raw = br#"{"schemaVersion":7,"sessions":[],"groups":[],"keys":[],"secrets":[],"knownHosts":[]}"#;
+
+        let mut document = from_slice(raw).expect("a version 7 document is readable");
+
+        assert_eq!(document.schema_version, VAULT_SCHEMA_VERSION);
+        assert!(document.snippet_token("github").is_none());
+
+        document.set_snippet_token("github", Some("ghp_one".to_owned()));
+        assert_eq!(document.snippet_token("github").expect("kept").expose(), "ghp_one");
+        assert!(
+            document.snippet_token("gitee").is_none(),
+            "one account's token is not another's"
+        );
+
+        // Two GitLab installations are two accounts, which is the reason this is a table rather than
+        // one field per service.
+        document.set_snippet_token("gitlab:https://one.example", Some("glpat-one".to_owned()));
+        document.set_snippet_token("gitlab:https://two.example", Some("glpat-two".to_owned()));
+        assert_eq!(
+            document
+                .snippet_token("gitlab:https://one.example")
+                .expect("kept")
+                .expose(),
+            "glpat-one"
+        );
+        assert_eq!(
+            document
+                .snippet_token("gitlab:https://two.example")
+                .expect("kept")
+                .expose(),
+            "glpat-two"
+        );
+
+        document.set_snippet_token("github", None);
+        assert!(
+            document.snippet_token("github").is_none(),
+            "forgetting one leaves the rest"
+        );
+        document.set_snippet_token("gitee", Some("   ".to_owned()));
+        assert!(
+            document.snippet_token("gitee").is_none(),
+            "a token of nothing is nobody keeping one"
+        );
+        assert!(document.snippet_token("gitlab:https://one.example").is_some());
+    }
+
+    #[test]
+    fn a_token_is_never_printed() {
+        let mut document = Document::empty();
+        document.set_snippet_token("github", Some("ghp_secret".to_owned()));
+
+        let rendered = format!("{document:?} {:?}", document.snippet_token("github"));
+
+        assert!(
+            !rendered.contains("ghp_secret"),
+            "a token reached Debug output: {rendered}"
         );
     }
 

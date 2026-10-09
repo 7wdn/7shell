@@ -5,6 +5,8 @@
  * in both directions, so a rename on one side fails the test suite rather than a release.
  */
 
+import type { SnippetProvider } from "@/types/sync";
+
 /** Facts about the running application, from `sevenshell_types::AppInfo`. */
 export interface AppInfo {
   readonly name: string;
@@ -418,4 +420,16 @@ export interface AppSettings {
   readonly syncAutoUpload: boolean;
   /** How often, in minutes. Between one minute and a day. */
   readonly syncAutoUploadMinutes: number;
+  /** Which service a snippet backup is parked in. Absent means nobody has chosen one. */
+  readonly syncSnippetProvider?: SnippetProvider;
+  /** GitLab only: which installation. Absent means the hosted one. */
+  readonly syncSnippetInstance?: string;
+  /**
+   * The gist or snippet each account writes to, keyed by the account's name.
+   *
+   * A map rather than one id because switching service is reversible, and coming back has to find
+   * the file that was already made. The key comes from the shell, which is the only side that knows
+   * what names an account.
+   */
+  readonly syncSnippetIds: Readonly<Record<string, string>>;
 }

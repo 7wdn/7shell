@@ -19,10 +19,11 @@ use sevenshell_types::{
     HostMetrics, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
     OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
     RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
-    SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet, SnippetGroup, SocketRow,
-    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
-    SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet, SnippetGroup, SnippetProvider,
+    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
+    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer,
+    UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -305,6 +306,55 @@ fn a_sync_service_status_and_an_upload_receipt_serialize_with_camel_case_fields(
 }
 
 #[test]
+fn a_snippet_account_and_its_receipt_speak_the_interface_s_words() {
+    // The provider is the one wire value here that is not camelCase, and it is deliberate: these are
+    // the services' own names, lower case as they write them, and `gitHub` would be neither.
+    for provider in SnippetProvider::ALL {
+        let json = check(provider, "SnippetProvider");
+        assert_eq!(
+            json,
+            serde_json::json!(provider.as_str()),
+            "the wire name and the stored name are one name"
+        );
+    }
+    assert_eq!(
+        SnippetProvider::default(),
+        SnippetProvider::ALL[0],
+        "the service nobody chose yet is the first one the list offers"
+    );
+
+    let status = check(
+        &SnippetStatus {
+            account: "gitlab:https://gitlab.example.com".to_owned(),
+            has_token: true,
+        },
+        "SnippetStatus",
+    );
+    assert_eq!(status["hasToken"], serde_json::json!(true));
+    assert_eq!(
+        status["account"],
+        serde_json::json!("gitlab:https://gitlab.example.com")
+    );
+
+    let uploaded = check(
+        &SnippetUploadReceipt {
+            contents: SyncContents::default(),
+            sealed: true,
+            provider: SnippetProvider::GitLab,
+            snippet_id: "42".to_owned(),
+        },
+        "SnippetUploadReceipt",
+    );
+    assert_eq!(uploaded["provider"], serde_json::json!("gitlab"));
+    assert_eq!(uploaded["snippetId"], serde_json::json!("42"));
+    assert_eq!(
+        uploaded["sealed"],
+        serde_json::json!(true),
+        "a snippet is always sealed, and the receipt says so rather than implying it"
+    );
+}
+
+#[test]
 fn asking_a_server_for_its_file_answers_with_camel_case_fields() {
     let nothing = check(&SyncDownloadOutcome::NothingYet, "NothingYet");
     assert_eq!(nothing["kind"], serde_json::json!("nothingYet"));
@@ -453,6 +503,9 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             sync_include_secrets: true,
             sync_auto_upload: true,
             sync_auto_upload_minutes: 45,
+            sync_snippet_provider: Some(SnippetProvider::GitLab),
+            sync_snippet_instance: Some("https://gitlab.example.com".to_owned()),
+            sync_snippet_ids: BTreeMap::from([("gitlab:https://gitlab.example.com".to_owned(), "42".to_owned())]),
         },
         "AppSettings",
     );

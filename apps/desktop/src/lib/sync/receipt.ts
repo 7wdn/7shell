@@ -46,6 +46,21 @@ export function backupReceipt(contents: SyncContents, sealed: boolean, fileName:
   return t(sealed ? "sync.exported" : "sync.exportedPlain", { parts: joined, file: fileName });
 }
 
+/**
+ * What an upload to a snippet did, named by the file it went into.
+ *
+ * Its own sentence rather than the server's, because the plain fact a person wants afterwards is
+ * *which* gist or snippet this build now writes to — the first upload is what creates one, and the
+ * id is the only thing that says which. Always "sealed": there is no plain form here, and a sentence
+ * that could say either would be inviting the question.
+ */
+export function snippetReceipt(contents: SyncContents, snippetId: string, t: SyncTranslate): string {
+  const parts = partsOf(contents, t);
+  const joined = parts.length === 0 ? t("sync.settings", { count: 0 }) : parts.join(", ");
+
+  return t("sync.snippetUploaded", { parts: joined, id: snippetId });
+}
+
 /** What a restore wrote, and what it could not. */
 export function restoreReceipt(summary: SyncApplySummary, t: SyncTranslate): string {
   const parts = partsOf(summary.contents, t);

@@ -365,6 +365,9 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
     case "syncIncludeSecrets":
     case "syncAutoUpload":
     case "syncAutoUploadMinutes":
+    case "syncSnippetProvider":
+    case "syncSnippetInstance":
+    case "syncSnippetIds":
       // The same, for the sync page: its form is its own component, and these cases are the switch
       // saying so rather than forgetting about fields that are not rows anywhere.
       return "";

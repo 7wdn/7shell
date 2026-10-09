@@ -1,40 +1,38 @@
 <script setup lang="ts">
 /**
- * Sync, and the two halves of it this build has: a WebDAV server, and a file.
+ * Sync, and the three halves of it this build has: a WebDAV server, a code host, and a file.
  *
- * Three tabs, one of which says it is not here yet rather than opening onto nothing.
- *
- * The two panels are laid out the same way on purpose, because they are the same three parts in the
+ * The three panels are laid out the same way on purpose, because they are the same three parts in the
  * same order — what this is, the secret that is kept for it, and the two things somebody does with
- * it. Where they differ is where the config lives: a server's address, user name and path are
- * settings and are written by the page's own Apply, while the file panel needs nothing but a
- * passphrase.
+ * it. Where they differ is where the config lives: a server's address, a code host's account and a
+ * file's passphrase are three different things, and only the passphrase is typed every time.
  *
- * **Every server action commits first.** The shell reads the address out of the settings file, so a
- * test pressed with an unsaved address on screen would dial the address that was saved — which is
- * exactly the mistake somebody makes once and then distrusts the button. That is also what the
- * application this page is modelled on does, in its own way: it writes its fields down before it
- * uses them.
+ * **Every action commits first.** The shell reads the address, the service and the file id out of the
+ * settings file, so a test pressed with an unsaved address on screen would dial the address that was
+ * saved — which is exactly the mistake somebody makes once and then distrusts the button. That is
+ * also what the application this page is modelled on does, in its own way: it writes its fields down
+ * before it uses them.
  *
- * A password and a passphrase are kept apart and are neither of them in this store. The password
- * authenticates to the server; the passphrase seals what is uploaded and never leaves this machine.
- * Both live in the vault, and this page only asks whether one is there.
+ * **The three secrets are three secrets.** A server password authenticates to the server; a snippet
+ * token authenticates to a code host; a passphrase seals what is uploaded and never leaves this
+ * machine. All three live in the vault, and this page only asks whether one is there.
  */
-import { Archive, Cloud, Download, Eye, EyeOff, Loader2, Upload, X } from "@lucide/vue";
+import { Archive, Cloud, Code, Download, Eye, EyeOff, Loader2, Upload, X } from "@lucide/vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SyncIncludeDialog from "@/components/settings/SyncIncludeDialog.vue";
 import SyncRestoreDialog from "@/components/settings/SyncRestoreDialog.vue";
+import Select from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
-import { backupReceipt, restoreReceipt } from "@/lib/sync/receipt";
+import { backupReceipt, restoreReceipt, snippetReceipt } from "@/lib/sync/receipt";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useSessionsStore } from "@/stores/sessions";
 import { useSyncStore, type ReadBackup } from "@/stores/sync";
 import { useWordsStore } from "@/stores/words";
 import { SYNC_AUTO_UPLOAD_MINUTES_MAX, SYNC_AUTO_UPLOAD_MINUTES_MIN } from "@/types/app";
-import type { SyncSelection } from "@/types/sync";
+import { GITLAB_DEFAULT_INSTANCE, SNIPPET_PROVIDERS, type SnippetProvider, type SyncSelection } from "@/types/sync";
 
 const { t } = useI18n();
 
@@ -54,13 +52,17 @@ const secretsPassphrase = ref("");
 const password = ref("");
 /** Whether the password should be kept, which is drawn from whether one already is. */
 const rememberPassword = ref(false);
+/** The snippet token, in memory only for the same reason, and whether it should be kept. */
+const token = ref("");
+const rememberToken = ref(false);
 /** Whether either secret is being shown, for a field somebody has to check their typing in. */
 const passwordShown = ref(false);
 const secretsShown = ref(false);
+const tokenShown = ref(false);
 
 const includeOpen = ref(false);
 const restoreOpen = ref(false);
-/** What a read brought back — from the server, or from a file — for the dialog that shows it. */
+/** What a read brought back — from a server, a code host or a file — for the dialog that shows it. */
 const downloaded = ref<ReadBackup | null>(null);
 /** What an action did, said under the buttons. */
 const notice = ref("");
@@ -73,6 +75,20 @@ const working = computed(() => sync.busy !== "");
 const canSeal = computed(() => secretsPassphrase.value.length >= 4 || sync.service?.hasPassphrase === true);
 /** Whether there is an address to talk to. */
 const hasEndpoint = computed(() => preferences.syncEndpoint.trim() !== "");
+
+/** The service the dropdown is showing, which is the one a request would go to. */
+const provider = computed<SnippetProvider>(() => preferences.syncSnippetProvider ?? SNIPPET_PROVIDERS[0]);
+/** Whether the address field applies at all: only one of the three services has more than one. */
+const needsInstance = computed(() => provider.value === "gitlab");
+/**
+ * The file id on screen: the setting for the account the shell says this is, or nothing.
+ *
+ * Read from the store rather than from the shell's answer, because this is a field somebody can type
+ * into — and what it holds is what the next action will use.
+ */
+const snippetId = computed(() => preferences.syncSnippetIds[sync.snippet?.account ?? ""] ?? "");
+/** Whether there is a token to dial with — typed now, or kept from last time. */
+const hasToken = computed(() => token.value !== "" || sync.snippet?.hasToken === true);
 
 const problem = computed(() => (sync.failure ? describeShellError(translate, sync.failure).message : ""));
 
@@ -97,6 +113,21 @@ watch(
   (kept) => {
     if (kept !== undefined) {
       rememberPassword.value = kept;
+    }
+  },
+  { immediate: true },
+);
+
+// The same for the token, which the shell answers per account: switching service changes which
+// token is being asked about, and the box follows the answer rather than staying where it was.
+watch(
+  () => sync.snippet?.hasToken,
+  (kept) => {
+    if (kept !== undefined) {
+      rememberToken.value = kept;
+      if (kept) {
+        token.value = "";
+      }
     }
   },
   { immediate: true },
@@ -207,6 +238,135 @@ async function reloadAfterRestore(settingsChanged: boolean): Promise<void> {
   }
 }
 
+// -- The snippet panel, which is the server's panel on somebody else's service ---------
+
+/**
+ * Writes the settings the shell is about to read, and the token the vault is about to hold.
+ *
+ * The token moves only when the box says it should, and only from what was typed — a field left empty
+ * is not a token somebody cleared, it is one they did not need to type again. After the commit the
+ * account may be a different one, which is why the shell is asked what it now holds rather than the
+ * page deciding.
+ */
+async function prepareSnippet(ask = true): Promise<boolean> {
+  await preferences.commit();
+
+  if (rememberToken.value && token.value !== "") {
+    await sync.keepSnippetToken(token.value);
+    token.value = "";
+  } else if (!rememberToken.value && sync.snippet?.hasToken) {
+    await sync.keepSnippetToken(null);
+  }
+
+  if (ask) {
+    await sync.loadSnippet();
+  }
+  return true;
+}
+
+/** The service's name as the sentence under the id field uses it. */
+function providerLabel(which: SnippetProvider): string {
+  return t(which === "gitlab" ? "sync.snippetGitlab" : which === "gitee" ? "sync.snippetGitee" : "sync.snippetGithub");
+}
+
+/** The three services as rows, which is what the dropdown draws. */
+const providerOptions = computed(() =>
+  SNIPPET_PROVIDERS.map((which) => ({ value: which, label: providerLabel(which) })),
+);
+
+async function changeSnippetProvider(which: string): Promise<void> {
+  notice.value = "";
+  const chosen = (SNIPPET_PROVIDERS as readonly string[]).includes(which)
+    ? (which as SnippetProvider)
+    : SNIPPET_PROVIDERS[0];
+  preferences.setSyncSnippetProvider(chosen);
+  // The address belongs to the installation, not to the service: the field shows the one the account
+  // would be talked to at, which is the hosted one for somebody who has never typed another.
+  if (chosen === "gitlab" && preferences.syncSnippetInstance.trim() === "") {
+    preferences.setSyncSnippetInstance(GITLAB_DEFAULT_INSTANCE);
+  }
+  await prepareSnippet();
+}
+
+async function testSnippet(): Promise<void> {
+  notice.value = "";
+  if (!(await prepareSnippet())) {
+    return;
+  }
+  if (!hasToken.value) {
+    notice.value = t("sync.snippetNoToken");
+    return;
+  }
+  if (await sync.testSnippet()) {
+    notice.value = t("sync.testOk");
+  }
+}
+
+function uploadToSnippet(selection: SyncSelection): void {
+  includeOpen.value = false;
+  void (async () => {
+    if (!(await prepareSnippet())) {
+      return;
+    }
+    const receipt = await sync.uploadToSnippet(
+      selection,
+      secretsPassphrase.value === "" ? null : secretsPassphrase.value,
+    );
+    if (!receipt) {
+      return;
+    }
+    notice.value = snippetReceipt(receipt.contents, receipt.snippetId, t);
+    // Written down before anything else: the next upload patches this file rather than creating
+    // another one, and only the shell knows what the account it belongs to is called.
+    if (sync.snippet) {
+      preferences.setSyncSnippetId(sync.snippet.account, receipt.snippetId);
+      await preferences.commit();
+    }
+  })();
+}
+
+function downloadFromSnippet(): void {
+  void (async () => {
+    if (!(await prepareSnippet())) {
+      return;
+    }
+    const outcome = await sync.downloadFromSnippet(secretsPassphrase.value === "" ? null : secretsPassphrase.value);
+    if (!outcome) {
+      return;
+    }
+    if (outcome.kind === "nothingYet") {
+      notice.value = t("sync.nothingOnServer");
+      return;
+    }
+    if (outcome.kind === "needsPassphrase") {
+      // The field that answers this is on the panel behind the message, which is why there is no
+      // dialog for it: the sentence and the box are one thing.
+      notice.value = t("sync.secretsPassphraseKept");
+      return;
+    }
+    downloaded.value = {
+      fileName: snippetId.value === "" ? providerLabel(provider.value) : snippetId.value,
+      catalog: outcome.catalog,
+    };
+    restoreOpen.value = true;
+  })();
+}
+
+function applyFromSnippet(replace: boolean): void {
+  restoreOpen.value = false;
+  void (async () => {
+    const summary = await sync.applyFromSnippet(
+      replace,
+      secretsPassphrase.value === "" ? null : secretsPassphrase.value,
+    );
+    if (!summary) {
+      return;
+    }
+    notice.value = restoreReceipt(summary, t);
+    await reloadAfterRestore(summary.contents.settings > 0);
+  })();
+}
+
 // -- The file panel, which is the same three parts with nothing to configure ----------
 
 function writeBackup(selection: SyncSelection): void {
@@ -245,14 +405,42 @@ function restore(replace: boolean): void {
     await reloadAfterRestore(summary.contents.settings > 0);
   })();
 }
+
+// -- The one dialog two panels share --------------------------------------------------
+
+/**
+ * What the include dialog's confirm does, which depends on the panel that opened it.
+ *
+ * The dialog is one component because the question is one question — what goes into this file — and
+ * the three answers after it are what differ. Reading the tab here rather than at the call site keeps
+ * the two dialogs' wiring in one place instead of in the template, where a new tab would have to
+ * remember to update them.
+ */
+function confirmUpload(selection: SyncSelection): void {
+  if (tab.value === "snippets") {
+    uploadToSnippet(selection);
+  } else if (tab.value === "local") {
+    writeBackup(selection);
+  } else {
+    uploadToServer(selection);
+  }
+}
+
+/** The same for the restore dialog, whose three answers are the three panels' own applies. */
+function confirmRestore(replace: boolean): void {
+  if (tab.value === "snippets") {
+    applyFromSnippet(replace);
+  } else if (tab.value === "local") {
+    restore(replace);
+  } else {
+    applyFromServer(replace);
+  }
+}
 </script>
 
 <template>
   <section class="space-y-4">
-    <!--
-      The three things a sync page is. One of them is not here yet, and a tab that opens onto nothing
-      would be a worse lie than a tab that says so.
-    -->
+    <!-- The three places a backup can live. One tab each, in the order the three were built. -->
     <div class="flex gap-1 rounded-md border border-border bg-muted/30 p-1" role="tablist">
       <button
         type="button"
@@ -267,9 +455,10 @@ function restore(replace: boolean): void {
       <button
         type="button"
         role="tab"
-        class="flex-1 rounded px-3 py-1.5 text-xs text-muted-foreground disabled:opacity-60"
-        disabled
-        :title="t('sync.later')"
+        :aria-selected="tab === 'snippets'"
+        class="flex-1 rounded px-3 py-1.5 text-xs"
+        :class="tab === 'snippets' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground'"
+        @click="tab = 'snippets'"
       >
         {{ t("sync.tabSnippets") }}
       </button>
@@ -284,10 +473,6 @@ function restore(replace: boolean): void {
         {{ t("sync.tabLocal") }}
       </button>
     </div>
-
-    <p v-if="tab === 'snippets'" class="text-[11px] leading-relaxed text-muted-foreground">
-      {{ t("sync.notYet") }}
-    </p>
 
     <template v-if="tab === 'webdav'">
       <div class="space-y-3 rounded-md border border-border px-3 py-3">
@@ -434,67 +619,6 @@ function restore(replace: boolean): void {
         </div>
       </div>
 
-      <!-- The one secret that never reaches the server, kept apart from the one that does. -->
-      <div class="space-y-2 rounded-md border border-border px-3 py-3">
-        <label class="flex items-start gap-2">
-          <input
-            :model-value="preferences.syncIncludeSecrets"
-            type="checkbox"
-            class="mt-0.5 size-3.5 shrink-0 accent-primary"
-            :disabled="working"
-            @change="preferences.setSyncIncludeSecrets(($event.target as HTMLInputElement).checked)"
-          />
-          <span class="min-w-0">
-            <span class="block text-xs">{{ t("sync.secretsToggle") }}</span>
-            <span class="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
-              {{ t("sync.secretsHint") }}
-            </span>
-          </span>
-        </label>
-
-        <div v-if="preferences.syncIncludeSecrets">
-          <label class="block text-xs" for="sync-secrets-passphrase">{{ t("sync.secretsPassphrase") }}</label>
-          <div class="relative mt-1">
-            <input
-              id="sync-secrets-passphrase"
-              v-model="secretsPassphrase"
-              :type="secretsShown ? 'text' : 'password'"
-              autocomplete="off"
-              class="w-full rounded-md border border-border bg-background px-3 py-2 pr-9 text-sm focus:outline-none"
-              :placeholder="t('sync.secretsPassphrasePlaceholder')"
-              :disabled="working"
-            />
-            <button
-              type="button"
-              class="absolute inset-y-0 right-0 grid w-8 place-items-center text-muted-foreground hover:text-foreground"
-              :aria-label="t('sync.secretsPassphrase')"
-              @click="secretsShown = !secretsShown"
-            >
-              <EyeOff v-if="secretsShown" :size="13" />
-              <Eye v-else :size="13" />
-            </button>
-          </div>
-          <p v-if="sync.service?.hasPassphrase" class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            {{ t("sync.secretsPassphraseKept") }}
-          </p>
-          <button
-            v-if="sync.service?.hasPassphrase"
-            type="button"
-            class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-            :disabled="working"
-            @click="
-              async () => {
-                await sync.keepPassphrase(null);
-                secretsPassphrase = '';
-              }
-            "
-          >
-            <X :size="11" />
-            {{ t("sync.forgetPassphrase") }}
-          </button>
-        </div>
-      </div>
-
       <!--
         The timer. It is armed by the frame rather than by this page — a page is mounted while it is
         open, and a timer that ran only while somebody was looking at the settings would never run.
@@ -527,6 +651,155 @@ function restore(replace: boolean): void {
             @input="preferences.setSyncAutoUploadMinutes(Number(($event.target as HTMLInputElement).value))"
           />
           <span>{{ t("sync.autoUploadMinutes") }}</span>
+        </div>
+      </div>
+    </template>
+
+    <template v-else-if="tab === 'snippets'">
+      <div class="space-y-3 rounded-md border border-border px-3 py-3">
+        <div class="space-y-1">
+          <h4 class="flex items-center gap-1.5 text-xs font-medium">
+            <Code :size="13" class="text-muted-foreground" />
+            {{ t("sync.snippetTitle") }}
+          </h4>
+          <p class="text-xs leading-relaxed text-muted-foreground">{{ t("sync.snippetDescription") }}</p>
+        </div>
+
+        <div class="grid gap-2 sm:grid-cols-2">
+          <div>
+            <label class="block text-xs" for="snippet-provider">{{ t("sync.snippetProvider") }}</label>
+            <Select
+              id="snippet-provider"
+              class="mt-1 block"
+              :model-value="provider"
+              :options="providerOptions"
+              :aria-label="t('sync.snippetProvider')"
+              :disabled="working"
+              trigger-class="w-full"
+              @update:model-value="changeSnippetProvider"
+            />
+          </div>
+          <div v-if="needsInstance">
+            <label class="block text-xs" for="snippet-instance">{{ t("sync.snippetInstance") }}</label>
+            <input
+              id="snippet-instance"
+              :value="preferences.syncSnippetInstance"
+              type="text"
+              spellcheck="false"
+              autocomplete="off"
+              class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none select-text"
+              placeholder="https://gitlab.example.com"
+              :disabled="working"
+              @input="preferences.setSyncSnippetInstance(typed($event))"
+            />
+            <p
+              v-if="preferences.syncSnippetInstance.trim().startsWith('http://')"
+              class="mt-1 text-[11px] text-destructive"
+            >
+              {{ t("sync.snippetInstanceInsecure") }}
+            </p>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs" for="snippet-id">{{ t("sync.snippetId") }}</label>
+          <input
+            id="snippet-id"
+            :value="snippetId"
+            type="text"
+            spellcheck="false"
+            autocomplete="off"
+            class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none select-text"
+            :placeholder="t('sync.snippetIdPlaceholder')"
+            :disabled="working"
+            @input="preferences.setSyncSnippetId(sync.snippet?.account ?? '', typed($event))"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs" for="snippet-token">{{ t("sync.snippetToken") }}</label>
+          <div class="relative mt-1">
+            <input
+              id="snippet-token"
+              v-model="token"
+              :type="tokenShown ? 'text' : 'password'"
+              autocomplete="off"
+              class="w-full rounded-md border border-border bg-background px-3 py-2 pr-9 text-sm focus:outline-none"
+              :placeholder="sync.snippet?.hasToken ? t('sync.snippetTokenKept') : ''"
+              :disabled="working"
+            />
+            <button
+              type="button"
+              class="absolute inset-y-0 right-0 grid w-8 place-items-center text-muted-foreground hover:text-foreground"
+              :aria-label="t('sync.snippetToken')"
+              @click="tokenShown = !tokenShown"
+            >
+              <EyeOff v-if="tokenShown" :size="13" />
+              <Eye v-else :size="13" />
+            </button>
+          </div>
+          <label class="mt-1 flex items-center gap-2 text-xs">
+            <input
+              v-model="rememberToken"
+              type="checkbox"
+              class="size-3.5 shrink-0 accent-primary"
+              :disabled="working"
+            />
+            {{ t("sync.snippetRememberToken") }}
+          </label>
+          <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">{{ t("sync.snippetTokenHint") }}</p>
+          <button
+            v-if="sync.snippet?.hasToken"
+            type="button"
+            class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            :disabled="working"
+            @click="
+              async () => {
+                await sync.keepSnippetToken(null);
+                rememberToken = false;
+                token = '';
+              }
+            "
+          >
+            <X :size="11" />
+            {{ t("sync.forgetToken") }}
+          </button>
+        </div>
+
+        <p v-if="problem" class="text-[11px] text-destructive" role="alert">{{ problem }}</p>
+        <p v-else-if="notice" class="text-[11px] text-muted-foreground">{{ notice }}</p>
+
+        <!-- The server's three, in the server's order: testing changes nothing and comes first. -->
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="working"
+            @click="testSnippet()"
+          >
+            <Loader2 v-if="sync.busy === 'test'" :size="12" class="animate-spin" />
+            {{ t("sync.test") }}
+          </button>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="working || snippetId === ''"
+            @click="downloadFromSnippet()"
+          >
+            <Loader2 v-if="sync.busy === 'download'" :size="12" class="animate-spin" />
+            <Download v-else :size="12" />
+            {{ t("sync.download") }}
+          </button>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="working || !hasToken"
+            @click="includeOpen = true"
+          >
+            <Loader2 v-if="sync.busy === 'upload'" :size="12" class="animate-spin" />
+            <Upload v-else :size="12" />
+            {{ t("sync.upload") }}
+          </button>
         </div>
       </div>
     </template>
@@ -583,12 +856,77 @@ function restore(replace: boolean): void {
       </div>
     </template>
 
+    <!--
+      The one secret that never reaches anywhere: what is uploaded is sealed under it, and the file
+      that leaves is the same file whichever of the two destinations carries it. That is why this
+      stands outside both panels rather than being typed twice — one switch, one passphrase.
+    -->
+    <div v-if="tab !== 'local'" class="space-y-2 rounded-md border border-border px-3 py-3">
+      <label class="flex items-start gap-2">
+        <input
+          :model-value="preferences.syncIncludeSecrets"
+          type="checkbox"
+          class="mt-0.5 size-3.5 shrink-0 accent-primary"
+          :disabled="working"
+          @change="preferences.setSyncIncludeSecrets(($event.target as HTMLInputElement).checked)"
+        />
+        <span class="min-w-0">
+          <span class="block text-xs">{{ t("sync.secretsToggle") }}</span>
+          <span class="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+            {{ t("sync.secretsHint") }}
+          </span>
+        </span>
+      </label>
+
+      <div v-if="preferences.syncIncludeSecrets">
+        <label class="block text-xs" for="sync-secrets-passphrase">{{ t("sync.secretsPassphrase") }}</label>
+        <div class="relative mt-1">
+          <input
+            id="sync-secrets-passphrase"
+            v-model="secretsPassphrase"
+            :type="secretsShown ? 'text' : 'password'"
+            autocomplete="off"
+            class="w-full rounded-md border border-border bg-background px-3 py-2 pr-9 text-sm focus:outline-none"
+            :placeholder="t('sync.secretsPassphrasePlaceholder')"
+            :disabled="working"
+          />
+          <button
+            type="button"
+            class="absolute inset-y-0 right-0 grid w-8 place-items-center text-muted-foreground hover:text-foreground"
+            :aria-label="t('sync.secretsPassphrase')"
+            @click="secretsShown = !secretsShown"
+          >
+            <EyeOff v-if="secretsShown" :size="13" />
+            <Eye v-else :size="13" />
+          </button>
+        </div>
+        <p v-if="sync.service?.hasPassphrase" class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          {{ t("sync.secretsPassphraseKept") }}
+        </p>
+        <button
+          v-if="sync.service?.hasPassphrase"
+          type="button"
+          class="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          :disabled="working"
+          @click="
+            async () => {
+              await sync.keepPassphrase(null);
+              secretsPassphrase = '';
+            }
+          "
+        >
+          <X :size="11" />
+          {{ t("sync.forgetPassphrase") }}
+        </button>
+      </div>
+    </div>
+
     <SyncIncludeDialog
       :open="includeOpen"
       :busy="sync.busy === 'export' || sync.busy === 'upload'"
       :available="sync.available"
-      :can-seal="tab === 'webdav' ? canSeal : passphrase.length >= 4"
-      @confirm="tab === 'webdav' ? uploadToServer($event) : writeBackup($event)"
+      :can-seal="tab === 'local' ? passphrase.length >= 4 : canSeal"
+      @confirm="confirmUpload"
       @update:open="includeOpen = $event"
     />
 
@@ -596,7 +934,7 @@ function restore(replace: boolean): void {
       :open="restoreOpen"
       :busy="sync.busy === 'import' || sync.busy === 'download'"
       :read="downloaded"
-      @confirm="tab === 'webdav' ? applyFromServer($event) : restore($event)"
+      @confirm="confirmRestore($event)"
       @update:open="
         (open: boolean) => {
           restoreOpen = open;

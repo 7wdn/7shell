@@ -46,6 +46,8 @@ import type {
   VaultState,
 } from "@/types/session";
 import type {
+  SnippetStatus,
+  SnippetUploadReceipt,
   SyncApplySummary,
   SyncContents,
   SyncDownloadOutcome,
@@ -349,6 +351,44 @@ export function syncDownload(passphrase: string | null): Promise<SyncDownloadOut
 /** Applies the file the server holds, fetching it again. */
 export function syncApply(replace: boolean, passphrase: string | null): Promise<SyncApplySummary> {
   return invoke<SyncApplySummary>("sync_apply", { replace, passphrase });
+}
+
+// -- The snippet -----------------------------------------------------------------
+
+/**
+ * What this installation has for the account its settings describe.
+ *
+ * The shell reads the settings file, so the caller commits what is on screen first — the same rule
+ * every server action on that page follows, and the reason the answer is about the account somebody
+ * is looking at rather than the one that was chosen last time.
+ */
+export function snippetSyncStatus(): Promise<SnippetStatus> {
+  return invoke<SnippetStatus>("snippet_sync_status");
+}
+
+/** Keeps the token for that account, or forgets the one that was kept. `null` is forgetting. */
+export function snippetSyncToken(token: string | null): Promise<SnippetStatus> {
+  return invoke<SnippetStatus>("snippet_sync_token", { token });
+}
+
+/** Asks the service whether the token, and the snippet when there is one, is good. */
+export function snippetSyncTest(): Promise<void> {
+  return invoke<void>("snippet_sync_test");
+}
+
+/** Writes the library into the gist or snippet, creating one when there is none. */
+export function snippetSyncUpload(selection: SyncSelection, passphrase: string | null): Promise<SnippetUploadReceipt> {
+  return invoke<SnippetUploadReceipt>("snippet_sync_upload", { selection, passphrase });
+}
+
+/** Reads the file the account holds and says what is inside it. */
+export function snippetSyncDownload(passphrase: string | null): Promise<SyncDownloadOutcome> {
+  return invoke<SyncDownloadOutcome>("snippet_sync_download", { passphrase });
+}
+
+/** Applies the file the account holds, fetching it again. */
+export function snippetSyncApply(replace: boolean, passphrase: string | null): Promise<SyncApplySummary> {
+  return invoke<SyncApplySummary>("snippet_sync_apply", { replace, passphrase });
 }
 
 // -- Keys --------------------------------------------------------------------

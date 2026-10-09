@@ -8,6 +8,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::sync::SnippetProvider;
+
 /// How the file browser is laid out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -900,6 +902,24 @@ pub struct AppSettings {
     /// How often, in minutes.
     #[serde(default = "sync_auto_upload_minutes_default")]
     pub sync_auto_upload_minutes: u32,
+    /// Which service a snippet backup is parked in, once somebody has chosen one.
+    ///
+    /// Absent means nobody has chosen, which is the state of the panel before it is used: the
+    /// dropdown then offers the first of the three rather than pretending a choice was made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_snippet_provider: Option<SnippetProvider>,
+    /// GitLab only: which installation. A self-hosted GitLab is the normal case there, and the
+    /// hosted one is only one of its addresses. Absent means the hosted one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync_snippet_instance: Option<String>,
+    /// The gist or snippet each account's backup lives in, keyed by account.
+    ///
+    /// A map rather than one id because a choice of service is reversible: coming back to one has to
+    /// find the file that was already made for it, or every visit would leave another gist behind.
+    /// Nothing here is a secret — an id is only half of what reads a snippet, and the other half is
+    /// the token, which is in the vault.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub sync_snippet_ids: BTreeMap<String, String>,
 }
 
 /// The interface's own size when nobody has changed it.
@@ -999,6 +1019,9 @@ impl Default for AppSettings {
             sync_include_secrets: false,
             sync_auto_upload: false,
             sync_auto_upload_minutes: sync_auto_upload_minutes_default(),
+            sync_snippet_provider: None,
+            sync_snippet_instance: None,
+            sync_snippet_ids: BTreeMap::new(),
         }
     }
 }

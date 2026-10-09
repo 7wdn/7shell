@@ -19,6 +19,7 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import type { ShortcutActionId } from "@/lib/shortcuts/registry";
+import type { SnippetProvider } from "@/types/sync";
 import {
   BACKGROUND_BLUR_MAX,
   DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
@@ -112,6 +113,9 @@ const FRESH: Omit<AppSettings, "locale"> = {
   syncIncludeSecrets: false,
   syncAutoUpload: false,
   syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+  syncSnippetProvider: undefined,
+  syncSnippetInstance: undefined,
+  syncSnippetIds: {},
 };
 
 /**
@@ -329,6 +333,17 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   const syncAutoUpload = ref(false);
   const syncAutoUploadMinutes = ref(DEFAULT_SYNC_AUTO_UPLOAD_MINUTES);
+  /**
+   * Where a snippet backup is parked: which service, which GitLab installation, and the file each
+   * account writes to.
+   *
+   * Settings rather than vault material, because none of it is a secret — the token is the secret,
+   * and it is in the vault. The ids are kept per account by the shell's naming: switching service and
+   * coming back finds the file that service already has, instead of leaving another gist behind.
+   */
+  const syncSnippetProvider = ref<SnippetProvider | undefined>(undefined);
+  const syncSnippetInstance = ref("");
+  const syncSnippetIds = ref<Record<string, string>>({});
   const problem = ref<ShellError | null>(null);
 
   const resolvedTheme = computed<ResolvedTheme>(() => {
@@ -529,6 +544,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
       syncIncludeSecrets.value = settings.syncIncludeSecrets;
       syncAutoUpload.value = settings.syncAutoUpload;
       syncAutoUploadMinutes.value = clampSyncMinutes(settings.syncAutoUploadMinutes);
+      syncSnippetProvider.value = settings.syncSnippetProvider;
+      syncSnippetInstance.value = settings.syncSnippetInstance ?? "";
+      syncSnippetIds.value = { ...settings.syncSnippetIds };
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -619,6 +637,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
         syncIncludeSecrets: syncIncludeSecrets.value,
         syncAutoUpload: syncAutoUpload.value,
         syncAutoUploadMinutes: clampSyncMinutes(syncAutoUploadMinutes.value),
+        // The service is absent until somebody picks one, so a fresh install does not record a choice
+        // nobody made; the address is absent for the two services that have only one.
+        syncSnippetProvider: syncSnippetProvider.value,
+        syncSnippetInstance: syncSnippetInstance.value.trim() || undefined,
+        syncSnippetIds: { ...syncSnippetIds.value },
       });
     } catch (error) {
       problem.value = asShellError(error, "settings_set");
@@ -962,6 +985,41 @@ export const usePreferencesStore = defineStore("preferences", () => {
     dirty.value = true;
   }
 
+  /**
+   * Which service a snippet backup goes to, and — for GitLab — which installation.
+   *
+   * Switching the service does not clear the other account's file id: the map keeps one per account,
+   * and coming back is meant to find the gist that is already there rather than making another.
+   */
+  function setSyncSnippetProvider(provider: SnippetProvider): void {
+    syncSnippetProvider.value = provider;
+    dirty.value = true;
+  }
+
+  function setSyncSnippetInstance(instance: string): void {
+    syncSnippetInstance.value = instance;
+    dirty.value = true;
+  }
+
+  /** The gist or snippet one account writes to, under the name the shell gave that account. */
+  function setSyncSnippetId(account: string, snippetId: string): void {
+    // Nothing to file it under until the shell has said what this account is called, which is the
+    // one thing this side does not work out for itself.
+    if (account === "") {
+      return;
+    }
+
+    const trimmed = snippetId.trim();
+    const ids = { ...syncSnippetIds.value };
+    if (trimmed === "") {
+      delete ids[account];
+    } else {
+      ids[account] = trimmed;
+    }
+    syncSnippetIds.value = ids;
+    dirty.value = true;
+  }
+
   /** An interval inside the range the field offers, for the same reason a font size is clamped. */
   function clampSyncMinutes(minutes: number): number {
     const rounded = Number.isFinite(minutes) ? Math.round(minutes) : DEFAULT_SYNC_AUTO_UPLOAD_MINUTES;
@@ -1210,6 +1268,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     syncIncludeSecrets,
     syncAutoUpload,
     syncAutoUploadMinutes,
+    syncSnippetProvider,
+    syncSnippetInstance,
+    syncSnippetIds,
     problem,
     dirty,
     initialize,
@@ -1254,6 +1315,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSyncIncludeSecrets,
     setSyncAutoUpload,
     setSyncAutoUploadMinutes,
+    setSyncSnippetProvider,
+    setSyncSnippetInstance,
+    setSyncSnippetId,
     setKeybinding,
     setPanelHeight,
     rememberPanelHeight,

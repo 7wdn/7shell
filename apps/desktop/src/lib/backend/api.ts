@@ -41,6 +41,8 @@ import type {
   VaultState,
 } from "@/types/session";
 import type {
+  SnippetStatus,
+  SnippetUploadReceipt,
   SyncApplySummary,
   SyncContents,
   SyncDownloadOutcome,
@@ -271,6 +273,26 @@ export const backend = {
       forward("sync_download", () => desktop.syncDownload(passphrase)),
     apply: (replace: boolean, passphrase: string | null): Promise<SyncApplySummary> =>
       forward("sync_apply", () => desktop.syncApply(replace, passphrase)),
+
+    /**
+     * The snippet: the same backup parked in somebody else's code host.
+     *
+     * One fewer thing to pass than the server's half, because a snippet's configuration *is* settings
+     * — the service, its address and the file each account writes to — and the shell reads them from
+     * the file. The only secret is the token, which is in the vault, and it goes in by name.
+     */
+    snippet: {
+      status: (): Promise<SnippetStatus> => forward("snippet_sync_status", () => desktop.snippetSyncStatus()),
+      keepToken: (token: string | null): Promise<SnippetStatus> =>
+        forward("snippet_sync_token", () => desktop.snippetSyncToken(token)),
+      test: (): Promise<void> => forward("snippet_sync_test", () => desktop.snippetSyncTest()),
+      upload: (selection: SyncSelection, passphrase: string | null): Promise<SnippetUploadReceipt> =>
+        forward("snippet_sync_upload", () => desktop.snippetSyncUpload(selection, passphrase)),
+      download: (passphrase: string | null): Promise<SyncDownloadOutcome> =>
+        forward("snippet_sync_download", () => desktop.snippetSyncDownload(passphrase)),
+      apply: (replace: boolean, passphrase: string | null): Promise<SyncApplySummary> =>
+        forward("snippet_sync_apply", () => desktop.snippetSyncApply(replace, passphrase)),
+    },
   },
 
   keys: {

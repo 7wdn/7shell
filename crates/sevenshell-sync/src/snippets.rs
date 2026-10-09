@@ -21,6 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
+use sevenshell_types::SnippetProvider;
 use sevenshell_vault::{PayloadPurpose, SealedPayload, ServicePassword, open_payload, seal_payload};
 
 use crate::snapshot::{SyncSnapshot, open};
@@ -41,31 +42,27 @@ pub const SNIPPET_ENVELOPE_VERSION: u32 = 1;
 /// The title a new gist or snippet is created with.
 pub const SNIPPET_TITLE: &str = "7Shell encrypted configuration sync";
 
-/// Which service a backup is parked in.
+/// Where a self-hosted GitLab is not involved, which is where a GitLab account is talked to.
 ///
-/// Three rather than one, because they are not the same API: the names are the services' own, and
-/// they are also what travels on the wire, so the interface's dropdown and this enum say the same
-/// words.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SnippetProvider {
-    GitHub,
-    Gitee,
-    GitLab,
-}
+/// Written down here as well as in the form, because the two have to agree: the field offers this
+/// address, and an account with no address gets this one — the same installation either way.
+pub const GITLAB_DEFAULT_INSTANCE: &str = "https://gitlab.com";
 
-impl SnippetProvider {
-    /// Every provider, in the order a list offers them: the one most people have first.
-    pub const ALL: &'static [SnippetProvider] =
-        &[SnippetProvider::GitHub, SnippetProvider::Gitee, SnippetProvider::GitLab];
-
-    /// The object this service keeps a small file in.
-    pub fn container(self) -> &'static str {
-        match self {
-            Self::GitLab => "snippet",
-            _ => "gist",
-        }
-    }
+/// What names one code-hosting account.
+///
+/// One token per account, and an account is a service and — for GitLab — an installation: the
+/// hosted one and somebody's own are two services with two tokens, and treating them as one would
+/// send the wrong token to one of them. GitHub and Gitee have a single address each, so their name
+/// is their name; GitLab's carries the address it is addressed at.
+///
+/// Readable rather than hashed, unlike a fingerprint: this ends up as a key in the settings file and
+/// in the vault's own table, where a person may well look at it, and the address it names is written
+/// in a setting two lines away. A hash would hide a hostname that is already on screen.
+pub fn snippet_account(provider: SnippetProvider, instance_url: Option<&str>) -> Result<String, ShellError> {
+    Ok(match provider {
+        SnippetProvider::GitLab => format!("gitlab:{}", gitlab_instance(instance_url)?),
+        other => other.as_str().to_owned(),
+    })
 }
 
 /// Where a snippet lives and what opens the door to it.
@@ -119,14 +116,13 @@ pub fn api_base(provider: SnippetProvider, instance_url: Option<&str>) -> Result
 ///
 /// An address with a query, a fragment or credentials in it is not one somebody meant to type, and
 /// a scheme other than http or https is a service this cannot talk to. The trailing slash goes,
-/// because the path is joined onto it.
+/// because the path is joined onto it. Nothing at all means the hosted GitLab, which is what an
+/// empty field on the form means.
 fn gitlab_instance(instance_url: Option<&str>) -> Result<String, ShellError> {
     let raw = instance_url
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            ShellError::sync_not_configured().with_detail("a GitLab address is needed as well as a token")
-        })?;
+        .unwrap_or(GITLAB_DEFAULT_INSTANCE);
 
     let parsed = reqwest::Url::parse(raw)
         .map_err(|error| ShellError::sync_not_configured().with_detail(format!("the address: {error}")))?;
@@ -319,11 +315,17 @@ pub fn file_in(value: &serde_json::Value) -> Result<(Option<String>, Option<Stri
 /// service, and the passphrase is what makes that acceptable. The payload is the same snapshot the
 /// other two homes carry — the same context string, so a file moved between a server and a snippet
 /// still opens.
+///
+/// Taking the snapshot rather than a string is what lets the credentials be checked here: a caller
+/// that assembled one and forgot to read the credentials out of the vault gets an error instead of a
+/// snippet that says it holds somebody's passwords and does not.
 pub fn seal(
     snapshot: &SyncSnapshot,
     passphrase: &str,
     kdf: &sevenshell_vault::KdfParams,
 ) -> Result<String, ShellError> {
+    crate::snapshot::ensure_credentials_came(snapshot)?;
+
     let payload = zeroize::Zeroizing::new(
         serde_json::to_vec(snapshot)
             .map_err(|error| ShellError::sync_io(format!("the snapshot could not be written: {error}")))?,
@@ -567,7 +569,18 @@ impl Snippets {
     ///
     /// What is there is looked at first: content that is not this application's envelope is somebody
     /// else's, and an id that was typed wrong should stop rather than destroy it.
+    ///
+    /// What is *sent* is held to the same rule, and this is where that is enforced rather than in the
+    /// caller: whatever is handed in has to be this application's sealed envelope already. A snippet
+    /// marked private is unlisted — anyone with the address can read it — so a caller that passed a
+    /// plain snapshot would be publishing a library, and no caller is trusted to remember that.
     pub async fn write(&self, content: &str) -> Result<String, ShellError> {
+        if !is_ours(content) {
+            return Err(ShellError::sync_snapshot_invalid(
+                "a snippet carries this application's sealed envelope and nothing else",
+            ));
+        }
+
         let updating = self.sync.snippet_id.as_deref().is_some_and(|id| !id.trim().is_empty());
 
         if updating {
@@ -714,11 +727,10 @@ mod tests {
     #[test]
     fn a_gitlab_address_that_is_not_one_is_refused() {
         for address in [
-            None,
-            Some(""),
-            Some("   "),
             Some("ftp://gitlab.example.com"),
             Some("https://user:pw@gitlab.example.com"),
+            Some("https://gitlab.example.com?x=1"),
+            Some("https://gitlab.example.com#snippets"),
         ] {
             let error = api_base(SnippetProvider::GitLab, address).expect_err("not an address");
 
@@ -728,6 +740,46 @@ mod tests {
                 "{address:?}"
             );
         }
+    }
+
+    #[test]
+    fn an_empty_gitlab_address_is_the_hosted_installation() {
+        // An empty field on the form is not somebody refusing to name an installation; it is the one
+        // most accounts are on, and the field shows that address rather than being blank.
+        for address in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                api_base(SnippetProvider::GitLab, address).expect("the hosted one"),
+                format!("{GITLAB_DEFAULT_INSTANCE}/api/v4"),
+                "{address:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_account_is_a_service_and_for_gitlab_an_installation() {
+        // One token per account, and the name of the account is what both the vault's table and the
+        // settings file are keyed by — so it has to be the same string for the same setup, and two
+        // installations must not land on one name.
+        assert_eq!(
+            snippet_account(SnippetProvider::GitHub, None).expect("github"),
+            "github"
+        );
+        assert_eq!(snippet_account(SnippetProvider::Gitee, None).expect("gitee"), "gitee");
+        assert_eq!(
+            snippet_account(SnippetProvider::GitHub, Some("https://api.github.com")).expect("github"),
+            "github",
+            "an address is not part of an account this service only has one of"
+        );
+        assert_eq!(
+            snippet_account(SnippetProvider::GitLab, Some("https://gitlab.example.com/")).expect("gitlab"),
+            "gitlab:https://gitlab.example.com",
+            "the trailing slash goes, or the same installation would be two accounts"
+        );
+        assert_ne!(
+            snippet_account(SnippetProvider::GitLab, Some("https://one.example")).expect("one"),
+            snippet_account(SnippetProvider::GitLab, Some("https://two.example")).expect("two"),
+            "two installations are two accounts with two tokens"
+        );
     }
 
     #[test]
@@ -1067,6 +1119,11 @@ mod tests {
         serde_json::json!({ "files": { SNIPPET_FILE_NAME: { "content": content } } }).to_string()
     }
 
+    /// An envelope this application wrote, which is the only thing an upload is allowed to send.
+    fn sealed() -> String {
+        seal(&sample_snapshot(), "correct horse", &Default::default()).expect("sealed")
+    }
+
     #[tokio::test]
     async fn creating_a_gist_sends_the_file_and_takes_the_id_from_the_answer() {
         let server = Fake::start(vec![("POST /gists".to_owned(), 201, "{\"id\":\"abc123\"}".to_owned())]).await;
@@ -1076,8 +1133,9 @@ mod tests {
             token: ServicePassword::new("token-value".to_owned()),
             snippet_id: None,
         };
+        let envelope = sealed();
 
-        let id = pointed(&sync, &server.base).write("sealed").await.expect("created");
+        let id = pointed(&sync, &server.base).write(&envelope).await.expect("created");
 
         assert_eq!(id, "abc123", "the id comes back for the next upload to patch");
         let requests = server.requests();
@@ -1089,8 +1147,33 @@ mod tests {
             Some("Bearer token-value")
         );
         let body: serde_json::Value = serde_json::from_str(&requests[0].body).expect("the body is JSON");
-        assert_eq!(body["files"][SNIPPET_FILE_NAME]["content"], "sealed");
+        assert_eq!(body["files"][SNIPPET_FILE_NAME]["content"], envelope);
         assert_eq!(body["public"], false, "never a public gist");
+    }
+
+    #[tokio::test]
+    async fn a_snapshot_that_is_not_sealed_is_refused_before_anything_is_sent() {
+        // A snippet marked private is unlisted rather than unreadable, so what goes into one has to be
+        // the sealed envelope and nothing else. The refusal is here rather than in the caller because
+        // no caller may be trusted with a rule that publishes a library when it is forgotten.
+        let server = Fake::start(vec![("POST /gists".to_owned(), 201, "{\"id\":\"abc123\"}".to_owned())]).await;
+        let sync = SnippetSync {
+            provider: SnippetProvider::GitHub,
+            instance_url: None,
+            token: ServicePassword::new("token-value".to_owned()),
+            snippet_id: None,
+        };
+
+        let error = pointed(&sync, &server.base)
+            .write(&sample_snapshot().to_json().expect("json"))
+            .await
+            .expect_err("a plain snapshot is not a snippet");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SyncSnapshotInvalid);
+        assert!(
+            server.requests().is_empty(),
+            "nothing was sent, so nothing was published"
+        );
     }
 
     #[tokio::test]
@@ -1103,10 +1186,7 @@ mod tests {
         .await;
         let sync = account(SnippetProvider::GitHub, "abc");
 
-        let id = pointed(&sync, &server.base)
-            .write("sealed again")
-            .await
-            .expect("updated");
+        let id = pointed(&sync, &server.base).write(&sealed()).await.expect("updated");
 
         assert_eq!(id, "abc");
         let requests = server.requests();
@@ -1133,7 +1213,7 @@ mod tests {
         let sync = account(SnippetProvider::GitHub, "abc");
 
         let error = pointed(&sync, &server.base)
-            .write("sealed")
+            .write(&sealed())
             .await
             .expect_err("not ours");
 
@@ -1246,7 +1326,7 @@ mod tests {
             snippet_id: None,
         };
 
-        let id = pointed(&sync, &server.base).write("sealed").await.expect("created");
+        let id = pointed(&sync, &server.base).write(&sealed()).await.expect("created");
 
         assert_eq!(id, "42", "Gitee answers with a list, and its ids are numbers");
         let request = &server.requests()[0];

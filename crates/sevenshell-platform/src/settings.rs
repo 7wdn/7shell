@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
-    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout, TabMaxWidth,
-    TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default, background_transparency_default,
-    command_completion_on, monitor_on, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
-    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
-    ui_scale_default,
+    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, SnippetProvider, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default,
+    background_transparency_default, command_completion_on, monitor_on, normalize_sync_auto_upload_minutes,
+    normalize_terminal_font_size, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
+    terminal_font_size_default, tray_icon_on, ui_scale_default,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -204,6 +204,18 @@ struct StoredSettings {
     sync_auto_upload: bool,
     #[serde(default = "sync_auto_upload_minutes_default")]
     sync_auto_upload_minutes: u32,
+    /// A snippet backup's service, its GitLab address, and the file each account writes to. Absent in
+    /// a file written before there was anywhere to park a snippet, and read back as "nothing chosen".
+    ///
+    /// The service is a string here for the same reason the theme is: a file written by a build with
+    /// a fourth provider in it has to open in this one, and a name this build does not know reads as
+    /// nobody having chosen rather than as a refusal to open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync_snippet_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sync_snippet_instance: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    sync_snippet_ids: BTreeMap<String, String>,
 }
 
 impl StoredSettings {
@@ -246,6 +258,11 @@ impl StoredSettings {
             sync_include_secrets: settings.sync_include_secrets,
             sync_auto_upload: settings.sync_auto_upload,
             sync_auto_upload_minutes: settings.sync_auto_upload_minutes,
+            sync_snippet_provider: settings
+                .sync_snippet_provider
+                .map(|provider| provider.as_str().to_owned()),
+            sync_snippet_instance: settings.sync_snippet_instance.clone(),
+            sync_snippet_ids: settings.sync_snippet_ids.clone(),
         }
     }
 
@@ -292,6 +309,9 @@ impl StoredSettings {
             sync_include_secrets: self.sync_include_secrets,
             sync_auto_upload: self.sync_auto_upload,
             sync_auto_upload_minutes: normalize_sync_auto_upload_minutes(self.sync_auto_upload_minutes),
+            sync_snippet_provider: self.sync_snippet_provider.as_deref().and_then(SnippetProvider::from_id),
+            sync_snippet_instance: self.sync_snippet_instance.filter(|value| !value.trim().is_empty()),
+            sync_snippet_ids: self.sync_snippet_ids,
         }
     }
 }
@@ -415,6 +435,9 @@ mod tests {
             sync_include_secrets: false,
             sync_auto_upload: false,
             sync_auto_upload_minutes: sync_auto_upload_minutes_default(),
+            sync_snippet_provider: None,
+            sync_snippet_instance: None,
+            sync_snippet_ids: BTreeMap::new(),
         }
     }
 
@@ -463,6 +486,47 @@ mod tests {
             !loaded.sync_include_secrets,
             "a file written before this existed is not a person asking for it"
         );
+    }
+
+    #[test]
+    fn a_snippet_setup_survives_a_round_trip_and_a_service_this_build_does_not_know_is_no_choice() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        let mut written = settings(ThemeMode::Dark, ThemeMode::System, None);
+        written.sync_snippet_provider = Some(SnippetProvider::GitLab);
+        written.sync_snippet_instance = Some("https://gitlab.example.com".to_owned());
+        written.sync_snippet_ids = BTreeMap::from([
+            ("gitlab:https://gitlab.example.com".to_owned(), "42".to_owned()),
+            ("github".to_owned(), "abc123".to_owned()),
+        ]);
+        save_to(&path, &written).expect("write");
+
+        let loaded = load_from(&path).expect("read");
+
+        assert_eq!(loaded.sync_snippet_provider, Some(SnippetProvider::GitLab));
+        assert_eq!(
+            loaded.sync_snippet_instance.as_deref(),
+            Some("https://gitlab.example.com")
+        );
+        assert_eq!(
+            loaded.sync_snippet_ids.get("github").map(String::as_str),
+            Some("abc123"),
+            "the id of a service somebody is not currently on is not thrown away"
+        );
+
+        // A file naming a service this build has never heard of is not a refusal to open — the same
+        // rule the theme follows. What it reads as is "nobody has chosen", which is a state the panel
+        // can draw and a person can act on.
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"syncSnippetProvider":"bitbucket","syncSnippetInstance":"  "}"#,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("read");
+        assert_eq!(loaded.sync_snippet_provider, None);
+        assert_eq!(loaded.sync_snippet_instance, None);
     }
 
     #[test]

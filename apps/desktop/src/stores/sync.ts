@@ -21,6 +21,8 @@ import { ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import type {
+  SnippetStatus,
+  SnippetUploadReceipt,
   SyncApplySummary,
   SyncCatalog,
   SyncContents,
@@ -37,10 +39,13 @@ import type {
  * One field for all of them rather than one per panel: two syncs at once is not a thing anybody
  * means, and a second one's sentence would arrive after the first's and overwrite it.
  */
-export type SyncWork = "" | "export" | "import" | "test" | "upload" | "download" | "password" | "passphrase";
+export type SyncWork = "" | "export" | "import" | "test" | "upload" | "download" | "password" | "passphrase" | "token";
 
 /** The server actions, which share that field with the two file ones. */
 type ServiceWork = "test" | "upload" | "download" | "password" | "passphrase";
+
+/** The snippet's actions, which are the server's with a token instead of a password. */
+type SnippetWork = "test" | "upload" | "download" | "token";
 
 /** A backup that was read and is waiting to be applied. */
 export interface ReadBackup {
@@ -219,6 +224,69 @@ export const useSyncStore = defineStore("sync", () => {
     return runService("download", () => backend.sync.apply(replace, passphrase));
   }
 
+  // -- The snippet, which is the same three things somewhere else ----------------------
+
+  /**
+   * What this installation has for the snippet account its settings describe.
+   *
+   * `null` until it has been asked, and asked again whenever the account changes: the answer names
+   * the account, so it is the only side that can say which file id belongs to what is on screen.
+   */
+  const snippet = ref<SnippetStatus | null>(null);
+
+  async function loadSnippet(): Promise<void> {
+    await runSnippet("token", async () => {
+      snippet.value = await backend.sync.snippet.status();
+    });
+  }
+
+  /** Keeps the token for the configured account, or forgets it. `null` is forgetting. */
+  async function keepSnippetToken(token: string | null): Promise<void> {
+    await runSnippet("token", async () => {
+      snippet.value = await backend.sync.snippet.keepToken(token);
+    });
+  }
+
+  /** Asks the service whether the token, and the file when there is one, is good. */
+  async function testSnippet(): Promise<boolean> {
+    return (await runSnippet("test", () => backend.sync.snippet.test())) !== null;
+  }
+
+  /** Writes the library into the gist or snippet. `null` is a refusal, already in `failure`. */
+  async function uploadToSnippet(
+    selection: SyncSelection,
+    passphrase: string | null,
+  ): Promise<SnippetUploadReceipt | null> {
+    return runSnippet("upload", () => backend.sync.snippet.upload(selection, passphrase));
+  }
+
+  async function downloadFromSnippet(passphrase: string | null): Promise<SyncDownloadOutcome | null> {
+    return runSnippet("download", () => backend.sync.snippet.download(passphrase));
+  }
+
+  async function applyFromSnippet(replace: boolean, passphrase: string | null): Promise<SyncApplySummary | null> {
+    return runSnippet("download", () => backend.sync.snippet.apply(replace, passphrase));
+  }
+
+  /**
+   * The shared shape of a snippet action, which is the server's shape with different words for the
+   * failure: its kinds are all names the busy field already has, so one flag still covers everything
+   * a panel disables while something is running.
+   */
+  async function runSnippet<T>(kind: SnippetWork, action: () => Promise<T>): Promise<T | null> {
+    failure.value = null;
+    notice.value = "";
+    busy.value = kind;
+    try {
+      return await action();
+    } catch (error) {
+      failure.value = asShellError(error, `snippet_sync_${kind}`);
+      return null;
+    } finally {
+      busy.value = "";
+    }
+  }
+
   return {
     available,
     busy,
@@ -238,5 +306,12 @@ export const useSyncStore = defineStore("sync", () => {
     uploadToServer,
     downloadFromServer,
     applyFromServer,
+    snippet,
+    loadSnippet,
+    keepSnippetToken,
+    testSnippet,
+    uploadToSnippet,
+    downloadFromSnippet,
+    applyFromSnippet,
   };
 });

@@ -82,6 +82,11 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     // No timer either: this spec is about choices somebody made, and nobody has made these.
     syncAutoUpload: false,
     syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+    // No service chosen and nothing filed under one, which is the same fresh install: the dropdown
+    // shows the first service and there is no gist id for it yet.
+    syncSnippetProvider: undefined,
+    syncSnippetInstance: undefined,
+    syncSnippetIds: {},
     ...overrides,
   };
 }
@@ -221,6 +226,9 @@ describe("preferences store", () => {
       syncIncludeSecrets: false,
       syncAutoUpload: false,
       syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+      syncSnippetProvider: undefined,
+      syncSnippetInstance: undefined,
+      syncSnippetIds: {},
     });
   });
 
@@ -269,6 +277,9 @@ describe("preferences store", () => {
       syncIncludeSecrets: false,
       syncAutoUpload: false,
       syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+      syncSnippetProvider: undefined,
+      syncSnippetInstance: undefined,
+      syncSnippetIds: {},
     });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
@@ -428,6 +439,9 @@ describe("the terminal palette", () => {
       syncIncludeSecrets: false,
       syncAutoUpload: false,
       syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+      syncSnippetProvider: undefined,
+      syncSnippetInstance: undefined,
+      syncSnippetIds: {},
     });
   });
 
@@ -1191,6 +1205,9 @@ describe("restoring the defaults", () => {
       syncIncludeSecrets: false,
       syncAutoUpload: false,
       syncAutoUploadMinutes: DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
+      syncSnippetProvider: undefined,
+      syncSnippetInstance: undefined,
+      syncSnippetIds: {},
     });
   });
 

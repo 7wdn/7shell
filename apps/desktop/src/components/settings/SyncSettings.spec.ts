@@ -22,6 +22,12 @@ vi.mock("@/lib/backend/tauri", () => ({
   syncUpload: vi.fn(),
   syncDownload: vi.fn(),
   syncApply: vi.fn(),
+  snippetSyncStatus: vi.fn(),
+  snippetSyncToken: vi.fn(),
+  snippetSyncTest: vi.fn(),
+  snippetSyncUpload: vi.fn(),
+  snippetSyncDownload: vi.fn(),
+  snippetSyncApply: vi.fn(),
   sessionsList: vi.fn(),
   groupsList: vi.fn(),
   snippetsOpen: vi.fn(),
@@ -39,6 +45,12 @@ import {
   sessionsList,
   settingsGet,
   settingsSet,
+  snippetSyncApply,
+  snippetSyncDownload,
+  snippetSyncStatus,
+  snippetSyncTest,
+  snippetSyncToken,
+  snippetSyncUpload,
   snippetsOpen,
   syncApply,
   syncAvailable,
@@ -71,9 +83,17 @@ const testMock = vi.mocked(syncTest);
 const uploadMock = vi.mocked(syncUpload);
 const downloadMock = vi.mocked(syncDownload);
 const applyMock = vi.mocked(syncApply);
+const snippetStatusMock = vi.mocked(snippetSyncStatus);
+const snippetTokenMock = vi.mocked(snippetSyncToken);
+const snippetTestMock = vi.mocked(snippetSyncTest);
+const snippetUploadMock = vi.mocked(snippetSyncUpload);
+const snippetDownloadMock = vi.mocked(snippetSyncDownload);
+const snippetApplyMock = vi.mocked(snippetSyncApply);
 
 let app: App | undefined;
 let host: HTMLDivElement;
+/** The one token the mocked vault holds, so "keep it" and "is one kept" cannot disagree. */
+let keptToken: string | null = null;
 
 function contents(overrides: Partial<SyncContents> = {}): SyncContents {
   return {
@@ -151,10 +171,15 @@ async function type(value: string): Promise<void> {
 
 /** Opens the file panel, because the page now opens on the server's. */
 async function openLocal(): Promise<void> {
+  await openTab("Local backup");
+}
+
+/** Opens any of the three panels by the label on its tab. */
+async function openTab(label: string): Promise<void> {
   const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-    (candidate) => candidate.textContent?.trim() === "Local backup",
+    (candidate) => candidate.textContent?.trim() === label,
   );
-  candidate_or_throw(tab, "the local backup tab");
+  candidate_or_throw(tab, `the ${label} tab`);
   tab.click();
   await nextTick();
 }
@@ -197,6 +222,37 @@ beforeEach(() => {
     missingKeys: 0,
     droppedHops: 0,
   });
+  // A fresh account: the shell has answered with the name of the service's one account and says no
+  // token is kept, which is what the snippet panel's fields are drawn from. What is kept is held
+  // here so the two answers stay consistent — a real vault holds one token, and a mock where
+  // "keep it" and "is it kept" disagree is a mock that fails a passing application.
+  keptToken = null;
+  snippetStatusMock.mockReset().mockImplementation(async () => ({
+    account: "github",
+    hasToken: keptToken !== null,
+  }));
+  snippetTokenMock.mockReset().mockImplementation(async (token: string | null) => {
+    keptToken = token;
+    return { account: "github", hasToken: token !== null };
+  });
+  snippetTestMock.mockReset().mockResolvedValue(undefined);
+  snippetUploadMock.mockReset().mockResolvedValue({
+    contents: contents(),
+    sealed: true,
+    provider: "github",
+    snippetId: "abc123",
+  });
+  snippetDownloadMock.mockReset().mockResolvedValue({
+    kind: "read",
+    catalog: { contents: contents(), sealed: true, exportedAt: 1, appVersion: "0.1.0" },
+  });
+  snippetApplyMock.mockReset().mockResolvedValue({
+    contents: contents(),
+    replaced: 0,
+    copied: 0,
+    missingKeys: 0,
+    droppedHops: 0,
+  });
 });
 
 afterEach(() => {
@@ -209,16 +265,118 @@ afterEach(() => {
 });
 
 describe("the sync page", () => {
-  it("says what this machine holds, and which parts are not here yet", async () => {
+  it("offers the three places a backup can live, all of them open", async () => {
     await mount();
 
     expect(host.textContent).toContain("Local backup");
-    // The two tabs that have not landed say so rather than opening onto nothing.
     const tabs = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     expect(
       tabs.map((tab) => tab.disabled),
-      "only snippet sync is missing",
-    ).toEqual([false, true, false]);
+      "none of the three is waiting to be built",
+    ).toEqual([false, false, false]);
+
+    await openTab("Snippet sync");
+    expect(host.textContent).toContain("GitHub Gist");
+    expect(host.querySelector("#snippet-token"), "and its form is drawn").not.toBeNull();
+  });
+
+  it("says there is nothing to test with until a token is entered", async () => {
+    await mount();
+    await openTab("Snippet sync");
+
+    await press("Test");
+
+    // The shell would answer the same way, but a round trip to be told "no token" is a round trip
+    // spent saying what the panel already knows.
+    await vi.waitFor(() => expect(snippetStatusMock).toHaveBeenCalled());
+    expect(host.textContent).toContain("Enter an access token first, or keep one.");
+    expect(snippetTestMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the token in the vault before it tests, so the test has something to dial with", async () => {
+    await mount();
+    await openTab("Snippet sync");
+
+    await typeInto("snippet-token", "ghp_secret");
+    const box = [...host.querySelectorAll<HTMLInputElement>("input[type=checkbox]")].find((candidate) =>
+      candidate.closest("label")?.textContent?.includes("Keep the token in the vault"),
+    );
+    if (!box) {
+      throw new Error("no box for keeping the token");
+    }
+    box.checked = true;
+    box.dispatchEvent(new Event("change"));
+    await nextTick();
+
+    await press("Test");
+
+    await vi.waitFor(() => expect(snippetTestMock).toHaveBeenCalled());
+    expect(snippetTokenMock.mock.calls[0]?.[0], "the token goes into the vault rather than to the request").toBe(
+      "ghp_secret",
+    );
+    expect(host.textContent).toContain("The server answered.");
+  });
+
+  it("uploads into the snippet and writes the id down under the name the shell gave the account", async () => {
+    await mount();
+    await openTab("Snippet sync");
+    await typeInto("snippet-token", "ghp_secret");
+
+    await press("Upload");
+    // The dialog's own action keeps the words the other two panels' dialogs use: the question is
+    // the same one, and the answer is "yes, back this up".
+    await press("Export backup", dialog() as HTMLElement);
+    await vi.waitFor(() => expect(snippetUploadMock).toHaveBeenCalled());
+    await vi.waitFor(() => expect(settingsSetMock).toHaveBeenCalled());
+
+    const written = settingsSetMock.mock.calls.at(-1)?.[0] as { syncSnippetIds?: Record<string, string> };
+    expect(written.syncSnippetIds, "the id is filed under the account, which is what the next upload patches").toEqual({
+      github: "abc123",
+    });
+    expect(host.textContent).toContain("Uploaded");
+  });
+
+  it("offers no upload until there is a token, because a snippet is always sealed and always needs one", async () => {
+    await mount();
+    await openTab("Snippet sync");
+
+    const upload = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (candidate) => candidate.textContent?.trim() === "Upload",
+    );
+    expect(upload?.disabled, "pressing it would only be refused by the shell").toBe(true);
+  });
+
+  it("writes the service and its address down before it asks the shell about the new account", async () => {
+    await mount();
+    await openTab("Snippet sync");
+    snippetStatusMock.mockResolvedValue({ account: "gitlab:https://gitlab.com", hasToken: false });
+
+    // The dropdown is the interface's own control, and choosing in it is a pointer released over a
+    // row of a list that lives on the body.
+    host
+      .querySelector<HTMLElement>('[role="combobox"]')
+      ?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }));
+    host.querySelector<HTMLElement>('[role="combobox"]')?.click();
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const gitlab = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) =>
+      option.textContent?.includes("GitLab"),
+    );
+    gitlab?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "mouse" }));
+
+    await vi.waitFor(() => expect(settingsSetMock).toHaveBeenCalled());
+    const written = settingsSetMock.mock.calls.at(-1)?.[0] as {
+      syncSnippetProvider?: string;
+      syncSnippetInstance?: string;
+    };
+    expect(written.syncSnippetProvider, "the service is a setting, written before it is used").toBe("gitlab");
+    expect(written.syncSnippetInstance, "and the address an empty field means").toBe("https://gitlab.com");
+
+    // The account changed with the service, so the shell is the one asked what it holds now — and it
+    // is asked after the choice is written, not before.
+    const writtenAt = settingsSetMock.mock.invocationCallOrder.at(-1) ?? 0;
+    const askedAt = snippetStatusMock.mock.invocationCallOrder.at(-1) ?? 0;
+    expect(askedAt, "the shell is asked after the setting is written").toBeGreaterThan(writtenAt);
   });
 
   it("writes a backup with the switches that were ticked, and says what it wrote", async () => {

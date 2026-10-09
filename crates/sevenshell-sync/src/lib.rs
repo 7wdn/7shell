@@ -42,11 +42,11 @@ pub use plan::{Destination, RestorePlan, plan_restore};
 pub use settings::PortableSettings;
 pub use snapshot::{
     BuiltSnapshot, MAX_SNAPSHOT_BYTES, OpenedSnapshot, PROTECTION_PASSPHRASE, SNAPSHOT_FORMAT, SNAPSHOT_SEALED_VERSION,
-    SNAPSHOT_VERSION, SnapshotEnvelope, SyncSnapshot, build, open,
+    SNAPSHOT_VERSION, SnapshotEnvelope, SyncSnapshot, build, gather, open, with_credentials,
 };
 pub use snippets::{
-    SNIPPET_ENVELOPE_FORMAT, SNIPPET_ENVELOPE_VERSION, SNIPPET_FILE_NAME, SNIPPET_TITLE, SnippetProvider,
+    GITLAB_DEFAULT_INSTANCE, SNIPPET_ENVELOPE_FORMAT, SNIPPET_ENVELOPE_VERSION, SNIPPET_FILE_NAME, SNIPPET_TITLE,
     SnippetRequest, SnippetSync, Snippets, api_base, create_body, file_in, is_ours, open_snippet, read_request,
-    response_id, seal, snippet_url, test_request, write_request,
+    response_id, seal, snippet_account, snippet_url, test_request, write_request,
 };
 pub use webdav::{DEFAULT_REMOTE_PATH, SyncService, WebDav};

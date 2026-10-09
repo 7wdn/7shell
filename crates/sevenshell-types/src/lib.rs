@@ -51,7 +51,7 @@ pub use snippet::{
     SendTarget, Snippet, SnippetGroup,
 };
 pub use sync::{
-    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
-    SyncServiceStatus, SyncUploadReceipt,
+    SnippetProvider, SnippetStatus, SnippetUploadReceipt, SyncApplySummary, SyncCatalog, SyncContents,
+    SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt,
 };
 pub use words::CompletionWord;

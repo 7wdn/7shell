@@ -70,6 +70,18 @@ function lowerFirst(name: string): string {
   return name.charAt(0).toLowerCase() + name.slice(1);
 }
 
+/**
+ * Every variant name of a Rust enum that carries no explicit names, as serde's camelCase writes it.
+ *
+ * The braced helper above only sees variants that carry fields; a union that mixes both — one variant
+ * with data and two without — needs the whole list, and lower-casing only the first letter is what
+ * turns `NothingYet` into the `nothingYet` the interface reads.
+ */
+function rustCamelVariants(source: string, enumName: string): string[] {
+  const body = new RegExp(`pub enum ${enumName} \\{([\\s\\S]*?)\\n\\}`).exec(source)?.[1] ?? "";
+  return [...body.matchAll(/^\s{4}([A-Z][A-Za-z0-9]*)/gm)].map((match) => lowerFirst(match[1] as string));
+}
+
 /** The `kind` discriminants of a TypeScript union of tagged objects. */
 function tsKindUnion(source: string, typeName: string): string[] {
   // Up to the next declaration or the end of the file: a union of object types ends with `};` at
@@ -354,7 +366,15 @@ describe("wire types", () => {
     const rust = read("crates/sevenshell-types/src/sync.rs");
     const typescript = read("apps/desktop/src/types/sync.ts");
 
-    for (const name of ["SyncSelection", "SyncContents", "SyncCatalog", "SyncReceipt", "SyncApplySummary"]) {
+    for (const name of [
+      "SyncSelection",
+      "SyncContents",
+      "SyncCatalog",
+      "SyncReceipt",
+      "SyncApplySummary",
+      "SnippetStatus",
+      "SnippetUploadReceipt",
+    ]) {
       const rustFields = rustStructFields(rust, name).map(camelCase);
 
       expect(rustFields.length, `${name} has no fields, so the comparison proves nothing`).toBeGreaterThan(0);
@@ -366,6 +386,19 @@ describe("wire types", () => {
     expect(sorted(tsKindUnion(typescript, "SyncInspectOutcome"))).toEqual(
       sorted(rustBracedEnumVariants(rust, "SyncInspectOutcome")),
     );
+    expect(sorted(tsKindUnion(typescript, "SyncDownloadOutcome"))).toEqual(
+      sorted(rustCamelVariants(rust, "SyncDownloadOutcome")),
+    );
+
+    // A service name is the one wire value here that is not camelCase. The same string is the
+    // dropdown's value, the settings file's value and the request's name for the service, so a
+    // `gitHub` on one side and a `github` on the other would be a service silently not chosen.
+    expect(sorted(tsStringUnion(typescript, "SnippetProvider"))).toEqual(["gitee", "github", "gitlab"]);
+    expect(sorted(rustEnumVariants(rust, "SnippetProvider"))).toEqual(["gitee", "github", "gitlab"]);
+    expect(
+      /#\[serde\(rename_all = "([a-z]+)"\)\]\s*pub enum SnippetProvider/.exec(rust)?.[1],
+      "SnippetProvider renames its variants, and lower case is what makes `GitHub` become `github`",
+    ).toBe("lowercase");
   });
 
   it("keeps the compiled interfaces aligned with the Rust structs", () => {

@@ -1,5 +1,5 @@
-//! Backups: what a snapshot would hold, writing one, reading one, and applying one — to a file, and
-//! to a server.
+//! Backups: what a snapshot would hold, writing one, reading one, and applying one — to a file, to
+//! a server, and to a code snippet.
 //!
 //! The rules live in `sevenshell-sync`; this is the layer that owns files, the settings and the
 //! vault's secrets. The native dialog runs here and the file is read and written here, so the
@@ -13,18 +13,27 @@
 //!
 //! A **server** needs none of that waiting. Where a file's contents have to be remembered between
 //! two calls, a server's can simply be asked again: the second call fetches the same file, which is
-//! also the more honest thing to do — what gets applied is what the server holds *now*.
+//! also the more honest thing to do — what gets applied is what the server holds *now*. A **snippet**
+//! is a server that belongs to somebody else's code host, and follows the server's rule for the same
+//! reason.
+//!
+//! Where a snippet's configuration is kept is the one place it differs from the WebDAV half: the
+//! service, its address and the file each account writes to are settings, and the only secret is the
+//! token, which is in the vault under an account name this layer computes. The interface is told
+//! that name rather than working it out: two languages agreeing on how an account is spelled is
+//! exactly the kind of agreement that comes apart quietly.
 
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
 use sevenshell_sync::{
-    DEFAULT_REMOTE_PATH, Destination, OpenedSnapshot, SyncService, SyncSnapshot, WebDav, plan_restore,
+    BuiltSnapshot, DEFAULT_REMOTE_PATH, Destination, OpenedSnapshot, SnippetSync, Snippets, SyncService, SyncSnapshot,
+    WebDav, plan_restore, snippet_account,
 };
 use sevenshell_types::{
-    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
-    SyncServiceStatus, SyncUploadReceipt,
+    AppSettings, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SyncApplySummary, SyncCatalog, SyncContents,
+    SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt,
 };
 use sevenshell_vault::{ServicePassword, Vault};
 use tauri::{AppHandle, State};
@@ -120,23 +129,7 @@ pub async fn sync_upload(
     selection: SyncSelection,
     passphrase: Option<String>,
 ) -> Result<SyncUploadReceipt, ShellError> {
-    let settings = sevenshell_platform::settings::load()?;
-    let sealing = sealing_passphrase(&state, passphrase)?;
-
-    // Two answers decide whether the credentials travel, and both have to say yes: the person
-    // ticking the box in the dialog, and the switch on the page saying this installation syncs
-    // credentials at all. The passphrase is what can actually seal them, and a build asked for
-    // credentials with nothing to seal them under writes a snapshot without any.
-    let mut wanted = selection;
-    wanted.credentials = wanted.credentials && settings.sync_include_secrets;
-
-    let built = sevenshell_sync::build(
-        state.vault(),
-        &settings,
-        &wanted,
-        sealing.as_ref().map(ServicePassword::expose),
-        now(),
-    )?;
+    let built = built_snapshot(&state, selection, passphrase)?;
 
     let dav = client(&state)?;
     dav.write(&built.text).await?;
@@ -160,17 +153,7 @@ pub async fn sync_download(
     };
 
     let sealing = sealing_passphrase(&state, passphrase)?;
-    match sevenshell_sync::open(&text)? {
-        OpenedSnapshot::Plain(snapshot) => Ok(SyncDownloadOutcome::Read {
-            catalog: catalog_of(&snapshot, false),
-        }),
-        OpenedSnapshot::Sealed(envelope) => match sealing.as_ref().map(ServicePassword::expose) {
-            Some(passphrase) => Ok(SyncDownloadOutcome::Read {
-                catalog: catalog_of(&envelope.unseal(passphrase)?, true),
-            }),
-            None => Ok(SyncDownloadOutcome::NeedsPassphrase),
-        },
-    }
+    read_backup(&text, sealing.as_ref())
 }
 
 /// Applies the file the server holds, fetching it again.
@@ -190,13 +173,116 @@ pub async fn sync_apply(
     };
 
     let sealing = sealing_passphrase(&state, passphrase)?;
-    let snapshot = match sevenshell_sync::open(&text)? {
-        OpenedSnapshot::Plain(snapshot) => *snapshot,
-        OpenedSnapshot::Sealed(envelope) => match sealing.as_ref().map(ServicePassword::expose) {
-            Some(passphrase) => envelope.unseal(passphrase)?,
-            None => return Err(ShellError::sync_passphrase()),
-        },
+    let snapshot = opened_backup(&text, sealing.as_ref())?;
+
+    apply(state.vault(), snapshot, replace)
+}
+
+// -- Snippets, which are the same backup parked somewhere else -----------------
+
+/// What this installation has for the account it is configured for: its name, and whether a token is
+/// kept for it.
+///
+/// The name is the reason this is a call rather than something the page works out: what names an
+/// account — a service, and for GitLab an address — is one rule, and it lives here. The snippet id
+/// is not in the answer because it is a setting, which the page already holds and writes.
+#[tauri::command]
+pub fn snippet_sync_status(state: State<'_, ShellState>) -> Result<SnippetStatus, ShellError> {
+    let settings = sevenshell_platform::settings::load()?;
+    let account = configured_account(&settings)?;
+
+    Ok(SnippetStatus {
+        has_token: state.vault().snippet_token(&account)?.is_some(),
+        account,
+    })
+}
+
+/// Keeps the token for the configured account, or forgets the one that was kept.
+///
+/// `None` is forgetting rather than "leave it alone", the same as the server's password: there is one
+/// control for this — a box beside the field — and unticking it has to mean something.
+#[tauri::command]
+pub fn snippet_sync_token(state: State<'_, ShellState>, token: Option<String>) -> Result<SnippetStatus, ShellError> {
+    let settings = sevenshell_platform::settings::load()?;
+    let account = configured_account(&settings)?;
+    state.vault().set_snippet_token(&account, token)?;
+
+    snippet_sync_status(state)
+}
+
+/// Asks the service whether the token — and, when one has been made, the snippet — is good.
+///
+/// A read of either the account or the file, and nothing is written. This is the question somebody
+/// asks before trusting a setup, which is also why it costs nothing to ask it twice.
+#[tauri::command]
+pub async fn snippet_sync_test(state: State<'_, ShellState>) -> Result<(), ShellError> {
+    let (snippets, _) = snippet_client(&state)?;
+    snippets.probe().await
+}
+
+/// Writes the library to the gist or snippet this account owns, creating one if there is none.
+///
+/// The id comes back because the first upload is what creates the file: without it written down, the
+/// next upload would create another one. What travels is the same snapshot a server or a file gets,
+/// and it is always sealed — a snippet marked private is unlisted rather than unreadable, and a file
+/// of somebody's logins sitting in one in the clear is not a thing this feature does. No passphrase
+/// is therefore not "upload everything except the passwords": it is a refusal, which is the one place
+/// this differs from the other two homes.
+#[tauri::command]
+pub async fn snippet_sync_upload(
+    state: State<'_, ShellState>,
+    selection: SyncSelection,
+    passphrase: Option<String>,
+) -> Result<SnippetUploadReceipt, ShellError> {
+    let settings = sevenshell_platform::settings::load()?;
+    let sealing = sealing_passphrase(&state, passphrase)?;
+    let Some(sealing) = sealing else {
+        return Err(ShellError::sync_passphrase());
     };
+
+    let wanted = wanted_selection(selection, &settings);
+
+    let mut snapshot = sevenshell_sync::gather(state.vault(), &settings, &wanted, Some(sealing.expose()), now())?;
+    let contents = snapshot.contents();
+    sevenshell_sync::with_credentials(state.vault(), &mut snapshot)?;
+    let text = sevenshell_sync::seal(&snapshot, sealing.expose(), &Default::default())?;
+
+    let (snippets, provider) = snippet_client(&state)?;
+    let snippet_id = snippets.write(&text).await?;
+
+    Ok(SnippetUploadReceipt {
+        contents,
+        sealed: true,
+        provider,
+        snippet_id,
+    })
+}
+
+/// Reads the file the account holds, and says what is inside it.
+#[tauri::command]
+pub async fn snippet_sync_download(
+    state: State<'_, ShellState>,
+    passphrase: Option<String>,
+) -> Result<SyncDownloadOutcome, ShellError> {
+    let text = read_snippet(&state).await?;
+    let sealing = sealing_passphrase(&state, passphrase)?;
+
+    read_backup(&text, sealing.as_ref())
+}
+
+/// Applies the file the account holds, fetching it again.
+///
+/// Read again rather than held between two calls, for the reason the server's copy is: what gets
+/// applied is what is there now, not what was there when somebody last looked.
+#[tauri::command]
+pub async fn snippet_sync_apply(
+    state: State<'_, ShellState>,
+    replace: bool,
+    passphrase: Option<String>,
+) -> Result<SyncApplySummary, ShellError> {
+    let text = read_snippet(&state).await?;
+    let sealing = sealing_passphrase(&state, passphrase)?;
+    let snapshot = opened_backup(&text, sealing.as_ref())?;
 
     apply(state.vault(), snapshot, replace)
 }
@@ -338,6 +424,118 @@ fn sealing_passphrase(state: &ShellState, typed: Option<String>) -> Result<Optio
         return Ok(Some(ServicePassword::new(value)));
     }
     state.vault().sync_passphrase()
+}
+
+/// The snapshot an upload would send, under the passphrase in force.
+///
+/// Shared by the two destinations that carry the file form, because the question "what does this file
+/// contain" must not have two answers.
+fn built_snapshot(
+    state: &ShellState,
+    selection: SyncSelection,
+    passphrase: Option<String>,
+) -> Result<BuiltSnapshot, ShellError> {
+    let settings = sevenshell_platform::settings::load()?;
+    let sealing = sealing_passphrase(state, passphrase)?;
+    let wanted = wanted_selection(selection, &settings);
+
+    sevenshell_sync::build(
+        state.vault(),
+        &settings,
+        &wanted,
+        sealing.as_ref().map(ServicePassword::expose),
+        now(),
+    )
+}
+
+/// What an upload of this shape actually carries, once the page's own switch has been read.
+///
+/// Two answers decide whether the credentials travel, and both have to say yes: the person ticking
+/// the box in the dialog, and the switch on the page saying this installation syncs credentials at
+/// all. The passphrase is what can actually seal them, and a build asked for credentials with nothing
+/// to seal them under carries none of them instead. One function for the three destinations: the
+/// decision is the same one, and the snippet's own builder is where a second copy of it would drift.
+fn wanted_selection(selection: SyncSelection, settings: &AppSettings) -> SyncSelection {
+    let mut wanted = selection;
+    wanted.credentials = wanted.credentials && settings.sync_include_secrets;
+    wanted
+}
+
+/// What a file that was downloaded is, in the shape the interface reads.
+///
+/// A sealed one the given passphrase does not open is a question rather than a failure — the field
+/// that answers it is already on the panel — and a plain one is read as what it is.
+fn read_backup(text: &str, sealing: Option<&ServicePassword>) -> Result<SyncDownloadOutcome, ShellError> {
+    match sevenshell_sync::open(text)? {
+        OpenedSnapshot::Plain(snapshot) => Ok(SyncDownloadOutcome::Read {
+            catalog: catalog_of(&snapshot, false),
+        }),
+        OpenedSnapshot::Sealed(envelope) => match sealing.map(ServicePassword::expose) {
+            Some(passphrase) => Ok(SyncDownloadOutcome::Read {
+                catalog: catalog_of(&envelope.unseal(passphrase)?, true),
+            }),
+            None => Ok(SyncDownloadOutcome::NeedsPassphrase),
+        },
+    }
+}
+
+/// The snapshot inside a downloaded file, or a refusal naming what is missing.
+fn opened_backup(text: &str, sealing: Option<&ServicePassword>) -> Result<SyncSnapshot, ShellError> {
+    match sevenshell_sync::open(text)? {
+        OpenedSnapshot::Plain(snapshot) => Ok(*snapshot),
+        OpenedSnapshot::Sealed(envelope) => match sealing.map(ServicePassword::expose) {
+            Some(passphrase) => envelope.unseal(passphrase),
+            None => Err(ShellError::sync_passphrase()),
+        },
+    }
+}
+
+/// The name of the account this installation is configured for.
+///
+/// A service nobody has chosen yet is the first the list offers rather than a refusal: the panel
+/// draws that service's name in its dropdown, so it is the one a request would go to, and the two
+/// have to mean the same thing. An address typed for GitLab is part of the name; for the other two
+/// there is nowhere to type one and the name is the service.
+fn configured_account(settings: &AppSettings) -> Result<String, ShellError> {
+    let provider = settings.sync_snippet_provider.unwrap_or_default();
+    snippet_account(provider, settings.sync_snippet_instance.as_deref())
+}
+
+/// The client this installation's settings and vault describe, and the service it talks to.
+///
+/// Built here for the reason the server's own client is: the configuration is a few fields from the
+/// settings file and one secret from the vault, and neither belongs in a wire type. The token is
+/// taken from the vault under the account's name, which is what makes one installation's GitHub token
+/// and its Gitee token two different things.
+fn snippet_client(state: &ShellState) -> Result<(Snippets, SnippetProvider), ShellError> {
+    let settings = sevenshell_platform::settings::load()?;
+    let provider = settings.sync_snippet_provider.unwrap_or_default();
+    let instance_url = settings.sync_snippet_instance.clone();
+    let account = snippet_account(provider, instance_url.as_deref())?;
+
+    let token = state
+        .vault()
+        .snippet_token(&account)?
+        .unwrap_or_else(|| ServicePassword::new(String::new()));
+
+    let sync = SnippetSync {
+        provider,
+        instance_url,
+        token,
+        snippet_id: settings.sync_snippet_ids.get(&account).cloned(),
+    };
+
+    Ok((Snippets::new(&sync)?, provider))
+}
+
+/// The file the account holds, whichever service it is on.
+///
+/// A service with nothing there yet answers with its own not-found, which is a refusal worth reading
+/// rather than an empty file: there is no "nothing yet" here as there is on a server, because a
+/// snippet that does not exist is a snippet id that is wrong.
+async fn read_snippet(state: &ShellState) -> Result<String, ShellError> {
+    let (snippets, _) = snippet_client(state)?;
+    snippets.read().await
 }
 
 /// What a snapshot holds, in the shape a catalog is.

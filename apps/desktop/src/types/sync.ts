@@ -117,3 +117,40 @@ export type SyncDownloadOutcome =
   | { readonly kind: "nothingYet" }
   | { readonly kind: "read"; readonly catalog: SyncCatalog }
   | { readonly kind: "needsPassphrase" };
+
+/**
+ * The services a backup can be parked in as a snippet.
+ *
+ * Lower case, and not camel-cased out of the middle of `GitHub`, because these are the services' own
+ * names — and because the same strings are what the settings file holds.
+ */
+export type SnippetProvider = "github" | "gitee" | "gitlab";
+
+/** The order the dropdown offers them in: the one most people have first. */
+export const SNIPPET_PROVIDERS: readonly [SnippetProvider, ...SnippetProvider[]] = ["github", "gitee", "gitlab"];
+
+/** Where a GitLab account is talked to when nobody has named an installation. */
+export const GITLAB_DEFAULT_INSTANCE = "https://gitlab.com";
+
+/**
+ * What this installation has for the snippet account it is configured for.
+ *
+ * `account` is the shell's answer rather than this side's arithmetic: what names an account — a
+ * service, and for GitLab an installation of it — is one rule in one place, and the snippet id is
+ * filed under the name the shell hands over. The id itself is a setting, so it comes from the store
+ * the form is written into rather than from here.
+ */
+export interface SnippetStatus {
+  readonly account: string;
+  readonly hasToken: boolean;
+}
+
+/** What an upload to a snippet did. */
+export interface SnippetUploadReceipt {
+  readonly contents: SyncContents;
+  /** Always true: a snippet belongs to somebody else's service, so it is always sealed. */
+  readonly sealed: boolean;
+  readonly provider: SnippetProvider;
+  /** The file that was written to — created by this upload when there was none. */
+  readonly snippetId: string;
+}

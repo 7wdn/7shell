@@ -3073,12 +3073,12 @@ test("the sync page says what it can back up, and asks before it writes", async 
     await settings.getByRole("button", { name: "Sync", exact: true }).click();
     await mkdir(ARTIFACTS, { recursive: true });
 
-    // Three tabs, and only the middle one is a thing this build does not have yet.
+    // Three tabs, and all three are things this build does.
     const tabs = settings.getByRole("tab");
     await expect(tabs).toHaveCount(3);
-    await expect(tabs.nth(0), "WebDAV is here now").toBeEnabled();
-    await expect(tabs.nth(1), "snippet sync is not").toBeDisabled();
-    await expect(tabs.nth(2)).toBeEnabled();
+    await expect(tabs.nth(0), "the server").toBeEnabled();
+    await expect(tabs.nth(1), "the code host").toBeEnabled();
+    await expect(tabs.nth(2), "the file").toBeEnabled();
 
     // The server panel: an address, a user name, a password and where the file goes. Two fields for
     // two different secrets, and both are on screen before anything is dialled.
@@ -3109,6 +3109,25 @@ test("the sync page says what it can back up, and asks before it writes", async 
     // Pressing an action with no address says so rather than dialling nothing.
     await settings.getByRole("button", { name: "Test", exact: true }).click();
     await expect(settings.getByText("Set an address first.")).toBeVisible();
+
+    // The snippet panel: which code host, which file it writes to, and the token that opens it. The
+    // token is the one secret here and it is typed into a field nobody can read; the file id is empty
+    // because this installation has never uploaded anything.
+    await tabs.nth(1).click();
+    await expect(settings.getByRole("combobox", { name: "Service" })).toContainText("GitHub Gist");
+    await expect(settings.locator("#snippet-id")).toHaveValue("");
+    await expect(settings.locator("#snippet-token")).toHaveAttribute("type", "password");
+    await expect(
+      settings.getByRole("button", { name: "Upload", exact: true }),
+      "a snippet is always sealed, so a token is what an upload needs",
+    ).toBeDisabled();
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "settings-sync-snippet.png"), fullPage: false });
+
+    // Testing with nothing to test with is said here rather than asked of the service: this run has
+    // no token and no account, and it must not reach out to one.
+    await settings.getByRole("button", { name: "Test", exact: true }).click();
+    await expect(settings.getByText("Enter an access token first, or keep one.")).toBeVisible();
 
     // The file panel, which is the same three parts with nothing to configure: its passphrase is on
     // the panel, and a backup cannot carry the passwords without it — the switch refuses until one

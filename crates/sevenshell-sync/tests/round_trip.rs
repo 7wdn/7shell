@@ -6,7 +6,8 @@
 
 use sevenshell_error::ErrorCode;
 use sevenshell_sync::{
-    Destination, OpenedSnapshot, PortableSettings, SyncSnapshot, build, open, plan_restore, read, write,
+    Destination, OpenedSnapshot, PortableSettings, SyncSnapshot, build, gather, open, plan_restore, read, seal,
+    with_credentials, write,
 };
 use sevenshell_types::{
     AppSettings, AuthMethod, CompletionWord, KeyInfo, KnownHostEntry, Protocol, Session, SessionAuth, SessionGroup,
@@ -292,6 +293,41 @@ fn a_sealed_snapshot_says_nothing_about_what_is_inside_it() {
     let OpenedSnapshot::Sealed(_) = open(&text).expect("open") else {
         panic!("a sealed file must be read as sealed");
     };
+}
+
+#[test]
+fn a_snapshot_that_says_it_carries_logins_and_does_not_is_refused() {
+    // The flag is what tells a reader to ask for a passphrase and what the sentence afterwards says
+    // about the file, so a snapshot that claims credentials it does not hold is a file that lies
+    // about itself. Assembling one without reading the vault is the mistake this catches, and it is
+    // caught here rather than by somebody finding out from the file.
+    let area = TempDir::new().expect("temp dir");
+    let source = vault(&area, "source");
+    library(&source);
+
+    let selection = SyncSelection {
+        credentials: true,
+        ..SyncSelection::default()
+    };
+    let mut claimed =
+        gather(&source, &AppSettings::default(), &selection, Some("correct horse"), 1).expect("assembled");
+    assert!(
+        claimed.selection.credentials,
+        "what was put together recorded that the logins were asked for"
+    );
+
+    let error = seal(&claimed, "correct horse", &Default::default()).expect_err("nothing was read");
+
+    assert_eq!(
+        error.code(),
+        ErrorCode::AppInternal,
+        "a programming mistake, said as one rather than written into a file"
+    );
+
+    // With them read, the same snapshot seals — which is what makes the refusal above about the
+    // missing read rather than about the snapshot.
+    with_credentials(&source, &mut claimed).expect("read");
+    seal(&claimed, "correct horse", &Default::default()).expect("sealed");
 }
 
 #[test]
