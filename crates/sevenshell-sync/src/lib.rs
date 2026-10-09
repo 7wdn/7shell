@@ -34,6 +34,7 @@ mod backup;
 mod plan;
 mod settings;
 mod snapshot;
+mod snippets;
 mod webdav;
 
 pub use backup::{read, write};
@@ -42,5 +43,10 @@ pub use settings::PortableSettings;
 pub use snapshot::{
     BuiltSnapshot, MAX_SNAPSHOT_BYTES, OpenedSnapshot, PROTECTION_PASSPHRASE, SNAPSHOT_FORMAT, SNAPSHOT_SEALED_VERSION,
     SNAPSHOT_VERSION, SnapshotEnvelope, SyncSnapshot, build, open,
+};
+pub use snippets::{
+    SNIPPET_ENVELOPE_FORMAT, SNIPPET_ENVELOPE_VERSION, SNIPPET_FILE_NAME, SNIPPET_TITLE, SnippetProvider,
+    SnippetRequest, SnippetSync, api_base, create_body, file_in, is_ours, open_snippet, read_request, response_id,
+    seal, snippet_url, test_request, write_request,
 };
 pub use webdav::{DEFAULT_REMOTE_PATH, SyncService, WebDav};
