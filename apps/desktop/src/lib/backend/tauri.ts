@@ -16,6 +16,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
+import type { HostSystem } from "@/types/system";
 import type {
   CommandHistoryEntry,
   CompletionWord,
@@ -451,6 +452,16 @@ export function sessionOpen(sessionId: string): Promise<OpenOutcome> {
  */
 export function sessionOpenCancel(sessionId: string): Promise<boolean> {
   return invoke<boolean>("session_open_cancel", { sessionId });
+}
+
+/**
+ * What the host behind a terminal says it is.
+ *
+ * A question of its own rather than a field on the open: it costs a round trip, and the open is
+ * answered the moment it can be. Asked by handle, because it rides the connection that is up.
+ */
+export function sessionSystem(handle: string): Promise<HostSystem> {
+  return invoke<HostSystem>("session_system", { handle });
 }
 
 export function terminalWrite(handle: string, base64: string): Promise<void> {

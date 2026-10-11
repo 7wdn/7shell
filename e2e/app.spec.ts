@@ -1973,6 +1973,21 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // footer only appears once there is a terminal tab, so a failure here means the terminal never
     // opened rather than that the button is missing.
     await expect(commands).toBeVisible({ timeout: 30_000 });
+
+    // The mark beside the row: the host was asked what it is and answered, the answer was mapped,
+    // and this build had a drawing for it. That whole path — one exec on the open connection, the
+    // identity on the wire, the row's mark — is what this line reads, which no unit test can see
+    // end to end. The lab image is Alpine; a lab rebuilt on something else moves this line and the
+    // mark it draws together.
+    //
+    // Rooted at the row rather than at the sidebar: other cases in this run reached the same lab,
+    // and their rows carry the same mark.
+    await expect(sessionRow(page, name).getByRole("img", { name: /^Remote system: Alpine/ })).toBeVisible({
+      timeout: 30_000,
+    });
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "session-mark.png"), fullPage: false });
+
     await commands.click();
     await page.getByRole("button", { name: "New command" }).click();
 
@@ -2101,6 +2116,69 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // is open, and it was passing only because this one used to be skipped when the lab ran.
     await page.getByRole("button", { name: "Close terminal" }).click();
     await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The mark beside a session is still there after the window has started over.
+ *
+ * The thing a person reported: the icon was there while the connection was, and gone the next time
+ * the application was opened — every launch began with the plain terminal until something connected
+ * again. A reload is what a restart looks like here (`page` comes back with nothing but what the
+ * WebView's storage kept), and the terminal is closed first on purpose: a mark that is still there
+ * afterwards cannot have come from a connection, because there is none.
+ *
+ * It needs the lab, like its neighbour: there has to be a real host to learn a system from.
+ */
+test("a mark a host taught the window is still there after a reload", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const name = `mark-${Date.now() % 100000}`;
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    // The first connection to this host asks about its key, and which of the two arrives first is a
+    // race — so the terminal is waited for together with the question, as in the case above.
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const commands = page.getByRole("button", { name: "Commands" });
+    await sessionRow(page, name).click();
+    await expect(question.or(commands).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(commands).toBeVisible({ timeout: 30_000 });
+
+    await expect(sessionRow(page, name).getByRole("img", { name: /^Remote system: Alpine/ })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Nothing is left connected: what follows is about what was written down, and a terminal left
+    // open would also change what the cases after this one are describing.
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
+
+    await page.reload();
+
+    await expect(sessionRow(page, name).getByRole("img", { name: /^Remote system: Alpine/ })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByRole("button", { name: "Commands" })).toHaveCount(0);
   } finally {
     await close();
   }

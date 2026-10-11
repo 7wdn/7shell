@@ -47,6 +47,8 @@ import { i18n } from "@/i18n";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { sessionEndpoint } from "@/lib/menu/sessions";
+import { readSystemCache, rememberSystem, writeSystemCache } from "@/lib/system/cache";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
 import { useBatchStore } from "@/stores/batch";
 import { useFilesStore } from "@/stores/files";
@@ -61,6 +63,7 @@ import type {
   SftpOutcome,
   TunnelFailure,
 } from "@/types/session";
+import type { HostSystem } from "@/types/system";
 
 /** What the backend answers when an attempt was called off, which is not a failure. */
 export const CANCELLED_OPEN = "SESSION-OPEN-CANCELLED";
@@ -256,6 +259,21 @@ export const useTerminalsStore = defineStore("terminals", () => {
   /** A stop, or a re-read of the forward list, that failed. Shown where the forwards are. */
   const tunnelProblem = ref<ShellError | null>(null);
 
+  /**
+   * What the host at each address said it is, as last seen.
+   *
+   * Read out of the WebView's own storage when the store is built, so a row draws its mark on the
+   * next launch without waiting for a connection, and written back after every answer. It is usage
+   * memory rather than a setting — nothing here was chosen and nothing has a default — which is the
+   * same reasoning (and the same place) as the recent-session list in `lib/sessions/recent`.
+   *
+   * Keyed by address rather than by session, because that is what the answer is about: two saved
+   * sessions reaching one machine are one machine, and a session whose address was edited is a row
+   * pointing somewhere that has not been asked yet — keyed by session it would go on drawing the
+   * system of the machine it used to point at.
+   */
+  const systems = ref<Record<string, HostSystem>>(readSystemCache());
+
   /** Subscribes to terminal events. Call once, from the shell. Returns the unsubscribe. */
   function initialize(): () => void {
     void startTerminalBus();
@@ -404,6 +422,34 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return tab ? (sessionOf(tab)?.name ?? sessionId) : sessionId;
   }
 
+  /** What the host a session reaches said it is, or null while nothing at that address has said. */
+  function systemOf(session: Session): HostSystem | null {
+    return systems.value[sessionEndpoint(session)] ?? null;
+  }
+
+  /**
+   * Asks the host what it is, once, just after its terminal opened, and writes the answer down.
+   *
+   * Nothing waits on this and nothing depends on it: the answer only decides which mark a row
+   * draws, and a host that keeps quiet — or a terminal that ended while the question was in the
+   * air — leaves the row exactly as it was, which is why the failure is dropped rather than
+   * reported. There is nothing a person could do about it and nothing they are missing.
+   *
+   * Every answer overwrites what the address had: a machine is rebuilt, reinstalled and replaced
+   * under the same name, and the last connection is the one that knows.
+   */
+  async function describeHost(session: Session, handle: string): Promise<void> {
+    try {
+      const system = await backend.terminal.system(handle);
+      const endpoint = sessionEndpoint(session);
+      const remembered = rememberSystem(systems.value, endpoint, system);
+      systems.value = remembered;
+      writeSystemCache(remembered);
+    } catch {
+      // A host that will not say what it is keeps the mark the row already draws for it.
+    }
+  }
+
   function acceptTerminal(session: Session, outcome: OpenOutcome): void {
     if (outcome.kind === "opened") {
       rememberTunnels(outcome.tunnels);
@@ -420,6 +466,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
         failure: null,
         panel: null,
       });
+      // Asked once the terminal is up rather than as part of opening it: which mark a row draws is
+      // not worth a moment of the connection somebody is waiting for.
+      void describeHost(session, outcome.handle);
       return;
     }
 
@@ -1079,6 +1128,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openSessionCount,
     failures,
     decision,
+    systemOf,
     tunnels,
     tunnelFailures,
     tunnelProblem,

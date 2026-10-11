@@ -272,7 +272,10 @@ fn parse_snapshot(stdout: &str, sampled_at: u64, round_trip: Duration) -> HostMe
 ///
 /// A group's lines are the non-empty ones between its marker and the next, so a blank line from a
 /// command that printed nothing is not mistaken for a reading.
-fn groups(stdout: &str) -> HashMap<&str, Vec<&str>> {
+///
+/// Shared with the identity probe in [`crate::system`]: both ask a host a handful of questions in
+/// one command and need to tell "nothing between the markers" from "no markers at all".
+pub(crate) fn groups(stdout: &str) -> HashMap<&str, Vec<&str>> {
     let mut out: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut current: Option<&str> = None;
 
@@ -294,25 +297,30 @@ fn groups(stdout: &str) -> HashMap<&str, Vec<&str>> {
     out
 }
 
-fn first<'a>(groups: &HashMap<&str, Vec<&'a str>>, name: &str) -> Option<&'a str> {
+pub(crate) fn first<'a>(groups: &HashMap<&str, Vec<&'a str>>, name: &str) -> Option<&'a str> {
     groups.get(name)?.first().copied()
 }
 
 /// `PRETTY_NAME` from `/etc/os-release`, without the quotes the shell would have stripped.
 fn os_release(groups: &HashMap<&str, Vec<&str>>) -> Option<String> {
-    let lines = groups.get("os")?;
+    os_release_value(groups.get("os")?, "PRETTY_NAME")
+}
 
-    for line in lines {
-        let Some(value) = line.strip_prefix("PRETTY_NAME=") else {
-            continue;
-        };
-        let name = value.trim().trim_matches(['"', '\'']).trim();
-        if !name.is_empty() {
-            return Some(name.to_owned());
-        }
-    }
+/// One `KEY=value` line out of `/etc/os-release`.
+///
+/// Shared with [`crate::system`], which reads the same file for a different reason: a sample wants
+/// the name a person reads, while an identity wants the id a table can be keyed on. The quoting
+/// rule is the file's own — values may be quoted, and the quotes are not part of the value — and a
+/// key that is absent or empty is `None` rather than an empty string, because "the host keeps no
+/// such field" and "the host keeps it empty" are both answers a caller must not read as a value.
+pub(crate) fn os_release_value(lines: &[&str], key: &str) -> Option<String> {
+    let prefix = format!("{key}=");
 
-    None
+    lines.iter().find_map(|line| {
+        let value = line.strip_prefix(&prefix)?;
+        let value = value.trim().trim_matches(['"', '\'']).trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    })
 }
 
 /// The first number of `/proc/uptime`: seconds since the machine came up.

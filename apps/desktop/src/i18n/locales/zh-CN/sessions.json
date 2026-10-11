@@ -5,6 +5,7 @@
       "add": "新建会话",
       "open": "为 {name} 打开终端",
       "connecting": "正在连接 {name}…",
+      "system": "远程系统：{name}",
       "edit": "编辑会话",
       "remove": "删除会话",
       "removeMessage": "删除“{name}”？它已保存的密码或密钥引用会一并删除。",

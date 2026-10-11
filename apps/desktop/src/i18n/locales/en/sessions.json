@@ -5,6 +5,7 @@
       "add": "New session",
       "open": "Open a terminal for {name}",
       "connecting": "Connecting to {name}…",
+      "system": "Remote system: {name}",
       "edit": "Edit session",
       "remove": "Delete session",
       "removeMessage": "Delete “{name}”? The stored password or key reference goes with it.",

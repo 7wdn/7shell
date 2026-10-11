@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   sessionOpen: vi.fn(),
+  sessionSystem: vi.fn(),
   terminalClose: vi.fn(),
   terminalWrite: vi.fn(),
   terminalResize: vi.fn(),
@@ -35,18 +36,22 @@ import {
   knownHostForget,
   knownHostTrust,
   sessionOpen,
+  sessionSystem,
   terminalClose,
   transfersOpen,
   tunnelClose,
   tunnelsOpen,
 } from "@/lib/backend/tauri";
+import { readSystemCache, writeSystemCache } from "@/lib/system/cache";
 import { endedTerminal, onTerminalEnded } from "@/lib/terminal/bus";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { type FilesTab, type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
 import type { OpenTunnel, PresentedHostKey, Session, TunnelFailure } from "@/types/session";
+import type { HostSystem } from "@/types/system";
 
 const sessionOpenMock = vi.mocked(sessionOpen);
+const sessionSystemMock = vi.mocked(sessionSystem);
 const terminalCloseMock = vi.mocked(terminalClose);
 const knownHostTrustMock = vi.mocked(knownHostTrust);
 const knownHostForgetMock = vi.mocked(knownHostForget);
@@ -162,7 +167,11 @@ describe("terminals store", () => {
     // the terminal half alone, so they say which shape they are testing instead of inheriting it.
     usePreferencesStore().sessionLayout = "terminal";
     endedListeners.length = 0;
+    // The marks a previous case learned are stored in the WebView's storage, which the store reads
+    // when it is built: without this, one case would hand its marks to the next.
+    localStorage.clear();
     sessionOpenMock.mockReset();
+    sessionSystemMock.mockReset().mockResolvedValue({ name: null, kernel: null, distro: null, distroLike: [] });
     terminalCloseMock.mockReset().mockResolvedValue(undefined);
     knownHostTrustMock.mockReset().mockResolvedValue(undefined);
     knownHostForgetMock.mockReset().mockResolvedValue(undefined);
@@ -860,6 +869,103 @@ describe("terminals store", () => {
     await store.followDirectory("handle-gone", "/data");
 
     expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The mark beside a session, and where it comes from.
+   *
+   * The rules worth pinning down are the two a person actually meets: a row that was described
+   * before draws its mark without connecting again — the point of writing the answer down at all —
+   * and a connection that answers overwrites whatever was there, because a machine under one
+   * address is rebuilt and reinstalled and the last connection is the one that knows.
+   */
+  describe("the system a session draws", () => {
+    const laptopAddress = `${session.user}@${session.host}:${session.port}`;
+
+    const ubuntu: HostSystem = {
+      name: "Ubuntu 24.04.1 LTS",
+      kernel: "Linux",
+      distro: "ubuntu",
+      distroLike: ["debian"],
+    };
+
+    /** What the probe answers after the machine behind the address was rebuilt. */
+    const debian: HostSystem = {
+      name: "Debian GNU/Linux 13",
+      kernel: "Linux",
+      distro: "debian",
+      distroLike: [],
+    };
+
+    it("draws what a previous connection learned, before anything connects", () => {
+      writeSystemCache({ [laptopAddress]: ubuntu });
+
+      const store = useTerminalsStore();
+      open();
+
+      expect(store.systemOf(session)).toEqual(ubuntu);
+      // Nothing was opened to get it, which is the whole point: this is a row that has not been
+      // clicked in this run.
+      expect(store.tabs).toHaveLength(0);
+      expect(sessionOpenMock).not.toHaveBeenCalled();
+    });
+
+    it("says nothing about an address it has never reached", () => {
+      const store = useTerminalsStore();
+      open();
+
+      expect(store.systemOf(session)).toBeNull();
+    });
+
+    it("writes the answer down, and overwrites it the next time it connects", async () => {
+      sessionOpenMock.mockResolvedValue(opened());
+      sessionSystemMock.mockResolvedValue(ubuntu);
+
+      const store = useTerminalsStore();
+      open();
+      await store.open(session);
+
+      // The question rides the open rather than being awaited by it, so the answer lands a
+      // microtask later — and nothing about the terminal waits for it.
+      await vi.waitFor(() => expect(store.systemOf(session)).toEqual(ubuntu));
+      expect(readSystemCache()[laptopAddress]).toEqual(ubuntu);
+
+      sessionSystemMock.mockResolvedValue(debian);
+      await store.open(session);
+
+      await vi.waitFor(() => expect(store.systemOf(session)).toEqual(debian));
+      expect(readSystemCache()[laptopAddress]).toEqual(debian);
+    });
+
+    it("keeps what it knew when the host has nothing to say", async () => {
+      writeSystemCache({ [laptopAddress]: ubuntu });
+      sessionOpenMock.mockResolvedValue(opened());
+      sessionSystemMock.mockResolvedValue({ name: null, kernel: null, distro: null, distroLike: [] });
+
+      const store = useTerminalsStore();
+      open();
+      await store.open(session);
+      await Promise.resolve();
+
+      expect(store.systemOf(session)).toEqual(ubuntu);
+      expect(readSystemCache()[laptopAddress]).toEqual(ubuntu);
+    });
+
+    it("keeps what it knew when the question fails outright", async () => {
+      // The handle may already be gone, which is the one failure `session_system` has. It is
+      // nobody's problem: the row keeps the mark a previous connection learned.
+      writeSystemCache({ [laptopAddress]: ubuntu });
+      sessionOpenMock.mockResolvedValue(opened());
+      sessionSystemMock.mockRejectedValue(refused);
+
+      const store = useTerminalsStore();
+      open();
+      await store.open(session);
+      await Promise.resolve();
+
+      expect(store.systemOf(session)).toEqual(ubuntu);
+      expect(readSystemCache()[laptopAddress]).toEqual(ubuntu);
+    });
   });
 });
 

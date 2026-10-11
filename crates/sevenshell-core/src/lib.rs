@@ -14,6 +14,7 @@ mod keys;
 mod monitor;
 mod sessions;
 mod snippets;
+mod system;
 
 pub use archive::{ARCHIVE_TIMEOUT, archive_name, shell_quote};
 pub use batch::{BatchEvent, DEFAULT_PARALLEL, MAX_HOST_TIMEOUT, MAX_PARALLEL, MIN_HOST_TIMEOUT, classify_command};

@@ -16,12 +16,12 @@ use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
     BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionWord, CornerStyle, CpuCounters,
     CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout,
-    HostFailure, HostMetrics, KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage,
-    NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol,
-    RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
-    SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, Snippet,
-    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
-    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
+    HostFailure, HostMetrics, HostSystem, KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage, LocalForward,
+    MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
+    Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
+    SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout,
+    Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary,
+    SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
     SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
     ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
@@ -838,6 +838,36 @@ fn a_host_sample_serializes_with_camel_case_fields_and_keeps_its_empty_sections(
     assert!(nothing["cpuModel"].is_null());
     assert_eq!(nothing["network"], serde_json::json!([]));
     assert_eq!(nothing["disks"], serde_json::json!([]));
+}
+
+/// A host's own account of itself, in both the shapes the interface has to tell apart: a machine
+/// that named its distribution, and one that answered nothing at all. A mark in the session list is
+/// drawn from this, so a silent host arrives as empty fields — never as a missing object, and never
+/// as a value somebody downstream has to guess at.
+#[test]
+fn a_host_identity_serializes_with_camel_case_fields_and_keeps_silence_as_empty_fields() {
+    let system = check(
+        &HostSystem {
+            name: Some("Ubuntu 24.04.1 LTS".to_owned()),
+            kernel: Some("Linux".to_owned()),
+            distro: Some("ubuntu".to_owned()),
+            distro_like: vec!["debian".to_owned()],
+        },
+        "HostSystem",
+    );
+
+    assert_eq!(system["distro"], serde_json::json!("ubuntu"));
+    assert_eq!(system["distroLike"], serde_json::json!(["debian"]));
+    assert_eq!(system["kernel"], serde_json::json!("Linux"));
+
+    let silent = check(&HostSystem::default(), "HostSystem (nothing answered)");
+
+    assert!(
+        silent["name"].is_null(),
+        "a host that did not say is null, not a missing key"
+    );
+    assert!(silent["distro"].is_null());
+    assert_eq!(silent["distroLike"], serde_json::json!([]));
 }
 
 /// The two shapes the process page reads: a row with everything a read asked for, and the whole of

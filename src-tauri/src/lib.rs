@@ -148,6 +148,7 @@ pub fn run() {
             commands::snippets::command_send,
             commands::terminal::session_open,
             commands::terminal::session_open_cancel,
+            commands::terminal::session_system,
             commands::terminal::terminal_write,
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,

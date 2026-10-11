@@ -191,6 +191,29 @@ One subscription serves every pane: `lib/terminal/bus.ts` receives both events f
 application and fans them out by handle. A terminal that ends is kept in the interface with its
 scrollback and a reconnect action, rather than disappearing.
 
+## The system mark beside a session
+
+A row in the session list draws the mark of the machine it reaches, once that machine has said which
+one it is. `session_system` answers with a `HostSystem`, and `Core::host_system` asks for it with one
+fixed, read-only command over the connection the terminal already has: `uname -s`, `/etc/os-release`,
+and `ver` for the one system that keeps neither. Three decisions shape it:
+
+1. **Asked after the open, never as part of it.** An open is answered the moment it can be; making
+   somebody wait on a second round trip that only decides which picture goes beside a row would put
+   the answer to the question they did not ask in front of the one they did.
+2. **An identity on the wire, a decision in the interface.** `HostSystem` carries what the host said
+   about itself and nothing else; which mark that becomes — the id it published, the family it named
+   in `ID_LIKE`, then the kernel — is decided in `lib/system/icons.ts`, where the drawings are. A
+   system this build has no mark for keeps the plain terminal rather than borrowing somebody else's.
+3. **What a connection learns is remembered, but never onto the session.** The answer is written into
+   the WebView's own storage under the address it was learned at (`lib/system/cache`) — the same place
+   and the same reasoning as the recent-session list: usage memory rather than a setting, nothing
+   chosen, no default, and losing it costs a mark until the next connection. Every connection
+   overwrites what was there, so a machine rebuilt or reinstalled under one name is drawn as what it
+   is now. Nothing is written onto the saved session, because the mark follows the *address*: editing
+   a session to point somewhere else stops drawing the old machine at once. The drawings themselves
+   live in `apps/desktop/src/assets/os` with their attribution beside them.
+
 ## The host monitor
 
 The panel to the right of the workspace is a live reading of whichever connection is on screen, and

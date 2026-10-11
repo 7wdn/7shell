@@ -18,6 +18,7 @@ import type { ErrorEnvelope, ErrorOrigin } from "@/lib/backend/errors";
 import { DEFAULT_UI_SCALE, UI_SCALE_PERCENTS } from "@/types/app";
 import type { AppInfo } from "@/types/app";
 import type { HostMetrics } from "@/types/monitor";
+import type { HostSystem } from "@/types/system";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -197,6 +198,13 @@ describe("wire types", () => {
         sorted(interfaceFields(typescript, name)),
       );
     }
+  });
+
+  it("declares the same host-identity fields on both sides", () => {
+    const rustFields = rustStructFields(read("crates/sevenshell-types/src/system.rs"), "HostSystem").map(camelCase);
+
+    expect(rustFields.length, "HostSystem has no fields, so the comparison proves nothing").toBeGreaterThan(0);
+    expect(sorted(rustFields)).toEqual(sorted(interfaceFields(read("apps/desktop/src/types/system.ts"), "HostSystem")));
   });
 
   it("declares the same session fields on both sides", () => {
@@ -460,9 +468,18 @@ describe("wire types", () => {
       processes: [],
     };
 
+    // An identity with everything unanswered, which is what a host that keeps quiet produces.
+    const identity: HostSystem = {
+      name: null,
+      kernel: null,
+      distro: null,
+      distroLike: [],
+    };
+
     expect(envelope.outcome).toBe("unknown");
     expect(origin.subsystem).toBe("ssh");
     expect(info.name).toBe("7Shell");
     expect(sample.memory).toBeNull();
+    expect(identity.distro).toBeNull();
   });
 });

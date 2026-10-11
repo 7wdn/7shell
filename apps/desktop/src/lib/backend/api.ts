@@ -19,6 +19,7 @@ import type {
   SnippetGroup,
 } from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
+import type { HostSystem } from "@/types/system";
 import type {
   CreatedKey,
   KeyAlgorithm,
@@ -329,6 +330,8 @@ export const backend = {
     /** Calls off an attempt that has not finished; false means there was nothing left to stop. */
     cancelOpen: (sessionId: string): Promise<boolean> =>
       forward("session_open_cancel", () => desktop.sessionOpenCancel(sessionId)),
+    /** What the host behind a terminal says it is: the mark a session row draws, or nothing. */
+    system: (handle: string): Promise<HostSystem> => forward("session_system", () => desktop.sessionSystem(handle)),
     write: (handle: string, base64: string): Promise<void> =>
       forward("terminal_write", () => desktop.terminalWrite(handle, base64)),
     resize: (handle: string, columns: number, rows: number): Promise<void> =>

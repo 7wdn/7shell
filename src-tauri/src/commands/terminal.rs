@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Serialize;
 use sevenshell_error::ShellError;
 use sevenshell_session::OpenTerminal;
-use sevenshell_types::{OpenOutcome, OpenTunnel};
+use sevenshell_types::{HostSystem, OpenOutcome, OpenTunnel};
 use tauri::{AppHandle, Emitter as _, State};
 
 use crate::state::ShellState;
@@ -38,6 +38,19 @@ pub struct TerminalClosed {
 #[tauri::command]
 pub async fn session_open(state: State<'_, ShellState>, session_id: String) -> Result<OpenOutcome, ShellError> {
     state.core().open_terminal(&session_id).await
+}
+
+/// What the host behind a terminal says it is: which system the session list should draw a mark for.
+///
+/// A question of its own rather than a field on the open, on purpose. Opening a terminal is what
+/// somebody asked for, and it is answered the moment it can be — making it wait on a second round
+/// trip that only decides which picture goes beside a row would put the answer to the question they
+/// did not ask in front of the one they did. A host that does not answer costs that row its mark and
+/// nothing else: the fields come back empty, and the one thing that does fail here — a handle whose
+/// terminal has already ended — is a failure the interface drops on the floor.
+#[tauri::command]
+pub async fn session_system(state: State<'_, ShellState>, handle: String) -> Result<HostSystem, ShellError> {
+    state.core().host_system(&handle).await
 }
 
 /// Calls off an open that is still going, and says whether there was one to call off.

@@ -68,6 +68,7 @@ import SessionDetails from "@/components/sessions/SessionDetails.vue";
 import SessionFailure from "@/components/sessions/SessionFailure.vue";
 import SidebarResizeHandle from "@/components/shell/SidebarResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import SystemIcon from "@/components/ui/SystemIcon.vue";
 import { HoverCardRoot, HoverCardTrigger } from "reka-ui";
 
 import { useContextMenu } from "@/composables/useContextMenu";
@@ -75,6 +76,7 @@ import { useToast } from "@/composables/useToast";
 import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
 import { isTextEntry } from "@/lib/menu/editable";
+import { systemLabel, systemMark } from "@/lib/system/icons";
 import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import type { MenuEntry } from "@/lib/menu/types";
@@ -564,6 +566,23 @@ function isConnecting(session: Session): boolean {
 /** What the last attempt at this session failed with, or nothing when it did not. */
 function failureOf(session: Session): ShellError | undefined {
   return terminals.failures[session.id];
+}
+
+/**
+ * Whether this session's host said something this build has a mark for.
+ *
+ * Not the same as having answered: a host can say "OpenBSD" quite clearly and still have no mark
+ * here, and that row keeps the plain terminal — a mark nobody drew is not an answer, and borrowing
+ * another system's would be worse than drawing none.
+ */
+function hasMark(session: Session): boolean {
+  return systemMark(terminals.systemOf(session)) !== null;
+}
+
+/** What to call that mark out loud, for the row a reader meets with a screen reader. */
+function markTitle(session: Session): string | null {
+  const name = systemLabel(terminals.systemOf(session));
+  return name ? t("sessions.list.system", { name }) : null;
 }
 
 function isSelected(id: string): boolean {
@@ -1285,7 +1304,20 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                       :title="t('sessions.list.open', { name: row.session.name })"
                       @click="terminals.open(row.session)"
                     >
-                      <Terminal :size="13" class="shrink-0 text-muted-foreground" />
+                      <!--
+                        The mark of the machine, once its host has said which machine it is. Until
+                        then — and for a system this build has no mark for — the row keeps the plain
+                        terminal it always had: a row is a saved session first and a host second.
+                        The mark keeps its own default box, which is the wider one: a picture with
+                        white space around it has to be drawn larger to read the same size as the
+                        glyph it replaces.
+                      -->
+                      <SystemIcon
+                        v-if="hasMark(row.session)"
+                        :system="terminals.systemOf(row.session)"
+                        :label="markTitle(row.session)"
+                      />
+                      <Terminal v-else :size="13" class="shrink-0 text-muted-foreground" />
                       <span class="min-w-0 flex-1">
                         <span class="block truncate text-sm">{{ row.session.name }}</span>
                         <span class="block truncate font-mono text-[10px] text-muted-foreground">{{

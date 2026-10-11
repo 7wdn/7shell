@@ -13,6 +13,7 @@ mod session;
 mod settings;
 mod snippet;
 mod sync;
+mod system;
 mod words;
 
 mod generated {
@@ -54,4 +55,5 @@ pub use sync::{
     SnippetProvider, SnippetStatus, SnippetUploadReceipt, SyncApplySummary, SyncCatalog, SyncContents,
     SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt,
 };
+pub use system::HostSystem;
 pub use words::CompletionWord;
