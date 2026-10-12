@@ -99,6 +99,13 @@ export const backend = {
    */
   appReady: (): Promise<void> => forward("app_ready", () => desktop.appReady()),
 
+  /**
+   * What the operating system says the application appearance is, or null where this shell has no
+   * answer: one of the platforms whose webview follows the system by itself, or a system that could
+   * not be read. The interface falls back to its own media query there.
+   */
+  systemTheme: (): Promise<"dark" | "light" | null> => forward("systemTheme", () => desktop.systemTheme()),
+
   /** Language and theme: the only things kept between runs so far, and never secrets. */
   settings: {
     get: (): Promise<AppSettings> => forward("settings_get", () => desktop.settingsGet()),
@@ -503,6 +510,9 @@ export const backend = {
   },
 
   events: {
+    /** The system's own appearance changing under a window that is following it. */
+    onSystemThemeChanged: (listener: (theme: "dark" | "light" | null) => void): Promise<Unlisten> =>
+      subscribe(desktop.onSystemThemeChanged, listener),
     /** One host starting or finishing during a batch. */
     onBatchEvent: (listener: (payload: BatchProgress) => void): Promise<Unlisten> =>
       subscribe(desktop.onBatchEvent, listener),

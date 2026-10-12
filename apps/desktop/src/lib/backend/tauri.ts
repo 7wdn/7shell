@@ -158,6 +158,22 @@ export function systemFontsList(): Promise<string[]> {
   return invoke<string[]>("system_fonts_list");
 }
 
+/**
+ * What the operating system says the application appearance is, or null where the shell cannot say.
+ *
+ * Asked of the shell rather than read out of the webview's own media query: inside WebView2 that
+ * query answers light whatever the system is — while the window itself is wearing dark, included —
+ * so an interface following the system would be following a lie.
+ */
+export function systemTheme(): Promise<"dark" | "light" | null> {
+  return invoke<"dark" | "light" | null>("system_theme");
+}
+
+/** Calls `listener` when the system's own appearance changes, with what it changed to. */
+export async function onSystemThemeChanged(listener: (theme: "dark" | "light" | null) => void): Promise<Unlisten> {
+  return listen<"dark" | "light" | null>("system-theme-changed", (event) => listener(event.payload));
+}
+
 // -- Window ------------------------------------------------------------------
 
 export function windowMinimize(): Promise<void> {

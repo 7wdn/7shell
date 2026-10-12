@@ -6,11 +6,13 @@ vi.mock("@/lib/backend/tauri", () => ({
   appInfo: vi.fn(),
   settingsGet: vi.fn(),
   settingsSet: vi.fn(),
+  systemTheme: vi.fn(),
+  onSystemThemeChanged: vi.fn(),
   webviewSetZoom: vi.fn(),
 }));
 
 import { i18n } from "@/i18n";
-import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
+import { onSystemThemeChanged, settingsGet, settingsSet, systemTheme, webviewSetZoom } from "@/lib/backend/tauri";
 import {
   DEFAULT_COMMANDS_LIBRARY_WIDTH,
   DEFAULT_FILES_TREE_WIDTH,
@@ -42,6 +44,8 @@ import {
 const settingsGetMock = vi.mocked(settingsGet);
 const settingsSetMock = vi.mocked(settingsSet);
 const webviewSetZoomMock = vi.mocked(webviewSetZoom);
+const systemThemeMock = vi.mocked(systemTheme);
+const onSystemThemeChangedMock = vi.mocked(onSystemThemeChanged);
 
 /**
  * What the backend answers when nothing has been chosen.
@@ -136,6 +140,10 @@ describe("preferences store", () => {
     system = stubSystemTheme(true);
     settingsGetMock.mockReset().mockResolvedValue(defaults());
     settingsSetMock.mockReset().mockResolvedValue(undefined);
+    // No answer from the shell by default: the query is the answer on the platforms where the shell
+    // has none, and the tests below that predate the shell's answer are about exactly that.
+    systemThemeMock.mockReset().mockResolvedValue(null);
+    onSystemThemeChangedMock.mockReset().mockResolvedValue(() => {});
     document.documentElement.classList.remove("dark");
   });
 
@@ -160,6 +168,42 @@ describe("preferences store", () => {
     expect(store.resolvedTheme).toBe("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("follows what the shell says the system is, not what the webview reports", async () => {
+    // One line from a real machine: Windows in its dark appearance, the shell reading that, and the
+    // webview answering light anyway. Following the webview is what made "follow the system" show
+    // light on a dark system, in every mode.
+    system.setDark(false);
+    systemThemeMock.mockResolvedValue("dark");
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await vi.waitFor(() => expect(store.resolvedTheme).toBe("dark"));
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("hears about the system changing from the shell, which is the only place that notices", async () => {
+    system.setDark(false);
+    systemThemeMock.mockResolvedValue("light");
+    let announce: ((theme: "dark" | "light" | null) => void) | null = null;
+    onSystemThemeChangedMock.mockImplementation(async (listener) => {
+      announce = listener;
+      return () => {};
+    });
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await vi.waitFor(() => expect(announce).not.toBeNull());
+
+    announce!("dark");
+
+    expect(store.resolvedTheme).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
   it("applies a stored choice instead of the system", async () => {

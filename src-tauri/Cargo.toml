@@ -38,3 +38,4 @@ tempfile = { workspace = true }
 
 [target."cfg(windows)".dependencies]
 clipboard-win = { workspace = true }
+winreg = { workspace = true }

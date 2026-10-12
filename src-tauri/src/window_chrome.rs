@@ -16,7 +16,7 @@
 
 use std::time::Duration;
 
-use tauri::{Manager, Runtime};
+use tauri::{Emitter, Manager, Runtime};
 
 /// Whether a platform should give up its native window decorations.
 ///
@@ -32,13 +32,169 @@ pub fn native_decorations_override(target_os: &str) -> Option<bool> {
 /// Which theme the window itself should wear for a chosen mode.
 ///
 /// `None` hands the decision back to the operating system, which is what "follow the system"
-/// means for native surfaces such as scrollbars and system dialogs.
+/// means for native surfaces such as scrollbars and system dialogs. Deliberately still `None` for
+/// that mode even though [`effective_theme`] can now say what the system is: a window with a
+/// preference of its own stops being told when the system changes (the platform skips its
+/// re-evaluation for a window that has been given a theme), and that notification is how the
+/// interface hears about a system that changed while it was following it.
 pub fn window_theme_for(mode: &str) -> Option<tauri::Theme> {
     match mode {
         "dark" => Some(tauri::Theme::Dark),
         "light" => Some(tauri::Theme::Light),
         _ => None,
     }
+}
+
+/// What the application *is*, given a chosen mode and what the system says.
+///
+/// The difference from [`window_theme_for`] is the "follow the system" mode: that one resolves to
+/// the system's own answer here, and to nothing there. Both are needed, and they answer two
+/// different questions — what to force on the window, and what the application is showing.
+///
+/// A mode this build does not know — an identifier from a newer version — resolves like "follow the
+/// system" rather than contradicting it, which is what "not chosen" has always meant for a mode.
+pub fn effective_theme(mode: &str, system: Option<tauri::Theme>) -> Option<tauri::Theme> {
+    match mode {
+        "dark" => Some(tauri::Theme::Dark),
+        "light" => Some(tauri::Theme::Light),
+        _ => system,
+    }
+}
+
+/// What the operating system says the application appearance is, where this shell can find out.
+///
+/// Windows has to be read, and the webview cannot be asked instead: WebView2 answers light whatever
+/// the system is. That is measured rather than assumed — with this machine in its dark appearance,
+/// the media query inside the window answered light in all three modes, including while the window
+/// itself was wearing dark. macOS and Linux answer nothing here, and the webview follows the system
+/// on both.
+#[cfg(windows)]
+pub fn system_theme() -> Option<tauri::Theme> {
+    use winreg::RegKey;
+    use winreg::enums::HKEY_CURRENT_USER;
+
+    /// Where Windows writes down whether applications are in their light or dark appearance.
+    const KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+    const VALUE: &str = "AppsUseLightTheme";
+
+    let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(KEY).ok()?;
+    match key.get_value::<u32, _>(VALUE) {
+        Ok(0) => Some(tauri::Theme::Dark),
+        Ok(_) => Some(tauri::Theme::Light),
+        // A value that is not there is not a value that is light: the interface is better off
+        // falling back to the webview than being told something this shell does not know.
+        Err(error) => {
+            log::warn!("the system's own appearance could not be read: {error}");
+            None
+        }
+    }
+}
+
+/// Nothing to read on the platforms whose webview follows the system by itself.
+#[cfg(not(windows))]
+pub fn system_theme() -> Option<tauri::Theme> {
+    None
+}
+
+/// The name the interface knows a theme by.
+pub fn theme_name(theme: Option<tauri::Theme>) -> Option<&'static str> {
+    match theme {
+        Some(tauri::Theme::Dark) => Some("dark"),
+        Some(tauri::Theme::Light) => Some("light"),
+        _ => None,
+    }
+}
+
+/// Makes the platform's own menus follow the application's theme.
+///
+/// The tray icon's menu is the one this is for: Windows draws popup menus from the process's
+/// "preferred app mode", and by default it reads that from the system rather than from the
+/// application — so a window switched to light kept a dark tray menu.
+///
+/// There is no supported API for this and no crate in the tree that wraps it. The two functions
+/// reached below are uxtheme ordinals this build already depends on: muda and tao, through Tauri,
+/// call the same ones for their own reasons. Nothing happens when the ordinals are not there —
+/// which has not been the case since Windows 10 1809 — and the menus keep the appearance they have.
+#[cfg(windows)]
+pub fn apply_menus_theme(theme: Option<tauri::Theme>) {
+    use std::ffi::c_void;
+
+    // Both lookups are kernel32's, and both take a pointer: a name for the module, and either a name
+    // or, for an ordinal, the number itself in place of one.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn LoadLibraryA(name: *const u8) -> *mut c_void;
+        fn GetProcAddress(module: *mut c_void, name: *const u8) -> *mut c_void;
+    }
+
+    type SetPreferredAppMode = unsafe extern "system" fn(i32) -> i32;
+    type FlushMenuThemes = unsafe extern "system" fn();
+
+    /// `PreferredAppMode`: 135 is `SetPreferredAppMode`, and these are its two forcing values.
+    const SET_PREFERRED_APP_MODE: u16 = 135;
+    const FLUSH_MENU_THEMES: u16 = 136;
+    const FORCE_DARK: i32 = 2;
+    const FORCE_LIGHT: i32 = 3;
+
+    let Some(theme) = theme else {
+        return;
+    };
+    let mode = if theme == tauri::Theme::Dark {
+        FORCE_DARK
+    } else {
+        FORCE_LIGHT
+    };
+
+    // SAFETY: the module is loaded by name and the two ordinals are looked up in it; each is only
+    // called after it was found, through a signature matching what uxtheme exports there. The
+    // pointers are the library's own for the life of the process and are not freed, which is what
+    // the platform's own documentation for this pair does as well.
+    unsafe {
+        let uxtheme = LoadLibraryA(c"uxtheme.dll".as_ptr() as *const u8);
+        if uxtheme.is_null() {
+            return;
+        }
+        let set_mode = GetProcAddress(uxtheme, SET_PREFERRED_APP_MODE as *const u8);
+        let flush = GetProcAddress(uxtheme, FLUSH_MENU_THEMES as *const u8);
+        if !set_mode.is_null() {
+            let set_mode: SetPreferredAppMode = std::mem::transmute(set_mode);
+            set_mode(mode);
+        }
+        if !flush.is_null() {
+            let flush: FlushMenuThemes = std::mem::transmute(flush);
+            flush();
+        }
+    }
+}
+
+/// Menus elsewhere are drawn by the toolkit, which already follows the application's theme.
+#[cfg(not(windows))]
+pub fn apply_menus_theme(_theme: Option<tauri::Theme>) {}
+
+/// Tells the interface when the system's own appearance changes.
+///
+/// The webview cannot notice it — its answer never changes — and the window is only told while no
+/// theme has been forced on it, which is exactly the state "follow the system" is in. So the event
+/// is the signal and the system is read again rather than taken from the event: what that carries is
+/// the window's theme, which is not the system's once a mode has been forced on the window.
+pub fn watch_system_theme<R: Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    let app = app.clone();
+    window.on_window_event(move |event| {
+        if !matches!(event, tauri::WindowEvent::ThemeChanged(_)) {
+            return;
+        }
+
+        let theme = system_theme();
+        apply_menus_theme(theme);
+        log::info!("the system's appearance changed; it is now {:?}", theme_name(theme));
+        if let Err(error) = app.emit("system-theme-changed", theme_name(theme)) {
+            log::warn!("the system's appearance could not be reported to the interface: {error}");
+        }
+    });
 }
 
 /// How long the window waits for the interface to report a drawn frame before it is shown anyway.
@@ -143,6 +299,55 @@ mod tests {
         assert_eq!(window_theme_for("light"), Some(tauri::Theme::Light));
         // An identifier from a newer version is treated as "not chosen", not as an error.
         assert_eq!(window_theme_for("midnight-aurora"), None);
+    }
+
+    #[test]
+    fn following_the_system_resolves_to_what_the_system_says() {
+        // The webview cannot be asked this on Windows: it answers light whatever the system is, so
+        // what the interface follows has to come from the system's own setting.
+        assert_eq!(
+            effective_theme("system", Some(tauri::Theme::Dark)),
+            Some(tauri::Theme::Dark)
+        );
+        assert_eq!(
+            effective_theme("system", Some(tauri::Theme::Light)),
+            Some(tauri::Theme::Light)
+        );
+    }
+
+    #[test]
+    fn a_system_that_could_not_be_read_leaves_the_resolution_to_the_webview() {
+        // Nothing is better than a wrong answer: the interface falls back to the media query, which
+        // follows the system on the platforms where this shell has no answer of its own.
+        assert_eq!(effective_theme("system", None), None);
+    }
+
+    #[test]
+    fn a_chosen_mode_does_not_change_when_the_system_does() {
+        assert_eq!(
+            effective_theme("dark", Some(tauri::Theme::Light)),
+            Some(tauri::Theme::Dark)
+        );
+        assert_eq!(
+            effective_theme("light", Some(tauri::Theme::Dark)),
+            Some(tauri::Theme::Light)
+        );
+    }
+
+    #[test]
+    fn a_mode_from_a_newer_version_follows_the_system() {
+        assert_eq!(
+            effective_theme("midnight-aurora", Some(tauri::Theme::Dark)),
+            Some(tauri::Theme::Dark)
+        );
+        assert_eq!(effective_theme("midnight-aurora", None), None);
+    }
+
+    #[test]
+    fn a_theme_is_named_the_way_the_interface_names_it() {
+        assert_eq!(theme_name(Some(tauri::Theme::Dark)), Some("dark"));
+        assert_eq!(theme_name(Some(tauri::Theme::Light)), Some("light"));
+        assert_eq!(theme_name(None), None);
     }
 
     #[test]

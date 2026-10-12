@@ -530,20 +530,70 @@ export const usePreferencesStore = defineStore("preferences", () => {
     applyScale();
   }
 
-  /** Follows the operating system while the theme mode is "system". */
+  /**
+   * Follows the system while the theme mode is "system".
+   *
+   * The shell is asked, and the webview's own media query is what answers where the shell cannot —
+   * because on Windows the two disagree, and the webview is the one that is wrong: WebView2 reports
+   * light whatever the system is. That is measured rather than assumed: with this machine in its dark
+   * appearance the query answered light in all three modes, the one where the window itself was dark
+   * included, so a mode following it was never dark.
+   *
+   * The shell reads the system's own setting and says when it changes; macOS, Linux and a system that
+   * could not be read have no answer, and the query follows the system on all three.
+   *
+   * The query is listened to first and dropped once the shell answers: the first paint should not be
+   * waiting on a call, and an answer that is wrong for ever is worse than one taken back.
+   */
   function followSystemTheme(): () => void {
-    if (typeof window.matchMedia !== "function") {
-      return () => {};
-    }
-    const query = window.matchMedia(DARK_QUERY);
-    systemPrefersDark.value = query.matches;
+    let stopQuery = (): void => {};
+    let stopShell: (() => void) | null = null;
+    let stopped = false;
 
-    const onChange = (event: MediaQueryListEvent): void => {
-      systemPrefersDark.value = event.matches;
+    if (typeof window.matchMedia === "function") {
+      const query = window.matchMedia(DARK_QUERY);
+      systemPrefersDark.value = query.matches;
+      const onChange = (event: MediaQueryListEvent): void => {
+        systemPrefersDark.value = event.matches;
+        apply();
+      };
+      query.addEventListener("change", onChange);
+      stopQuery = () => query.removeEventListener("change", onChange);
+    }
+
+    // No catch to report: a read that failed is a shell with no answer, which is a state this
+    // deliberately has a fallback for, and the shell has already logged what went wrong.
+    void (async () => {
+      const fromShell = await backend.systemTheme().catch(() => null);
+      if (stopped || fromShell === null) {
+        return;
+      }
+
+      stopQuery();
+      systemPrefersDark.value = fromShell === "dark";
       apply();
+
+      const stop = await backend.events.onSystemThemeChanged((theme) => {
+        if (theme === null) {
+          return;
+        }
+        systemPrefersDark.value = theme === "dark";
+        apply();
+      });
+      // Unsubscribed here rather than after the assignment: the window may have been closed while
+      // this was being registered, and a listener outliving it would keep repainting nothing.
+      if (stopped) {
+        stop();
+      } else {
+        stopShell = stop;
+      }
+    })();
+
+    return () => {
+      stopped = true;
+      stopQuery();
+      stopShell?.();
     };
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
   }
 
   async function load(): Promise<void> {

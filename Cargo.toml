@@ -20,6 +20,10 @@ base64 = "0.23"
 # Reading the file list off the clipboard is a Windows API rather than a portable one; the
 # alternative is telling Windows users that pasting files is not supported.
 clipboard-win = { version = "5.4", features = ["std"] }
+# Whether Windows itself is in its light or dark appearance. The shell has to read it: inside a
+# WebView2 the media query that would answer this reports light whatever the system is, so an
+# interface following the system would be following a lie.
+winreg = "0.55"
 # The families a machine has, for the interface font and the terminal font. A system source rather
 # than a reader of the font files: the names have to come back spelled the way this machine spells
 # them, which on a Chinese installation means 微软雅黑 rather than Microsoft YaHei — a name table

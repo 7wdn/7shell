@@ -4484,6 +4484,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "tokio",
+ "winreg",
 ]
 
 [[package]]

@@ -31,6 +31,7 @@ pub fn run() {
         .setup(|app| {
             window_chrome::prepare_main_window(app.handle());
             apply_startup_window_theme(app.handle());
+            window_chrome::watch_system_theme(app.handle());
 
             let (shell_state, events) = state::ShellState::new();
             commands::terminal::pump_events(app.handle().clone(), events);
@@ -101,6 +102,7 @@ pub fn run() {
             commands::fonts::system_fonts_list,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            commands::settings::system_theme,
             commands::vault::vault_state,
             commands::vault::vault_create,
             commands::vault::vault_unlock,
