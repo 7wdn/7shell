@@ -4443,7 +4443,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "flate2",
  "serde_json",
@@ -4462,7 +4462,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "clipboard-win",
@@ -4489,7 +4489,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-error"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4497,7 +4497,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "font-kit",
  "serde",
@@ -4509,7 +4509,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-policy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4519,7 +4519,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-session"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "serde",
@@ -4535,7 +4535,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-sftp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "russh-sftp",
  "sevenshell-error",
@@ -4547,7 +4547,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-ssh"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.23.1",
  "russh",
@@ -4561,7 +4561,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "reqwest",
  "serde",
@@ -4577,7 +4577,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-types"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4585,7 +4585,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-vault"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "base64 0.23.1",
