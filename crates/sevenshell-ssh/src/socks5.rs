@@ -212,12 +212,24 @@ mod tests {
         client.write_all(&script).await.expect("the script is sent");
         client.flush().await.expect("flushed");
 
-        let mut reply = vec![0u8; 64];
-        let read = tokio::time::timeout(Duration::from_secs(5), client.read(&mut reply))
-            .await
-            .expect("the server answers")
-            .expect("bytes");
-        reply.truncate(read);
+        // Read until the server closes rather than once. It answers the greeting and the request as
+        // two writes, and a single read can come back holding only the first of them — which is how a
+        // correct server was read as a broken one on a runner under load, and the assertions below
+        // make the same assumption when they index past the first two bytes. The server does close
+        // after answering, having drained what it did not read, so this ends.
+        let mut reply = Vec::new();
+        let mut chunk = [0u8; 64];
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let read = client.read(&mut chunk).await.expect("bytes");
+                if read == 0 {
+                    break;
+                }
+                reply.extend_from_slice(&chunk[..read]);
+            }
+        })
+        .await
+        .expect("the server answers");
 
         (serving.await.expect("the server finished"), reply)
     }
