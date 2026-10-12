@@ -397,6 +397,13 @@ export interface AppSettings {
   readonly showTrayIcon: boolean;
   /** Whether closing the window ends the application rather than putting it away. */
   readonly quitOnClose: boolean;
+  /**
+   * Whether the application asks the update channel at startup whether a newer release exists.
+   *
+   * On unless somebody turns it off. This is the one request the build makes on its own initiative,
+   * which is why the switch that stops it is on the page where the manual check lives.
+   */
+  readonly updateCheckOnStartup: boolean;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** How large the terminal draws its text, in pixels. */

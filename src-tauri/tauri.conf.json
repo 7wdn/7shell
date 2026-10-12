@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "7Shell",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "identifier": "com.sevenshell.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -23,7 +23,10 @@
         "visible": false,
         "backgroundColor": "#0d0f15",
         "titleBarStyle": "Overlay",
-        "trafficLightPosition": { "x": 16, "y": 18 },
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 18
+        },
         "hiddenTitle": true,
         "acceptFirstMouse": true
       }
@@ -47,5 +50,17 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/7wdn/7shell/releases/download/updates/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFGMzIzREExNkFDMTZCQkUKUldTK2E4RnFvVDB5SDdTd2tCSGx2aHl1Z3V2UzVKa1g3WEpBajUyZVJQeHR2b2RFenp2TVNFQXoK",
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

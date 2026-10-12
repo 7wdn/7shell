@@ -14,6 +14,7 @@ mod settings;
 mod snippet;
 mod sync;
 mod system;
+mod update;
 mod words;
 
 mod generated {
@@ -45,7 +46,7 @@ pub use settings::{
     TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS,
     background_blur_default, background_transparency_default, command_completion_on, monitor_on,
     normalize_sync_auto_upload_minutes, normalize_terminal_font_size, normalize_ui_scale, sidebar_on,
-    sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on, ui_scale_default,
+    sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
 };
 pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,
@@ -56,4 +57,5 @@ pub use sync::{
     SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt,
 };
 pub use system::HostSystem;
+pub use update::{AvailableRelease, UpdateCheck, UpdateProgress};
 pub use words::CompletionWord;

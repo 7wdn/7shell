@@ -23,7 +23,7 @@ use sevenshell_types::{
     TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default,
     background_transparency_default, command_completion_on, monitor_on, normalize_sync_auto_upload_minutes,
     normalize_terminal_font_size, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
-    terminal_font_size_default, tray_icon_on, ui_scale_default,
+    terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -121,6 +121,11 @@ struct StoredSettings {
     show_tray_icon: bool,
     #[serde(default)]
     quit_on_close: bool,
+    /// Absent in a file written before the update channel existed, which reads as on: the answer only
+    /// arrives if somebody asks, and a build that shipped with the check off would be a build nobody
+    /// hears about a new release from.
+    #[serde(default = "update_check_on")]
+    update_check_on_startup: bool,
     /// Absent in a file written before there was a packed transfer, which reads as off — the default
     /// the feature ships with. A file written by a build that has it cannot be read back by one that
     /// does not, but that is what the schema version is for.
@@ -242,6 +247,7 @@ impl StoredSettings {
             background_image: StoredBackgroundImage::from_settings(&settings.background_image),
             show_tray_icon: settings.show_tray_icon,
             quit_on_close: settings.quit_on_close,
+            update_check_on_startup: settings.update_check_on_startup,
             packed_transfer: settings.packed_transfer,
             command_completion: settings.command_completion,
             keybindings: settings.keybindings.clone(),
@@ -290,6 +296,7 @@ impl StoredSettings {
             background_image: self.background_image.to_settings(),
             show_tray_icon: self.show_tray_icon,
             quit_on_close: self.quit_on_close,
+            update_check_on_startup: self.update_check_on_startup,
             packed_transfer: self.packed_transfer,
             command_completion: self.command_completion,
             keybindings: self.keybindings,
@@ -426,6 +433,7 @@ mod tests {
             background_image: BackgroundImage::default(),
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
+            update_check_on_startup: update_check_on(),
             packed_transfer: false,
             command_completion: command_completion_on(),
             keybindings: BTreeMap::new(),

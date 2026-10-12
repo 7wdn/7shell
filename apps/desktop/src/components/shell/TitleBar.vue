@@ -22,12 +22,14 @@ import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
+import { useUpdatesStore } from "@/stores/updates";
 
 const { t } = useI18n();
 const app = useAppStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
 const files = useFilesStore();
+const updates = useUpdatesStore();
 
 const { isMac, showControls, isMaximized, minimize, toggleMaximize, close } = useWindowControls(
   () => app.info?.os ?? "",
@@ -197,7 +199,21 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       :aria-current="settingsShowing ? 'page' : undefined"
       @click="terminals.openSettings()"
     >
-      <Settings :size="15" />
+      <!--
+        The mark that says the settings page has something for you: a release is published. On the
+        button that opens the page rather than in a message that would leave on its own — where the
+        update lives is a *place*, and the point of the mark is that it is still there when somebody
+        comes back to look.
+      -->
+      <span class="relative grid place-items-center">
+        <Settings :size="15" />
+        <span
+          v-if="updates.release"
+          data-update-mark
+          class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-primary ring-2 ring-background"
+          ><span class="sr-only">{{ t("settings.update.available", { version: updates.release.version }) }}</span></span
+        >
+      </span>
     </button>
 
     <WindowControls

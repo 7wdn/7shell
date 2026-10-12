@@ -1,6 +1,23 @@
 {
   "settings": {
     "title": "Settings",
+    "update": {
+      "title": "Updates",
+      "check": "Check for updates",
+      "checkAgain": "Check again",
+      "checking": "Checking…",
+      "upToDate": "Nothing newer than {version} is published.",
+      "available": "Version {version} is published.",
+      "published": "Published {when}",
+      "notes": "What changed",
+      "install": "Install and restart",
+      "downloading": "Downloading {done} of {total}",
+      "downloadingUnknown": "Downloading {done}",
+      "installing": "Installing — the application restarts when it is done.",
+      "notInstalled": "This is a development build, not an installed application: there is no installed copy for an update to replace.",
+      "autoLabel": "Check for updates at startup",
+      "autoHelp": "The only request this build makes on its own. It sends the request and nothing about you, your machine or what you are working on — and pressing the button above does the same thing whenever you would rather ask by hand."
+    },
     "nav": {
       "label": "Settings categories",
       "appearance": "Appearance",

@@ -1,6 +1,23 @@
 {
   "settings": {
     "title": "设置",
+    "update": {
+      "title": "更新",
+      "check": "检查更新",
+      "checkAgain": "再检查一次",
+      "checking": "正在检查…",
+      "upToDate": "没有比 {version} 更新的发布版本。",
+      "available": "已发布 {version}。",
+      "published": "发布于 {when}",
+      "notes": "更新内容",
+      "install": "安装并重启",
+      "downloading": "正在下载 {done} / {total}",
+      "downloadingUnknown": "正在下载 {done}",
+      "installing": "正在安装——完成后应用会重启。",
+      "notInstalled": "这是开发构建，不是安装好的应用，没有可被更新替换的已安装副本。",
+      "autoLabel": "启动时检查更新",
+      "autoHelp": "这是本构建唯一会主动发出的请求，不包含任何关于你、你的机器或你正在做的事的信息；也可以关掉它，用上面的按钮在想检查的时候手动检查。"
+    },
     "nav": {
       "label": "设置分类",
       "appearance": "外观",

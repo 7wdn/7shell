@@ -60,6 +60,11 @@
     "net": {
       "proxyFailed": "The proxy could not be reached."
     },
+    "update": {
+      "checkFailed": "The update channel could not be read, so a newer release may exist without being found.",
+      "notAvailable": "There is no checked update waiting to be installed.",
+      "installFailed": "The update could not be installed."
+    },
     "app": {
       "notReady": "The application is still starting up.",
       "noTransport": "{operation} needs the desktop application.",

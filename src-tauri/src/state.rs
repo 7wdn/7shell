@@ -69,6 +69,11 @@ pub struct ShellState {
     pending_import: PendingFile,
     /// A backup that has been read and is waiting to be applied, or to be asked about.
     pending_restore: PendingFile,
+    /// The release a look at the update channel found, waiting for somebody to install it.
+    ///
+    /// Not a secret and not read by anything but its own command, but it is a *decision* waiting to
+    /// happen: what is installed has to be the release the person was shown.
+    pending_update: crate::commands::update::PendingUpdate,
     /// Whether the interface has said that closing the window would throw something away.
     quit_guard: AtomicBool,
     /// Whether closing the window ends the application or puts it away.
@@ -107,6 +112,7 @@ impl ShellState {
                 pending_uploads: PendingUploads::default(),
                 pending_import: PendingFile::default(),
                 pending_restore: PendingFile::default(),
+                pending_update: crate::commands::update::PendingUpdate::default(),
                 quit_guard: AtomicBool::new(false),
                 close_to_tray: AtomicBool::new(true),
                 tray_shown: AtomicBool::new(false),
@@ -147,6 +153,11 @@ impl ShellState {
     /// The backup that was read, waiting to be applied.
     pub fn pending_restore(&self) -> &PendingFile {
         &self.pending_restore
+    }
+
+    /// The release the update channel offered, waiting to be installed or dropped.
+    pub fn pending_update(&self) -> &crate::commands::update::PendingUpdate {
+        &self.pending_update
     }
 
     /// Whether the interface has something a close would throw away.

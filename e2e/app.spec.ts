@@ -48,6 +48,7 @@ async function writtenSettings(): Promise<{
   commandCompletion?: boolean;
   filesTreeWidth?: number;
   commandsLibraryWidth?: number;
+  updateCheckOnStartup?: boolean;
 }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
     packedTransfer?: boolean;
@@ -64,6 +65,7 @@ async function writtenSettings(): Promise<{
     keybindings?: Record<string, string>;
     filesTreeWidth?: number;
     commandsLibraryWidth?: number;
+    updateCheckOnStartup?: boolean;
   };
 }
 
@@ -554,6 +556,54 @@ test("the packed-transfer switch is written down, not just remembered", async ()
         message: "and it is written back when it is turned off again",
       })
       .toBe(false);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The update page, driven the way a person drives it, in the only build this run can have.
+ *
+ * `pnpm app:e2e` runs a *development* build, and a development build is the case the updater answers
+ * without asking anything: its bytes come from `target/`, there is no installed bundle for an update
+ * to replace, and the shell says so rather than reaching for a release server on every run of the
+ * suite. So this checks the two things that are true here — the page reports that answer in words,
+ * and refusing the startup check is written down — and leaves "a newer release is offered, and
+ * installing it replaces the application" to the release channel, which is the only thing that can
+ * produce it.
+ */
+test("the update page reports what this build is, and the startup check is a written choice", async () => {
+  const { page, close } = await openApp();
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "About", exact: true }).click();
+
+    // By the time this page is open the startup check has already run, so the button offers to look
+    // again rather than to look — which is the label that means "there is an answer on screen", and
+    // the one this case is about. Either spelling asks the channel the same way.
+    const check = settings.getByRole("button", { name: /^Check (for updates|again)$/ });
+    await check.click();
+    await expect(settings.locator("[data-update-problem]")).toHaveCount(0);
+    await expect(settings.getByText("development build")).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Install and restart" })).toHaveCount(0);
+
+    const startupSwitch = settings.getByRole("switch", { name: "Check for updates at startup" });
+    await expect(startupSwitch).toHaveAttribute("aria-checked", "true");
+    await startupSwitch.click();
+    await applySettings(page);
+
+    await expect
+      .poll(async () => (await writtenSettings()).updateCheckOnStartup, {
+        message: "the choice reached the settings file",
+      })
+      .toBe(false);
+
+    // Put back, so the rest of the run is not the run that followed somebody turning it off.
+    await startupSwitch.click();
+    await page.getByRole("button", { name: "Close settings" }).click();
+    await expect(settings).toHaveCount(0);
+    await expect.poll(async () => (await writtenSettings()).updateCheckOnStartup).toBe(true);
   } finally {
     await close();
   }
@@ -2161,8 +2211,12 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // be showing.
     const fileToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
     await fileToggle.click();
-    const pathBar = page.getByPlaceholder("Path");
-    if (!(await pathBar.isVisible().catch(() => false))) {
+    // The path field of the panel that is *on screen*. Every tab with a file panel keeps one in the
+    // document — that is what lets a panel still be there when its tab comes back — so the placeholder
+    // alone matches one per open session, and the first of them belongs to whichever tab was built
+    // first rather than to the one somebody is looking at.
+    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    if (!(await pathBar.isVisible())) {
       await fileToggle.click();
     }
     await expect(pathBar).toBeVisible({ timeout: 30_000 });
@@ -3986,18 +4040,46 @@ test("a panel split down the middle can be resized, and the width is written dow
     await expect(editor).toHaveCount(0);
 
     const question = page.getByRole("button", { name: "Trust this key and connect" });
-    const pathBar = page.getByPlaceholder("Path");
+    // The panel on screen rather than the first panel in the document: see the note on the same
+    // locator in the command-bar case above. This case is the last in the file, which is also why it
+    // was the one that noticed — by then several tabs have panels.
+    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
     await sessionRow(page, name).click();
-    await expect(question.or(pathBar).first()).toBeVisible({ timeout: 30_000 });
+
+    // What to wait for, said as visibility rather than as existence.
+    //
+    // The panel's own path field is in the document before the panel is on screen — it is drawn the
+    // moment the tab has a browser behind it, which is after the connection and after the handshake —
+    // so a locator that takes the first *match* can pick an element that is there and hidden and then
+    // wait for it forever. The three things that can be true instead are waited for by what is visible:
+    // the question about the host key, the panel already open, or the toggle that opens it.
+    await expect
+      .poll(
+        async () => (await question.isVisible()) || (await pathBar.isVisible()) || (await filesToggle.isVisible()),
+        { timeout: 60_000, message: "the connection either asks about the key, or has a panel to show" },
+      )
+      .toBe(true);
+
     if (await question.isVisible()) {
       await question.click();
     }
-    // The file panel opens on its own for a session, and the tree is the half on the left of it.
+    // The panel opens by itself for a session whose layout says split; when it is not there — this
+    // case runs after forty others, and the window remembers what each tab was left showing — the
+    // control that opens it is the one in the strip above it.
+    if (!(await pathBar.isVisible())) {
+      await filesToggle.click();
+    }
+    // The file panel is on screen for this session, and the tree is the half on the left of it.
     await expect(pathBar).toBeVisible({ timeout: 30_000 });
 
     // The line, and the pane it sizes — whatever is on its left, which is how both panels are
     // measured here without the test naming a tag either panel is free to change.
-    const line = page.locator("[data-pane-divider]");
+    //
+    // The line of the panel on screen, for the reason the path field above is the one on screen: the
+    // others are in the document, behind their own tabs. It is measured by what is drawn, so a hidden
+    // one would measure zero and the case would compare nothing with nothing.
+    const line = page.locator("[data-pane-divider]").filter({ visible: true });
     await expect(line).toHaveCount(1);
     await expect(line).toHaveAttribute("aria-label", "Resize the directory tree");
     const paneWidth = () =>
@@ -4012,10 +4094,20 @@ test("a panel split down the middle can be resized, and the width is written dow
     // Every run starts from an empty settings file, so this is the width this build draws the tree at.
     const before = await paneWidth();
     expect(before, "the tree opens at the width this build draws it at").toBe(224);
+    // The listing is drawn before it is measured. A panel that has just opened has a listing of no
+    // width for a frame or two, and the arithmetic below compares what the drag moved against what the
+    // listing was — a listing measured as nothing turns that comparison into a negative number, which
+    // is a failure with nothing behind it.
+    await expect.poll(listingWidth, { message: "the listing is on screen and has a width" }).toBeGreaterThan(0);
     const listingBefore = await listingWidth();
 
     /** Drags the line sideways, the way a hand does. */
     const dragLine = async (delta: number): Promise<void> => {
+      // Positioned by the driver rather than by arithmetic: `hover` waits until the line is where it
+      // is drawn and stays there, and a line is eight pixels wide — one measured while the panel
+      // behind it is still laying out is a line whose middle a press can miss, which is how a drag
+      // becomes a click on nothing.
+      await line.hover();
       const grip = await line.boundingBox();
       if (!grip) {
         throw new Error("the line has no place on screen");

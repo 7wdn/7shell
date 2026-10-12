@@ -23,7 +23,8 @@ use sevenshell_types::{
     SessionLayout, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow,
     SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
     SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome,
+    VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -544,6 +545,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             monitor_enabled: true,
             show_tray_icon: false,
             quit_on_close: true,
+            update_check_on_startup: false,
             background_image: BackgroundImage {
                 file_name: Some("wallpaper.png".to_owned()),
                 display_mode: BackgroundDisplayMode::Tile,
@@ -1091,4 +1093,66 @@ fn a_completion_word_serializes_with_camel_case_fields() {
     assert_eq!(word["id"], serde_json::json!("word-1"));
     assert_eq!(word["note"], serde_json::json!("put the manifest on the cluster"));
     assert_eq!(word.as_object().expect("an object").len(), 4);
+}
+
+/// What the update channel answered, in each of its three shapes.
+///
+/// The optional fields are checked absent as well as present: the interface draws a release note
+/// only when there is one, and a serialized `null` would be a note saying nothing where the answer
+/// was "the channel did not say".
+#[test]
+fn an_update_answer_serializes_with_camel_case_fields() {
+    let up_to_date = check(
+        &UpdateCheck::UpToDate {
+            current_version: "0.1.0".to_owned(),
+        },
+        "UpdateCheck::UpToDate",
+    );
+    assert_eq!(up_to_date["kind"], serde_json::json!("upToDate"));
+    assert_eq!(up_to_date["currentVersion"], serde_json::json!("0.1.0"));
+
+    let available = check(
+        &UpdateCheck::Available {
+            current_version: "0.1.0".to_owned(),
+            release: sevenshell_types::AvailableRelease {
+                version: "0.1.0-rc.2".to_owned(),
+                notes: Some("the second candidate".to_owned()),
+                published_at: Some(1_780_000_000),
+            },
+        },
+        "UpdateCheck::Available",
+    );
+    assert_eq!(available["kind"], serde_json::json!("available"));
+    assert_eq!(available["release"]["version"], serde_json::json!("0.1.0-rc.2"));
+    assert_eq!(available["release"]["publishedAt"], serde_json::json!(1_780_000_000));
+
+    let quiet = check(
+        &UpdateCheck::Available {
+            current_version: "0.1.0".to_owned(),
+            release: sevenshell_types::AvailableRelease {
+                version: "0.1.0-rc.2".to_owned(),
+                notes: None,
+                published_at: None,
+            },
+        },
+        "UpdateCheck::Available (no notes)",
+    );
+    assert!(
+        quiet["release"].get("notes").is_none(),
+        "a release the channel did not describe carries no notes key at all"
+    );
+
+    let progress = check(
+        &UpdateProgress::Downloading {
+            downloaded: 1024,
+            total: None,
+        },
+        "UpdateProgress::Downloading",
+    );
+    assert_eq!(progress["kind"], serde_json::json!("downloading"));
+    assert_eq!(progress["downloaded"], serde_json::json!(1024));
+    assert!(progress["total"].is_null(), "no announced size is a null, not a guess");
+
+    let installing = check(&UpdateProgress::Installing, "UpdateProgress::Installing");
+    assert_eq!(installing["kind"], serde_json::json!("installing"));
 }

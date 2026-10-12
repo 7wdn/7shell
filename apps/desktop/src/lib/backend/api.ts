@@ -20,6 +20,7 @@ import type {
 } from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
+import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CreatedKey,
   DownloadFolderView,
@@ -490,10 +491,24 @@ export const backend = {
       forward("command_send", () => desktop.commandSend(target, command, appendCr, acknowledged)),
   },
 
+  /**
+   * The update channel: what is published, and installing it.
+   *
+   * Two calls rather than one, because a person decides between them, and the second installs the
+   * release the first showed — the shell holds it in between rather than checking again.
+   */
+  updates: {
+    check: (): Promise<UpdateCheck> => forward("update_check", () => desktop.updateCheck()),
+    install: (): Promise<void> => forward("update_install", () => desktop.updateInstall()),
+  },
+
   events: {
     /** One host starting or finishing during a batch. */
     onBatchEvent: (listener: (payload: BatchProgress) => void): Promise<Unlisten> =>
       subscribe(desktop.onBatchEvent, listener),
+    /** How far an update download has got, and when the installer has taken it over. */
+    onUpdateProgress: (listener: (payload: UpdateProgress) => void): Promise<Unlisten> =>
+      subscribe(desktop.onUpdateProgress, listener),
     onTerminalData: (listener: (payload: TerminalData) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>

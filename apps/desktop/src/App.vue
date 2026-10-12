@@ -52,6 +52,7 @@ import { backend } from "@/lib/backend/api";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
+import { useUpdatesStore } from "@/stores/updates";
 import { useVaultStore } from "@/stores/vault";
 
 const { t } = useI18n();
@@ -62,6 +63,7 @@ const terminals = useTerminalsStore();
 const batch = useBatchStore();
 const editor = useSessionEditorStore();
 const library = useSessionsStore();
+const updates = useUpdatesStore();
 
 /**
  * The timed backup, armed by the frame rather than by the page that configures it.
@@ -327,6 +329,25 @@ async function reportFirstFrame(): Promise<void> {
   }
 }
 
+/**
+ * Asks the update channel at startup, when the settings say to.
+ *
+ * Deliberately not awaited by the startup that calls it and deliberately not reported anywhere: the
+ * answer is a *page's* — the mark on the settings button and the block on the About page — and the
+ * window must not wait for a release server to draw itself. Nothing is said out loud either: a
+ * message that leaves on its own would be a second home for the same fact, and the one it has is
+ * still there an hour later.
+ *
+ * A failure is kept in the store rather than shouted here, and it is shown on the page that asked —
+ * where somebody who wants to retry is already looking.
+ */
+async function checkForUpdates(): Promise<void> {
+  if (!preferences.updateCheckOnStartup) {
+    return;
+  }
+  await updates.check();
+}
+
 onMounted(async () => {
   stopFollowingSystem = preferences.initialize();
   stopDragEvents = await backend.events.onFilesDrag((payload) => {
@@ -344,6 +365,9 @@ onMounted(async () => {
   stopQuitRequested = await backend.events.onQuitRequested(() => void askedToQuit());
   await preferences.load();
   await app.load();
+  // Started, not awaited: the mark it may put on the settings button appearing a moment later is
+  // the whole of what it changes on screen.
+  void checkForUpdates();
   await reportFirstFrame();
   await vault.initialize();
 });

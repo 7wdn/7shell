@@ -22,4 +22,5 @@ pub mod settings;
 pub mod snippets;
 pub mod sync;
 pub mod terminal;
+pub mod update;
 pub mod vault;

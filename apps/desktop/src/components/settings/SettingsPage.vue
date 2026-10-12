@@ -48,6 +48,7 @@ import WordsSettings from "@/components/settings/WordsSettings.vue";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
 import SyncSettings from "@/components/settings/SyncSettings.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
+import UpdateSettings from "@/components/settings/UpdateSettings.vue";
 import {
   CUSTOM_COLOR_LABEL_KEYS,
   SETTINGS_CATEGORIES,
@@ -70,6 +71,7 @@ import { useCommandsStore } from "@/stores/commands";
 import { useTerminalsStore } from "@/stores/terminals";
 import { useWordsStore } from "@/stores/words";
 import { type PreferenceField, usePreferencesStore } from "@/stores/preferences";
+import { useUpdatesStore } from "@/stores/updates";
 import {
   CUSTOM_COLOR_KEYS,
   DEFAULT_TERMINAL_FONT,
@@ -94,6 +96,7 @@ const { t } = useI18n();
 const app = useAppStore();
 const terminals = useTerminalsStore();
 const preferences = usePreferencesStore();
+const updates = useUpdatesStore();
 
 const query = ref("");
 const category = ref<SettingsCategoryId>("appearance");
@@ -713,6 +716,20 @@ function translate(key: string, params?: Record<string, string>): string {
             @click="selectCategory(id)"
           >
             <span class="truncate">{{ t(SETTINGS_CATEGORY_LABEL_KEYS[id]) }}</span>
+            <!--
+              Following the mark on the settings button: the release that is published, named where
+              the page about this build is named. It is the same message the page itself carries —
+              "here is what is new" — said once where somebody arriving is looking, so that opening
+              the page does not mean hunting for why it was opened.
+            -->
+            <span
+              v-if="id === 'about' && updates.release && !searching"
+              data-update-badge
+              class="flex shrink-0 items-center gap-1 font-mono text-[11px] opacity-70"
+            >
+              <span class="size-1.5 rounded-full bg-current" aria-hidden="true"></span>
+              {{ updates.release.version }}
+            </span>
             <!-- While searching, the way to a hit is the category it is in — so the count is what
                  tells apart a category that has one from a category that does not. -->
             <span v-if="searching && hitsIn(id) > 0" class="shrink-0 font-mono text-[11px] opacity-70">
@@ -840,6 +857,12 @@ function translate(key: string, params?: Record<string, string>): string {
                     </div>
                   </dl>
                   <p v-else class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
+
+                  <!-- What this build can be replaced by, under what this build is. -->
+                  <section class="space-y-2 pt-3">
+                    <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.update.title") }}</h3>
+                    <UpdateSettings />
+                  </section>
                 </template>
 
                 <!--

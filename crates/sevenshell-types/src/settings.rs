@@ -794,6 +794,15 @@ pub struct AppSettings {
     /// build ships with, and the other is one switch away.
     #[serde(default)]
     pub quit_on_close: bool,
+    /// Whether the application asks the update channel at startup whether a newer release exists.
+    ///
+    /// On unless somebody says otherwise: an update nobody is told about is an update most people
+    /// never install. This is the only request the application makes on its own initiative — asking
+    /// sends the request and nothing else — so it is the one switch that decides whether this build
+    /// talks to the network at all. Turning it off leaves everything else working, the update page's
+    /// own check included.
+    #[serde(default = "update_check_on")]
+    pub update_check_on_startup: bool,
     /// Whether a directory travels as one archive instead of file by file.
     ///
     /// Off unless somebody turns it on, unlike the monitor above: this one changes what a transfer
@@ -992,6 +1001,14 @@ pub fn tray_icon_on() -> bool {
     true
 }
 
+/// Whether the update channel is asked at startup.
+///
+/// A named function rather than a literal so the two readers of this default — the deserializer and
+/// `Default` — cannot disagree, and "on" because the answer only arrives if somebody asks.
+pub fn update_check_on() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -1008,6 +1025,7 @@ impl Default for AppSettings {
             monitor_enabled: monitor_on(),
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
+            update_check_on_startup: update_check_on(),
             background_image: BackgroundImage::default(),
             packed_transfer: false,
             command_completion: command_completion_on(),

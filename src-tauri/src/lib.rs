@@ -23,6 +23,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        // Registered for its Rust API alone: the interface reaches the channel through the two
+        // `update_*` commands below rather than through the plugin's own JavaScript commands, which
+        // is why no `updater:*` permission appears in the capability file. One place asks, and it is
+        // ours — a permission the interface does not have is a path nobody can forget to audit.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             window_chrome::prepare_main_window(app.handle());
             apply_startup_window_theme(app.handle());
@@ -88,6 +93,8 @@ pub fn run() {
             commands::app::app_ready,
             commands::app::window_quit_guard,
             commands::app::window_quit,
+            commands::update::update_check,
+            commands::update::update_install,
             commands::background::background_image_choose,
             commands::background::background_image_read,
             commands::background::background_image_clear,

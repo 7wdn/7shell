@@ -135,6 +135,14 @@ error_catalog! {
     #[doc = "The proxy could not be used to reach the target."]
     NetProxyFailed => "NET-PROXY-FAILED", "errors.net.proxyFailed";
 
+    // -- Updates -----------------------------------------------------------
+    #[doc = "The update channel could not be read, so whether a newer release exists is unknown."]
+    UpdateCheckFailed => "UPDATE-CHECK-FAILED", "errors.update.checkFailed";
+    #[doc = "An installation was asked for while no checked release was waiting."]
+    UpdateNotPending => "UPDATE-NOT-AVAILABLE", "errors.update.notAvailable";
+    #[doc = "A checked release could not be downloaded or installed."]
+    UpdateInstallFailed => "UPDATE-INSTALL-FAILED", "errors.update.installFailed";
+
     // -- Application -------------------------------------------------------
     #[doc = "A required service is not ready yet, for example the vault during startup."]
     AppNotReady => "APP-NOT-READY", "errors.app.notReady";

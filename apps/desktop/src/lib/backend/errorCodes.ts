@@ -56,6 +56,10 @@ export const ERROR_CATALOG = {
   "POLICY-APPROVAL-REQUIRED": "errors.policy.approvalRequired",
   // Networking
   "NET-PROXY-FAILED": "errors.net.proxyFailed",
+  // Updates
+  "UPDATE-CHECK-FAILED": "errors.update.checkFailed",
+  "UPDATE-NOT-AVAILABLE": "errors.update.notAvailable",
+  "UPDATE-INSTALL-FAILED": "errors.update.installFailed",
   // Application
   "APP-NOT-READY": "errors.app.notReady",
   "APP-NO-TRANSPORT": "errors.app.noTransport",

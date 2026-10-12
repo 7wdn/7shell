@@ -106,6 +106,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   commandsLibraryWidth: undefined,
   sidebarOpen: true,
   monitorEnabled: true,
+  updateCheckOnStartup: true,
   packedTransfer: false,
   commandCompletion: true,
   keybindings: {},
@@ -319,6 +320,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * so "hidden" means the commands on the far side stop as well as the drawing.
    */
   const monitorEnabled = ref(true);
+  /**
+   * Whether the update channel is asked at startup.
+   *
+   * On unless somebody turns it off, and it sits with the manual check rather than with the shell's
+   * other switches: it is the same page that says what the channel answered, and the two belong
+   * together — a person who does not want this build talking to the network turns it off there and
+   * can still ask by hand when they choose to.
+   */
+  const updateCheckOnStartup = ref(true);
   /**
    * Whether a remote directory is moved as one archive rather than file by file.
    *
@@ -571,6 +581,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       commandsLibraryWidth.value = settings.commandsLibraryWidth ?? null;
       sidebarOpen.value = settings.sidebarOpen;
       monitorEnabled.value = settings.monitorEnabled;
+      updateCheckOnStartup.value = settings.updateCheckOnStartup;
       packedTransfer.value = settings.packedTransfer;
       commandCompletion.value = settings.commandCompletion;
       keybindings.value = { ...settings.keybindings };
@@ -662,6 +673,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         commandsLibraryWidth: commandsLibraryWidth.value ?? undefined,
         sidebarOpen: sidebarOpen.value,
         monitorEnabled: monitorEnabled.value,
+        updateCheckOnStartup: updateCheckOnStartup.value,
         packedTransfer: packedTransfer.value,
         commandCompletion: commandCompletion.value,
         keybindings: { ...keybindings.value },
@@ -954,6 +966,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   async function setMonitorEnabled(enabled: boolean): Promise<void> {
     monitorEnabled.value = enabled;
+    dirty.value = true;
+  }
+
+  /**
+   * Turns the startup check on or off.
+   *
+   * Only the next start obeys it: this session has already either asked or not, and asking again on
+   * the way out of the switch would be a request nobody made. The manual button beside it is how
+   * somebody asks right now.
+   */
+  async function setUpdateCheckOnStartup(auto: boolean): Promise<void> {
+    updateCheckOnStartup.value = auto;
     dirty.value = true;
   }
 
@@ -1339,6 +1363,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     commandsLibraryWidth,
     sidebarOpen,
     monitorEnabled,
+    updateCheckOnStartup,
     packedTransfer,
     commandCompletion,
     keybindings,
@@ -1394,6 +1419,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setFilesLayout,
     setSessionLayout,
     setMonitorEnabled,
+    setUpdateCheckOnStartup,
     setPackedTransfer,
     setCommandCompletion,
     setSyncEndpoint,

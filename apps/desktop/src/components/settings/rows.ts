@@ -80,12 +80,14 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 /**
  * The fields a row can write.
  *
- * Eight settings have no row of their own. Four are dividers somebody drags — the file panel's
+ * Nine settings have no row of their own. Four are dividers somebody drags — the file panel's
  * height, the sidebar's width, the file panel's tree, and the command panel's library; whether the
- * sidebar is open is a button in the sidebar's own header; and the two hand-picked colour sets are
- * five pickers that appear inside the colour-theme row once it says `custom` — a row of their own
- * would be a row that means nothing until another row is set. They are reset with the category they
- * belong to — `SettingsPage.fieldsOf` is where that is said — rather than listed here.
+ * sidebar is open is a button in the sidebar's own header; the two hand-picked colour sets are five
+ * pickers that appear inside the colour-theme row once it says `custom` — a row of their own would
+ * be a row that means nothing until another row is set; and the startup update check is a switch
+ * drawn inside the update block, where what it is a switch *about* — the answer the channel gave —
+ * is on screen beside it. They are reset with the category they belong to —
+ * `SettingsPage.fieldsOf` is where that is said — rather than listed here.
  */
 export type SettingsRowField = Exclude<
   PreferenceField,
@@ -96,6 +98,7 @@ export type SettingsRowField = Exclude<
   | "sidebarOpen"
   | "customColors"
   | "customColorsDark"
+  | "updateCheckOnStartup"
 >;
 
 /** The glyphs a choice may carry. A closed set, because the control has to know how to draw one. */

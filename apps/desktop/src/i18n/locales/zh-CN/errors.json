@@ -60,6 +60,11 @@
     "net": {
       "proxyFailed": "无法连接到代理。"
     },
+    "update": {
+      "checkFailed": "无法读取更新通道，可能有新版本但没有被发现。",
+      "notAvailable": "没有已检查、待安装的更新。",
+      "installFailed": "无法安装这次更新。"
+    },
     "app": {
       "notReady": "应用仍在启动中。",
       "noTransport": "{operation} 需要在桌面应用中使用。",

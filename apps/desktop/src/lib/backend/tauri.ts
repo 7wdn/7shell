@@ -17,6 +17,7 @@ import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
+import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CommandHistoryEntry,
   CompletionWord,
@@ -91,6 +92,34 @@ export function appInfo(): Promise<AppInfo> {
 /** Tells the shell there is a frame on screen. The window is hidden until it hears this. */
 export function appReady(): Promise<void> {
   return invoke<void>("app_ready");
+}
+
+// -- Updates -----------------------------------------------------------------
+
+/**
+ * Asks the update channel whether a newer release is published.
+ *
+ * The answer is the whole result: a failure to reach the channel comes back as a `ShellError`, which
+ * is what lets the page say "could not check" rather than "you are up to date" — two states that
+ * look identical and mean opposite things.
+ */
+export function updateCheck(): Promise<UpdateCheck> {
+  return invoke<UpdateCheck>("update_check");
+}
+
+/**
+ * Downloads and installs the release the last check found, then restarts into it.
+ *
+ * The call does not come back on Windows — the installer takes the process over — and on macOS and
+ * Linux the application is gone before a caller could read a result. Treating it as an ordinary
+ * awaitable that returns would be the interface drawing a page into a window that is being replaced.
+ */
+export function updateInstall(): Promise<void> {
+  return invoke<void>("update_install");
+}
+
+export async function onUpdateProgress(listener: (payload: UpdateProgress) => void): Promise<Unlisten> {
+  return listen<UpdateProgress>("update:progress", (event) => listener(event.payload));
 }
 
 // -- Settings ----------------------------------------------------------------

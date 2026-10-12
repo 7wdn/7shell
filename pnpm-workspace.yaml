@@ -2,7 +2,10 @@ packages:
   - "packages/*"
 
 # Install scripts are blocked unless they are listed here. Only what this project needs:
-# the Tailwind engine's native binding, and vue-demi's compatibility shim.
+# the Tailwind engine's native binding, vue-demi's compatibility shim, and the bundler
+# VitePress brings its own copy of — its install script is what places the platform binary
+# the documentation build runs.
 allowBuilds:
   "@tailwindcss/oxide": true
+  esbuild: true
   vue-demi: true

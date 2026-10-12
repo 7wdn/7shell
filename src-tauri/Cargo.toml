@@ -30,6 +30,7 @@ sevenshell-sync = { workspace = true }
 sevenshell-types = { workspace = true }
 sevenshell-vault = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
+tauri-plugin-updater = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]

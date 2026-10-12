@@ -552,6 +552,30 @@ impl ShellError {
         Self::new(ErrorCode::NetProxyFailed, Origin::new(Subsystem::Net)).with_detail(detail)
     }
 
+    // -- Updates -----------------------------------------------------------
+
+    /// The channel could not be read. What the request itself said goes in the detail, which is
+    /// where "no such release" and "the network is down" are told apart by whoever is looking.
+    pub fn update_check_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::UpdateCheckFailed, Origin::new(Subsystem::App))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// An installation with nothing checked to install.
+    ///
+    /// Its own code rather than an internal failure: the interface asks the channel first and
+    /// installs second, so this means those two steps got out of order — which is a thing to say
+    /// plainly rather than to report as a mystery.
+    pub fn update_not_pending() -> Self {
+        Self::new(ErrorCode::UpdateNotPending, Origin::new(Subsystem::App)).with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// The download or the installer failed. The detail carries what the plugin said.
+    pub fn update_install_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::UpdateInstallFailed, Origin::new(Subsystem::App)).with_detail(detail)
+    }
+
     // -- Application -------------------------------------------------------
 
     pub fn app_not_ready() -> Self {

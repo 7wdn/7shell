@@ -410,6 +410,29 @@ describe("wire types", () => {
     );
   });
 
+  it("declares the same update-channel shapes on both sides", () => {
+    // The update channel is the one thing this build reaches out to on its own, and the answer is
+    // drawn by the interface: a variant or a field renamed on one side would be a page that reports
+    // "up to date" because it read nothing at all.
+    const rust = read("crates/sevenshell-types/src/update.rs");
+    const typescript = read("apps/desktop/src/types/update.ts");
+
+    const rustFields = rustStructFields(rust, "AvailableRelease").map(camelCase);
+
+    expect(rustFields.length, "AvailableRelease has no fields, so the comparison proves nothing").toBeGreaterThan(0);
+    expect(sorted(rustFields), "AvailableRelease differs between Rust and the interface").toEqual(
+      sorted(interfaceFields(typescript, "AvailableRelease")),
+    );
+
+    // Both unions are written twice on each side — once in Rust, once as the interface's reading of
+    // it — so the discriminants are what has to be compared, including the third answer a
+    // development build gets.
+    expect(sorted(tsKindUnion(typescript, "UpdateCheck"))).toEqual(sorted(rustCamelVariants(rust, "UpdateCheck")));
+    expect(sorted(tsKindUnion(typescript, "UpdateProgress"))).toEqual(
+      sorted(rustCamelVariants(rust, "UpdateProgress")),
+    );
+  });
+
   it("declares the same sync fields on both sides", () => {
     // A backup crosses the boundary as counts and switches, so the two halves have to agree on both
     // — and on the one shape that is a question rather than a result.
