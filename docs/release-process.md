@@ -17,9 +17,19 @@ Only `version.json` is edited by hand. `pnpm sync:versions` writes the number in
 when any of them disagrees. A version number that has to be updated in four places by hand is a
 version number that will eventually disagree with itself in a release build.
 
-A candidate is a version with a suffix: `0.1.0-rc.1`, `0.1.0-rc.2`, then `0.1.0`. The suffixes are
-ordered by SemVer, so an installation on `0.1.0-rc.1` is offered `0.1.0` when it exists — which is the
-point of shipping candidates first.
+A version is **numbers and periods only** — `0.1.0`, then `0.1.1`, then `0.2.0`. Two reasons, and
+both are mechanical rather than stylistic:
+
+- **An MSI can carry at most a numeric pre-release identifier.** The Windows installer's version is
+  four numbers, and `0.1.0-rc.1` is rejected by the bundler with "optional pre-release identifier in
+  app version must be numeric-only". A version with a suffix is a version Windows cannot be built for.
+- **Package managers carry releases, not candidates.** Winget's own pipeline refuses a pre-release
+  version outright, and a Homebrew cask or a Scoop manifest that names one is a package that installs
+  something the registry never reviewed.
+
+So a **candidate is not a version, it is this release marked as one**: the artefacts are attached to a
+draft, the draft is published as a prerelease, and a person promotes it when they are satisfied. The
+update channel follows the promotion — installed builds are never offered a candidate.
 
 ## Before a release
 
@@ -40,18 +50,27 @@ point of shipping candidates first.
 2. Four builds run in parallel — Windows (MSI and NSIS), macOS on Apple silicon, macOS on Intel,
    Linux (AppImage, deb, rpm) — each on the runner for the platform it produces.
 3. The release job hashes every installer, writes the update manifest, writes the package manager
-   manifests, and publishes the GitHub release. The checksums in the release body are computed from
-   the attached files rather than typed, and a version with a suffix publishes as a **prerelease**.
-4. Package manager manifests are attached to the release and are submitted by hand from there; see
+   manifests, and attaches everything to a **draft** release. Nothing is on the releases page while
+   that is happening, so nobody opens a release that is still being filled.
+4. When everything is attached, the draft is published **as a prerelease** — the candidate. Its notes
+   and its files are the real thing; what it is not is what installed builds are offered.
+5. **Promoting** it is the other half: `workflow_dispatch` on the Release workflow with the tag and
+   `promote` set, or by hand — `gh release edit v0.1.0 --prerelease=false --latest`. That is the moment
+   the update channel starts offering it, and it is a decision rather than a build step: a channel that
+   offered candidates would make users the ones who find out that a build was not ready. A release
+   whose build carried no signed update manifest cannot fill the channel, and the step says so rather
+   than publishing a manifest for an unsigned artefact.
+6. Package manager manifests are attached to the release and are submitted by hand from there; see
    `packaging/README.md` for what each submission takes. Winget carries releases rather than
-   candidates, so a prerelease produces none for it.
+   candidates, so the first version it can carry is the first stable one.
 
 ## The update channel
 
 An installed build asks one fixed URL:
 `https://github.com/7wdn/7shell/releases/download/updates/latest.json`. That is a release of its own,
-tagged `updates`, whose single asset each release replaces — a URL that changed per version would be
-a URL baked into the builds people already have, and those are the ones that matter.
+tagged `updates`, whose single asset is replaced when a release is **promoted** — a URL that changed
+per version would be a URL baked into the builds people already have, and those are the ones that
+matter.
 
 The manifest is assembled from what each build signed, never from what a workflow assumed:
 `scripts/update-manifest.mjs` reads back the archives the bundler wrote, and refuses to publish when
@@ -61,11 +80,12 @@ against the public key committed in `src-tauri/tauri.conf.json` before installin
 
 Two things worth knowing before the first release:
 
-- **Without the signing key a release has no update channel.** The workflow says so in its summary and
-  publishes installers only. A channel pointing at files nobody signed would be worse than none.
-- **The channel has never delivered an update until it has.** It is exercised by the *second* release:
-  install the first, and the first should offer the second. Until that has happened, the manifest's
-  shape is covered by tests and its behaviour is not.
+- **Without the signing key a release has no update manifest at all.** The workflow says so in its
+  summary and publishes installers only; the promotion step then leaves the channel as it was, because
+  a manifest pointing at files nobody signed would be worse than none.
+- **The channel has never delivered an update until it has.** It needs two versions: install one, and
+  it should be offered the next. Until that has happened, the manifest's shape is covered by tests and
+  its behaviour is not.
 
 ## Signing and secrets
 

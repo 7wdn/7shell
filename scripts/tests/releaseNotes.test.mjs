@@ -16,7 +16,17 @@ import { releaseNotesFor } from "../release-notes.mjs";
 
 const SCRIPT = path.join(REPO_ROOT, "scripts", "release-notes.mjs");
 const CHANGELOG = path.join(REPO_ROOT, "CHANGELOG.md");
-const RELEASED = "0.1.0-rc.1";
+const VERSION_FILE = path.join(REPO_ROOT, "version.json");
+
+/**
+ * The version this repository is being prepared to release.
+ *
+ * Read from the single source of truth rather than written here: a literal goes stale on the first
+ * bump, and the guard worth having is "the version that is about to be released has notes in the
+ * changelog" — the same question the release workflow asks before it builds anything. With a literal
+ * this stops asking about anything at all the moment the version moves.
+ */
+const RELEASED = JSON.parse(readFileSync(VERSION_FILE, "utf8")).app;
 
 /**
  * Two versions, so "the section that was asked for" can be told apart from "the one after it",

@@ -13,10 +13,14 @@ Builds are published at [github.com/7wdn/7shell/releases](https://github.com/7wd
 | macOS | `.dmg` | Nothing beyond macOS itself |
 | Linux | `.AppImage`, `.deb`, `.rpm` | The executable bit for the AppImage (`chmod +x`); a package manager for the other two |
 
-Nothing has been released yet, and the **first release will be a prerelease**. A prerelease is a
-real download — it is what the project has built and tested — but it is not the shape a stable
-release will take, and its release notes say so. Until that tag exists, the only way to run the
-application is [to build it from source](#build-from-source).
+The **current release, `0.1.0`, is published as a prerelease**. That is a real download — it is what
+the project has built and tested — but it is not what a stable release will be: it says so on its own
+page, in its notes, and by not being offered to installed builds yet. A release is promoted to the
+stable channel once it has been used, and the
+[release process](/release-process.md) describes exactly what that means.
+
+If no build is on the releases page for your platform, the way to run the application is
+[to build it from source](#build-from-source).
 
 ### The operating system will warn, and that is expected
 

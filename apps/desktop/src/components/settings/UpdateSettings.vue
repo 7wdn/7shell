@@ -4,7 +4,7 @@
  *
  * It lives on the About page because that is where the version already is, and an update is a fact
  * about the version. Everything it draws comes from one answer — the store's — so the line saying
- * "nothing newer is published" and the line saying "0.1.0-rc.2 is published" can never both be on
+ * "nothing newer is published" and the line saying "0.1.1 is published" can never both be on
  * screen, which is the failure mode of a page that keeps its own copy of an answer.
  *
  * The install button is deliberately not a silent one: it starts a download of tens of megabytes,

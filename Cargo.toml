@@ -4,7 +4,7 @@ members = ["src-tauri", "crates/*"]
 exclude = ["vendor"]
 
 [workspace.package]
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
@@ -74,16 +74,16 @@ tauri-plugin-dialog = "2"
 # still runs — it just has nothing to verify an update against, and says so.
 tauri-plugin-updater = "2"
 
-sevenshell-error = { version = "0.1.0-rc.1", path = "crates/sevenshell-error" }
-sevenshell-platform = { version = "0.1.0-rc.1", path = "crates/sevenshell-platform" }
-sevenshell-policy = { version = "0.1.0-rc.1", path = "crates/sevenshell-policy" }
-sevenshell-vault = { version = "0.1.0-rc.1", path = "crates/sevenshell-vault" }
-sevenshell-core = { version = "0.1.0-rc.1", path = "crates/sevenshell-core" }
-sevenshell-ssh = { version = "0.1.0-rc.1", path = "crates/sevenshell-ssh" }
-sevenshell-sync = { version = "0.1.0-rc.1", path = "crates/sevenshell-sync" }
-sevenshell-session = { version = "0.1.0-rc.1", path = "crates/sevenshell-session" }
-sevenshell-sftp = { version = "0.1.0-rc.1", path = "crates/sevenshell-sftp" }
-sevenshell-types = { version = "0.1.0-rc.1", path = "crates/sevenshell-types" }
+sevenshell-error = { version = "0.1.0", path = "crates/sevenshell-error" }
+sevenshell-platform = { version = "0.1.0", path = "crates/sevenshell-platform" }
+sevenshell-policy = { version = "0.1.0", path = "crates/sevenshell-policy" }
+sevenshell-vault = { version = "0.1.0", path = "crates/sevenshell-vault" }
+sevenshell-core = { version = "0.1.0", path = "crates/sevenshell-core" }
+sevenshell-ssh = { version = "0.1.0", path = "crates/sevenshell-ssh" }
+sevenshell-sync = { version = "0.1.0", path = "crates/sevenshell-sync" }
+sevenshell-session = { version = "0.1.0", path = "crates/sevenshell-session" }
+sevenshell-sftp = { version = "0.1.0", path = "crates/sevenshell-sftp" }
+sevenshell-types = { version = "0.1.0", path = "crates/sevenshell-types" }
 
 [profile.dev]
 # Line tables for everything in dev, this workspace's own crates included. What is actually read

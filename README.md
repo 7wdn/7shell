@@ -6,10 +6,10 @@
 
 ![A terminal over a real host, the file workbench beneath it, and the host monitor beside it](docs/public/screenshots/workspace.png)
 
-> **Status: first candidate release.** `0.1.0-rc.1` is a prerelease built to be tried, not relied on.
-> Nothing here has had a security review. The installers are not code-signed and the macOS build is
-> not notarized, so both operating systems will warn before running them. **Do not put production
-> credentials into this build.**
+> **Status: first candidate release.** `0.1.0` is published as a prerelease — built to be tried, not
+> relied on. Nothing here has had a security review. The installers are not code-signed and the
+> macOS build is not notarized, so both operating systems will warn before running them. **Do not put
+> production credentials into this build.**
 
 ## What it is
 
@@ -100,10 +100,11 @@ pnpm app:e2e          # drive the real window (Windows; the terminal cases need 
 
 An installed build asks a fixed URL for a signed manifest, verifies the signature against the public
 key compiled into it, and installs what the manifest names — then restarts. The manifest is written by
-the release workflow from the files that release built, and the workflow refuses to publish one for an
-archive nobody signed ([docs/release-process.md](docs/release-process.md)).
+the release workflow from the files that release built, and the workflow refuses to write one for an
+archive nobody signed ([docs/release-process.md](docs/release-process.md)). Only a release somebody has
+**promoted** is offered this way: a candidate stays a download for people who go looking for it.
 
-It has **not delivered an update yet**: that needs two releases, and there has been one. Until then,
+It has **not delivered an update yet**: that needs two versions, and there has been one. Until then,
 treat "an update is available" as a feature to try rather than a channel to depend on.
 
 ## Working on it

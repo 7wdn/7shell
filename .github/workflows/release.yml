@@ -7,6 +7,13 @@ name: Release
 # a release whose notes were never written, or whose tag disagrees with the version in the manifests,
 # is a release that cannot be repaired after the fact.
 #
+# A version is numbers and periods only. A candidate is not a version with a suffix but this release
+# marked as one: the artefacts are attached to a draft, the draft is published as a prerelease, and a
+# person promotes it once they are satisfied — which is also when the update channel starts offering
+# it. Two reasons for that order rather than a `-rc.N` suffix: an MSI carries at most a numeric
+# pre-release identifier, so a suffixed version cannot be built as an installer at all, and the
+# package managers carry releases rather than candidates.
+#
 # Nothing here builds from a working tree: every artefact comes from the tagged commit, on the
 # platform it is for, because an installer built anywhere else is an installer nobody can reproduce.
 
@@ -16,8 +23,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (for example v0.1.0-rc.1)"
+        description: "Tag to build, or to promote when `promote` is set (for example v0.1.0)"
         required: true
+      promote:
+        description: "Publish an existing prerelease as the latest release, and point the update channel at it. Nothing is built."
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -29,6 +40,9 @@ env:
 jobs:
   verify:
     name: The tag, the version and the notes agree
+    # Promoting builds nothing: it is a decision about a release that already exists, and running four
+    # builds to make it would be four builds whose artefacts nobody would look at again.
+    if: ${{ !inputs.promote }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -251,7 +265,6 @@ jobs:
           node -e "for (const a of require('./assets.json')) console.log(a.sha256 + '  ' + a.name)"
 
       - name: Write the update manifest
-        id: updates
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
@@ -267,12 +280,14 @@ jobs:
               --notes release-body.md \
               --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
               --out latest.json
-            echo "published=true" >> "$GITHUB_OUTPUT"
+            # Attached to this release like everything else, and picked up by the promotion step when
+            # a person decides the build is good. A candidate is not offered to installed builds.
+            echo "signing: this release carries a signed update manifest" >> "$GITHUB_STEP_SUMMARY"
           else
-            # No signing key: the release still ships, and it ships without an update channel rather
-            # than with one pointing at files nobody signed.
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "no signed update archives were produced, so no update channel is published" >> "$GITHUB_STEP_SUMMARY"
+            # No signing key: the release still ships, and it ships without an update manifest rather
+            # than with one pointing at files nobody signed. The promotion step notices the absence
+            # and leaves the channel as it is.
+            echo "signing: no update key, so this release carries no update manifest" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Write the package manager manifests
@@ -315,7 +330,7 @@ jobs:
           } > body.md
           cat body.md
 
-      - name: Publish the release
+      - name: Attach the files
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -325,32 +340,69 @@ jobs:
           files="$(cat release-assets.txt) assets.json packaging-manifests.zip"
           if [ -f latest.json ]; then files="$files latest.json"; fi
 
-          prerelease=""
-          case "$TAG" in
-            *-*) prerelease="--prerelease" ;;
-          esac
-
           if gh release view "$TAG" > /dev/null 2>&1; then
             # Re-running a release is normal — a build failed, a note was wrong — so an existing
             # release is filled in rather than treated as an error.
             gh release upload "$TAG" $files --clobber
             gh release edit "$TAG" --notes-file body.md
           else
-            gh release create "$TAG" --title "$TAG" --notes-file body.md $prerelease $files
+            # As a draft: it exists while the next step runs and is not on the releases page until
+            # everything is attached, so nobody opens a release that is still being filled.
+            gh release create "$TAG" --draft --title "$TAG" --notes-file body.md $files
           fi
 
-      # The endpoint the application reads is a fixed URL, so the channel is its own tiny release
-      # whose one asset is replaced. A URL that changed with every version would be a URL baked into
-      # the builds people already have — and the builds already installed are the ones that matter.
-      - name: Point the update channel at this release
-        if: steps.updates.outputs.published == 'true'
+      - name: Publish it as a candidate
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          if ! gh release view updates > /dev/null 2>&1; then
-            gh release create updates \
-              --title "Update channel" \
-              --prerelease \
-              --notes "The signed update manifest the installed application reads. It is replaced by every release, and it is not a release of its own."
+          # Every release goes out marked as a prerelease, and somebody promotes it when they are
+          # satisfied — with the `promote` input of this workflow, or by hand:
+          #   gh release edit <tag> --prerelease=false --latest
+          # That is what "candidate" means here. It is deliberately not a suffix on the version: a
+          # suffixed version cannot be built as an MSI at all, and the package managers take releases.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+            gh release edit "$TAG" --draft=false --prerelease
+            echo "**$TAG is published as a candidate.** Installed builds are not offered it until it is promoted." >> "$GITHUB_STEP_SUMMARY"
+          else
+            # Re-running a release that is already out there: its flags are somebody's decision about
+            # it, and a build job has no business changing them back.
+            echo "**$TAG is already published**; its files were replaced and its flags were left alone." >> "$GITHUB_STEP_SUMMARY"
           fi
-          gh release upload updates latest.json --clobber
+
+  promote:
+    name: Promote a release
+    # The other half of "candidate": the release already exists, its files were built and signed by
+    # the run that made it, and this only says that a person considers it good. It is also the moment
+    # the update channel starts offering it — a channel that offered candidates would be a channel
+    # whose users are the ones who find out that a build was not ready.
+    if: ${{ inputs.promote }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Promote it, and point the update channel at it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release edit "$TAG" --prerelease=false --latest
+
+          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx latest.json; then
+            gh release download "$TAG" --pattern latest.json --clobber
+            # The channel is its own tiny release whose one asset is replaced: the endpoint the
+            # application reads is a fixed URL, and a URL that changed with every version would be a
+            # URL baked into the builds people already have.
+            if ! gh release view updates > /dev/null 2>&1; then
+              gh release create updates \
+                --title "Update channel" \
+                --prerelease \
+                --notes "The signed update manifest the installed application reads. It is replaced when a release is promoted, and it is not a release of its own."
+            fi
+            gh release upload updates latest.json --clobber
+            echo "**$TAG is the latest release**, and the update channel now offers it." >> "$GITHUB_STEP_SUMMARY"
+          else
+            # No signing key when that release was built: there is nothing for the channel to point
+            # at, and a manifest for an unsigned artefact is worse than none.
+            echo "::warning::$TAG carries no latest.json, so the update channel was left as it was."
+          fi

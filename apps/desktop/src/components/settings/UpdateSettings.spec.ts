@@ -78,14 +78,14 @@ describe("the update block", () => {
   it("says a release is published, with what it changed, and offers to install it", async () => {
     checkMock.mockResolvedValue({
       kind: "available",
-      currentVersion: "0.1.0-rc.1",
-      release: { version: "0.1.0-rc.2", notes: "a fixed transfer that stalled", publishedAt: 1_780_000_000 },
+      currentVersion: "0.1.0",
+      release: { version: "0.1.1", notes: "a fixed transfer that stalled", publishedAt: 1_780_000_000 },
     });
     await mount();
 
     await press("Check for updates");
 
-    expect(text()).toContain("0.1.0-rc.2");
+    expect(text()).toContain("0.1.1");
     expect(text()).toContain("a fixed transfer that stalled");
     expect(text()).toContain("Install and restart");
   });
@@ -121,8 +121,8 @@ describe("the update block", () => {
   it("shows how far a download has got while it runs", async () => {
     checkMock.mockResolvedValue({
       kind: "available",
-      currentVersion: "0.1.0-rc.1",
-      release: { version: "0.1.0-rc.2" },
+      currentVersion: "0.1.0",
+      release: { version: "0.1.1" },
     });
     let listener: ((payload: { kind: "downloading"; downloaded: number; total?: number }) => void) | undefined;
     progressMock.mockImplementation(async (register) => {

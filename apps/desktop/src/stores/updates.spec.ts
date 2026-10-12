@@ -19,8 +19,8 @@ const progressMock = vi.mocked(onUpdateProgress);
 /** What the channel answers when it offers a release. */
 const published = {
   kind: "available" as const,
-  currentVersion: "0.1.0-rc.1",
-  release: { version: "0.1.0-rc.2", notes: "the second candidate", publishedAt: 1_780_000_000 },
+  currentVersion: "0.1.0",
+  release: { version: "0.1.1", notes: "the second candidate", publishedAt: 1_780_000_000 },
 };
 
 beforeEach(() => {
@@ -40,8 +40,8 @@ describe("the update channel as the interface reads it", () => {
 
     await updates.check();
 
-    expect(updates.release?.version).toBe("0.1.0-rc.2");
-    expect(updates.answer?.currentVersion).toBe("0.1.0-rc.1");
+    expect(updates.release?.version).toBe("0.1.1");
+    expect(updates.answer?.currentVersion).toBe("0.1.0");
     expect(updates.failure).toBeNull();
     expect(updates.asking).toBe(false);
   });
@@ -72,7 +72,7 @@ describe("the update channel as the interface reads it", () => {
 
     // A release that was published and then withdrawn — or one this build has caught up with — is
     // not installable any more, and a page that kept offering it would be offering nothing.
-    checkMock.mockResolvedValueOnce({ kind: "upToDate", currentVersion: "0.1.0-rc.1" });
+    checkMock.mockResolvedValueOnce({ kind: "upToDate", currentVersion: "0.1.0" });
     await updates.check();
 
     expect(updates.release).toBeNull();

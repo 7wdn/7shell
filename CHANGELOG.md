@@ -4,7 +4,7 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0-rc.1] - 2026-10-12
+## [0.1.0] - 2026-10-12
 
 The first build of 7Shell: an SSH client for people who look after a few machines and would rather
 the work stayed on their own computer. One window holds a session library, a terminal per
