@@ -14,6 +14,10 @@ allow = [
   "BSD-2-Clause",
   "BSD-3-Clause",
   "BSL-1.0",
+  # The root certificates Mozilla ships, as data (`webpki-root-certs`). Permissive, no copyleft, no
+  # obligation beyond carrying the notice — and it is the same certificate store every TLS client on
+  # the machine trusts anyway.
+  "CDLA-Permissive-2.0",
   "CC0-1.0",
   "ISC",
   "MIT",
@@ -48,4 +52,11 @@ unmaintained = "workspace"
 yanked = "deny"
 # Something that is wrong *for this project* belongs here with a comment saying why,
 # rather than being added quietly.
-ignore = []
+ignore = [
+  # The Marvin attack against RSA, as `russh` uses it. There is no release to move to: the advisory
+  # is against the `rsa` crate itself, which states the timing leak is inherent to what it does, and
+  # the alternative is not doing RSA keys at all — which for an SSH client means not connecting to a
+  # good part of the machines it exists for. Nothing this repository changes can fix it, and a report
+  # nobody can act on is what the setting above is about too.
+  "RUSTSEC-2023-0071",
+]
