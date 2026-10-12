@@ -5,8 +5,8 @@ vocabulary are declared. Rust and TypeScript are both generated from it, so the 
 cannot disagree about what the product supports.
 
 The rules for editing the YAML — including the `planned` flag and what `labelKey` must look like
-— are in [descriptors/README.md](../descriptors/README.md), next to the files themselves. This
-document is about the pipeline around them.
+— are in [descriptors/README.md](https://github.com/7wdn/7shell/blob/main/descriptors/README.md),
+next to the files themselves. This document is about the pipeline around them.
 
 ## The pipeline
 

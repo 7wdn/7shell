@@ -42,7 +42,7 @@
       "stepSession": "Create a session: address, authentication, and any jump hosts on the way.",
       "stepHostKey": "Confirm the host key on the first connection. A key that has changed stops the connection instead of asking twice.",
       "stepTerminal": "Open a terminal, or the file workbench beside it.",
-      "pending": "Sessions, password and key authentication and terminals work today; jump hosts, forwarding, SFTP and the platform agents do not yet. A session can only reach a host this build speaks to directly."
+      "pending": "Every step above works today. What is still missing is named on the card below, and nothing is named there before it is implemented."
     },
     "about": {
       "version": "Version",

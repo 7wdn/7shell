@@ -253,4 +253,4 @@ only in development, where the dev server and hot reload need it (`csp` and `dev
 
 ## Reporting
 
-See [SECURITY.md](../SECURITY.md).
+See [SECURITY.md](https://github.com/7wdn/7shell/blob/main/SECURITY.md).

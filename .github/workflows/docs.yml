@@ -1,0 +1,67 @@
+name: Documentation
+
+# Builds the documentation site and publishes it to GitHub Pages.
+#
+# The site's source is the repository's own `docs/` directory rather than a copy of it, so this job
+# is a check on those pages as well as a deployment: `pnpm docs:build` fails on a dead link between
+# pages, which is the failure a documentation site can hide for months otherwise.
+#
+# It runs from `main` only, and `workflow_dispatch` is the way to publish again after something
+# outside `docs/` changes what the site is built with.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# What a Pages deployment needs: read the repository, write the deployment, and mint the OIDC token
+# `deploy-pages` exchanges for a short-lived credential. Nothing here holds a long-lived secret.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages serves one deployment at a time. A queued run is therefore not cancelled in favour of a newer
+# one — cutting a deployment in half would leave the site's previous version unreachable — which is
+# the opposite of the other workflows' `cancel-in-progress: true`.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # `enablement: true` is the difference between "Pages is configured" being a prerequisite
+      # somebody has to remember and the first run setting it up: without it, a repository whose
+      # Pages source was never switched to GitHub Actions fails here with an error about a site that
+      # does not exist yet.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm docs:build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -7,6 +7,13 @@ dist-ssr/
 coverage/
 *.tsbuildinfo
 
+# Documentation site: the VitePress build output and its cache.
+/docs/.vitepress/cache
+/docs/.vitepress/dist
+
+# Package manager manifests, written per release from the files that release built.
+/packaging/out/
+
 # Rust
 /target/
 src-tauri/target/
