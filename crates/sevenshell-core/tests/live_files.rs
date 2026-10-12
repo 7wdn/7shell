@@ -1097,7 +1097,8 @@ fn peak_memory() -> Option<u64> {
         let status = std::fs::read_to_string("/proc/self/status").ok()?;
         let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
         let kibibytes: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-        return Some(kibibytes * 1024);
+        // No `return`: on the platform this arm is compiled for, it is the whole of the function.
+        Some(kibibytes * 1024)
     }
 
     #[cfg(windows)]
