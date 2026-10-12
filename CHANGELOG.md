@@ -4,6 +4,27 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-10-12
+
+Two things the first build got wrong on Windows, both of them settings nobody had written rather than
+code that misbehaved.
+
+### Fixed
+
+- **The installer wore NSIS's own icon.** Tauri's NSIS template takes the installer's and the
+  uninstaller's icon from `bundle.windows.nsis.installerIcon`, a setting with no default — so
+  an unset one is not the application's icon but the build tool's. Both now point at the project's
+  own. The wizard also follows the system's language (English and Simplified Chinese) instead of
+  always being English, and shows `7Shell 0.1.1` in its bottom-left corner rather than the copyright
+  notice, which is where every other installer puts the product and its version.
+- **"Follow the system" did not follow the system.** The interface asked the webview what the system
+  was, and WebView2 answers "light" whatever it is — with the system in its dark appearance, the
+  answer was light in all three theme modes, including the one where the window itself was dark. The
+  shell reads the system's own setting now, and watches it change.
+- **The tray icon's right-click menu kept the appearance of the mode before it**, which on Windows is
+  read from the system rather than from the application. It follows the application now, at the
+  moment a theme is chosen rather than when the settings page is saved.
+
 ## [0.1.0] - 2026-10-12
 
 The first build of 7Shell: an SSH client for people who look after a few machines and would rather

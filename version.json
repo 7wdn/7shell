@@ -1,4 +1,4 @@
 {
   "$comment": "Single source of truth for released version numbers. Run `pnpm sync:versions` after editing; `pnpm verify:versions` (CI) fails when a manifest drifts. A version is numbers and periods only: a suffix like `-rc.1` is a version the Windows installer cannot be built with (an MSI carries at most a numeric pre-release identifier), and the package managers carry releases rather than candidates. A candidate is the release marked as one — see docs/release-process.md.",
-  "app": "0.1.0"
+  "app": "0.1.1"
 }
