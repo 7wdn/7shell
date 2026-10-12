@@ -1005,6 +1005,74 @@ test("a choice is applied at once, written on Apply, and dropped only when asked
 });
 
 /**
+ * The bar's own button for the three modes, which is the way to them without the settings page.
+ *
+ * One button covers all three, so what it carries is which one is on rather than what pressing it
+ * would do: a sun for light, a moon for dark, and a sun and a moon together for following the system
+ * — the two things that mode can be at once, and the same mark the settings page puts on the same
+ * choice. It applies as it is pressed and writes nothing, which is where it parts company with the
+ * page's foot: there is no moment here at which somebody is deciding between writing and dropping,
+ * so there is nothing to wait for before the next press.
+ *
+ * The row it sits in is part of the claim: the button that puts a page in the workspace stands with
+ * the one that does the same, and the two about the window itself — how it is lit, and everything
+ * else through the gear — come after them.
+ */
+test("the title bar's button names the theme it is on, and cycles the three", async () => {
+  const { page, close } = await openApp();
+  try {
+    // The case before this one puts the theme back to dark, and this one reads that as its start
+    // rather than setting it up again.
+    const modeButton = page.getByRole("banner").getByRole("button", { name: /^(System|Light|Dark)$/ });
+    /** The name class on the mark the button is drawn with, which is how the icon is identified. */
+    const mark = async (): Promise<string[]> =>
+      ((await modeButton.locator("svg").getAttribute("class")) ?? "").split(/\s+/);
+
+    await expect(modeButton).toHaveAttribute("aria-label", "Dark");
+    expect(await mark(), "dark is a moon").toContain("lucide-moon");
+
+    // The row it stands in, read off the bar itself: the two that put a page in the workspace stand
+    // together, and the two about the window — how it is lit, and the gear — come after them. Named
+    // by index rather than asserted whole, because the window buttons change their words with the
+    // state of the window and none of that is this case's business.
+    const order = await page
+      .getByRole("banner")
+      .locator("button")
+      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? ""));
+    expect(order.indexOf("Batch execution"), "the batch button stands before the mode button").toBeLessThan(
+      order.indexOf("Dark"),
+    );
+    expect(order.indexOf("Dark"), "and the mode button before the gear").toBeLessThan(order.indexOf("Settings"));
+
+    await modeButton.click();
+    await expect(modeButton).toHaveAttribute("aria-label", "Light");
+    expect(await mark(), "light is a sun").toContain("lucide-sun");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    await modeButton.click();
+    await expect(modeButton).toHaveAttribute("aria-label", "System");
+    expect(
+      await mark(),
+      "following the system is the sun and the moon together, which is what the settings page draws for it",
+    ).toContain("lucide-sun-moon");
+    expect(
+      (await writtenSettings()).themeMode ?? "dark",
+      "and nothing was written on the way: the button applies, and the page is where a choice is written",
+    ).toBe("dark");
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "title-bar-theme.png"), fullPage: false });
+
+    // Round to dark again, so the run after this one meets the mode it left.
+    await modeButton.click();
+    await expect(modeButton).toHaveAttribute("aria-label", "Dark");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The interface layout, which is the one appearance choice whose whole effect is on the chrome.
  *
  * What only a real window can settle: a tab takes its shape from the setting rather than only being

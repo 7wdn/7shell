@@ -35,6 +35,7 @@ const REFUSING = [
   { file: "shell/ContextMenu.vue", what: "the menus, both levels" },
   { file: "shell/SidebarResizeHandle.vue", what: "the handle that widens the sidebar" },
   { file: "ui/ColumnResizeHandle.vue", what: "the edge between two columns, which is dragged to resize" },
+  { file: "ui/SideDivider.vue", what: "the line between a panel's two halves, which is dragged to resize" },
   { file: "shell/TransferPanel.vue", what: "the list of transfers, whose rows are pressed" },
   { file: "workspace/WorkspaceTabs.vue", what: "the tab strip and the terminal's strip" },
   { file: "workspace/SplitDivider.vue", what: "the divider above the file panel" },

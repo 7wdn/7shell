@@ -11,7 +11,7 @@
  *
  * On macOS the bar keeps its native traffic lights, so the content is inset to make room.
  */
-import { ArrowUpDown, ChevronsRight, ListChecks, Monitor, Moon, Settings, Sun } from "@lucide/vue";
+import { ArrowUpDown, ChevronsRight, ListChecks, Moon, Settings, Sun, SunMoon } from "@lucide/vue";
 import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -35,9 +35,16 @@ const { isMac, showControls, isMaximized, minimize, toggleMaximize, close } = us
 
 const version = computed(() => (app.info ? `v${app.info.version}` : ""));
 
-/** One button covers all three modes, cycling in the order the settings page lists them. */
+/**
+ * One button covers all three modes, cycling in the order the settings page lists them.
+ *
+ * Following the system is drawn as a sun and a moon together rather than as the display it is
+ * currently reading: the two things the mode can be at once, which is what "whichever the system
+ * says" looks like — and it is the same mark the settings page puts on that choice, so the two
+ * places that name the mode name it the same way.
+ */
 const modeIcon = computed(() =>
-  markRaw(preferences.themeMode === "system" ? Monitor : preferences.themeMode === "dark" ? Moon : Sun),
+  markRaw(preferences.themeMode === "system" ? SunMoon : preferences.themeMode === "dark" ? Moon : Sun),
 );
 
 const modeLabel = computed(() => {
@@ -150,16 +157,11 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       ></span>
     </button>
 
-    <button
-      type="button"
-      class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      :title="modeLabel"
-      :aria-label="modeLabel"
-      @click="cycleThemeMode()"
-    >
-      <component :is="modeIcon" :size="15" />
-    </button>
-
+    <!--
+      Batch execution, then the mode, then the gear. The three are ordered by what they are about:
+      the two that put a page in the workspace stand together, and the two that are about the window
+      itself — how it is lit, and the settings for everything — come last.
+    -->
     <button
       type="button"
       class="grid size-8 place-items-center rounded-md transition-colors"
@@ -172,6 +174,16 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       @click="terminals.openBatch()"
     >
       <ListChecks :size="15" />
+    </button>
+
+    <button
+      type="button"
+      class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      :title="modeLabel"
+      :aria-label="modeLabel"
+      @click="cycleThemeMode()"
+    >
+      <component :is="modeIcon" :size="15" />
     </button>
 
     <button
