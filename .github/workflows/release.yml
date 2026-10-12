@@ -245,10 +245,15 @@ jobs:
       - name: Choose the assets
         shell: bash
         run: |
+          # `|| true` on each `ls`, and not because the output does not matter: a glob that matches
+          # nothing makes `ls` exit 2, the step runs under `-e -o pipefail`, and a release with no
+          # signing key has no `*.app.tar.gz` — which is exactly how this step failed the first time
+          # it ever ran. What is missing is reported by the step after this one, which refuses an
+          # empty directory by name rather than by exit code.
           mkdir -p release
           {
-            ls artifacts/*.msi artifacts/*.exe artifacts/*.dmg artifacts/*.AppImage artifacts/*.deb artifacts/*.rpm 2>/dev/null
-            ls artifacts/*.app.tar.gz artifacts/*.AppImage.tar.gz 2>/dev/null
+            ls artifacts/*.msi artifacts/*.exe artifacts/*.dmg artifacts/*.AppImage artifacts/*.deb artifacts/*.rpm 2>/dev/null || true
+            ls artifacts/*.app.tar.gz artifacts/*.AppImage.tar.gz 2>/dev/null || true
           } | sort -u > release-assets.txt
           while read -r file; do cp "$file" release/; done < release-assets.txt
           ls -l release
@@ -361,7 +366,11 @@ jobs:
           #   gh release edit <tag> --prerelease=false --latest
           # That is what "candidate" means here. It is deliberately not a suffix on the version: a
           # suffixed version cannot be built as an MSI at all, and the package managers take releases.
-          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+          #
+          # Asked once, into a variable, so a `gh` that cannot answer fails the step instead of being
+          # read as "not a draft" and reported as a release somebody had already published.
+          draft="$(gh release view "$TAG" --json isDraft --jq .isDraft)"
+          if [ "$draft" = "true" ]; then
             gh release edit "$TAG" --draft=false --prerelease
             echo "**$TAG is published as a candidate.** Installed builds are not offered it until it is promoted." >> "$GITHUB_STEP_SUMMARY"
           else
