@@ -555,6 +555,10 @@ mod tests {
     #[test]
     fn a_folder_is_shown_by_its_own_name() {
         assert_eq!(folder_name(Path::new("/home/me/fsdownload")), "fsdownload");
+        // The name is taken with the host's own path rules, and a path in Windows' syntax is only a
+        // path on Windows: on macOS and Linux a `\` is an ordinary character, and that whole string
+        // is one name that is its own.
+        #[cfg(windows)]
         assert_eq!(folder_name(Path::new(r"C:\Users\me\Desktop\fsdownload")), "fsdownload");
     }
 

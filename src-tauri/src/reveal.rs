@@ -153,6 +153,12 @@ mod tests {
     fn a_path_that_is_not_there_is_shown_by_the_folder_holding_it() {
         // Explorer asked to mark a path that does not exist opens Documents, and "where the part
         // file is" is the folder anyway.
+        //
+        // The folder holding a path is worked out with the host's own path rules, the application
+        // never being handed a path written for another platform, so a path in Windows' syntax can
+        // only be asserted on Windows: on macOS and Linux a `\` is an ordinary character, and
+        // `C:\dl\half.bin` is one name with no folder in front of it.
+        #[cfg(windows)]
         assert_eq!(
             command_for(Platform::Windows, &path(r"C:\dl\half.bin"), Show::Select, false).1,
             vec![r"C:\dl".to_owned()]
