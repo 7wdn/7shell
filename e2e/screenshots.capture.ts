@@ -54,7 +54,10 @@ async function shot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(OUTPUT, `${name}.png`) });
 }
 
-test("the gate: the screen a first run opens on", async ({}, testInfo) => {
+// The first argument is Playwright's fixtures, named rather than destructured: all three tests take
+// none of them — they open the application themselves — and an empty binding pattern is a lint error
+// rather than a way of saying that.
+test("the gate: the screen a first run opens on", async (_fixtures, testInfo) => {
   const { page, close } = await openApp();
   try {
     // Nothing is filled in for this one on purpose: an empty form is what a person sees first, and
@@ -73,7 +76,7 @@ test("the gate: the screen a first run opens on", async ({}, testInfo) => {
   testInfo.annotations.push({ type: "shot", description: "create-vault.png" });
 });
 
-test("the first connection: the host key is a question, not a warning to dismiss", async ({}, testInfo) => {
+test("the first connection: the host key is a question, not a warning to dismiss", async (_fixtures, testInfo) => {
   const host = process.env.SEVENSHELL_TEST_HOST;
   const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
   const user = process.env.SEVENSHELL_TEST_USER;
@@ -107,7 +110,7 @@ test("the first connection: the host key is a question, not a warning to dismiss
   }
 });
 
-test("the workspace: a terminal over a real host, with the files beside it", async ({}, testInfo) => {
+test("the workspace: a terminal over a real host, with the files beside it", async (_fixtures, testInfo) => {
   const { page, close } = await openApp();
   try {
     await page.locator(".xterm").click({ timeout: 60_000 });
