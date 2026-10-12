@@ -90,7 +90,10 @@ test("the command prints the section without its version heading", () => {
   assert.equal(plain.status, 0, `printing the notes failed: ${plain.stderr}`);
   assert.equal(tagged.status, 0, `the tag spelling failed: ${tagged.stderr}`);
   assert.equal(tagged.stdout, plain.stdout, "a tag's v changed what is printed");
-  assert.ok(plain.stdout.includes("### Added"), "the printed body has no changelog section headings");
+  // Any changelog heading, and not `### Added` in particular: a release that only fixes things has
+  // no section of additions, and what this is here for is that the body carries the changelog's own
+  // headings rather than its prose alone.
+  assert.ok(/^### /m.test(plain.stdout), "the printed body has no changelog section headings");
   assert.ok(!plain.stdout.includes(`## [${RELEASED}]`), "the version heading must stay out of the release body");
 });
 
