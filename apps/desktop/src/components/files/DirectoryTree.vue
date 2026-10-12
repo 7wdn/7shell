@@ -21,6 +21,14 @@ const props = defineProps<{
   handle: string;
   /** Where the listing is; the tree follows it rather than the other way round. */
   currentPath: string;
+  /**
+   * How wide to draw it, in pixels.
+   *
+   * Handed in rather than written here, because the width is the panel's: it is whatever the divider
+   * beside this pane was last left at, and a width this component decided would be one the divider
+   * could not move.
+   */
+  width: number;
 }>();
 
 const emit = defineEmits<{ navigate: [path: string] }>();
@@ -139,9 +147,14 @@ function onTheWay(path: string): boolean {
   <!--
     The tree is a list of places to click, not text to select: without this the pointer turns into an
     I-beam over every name, and a drag picks up letters instead of rows.
+
+    No border of its own: the line at its right edge is the divider's, which is the same line whoever
+    drags it — two lines a pixel apart would be a border that thickened when the pointer was nowhere
+    near it.
   -->
   <nav
-    class="w-56 shrink-0 cursor-default overflow-auto border-r border-border py-1 select-none"
+    class="shrink-0 cursor-default overflow-auto py-1 select-none"
+    :style="{ width: `${props.width}px` }"
     :aria-label="t('files.tree.title')"
   >
     <ul>

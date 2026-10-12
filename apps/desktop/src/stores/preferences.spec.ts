@@ -11,7 +11,12 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import { i18n } from "@/i18n";
 import { settingsGet, settingsSet, webviewSetZoom } from "@/lib/backend/tauri";
-import { DEFAULT_TERMINAL_PANEL_HEIGHT, usePreferencesStore } from "@/stores/preferences";
+import {
+  DEFAULT_COMMANDS_LIBRARY_WIDTH,
+  DEFAULT_FILES_TREE_WIDTH,
+  DEFAULT_TERMINAL_PANEL_HEIGHT,
+  usePreferencesStore,
+} from "@/stores/preferences";
 import { DEFAULT_SYNC_AUTO_UPLOAD_MINUTES } from "@/types/app";
 import {
   DEFAULT_APP_LAYOUT,
@@ -214,6 +219,8 @@ describe("preferences store", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       sidebarWidth: undefined,
+      filesTreeWidth: undefined,
+      commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: true,
       packedTransfer: false,
@@ -265,6 +272,8 @@ describe("preferences store", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       sidebarWidth: undefined,
+      filesTreeWidth: undefined,
+      commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: true,
       packedTransfer: false,
@@ -427,6 +436,8 @@ describe("the terminal palette", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       sidebarWidth: undefined,
+      filesTreeWidth: undefined,
+      commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: true,
       packedTransfer: false,
@@ -1121,6 +1132,87 @@ describe("the file panel under a terminal", () => {
   });
 });
 
+/**
+ * The two panels that are split down the middle: the file panel's tree beside its listing, and the
+ * command panel's library beside the line being edited.
+ *
+ * Both widths are the same kind of wish as the height above — a pixel size somebody dragged to, kept
+ * across restarts and clamped against the room there is when it is drawn — so what these cases pin
+ * is that each of them is its own field: a build that wrote both through one field would pass every
+ * case about one panel and make the other panel's divider move the wrong one.
+ */
+describe("the two panels split down the middle", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("starts each at the width this build draws it at", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.resolvedFilesTreeWidth).toBe(DEFAULT_FILES_TREE_WIDTH);
+    expect(store.resolvedCommandsLibraryWidth).toBe(DEFAULT_COMMANDS_LIBRARY_WIDTH);
+  });
+
+  it("draws a drag before it writes anything down", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setFilesTreeWidth(312.6);
+    store.setCommandsLibraryWidth(199.4);
+
+    expect(store.resolvedFilesTreeWidth).toBe(313);
+    expect(store.resolvedCommandsLibraryWidth).toBe(199);
+    expect(settingsSetMock).not.toHaveBeenCalled();
+  });
+
+  it("writes down only the panel whose divider was let go", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setFilesTreeWidth(313);
+    await store.rememberFilesTreeWidth();
+    await store.commit();
+
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filesTreeWidth: 313, commandsLibraryWidth: undefined }),
+    );
+  });
+
+  it("reads each back on the next start", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ filesTreeWidth: 300, commandsLibraryWidth: 200 }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.resolvedFilesTreeWidth).toBe(300);
+    expect(store.resolvedCommandsLibraryWidth).toBe(200);
+  });
+
+  it("leaves nothing behind in the file when a line is put back where it started", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ filesTreeWidth: 300, commandsLibraryWidth: 200 }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.resetFilesTreeWidth();
+
+    expect(store.resolvedFilesTreeWidth).toBe(DEFAULT_FILES_TREE_WIDTH);
+    expect(store.resolvedCommandsLibraryWidth, "putting one line back is not putting the other one back").toBe(200);
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filesTreeWidth: undefined, commandsLibraryWidth: 200 }),
+    );
+  });
+});
+
 describe("restoring the defaults", () => {
   const CHOSEN = defaults({
     themeMode: "dark",
@@ -1193,6 +1285,8 @@ describe("restoring the defaults", () => {
       filesLayout: "tree",
       sessionLayout: "split",
       sidebarWidth: undefined,
+      filesTreeWidth: undefined,
+      commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: false,
       packedTransfer: false,

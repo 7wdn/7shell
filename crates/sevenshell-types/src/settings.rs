@@ -749,6 +749,18 @@ pub struct AppSettings {
     /// the window it is beside is honoured as far as the workspace allows rather than refused.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sidebar_width: Option<u32>,
+    /// How wide the file panel's directory tree is, in pixels.
+    ///
+    /// The same kind of wish, clamped the same way, and one width for every file panel rather than
+    /// one per session: the split is the same split wherever it is drawn, and two panels disagreeing
+    /// about where the line is would be a line that moved when a tab was switched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_tree_width: Option<u32>,
+    /// How wide the command panel's list of groups and saved commands is, in pixels.
+    ///
+    /// The other panel split down the middle, and the same kind of wish as the one above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commands_library_width: Option<u32>,
     /// Whether the session sidebar is on screen.
     ///
     /// On unless somebody puts it away: the sessions live there, and a window that opens with an
@@ -990,6 +1002,8 @@ impl Default for AppSettings {
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
             sidebar_width: None,
+            files_tree_width: None,
+            commands_library_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
             show_tray_icon: tray_icon_on(),
@@ -1049,6 +1063,8 @@ impl AppSettings {
             && self.session_layout == SessionLayout::Split
             && self.terminal_panel_height.is_none()
             && self.sidebar_width.is_none()
+            && self.files_tree_width.is_none()
+            && self.commands_library_width.is_none()
             && self.sidebar_open
             && self.monitor_enabled
             && self.show_tray_icon

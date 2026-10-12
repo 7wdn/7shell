@@ -18,15 +18,18 @@ import { useI18n } from "vue-i18n";
 
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import SideDivider from "@/components/ui/SideDivider.vue";
 import { describeErrorFields, describeShellError } from "@/i18n/errors";
 import { atLeast, needsApproval } from "@/lib/batch/risk";
 import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { useCommandsStore } from "@/stores/commands";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 
 const { t } = useI18n();
 const commands = useCommandsStore();
 const terminals = useTerminalsStore();
+const preferences = usePreferencesStore();
 
 /** Which group the list on the left is showing. */
 const openGroup = ref<string>("");
@@ -139,8 +142,14 @@ async function renameGroup(): Promise<void> {
 
 <template>
   <div class="flex h-full min-h-0 text-xs">
-    <!-- The library. Groups first, then the commands in the one that is open. -->
-    <aside class="flex w-64 shrink-0 flex-col border-r border-border">
+    <!--
+      The library. Groups first, then the commands in the one that is open.
+
+      No border of its own: the line at its right edge is the divider's, which is the same line
+      whoever drags it — two lines a pixel apart would be a border that thickened when the pointer
+      was nowhere near it.
+    -->
+    <aside class="flex shrink-0 flex-col" :style="{ width: `${preferences.resolvedCommandsLibraryWidth}px` }">
       <header class="flex items-center justify-between border-b border-border px-2 py-1.5">
         <span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("commands.groups") }}
@@ -282,6 +291,19 @@ async function renameGroup(): Promise<void> {
         </li>
       </ul>
     </aside>
+
+    <!--
+      The line between the two halves, and the drag that moves it. The width it reports goes to the
+      settings, because a library somebody widened is a library they want wide the next time the
+      panel opens.
+    -->
+    <SideDivider
+      :width="preferences.resolvedCommandsLibraryWidth"
+      :label="t('commands.library.divider')"
+      @move="preferences.setCommandsLibraryWidth($event)"
+      @settle="preferences.rememberCommandsLibraryWidth()"
+      @reset="preferences.resetCommandsLibraryWidth()"
+    />
 
     <!-- The line being edited, its slots, and where it goes. -->
     <section class="flex min-w-0 flex-1 flex-col">

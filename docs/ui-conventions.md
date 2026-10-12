@@ -142,3 +142,9 @@ before adding a column anywhere:
 A width belongs to the run rather than to the installation: nothing is written down, and closing the
 window puts every column back to the width its table states, which is what the file managers this
 interface is measured against do with theirs.
+
+A **panel** divider is the other way round, and the difference is what each of them is about: the
+sidebar, the file panel's height, the tree beside its listing and the library beside the line being
+edited are all written down when a drag ends. A column is a view of the data in one run; a panel is
+part of where somebody put things in their window, and a window that came back with the panels where
+it left them is a window that was not reset by restarting.

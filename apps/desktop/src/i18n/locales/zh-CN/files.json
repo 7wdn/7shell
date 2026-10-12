@@ -127,7 +127,8 @@
       "title": "目录",
       "root": "/",
       "expand": "展开",
-      "collapse": "折叠"
+      "collapse": "折叠",
+      "divider": "调整目录树宽度"
     },
     "drop": {
       "hint": "松开即上传到 {path}"

@@ -341,6 +341,10 @@ export interface AppSettings {
   readonly terminalPanelHeight?: number;
   /** How wide the session sidebar is, in pixels. Absent means nobody has moved the divider. */
   readonly sidebarWidth?: number;
+  /** How wide the file panel's directory tree is, in pixels. Absent means nobody has moved it. */
+  readonly filesTreeWidth?: number;
+  /** How wide the command panel's library is, in pixels. Absent means nobody has moved it. */
+  readonly commandsLibraryWidth?: number;
   /** Whether the session sidebar is on screen. On unless somebody puts it away. */
   readonly sidebarOpen: boolean;
   /**

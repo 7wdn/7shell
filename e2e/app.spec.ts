@@ -46,6 +46,8 @@ async function writtenSettings(): Promise<{
   customColorsDark?: { primary?: string };
   keybindings?: Record<string, string>;
   commandCompletion?: boolean;
+  filesTreeWidth?: number;
+  commandsLibraryWidth?: number;
 }> {
   return JSON.parse(await readFile(SETTINGS_FILE, "utf8")) as {
     packedTransfer?: boolean;
@@ -60,6 +62,8 @@ async function writtenSettings(): Promise<{
     terminalFontSize?: number;
     customColorsDark?: { primary?: string };
     keybindings?: Record<string, string>;
+    filesTreeWidth?: number;
+    commandsLibraryWidth?: number;
   };
 }
 
@@ -3878,6 +3882,128 @@ test("a download lands in the chosen folder, which is made if it is not there", 
     // spends its height on what has to be read, and "download, finished" is there to be recognised.
     await expect(downloadRow.locator("[title='Download']")).toBeVisible();
     await expect(downloadRow.locator("[title='Finished']")).toBeVisible({ timeout: 60_000 });
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The two panels that are split down the middle: the file panel's tree beside its listing, and the
+ * command panel's library beside the line being edited.
+ *
+ * Three claims, and none of them can be settled without a window that lays things out. That the line
+ * stands where the border used to, so the two halves are still one panel rather than two frames. That
+ * a drag takes the room out of the half *beside* the line, which is what makes this a split rather
+ * than a panel that grew. And that what the line was left at is written down — the same claim the
+ * sidebar's own case makes, on the two dividers that were added after it.
+ */
+test("a panel split down the middle can be resized, and the width is written down", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const name = `split-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const pathBar = page.getByPlaceholder("Path");
+    await sessionRow(page, name).click();
+    await expect(question.or(pathBar).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    // The file panel opens on its own for a session, and the tree is the half on the left of it.
+    await expect(pathBar).toBeVisible({ timeout: 30_000 });
+
+    // The line, and the pane it sizes — whatever is on its left, which is how both panels are
+    // measured here without the test naming a tag either panel is free to change.
+    const line = page.locator("[data-pane-divider]");
+    await expect(line).toHaveCount(1);
+    await expect(line).toHaveAttribute("aria-label", "Resize the directory tree");
+    const paneWidth = () =>
+      line.evaluate((element) =>
+        Math.round((element.previousElementSibling as HTMLElement).getBoundingClientRect().width),
+      );
+    const listingWidth = () =>
+      page
+        .getByRole("listbox", { name: "Files", exact: true })
+        .evaluate((element) => Math.round(element.getBoundingClientRect().width));
+
+    // Every run starts from an empty settings file, so this is the width this build draws the tree at.
+    const before = await paneWidth();
+    expect(before, "the tree opens at the width this build draws it at").toBe(224);
+    const listingBefore = await listingWidth();
+
+    /** Drags the line sideways, the way a hand does. */
+    const dragLine = async (delta: number): Promise<void> => {
+      const grip = await line.boundingBox();
+      if (!grip) {
+        throw new Error("the line has no place on screen");
+      }
+      await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(grip.x + grip.width / 2 + delta, grip.y + grip.height / 2, { steps: 8 });
+      await page.mouse.up();
+    };
+
+    await dragLine(120);
+
+    await expect.poll(paneWidth).toBeGreaterThan(before + 100);
+    const pulled = await paneWidth();
+    expect(await listingWidth(), "the room came out of the listing beside the line, not out of the panel").toBeCloseTo(
+      listingBefore - (pulled - before),
+      0,
+    );
+
+    // Written down when the drag ends rather than on every move, and the write is an answer from the
+    // backend that does not land the moment the pointer comes up.
+    await expect
+      .poll(async () => (await writtenSettings()).filesTreeWidth ?? 0, "the width is written down when the drag ends")
+      .toBe(pulled);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "file-tree-resized.png"), fullPage: false });
+
+    // Double-clicking the line puts it back where it started and forgets the width: nothing has been
+    // chosen, which is what the settings file has to say as well as the panel.
+    await line.dblclick();
+    await expect.poll(paneWidth).toBe(224);
+    await expect.poll(async () => (await writtenSettings()).filesTreeWidth ?? 0).toBe(0);
+
+    // The other split down the middle: the same control on a different pair of panes, which is why it
+    // answers to its own name and keeps its own width.
+    await page.getByRole("main").getByRole("button", { name: "Commands", exact: true }).click();
+    await expect(line).toHaveCount(1);
+    await expect(line).toHaveAttribute("aria-label", "Resize the groups and commands list");
+
+    const libraryBefore = await paneWidth();
+    expect(libraryBefore, "the library opens at the width this build draws it at").toBe(256);
+
+    await dragLine(-80);
+
+    await expect.poll(paneWidth).toBeLessThan(libraryBefore - 60);
+    const narrowed = await paneWidth();
+    await expect
+      .poll(async () => (await writtenSettings()).commandsLibraryWidth ?? 0, "and this one is written down too")
+      .toBe(narrowed);
+    expect(
+      (await writtenSettings()).filesTreeWidth ?? 0,
+      "the two lines keep their own widths rather than sharing one field",
+    ).toBe(0);
+
+    await page.screenshot({ path: path.join(ARTIFACTS, "command-library-resized.png"), fullPage: false });
   } finally {
     await close();
   }

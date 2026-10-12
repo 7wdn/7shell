@@ -102,6 +102,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   sessionLayout: "split",
   terminalPanelHeight: undefined,
   sidebarWidth: undefined,
+  filesTreeWidth: undefined,
+  commandsLibraryWidth: undefined,
   sidebarOpen: true,
   monitorEnabled: true,
   packedTransfer: false,
@@ -133,6 +135,22 @@ export const DEFAULT_SIDEBAR_WIDTH = 280;
  * small enough that the terminal above it is still the larger half.
  */
 export const DEFAULT_TERMINAL_PANEL_HEIGHT = 280;
+
+/**
+ * How wide the file panel's tree starts out, until somebody moves the divider beside it.
+ *
+ * The width this build has always drawn it at, which is about a dozen characters of a directory name
+ * per level of indentation before a row starts being cut off.
+ */
+export const DEFAULT_FILES_TREE_WIDTH = 224;
+
+/**
+ * How wide the command panel's library starts out, until somebody moves the divider beside it.
+ *
+ * The width this build has always drawn it at: a group's name, the count beside it, and the two
+ * buttons that appear when the pointer is on the row, without any of them pushing the name out.
+ */
+export const DEFAULT_COMMANDS_LIBRARY_WIDTH = 256;
 
 export const usePreferencesStore = defineStore("preferences", () => {
   const themeMode = ref<ThemeMode>("system");
@@ -221,6 +239,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * absorb whatever the window does.
    */
   const sidebarWidth = ref<number | null>(null);
+  /**
+   * How wide the file panel's tree is, in pixels; null until somebody moves the divider beside it.
+   *
+   * The same kind of pixel width as the sidebar's above, and written down for the same reason: a tree
+   * somebody widened is a tree they want wide the next time the panel opens. It is shared by every
+   * file panel rather than kept per session — there is one split, drawn in as many tabs as are open,
+   * and two tabs disagreeing about where the line is would be a split that moves when a tab is
+   * switched.
+   */
+  const filesTreeWidth = ref<number | null>(null);
+  /** The same for the command panel's library, which is the other panel split down the middle. */
+  const commandsLibraryWidth = ref<number | null>(null);
   /**
    * Whether the sidebar is drawn at all.
    *
@@ -402,6 +432,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
   /** The same answer for the sidebar's width. */
   const resolvedSidebarWidth = computed(() => sidebarWidth.value ?? DEFAULT_SIDEBAR_WIDTH);
 
+  /** And for the two panels split down the middle, which start at the width they are drawn at. */
+  const resolvedFilesTreeWidth = computed(() => filesTreeWidth.value ?? DEFAULT_FILES_TREE_WIDTH);
+  const resolvedCommandsLibraryWidth = computed(() => commandsLibraryWidth.value ?? DEFAULT_COMMANDS_LIBRARY_WIDTH);
+
   /**
    * What the shell was last asked to draw the interface at, or null when it never was.
    *
@@ -533,6 +567,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       sessionLayout.value = settings.sessionLayout;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       sidebarWidth.value = settings.sidebarWidth ?? null;
+      filesTreeWidth.value = settings.filesTreeWidth ?? null;
+      commandsLibraryWidth.value = settings.commandsLibraryWidth ?? null;
       sidebarOpen.value = settings.sidebarOpen;
       monitorEnabled.value = settings.monitorEnabled;
       packedTransfer.value = settings.packedTransfer;
@@ -622,6 +658,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         sessionLayout: sessionLayout.value,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         sidebarWidth: sidebarWidth.value ?? undefined,
+        filesTreeWidth: filesTreeWidth.value ?? undefined,
+        commandsLibraryWidth: commandsLibraryWidth.value ?? undefined,
         sidebarOpen: sidebarOpen.value,
         monitorEnabled: monitorEnabled.value,
         packedTransfer: packedTransfer.value,
@@ -1088,6 +1126,45 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * The three the two split panels' dividers drive: the file panel's tree, and the command panel's
+   * library.
+   *
+   * One set per field rather than a shared one, because the two panels are two things somebody can
+   * move independently and a bug in one should not be able to reach the other — but they are written
+   * as a pair because they are the same gesture twice: report the width, write it down when the drag
+   * ends, and forget it when the line is double-clicked.
+   */
+  function setFilesTreeWidth(width: number): void {
+    filesTreeWidth.value = Math.round(width);
+  }
+
+  /** Writes down the width the file panel's divider was left at. */
+  async function rememberFilesTreeWidth(): Promise<void> {
+    await commit();
+  }
+
+  /** Puts it back where it started, and forgets the width: nothing has been chosen. */
+  async function resetFilesTreeWidth(): Promise<void> {
+    filesTreeWidth.value = null;
+    await commit();
+  }
+
+  function setCommandsLibraryWidth(width: number): void {
+    commandsLibraryWidth.value = Math.round(width);
+  }
+
+  /** Writes down the width the command panel's divider was left at. */
+  async function rememberCommandsLibraryWidth(): Promise<void> {
+    await commit();
+  }
+
+  /** Puts it back where it started, and forgets the width: nothing has been chosen. */
+  async function resetCommandsLibraryWidth(): Promise<void> {
+    commandsLibraryWidth.value = null;
+    await commit();
+  }
+
+  /**
    * Puts the sidebar away, or brings it back.
    *
    * Written down at once rather than at the end of a drag: it is one decision, and somebody who
@@ -1192,6 +1269,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "sidebarWidth":
           sidebarWidth.value = null;
           break;
+        case "filesTreeWidth":
+          filesTreeWidth.value = null;
+          break;
+        case "commandsLibraryWidth":
+          commandsLibraryWidth.value = null;
+          break;
         case "sidebarOpen":
           sidebarOpen.value = FRESH.sidebarOpen;
           break;
@@ -1252,6 +1335,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sessionLayout,
     terminalPanelHeight,
     sidebarWidth,
+    filesTreeWidth,
+    commandsLibraryWidth,
     sidebarOpen,
     monitorEnabled,
     packedTransfer,
@@ -1261,6 +1346,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     resolvedTerminalTheme,
     resolvedPanelHeight,
     resolvedSidebarWidth,
+    resolvedFilesTreeWidth,
+    resolvedCommandsLibraryWidth,
     locale,
     syncEndpoint,
     syncUsername,
@@ -1325,6 +1412,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSidebarWidth,
     rememberSidebarWidth,
     resetSidebarWidth,
+    setFilesTreeWidth,
+    rememberFilesTreeWidth,
+    resetFilesTreeWidth,
+    setCommandsLibraryWidth,
+    rememberCommandsLibraryWidth,
+    resetCommandsLibraryWidth,
     setSidebarOpen,
     setLocale,
     reset,

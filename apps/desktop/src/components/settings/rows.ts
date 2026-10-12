@@ -80,16 +80,22 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 /**
  * The fields a row can write.
  *
- * Six settings have no row of their own. The file panel's height and the sidebar's width are
- * dividers somebody drags; whether the sidebar is open is a button in the sidebar's own header; and
- * the two hand-picked colour sets are five pickers that appear inside the colour-theme row once it
- * says `custom` — a row of their own would be a row that means nothing until another row is set.
- * They are reset with the category they belong to — `SettingsPage.fieldsOf` is where that is said —
- * rather than listed here.
+ * Eight settings have no row of their own. Four are dividers somebody drags — the file panel's
+ * height, the sidebar's width, the file panel's tree, and the command panel's library; whether the
+ * sidebar is open is a button in the sidebar's own header; and the two hand-picked colour sets are
+ * five pickers that appear inside the colour-theme row once it says `custom` — a row of their own
+ * would be a row that means nothing until another row is set. They are reset with the category they
+ * belong to — `SettingsPage.fieldsOf` is where that is said — rather than listed here.
  */
 export type SettingsRowField = Exclude<
   PreferenceField,
-  "terminalPanelHeight" | "sidebarWidth" | "sidebarOpen" | "customColors" | "customColorsDark"
+  | "terminalPanelHeight"
+  | "sidebarWidth"
+  | "filesTreeWidth"
+  | "commandsLibraryWidth"
+  | "sidebarOpen"
+  | "customColors"
+  | "customColorsDark"
 >;
 
 /** The glyphs a choice may carry. A closed set, because the control has to know how to draw one. */

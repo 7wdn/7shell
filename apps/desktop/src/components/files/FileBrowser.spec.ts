@@ -28,7 +28,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
-import { filesCreateFile, filesDownload, filesList } from "@/lib/backend/tauri";
+import { filesCreateFile, filesDownload, filesList, settingsSet } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry } from "@/lib/menu/types";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -866,5 +866,82 @@ describe("the columns of the listing", () => {
     await nextTick();
 
     expect(columnWidth("size")).toBe("80px");
+  });
+});
+
+describe("the line between the tree and the listing", () => {
+  /**
+   * The line itself, found by the marker it carries.
+   *
+   * It is not looked for by its role: the listing's own rows are a listbox and its headers carry
+   * separators of their own, so a query by role would be a coin toss between the split and a column.
+   */
+  function divider(): HTMLElement | null {
+    return host.querySelector<HTMLElement>("[data-pane-divider]");
+  }
+
+  /** The pane the line sizes: whatever is on its left, which is the tree when the tree is drawn. */
+  function paneLeftOfIt(): HTMLElement | null {
+    const before = divider()?.previousElementSibling;
+    return before instanceof HTMLElement ? before : null;
+  }
+
+  /** A key press on the line, which is one way to move it. */
+  async function press(key: string): Promise<void> {
+    divider()?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    await nextTick();
+  }
+
+  it("draws the tree at the width the line was left at, and says where that is", async () => {
+    const preferences = usePreferencesStore();
+    preferences.setFilesTreeWidth(300);
+
+    await render(unsorted);
+
+    expect(paneLeftOfIt()?.style.width).toBe("300px");
+    expect(divider()?.getAttribute("aria-valuenow")).toBe("300");
+    expect(divider()?.getAttribute("aria-label"), "the line says which split it is").toBe("Resize the directory tree");
+  });
+
+  it("moves the tree with the keyboard, and keeps the width it was left at", async () => {
+    const preferences = usePreferencesStore();
+    await render(unsorted);
+    // The default, which is where a panel nobody has touched opens.
+    expect(paneLeftOfIt()?.style.width).toBe("224px");
+
+    await press("ArrowRight");
+
+    expect(preferences.filesTreeWidth).toBe(240);
+    expect(paneLeftOfIt()?.style.width, "the pane follows the line rather than the line alone moving").toBe("240px");
+  });
+
+  it("writes the width down when a drag ends, which is what makes it survive a restart", async () => {
+    await render(unsorted);
+
+    const element = divider();
+    if (!element) {
+      throw new Error("the panel drew no line to drag");
+    }
+    element.setPointerCapture = vi.fn();
+    element.releasePointerCapture = vi.fn();
+    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 300 }));
+    element.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 340 }));
+    element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    await nextTick();
+
+    expect(paneLeftOfIt()?.style.width).toBe("340px");
+    await vi.waitFor(() => {
+      expect(vi.mocked(settingsSet)).toHaveBeenCalledWith(expect.objectContaining({ filesTreeWidth: 340 }));
+    });
+  });
+
+  it("draws no line to move when the panel is one pane, because there is nothing beside it", async () => {
+    const preferences = usePreferencesStore();
+    await preferences.setFilesLayout("list");
+
+    await render(unsorted);
+
+    expect(divider()).toBeNull();
+    expect(paneLeftOfIt()).toBeNull();
   });
 });

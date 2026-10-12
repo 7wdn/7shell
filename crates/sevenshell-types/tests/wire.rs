@@ -538,6 +538,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             session_layout: SessionLayout::Terminal,
             terminal_panel_height: Some(320),
             sidebar_width: Some(300),
+            files_tree_width: Some(224),
+            commands_library_width: Some(256),
             sidebar_open: false,
             monitor_enabled: true,
             show_tray_icon: false,

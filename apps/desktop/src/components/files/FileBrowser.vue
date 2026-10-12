@@ -37,6 +37,7 @@ import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import ColumnResizeHandle from "@/components/ui/ColumnResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import SideDivider from "@/components/ui/SideDivider.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
 import { useColumnWidths } from "@/composables/useColumnWidths";
 import { useContextMenu } from "@/composables/useContextMenu";
@@ -1110,7 +1111,27 @@ function openAreaMenu(event: MouseEvent): void {
     </header>
 
     <div class="flex min-h-0 flex-1">
-      <DirectoryTree v-if="twoPanes" :handle="props.handle" :current-path="browser.path" @navigate="goTo" />
+      <!--
+        The tree, then the line that can move it, then the listing. Both of the first two go away
+        together with the two-pane layout: a lone divider with nothing on its left would be a line
+        somebody could drag that changes nothing.
+      -->
+      <DirectoryTree
+        v-if="twoPanes"
+        :handle="props.handle"
+        :current-path="browser.path"
+        :width="preferences.resolvedFilesTreeWidth"
+        @navigate="goTo"
+      />
+
+      <SideDivider
+        v-if="twoPanes"
+        :width="preferences.resolvedFilesTreeWidth"
+        :label="t('files.tree.divider')"
+        @move="preferences.setFilesTreeWidth($event)"
+        @settle="preferences.rememberFilesTreeWidth()"
+        @reset="preferences.resetFilesTreeWidth()"
+      />
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
         <!--

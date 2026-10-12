@@ -127,7 +127,8 @@
       "title": "Directories",
       "root": "/",
       "expand": "Expand",
-      "collapse": "Collapse"
+      "collapse": "Collapse",
+      "divider": "Resize the directory tree"
     },
     "drop": {
       "hint": "Drop to upload into {path}"

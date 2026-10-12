@@ -35,6 +35,9 @@
       "removeConfirm": "Delete",
       "rename": "Rename"
     },
+    "library": {
+      "divider": "Resize the groups and commands list"
+    },
     "historyClear": "Clear",
     "panel": "Commands",
     "input": {

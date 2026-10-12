@@ -138,6 +138,12 @@ struct StoredSettings {
     /// has never been moved".
     #[serde(default)]
     sidebar_width: Option<u32>,
+    /// The two panels split down the middle, absent in a file written before either could be
+    /// resized, which reads the same way: the divider has never been moved.
+    #[serde(default)]
+    files_tree_width: Option<u32>,
+    #[serde(default)]
+    commands_library_width: Option<u32>,
     /// Absent in a file written before the sidebar could be put away, which reads as the default it
     /// ships with — on — rather than as a sidebar somebody closed before it could be closed.
     #[serde(default = "sidebar_on")]
@@ -229,6 +235,8 @@ impl StoredSettings {
             session_layout: settings.session_layout.as_str().to_owned(),
             terminal_panel_height: settings.terminal_panel_height,
             sidebar_width: settings.sidebar_width,
+            files_tree_width: settings.files_tree_width,
+            commands_library_width: settings.commands_library_width,
             sidebar_open: settings.sidebar_open,
             monitor_enabled: settings.monitor_enabled,
             background_image: StoredBackgroundImage::from_settings(&settings.background_image),
@@ -275,6 +283,8 @@ impl StoredSettings {
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             terminal_panel_height: self.terminal_panel_height,
             sidebar_width: self.sidebar_width,
+            files_tree_width: self.files_tree_width,
+            commands_library_width: self.commands_library_width,
             sidebar_open: self.sidebar_open,
             monitor_enabled: self.monitor_enabled,
             background_image: self.background_image.to_settings(),
@@ -409,6 +419,8 @@ mod tests {
             session_layout: SessionLayout::default(),
             terminal_panel_height: None,
             sidebar_width: None,
+            files_tree_width: None,
+            commands_library_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
             background_image: BackgroundImage::default(),
@@ -673,6 +685,10 @@ mod tests {
         let written = AppSettings {
             session_layout: SessionLayout::Terminal,
             terminal_panel_height: Some(320),
+            // Not the defaults, so the round trip proves that the two widths a divider was left at
+            // come back rather than the file forgetting half of what it was given.
+            files_tree_width: Some(300),
+            commands_library_width: Some(200),
             // Off, so the round trip proves a choice survives rather than the default coming back.
             monitor_enabled: false,
             // On, for the same reason in the other direction: the default is off.

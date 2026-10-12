@@ -35,6 +35,9 @@
       "removeConfirm": "删除",
       "rename": "重命名"
     },
+    "library": {
+      "divider": "调整分类和命令列表的宽度"
+    },
     "historyClear": "清空",
     "panel": "命令",
     "input": {
