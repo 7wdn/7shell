@@ -22,11 +22,17 @@ const STEPS = [
   {
     name: "format",
     group: "interface",
-    command: 'pnpm exec oxfmt --check "apps/desktop/src/**/*.{ts,vue}" "scripts/**/*.mjs"',
+    // The globs are the script's own rather than repeated here: a copy of them in this file is a copy
+    // that stops matching the day a new kind of source is added, and the gate would then be silent
+    // about exactly the files nobody had formatted yet.
+    command: "pnpm fmt:check",
   },
   { name: "lint", group: "interface", command: "pnpm exec oxlint apps/desktop/src" },
   { name: "types", group: "interface", command: "pnpm exec vue-tsc --noEmit --project apps/desktop/tsconfig.json" },
   { name: "unit tests", group: "interface", command: "pnpm exec vitest run" },
+  // The documentation site has a workflow of its own, but a build that only ever runs when a page is
+  // pushed is a build that breaks quietly on the day somebody renames a file another page links to.
+  { name: "docs build", group: "interface", command: "pnpm docs:build" },
   { name: "rust format", group: "rust", command: "cargo fmt --all --check" },
   { name: "rust lint", group: "rust", command: "cargo clippy --workspace --all-targets -- -D warnings" },
   { name: "rust tests", group: "rust", command: "cargo test --workspace" },

@@ -1,0 +1,356 @@
+name: Release
+
+# Everything that turns a tag into something a person can install.
+#
+# The tag is the whole decision: the version is bumped on `main`, the changelog section is written, and
+# the tag is pushed. Verifying that the three agree is the first job and the only reason it exists —
+# a release whose notes were never written, or whose tag disagrees with the version in the manifests,
+# is a release that cannot be repaired after the fact.
+#
+# Nothing here builds from a working tree: every artefact comes from the tagged commit, on the
+# platform it is for, because an installer built anywhere else is an installer nobody can reproduce.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (for example v0.1.0-rc.1)"
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: The tag, the version and the notes agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: The tag names the version every manifest carries
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          version="$(node -p "require('./version.json').app")"
+          if [ "v$version" != "$TAG" ]; then
+            echo "the tag is $TAG and version.json says $version" >&2
+            echo "bump the version with \`pnpm sync:versions\` and tag that commit" >&2
+            exit 1
+          fi
+      - run: pnpm verify:versions
+
+      - name: The release notes exist
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        # A release with an empty body is a release nobody can decide about, and the moment to find
+        # out is now rather than after four builds have run.
+        run: node scripts/release-notes.mjs "$TAG" --check
+
+  build:
+    name: ${{ matrix.name }}
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows (x86_64)
+            os: windows-latest
+            platform: windows-x86_64
+            target: ""
+            rust_targets: ""
+          - name: macOS (Apple silicon)
+            os: macos-latest
+            platform: darwin-aarch64
+            target: aarch64-apple-darwin
+            rust_targets: aarch64-apple-darwin
+          - name: macOS (Intel)
+            os: macos-15-intel
+            platform: darwin-x86_64
+            target: x86_64-apple-darwin
+            rust_targets: x86_64-apple-darwin
+          - name: Linux (x86_64)
+            os: ubuntu-22.04
+            platform: linux-x86_64
+            target: ""
+            rust_targets: ""
+    env:
+      # Job-wide because two steps ask the same question — "is this a signed build?" — and a variable
+      # set inside one step is invisible to the next, which is how a release ends up publishing
+      # installers and no update channel while every step reports success.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Only the platform being built: installing both macOS targets would build the application
+          # for a machine that is not this one.
+          targets: ${{ matrix.rust_targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.platform }}
+
+      # WebKit, GTK, and the tooling the RPM bundle is made with.
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf rpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Signing is a secret, so it decides what kind of build this is rather than failing one.
+      #
+      # The update channel needs the Tauri signing key: without it the build produces installers and
+      # no signed update archives, which is a release people can install by hand and not one they are
+      # told about. The Apple variables are the platform's own signing and notarization, absent until
+      # somebody holds the certificates — the release says so in its own body rather than pretending a
+      # warning-free install.
+      - name: Build the bundles
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # An unfilled secret arrives as an empty string, and an empty string is not "unset" to the
+          # tools that read these: signing with nothing is a build that fails in the middle.
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+                      APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+                      APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+
+          extra='{}'
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            # The one setting that makes the update archives, switched on here rather than in the
+            # configuration: a build without the key must still work, and a checked-in `true` would
+            # make every local `pnpm tauri build` demand a secret nobody has.
+            extra='{"bundle":{"createUpdaterArtifacts":true}}'
+            echo "signing: the update archives will be signed" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "signing: no update key, so this build publishes no update channel" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -z "${APPLE_ID:-}" ]; then
+            echo "notarization: no Apple credentials, so the macOS build is signed ad hoc at best" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          pnpm tauri build ${TARGET:+--target "$TARGET"} --config "$extra"
+
+      # The platform's own files, and the update manifest's entry for it: which archives exist is read
+      # back from what the bundler wrote rather than predicted here.
+      - name: Collect the installers
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          mkdir -p release-artifacts
+          # The workspace's own target directory, which is at the repository root rather than under
+          # `src-tauri`: this is a Cargo workspace, so every crate's output lands in one place.
+          find target -path '*/bundle/*' -type f \
+            \( -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o -name '*.AppImage' \
+               -o -name '*.deb' -o -name '*.rpm' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \) \
+            -exec cp {} release-artifacts/ \;
+
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            # Named per platform: the four builds' outputs are downloaded into one directory at the
+            # end, and a file every job calls the same thing would leave the last platform standing.
+            node scripts/update-manifest.mjs platform \
+              --bundle target \
+              --platform "${{ matrix.platform }}" \
+              --tag "$TAG" \
+              --repository "${{ github.repository }}" \
+              --out "release-artifacts/updater-${{ matrix.platform }}.json"
+          fi
+
+          ls -l release-artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: release-artifacts
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      # The release, its assets and the update channel's own release are all written with the token
+      # this job is given. Nothing else in the repository needs write access.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # What the release carries: the installers a person runs, and the archives the update channel
+      # downloads. On Windows those are the same files — the signature is attached to the installer —
+      # and on macOS and Linux the update artifact is the packed application or the AppImage itself.
+      # Both kinds are named here by file name because the update manifest does the same: an archive
+      # that is not attached is an update that cannot be fetched.
+      - name: Choose the assets
+        shell: bash
+        run: |
+          mkdir -p release
+          {
+            ls artifacts/*.msi artifacts/*.exe artifacts/*.dmg artifacts/*.AppImage artifacts/*.deb artifacts/*.rpm 2>/dev/null
+            ls artifacts/*.app.tar.gz artifacts/*.AppImage.tar.gz 2>/dev/null
+          } | sort -u > release-assets.txt
+          while read -r file; do cp "$file" release/; done < release-assets.txt
+          ls -l release
+
+      - name: Hash what was actually built
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          # The chosen files rather than everything the builds produced: the hashes published in the
+          # notes and in the package manager manifests are of the downloads, and a table that also
+          # listed a job's own bookkeeping files would invite somebody to check the wrong one.
+          node scripts/packaging-manifests.mjs assets \
+            --dir release --tag "$TAG" --repository "${{ github.repository }}" --out assets.json
+          node -e "for (const a of require('./assets.json')) console.log(a.sha256 + '  ' + a.name)"
+
+      - name: Write the update manifest
+        id: updates
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if compgen -G "artifacts/updater-*.json" > /dev/null; then
+            mkdir -p updater
+            cp artifacts/updater-*.json updater/
+            node scripts/release-notes.mjs "$TAG" > release-body.md
+            node scripts/update-manifest.mjs merge \
+              --releases updater \
+              --version "${TAG#v}" \
+              --tag "$TAG" \
+              --repository "${{ github.repository }}" \
+              --notes release-body.md \
+              --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --out latest.json
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            # No signing key: the release still ships, and it ships without an update channel rather
+            # than with one pointing at files nobody signed.
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "no signed update archives were produced, so no update channel is published" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Write the package manager manifests
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          node scripts/packaging-manifests.mjs manifests \
+            --assets assets.json --version "${TAG#v}" --tag "$TAG" \
+            --repository "${{ github.repository }}" --date "$(date -u +%Y-%m-%d)" \
+            --out packaging/out
+          find packaging/out -type f | sort || true
+          (cd packaging/out && zip -qr "$GITHUB_WORKSPACE/packaging-manifests.zip" .)
+
+      - name: The release body
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          {
+            node scripts/release-notes.mjs "$TAG"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Files and checksums"
+            echo ""
+            echo '```'
+            # From the files themselves rather than from a table somebody typed: these lines are the
+            # hashes of what is attached below.
+            (cd release && sha256sum $(cat ../release-assets.txt | xargs -n1 basename)) || true
+            echo '```'
+            echo ""
+            echo "### Installing"
+            echo ""
+            echo "- **Windows:** run the \`.exe\` or \`.msi\`. The installer is not code-signed yet, so Windows warns before running it."
+            echo "- **macOS:** open the \`.dmg\` and drag the application across. The build is not notarized yet, so Gatekeeper warns."
+            echo "- **Linux:** the AppImage runs after \`chmod +x\`; the \`.deb\` and \`.rpm\` install with the system's package manager."
+            echo ""
+            echo "Package manager manifests for Winget, Scoop and Homebrew are attached as \`packaging-manifests.zip\`."
+            echo ""
+            echo "Nothing in this project has had a security review. Read SECURITY.md before putting production credentials in it."
+          } > body.md
+          cat body.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          # Everything that is attached, and only those: the installers, the update manifest, the
+          # hash list and the package manager manifests.
+          files="$(cat release-assets.txt) assets.json packaging-manifests.zip"
+          if [ -f latest.json ]; then files="$files latest.json"; fi
+
+          prerelease=""
+          case "$TAG" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Re-running a release is normal — a build failed, a note was wrong — so an existing
+            # release is filled in rather than treated as an error.
+            gh release upload "$TAG" $files --clobber
+            gh release edit "$TAG" --notes-file body.md
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file body.md $prerelease $files
+          fi
+
+      # The endpoint the application reads is a fixed URL, so the channel is its own tiny release
+      # whose one asset is replaced. A URL that changed with every version would be a URL baked into
+      # the builds people already have — and the builds already installed are the ones that matter.
+      - name: Point the update channel at this release
+        if: steps.updates.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view updates > /dev/null 2>&1; then
+            gh release create updates \
+              --title "Update channel" \
+              --prerelease \
+              --notes "The signed update manifest the installed application reads. It is replaced by every release, and it is not a release of its own."
+          fi
+          gh release upload updates latest.json --clobber

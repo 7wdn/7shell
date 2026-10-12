@@ -2,6 +2,7 @@
 // Runs the end-to-end tests against the real application.
 //
 //   pnpm app:e2e
+//   pnpm app:e2e --config e2e/playwright.capture.config.ts    (the screenshots, see package.json)
 //
 // Three things happen here, and each is deliberate:
 //
@@ -18,6 +19,12 @@ import path from "node:path";
 
 import { DEV_PORT, listenersOn, portIsFree } from "./lib/dev-server.mjs";
 import { REPO_ROOT } from "./lib/descriptors.mjs";
+
+/** Which Playwright config to run under. Anything but the suite's own is asked for explicitly. */
+const CONFIG = (() => {
+  const index = process.argv.indexOf("--config");
+  return index === -1 ? "e2e/playwright.config.ts" : process.argv[index + 1];
+})();
 
 const DATA_DIR = path.join(REPO_ROOT, "e2e", ".run", "config");
 /**
@@ -180,7 +187,7 @@ async function main() {
     tests = await new Promise((resolve) => {
       const run = spawn(
         "pnpm",
-        ["exec", "playwright", "test", "--config", "e2e/playwright.config.ts", ...(grep ? ["-g", `"${grep}"`] : [])],
+        ["exec", "playwright", "test", "--config", CONFIG, ...(grep ? ["-g", `"${grep}"`] : [])],
         {
           cwd: REPO_ROOT,
           shell: true,

@@ -1,7 +1,9 @@
 # Release process
 
 **Nothing has been released yet.** This is the process the first release will follow, written down
-before it is needed so the first one is boring.
+before it is needed so the first one is boring. Everything below is what the workflows and scripts
+actually do; a step described here that no file implements is a bug in this document, not an
+aspiration.
 
 ## Version lines
 
@@ -15,38 +17,84 @@ Only `version.json` is edited by hand. `pnpm sync:versions` writes the number in
 when any of them disagrees. A version number that has to be updated in four places by hand is a
 version number that will eventually disagree with itself in a release build.
 
+A candidate is a version with a suffix: `0.1.0-rc.1`, `0.1.0-rc.2`, then `0.1.0`. The suffixes are
+ordered by SemVer, so an installation on `0.1.0-rc.1` is offered `0.1.0` when it exists — which is the
+point of shipping candidates first.
+
 ## Before a release
 
 1. `pnpm check` green, on all three platforms in CI.
-2. `CHANGELOG.md` updated. Entries are written for someone deciding whether to upgrade, not for
-   someone reading the diff: what changed, what it means for them, what breaks.
-3. The version bumped with `pnpm sync:versions` and `version.json` committed.
+2. `CHANGELOG.md` has a section for the version being released. `pnpm release:notes <version> --check`
+   is the gate: a release whose notes were never written fails before anything is built, because a
+   release with an empty body is a release nobody can decide about.
+3. The version bumped with `pnpm sync:versions`, and `version.json` committed.
 4. For the first release only: the README's status line, `SECURITY.md` and the notice in the
    interface footer all still say "no security review" — a release does not change that until an
    audit has actually happened.
 
 ## Cutting the release
 
-1. Tag `v<version>` on the commit that bumped the version.
-2. CI builds the installers (MSI and NSIS on Windows, DMG on macOS with notarization, AppImage,
-   deb and rpm on Linux) and signs what can be signed.
-3. The release notes come from the changelog and list the artefacts with their checksums.
-4. Package manager manifests are updated: Homebrew, Winget, Scoop and Flatpak where they apply.
-5. If the update channel is live, update the signed update metadata — and never publish update
-   metadata that points at an unsigned or unbuilt artefact.
+1. Tag `v<version>` on the commit that bumped the version, and push the tag. That is the whole
+   trigger: `.github/workflows/release.yml` refuses to build when the tag, `version.json` and the
+   changelog disagree, so the three cannot drift apart unnoticed.
+2. Four builds run in parallel — Windows (MSI and NSIS), macOS on Apple silicon, macOS on Intel,
+   Linux (AppImage, deb, rpm) — each on the runner for the platform it produces.
+3. The release job hashes every installer, writes the update manifest, writes the package manager
+   manifests, and publishes the GitHub release. The checksums in the release body are computed from
+   the attached files rather than typed, and a version with a suffix publishes as a **prerelease**.
+4. Package manager manifests are attached to the release and are submitted by hand from there; see
+   `packaging/README.md` for what each submission takes. Winget carries releases rather than
+   candidates, so a prerelease produces none for it.
 
-## What a release must not do
+## The update channel
 
-- **It must not claim more than it delivers.** The capability list in the interface is generated
-  from the descriptors, and the descriptors only claim what is implemented — if a release note and
-  that screen disagree, the screen is right and the note is a bug.
-- **It must not ship a binary that was not built by CI from the tagged commit.** A local build is
-  for testing; a release artefact is reproducible from a tag.
-- **It must not skip the security statement.** Until an audit exists, every release says there is
-  no audit.
+An installed build asks one fixed URL:
+`https://github.com/7wdn/7shell/releases/download/updates/latest.json`. That is a release of its own,
+tagged `updates`, whose single asset each release replaces — a URL that changed per version would be
+a URL baked into the builds people already have, and those are the ones that matter.
+
+The manifest is assembled from what each build signed, never from what a workflow assumed:
+`scripts/update-manifest.mjs` reads back the archives the bundler wrote, and refuses to publish when
+an archive has no signature beside it, when two platform files disagree about the tag, or when an
+archive has a name it cannot place. The application verifies the signature of everything it downloads
+against the public key committed in `src-tauri/tauri.conf.json` before installing it.
+
+Two things worth knowing before the first release:
+
+- **Without the signing key a release has no update channel.** The workflow says so in its summary and
+  publishes installers only. A channel pointing at files nobody signed would be worse than none.
+- **The channel has never delivered an update until it has.** It is exercised by the *second* release:
+  install the first, and the first should offer the second. Until that has happened, the manifest's
+  shape is covered by tests and its behaviour is not.
 
 ## Signing and secrets
 
-Signing keys and notarization credentials live only in CI secrets, never in the repository and
-never on a contributor's machine as part of the build. A build that needs a secret to compile is a
-build that cannot be verified by anyone else.
+Signing keys and notarization credentials live only in CI secrets, never in the repository and never
+on a contributor's machine as part of the build. A build that needs a secret to compile is a build
+that cannot be verified by anyone else — which is why the release switches the update artifacts on
+from the workflow rather than from `tauri.conf.json`, and why a build with no secrets at all still
+produces installers.
+
+| Secret | What it is for | State |
+|---|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | Signs the update archives. The matching public key is committed in `src-tauri/tauri.conf.json`. | Needed for the update channel |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | The password that key is stored with. | Needed with the key |
+| `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Signing and notarizing the macOS build. | Absent until an Apple Developer account exists |
+| A Windows code-signing certificate | Not configured: Tauri signs with whatever certificate the environment provides, and there is none yet. | Absent |
+
+Until those exist, the release says so in its own body: the installers are not code-signed, the macOS
+build is not notarized, and both operating systems warn before running them. Losing the update key
+means no further update can reach an installed build — a new key would have to be committed to
+`tauri.conf.json`, and a fresh install would be the only way onto it.
+
+## What a release must not do
+
+- **It must not claim more than it delivers.** The capability list in the interface is generated from
+  the descriptors, and the descriptors only claim what is implemented — if a release note and that
+  screen disagree, the screen is right and the note is a bug.
+- **It must not ship a binary that was not built by CI from the tagged commit.** A local build is for
+  testing; a release artefact is reproducible from a tag.
+- **It must not publish update metadata that points at an unsigned artefact.** The workflow enforces
+  this by refusing to write a manifest for an archive with no signature beside it.
+- **It must not skip the security statement.** Until an audit exists, every release says there is no
+  audit.
