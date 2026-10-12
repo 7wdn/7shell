@@ -27,7 +27,16 @@ const STEPS = [
     // about exactly the files nobody had formatted yet.
     command: "pnpm fmt:check",
   },
-  { name: "lint", group: "interface", command: "pnpm exec oxlint apps/desktop/src" },
+  {
+    name: "lint",
+    group: "interface",
+    // The script's own command rather than the arguments written out here, for the reason the format
+    // gate gives below: this one used to read `oxlint apps/desktop/src`, which is the same prefix as
+    // `pnpm lint` and one directory short of it. The e2e suite went unlinted here while CI ran the
+    // real command, and the difference showed up as a red `main` that was green on every machine that
+    // only ever ran this file.
+    command: "pnpm lint",
+  },
   { name: "types", group: "interface", command: "pnpm exec vue-tsc --noEmit --project apps/desktop/tsconfig.json" },
   { name: "unit tests", group: "interface", command: "pnpm exec vitest run" },
   // The documentation site has a workflow of its own, but a build that only ever runs when a page is
@@ -36,6 +45,15 @@ const STEPS = [
   { name: "rust format", group: "rust", command: "cargo fmt --all --check" },
   { name: "rust lint", group: "rust", command: "cargo clippy --workspace --all-targets -- -D warnings" },
   { name: "rust tests", group: "rust", command: "cargo test --workspace" },
+  {
+    name: "supply chain",
+    group: "rust",
+    // The same command CI's supply chain job runs, over the same `deny.toml`: a policy file only ever
+    // read by a workflow is a policy file nobody notices has stopped matching the tree, and the
+    // licence and advisory rules are the ones that go stale quietly as dependencies move.
+    // Needs `cargo install cargo-deny`.
+    command: "cargo deny check licenses bans sources advisories",
+  },
 ];
 
 function parseArguments(argv) {
