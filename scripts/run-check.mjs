@@ -20,6 +20,14 @@ const STEPS = [
   { name: "provenance", group: "guards", command: "node scripts/check-provenance.mjs" },
   { name: "guard tests", group: "guards", command: 'node --test "scripts/tests/*.test.mjs"' },
   {
+    name: "installer template",
+    group: "guards",
+    // src-tauri/nsis/installer.nsi is generated from the template inside the CLI, and this is the
+    // comparison that keeps it that: a Tauri upgrade that changes the template fails here, by name,
+    // instead of shipping an installer built from a file nobody has looked at since.
+    command: "node scripts/sync-nsis-template.mjs --check",
+  },
+  {
     name: "format",
     group: "interface",
     // The globs are the script's own rather than repeated here: a copy of them in this file is a copy
