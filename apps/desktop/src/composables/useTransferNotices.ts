@@ -1,44 +1,30 @@
 /**
- * Says the one sentence a lost transfer deserves, when the list that would have shown it was not on
- * screen.
+ * Says the one sentence a lost transfer deserves, when the panel that would have shown it is put
+ * away.
  *
- * The transfer list is drawn inside a file browser, so a transfer that fails while the person is in
- * a terminal leaves no trace they would find on their own: nothing is drawn, nothing is counted, and
- * the row waits in a panel they have no reason to open. This is the "action whose context is gone"
- * case the toast exists for.
+ * A failed transfer leaves a row in the panel, and a pill is all that is left of the panel when
+ * somebody has tucked it away — a pill that says how much is going on and nothing about what
+ * happened. This is the "action whose context is gone" case the toast exists for, and its one action
+ * is the way back: the row waiting behind the pill.
  *
- * When a file browser *is* on screen, nothing is said: the list is already the notice, a failed row
- * that stays until it is dismissed, and one message must not have two homes — and a browser in the
- * file panel under a terminal counts as on screen, because it is. Either way the failure is consumed
- * here — whether it was visible was a fact about that moment, not about the failure.
+ * While the panel is *open* nothing is said, because the row is already the notice: it stays until
+ * it is dismissed, and one message must not have two homes. Either way the failure is consumed here —
+ * whether it was visible was a fact about that moment, not about the failure.
  */
 import { watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { useToast } from "@/composables/useToast";
 import { useFilesStore } from "@/stores/files";
-import { useTerminalsStore } from "@/stores/terminals";
 import type { TransferDirection } from "@/types/session";
 
 export function useTransferNotices(): void {
   const { t } = useI18n();
   const files = useFilesStore();
-  const terminals = useTerminalsStore();
   const { toast } = useToast();
 
   function directionLabel(direction: TransferDirection): string {
     return direction === "upload" ? t("files.transfer.direction.upload") : t("files.transfer.direction.download");
-  }
-
-  /**
-   * Every file browser shows the same list, so any of them can serve as the way back to it — a file
-   * tab, or the panel under a terminal, which is likewise a browser someone can be sent to.
-   */
-  function showTransfers(): void {
-    const target = [...terminals.tabs].reverse().find((entry) => terminals.browserHandleOf(entry) !== null);
-    if (target) {
-      terminals.activate(target.id);
-    }
   }
 
   watch(
@@ -49,9 +35,7 @@ export function useTransferNotices(): void {
       }
       files.attendFailures(waiting.map((entry) => entry.id));
 
-      const active = terminals.activeTab;
-      const listIsOnScreen = active !== null && terminals.browserHandleOf(active) !== null;
-      if (listIsOnScreen) {
+      if (files.panelExpanded) {
         return;
       }
 
@@ -60,12 +44,12 @@ export function useTransferNotices(): void {
         ? t("files.transfer.failedAway", { direction: directionLabel(only.direction), name: only.name })
         : t("files.transfer.failedAwayCount", { count: waiting.length });
 
-      const reachable = terminals.tabs.some((entry) => terminals.browserHandleOf(entry) !== null);
-      toast(
-        message,
-        "unseenFailure",
-        reachable ? { label: t("files.transfer.showList"), onClick: showTransfers } : undefined,
-      );
+      toast(message, "unseenFailure", {
+        label: t("files.transfer.showList"),
+        onClick: () => {
+          files.panelExpanded = true;
+        },
+      });
     },
   );
 }

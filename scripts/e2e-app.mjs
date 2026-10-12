@@ -20,6 +20,14 @@ import { DEV_PORT, listenersOn, portIsFree } from "./lib/dev-server.mjs";
 import { REPO_ROOT } from "./lib/descriptors.mjs";
 
 const DATA_DIR = path.join(REPO_ROOT, "e2e", ".run", "config");
+/**
+ * Where the seeded download folder is.
+ *
+ * Under the run's own directory rather than the person's, and named for the run so a test can look
+ * inside it: the folder is made by the application, and "it made one" is one of the things the
+ * end-to-end run checks.
+ */
+const DOWNLOAD_DIR = path.join(REPO_ROOT, "e2e", ".run", "downloads", "fsdownload");
 const DEBUG_PORT = Number(process.env.SEVENSHELL_E2E_PORT ?? 9222);
 const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 
@@ -116,6 +124,27 @@ async function main() {
     "utf8",
   );
 
+  // Where downloads land, written before the application starts.
+  //
+  // The one setting a test cannot set for itself: choosing a folder opens a *native* dialog, and a
+  // driver cannot answer one of those. Seeding the file is also what makes the download path
+  // testable at all — with a folder in force there is no dialog between the click and the bytes,
+  // which is exactly the case the end-to-end run exists to check. The folder itself is deliberately
+  // not created here: the application makes it, and the test is that it does.
+  await writeFile(
+    path.join(DATA_DIR, "downloads.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        current: DOWNLOAD_DIR,
+        history: [DOWNLOAD_DIR, path.join(DATA_DIR, "older-downloads")],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
   const app = spawn("pnpm", ["dev:tauri"], {
     cwd: REPO_ROOT,
     shell: true,
@@ -144,13 +173,21 @@ async function main() {
     const version = await waitForCdp(180_000);
     console.log(`attached to ${version.Browser ?? "the webview"} at ${CDP_URL}`);
 
+    // A name to run one case by, for the loop of writing a case and watching it: setting it is not
+    // the default, and the whole suite is what CI and the gate run. Quoted because this runs through
+    // a shell, where an unquoted name with a space in it would arrive as two arguments.
+    const grep = process.env.SEVENSHELL_E2E_GREP;
     tests = await new Promise((resolve) => {
-      const run = spawn("pnpm", ["exec", "playwright", "test", "--config", "e2e/playwright.config.ts"], {
-        cwd: REPO_ROOT,
-        shell: true,
-        stdio: "inherit",
-        env: { ...process.env, SEVENSHELL_E2E_CDP: CDP_URL },
-      });
+      const run = spawn(
+        "pnpm",
+        ["exec", "playwright", "test", "--config", "e2e/playwright.config.ts", ...(grep ? ["-g", `"${grep}"`] : [])],
+        {
+          cwd: REPO_ROOT,
+          shell: true,
+          stdio: "inherit",
+          env: { ...process.env, SEVENSHELL_E2E_CDP: CDP_URL },
+        },
+      );
       run.on("exit", (code) => resolve(code ?? 1));
     });
   } finally {

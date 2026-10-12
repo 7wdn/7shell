@@ -6,10 +6,12 @@
 //! window existing.
 
 pub mod background;
+pub mod downloads;
 pub mod fonts;
 pub mod paths;
 pub mod settings;
 
+pub use downloads::{DownloadFolder, HISTORY_LIMIT, downloads_file};
 pub use fonts::list_families;
 pub use paths::{APP_IDENTIFIER, config_dir, settings_file};
 pub use settings::{SETTINGS_SCHEMA_VERSION, load, load_from, save, save_to};

@@ -5,6 +5,7 @@
     "files": "{count} 项的操作",
     "directory": "目录操作",
     "transfer": "传输操作",
+    "downloadFolder": "下载位置",
     "tab": "标签页操作",
     "session": "会话操作",
     "group": "分组操作",

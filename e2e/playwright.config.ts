@@ -32,7 +32,11 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [["list"]],
   use: {
-    trace: "off",
+    // Off unless asked for: a trace is worth megabytes per case, and the reason to ask for one is a
+    // case that hung — which is exactly the failure a timeout reports worst. `SEVENSHELL_E2E_TRACE=1`
+    // leaves `e2e/test-results/<case>/trace.zip` behind, and its `trace.trace` lists every action with
+    // the one that never finished at the end.
+    trace: process.env.SEVENSHELL_E2E_TRACE === "1" ? "on" : "off",
     screenshot: "off",
   },
 });

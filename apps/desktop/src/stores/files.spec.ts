@@ -15,10 +15,20 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesUploadAnswer: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
+  transferStop: vi.fn(),
+  transferRemove: vi.fn(),
+  transferStopAll: vi.fn(),
+  transferClearSettled: vi.fn(),
+  transferOpen: vi.fn(),
+  transferReveal: vi.fn(),
   transferPause: vi.fn(),
   transferResume: vi.fn(),
   transferRetry: vi.fn(),
-  transferCancel: vi.fn(),
+  downloadFolderGet: vi.fn(),
+  downloadFolderChoose: vi.fn(),
+  downloadFolderSelect: vi.fn(),
+  downloadFolderAsk: vi.fn(),
+  downloadFolderReveal: vi.fn(),
 }));
 
 import {
@@ -31,11 +41,20 @@ import {
   filesRename,
   filesUpload,
   filesUploadAnswer,
-  transferCancel,
+  transferClearSettled,
+  transferOpen,
   transfersOpen,
   transferPause,
+  transferRemove,
   transferResume,
   transferRetry,
+  transferStop,
+  transferStopAll,
+  downloadFolderAsk,
+  downloadFolderChoose,
+  downloadFolderGet,
+  downloadFolderReveal,
+  downloadFolderSelect,
   droppedUpload,
   clipboardFiles,
 } from "@/lib/backend/tauri";
@@ -57,7 +76,16 @@ const transfersOpenMock = vi.mocked(transfersOpen);
 const transferPauseMock = vi.mocked(transferPause);
 const transferResumeMock = vi.mocked(transferResume);
 const transferRetryMock = vi.mocked(transferRetry);
-const transferCancelMock = vi.mocked(transferCancel);
+const transferStopMock = vi.mocked(transferStop);
+const transferRemoveMock = vi.mocked(transferRemove);
+const transferStopAllMock = vi.mocked(transferStopAll);
+const transferClearSettledMock = vi.mocked(transferClearSettled);
+const transferOpenMock = vi.mocked(transferOpen);
+const downloadFolderGetMock = vi.mocked(downloadFolderGet);
+const downloadFolderChooseMock = vi.mocked(downloadFolderChoose);
+const downloadFolderSelectMock = vi.mocked(downloadFolderSelect);
+const downloadFolderAskMock = vi.mocked(downloadFolderAsk);
+const downloadFolderRevealMock = vi.mocked(downloadFolderReveal);
 
 const sessionId = "session-1";
 const handle = "f1";
@@ -79,9 +107,11 @@ const download: TransferInfo = {
   direction: "download",
   name: "notes.txt",
   remotePath: "/home/user/notes.txt",
+  sessionId,
   size: 100,
   transferred: 40,
   state: { kind: "running" },
+  hasLocalPath: true,
   packed: false,
 };
 
@@ -93,9 +123,11 @@ const upload: TransferInfo = {
   direction: "upload",
   name: "notes.txt",
   remotePath: "/home/user/notes.txt",
+  sessionId,
   size: 10,
   transferred: 0,
   state: { kind: "running" },
+  hasLocalPath: true,
   packed: false,
 };
 
@@ -126,7 +158,16 @@ describe("files store", () => {
     transferPauseMock.mockReset().mockResolvedValue(undefined);
     transferResumeMock.mockReset().mockResolvedValue(undefined);
     transferRetryMock.mockReset().mockResolvedValue(undefined);
-    transferCancelMock.mockReset().mockResolvedValue(undefined);
+    transferStopMock.mockReset().mockResolvedValue(undefined);
+    transferRemoveMock.mockReset().mockResolvedValue(undefined);
+    transferStopAllMock.mockReset().mockResolvedValue(undefined);
+    transferClearSettledMock.mockReset().mockResolvedValue(undefined);
+    transferOpenMock.mockReset().mockResolvedValue(undefined);
+    downloadFolderGetMock.mockReset().mockResolvedValue({ current: null, history: [] });
+    downloadFolderChooseMock.mockReset().mockResolvedValue(undefined);
+    downloadFolderSelectMock.mockReset();
+    downloadFolderAskMock.mockReset();
+    downloadFolderRevealMock.mockReset();
   });
 
   afterEach(() => {
@@ -328,15 +369,126 @@ describe("files store", () => {
     expect(store.unattendedFailures).toHaveLength(1);
   });
 
-  it("stops a transfer through the backend and drops the row", async () => {
+  it("asks a transfer to stop and keeps the row, which is what the outcome is drawn on", async () => {
+    const stopped: TransferInfo = { ...download, state: { kind: "cancelled" } };
+    transfersOpenMock.mockResolvedValueOnce([download]).mockResolvedValueOnce([stopped]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    await store.stopTransfer(download.id);
+
+    expect(transferStopMock).toHaveBeenCalledWith(download.id);
+    expect(store.transfers.map((row) => row.id)).toEqual([download.id]);
+    expect(store.transfers[0]?.state).toEqual({ kind: "cancelled" });
+  });
+
+  it("removes a transfer through the backend and drops the row", async () => {
     transfersOpenMock.mockResolvedValueOnce([download]).mockResolvedValueOnce([]);
 
     const store = useFilesStore();
     await store.refreshTransfers();
-    await store.cancelTransfer(download.id);
+    await store.removeTransfer(download.id);
 
-    expect(transferCancelMock).toHaveBeenCalledWith(download.id);
+    expect(transferRemoveMock).toHaveBeenCalledWith(download.id);
     expect(store.transfers).toEqual([]);
+  });
+
+  it("clears what has stopped and lets the backend decide what that means", async () => {
+    // What is left after the clear: the one that is still moving. The rule that a tidy-up never
+    // cancels anything lives in the core, and this is the call that gets it there.
+    transfersOpenMock
+      .mockResolvedValueOnce([download, { ...upload, state: { kind: "done" } }])
+      .mockResolvedValueOnce([download]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    await store.clearSettledTransfers();
+
+    expect(transferClearSettledMock).toHaveBeenCalled();
+    expect(store.transfers.map((row) => row.id)).toEqual([download.id]);
+  });
+
+  it("stops everything through one call, rather than one call per row", async () => {
+    transfersOpenMock
+      .mockResolvedValueOnce([download, { ...upload, state: { kind: "paused" } }])
+      .mockResolvedValueOnce([]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    await store.stopAllTransfers();
+
+    expect(transferStopAllMock).toHaveBeenCalledTimes(1);
+    expect(transferStopMock).not.toHaveBeenCalled();
+  });
+
+  it("opens a transfer by its id and leaves the list alone", async () => {
+    transfersOpenMock.mockResolvedValue([{ ...download, state: { kind: "done" } }]);
+
+    const store = useFilesStore();
+    await store.refreshTransfers();
+    const reads = transfersOpenMock.mock.calls.length;
+    await store.openTransfer(download.id);
+
+    expect(transferOpenMock).toHaveBeenCalledWith(download.id);
+    // Opening a file manager is not a change to the transfer list, so nothing is read again.
+    expect(transfersOpenMock.mock.calls.length).toBe(reads);
+  });
+
+  it("reads where downloads land, and keeps it as the backend describes it", async () => {
+    downloadFolderGetMock.mockResolvedValue({ current: "fsdownload", history: ["fsdownload", "Desktop"] });
+
+    const store = useFilesStore();
+    await store.loadDownloadFolder();
+
+    expect(store.downloadFolder).toEqual({ current: "fsdownload", history: ["fsdownload", "Desktop"] });
+  });
+
+  it("keeps the answer to the folder picker, and nothing at all when it was dismissed", async () => {
+    downloadFolderChooseMock.mockResolvedValueOnce({ current: "Desktop", history: ["Desktop", "fsdownload"] });
+    downloadFolderChooseMock.mockResolvedValueOnce(undefined);
+
+    const store = useFilesStore();
+    await store.chooseDownloadFolder("Choose where downloads go");
+    expect(store.downloadFolder).toEqual({ current: "Desktop", history: ["Desktop", "fsdownload"] });
+
+    // Closing the dialog is somebody changing their mind: what was in force stays in force.
+    await store.chooseDownloadFolder("Choose where downloads go");
+    expect(store.downloadFolder).toEqual({ current: "Desktop", history: ["Desktop", "fsdownload"] });
+  });
+
+  it("takes the list the backend answers with after a choice, rather than guessing it", async () => {
+    downloadFolderSelectMock.mockResolvedValue({ current: "Desktop", history: ["Desktop", "fsdownload"] });
+    downloadFolderAskMock.mockResolvedValue({ current: null, history: ["Desktop", "fsdownload"] });
+
+    const store = useFilesStore();
+    await store.useDownloadFolder(1);
+    expect(store.downloadFolder?.current).toEqual("Desktop");
+
+    await store.askForDownloadFolder();
+    expect(store.downloadFolder?.current).toBeNull();
+    expect(
+      store.downloadFolder?.history,
+      "going back to asking does not throw away the way back to a folder",
+    ).toHaveLength(2);
+  });
+
+  it("opens the download folder by asking, since the interface has no path to give", async () => {
+    const store = useFilesStore();
+    await store.revealDownloadFolder();
+
+    expect(downloadFolderRevealMock).toHaveBeenCalled();
+  });
+
+  it("opens the panel when a transfer that was not there before appears", async () => {
+    transfersOpenMock.mockResolvedValueOnce([]).mockResolvedValueOnce([download]);
+
+    const store = useFilesStore();
+    store.panelExpanded = false;
+    await store.refreshTransfers();
+    expect(store.panelExpanded).toBe(false);
+
+    await store.refreshTransfers();
+    expect(store.panelExpanded).toBe(true);
   });
 
   it("holds a transfer and lets it go through the same call, one reading each", async () => {

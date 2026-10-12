@@ -1,9 +1,9 @@
 /**
- * The policy half of the transfer notice: say it only when the list that would have shown it is not
- * on screen, and consume it either way.
+ * The policy half of the transfer notice: say it only when the panel that would have shown it is put
+ * away, and consume it either way.
  *
- * The stores are replaced with small fakes because the question here is not what the stores do —
- * that is their own spec's job — but what this policy decides about what is on screen.
+ * The store is replaced with a small fake because the question here is not what the store does — that
+ * is its own spec's job — but what this policy decides about what is on screen.
  */
 import { createApp, defineComponent, h, nextTick, reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,18 +14,6 @@ interface FailedTransfer {
   name: string;
 }
 
-interface WorkspaceTab {
-  id: string;
-  kind: "terminal" | "files";
-  /**
-   * The browser this tab is drawing, if it is drawing one.
-   *
-   * The real store answers this from a file tab's own handle or from the panel under a terminal;
-   * what the policy asks is only ever "is there a list here", so the fake says it directly.
-   */
-  browser?: string;
-}
-
 /**
  * `reactive` rather than `ref`s, because that is what a Pinia store hands back: the properties are
  * the values, not wrappers around them, and a watcher on one has to see the assignment.
@@ -33,17 +21,10 @@ interface WorkspaceTab {
 const files = reactive({
   unattendedFailures: [] as ReadonlyArray<FailedTransfer>,
   attendFailures: vi.fn<(ids: readonly string[]) => void>(),
-});
-
-const terminals = reactive({
-  tabs: [] as ReadonlyArray<WorkspaceTab>,
-  activeTab: null as WorkspaceTab | null,
-  activate: vi.fn<(id: string) => void>(),
-  browserHandleOf: (tab: WorkspaceTab): string | null => tab.browser ?? null,
+  panelExpanded: false,
 });
 
 vi.mock("@/stores/files", () => ({ useFilesStore: () => files }));
-vi.mock("@/stores/terminals", () => ({ useTerminalsStore: () => terminals }));
 
 import { useToast } from "@/composables/useToast";
 import { useTransferNotices } from "@/composables/useTransferNotices";
@@ -52,7 +33,6 @@ import { i18n } from "@/i18n";
 const { message, tier, action, visible, toast } = useToast();
 
 const { attendFailures } = files;
-const { activate } = terminals;
 
 const Host = defineComponent({
   setup() {
@@ -76,20 +56,13 @@ function mount(): void {
   };
 }
 
-const FILE_TAB = { id: "tab-files", kind: "files", browser: "f1" } as const;
-const TERMINAL_TAB = { id: "tab-terminal", kind: "terminal" } as const;
-/** A terminal with its file panel open: the second place a browser can be drawn. */
-const PANEL_TAB = { id: "tab-panel", kind: "terminal", browser: "f2" } as const;
-
 const DOWNLOAD_FAILED = { id: "x1", direction: "download", name: "notes.txt" } as const;
 
 describe("what a failed transfer says", () => {
   beforeEach(() => {
     files.unattendedFailures = [];
+    files.panelExpanded = false;
     attendFailures.mockReset();
-    terminals.tabs = [];
-    terminals.activeTab = null;
-    activate.mockReset();
     visible.value = false;
     action.value = undefined;
   });
@@ -100,10 +73,8 @@ describe("what a failed transfer says", () => {
     document.body.innerHTML = "";
   });
 
-  it("names the file when the list is not the thing on screen", async () => {
+  it("names the file when the panel is tucked away", async () => {
     mount();
-    terminals.tabs = [FILE_TAB];
-    terminals.activeTab = TERMINAL_TAB;
 
     files.unattendedFailures = [DOWNLOAD_FAILED];
     await nextTick();
@@ -113,60 +84,30 @@ describe("what a failed transfer says", () => {
     expect(visible.value).toBe(true);
   });
 
-  it("offers the way back to the list, since every browser shows the same one", async () => {
+  it("offers the panel as the way back, rather than sending anybody to a tab", async () => {
     mount();
-    terminals.tabs = [TERMINAL_TAB, FILE_TAB];
-    terminals.activeTab = TERMINAL_TAB;
 
     files.unattendedFailures = [DOWNLOAD_FAILED];
     await nextTick();
 
     expect(action.value?.label).toBe("Show transfers");
     action.value?.onClick();
-    expect(activate).toHaveBeenCalledWith(FILE_TAB.id);
+    expect(files.panelExpanded).toBe(true);
   });
 
   it("says nothing when the failed row is already on screen, and still consumes it", async () => {
     mount();
-    terminals.tabs = [FILE_TAB];
-    terminals.activeTab = FILE_TAB;
+    files.panelExpanded = true;
 
     files.unattendedFailures = [DOWNLOAD_FAILED];
     await nextTick();
 
     expect(visible.value).toBe(false);
     expect(attendFailures).toHaveBeenCalledWith([DOWNLOAD_FAILED.id]);
-  });
-
-  it("counts the file panel under a terminal as the list being on screen", async () => {
-    mount();
-    terminals.tabs = [PANEL_TAB];
-    terminals.activeTab = PANEL_TAB;
-
-    files.unattendedFailures = [DOWNLOAD_FAILED];
-    await nextTick();
-
-    expect(visible.value).toBe(false);
-    expect(attendFailures).toHaveBeenCalledWith([DOWNLOAD_FAILED.id]);
-  });
-
-  it("offers the panel under a terminal as the way back to the list", async () => {
-    mount();
-    terminals.tabs = [TERMINAL_TAB, PANEL_TAB];
-    terminals.activeTab = TERMINAL_TAB;
-
-    files.unattendedFailures = [DOWNLOAD_FAILED];
-    await nextTick();
-
-    expect(action.value?.label).toBe("Show transfers");
-    action.value?.onClick();
-    expect(activate).toHaveBeenCalledWith(PANEL_TAB.id);
   });
 
   it("counts them when several arrive in the same read", async () => {
     mount();
-    terminals.tabs = [FILE_TAB];
-    terminals.activeTab = TERMINAL_TAB;
 
     files.unattendedFailures = [DOWNLOAD_FAILED, { id: "x2", direction: "upload", name: "photo.jpg" }];
     await nextTick();
@@ -174,21 +115,8 @@ describe("what a failed transfer says", () => {
     expect(message.value).toBe("2 transfers failed");
   });
 
-  it("offers no action when there is no browser left to open", async () => {
-    mount();
-    terminals.tabs = [TERMINAL_TAB];
-    terminals.activeTab = TERMINAL_TAB;
-
-    files.unattendedFailures = [DOWNLOAD_FAILED];
-    await nextTick();
-
-    expect(visible.value).toBe(true);
-    expect(action.value).toBeUndefined();
-  });
-
   it("stays quiet while nothing has failed", async () => {
     mount();
-    terminals.activeTab = TERMINAL_TAB;
 
     await nextTick();
     toast("something else", "confirmation");

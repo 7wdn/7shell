@@ -373,6 +373,7 @@
       },
       "actions": {
         "uploadClipboard": "上传剪贴板中的文件",
+      "toggleTransfers": "显示传输面板",
         "terminalFind": "在终端里查找",
         "completionAccept": "取用方向键指到的那一行",
         "completionTrigger": "打开联想列表"

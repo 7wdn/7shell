@@ -144,6 +144,20 @@ Two rules the interface depends on:
   its task; the interface polls the list while something is running, which costs a read of a few
   counters and saves a second event channel whose only job would be to move a number.
 
+**Downloads can be given a folder once, and then they stop asking.** The folder is chosen through the
+same native picker and kept beside the settings rather than in them — the settings travel to the
+interface whole, so a path there would be a path the interface could write back, and invariant 6
+would be gone. What crosses is the folder's *name*, the list of names used before, and the two things
+the interface can do with them: ask for the picker again, or name one of the rows. Two consequences
+follow from that and are deliberate: the folder is created on the way in — one that has to be made by
+hand after a cleanup is one nobody keeps — and a download whose name already exists there replaces it
+without a question, because the question a save dialog used to ask is exactly what having a folder
+removes. Nothing has been chosen means every download still asks, which is what an installation
+nobody has configured does. The panel itself is reachable whether or not anything is moving — a button
+in the window's own bar, which carries the count of what is still going, and a key from the table of
+reserved keys — because "where do downloads land" is a question somebody has *before* the first one,
+and it used to be answerable only afterwards.
+
 **A transfer never writes the name it was asked for until it has the whole thing.** Both directions
 write beside their target — `notes.txt.7shell-part` — and rename it into place once every byte has
 arrived, so a half-written file never wears the name somebody checks, on either end. The same fact
@@ -158,8 +172,24 @@ watches because it is the layer that knows what the source was. Cancelling remov
 (somebody said stop); failing keeps it, because the next thing they will try is the retry button.
 A failure nobody retries leaves one file, clearly named, that is theirs to delete.
 
-Three things can be done to a transfer — hold a running one, let a paused one go, try a stopped one
-again — and the row has one button that says which of the three it is.
+Five things can be done to a transfer, and they are deliberately not each other. **Hold** a running
+one; **let a paused one go**; **try a stopped one again**, from wherever it stopped. Then the two
+that end something: **stop** asks the bytes to stop and leaves the row saying it was cancelled,
+while **remove** takes the row away — stopping the transfer first if it is still moving, because
+"I am done with this row" about bytes that are still arriving can only mean they should stop
+arriving. A row's own button is whichever of the first three that row needs next; the rest live in
+its menu, together with the two entries about the file: **open** (finished transfers only — a part
+file handed to an application looks like a file that is merely short) and **show in folder** (any
+state, which is how the part file of a stopped transfer is found). Both name the *row*, not a path:
+the local end was chosen in a native dialog and is looked up where it was kept, which is what keeps
+invariant 6 true of the feature that uses it most.
+
+A transfer belongs to its **session**, not to the file panel it was started from. It holds the
+channel it is moving bytes over for as long as it runs, so closing the tab takes away the browsing
+and nothing else — and the list, which is the only place left that can stop it, is drawn by the shell
+rather than by the browser. The list opens itself when a transfer starts, tucks into a pill when
+somebody clicks elsewhere, and is cleared of what has stopped by `clear_settled_transfers`, which
+touches nothing that is still moving: a tidy-up must not be a destructive answer.
 
 ### Two panes
 

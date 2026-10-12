@@ -82,6 +82,8 @@ error_catalog! {
     FsGrantUnknown => "FS-GRANT-UNKNOWN", "errors.fs.grantUnknown";
     #[doc = "The file token expired or was revoked when the vault locked."]
     FsGrantExpired => "FS-GRANT-EXPIRED", "errors.fs.grantExpired";
+    #[doc = "The system's file manager could not be asked to show a location."]
+    FsOpenFailed => "FS-OPEN-FAILED", "errors.fs.openFailed";
 
     // -- Persistence -------------------------------------------------------
     #[doc = "Reading or writing application state failed."]

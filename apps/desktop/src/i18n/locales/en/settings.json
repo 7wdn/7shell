@@ -373,6 +373,7 @@
       },
       "actions": {
         "uploadClipboard": "Upload the files on the clipboard",
+      "toggleTransfers": "Show the transfers",
         "terminalFind": "Find in the terminal",
         "completionAccept": "Take the row the arrows are on",
         "completionTrigger": "Open the completion list"

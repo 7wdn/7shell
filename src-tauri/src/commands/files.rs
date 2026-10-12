@@ -9,13 +9,17 @@
 //! far side are checked first, and a name that is taken comes back as a question rather than as a
 //! transfer. The files that were chosen wait in `uploads` while the question is answered.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use sevenshell_error::ShellError;
-use sevenshell_types::{EntryKind, SftpListing, SftpOutcome, TransferInfo, UploadAnswer, UploadOutcome};
+use sevenshell_platform::downloads::{self, DownloadFolder};
+use sevenshell_types::{
+    DownloadFolderView, EntryKind, SftpListing, SftpOutcome, TransferInfo, UploadAnswer, UploadOutcome,
+};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::reveal::{self, Show};
 use crate::state::ShellState;
 use crate::uploads::PendingUpload;
 
@@ -82,7 +86,7 @@ pub async fn files_write_text(
     state.core().write_text_file(&handle, &path, &text).await
 }
 
-/// Closes a file browser, and cancels whatever it was still moving.
+/// Closes a file browser. Whatever it was moving keeps moving.
 #[tauri::command]
 pub async fn files_close(state: State<'_, ShellState>, handle: String) -> Result<(), ShellError> {
     state.core().close_files(&handle).await
@@ -94,9 +98,60 @@ pub async fn transfers_open(state: State<'_, ShellState>) -> Result<Vec<Transfer
     Ok(state.core().transfers().await)
 }
 
+/// Asks one transfer to stop. The row stays, and says it was cancelled.
 #[tauri::command]
-pub async fn transfer_cancel(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
-    state.core().cancel_transfer(&id).await
+pub async fn transfer_stop(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().stop_transfer(&id).await
+}
+
+/// Takes one transfer off the list, stopping it first if it is still moving.
+#[tauri::command]
+pub async fn transfer_remove(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    state.core().remove_transfer(&id).await
+}
+
+/// Asks everything that is still moving to stop, leaving every row to say so.
+#[tauri::command]
+pub async fn transfer_stop_all(state: State<'_, ShellState>) -> Result<(), ShellError> {
+    state.core().stop_active_transfers().await
+}
+
+/// Takes the transfers that have stopped off the list, and leaves what is moving alone.
+#[tauri::command]
+pub async fn transfer_clear_settled(state: State<'_, ShellState>) -> Result<(), ShellError> {
+    state.core().clear_settled_transfers().await
+}
+
+/// Opens one transfer's local end with whatever this system opens it with.
+///
+/// The interface passes the row it is about and nothing else. Only a transfer that finished is
+/// opened: a half-written file is not something to hand to an application, and a transfer that is
+/// still moving is one whose bytes are not all there yet. A row this side cannot find is left
+/// alone rather than reported — it is the same "already gone" that stopping one twice means.
+#[tauri::command]
+pub async fn transfer_open(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    let Some(end) = state.core().transfer_local_end(&id).await else {
+        return Ok(());
+    };
+    if !end.done {
+        return Ok(());
+    }
+
+    reveal::show(&end.path, Show::Open)
+}
+
+/// Shows where one transfer's local end is, with the file marked when it is there.
+///
+/// Allowed in every state, unlike opening: a transfer that stopped part-way is exactly the one
+/// somebody wants to find the part file of, and "where did it put it" is a question about transfers
+/// that failed as much as about ones that worked.
+#[tauri::command]
+pub async fn transfer_reveal(state: State<'_, ShellState>, id: String) -> Result<(), ShellError> {
+    let Some(end) = state.core().transfer_local_end(&id).await else {
+        return Ok(());
+    };
+
+    reveal::show(&end.path, Show::Select)
 }
 
 /// Holds a transfer where it is, keeping its connection and what it has already copied.
@@ -141,6 +196,29 @@ pub async fn files_download(
 ) -> Result<Vec<String>, ShellError> {
     if paths.is_empty() {
         return Ok(Vec::new());
+    }
+
+    // Somebody has said where downloads go: no dialog, no naming, straight into that folder. The
+    // folder is made if it is not there, which is what a download folder is for — one that has to be
+    // recreated by hand after every cleanup is a folder that stops being used.
+    if let Some(folder) = sevenshell_platform::downloads::load()?.current().map(Path::to_path_buf) {
+        ensure_folder(&folder, &paths[0])?;
+
+        if packed {
+            return state
+                .core()
+                .start_packed_download(&handle, &paths, folder)
+                .await
+                .map(|id| vec![id]);
+        }
+
+        // Every case lands the same way here, single file included: the file keeps its own name,
+        // because with no dialog there is nobody to ask for another one.
+        let mut started = Vec::with_capacity(paths.len());
+        for path in &paths {
+            started.push(state.core().start_download_into(&handle, path, &folder).await?);
+        }
+        return Ok(started);
     }
 
     // One archive, opened where somebody says: directories, files, or a mixture of the two.
@@ -193,6 +271,105 @@ pub async fn files_download(
         .start_download(&handle, &paths[0], local)
         .await
         .map(|id| vec![id])
+}
+
+/// Where downloads land, as the interface is told about it: the folder's own name, and the names of
+/// the folders used before.
+///
+/// No path crosses this boundary, on purpose and by the same rule the transfer list follows — the
+/// folder was chosen in a native dialog, so what the interface can do is *ask for it*, name a row
+/// from the list, or ask for the dialog back. Where the bytes actually go is looked up on this side.
+#[tauri::command]
+pub async fn download_folder_get() -> Result<DownloadFolderView, ShellError> {
+    Ok(view_of(&downloads::load()?))
+}
+
+/// Asks which folder downloads should land in, and remembers it.
+///
+/// Answers with nothing when the dialog was dismissed, which is somebody changing their mind rather
+/// than a failure — and nothing about the folder has changed either.
+#[tauri::command]
+pub async fn download_folder_choose(app: AppHandle, title: String) -> Result<Option<DownloadFolderView>, ShellError> {
+    let chosen = spawn_dialog(move || app.dialog().file().set_title(title).blocking_pick_folder()).await?;
+    let Some(chosen) = chosen else {
+        return Ok(None);
+    };
+    // The picker answers with a real path on every platform this ships on, so this is a branch that
+    // should not be reachable: it is reported as an internal failure rather than as anything about
+    // the folder, because a sentence about a folder would send somebody looking at their disk.
+    let path: PathBuf = chosen.into_path().map_err(|error| {
+        ShellError::app_internal(format!("the folder picker answered with something unusable: {error}"))
+    })?;
+
+    let mut folder = downloads::load()?;
+    folder.choose(path);
+    downloads::save(&folder)?;
+
+    Ok(Some(view_of(&folder)))
+}
+
+/// Makes the folder at `index` of the remembered list the one downloads land in.
+///
+/// An index from a list that has changed under the pointer is stale rather than wrong: the answer is
+/// the list as it is now, which is what the interface draws.
+#[tauri::command]
+pub async fn download_folder_select(index: usize) -> Result<DownloadFolderView, ShellError> {
+    let mut folder = downloads::load()?;
+    folder.select(index);
+    downloads::save(&folder)?;
+
+    Ok(view_of(&folder))
+}
+
+/// Stops using a fixed folder, so every download asks again. What was used stays in the list.
+#[tauri::command]
+pub async fn download_folder_ask() -> Result<DownloadFolderView, ShellError> {
+    let mut folder = downloads::load()?;
+    folder.ask();
+    downloads::save(&folder)?;
+
+    Ok(view_of(&folder))
+}
+
+/// Shows where downloads land, in this system's file manager.
+///
+/// Nothing to show when every download asks, which is not a failure: there is no folder that belongs
+/// to this question yet.
+#[tauri::command]
+pub async fn download_folder_reveal() -> Result<(), ShellError> {
+    let Some(folder) = downloads::load()?.current().map(Path::to_path_buf) else {
+        return Ok(());
+    };
+
+    reveal::show(&folder, Show::Open)
+}
+
+/// What the interface is told about a folder: its own name, never where it is.
+fn view_of(folder: &DownloadFolder) -> DownloadFolderView {
+    DownloadFolderView {
+        current: folder.current().map(folder_name),
+        history: folder.history().iter().map(|path| folder_name(path)).collect(),
+    }
+}
+
+/// A folder's own name, which is what a person recognises.
+///
+/// A path with no last segment — the root of a drive — is shown as itself: there is nothing shorter
+/// that means anything, and a root is not a place somebody has to be protected from reading.
+fn folder_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+/// Makes sure the download folder is there.
+///
+/// The failure is reported against the *remote* file: where the folder is on this machine is exactly
+/// what the interface is never told, so it cannot be part of what the interface is told went wrong.
+fn ensure_folder(folder: &Path, remote: &str) -> Result<(), ShellError> {
+    std::fs::create_dir_all(folder).map_err(|error| {
+        ShellError::sftp_transfer_failed(remote, format!("the download folder could not be created: {error}"))
+    })
 }
 
 /// Asks which local files to send, then copies them into a remote directory.
@@ -369,4 +546,62 @@ where
     tauri::async_runtime::spawn_blocking(dialog)
         .await
         .map_err(|error| ShellError::app_internal(format!("the file dialog could not be opened: {error}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_is_shown_by_its_own_name() {
+        assert_eq!(folder_name(Path::new("/home/me/fsdownload")), "fsdownload");
+        assert_eq!(folder_name(Path::new(r"C:\Users\me\Desktop\fsdownload")), "fsdownload");
+    }
+
+    #[test]
+    fn a_folder_with_no_name_of_its_own_is_shown_as_itself() {
+        // The root of a drive is somewhere somebody can point a download folder at, and a blank name
+        // would be a row in the list that says nothing at all.
+        assert_eq!(folder_name(Path::new("/")), "/");
+        assert_eq!(folder_name(Path::new(r"C:\")), r"C:\");
+    }
+
+    #[test]
+    fn a_download_folder_that_cannot_be_made_fails_against_the_file_not_the_folder() {
+        // A file where the folder's parent should be: `create_dir_all` cannot make anything under it.
+        let directory = tempfile::tempdir().expect("temp dir");
+        let blocker = directory.path().join("blocker");
+        std::fs::write(&blocker, "not a folder").expect("write the blocker");
+        let folder = blocker.join("downloads");
+
+        let error = ensure_folder(&folder, "/home/labuser/notes.txt").expect_err("it cannot be created");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SftpTransferFailed);
+        assert_eq!(
+            error.message_params().get("path").map(String::as_str),
+            Some("/home/labuser/notes.txt"),
+            "a failure is reported against the file that was being fetched"
+        );
+        assert!(
+            !error.to_string().contains("blocker"),
+            "and never against where the folder is on this machine: {}",
+            error
+        );
+    }
+
+    #[test]
+    fn a_folder_that_is_already_there_is_left_alone() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let folder = directory.path().join("downloads");
+        std::fs::create_dir_all(&folder).expect("make it once");
+        std::fs::write(folder.join("already-here.txt"), "kept").expect("put something in it");
+
+        ensure_folder(&folder, "/home/labuser/notes.txt").expect("making it again is not an error");
+
+        assert_eq!(
+            std::fs::read_to_string(folder.join("already-here.txt")).expect("read it back"),
+            "kept",
+            "a folder that is there is used as it is, with what is in it"
+        );
+    }
 }

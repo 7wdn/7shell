@@ -310,11 +310,17 @@ onBeforeUnmount(detach);
 
 <template>
   <Teleport to="body">
+    <!--
+      `data-menu-layer` is on both lists because a menu is not always the only layer on screen: a
+      panel that opened one has to be able to tell a click on its own menu from a click somewhere
+      else, and an id is what lets it say so without reaching into what this component draws.
+    -->
     <div
       v-if="visible"
       ref="box"
       role="menu"
       tabindex="-1"
+      data-menu-layer
       :aria-label="label"
       :aria-activedescendant="rootActiveId"
       :class="boxClass"
@@ -340,6 +346,7 @@ onBeforeUnmount(detach);
       ref="submenuBox"
       role="menu"
       tabindex="-1"
+      data-menu-layer
       :aria-label="label"
       :aria-activedescendant="submenuActiveId"
       :class="boxClass"

@@ -10,8 +10,10 @@
  * 1. **A download and an upload ask for a local path in Rust.** The interface names neither: each
  *    call answers with a transfer id, or with nothing when the dialog was dismissed — and a
  *    dismissed dialog is somebody changing their mind, so nothing at all is recorded for it.
- * 2. **Closing a browser cancels whatever it was still moving**, which is why closing re-reads the
- *    transfer list rather than leaving rows behind that are already gone.
+ * 2. **A transfer outlives the browser it was started from.** It holds the channel it is moving
+ *    bytes over for as long as it runs, so closing a file tab takes away the browsing and nothing
+ *    else: the row stays in the list until it is stopped or removed, and `settle` keeps looking for
+ *    the directories it lands things in among the browsers that are still open.
  *
  * A browser can also be moved by the thing it belongs to. A terminal's file panel follows the shell
  * under it — `cd /data` in the terminal takes the panel to /data — and that arrives here as
@@ -27,6 +29,7 @@ import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { parentPath } from "@/lib/files/format";
 import { resolveDirectory } from "@/lib/terminal/follow";
 import type {
+  DownloadFolderView,
   SftpEntry,
   SftpListing,
   SftpOutcome,
@@ -359,9 +362,28 @@ export const useFilesStore = defineStore("files", () => {
       return asShellError(error, "files_close");
     }
     delete browsers.value[handle];
-    // Closing cancelled whatever this browser was still moving, so the list has changed.
+    // Whatever this browser was still moving keeps moving, and its row goes on being drawn — the
+    // list is the shell's now, and a transfer nobody can see is a transfer nobody can stop.
     await refreshTransfers();
     return null;
+  }
+
+  /**
+   * Whether the transfer panel is drawn open rather than tucked into its pill.
+   *
+   * It lives here rather than in the panel because what opens it is a transfer *starting*, and that
+   * edge is known where the list is read: a panel watching the list would have to work out "just
+   * started" a second time, from a snapshot that no longer holds the moment it happened.
+   */
+  const panelExpanded = ref(false);
+
+  /** Opens it, or puts it back to the pill. The pill is always the way back. */
+  function togglePanel(): void {
+    panelExpanded.value = !panelExpanded.value;
+  }
+
+  function collapsePanel(): void {
+    panelExpanded.value = false;
   }
 
   /**
@@ -369,7 +391,7 @@ export const useFilesStore = defineStore("files", () => {
    *
    * Polling rather than events: a transfer is started by a command and outlives it, so there is no
    * call left for the backend to answer into. Half a second of counters is one small read, and a
-   * second event channel would have to be kept in step with the list the strip already draws.
+   * second event channel would have to be kept in step with the list the panel already draws.
    */
   async function refreshTransfers(): Promise<void> {
     try {
@@ -391,9 +413,16 @@ export const useFilesStore = defineStore("files", () => {
   async function settle(): Promise<void> {
     const landed: string[] = [];
     const stopped: UnattendedTransferFailure[] = [];
+    let started = false;
     for (const transfer of transfers.value) {
       const previous = lastStates.get(transfer.id);
       lastStates.set(transfer.id, transfer.state.kind);
+      // A transfer nobody has seen before is one that has just been started — including one that
+      // finished before the first read saw it moving. It is what opens the panel: an upload started
+      // from a terminal should be visible without anybody going to look for it.
+      if (previous === undefined) {
+        started = true;
+      }
       const arrived = previous !== "done" && transfer.state.kind === "done";
       if (arrived && transfer.direction === "upload") {
         // A packed upload lands the files *in* the directory it was aimed at; an ordinary one lands a
@@ -413,6 +442,12 @@ export const useFilesStore = defineStore("files", () => {
 
     if (stopped.length > 0) {
       unattendedFailures.value = [...unattendedFailures.value, ...stopped];
+    }
+
+    // Opened after the failures are accounted for, so a transfer that failed instantly is announced
+    // by the panel it opened rather than by a toast about a list nobody could see.
+    if (started) {
+      panelExpanded.value = true;
     }
 
     for (const open of Object.values(browsers.value)) {
@@ -436,18 +471,156 @@ export const useFilesStore = defineStore("files", () => {
   }
 
   /**
-   * Stops a transfer.
+   * Asks a transfer to stop. The row stays, and goes on saying it was cancelled.
    *
-   * The same call takes a finished record off the list: the backend drops it from its map, and a
-   * second click on a transfer that is already gone is deliberately not an error.
+   * Not the same as removing it, and the difference is visible: stopping is a fact about the bytes,
+   * and a row that vanished the moment somebody asked it to stop would leave them unable to tell a
+   * cancellation from a failure they slept through.
    */
-  async function cancelTransfer(id: string): Promise<void> {
+  async function stopTransfer(id: string): Promise<void> {
     transferFailure.value = null;
     try {
-      await backend.transfers.cancel(id);
+      await backend.transfers.stop(id);
       await refreshTransfers();
     } catch (error) {
-      transferFailure.value = asShellError(error, "transfer_cancel");
+      transferFailure.value = asShellError(error, "transfer_stop");
+    }
+  }
+
+  /**
+   * Takes a transfer off the list, stopping it first if it is still moving.
+   *
+   * This is the delete. For a row that is still moving it is also the cancellation — "I am done
+   * with this" about bytes that are still arriving can only mean they should stop arriving — and
+   * for one that has already stopped it only takes the record away.
+   */
+  async function removeTransfer(id: string): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.transfers.remove(id);
+      await refreshTransfers();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "transfer_remove");
+    }
+  }
+
+  /** Asks everything that is still moving to stop, leaving every row to say so. */
+  async function stopAllTransfers(): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.transfers.stopAll();
+      await refreshTransfers();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "transfer_stop_all");
+    }
+  }
+
+  /**
+   * Takes the transfers that have stopped off the list.
+   *
+   * Only those: what is running or waiting is still going to happen, and a tidy-up that cancelled it
+   * would be a destructive answer to a question nobody asked dangerously. Stopping everything is its
+   * own button, and it says what it does.
+   */
+  async function clearSettledTransfers(): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.transfers.clearSettled();
+      await refreshTransfers();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "transfer_clear_settled");
+    }
+  }
+
+  /**
+   * Opens a finished transfer's local file.
+   *
+   * The path is looked up on the other side — this side has never held it — so all that goes out is
+   * the row's id. Nothing is re-read afterwards: what the file manager did is not a change to the
+   * list.
+   */
+  async function openTransfer(id: string): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.transfers.open(id);
+    } catch (error) {
+      transferFailure.value = asShellError(error, "transfer_open");
+    }
+  }
+
+  /** Shows where a transfer's local end is, which is how the part file of a stopped one is found. */
+  async function revealTransfer(id: string): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.transfers.reveal(id);
+    } catch (error) {
+      transferFailure.value = asShellError(error, "transfer_reveal");
+    }
+  }
+
+  /**
+   * Where downloads land, as the backend is willing to describe it: a name, or nothing.
+   *
+   * Nothing means every download asks, and that is the state an installation nobody has configured
+   * is in — so `null` is not "unset", it is a choice, and the strip says which one is in force.
+   */
+  const downloadFolder = ref<DownloadFolderView | null>(null);
+
+  /**
+   * Reads where downloads land.
+   *
+   * Read once when the shell comes up and after every change, rather than polled: this changes when
+   * somebody chooses, and a choice is followed by the answer that says what changed.
+   */
+  async function loadDownloadFolder(): Promise<void> {
+    try {
+      downloadFolder.value = await backend.downloads.folder();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "download_folder_get");
+    }
+  }
+
+  /** Asks where downloads should land, in Rust, and remembers the answer. */
+  async function chooseDownloadFolder(title: string): Promise<void> {
+    transferFailure.value = null;
+    try {
+      const chosen = await backend.downloads.chooseFolder(title);
+      // Closing the dialog is somebody changing their mind: nothing changed, so nothing is written.
+      if (chosen) {
+        downloadFolder.value = chosen;
+      }
+    } catch (error) {
+      transferFailure.value = asShellError(error, "download_folder_choose");
+    }
+  }
+
+  /** Makes one of the remembered folders the one downloads land in. */
+  async function useDownloadFolder(index: number): Promise<void> {
+    transferFailure.value = null;
+    try {
+      downloadFolder.value = await backend.downloads.useFolder(index);
+    } catch (error) {
+      transferFailure.value = asShellError(error, "download_folder_select");
+    }
+  }
+
+  /** Goes back to asking, which is what somebody who wants the save dialog back is saying. */
+  async function askForDownloadFolder(): Promise<void> {
+    transferFailure.value = null;
+    try {
+      downloadFolder.value = await backend.downloads.askEachTime();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "download_folder_ask");
+    }
+  }
+
+  /** Shows where downloads land, in this system's file manager. */
+  async function revealDownloadFolder(): Promise<void> {
+    transferFailure.value = null;
+    try {
+      await backend.downloads.revealFolder();
+    } catch (error) {
+      transferFailure.value = asShellError(error, "download_folder_reveal");
     }
   }
 
@@ -638,7 +811,21 @@ export const useFilesStore = defineStore("files", () => {
     upload,
     close,
     refreshTransfers,
-    cancelTransfer,
+    panelExpanded,
+    togglePanel,
+    collapsePanel,
+    stopTransfer,
+    removeTransfer,
+    stopAllTransfers,
+    clearSettledTransfers,
+    openTransfer,
+    revealTransfer,
+    downloadFolder,
+    loadDownloadFolder,
+    chooseDownloadFolder,
+    useDownloadFolder,
+    askForDownloadFolder,
+    revealDownloadFolder,
     setTransferPaused,
     retryTransfer,
     dismissTransferFailure,

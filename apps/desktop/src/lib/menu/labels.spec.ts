@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { i18n } from "@/i18n";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import { downloadFolderMenu } from "./downloads";
 import { fileAreaMenu, fileEntryMenu } from "./files";
 import { connectionMenu, environmentMenu, listenerMenu, processDetailMenu, processRowMenu } from "./inspect";
 import { diskMenu, monitorProcessMenu } from "./monitor";
@@ -22,7 +23,7 @@ import { transferMenu } from "./transfers";
 import type { MenuEntry } from "./types";
 import { tabMenu } from "./workspace";
 import type { DiskUsage, EnvironmentEntry, ProcessDetail, ProcessSample, SocketRow } from "@/types/monitor";
-import type { OpenTunnel, Session, SessionGroup, SftpEntry, TransferInfo } from "@/types/session";
+import type { DownloadFolderView, OpenTunnel, Session, SessionGroup, SftpEntry, TransferInfo } from "@/types/session";
 
 const LOCALES = ["en", "zh-CN"] as const;
 
@@ -90,11 +91,16 @@ const transfer: TransferInfo = {
   direction: "download",
   name: "nginx.conf",
   remotePath: "/etc/nginx/nginx.conf",
+  sessionId: session.id,
   size: 1024,
   transferred: 512,
   state: { kind: "running" },
+  hasLocalPath: true,
   packed: false,
 };
+
+/** Where downloads land, as the interface is told about it: names, and a tick by position. */
+const downloadFolder: DownloadFolderView = { current: "fsdownload", history: ["fsdownload", "Desktop"] };
 
 const nothing = () => {};
 
@@ -173,8 +179,19 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
       ),
     },
     {
+      title: MENU_TITLES.downloadFolder,
+      entries: downloadFolderMenu(downloadFolder, { use: nothing, choose: nothing, ask: nothing }),
+    },
+    {
       title: MENU_TITLES.transfer,
-      entries: transferMenu(transfer, { cancel: nothing, setPaused: nothing, retry: nothing }),
+      entries: transferMenu(transfer, {
+        stop: nothing,
+        remove: nothing,
+        open: nothing,
+        reveal: nothing,
+        setPaused: nothing,
+        retry: nothing,
+      }),
     },
     {
       title: MENU_TITLES.tab,

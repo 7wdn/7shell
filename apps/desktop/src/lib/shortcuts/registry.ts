@@ -15,6 +15,7 @@
 
 export type ShortcutActionId =
   | "global.uploadClipboard"
+  | "global.toggleTransfers"
   | "terminal.find"
   | "commands.completionAccept"
   | "commands.completionTrigger";
@@ -40,6 +41,14 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     scope: "global",
     labelKey: "settings.shortcuts.actions.uploadClipboard",
     defaultBinding: "Mod+V",
+  },
+  // Shifted on purpose: every plain control combination belongs to the terminal — Ctrl+J is a newline
+  // and Ctrl+D ends its input — and this panel has to be openable while somebody is typing in one.
+  {
+    id: "global.toggleTransfers",
+    scope: "global",
+    labelKey: "settings.shortcuts.actions.toggleTransfers",
+    defaultBinding: "Mod+Shift+D",
   },
   {
     id: "terminal.find",

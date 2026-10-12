@@ -26,7 +26,8 @@
     },
     "fs": {
       "grantUnknown": "That file was not chosen through the file dialog, so it cannot be read.",
-      "grantExpired": "Access to that file ended when the vault was locked."
+      "grantExpired": "Access to that file ended when the vault was locked.",
+      "openFailed": "That location could not be opened on this system."
     },
     "store": {
       "io": "Application state could not be written.",

@@ -22,6 +22,7 @@ import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types
 import type { HostSystem } from "@/types/system";
 import type {
   CreatedKey,
+  DownloadFolderView,
   KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
@@ -202,12 +203,51 @@ export const backend = {
 
   transfers: {
     list: (): Promise<TransferInfo[]> => forward("transfers_open", () => desktop.transfersOpen()),
-    cancel: (id: string): Promise<void> => forward("transfer_cancel", () => desktop.transferCancel(id)),
+
+    /**
+     * Asks one transfer to stop. The row stays and says it was cancelled.
+     *
+     * Not the same as removing it, and the difference is the point: stopping is a fact about the
+     * bytes, and a row that disappeared the moment somebody asked would leave them unable to tell a
+     * cancellation from a failure they slept through.
+     */
+    stop: (id: string): Promise<void> => forward("transfer_stop", () => desktop.transferStop(id)),
+    /** Takes one off the list, stopping it first if it is still moving. */
+    remove: (id: string): Promise<void> => forward("transfer_remove", () => desktop.transferRemove(id)),
+    /** Asks everything that is still moving to stop, leaving every row to say so. */
+    stopAll: (): Promise<void> => forward("transfer_stop_all", () => desktop.transferStopAll()),
+    /** Takes the transfers that have stopped off the list, and leaves what is moving alone. */
+    clearSettled: (): Promise<void> => forward("transfer_clear_settled", () => desktop.transferClearSettled()),
+    /** Opens the local end of a finished transfer. The path is looked up on the other side. */
+    open: (id: string): Promise<void> => forward("transfer_open", () => desktop.transferOpen(id)),
+    /** Shows where a transfer's local end is, in this system's file manager. */
+    reveal: (id: string): Promise<void> => forward("transfer_reveal", () => desktop.transferReveal(id)),
     /** Holds a running transfer where it is, keeping its connection and its part of the file. */
     pause: (id: string): Promise<void> => forward("transfer_pause", () => desktop.transferPause(id)),
     resume: (id: string): Promise<void> => forward("transfer_resume", () => desktop.transferResume(id)),
     /** Runs a stopped transfer again, continuing from wherever it stopped. */
     retry: (id: string): Promise<void> => forward("transfer_retry", () => desktop.transferRetry(id)),
+  },
+
+  /**
+   * Where downloads land, when somebody has said where that is.
+   *
+   * A folder picked once means every download lands there without a dialog, which is the difference
+   * between downloading ten files and answering ten dialogs. What travels is the folder's own name —
+   * the picker runs in Rust and the path stays there, so choosing is asking for a dialog rather than
+   * naming a place.
+   */
+  downloads: {
+    folder: (): Promise<DownloadFolderView> => forward("download_folder_get", () => desktop.downloadFolderGet()),
+    /** Answers with nothing when the dialog was dismissed, which is not a change. */
+    chooseFolder: (title: string): Promise<DownloadFolderView | undefined> =>
+      forward("download_folder_choose", () => desktop.downloadFolderChoose(title)),
+    /** Makes one of the remembered folders the one downloads land in. */
+    useFolder: (index: number): Promise<DownloadFolderView> =>
+      forward("download_folder_select", () => desktop.downloadFolderSelect(index)),
+    /** Goes back to asking, which is what an installation nobody has configured does. */
+    askEachTime: (): Promise<DownloadFolderView> => forward("download_folder_ask", () => desktop.downloadFolderAsk()),
+    revealFolder: (): Promise<void> => forward("download_folder_reveal", () => desktop.downloadFolderReveal()),
   },
 
   sessions: {

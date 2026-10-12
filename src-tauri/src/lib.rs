@@ -8,6 +8,7 @@ mod clipboard;
 mod close;
 mod commands;
 mod dropped;
+mod reveal;
 mod state;
 mod tray;
 mod uploads;
@@ -171,8 +172,18 @@ pub fn run() {
             commands::files::files_download,
             commands::files::files_upload,
             commands::files::files_upload_answer,
+            commands::files::download_folder_get,
+            commands::files::download_folder_choose,
+            commands::files::download_folder_select,
+            commands::files::download_folder_ask,
+            commands::files::download_folder_reveal,
             commands::files::transfers_open,
-            commands::files::transfer_cancel,
+            commands::files::transfer_stop,
+            commands::files::transfer_remove,
+            commands::files::transfer_stop_all,
+            commands::files::transfer_clear_settled,
+            commands::files::transfer_open,
+            commands::files::transfer_reveal,
             commands::files::transfer_pause,
             commands::files::transfer_resume,
             commands::files::transfer_retry,

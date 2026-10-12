@@ -27,6 +27,7 @@ import type {
 } from "@/types/snippet";
 import type {
   CreatedKey,
+  DownloadFolderView,
   KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
@@ -597,8 +598,70 @@ export function clipboardFiles(): Promise<PendingFiles> {
   return invoke<PendingFiles>("clipboard_files");
 }
 
-export function transferCancel(id: string): Promise<void> {
-  return invoke<void>("transfer_cancel", { id });
+/** Asks one transfer to stop. The row stays, and goes on saying it was cancelled. */
+export function transferStop(id: string): Promise<void> {
+  return invoke<void>("transfer_stop", { id });
+}
+
+/** Takes one transfer off the list, stopping it first if it is still moving. */
+export function transferRemove(id: string): Promise<void> {
+  return invoke<void>("transfer_remove", { id });
+}
+
+/** Asks everything that is still moving to stop, leaving every row to say so. */
+export function transferStopAll(): Promise<void> {
+  return invoke<void>("transfer_stop_all");
+}
+
+/** Takes the transfers that have stopped off the list, and leaves what is moving alone. */
+export function transferClearSettled(): Promise<void> {
+  return invoke<void>("transfer_clear_settled");
+}
+
+/**
+ * Opens one transfer's local end, by the row it is about.
+ *
+ * The path stays on the other side: it was chosen in a native dialog and the interface has never
+ * held it. Only a finished transfer is opened — the other side checks that itself, so a click that
+ * arrives late does nothing rather than handing a half-written file to an application.
+ */
+export function transferOpen(id: string): Promise<void> {
+  return invoke<void>("transfer_open", { id });
+}
+
+/** Shows where one transfer's local end is, which is how the part file of a stopped one is found. */
+export function transferReveal(id: string): Promise<void> {
+  return invoke<void>("transfer_reveal", { id });
+}
+
+/** Where downloads land: the folder's own name, and the names of the folders used before. */
+export function downloadFolderGet(): Promise<DownloadFolderView> {
+  return invoke<DownloadFolderView>("download_folder_get");
+}
+
+/**
+ * Asks which folder downloads should land in, and remembers it.
+ *
+ * The dialog runs in Rust, so the answer is a name rather than a path — and `null` is somebody
+ * closing it, which is not a failure and not a change.
+ */
+export function downloadFolderChoose(title: string): Promise<DownloadFolderView | undefined> {
+  return invoke<DownloadFolderView | null>("download_folder_choose", { title }).then((view) => view ?? undefined);
+}
+
+/** Makes one of the remembered folders the one downloads land in. */
+export function downloadFolderSelect(index: number): Promise<DownloadFolderView> {
+  return invoke<DownloadFolderView>("download_folder_select", { index });
+}
+
+/** Stops using a fixed folder, so every download asks again. What was used stays in the list. */
+export function downloadFolderAsk(): Promise<DownloadFolderView> {
+  return invoke<DownloadFolderView>("download_folder_ask");
+}
+
+/** Shows where downloads land, in the system's file manager. */
+export function downloadFolderReveal(): Promise<void> {
+  return invoke<void>("download_folder_reveal");
 }
 
 /** Holds a transfer where it is, keeping its connection and what it has already copied. */

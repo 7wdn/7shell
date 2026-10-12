@@ -13,10 +13,10 @@ address, a path, a version, a line of output — so the test for any surface is 
 somebody paste this somewhere?
 
 1. **The shell is not text.** The window's bar, the session library, the tabs, the strips, the file
-   listing, the directory tree, the menus and the drag handles. A drag in those places means moving,
-   resizing or scrolling, and a selection smeared over a toolbar is noise the person then has to
-   clear. Every one of them offers what it holds another way: a row's menu copies its name, its path
-   or its address.
+   listing, the directory tree, the transfer list, the menus and the drag handles. A drag in those
+   places means moving, resizing or scrolling, and a selection smeared over a toolbar is noise the
+   person then has to clear. Every one of them offers what it holds another way: a row's menu copies
+   its name, its path or its address.
 2. **A control is not text, and neither is a name.** A button's label, a heading, a column heading
    and a field's name are what the interface *says*; the reading beside them is what somebody copies.
    A drag that starts on a button otherwise takes its label — and the icon inside it, as a highlighted
@@ -50,6 +50,7 @@ somebody paste this somewhere?
 | Buttons, headings, column headings, field names | no | a control says what it does; the reading beside it is the text |
 | The strip naming the connections of a port | no | it is the heading of the table under it; the row above holds the same values |
 | Monitor panel | no | it is an instrument; the address has its own button and the rows have menus. The failure block is the one exception |
+| Transfer list panel | no | rows are pressed and their menus copy what they hold; the panel floats over the listing, so a drag that lands on it was meant for the listing. The failure lines — the banner over the list and a row's own reason — are the exception |
 | Sidebar search, rename fields, command bar, file editor | yes | text being typed |
 | Terminal screen | yes, its own way | xterm's selection and menu, not the DOM's |
 | Host pages: system, processes, network | yes | readings, paths and command lines — the surfaces people copy from |

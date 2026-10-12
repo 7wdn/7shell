@@ -840,6 +840,217 @@ async fn a_transfer_can_be_held_and_let_go_again() {
     clear_workspace(&lab, &handle, &workspace).await;
 }
 
+/// A transfer is not the tab's: closing the browser that started it takes away the browsing.
+///
+/// The row has to still be there afterwards, because with the file panel gone the list is the only
+/// place left that can show or stop it — and a 2 GB upload that died because somebody tidied a panel
+/// away would be a worse answer than a transfer outliving the tab.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_transfer_keeps_going_when_the_browser_that_started_it_is_closed() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    let text = payload(60_000);
+    let remote = format!("{workspace}/survives.txt");
+    lab.core
+        .write_text_file(&handle, &remote, &text)
+        .await
+        .expect("write the file to download");
+
+    let scratch = tempdir().expect("temp dir");
+    let target = scratch.path().join("survives.txt");
+    let id = lab
+        .core
+        .start_download(&handle, &remote, target.clone())
+        .await
+        .expect("start the download");
+
+    lab.core.close_files(&handle).await.expect("close the browser");
+
+    // The browser is really closed, so the assertion below cannot pass by the close having quietly
+    // done nothing.
+    assert!(
+        lab.core.list_files(&handle, ".").await.is_err(),
+        "a closed browser is closed"
+    );
+    let listed = lab
+        .core
+        .transfers()
+        .await
+        .into_iter()
+        .find(|transfer| transfer.id == id);
+    assert!(
+        listed.is_some(),
+        "the transfer went with the panel that started it, and nobody can see or stop it now"
+    );
+
+    assert_eq!(
+        lab.settle(&id).await,
+        TransferState::Done,
+        "it finished with nobody watching"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("read the local file"),
+        text,
+        "closing the browser did not cost the transfer any of its bytes"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+/// The list the panel draws knows whose bytes each row is, and where its local end is.
+///
+/// This is what the two entries about the file are decided by, and neither answer may be a path: the
+/// row says only that there is one.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_row_says_which_session_it_is_for_and_whether_it_has_a_local_end() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    let remote = format!("{workspace}/placed.txt");
+    lab.core
+        .write_text_file(&handle, &remote, "a few bytes\n")
+        .await
+        .expect("write the file to download");
+
+    let scratch = tempdir().expect("temp dir");
+    let target = scratch.path().join("placed.txt");
+    let id = lab
+        .core
+        .start_download(&handle, &remote, target.clone())
+        .await
+        .expect("start the download");
+    assert_eq!(lab.settle(&id).await, TransferState::Done, "the download finished");
+
+    let info = row(&lab, &id).await;
+    assert_eq!(
+        info.session_id, lab.session_id,
+        "the row names the session it moved bytes for"
+    );
+    assert!(info.has_local_path, "a download knows where it put the file");
+
+    // What the two entries that use it are answered with: the path and whether it may be opened.
+    let end = lab
+        .core
+        .transfer_local_end(&id)
+        .await
+        .expect("this transfer has a local end");
+    assert_eq!(end.path, target);
+    assert!(end.done, "a finished transfer may be opened");
+
+    // And a packed upload has none: the archive that carried the files was deleted once read.
+    let source = scratch.path().join("packed-not-placed.txt");
+    std::fs::write(&source, "one of several\n").expect("write a local file");
+    let packed = lab
+        .core
+        .start_packed_upload(&handle, vec![source], &workspace)
+        .await
+        .expect("start the packed upload");
+    assert_eq!(lab.settle(&packed).await, TransferState::Done, "the upload finished");
+    assert!(
+        lab.core.transfer_local_end(&packed).await.is_none(),
+        "a packed upload has no single local end to point at"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+/// Stopping keeps the row; removing takes it away. Clearing takes away only what has stopped.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn stopping_keeps_the_row_and_clearing_leaves_what_is_still_moving() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // One that has finished, and one that is being held: the two states a "clear" has to tell apart.
+    let small = format!("{workspace}/settled.txt");
+    lab.core
+        .write_text_file(&handle, &small, "done already\n")
+        .await
+        .expect("write the small file");
+    let scratch = tempdir().expect("temp dir");
+    let settled = lab
+        .core
+        .start_download(&handle, &small, scratch.path().join("settled.txt"))
+        .await
+        .expect("start the small download");
+    assert_eq!(
+        lab.settle(&settled).await,
+        TransferState::Done,
+        "the small one finished"
+    );
+
+    // Big enough that holding it lands while it is still moving, with the same retry as the hold
+    // test uses: a machine fast enough to finish first is not a reason for a different assertion.
+    let big = format!("{workspace}/held.txt");
+    lab.core
+        .write_text_file(&handle, &big, &payload(120_000))
+        .await
+        .expect("write the big file");
+    let mut held = None;
+    for attempt in 0..3 {
+        let id = lab
+            .core
+            .start_download(&handle, &big, scratch.path().join("held.txt"))
+            .await
+            .expect("start the big download");
+        lab.core.pause_transfer(&id).await.expect("hold it");
+
+        if row(&lab, &id).await.state == TransferState::Paused {
+            held = Some(id);
+            break;
+        }
+        assert!(
+            attempt < 2,
+            "three attempts in a row finished before they could be held"
+        );
+    }
+    let id = held.expect("the transfer was held");
+
+    lab.core
+        .clear_settled_transfers()
+        .await
+        .expect("clear what has stopped");
+    let rows = lab.core.transfers().await;
+    assert!(
+        !rows.iter().any(|transfer| transfer.id == settled),
+        "the finished transfer was still on the list after a clear"
+    );
+    assert!(
+        rows.iter().any(|transfer| transfer.id == id),
+        "a clear took away a transfer that is still going to happen"
+    );
+
+    // Stopping it leaves the row behind, saying what happened — which is not something a person
+    // could tell if the row had simply vanished.
+    lab.core.stop_transfer(&id).await.expect("stop it");
+    assert_eq!(
+        row(&lab, &id).await.state,
+        TransferState::Cancelled,
+        "a stopped transfer says it was cancelled"
+    );
+
+    // And removing is what takes the row away.
+    lab.core.remove_transfer(&id).await.expect("remove it");
+    assert!(
+        !lab.core.transfers().await.iter().any(|transfer| transfer.id == id),
+        "a removed transfer is gone from the list"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
 #[tokio::test]
 #[ignore = "needs the SSH lab with its fixtures: see deploy/lab/README.md"]
 async fn a_directory_with_fifty_thousand_entries_is_read_in_reasonable_time() {

@@ -5,6 +5,7 @@
     "files": "Actions for {count} items",
     "directory": "Directory actions",
     "transfer": "Transfer actions",
+    "downloadFolder": "Download location",
     "tab": "Tab actions",
     "session": "Session actions",
     "group": "Group actions",

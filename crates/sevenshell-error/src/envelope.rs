@@ -375,6 +375,17 @@ impl ShellError {
         Self::new(ErrorCode::FsGrantExpired, Origin::new(Subsystem::Fs)).with_outcome(OperationOutcome::Rejected)
     }
 
+    /// The system could not be asked to show a location.
+    ///
+    /// No path in the message, on purpose: the sentence is one somebody reads in the interface, and
+    /// where a file is on this machine is exactly what the interface is never told of. The detail
+    /// carries what the system said, which is where a missing file manager shows up.
+    pub fn fs_open_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FsOpenFailed, Origin::new(Subsystem::Fs))
+            .with_outcome(OperationOutcome::Rejected)
+            .with_detail(detail)
+    }
+
     // -- Persistence -------------------------------------------------------
 
     pub fn session_not_found(id: &str) -> Self {

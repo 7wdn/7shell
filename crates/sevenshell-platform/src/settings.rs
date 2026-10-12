@@ -362,7 +362,11 @@ pub fn save(settings: &AppSettings) -> Result<(), ShellError> {
     save_to(&path, settings)
 }
 
-fn write_atomically(path: &Path, contents: &[u8]) -> Result<(), ShellError> {
+/// Writes bytes to `path`, atomically.
+///
+/// Shared with the other file this crate keeps, so that "an interrupted write leaves the previous
+/// file readable" is one rule rather than one per file.
+pub(crate) fn write_atomically(path: &Path, contents: &[u8]) -> Result<(), ShellError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| ShellError::store_io(format!("cannot create {}: {error}", parent.display())))?;

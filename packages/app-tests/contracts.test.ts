@@ -7,7 +7,7 @@
  * fails when the two sides disagree about a code, a message key or a field name.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -226,6 +226,7 @@ describe("wire types", () => {
       "SftpEntry",
       "SftpListing",
       "TransferInfo",
+      "DownloadFolderView",
       "SessionExportSummary",
       "SessionImportSummary",
     ]) {
@@ -238,8 +239,29 @@ describe("wire types", () => {
     }
   });
 
-  it("has no field a secret could travel out in", () => {
-    // Invariant 1: a password travels inwards only. What the DTOs carry is a boolean saying one
+  it("names no path in any wire type", () => {
+    // Invariant 6, checked where a path could sneak in without anybody noticing: a DTO field typed as
+    // one. Everything in that crate is handed to the interface, so a `PathBuf` there *is* a path the
+    // interface holds — and the answer to "the interface needs to know about this file" is never to
+    // put the file in the DTO. It is to hand over a name and keep the path on the side that writes the
+    // bytes: the export summary says `file_name`, and the download folder is a folder's own name.
+    // Either of those would fail here if somebody typed it as a path instead.
+    const sources = readdirSync(path.join(REPO_ROOT, "crates", "sevenshell-types", "src"))
+      .filter((name) => name.endsWith(".rs"))
+      .map((name) => read(path.join("crates", "sevenshell-types", "src", name)));
+
+    expect(sources.length, "no source was read, so the comparison proves nothing").toBeGreaterThan(0);
+
+    const offenders = sources.flatMap((source) =>
+      [...source.matchAll(/^\s{4}pub ([a-z_][a-z0-9_]*)\s*:\s*([^,\n]*)/gm)]
+        .filter((match) => /\bPath(Buf)?\b/.test(match[2] ?? ""))
+        .map((match) => `${match[1]} (${(match[2] ?? "").trim()})`),
+    );
+
+    expect(offenders, "a wire type holds a path, and what the interface gets is names").toEqual([]);
+  });
+
+  it("has no field a secret could travel out in", () => {    // Invariant 1: a password travels inwards only. What the DTOs carry is a boolean saying one
     // is stored — so a field named like a secret, other than those two booleans, is a bug.
     const rust = read("crates/sevenshell-types/src/session.rs");
     const fields = [

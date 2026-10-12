@@ -13,6 +13,8 @@ export const MENU_TITLES = {
   files: "menu.files",
   directory: "menu.directory",
   transfer: "menu.transfer",
+  /** The list behind the download folder strip: where downloads land, and where they used to. */
+  downloadFolder: "menu.downloadFolder",
   tab: "menu.tab",
   session: "menu.session",
   group: "menu.group",

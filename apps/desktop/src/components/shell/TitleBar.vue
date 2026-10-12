@@ -11,7 +11,7 @@
  *
  * On macOS the bar keeps its native traffic lights, so the content is inset to make room.
  */
-import { ChevronsRight, ListChecks, Monitor, Moon, Settings, Sun } from "@lucide/vue";
+import { ArrowUpDown, ChevronsRight, ListChecks, Monitor, Moon, Settings, Sun } from "@lucide/vue";
 import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -19,6 +19,7 @@ import AppMark from "@/components/brand/AppMark.vue";
 import WindowControls from "@/components/shell/WindowControls.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import { useAppStore } from "@/stores/app";
+import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 
@@ -26,6 +27,7 @@ const { t } = useI18n();
 const app = useAppStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
+const files = useFilesStore();
 
 const { isMac, showControls, isMaximized, minimize, toggleMaximize, close } = useWindowControls(
   () => app.info?.os ?? "",
@@ -65,6 +67,19 @@ const settingsShowing = computed(() => terminals.activeTab?.kind === "settings")
 
 /** The same "is it already the one on screen" answer, for the batch panel's button. */
 const batchShowing = computed(() => terminals.activeTab?.kind === "batch");
+
+/**
+ * What the transfers button is carrying: how many are still moving, and whether anything stopped
+ * badly.
+ *
+ * On the button rather than only in the panel, because the panel is not always on screen — and the
+ * question somebody has while it is away is exactly "is anything happening, and did anything go
+ * wrong", which is a count and a colour rather than a list.
+ */
+const movingTransfers = computed(
+  () => files.transfers.filter((entry) => entry.state.kind === "running" || entry.state.kind === "paused").length,
+);
+const failedTransfers = computed(() => files.transfers.some((entry) => entry.state.kind === "failed"));
 </script>
 
 <template>
@@ -99,6 +114,41 @@ const batchShowing = computed(() => terminals.activeTab?.kind === "batch");
     </button>
 
     <div data-tauri-drag-region class="h-full min-w-4 flex-1"></div>
+
+    <!--
+      The way to the transfers without one, and the reason it is here rather than in a menu: the panel
+      used to appear only when a transfer did, which left somebody who wanted to look at it — or at
+      the folder downloads land in — waiting for one to happen. It carries the count of what is still
+      moving, so "is anything going on" is answerable without pressing it.
+    -->
+    <button
+      type="button"
+      data-transfers-toggle
+      class="relative grid size-8 place-items-center rounded-md transition-colors"
+      :class="
+        files.panelExpanded
+          ? 'bg-accent text-foreground'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      "
+      :title="t('files.transfer.title')"
+      :aria-label="t('files.transfer.title')"
+      :aria-pressed="files.panelExpanded"
+      @click="files.togglePanel()"
+    >
+      <ArrowUpDown :size="15" />
+      <span
+        v-if="movingTransfers > 0"
+        data-transfers-count
+        class="absolute -top-0.5 -right-0.5 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground"
+      >
+        {{ movingTransfers }}
+      </span>
+      <span
+        v-else-if="failedTransfers"
+        data-transfers-count
+        class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-destructive"
+      ></span>
+    </button>
 
     <button
       type="button"

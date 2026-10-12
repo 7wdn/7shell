@@ -41,8 +41,17 @@ pub(crate) enum HostKeyDecision {
 pub struct TransferRecord {
     pub(crate) info: TransferInfo,
     pub(crate) progress: Arc<sevenshell_sftp::TransferProgress>,
-    /// The task driving it, so a cancellation can wait for the file handles to be released.
-    pub(crate) task: tokio::task::JoinHandle<()>,
+    /// The task driving it, so whoever stops it can wait for the file handles to be released.
+    ///
+    /// An `Option` because a handle can be awaited exactly once: stopping and removing both take it,
+    /// and what is left behind is the truth — a transfer with nothing running behind it any more.
+    pub(crate) task: Option<tokio::task::JoinHandle<()>>,
+    /// Where this transfer's local end is, when there is one.
+    ///
+    /// Kept here rather than in `info` because it must not cross to the interface: it was chosen in
+    /// a native dialog, and what the interface asks for instead is *this row* — the id — so that
+    /// opening the file, or showing where it is, happens entirely on this side.
+    pub(crate) local: Option<std::path::PathBuf>,
     /// How to run this transfer again, for the retry button.
     ///
     /// The core is the only place that can hold this: the local end of a transfer was chosen in a

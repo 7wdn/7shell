@@ -35,7 +35,6 @@ import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
-import TransferList from "@/components/files/TransferList.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
@@ -1209,8 +1208,6 @@ function openAreaMenu(event: MouseEvent): void {
             :style="{ top: `${marquee.top}px`, height: `${marquee.bottom - marquee.top}px` }"
           ></div>
         </div>
-
-        <TransferList />
       </div>
     </div>
 

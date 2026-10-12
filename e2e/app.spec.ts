@@ -5,6 +5,8 @@
  * records what is on screen and takes a screenshot, so the selectors the real cases use come from
  * the interface itself instead of from a guess.
  */
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3328,11 +3330,14 @@ test("a directory with fifty thousand entries does not draw fifty thousand rows"
     }
 
     // The files half of the panel under the terminal, opened if it is not already showing.
-    await expect(openPanel.or(filesToggle).or(listing).first()).toBeVisible({ timeout: 30_000 });
+    // Whether the panel is opening by itself — a session's layout decides that — has to settle before
+    // it is read. The button that opens it is on screen the whole time, so waiting on *it* proves
+    // nothing, and while a panel is opening neither that button nor the listing is showing: a click
+    // landing in that window closes what is opening. This preamble has lost that race once, which is
+    // why what it waits for here is the settled state rather than the always-present button.
+    await expect(listing.or(openPanel).first()).toBeVisible({ timeout: 30_000 });
     if (await openPanel.isVisible()) {
       await openPanel.click();
-    } else if (!(await listing.isVisible())) {
-      await filesToggle.click();
     }
     await expect(listing).toBeVisible({ timeout: 30_000 });
 
@@ -3370,6 +3375,335 @@ test("a directory with fifty thousand entries does not draw fifty thousand rows"
     // The panel is still the one under this terminal, and the case ends with it open: the next case
     // copes with either state, and a click that only tidies up is a click that can only fail.
     await expect(page.getByTitle("Close the file panel")).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The transfer panel, through the window: it appears on its own, tucks away, and comes back whole.
+ *
+ * The transfer is started by pasting a file that the *operating system* put on the clipboard. Not
+ * because pasting is the interesting part, but because it is the one way to start a transfer here:
+ * a download and an upload both ask for a local path in a native dialog, and a driver cannot answer
+ * a native dialog — while a paste arrives with the path already decided, on the side that can read
+ * it. That is also why the file is put there by PowerShell rather than by the page: what the
+ * backend reads has to be a real file on this machine, or nothing would be uploaded at all.
+ *
+ * It needs a server, so it skips when the lab is not configured. What it proves that the store's own
+ * spec cannot: that the panel is drawn by the shell, that a transfer arriving from the backend is
+ * what opens it, that a click somewhere else puts it away without touching the transfer, and that
+ * what comes back is the same row, still moving towards the same end.
+ */
+test("a transfer shows itself, tucks away, and is still there when it comes back", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    // A session of its own, like the batch and the big-directory cases, so nothing another test did
+    // to the list matters here.
+    const name = `lab-transfer-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+
+    // The file panel under the terminal, opened if it is not already showing — the same race and the
+    // same memory the big-directory case copes with.
+    const trust = page.getByRole("button", { name: "Trust this key and connect" });
+    const listing = page.getByRole("listbox", { name: "Files", exact: true });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    const openPanel = page.getByTitle("Open the file panel under this terminal");
+
+    await expect(trust.or(openPanel).or(filesToggle).or(listing).first()).toBeVisible({ timeout: 30_000 });
+    if (await trust.isVisible()) {
+      await trust.click();
+    }
+    // Whether the panel is opening by itself — a session's layout decides that — has to settle before
+    // it is read. The button that opens it is on screen the whole time, so waiting on *it* proves
+    // nothing, and while a panel is opening neither that button nor the listing is showing: a click
+    // landing in that window closes what is opening. This preamble has lost that race once, which is
+    // why what it waits for here is the settled state rather than the always-present button.
+    await expect(listing.or(openPanel).first()).toBeVisible({ timeout: 30_000 });
+    if (await openPanel.isVisible()) {
+      await openPanel.click();
+    }
+    await expect(listing).toBeVisible({ timeout: 30_000 });
+
+    // The file the transfer is about, on this machine's clipboard and nowhere else. It is named for
+    // this run so that nothing already on the far side can turn the upload into a question.
+    const fileName = `7shell-e2e-paste-${Date.now() % 1000000}.txt`;
+    const source = path.join(HERE, ".run", fileName);
+    await mkdir(path.dirname(source), { recursive: true });
+    await writeFile(source, "pasted into the lab\n", "utf8");
+    execFileSync("powershell", ["-NoProfile", "-Command", `Set-Clipboard -Path '${source}'`], { stdio: "pipe" });
+
+    // Nothing is drawn before there is anything to draw: the panel is not a permanent fixture of the
+    // window, it is what a transfer brings with it.
+    await expect(page.locator("[data-transfer-panel]")).toHaveCount(0);
+    await expect(page.locator("[data-transfer-pill]")).toHaveCount(0);
+
+    await listing.click();
+    await page.keyboard.press("Control+V");
+
+    // It opens by itself, and the row says what is moving. Whose bytes they are is *not* written on
+    // it here: the session label is drawn only when the list holds more than one session to tell
+    // apart, and on the usual list a label saying "the session you are in" on every row is a column
+    // of noise. That it appears when there are two is its own case in the panel's spec.
+    const panel = page.locator("[data-transfer-panel]");
+    const row = page.locator("[data-transfer-row]");
+    await expect(panel).toBeVisible({ timeout: 30_000 });
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText(fileName);
+    await expect(row.locator("[data-transfer-session]")).toHaveCount(0);
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "transfer-panel.png"), fullPage: false });
+
+    // A drag across the panel takes nothing with it, which is a claim about the browser's own
+    // selection and can only be measured in the real window: the panel is a list of rows that are
+    // pressed, and a drag that lands on it was meant for the listing it floats over. The drag also
+    // must not be read as a click somewhere else — the panel stays open while a row is dragged on.
+    const rowBox = await row.boundingBox();
+    if (!rowBox) {
+      throw new Error("the row has no box to be dragged across");
+    }
+    await page.mouse.move(rowBox.x + 6, rowBox.y + 6);
+    await page.mouse.down();
+    await page.mouse.move(rowBox.x + rowBox.width / 2, rowBox.y + rowBox.height / 2, { steps: 4 });
+    await page.mouse.move(rowBox.x + rowBox.width - 6, rowBox.y + rowBox.height - 6, { steps: 4 });
+    await page.mouse.up();
+
+    const smeared = await page.evaluate(() => window.getSelection()?.toString() ?? "");
+    expect(smeared, "a drag across the transfer panel selected something").toBe("");
+    await expect(panel, "and it did not treat the drag as a click somewhere else").toBeVisible();
+    // A click somewhere else tucks it away rather than closing anything: what is left is the pill,
+    // and the row is behind it — the transfer was never the panel's to cancel.
+    await listing.click();
+    await expect(page.locator("[data-transfer-panel]")).toHaveCount(0);
+    const pill = page.locator("[data-transfer-pill]");
+    await expect(pill).toBeVisible();
+    await expect(pill).toContainText("1 transfers");
+
+    // Reopened from the pill, and the same row is there and still going: a transfer that had been
+    // cancelled by the tuck-away would never reach Finished.
+    await pill.click();
+    await expect(panel).toBeVisible();
+    await expect(row).toHaveCount(1);
+    await expect(row.locator("[title='Finished']"), "the row says it finished").toBeVisible({
+      timeout: 60_000,
+    });
+
+    // And being finished with the last row leaves the panel where it is, saying there is nothing —
+    // rather than vanishing, which is what it used to do before it could be opened by hand. Where a
+    // panel is drawn is the person's window state; the rows coming and going is not what decides it.
+    await row.getByRole("button", { name: "Remove" }).click();
+    await expect(page.locator("[data-transfer-row]")).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await expect(page.locator("[data-transfer-empty]")).toContainText("No transfers yet");
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * The transfers panel can be asked for, with nothing to transfer.
+ *
+ * It used to appear only when a transfer did — which left the folder downloads land in invisible, and
+ * unsettable, until somebody had already downloaded something. Three ways in are checked here (the
+ * title bar's button, the key from the table of reserved keys, and the panel's own chevron going back
+ * out) and one way out (Escape).
+ *
+ * No server is needed for any of it, which is the point of it being its own case: a check that skips
+ * without a lab is a check that mostly does not run. The folder it names was written down before the
+ * run and no transfer has touched it.
+ */
+test("the transfers panel opens on its own, without a transfer", async () => {
+  const { page, close } = await openApp();
+  try {
+    const panel = page.locator("[data-transfer-panel]");
+
+    // Put away first: the window is one window and the panel's state lives in the store, so an earlier
+    // case may have left it open. Escape is what "put away" is, and pressing it when there is nothing
+    // to put away is not an error.
+    await page.keyboard.press("Escape");
+    await expect(panel, "nothing draws a transfers panel once it is put away").toHaveCount(0);
+
+    await page.locator("[data-transfers-toggle]").click();
+    await expect(panel).toBeVisible();
+
+    // The strip, which is drawn whether or not there is anything on the list — and it is the reason
+    // opening this before transferring anything is worth doing at all. The empty line is left to the
+    // panel's own spec: one window is shared by the whole run, so a row left by an earlier case is not
+    // this case's business, and an assertion about emptiness would be an assertion about that case.
+    await expect(page.locator("[data-download-folder]")).toContainText("fsdownload");
+    await page.screenshot({ path: path.join(ARTIFACTS, "transfers-panel-empty.png"), fullPage: false });
+
+    await page.keyboard.press("Escape");
+    await expect(panel, "Escape puts it away, and there is no pill: the button is the way back").toHaveCount(0);
+
+    // The key, which is what "global" means in the table of reserved keys. A real window is the only
+    // place that can say whether the webview agrees about the combination — and this one is taken with
+    // Shift precisely so it is not a control character the terminal needs.
+    await page.keyboard.press("Control+Shift+D");
+    await expect(panel).toBeVisible();
+
+    // And the panel's own chevron, which is the third way out.
+    await page.locator("[data-transfer-collapse]").click({ timeout: 5_000 });
+    await expect(panel).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A download lands in the folder somebody chose, which is made if it is not there.
+ *
+ * The folder is written into the settings the application reads before it starts, because choosing
+ * one opens a *native* dialog and a driver cannot answer those — and that same seeding is what makes
+ * this case possible at all. With a folder in force a download is a click and some bytes with
+ * nothing in between; a case that had to answer a dialog would simply hang here, which is the fine
+ * print behind "no dialog appeared".
+ *
+ * What it downloads is a file that is already on the far side — the shell's own history, which every
+ * one of these runs leaves there. Uploading first and bringing *that* down would make this case
+ * depend on the listing reading itself again after an upload lands, which is a race about a different
+ * feature; what is under test here is where the bytes land, not when the panel notices them.
+ *
+ * What it checks: the strip says where downloads go, the list behind it offers what was used before
+ * with the folder in force ticked, Escape closes only the menu, the file comes down under its own
+ * name, and the folder is *created* on the way in — nothing makes it before the run, because the
+ * launcher clears the directory it lives in.
+ */
+test("a download lands in the chosen folder, which is made if it is not there", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const name = `lab-download-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+
+    const trust = page.getByRole("button", { name: "Trust this key and connect" });
+    const listing = page.getByRole("listbox", { name: "Files", exact: true });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    const openPanel = page.getByTitle("Open the file panel under this terminal");
+
+    await expect(trust.or(openPanel).or(filesToggle).or(listing).first()).toBeVisible({ timeout: 30_000 });
+    if (await trust.isVisible()) {
+      await trust.click();
+    }
+
+    // Whether the panel is opening by itself — a session's layout decides that — has to settle before
+    // it is read. The button that opens it is on screen the whole time, so waiting on *it* proves
+    // nothing, and while a panel is opening neither that button nor the listing is showing: a click
+    // landing in that window closes what is opening. This preamble has lost that race once, which is
+    // why what it waits for here is the settled state rather than the always-present button.
+    await expect(listing.or(openPanel).first()).toBeVisible({ timeout: 30_000 });
+    if (await openPanel.isVisible()) {
+      await openPanel.click();
+    }
+    await expect(listing).toBeVisible({ timeout: 30_000 });
+
+    // The folder the launcher wrote down is not there yet, and the application is what makes it.
+    const folder = path.join(HERE, ".run", "downloads", "fsdownload");
+    expect(existsSync(folder), "nothing made the download folder before the run started").toBe(false);
+
+    // A file that is already on the far side, brought down from the listing's own menu. No dialog is
+    // answered here because none appears: the folder is in force.
+    const remote = listing.getByRole("option", { name: /^.bash_history/ });
+    await expect(remote).toBeVisible({ timeout: 30_000 });
+
+    // The gesture is retried as a whole rather than half-done twice, and that is the menu's own rule
+    // rather than a test's caution: a menu dismisses itself when anything scrolls, so one opened in
+    // the moment a directory is re-read can be gone by the time the entry is pressed. A loss here
+    // means nothing was clicked, because the work and the assertion are one attempt.
+    //
+    // Selecting the row comes first and belongs to this attempt, not before it: a row's menu is built
+    // from the *selection*, so a right-click on a row that is already part of one leaves that selection
+    // alone — and a selection holding a directory has no plain download entry at all. Every step here
+    // is bounded, including the plain click: an action with no timeout of its own waits until the whole
+    // case gives up and then says nothing about which step was stuck, which is exactly how this case
+    // spent four runs reporting a symptom instead of a cause.
+    const downloadEntry = page.getByRole("menuitem", { name: /^Download/ });
+    await expect(async () => {
+      // Every step bounded, including the ones that only click: an action with no timeout of its own
+      // waits until the whole case gives up and then says nothing about which of them was stuck, which
+      // is how this case spent two runs describing a symptom instead of a cause.
+      await remote.click({ timeout: 5_000 });
+      await remote.click({ button: "right", timeout: 5_000 });
+      await expect(downloadEntry, "the row's menu offers the download").toBeVisible({ timeout: 3_000 });
+      await downloadEntry.click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+
+    // The panel brought itself on screen with the transfer, and the strip says where downloads go by
+    // the folder's own name — the interface is never told the path, which is why what is checked here
+    // is a name and an invitation to open it.
+    await expect(page.locator("[data-transfer-download-folder]")).toContainText("Download to");
+    await expect(page.locator("[data-download-folder]")).toContainText("fsdownload");
+
+    // The list behind it: every row says whether it is the one in force — the folder in force ticked,
+    // the one used before still reachable and unticked, and asking as the third way out.
+    //
+    // Every click from here on is bounded, and the panel is asserted rather than assumed: a click with
+    // no timeout of its own waits until the whole case gives up and then reports nothing about what was
+    // missing, which is how this case spent three runs describing a symptom.
+    await expect(page.locator("[data-transfer-panel]"), "the panel is still on screen").toBeVisible();
+    await page.locator("[data-download-folder]").click({ timeout: 5_000 });
+    await expect(page.getByRole("menuitemcheckbox", { name: "fsdownload" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("menuitemcheckbox", { name: "older-downloads" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await expect(page.getByRole("menuitemcheckbox", { name: "Ask every time" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await expect(page.getByRole("menuitem", { name: "Choose a folder…" })).toBeVisible();
+    await page.screenshot({ path: path.join(ARTIFACTS, "transfer-download-folder.png"), fullPage: false });
+
+    // Escape closes the menu and only the menu: the panel underneath stays where it is.
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menuitemcheckbox", { name: "Ask every time" })).toHaveCount(0);
+    await expect(page.locator("[data-transfer-panel]")).toBeVisible();
+
+    // The bytes: the file is in the folder that did not exist a moment ago, under its own name.
+    const landed = path.join(folder, ".bash_history");
+    await expect.poll(() => existsSync(landed), { message: "the download landed in the chosen folder" }).toBe(true);
+    expect(
+      (await readFile(landed, "utf8")).length,
+      "and it is the file that came down rather than an empty one",
+    ).toBeGreaterThan(0);
+
+    const downloadRow = page.locator("[data-transfer-row]").filter({ hasText: ".bash_history" });
+    await expect(downloadRow).toHaveCount(1);
+    // The direction and the state are the arrow and the tick, each with its word on hover: the row
+    // spends its height on what has to be read, and "download, finished" is there to be recognised.
+    await expect(downloadRow.locator("[title='Download']")).toBeVisible();
+    await expect(downloadRow.locator("[title='Finished']")).toBeVisible({ timeout: 60_000 });
   } finally {
     await close();
   }

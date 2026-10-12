@@ -428,6 +428,20 @@ pub enum UploadAnswer {
     Cancel,
 }
 
+/// Where downloads land, as the interface sees it.
+///
+/// Names, never paths — the same rule the export summary follows with the file it wrote. The folder
+/// itself is kept on the other side, which is what makes "download into it" something the interface
+/// can ask for without being able to name it: a row is named, this side answers with where.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadFolderView {
+    /// The folder downloads land in, by its own name, or nothing when every download asks.
+    pub current: Option<String>,
+    /// The folders chosen before, newest first, by their own names. The current one is the first.
+    pub history: Vec<String>,
+}
+
 /// A transfer that is running, or has stopped.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -437,10 +451,23 @@ pub struct TransferInfo {
     /// The name shown to a person: the file's own name, not a path on either side.
     pub name: String,
     pub remote_path: String,
+    /// Which session it is moving bytes for.
+    ///
+    /// A transfer outlives the file browser that started it, so a list that is no longer one
+    /// browser's own has to be able to say whose it is — and what the interface knows is sessions,
+    /// not the handles this side keeps to itself.
+    pub session_id: String,
     pub size: u64,
     pub transferred: u64,
     /// `cancelled` only ever comes from the person who asked for it.
     pub state: TransferState,
+    /// Whether this end holds a local path for the transfer — not what it is.
+    ///
+    /// The path was chosen in a native dialog and has never come back through the interface, and it
+    /// still does not: opening the file, or showing where it is, stays a call *about this row* that
+    /// this side answers from what it kept. What the interface needs in order to draw the entries
+    /// that ask for that is only whether asking is possible at all.
+    pub has_local_path: bool,
     /// Whether the files travelled as one archive, packed on the side they came from.
     ///
     /// It is separate from the name because the two answer different questions — the name says what

@@ -30,6 +30,7 @@ export const ERROR_CATALOG = {
   // Local file grants
   "FS-GRANT-UNKNOWN": "errors.fs.grantUnknown",
   "FS-GRANT-EXPIRED": "errors.fs.grantExpired",
+  "FS-OPEN-FAILED": "errors.fs.openFailed",
   // Persistence
   "STORE-IO": "errors.store.io",
   "STORE-SCHEMA-NEWER": "errors.store.schemaNewer",

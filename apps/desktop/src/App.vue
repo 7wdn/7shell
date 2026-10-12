@@ -33,12 +33,15 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import ContextMenu from "@/components/shell/ContextMenu.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
 import ToastViewport from "@/components/shell/ToastViewport.vue";
+import TransferPanel from "@/components/shell/TransferPanel.vue";
 import Wallpaper from "@/components/shell/Wallpaper.vue";
 import UnlockScreen from "@/components/vault/UnlockScreen.vue";
 import HomeView from "@/components/views/HomeView.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { describeShellError } from "@/i18n/errors";
 import { useSyncAutoUpload } from "@/composables/useSyncAutoUpload";
+import { matchesShortcut } from "@/lib/shortcuts/binding";
+import { resolveBindings } from "@/lib/shortcuts/registry";
 import { useTransferNotices } from "@/composables/useTransferNotices";
 import { isTextEntry } from "@/lib/menu/editable";
 import { useAppStore } from "@/stores/app";
@@ -221,6 +224,32 @@ async function dropped(payload: { pending?: { token: string }; error?: unknown }
 }
 
 /**
+ * The keys that work anywhere in the window, read from the table rather than spelled out here.
+ *
+ * Reading them is what makes the settings page's rebinding real: a table only the settings page
+ * consults is a table that describes what a handler does instead of deciding it, and somebody who
+ * changed one of these would find the old key still working.
+ *
+ * Two of them, and they are asked in this order:
+ *
+ * 1. **The transfers panel**, which is the one thing on screen that is a panel rather than a tab —
+ *    it has no row anywhere else, so a key is the second way to it beside the title bar's button.
+ * 2. **The paste that uploads**, which aims at the browser on screen.
+ */
+const shortcuts = computed(() => resolveBindings(preferences.keybindings));
+const platform = computed(() => app.info?.os ?? "");
+
+function onGlobalKey(event: KeyboardEvent): void {
+  if (matchesShortcut(event, shortcuts.value["global.toggleTransfers"], platform.value)) {
+    event.preventDefault();
+    files.togglePanel();
+    return;
+  }
+
+  pasteInto(event);
+}
+
+/**
  * The same upload, from the keyboard.
  *
  * Ctrl+V is the first thing somebody tries with a file on the clipboard, and it aims at the same
@@ -234,7 +263,7 @@ async function dropped(payload: { pending?: { token: string }; error?: unknown }
  * with a reason and the panel shows it, instead of the shortcut seeming dead.
  */
 function pasteInto(event: KeyboardEvent): void {
-  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "v") {
+  if (!matchesShortcut(event, shortcuts.value["global.uploadClipboard"], platform.value)) {
     return;
   }
 
@@ -304,8 +333,8 @@ onMounted(async () => {
     dragging.value = payload.hovering;
   });
   stopDropEvents = await backend.events.onFilesDropped((payload) => void dropped(payload));
-  window.addEventListener("keydown", pasteInto);
-  stopPaste = () => window.removeEventListener("keydown", pasteInto);
+  window.addEventListener("keydown", onGlobalKey);
+  stopPaste = () => window.removeEventListener("keydown", onGlobalKey);
   window.addEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopContextMenu = () => window.removeEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopTerminalEvents = terminals.initialize();
@@ -387,6 +416,16 @@ onBeforeUnmount(() => {
         asked of a host while the setting is off.
       -->
       <MonitorPanel v-if="preferences.monitorEnabled" />
+
+      <!--
+        The transfers, drawn over the workspace rather than inside a tab's own panel: a transfer
+        holds the channel it is moving bytes over for as long as it runs, so it outlives the file
+        tab that started it — and a row that keeps moving with nothing on screen to show or stop it
+        is what this panel is here to prevent. Floating over the content rather than taking a column
+        of its own, because it appears on its own and a terminal that reflowed every time an upload
+        started would be a terminal that jumped under somebody's hands.
+      -->
+      <TransferPanel />
     </div>
 
     <HostKeyPrompt

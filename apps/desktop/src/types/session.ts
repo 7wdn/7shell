@@ -248,9 +248,25 @@ export interface TransferInfo {
   /** The file's own name, not a path on either side. */
   readonly name: string;
   readonly remotePath: string;
+  /**
+   * Which session it is moving bytes for.
+   *
+   * A transfer outlives the file browser that started it, so a list that is no longer one browser's
+   * own has to be able to say whose it is — and what this side knows is sessions, not the handles
+   * the backend keeps to itself.
+   */
+  readonly sessionId: string;
   readonly size: number;
   readonly transferred: number;
   readonly state: TransferState;
+  /**
+   * Whether the backend holds a local path for this transfer — not what it is.
+   *
+   * The path was chosen in a native dialog and has never come back this way. What the two entries
+   * that open the file or show where it is need is only whether asking is possible at all; the
+   * asking itself names the row, and the path is looked up on the other side.
+   */
+  readonly hasLocalPath: boolean;
   /**
    * Whether the files travelled as one archive, packed on the side they came from.
    *
@@ -259,6 +275,20 @@ export interface TransferInfo {
    * upload: a packed one lands its files *in* the directory it was aimed at.
    */
   readonly packed: boolean;
+}
+
+/**
+ * Where downloads land, as this side is told about it.
+ *
+ * Names, never paths: the folder was chosen in a native dialog, so what this side can do is ask for
+ * the dialog back, name a row of the remembered list, or ask for the dialog instead. Where the bytes
+ * go is looked up on the other side, which is the same rule the transfer rows follow.
+ */
+export interface DownloadFolderView {
+  /** The folder downloads land in, by its own name — or nothing when every download asks. */
+  readonly current: string | null;
+  /** The folders chosen before, newest first, by their own names. The current one is the first. */
+  readonly history: readonly string[];
 }
 
 /**

@@ -15,15 +15,15 @@ use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
     BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionWord, CornerStyle, CpuCounters,
-    CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout,
-    HostFailure, HostMetrics, HostSystem, KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage, LocalForward,
-    MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
-    Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
-    SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout,
-    Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary,
-    SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
-    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
-    ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
+    CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout,
+    ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage,
+    LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage,
+    ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget,
+    Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
+    SessionLayout, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow,
+    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
+    SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UploadAnswer, UploadOutcome, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -352,6 +352,34 @@ fn a_snippet_account_and_its_receipt_speak_the_interface_s_words() {
         serde_json::json!(true),
         "a snippet is always sealed, and the receipt says so rather than implying it"
     );
+}
+
+#[test]
+fn a_download_folder_view_carries_names_and_no_path_to_anything() {
+    let view = check(
+        &DownloadFolderView {
+            current: Some("fsdownload".to_owned()),
+            history: vec!["fsdownload".to_owned(), "Desktop".to_owned()],
+        },
+        "DownloadFolderView",
+    );
+
+    assert_eq!(
+        view["history"],
+        serde_json::json!(["fsdownload", "Desktop"]),
+        "what the interface is offered is the folders' own names, in the order they were chosen"
+    );
+
+    // Nothing chosen means every download asks, and that reads as an absent folder rather than as an
+    // empty name somebody might try to look up.
+    let asking = check(
+        &DownloadFolderView {
+            current: None,
+            history: Vec::new(),
+        },
+        "DownloadFolderView",
+    );
+    assert_eq!(asking["current"], serde_json::Value::Null);
 }
 
 #[test]

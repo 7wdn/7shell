@@ -21,6 +21,11 @@ pub struct FileSession {
     /// Kept alive for as long as the browser is: the channel dies with the connection.
     connection: Arc<SshSession>,
     sftp: Arc<SftpSession>,
+    /// The session it was opened for, which is what every transfer started here belongs to.
+    ///
+    /// Held rather than looked up per transfer because the browser can be gone by the time somebody
+    /// asks a transfer whose it is: the row in the list outlives the tab that started it.
+    session_id: String,
 }
 
 impl FileSession {
@@ -29,6 +34,36 @@ impl FileSession {
     fn connection(&self) -> Arc<SshSession> {
         Arc::clone(&self.connection)
     }
+
+    fn session_id(&self) -> String {
+        self.session_id.clone()
+    }
+}
+
+/// The local end of one transfer, for the two things only this side can do with it.
+///
+/// A named struct rather than a tuple because the second half is not obvious: whether the transfer
+/// finished is what decides whether the file may be *opened*, while showing where it is stays
+/// useful in every state — that is how somebody finds the part file of a transfer that stopped.
+pub struct LocalEnd {
+    pub path: PathBuf,
+    pub done: bool,
+}
+
+/// What a transfer is, as the row that describes it — plus the two things the interface is not told.
+///
+/// Built by the caller rather than passed as arguments, because most of it is strings: the name, the
+/// remote path and the session id would be three adjacent `String`s in a positional call, and two of
+/// them swapping would still compile.
+struct TransferFacts {
+    direction: TransferDirection,
+    name: String,
+    remote_path: String,
+    session_id: String,
+    size: u64,
+    packed: bool,
+    /// Where the transfer's local end is, when it has one. Never serialized: see [`LocalEnd`].
+    local: Option<PathBuf>,
 }
 
 impl Core {
@@ -53,10 +88,14 @@ impl Core {
         let listing = sftp.list(".").await?;
 
         let handle = format!("f{}", self.next_file.fetch_add(1, Ordering::Relaxed));
-        self.files
-            .lock()
-            .await
-            .insert(handle.clone(), Arc::new(FileSession { connection, sftp }));
+        self.files.lock().await.insert(
+            handle.clone(),
+            Arc::new(FileSession {
+                connection,
+                sftp,
+                session_id: session_id.to_owned(),
+            }),
+        );
 
         Ok(SftpOutcome::Opened {
             handle,
@@ -106,7 +145,8 @@ impl Core {
 
     /// Starts copying a remote file to a local path, and returns the transfer's id.
     pub async fn start_download(&self, handle: &str, remote: &str, local: PathBuf) -> Result<String, ShellError> {
-        let files = Arc::clone(&self.file_session(handle).await?.sftp);
+        let browser = self.file_session(handle).await?;
+        let files = Arc::clone(&browser.sftp);
         let size = files.size_of(remote).await?;
         let name = file_name_of(remote);
         // Owned before the task takes it: the task outlives the borrow this call was given.
@@ -115,11 +155,16 @@ impl Core {
 
         self.spawn_transfer(
             self.reserve_transfer_id(),
-            TransferDirection::Download,
-            name,
-            source.clone(),
-            size,
-            false,
+            TransferFacts {
+                direction: TransferDirection::Download,
+                name,
+                remote_path: source.clone(),
+                session_id: browser.session_id(),
+                size,
+                packed: false,
+                // Where it is landing, which is what the row can be pointed at afterwards.
+                local: Some(local.clone()),
+            },
             move |progress| {
                 let files = Arc::clone(&files);
                 let source = source.clone();
@@ -171,7 +216,8 @@ impl Core {
 
     /// Starts copying a local file into a remote directory, and returns the transfer's id.
     pub async fn start_upload(&self, handle: &str, local: PathBuf, remote_dir: &str) -> Result<String, ShellError> {
-        let files = Arc::clone(&self.file_session(handle).await?.sftp);
+        let browser = self.file_session(handle).await?;
+        let files = Arc::clone(&browser.sftp);
         let name = local
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -189,11 +235,16 @@ impl Core {
 
         self.spawn_transfer(
             self.reserve_transfer_id(),
-            TransferDirection::Upload,
-            name,
-            remote,
-            size,
-            false,
+            TransferFacts {
+                direction: TransferDirection::Upload,
+                name,
+                remote_path: remote,
+                session_id: browser.session_id(),
+                size,
+                packed: false,
+                // Where it was read from, which is the end a person can still be shown.
+                local: Some(local.clone()),
+            },
             move |progress| {
                 let files = Arc::clone(&files);
                 let local = local.clone();
@@ -258,11 +309,17 @@ impl Core {
 
         self.spawn_transfer(
             id,
-            TransferDirection::Download,
-            held,
-            origin,
-            0,
-            true,
+            TransferFacts {
+                direction: TransferDirection::Download,
+                name: held,
+                remote_path: origin,
+                session_id: session.session_id(),
+                size: 0,
+                packed: true,
+                // What lands is the entries themselves inside the folder that was chosen, so that
+                // folder — not the archive, which is already gone by then — is the local end.
+                local: Some(into.clone()),
+            },
             move |progress| {
                 let files = Arc::clone(&files);
                 let connection = connection.clone();
@@ -347,11 +404,17 @@ impl Core {
 
         self.spawn_transfer(
             id,
-            TransferDirection::Upload,
-            name,
-            directory.clone(),
-            0,
-            true,
+            TransferFacts {
+                direction: TransferDirection::Upload,
+                name,
+                remote_path: directory.clone(),
+                session_id: session.session_id(),
+                size: 0,
+                packed: true,
+                // No local end to point at: what was sent is a pile of files, and the archive that
+                // carried them across is deleted here the moment it has been read.
+                local: None,
+            },
             move |progress| {
                 let files = Arc::clone(&files);
                 let connection = connection.clone();
@@ -404,16 +467,129 @@ impl Core {
     }
 
     /// Asks a transfer to stop, and waits for it to notice.
-    pub async fn cancel_transfer(&self, id: &str) -> Result<(), ShellError> {
-        let record = self.transfers.lock().await.remove(id);
-        let Some(record) = record else {
-            // A transfer that is already gone is what a second click means.
-            return Ok(());
+    ///
+    /// The row stays and says it was cancelled. That is the difference between this and
+    /// [`Core::remove_transfer`]: stopping is a fact about the bytes, and a row that vanished the
+    /// moment somebody asked it to stop would leave them unable to tell a cancellation from a
+    /// failure they slept through.
+    ///
+    /// Waiting is what makes the flag and the row agree: the state is written by the task itself, so
+    /// by the time this returns there is nothing left running that could write another one.
+    pub async fn stop_transfer(&self, id: &str) -> Result<(), ShellError> {
+        let (progress, task) = {
+            let mut transfers = self.transfers.lock().await;
+            let Some(record) = transfers.get_mut(id) else {
+                // A transfer that is already gone is what a second click means.
+                return Ok(());
+            };
+            // What has already stopped is not stopped again: a done transfer that was asked to
+            // cancel would otherwise have its own record say it never finished.
+            if !matches!(record.info.state, TransferState::Running | TransferState::Paused) {
+                return Ok(());
+            }
+
+            (Arc::clone(&record.progress), record.task.take())
         };
 
-        record.progress.cancel();
-        let _ = record.task.await;
+        progress.cancel();
+        if let Some(task) = task {
+            let _ = task.await;
+        }
         Ok(())
+    }
+
+    /// Takes a transfer off the list, stopping it first if it is still moving.
+    ///
+    /// This is the delete: what it means is "I am done looking at this row", and for a row that is
+    /// still moving the only honest way to mean it is to stop the bytes as well. It waits for the
+    /// task, so a record that is gone is a transfer that is really over — leaving a task behind to
+    /// write into a map it is no longer in is how a row that was deleted comes back.
+    pub async fn remove_transfer(&self, id: &str) -> Result<(), ShellError> {
+        let (progress, task) = {
+            let mut transfers = self.transfers.lock().await;
+            let Some(record) = transfers.get_mut(id) else {
+                return Ok(());
+            };
+            (Arc::clone(&record.progress), record.task.take())
+        };
+
+        progress.cancel();
+        if let Some(task) = task {
+            let _ = task.await;
+        }
+
+        let mut transfers = self.transfers.lock().await;
+        // A retry that arrived while the task was being waited for may have started it again, and
+        // what was asked to be removed is then something that is moving. It is left alone: the row is
+        // on screen, and stopping it is one click — whereas a record dropped out from under a running
+        // task is exactly the invisible transfer this list exists to prevent.
+        if let Some(record) = transfers.get(id)
+            && matches!(record.info.state, TransferState::Running | TransferState::Paused)
+        {
+            return Ok(());
+        }
+        transfers.remove(id);
+        Ok(())
+    }
+
+    /// Asks everything that is still moving to stop, and leaves every row to say so.
+    ///
+    /// The rows are kept for the same reason one stop keeps its row, and it is the reason this is
+    /// not a loop over [`Core::stop_transfer`]: the list would have to be read between the calls to
+    /// find out what to stop, and a transfer started while that loop ran would be stopped by nobody.
+    pub async fn stop_active_transfers(&self) -> Result<(), ShellError> {
+        let (stops, tasks) = {
+            let mut transfers = self.transfers.lock().await;
+            let mut stops = Vec::new();
+            let mut tasks = Vec::new();
+            for record in transfers.values_mut() {
+                if !matches!(record.info.state, TransferState::Running | TransferState::Paused) {
+                    continue;
+                }
+                stops.push(Arc::clone(&record.progress));
+                if let Some(task) = record.task.take() {
+                    tasks.push(task);
+                }
+            }
+            (stops, tasks)
+        };
+
+        for progress in stops {
+            progress.cancel();
+        }
+        for task in tasks {
+            let _ = task.await;
+        }
+        Ok(())
+    }
+
+    /// Takes every transfer that has stopped off the list, and nothing else.
+    ///
+    /// "Clear" is a tidying question, so it must not be a destructive answer: a transfer that is
+    /// running, or waiting to go on, is one that is still going to happen, and it stays. Stopping
+    /// what is moving is [`Core::stop_active_transfers`] — one call that says exactly that.
+    pub async fn clear_settled_transfers(&self) -> Result<(), ShellError> {
+        self.transfers
+            .lock()
+            .await
+            .retain(|_, record| matches!(record.info.state, TransferState::Running | TransferState::Paused));
+        Ok(())
+    }
+
+    /// Where a transfer's local end is, and whether it is finished there.
+    ///
+    /// `None` for an id this core does not know, and for a transfer with no local end of its own —
+    /// a packed upload, whose archive is deleted the moment it has been read. The state comes back
+    /// with the path because the two questions are asked together: a file that is finished may be
+    /// opened, and one that is half-written may only be pointed at.
+    pub async fn transfer_local_end(&self, id: &str) -> Option<LocalEnd> {
+        let transfers = self.transfers.lock().await;
+        let record = transfers.get(id)?;
+
+        Some(LocalEnd {
+            path: record.local.clone()?,
+            done: record.info.state == TransferState::Done,
+        })
     }
 
     /// Asks a transfer to wait, keeping its connection and the part of the file it has.
@@ -475,26 +651,19 @@ impl Core {
         let task = self.run_transfer(id.to_owned(), Arc::clone(&run), Arc::clone(&progress));
 
         if let Some(record) = self.transfers.lock().await.get_mut(id) {
-            record.task = task;
+            record.task = Some(task);
         }
         Ok(())
     }
 
-    /// Closes a file browser, and cancels whatever it was still moving.
+    /// Closes a file browser. Whatever it was moving keeps moving.
+    ///
+    /// A transfer is not the tab's: it was started from a browser, and it holds the channel it is
+    /// using for as long as it runs, so closing the tab takes away the browsing and nothing else.
+    /// The row stays in the list, which is the only place left that can stop it — and a 2 GB upload
+    /// that died because somebody tidied away a panel would be a worse answer than a row that
+    /// outlives the tab that started it.
     pub async fn close_files(&self, handle: &str) -> Result<(), ShellError> {
-        let ids: Vec<String> = {
-            let transfers = self.transfers.lock().await;
-            transfers
-                .values()
-                .filter(|record| record.info.id.starts_with(handle))
-                .map(|record| record.info.id.clone())
-                .collect()
-        };
-
-        for id in ids {
-            let _ = self.cancel_transfer(&id).await;
-        }
-
         self.files.lock().await.remove(handle);
         Ok(())
     }
@@ -516,33 +685,25 @@ impl Core {
         format!("x{}", self.next_transfer.fetch_add(1, Ordering::Relaxed))
     }
 
-    /// Runs a transfer on its own task, and remembers it until it is dismissed.
-    #[allow(clippy::too_many_arguments)]
-    async fn spawn_transfer<F, Fut>(
-        &self,
-        id: String,
-        direction: TransferDirection,
-        name: String,
-        remote_path: String,
-        size: u64,
-        packed: bool,
-        run: F,
-    ) -> Result<String, ShellError>
+    /// Runs a transfer on its own task, and remembers it until it is taken off the list.
+    async fn spawn_transfer<F, Fut>(&self, id: String, facts: TransferFacts, run: F) -> Result<String, ShellError>
     where
         F: Fn(Arc<TransferProgress>) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<(), ShellError>> + Send + 'static,
     {
-        let progress = TransferProgress::new(size);
+        let progress = TransferProgress::new(facts.size);
 
         let info = TransferInfo {
             id: id.clone(),
-            direction,
-            name,
-            remote_path,
-            size,
+            direction: facts.direction,
+            name: facts.name,
+            remote_path: facts.remote_path,
+            session_id: facts.session_id,
+            size: facts.size,
             transferred: 0,
             state: TransferState::Running,
-            packed,
+            has_local_path: facts.local.is_some(),
+            packed: facts.packed,
         };
 
         // Boxed once, kept twice: the task that starts now and the retry button that may need it
@@ -556,7 +717,8 @@ impl Core {
             TransferRecord {
                 info,
                 progress,
-                task,
+                task: Some(task),
+                local: facts.local,
                 run,
             },
         );
