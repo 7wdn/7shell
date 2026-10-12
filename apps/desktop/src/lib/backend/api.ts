@@ -120,6 +120,13 @@ export const backend = {
     close: (): Promise<void> => forward("window.close", () => desktop.windowClose()),
 
     /**
+     * Applies the appearance to what the interface does not draw: the window's own chrome and the
+     * platform's menus. Sent when the mode is chosen, not when the settings are written.
+     */
+    applyTheme: (themeMode: string): Promise<void> =>
+      forward("window.applyTheme", () => desktop.windowThemeApply(themeMode)),
+
+    /**
      * Draws the interface at `scale` times its own size, inside a window of the same size.
      *
      * Answered rather than refused where there is no shell: a browser tab is drawn by the browser

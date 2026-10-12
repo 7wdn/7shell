@@ -145,6 +145,13 @@ pub fn apply_menus_theme(theme: Option<tauri::Theme>) {
         FORCE_LIGHT
     };
 
+    // Said out loud because the menu it decides is drawn by the system and looks like nothing this
+    // application did: "the tray menu is still dark" is a report that needs this line to answer.
+    log::info!(
+        "the platform's menus follow the application: {}",
+        if theme == tauri::Theme::Dark { "dark" } else { "light" }
+    );
+
     // SAFETY: the module is loaded by name and the two ordinals are looked up in it; each is only
     // called after it was found, through a signature matching what uxtheme exports there. The
     // pointers are the library's own for the life of the process and are not freed, which is what

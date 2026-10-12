@@ -19,7 +19,7 @@ pub fn settings_get() -> Result<AppSettings, ShellError> {
 #[tauri::command]
 pub fn settings_set(window: WebviewWindow, settings: AppSettings) -> Result<(), ShellError> {
     sevenshell_platform::save(&settings)?;
-    apply_window_theme(&window, &settings);
+    apply_window_theme(&window, settings.theme_mode.as_str());
     // The two the shell itself obeys, which the window cannot apply by being restyled: whether there
     // is an icon, and what closing does.
     crate::apply_shell_settings(window.app_handle(), &settings);
@@ -34,12 +34,23 @@ pub fn settings_set(window: WebviewWindow, settings: AppSettings) -> Result<(), 
 /// the mode itself otherwise. What the *application* is, which is what the menus are set from, is the
 /// resolved theme: the platform's menus do not follow a window's theme, and Windows reads its own
 /// setting rather than this one's, so a window switched to light kept a dark tray menu.
-pub fn apply_window_theme(window: &WebviewWindow, settings: &AppSettings) {
-    let mode = settings.theme_mode.as_str();
+pub fn apply_window_theme(window: &WebviewWindow, mode: &str) {
     if let Err(error) = window.set_theme(window_theme_for(mode)) {
         log::warn!("the window theme could not be changed: {error}");
     }
     apply_menus_theme(effective_theme(mode, crate::window_chrome::system_theme()));
+}
+
+/// Applies the appearance to the surfaces the interface cannot restyle itself.
+///
+/// The window's chrome and the platform's menus belong to the platform, so they follow when the shell
+/// is told — and the shell is otherwise told when the settings are *written*, which is a different
+/// moment from when they are *chosen*: a theme clicked in the title bar is applied at once and
+/// written when the settings page is left. In between, everything this command covers kept the
+/// appearance of the mode before it, and the tray menu does not repaint itself on the next click.
+#[tauri::command]
+pub fn window_theme_apply(window: WebviewWindow, theme_mode: String) {
+    apply_window_theme(&window, &theme_mode);
 }
 
 /// What the operating system says the application appearance is, for the interface to follow.

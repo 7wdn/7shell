@@ -8,11 +8,19 @@ vi.mock("@/lib/backend/tauri", () => ({
   settingsSet: vi.fn(),
   systemTheme: vi.fn(),
   onSystemThemeChanged: vi.fn(),
+  windowThemeApply: vi.fn(),
   webviewSetZoom: vi.fn(),
 }));
 
 import { i18n } from "@/i18n";
-import { onSystemThemeChanged, settingsGet, settingsSet, systemTheme, webviewSetZoom } from "@/lib/backend/tauri";
+import {
+  onSystemThemeChanged,
+  settingsGet,
+  settingsSet,
+  systemTheme,
+  webviewSetZoom,
+  windowThemeApply,
+} from "@/lib/backend/tauri";
 import {
   DEFAULT_COMMANDS_LIBRARY_WIDTH,
   DEFAULT_FILES_TREE_WIDTH,
@@ -46,6 +54,7 @@ const settingsSetMock = vi.mocked(settingsSet);
 const webviewSetZoomMock = vi.mocked(webviewSetZoom);
 const systemThemeMock = vi.mocked(systemTheme);
 const onSystemThemeChangedMock = vi.mocked(onSystemThemeChanged);
+const windowThemeApplyMock = vi.mocked(windowThemeApply);
 
 /**
  * What the backend answers when nothing has been chosen.
@@ -144,6 +153,7 @@ describe("preferences store", () => {
     // has none, and the tests below that predate the shell's answer are about exactly that.
     systemThemeMock.mockReset().mockResolvedValue(null);
     onSystemThemeChangedMock.mockReset().mockResolvedValue(() => {});
+    windowThemeApplyMock.mockReset().mockResolvedValue(undefined);
     document.documentElement.classList.remove("dark");
   });
 
@@ -204,6 +214,22 @@ describe("preferences store", () => {
 
     expect(store.resolvedTheme).toBe("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
+  });
+
+  it("tells the shell about a theme that has not been written down yet", async () => {
+    // The window's chrome and the platform's menus are drawn by the platform, and what they follow is
+    // the shell's command rather than the file. A mode clicked in the title bar is applied before it
+    // is saved, so between the click and the save the menus kept the mode before it — which is the
+    // other half of "the tray menu is still dark".
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.setThemeMode("light");
+
+    expect(windowThemeApplyMock).toHaveBeenCalledWith("light");
+    // And nothing was written: that is the settings page's business, which has not been asked.
+    expect(settingsSetMock).not.toHaveBeenCalled();
   });
 
   it("applies a stored choice instead of the system", async () => {

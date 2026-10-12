@@ -102,6 +102,7 @@ pub fn run() {
             commands::fonts::system_fonts_list,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            commands::settings::window_theme_apply,
             commands::settings::system_theme,
             commands::vault::vault_state,
             commands::vault::vault_create,
@@ -295,7 +296,7 @@ fn apply_startup_window_theme(app: &tauri::AppHandle) {
     };
 
     match sevenshell_platform::load() {
-        Ok(settings) => commands::settings::apply_window_theme(&window, &settings),
+        Ok(settings) => commands::settings::apply_window_theme(&window, settings.theme_mode.as_str()),
         Err(error) => {
             log::warn!("settings could not be read at startup, so the window keeps the system theme: {error}")
         }

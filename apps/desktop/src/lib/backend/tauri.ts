@@ -212,6 +212,18 @@ export function windowQuitGuard(armed: boolean): Promise<void> {
   return invoke<void>("window_quit_guard", { armed });
 }
 
+/**
+ * Applies the appearance to the surfaces the interface does not draw: the window's own chrome and
+ * the platform's menus, the tray icon's included.
+ *
+ * Sent when the mode is chosen rather than when the settings are written, which are two different
+ * moments: everything the interface draws follows the click, and the file follows the settings page.
+ * Without it the tray menu kept the appearance of the mode before until the file was written.
+ */
+export function windowThemeApply(themeMode: string): Promise<void> {
+  return invoke<void>("window_theme_apply", { themeMode });
+}
+
 /** Calls `listener` when a close was asked for while the guard was armed. */
 export async function onQuitRequested(listener: () => void): Promise<Unlisten> {
   return listen("quit-requested", () => listener());

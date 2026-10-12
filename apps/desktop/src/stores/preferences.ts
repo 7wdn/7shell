@@ -752,6 +752,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     themeMode.value = mode;
     apply();
     dirty.value = true;
+    // Told to the shell as well, and now rather than when the settings are written: the window's own
+    // chrome and the platform's menus are not this document's to restyle, and they were otherwise
+    // left wearing the mode before until the settings page was saved or left.
+    await backend.window.applyTheme(mode);
   }
 
   /**
