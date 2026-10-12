@@ -175,7 +175,15 @@ export async function mergeManifest({ releasesDir, version, tag, notes, date }) 
 
   const platforms = {};
   for (const file of files.sort()) {
-    const entry = JSON.parse(await readFile(path.join(releasesDir, file), "utf8"));
+    const source = await readFile(path.join(releasesDir, file), "utf8");
+    let entry;
+    try {
+      entry = JSON.parse(source);
+    } catch (error) {
+      // Named, because the bare parse error says nothing about which of four platform files was
+      // truncated — and a truncated one is what a cancelled build or an empty copy leaves behind.
+      throw new ManifestError(`${file} is not JSON: ${error.message}`);
+    }
     if (entry.tag !== tag) {
       throw new ManifestError(`${file} was built from ${entry.tag}, and this manifest is for ${tag}`);
     }

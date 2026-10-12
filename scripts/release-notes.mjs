@@ -2,9 +2,9 @@
 // Prints the changelog section for one version, for the release workflow to use as the body of a
 // GitHub release.
 //
-//   node scripts/release-notes.mjs 0.1.0-rc.1          the section, ready to publish
-//   node scripts/release-notes.mjs v0.1.0-rc.1         the same: the tag is what carries the `v`
-//   node scripts/release-notes.mjs 0.1.0-rc.1 --check  answer whether the section exists, write no body
+//   node scripts/release-notes.mjs 0.1.1          the section, ready to publish
+//   node scripts/release-notes.mjs v0.1.1         the same: the tag is what carries the `v`
+//   node scripts/release-notes.mjs 0.1.1 --check  answer whether the section exists, write no body
 //
 // The version heading is left out of what is printed: a release is already named after its tag, and
 // a body that opens by repeating its own title reads like something no person wrote. What is
@@ -18,11 +18,20 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { REPO_ROOT } from "./lib/descriptors.mjs";
+/**
+ * The repository root, worked out here rather than imported from `lib/descriptors.mjs`.
+ *
+ * The release workflow runs this script with nothing but Node — no `pnpm install`, no development
+ * dependencies — so a `CHANGELOG.md` path is not worth an import that drags YAML in with it: the
+ * publish step then needs `node_modules` to exist, which it does on a machine where the repository
+ * has been installed and does not on a runner. It took a release run to find that out;
+ * `scripts/tests/releaseTooling.test.mjs` is what stops it happening again.
+ */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const CHANGELOG = path.join(REPO_ROOT, "CHANGELOG.md");
 
-/** A version as it is written in an argument or a tag: `0.1.0-rc.1` from either spelling. */
+/** A version as it is written in an argument or a tag: `0.1.1` from either spelling. */
 function normalizeVersion(version) {
   return String(version)
     .trim()

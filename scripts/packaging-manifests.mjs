@@ -22,7 +22,17 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { REPO_ROOT } from "./lib/descriptors.mjs";
+/**
+ * The repository root, worked out here rather than imported from `lib/descriptors.mjs`.
+ *
+ * The release workflow runs this script with nothing but Node: no `pnpm install`, no development
+ * dependencies, because the job that publishes a release should need nothing that is not already on
+ * the runner. That other file reads YAML, so importing it for this one string made publishing depend
+ * on `node_modules` existing — invisible on a machine where the repository has been installed, and
+ * fatal on the runner. `scripts/tests/releaseTooling.test.mjs` keeps the three scripts that job runs
+ * free of anything but `node:`.
+ */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The package's own identity, as the registries spell it. */
 const PACKAGE_ID = "SevenShell.7Shell";
