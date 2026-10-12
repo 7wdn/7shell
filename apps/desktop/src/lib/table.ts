@@ -22,9 +22,11 @@
  *    the message spans the table's own columns instead of floating under it.
  * 4. **A heading that sorts is `ui/SortHeader`.** No table writes its own arrows.
  *
- * Everything a page draws its own way — column widths, alignment, which cells are monospaced, what
- * is truncated and what carries a `title` — stays in the component: this file is about the shape,
- * not about the columns.
+ * Everything a page draws its own way — alignment, which cells are monospaced, what is truncated and
+ * what carries a `title` — stays in the component: this file is about the shape, not about the
+ * columns. A column's *width* was in that list and is not any more: a width is read by the heading
+ * and by every row under it, and an edge of it can be dragged, so the two copies it used to be
+ * written as drifted apart. `lib/columns.ts` is where a width comes from now.
  */
 
 import { cn } from "@/lib/utils";

@@ -1908,14 +1908,91 @@ test("the panel's tables draw a real host, and mark the row under the pointer", 
     await expect(page.getByRole("main").getByRole("table", { name: "File systems" })).toBeVisible({
       timeout: 30_000,
     });
+    // Closed before the next page opens: a page is a tab of its own, and two tabs each offering to
+    // close "this page" are two buttons with one name, which is a thing this case would then be
+    // testing by accident rather than on purpose.
+    await page.getByRole("button", { name: "Close this page" }).click();
+    await expect(page.getByRole("button", { name: "Close this page" })).toHaveCount(0);
+
+    // And the operations page, which is a table with columns of its own: drawn with a fixed layout, so
+    // a column's width is a width rather than a suggestion the widest cell overrules — which is what
+    // makes an edge worth dragging. Read from a real window, because a fixed table, an elastic column
+    // and a drag are all things a test document lays nothing out for.
+    await panel.getByRole("button", { name: "Processes", exact: true }).click();
+    const processes = page.getByRole("main").getByRole("table", { name: "Processes" });
+    await expect(processes.locator("tbody tr").first()).toBeVisible({ timeout: 30_000 });
+    await expect(processes, "a width is a width only under a fixed layout").toHaveCSS("table-layout", "fixed");
+
+    /** What the first row's cells are drawn at, read from inside the page rather than cell by cell. */
+    const processColumns = () =>
+      processes.evaluate((table) => {
+        const row = table.querySelector("tbody tr");
+        return row === null ? [] : [...row.children].map((cell) => Math.round(cell.getBoundingClientRect().width));
+      });
+
+    // A page that has just opened has not heard from the host yet, and until it has, the table is one
+    // row saying so — which spans the columns rather than being one of them.
+    await expect
+      .poll(async () => (await processColumns()).length, { message: "the host answers with its processes" })
+      .toBe(7);
+
+    const columns = await processColumns();
+    // Every column has an edge, the command line included — it is the column this page is read for,
+    // and so the one somebody reaches for first.
+    expect(await processes.locator("thead [data-column-divider]").count()).toBe(7);
+    // Whatever the page's width, the columns add up to the table's own line: the room the page has to
+    // spare is divided between the columns nobody has moved.
+    const tableWidth = await processes.evaluate((table) => Math.round(table.getBoundingClientRect().width));
+    expect(
+      columns.reduce((sum, width) => sum + width, 0),
+      "the columns fill the line",
+    ).toBe(tableWidth);
+
+    /** Drags a column's edge this many pixels sideways, the way a pointer does. */
+    const dragEdge = async (edge: Locator, delta: number): Promise<void> => {
+      const grip = await edge.boundingBox();
+      if (!grip) {
+        throw new Error("the column's edge was not drawn");
+      }
+      await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(grip.x + grip.width / 2 + delta, grip.y + grip.height / 2, { steps: 4 });
+      await page.mouse.up();
+    };
+
+    // Dragged left, the command line gives way by exactly what the pointer asked for, and the columns
+    // that still share the room take up the difference.
+    const commandEdge = processes.locator("thead [data-column-divider][data-column='command']");
+    await dragEdge(commandEdge, -40);
+    const narrowed = await processColumns();
+    expect(narrowed[5], "the column the edge belongs to gave way").toBe((columns[5] ?? 0) - 40);
+    expect(
+      narrowed.reduce((sum, width) => sum + width, 0),
+      "and the line is still full",
+    ).toBe(tableWidth);
+
+    // Dragged right there is no furthest point: the columns take more room than the page has, and the
+    // page is scrolled sideways to reach them.
+    await dragEdge(commandEdge, 4000);
+    const widened = await processColumns();
+    expect(widened[5], "a drag goes as wide as the pointer asks").toBe((narrowed[5] ?? 0) + 4000);
+    expect(
+      await processes.evaluate((table) => {
+        const scroller = table.parentElement;
+        return scroller !== null && scroller.scrollWidth > scroller.clientWidth;
+      }),
+      "a page narrower than its table scrolls sideways",
+    ).toBe(true);
+    await page.screenshot({ path: path.join(ARTIFACTS, "process-columns.png"), fullPage: false });
+
+    await page.getByRole("button", { name: "Close this page" }).click();
+    await expect(page.getByRole("button", { name: "Close this page" })).toHaveCount(0);
 
     // Closed on the way out, and this case is the reason the others say why: it leaves nothing of its
     // session open. Both of the things it opened count — a terminal *and* a page about the host are
     // "sessions that are open" as far as the sidebar is concerned, so a page left behind is an active
     // session for every case after it: the sidebar's own switch behaves differently, and a search that
     // should have found a row finds nothing.
-    await page.getByRole("button", { name: "Close this page" }).click();
-    await expect(page.getByRole("button", { name: "Close this page" })).toHaveCount(0);
     await page.getByRole("button", { name: "Close terminal" }).click();
     await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
   } finally {
@@ -2097,6 +2174,103 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await expect(page.getByRole("option", { name: `${stamp}.tar.gz` })).toContainText("Archive");
     await expect(page.getByRole("option", { name: `${stamp}-typed` })).toContainText("File");
     await page.screenshot({ path: path.join(ARTIFACTS, "listing-types.png"), fullPage: false });
+
+    // A column's edge can be dragged, and what moves is the one width its heading and its rows both
+    // read. The two used to write that width down separately — the permissions column was 24 pixels
+    // in the strip and 20 in the rows — so this is measured in a real window, where the drift showed,
+    // rather than in a test document that lays nothing out.
+    //
+    // What a drag may do depends on how wide the panel happens to be, because a panel with room to
+    // spare divides it between the columns nobody has moved. So the case is written the way the rule
+    // is rather than against one window's geometry: every column has an edge, a drag goes as wide as
+    // the pointer asks and the strip scrolls, and a column never goes below its own floor.
+    const sizeEdge = listing.locator("[data-listing-header] [data-column-divider][data-column='size']");
+
+    /**
+     * The widths of the strip's cells and of the first row's, read from inside the page in one go.
+     *
+     * From inside rather than cell by cell, because the columns of a narrow panel are wider than the
+     * panel is: the strip scrolls sideways, and asking Playwright for a cell that has been scrolled
+     * out of sight waits for it to come back rather than reading where it is.
+     */
+    const drawnColumns = () =>
+      listing.evaluate((element) => {
+        const widths = (container: Element | null): number[] =>
+          container === null
+            ? []
+            : [...container.children].map((cell) => Math.round(cell.getBoundingClientRect().width));
+        return {
+          headings: widths(element.querySelector("[data-listing-header]")),
+          cells: widths(element.querySelector("li[data-path] > div")),
+          line: Math.round(
+            (element.querySelector("[data-listing-header]") as HTMLElement).getBoundingClientRect().width,
+          ),
+        };
+      });
+
+    /** What the line spends around its columns: `px-3` on each side and `gap-2` between six cells. */
+    const CHROME = 24 + 40;
+
+    /** Drags a column's edge this many pixels sideways, the way a pointer does. */
+    const dragEdge = async (edge: Locator, delta: number): Promise<void> => {
+      const grip = await edge.boundingBox();
+      if (!grip) {
+        throw new Error("the column's edge was not drawn");
+      }
+      await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(grip.x + grip.width / 2 + delta, grip.y + grip.height / 2, { steps: 4 });
+      await page.mouse.up();
+    };
+
+    // Every column, not only the one this case goes on to drag: the heading and the cell under it are
+    // the same width, which is what one variable is for.
+    const was = await drawnColumns();
+    expect(was.cells, "a row is drawn at the widths its headings are").toEqual(was.headings);
+    expect(
+      await listing.locator("[data-listing-header] [data-column-divider]").count(),
+      "every column carries an edge, the name column included",
+    ).toBe(was.headings.length);
+
+    const floor = Number(await sizeEdge.getAttribute("aria-valuemin"));
+    // There is no furthest point, and the handle says so rather than naming one: a column dragged
+    // wider than the panel is a column the strip is scrolled to reach.
+    expect(await sizeEdge.getAttribute("aria-valuemax")).toBeNull();
+
+    const sizeBefore = was.headings[1] ?? 0;
+    await dragEdge(sizeEdge, 400);
+    const pulled = await drawnColumns();
+    expect(pulled.headings[1], "a drag goes as wide as the pointer asks").toBe(sizeBefore + 400);
+    expect(pulled.cells, "and the rows followed it").toEqual(pulled.headings);
+    expect(
+      await listing.evaluate((element) => element.scrollWidth > element.clientWidth),
+      "a strip wider than the panel scrolls sideways",
+    ).toBe(true);
+
+    // The keyboard moves it too, a step a press: a separator only a mouse can work is half a control.
+    await sizeEdge.focus();
+    await page.keyboard.press("ArrowLeft");
+    const nudged = await drawnColumns();
+    expect(nudged.headings[1], "an arrow key nudges the edge by a step").toBe(pulled.headings[1] - 16);
+
+    // Dragged the other way it gives way, down to its own floor and no further: a size column
+    // narrower than the numbers it holds is a column that says nothing.
+    await dragEdge(sizeEdge, -4000);
+    const given = await drawnColumns();
+    expect(given.headings[1], "a column stops at its own floor").toBe(floor);
+
+    // And whichever way they were dragged, the columns add up to the line they are drawn on: the
+    // panel's width when the panel gives them room, and the strip's own width when it does not.
+    expect(
+      given.headings.reduce((sum, width) => sum + width, 0),
+      "the columns fill the line",
+    ).toBe(given.line - CHROME);
+    // Scrolled back to the left for the screenshot, which is where a listing opens: reaching the
+    // columns past the right edge is what the scrollbar is for, and it works both ways.
+    await listing.evaluate((element) => {
+      element.scrollLeft = 0;
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, "listing-columns.png"), fullPage: false });
 
     // Find in terminal: Ctrl+F belongs to the terminal, not to the shell, and the bar says how many
     // matches the scrollback holds. The needle is in the typed line and in what it printed, so the

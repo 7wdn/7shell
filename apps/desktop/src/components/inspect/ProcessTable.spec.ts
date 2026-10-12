@@ -177,3 +177,118 @@ describe("the process table", () => {
     ]);
   });
 });
+
+/**
+ * The columns, which are drawn at widths of their own rather than at whatever the content asks for.
+ *
+ * That is the change a fixed layout makes: under the automatic one a width is a suggestion the
+ * widest cell overrules, and a suggestion is not something an edge can be dragged to. So what is
+ * asserted here is the shape — the table is drawn fixed, every column but the command line is told
+ * its width, and the line's own floor is what a drag of the last column stops against.
+ *
+ * A test document lays nothing out, so the room is told rather than measured: the table's width is
+ * defined and the observers are then run, exactly as a real one runs when the window changes size.
+ */
+describe("the columns of the process table", () => {
+  /** Whatever asked to be told when the table changes size, so that a case can tell it. */
+  let watching: (() => void)[] = [];
+
+  beforeEach(() => {
+    watching = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(notify: () => void) {
+          watching.push(notify);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function table(): HTMLTableElement {
+    const found = host.querySelector("table");
+    if (!found) {
+      throw new Error("the page drew no table");
+    }
+    return found;
+  }
+
+  /** Says how wide the table is, and lets whatever is watching it hear about it. */
+  async function room(width: number): Promise<void> {
+    Object.defineProperty(table(), "clientWidth", { value: width });
+    for (const notify of watching) {
+      notify();
+    }
+    await nextTick();
+  }
+
+  function columnWidth(key: string): string {
+    return table().style.getPropertyValue(`--col-${key}`);
+  }
+
+  /** Drags a column's edge this many pixels to the right, the way a pointer does. */
+  async function dragEdge(key: string, delta: number): Promise<void> {
+    const edge = table().querySelector<HTMLElement>(`[data-column-divider][data-column='${key}']`);
+    if (!edge) {
+      throw new Error(`no edge is drawn for the ${key} column`);
+    }
+    edge.setPointerCapture = vi.fn();
+    edge.releasePointerCapture = vi.fn();
+    edge.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 400 }));
+    edge.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 400 + delta }));
+    edge.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    await nextTick();
+  }
+
+  it("draws every column at a width of its own, the command line included", async () => {
+    await render();
+
+    expect(table().className, "a width is a width only under a fixed layout").toContain("table-fixed");
+    const edges = [...table().querySelectorAll<HTMLElement>("[data-column-divider]")].map(
+      (edge) => edge.dataset.column,
+    );
+    expect(edges).toEqual(["pid", "user", "memory", "cpu", "name", "command", "executable"]);
+    // Every column is told its width, so every column is one an edge can move — the command line too,
+    // which is the column this page is read for and the one somebody widens first.
+    expect(columnWidth("command")).not.toBe("");
+  });
+
+  it("tells the table how narrow it may be drawn, so a narrow page scrolls instead of squeezing", async () => {
+    await render();
+
+    // The seven columns at 80 + 80 + 96 + 80 + 160 + 260 + 224. A table spends nothing on padding and
+    // gaps of its own.
+    expect(table().style.minWidth).toBe("980px");
+  });
+
+  it("divides the room a page has to spare between the columns nobody has moved", async () => {
+    await render();
+    await room(1200);
+
+    // 1200 less the 980 the columns ask for: 220 left over, 31 each and the first three a pixel more.
+    expect(columnWidth("pid")).toBe("112px");
+    expect(columnWidth("command")).toBe("291px");
+    expect(columnWidth("executable")).toBe("255px");
+  });
+
+  it("widens a column when its edge is dragged, and lets a drag go as wide as the pointer asks", async () => {
+    await render();
+    await room(1200);
+
+    // The drag starts from the width the column is drawn at — 224 plus the 31 it shares — rather than
+    // from the width this build states.
+    await dragEdge("executable", 40);
+    expect(columnWidth("executable")).toBe("295px");
+
+    // And there is no furthest point: the columns simply take more room than the page has, which is
+    // what the table's own scroller is for.
+    await dragEdge("executable", 2000);
+    expect(columnWidth("executable")).toBe("2295px");
+  });
+});

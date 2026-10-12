@@ -22,9 +22,12 @@ import { LoaderCircle, RefreshCw, X } from "@lucide/vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import ColumnResizeHandle from "@/components/ui/ColumnResizeHandle.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
+import { useColumnWidths } from "@/composables/useColumnWidths";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
+import { NO_CHROME, type ColumnWidth } from "@/lib/columns";
 import { formatSize } from "@/lib/files/format";
 import { environmentMenu, processDetailMenu, processRowMenu } from "@/lib/menu/inspect";
 import { MENU_TITLES } from "@/lib/menu/titles";
@@ -32,14 +35,52 @@ import { UNKNOWN } from "@/lib/monitor/format";
 import type { ProcessSortKey } from "@/lib/monitor/processes";
 import { type SortDirection, startsDescending } from "@/lib/sort";
 import { TABLE, rowClass } from "@/lib/table";
+import { cn } from "@/lib/utils";
 import { useMonitorStore } from "@/stores/monitor";
 import type { EnvironmentEntry, ProcessSample } from "@/types/monitor";
 
 const props = defineProps<{ active: boolean }>();
 
+/**
+ * The table's columns, and what each of them may be.
+ *
+ * Every column carries a width and an edge, the command line included: what a drag means does not
+ * depend on which column it is. The command line is the one this page is read for — a process is
+ * identified by what it was started with, not by its number — so it is given the widest default of
+ * the seven, and a panel with room to spare hands it the same share as the rest.
+ *
+ * The table is drawn with a fixed layout, which is what makes a width a width: under the automatic
+ * layout the widths are suggestions the widest cell overrules, and a suggestion is not something an
+ * edge can be dragged to. That is also why the two long columns below no longer carry `max-w-0` —
+ * that was the automatic layout's way of asking for truncation, and a fixed layout truncates where
+ * it is told to by the cell's own width.
+ */
+const PROCESS_COLUMNS: readonly ColumnWidth[] = [
+  { key: "pid", defaultPx: 80, minPx: 64 },
+  { key: "user", defaultPx: 80, minPx: 56 },
+  { key: "memory", defaultPx: 96, minPx: 72 },
+  { key: "cpu", defaultPx: 80, minPx: 56 },
+  { key: "name", defaultPx: 160, minPx: 96 },
+  { key: "command", defaultPx: 260, minPx: 200 },
+  { key: "executable", defaultPx: 224, minPx: 120 },
+];
+
+/** The line the columns are drawn on: the table's own width, spent on nothing but them. */
+const TABLE_LINE = NO_CHROME;
+
 const { t } = useI18n();
 const monitor = useMonitorStore();
 const { openMenu } = useContextMenu();
+
+/** The table itself, whose width is the room the columns have. */
+const columnsLine = ref<HTMLTableElement | null>(null);
+const {
+  vars: columnVars,
+  minWidth: columnsMinWidth,
+  edge: columnEdge,
+  move: moveColumn,
+  reset: resetColumn,
+} = useColumnWidths({ table: "processes", columns: PROCESS_COLUMNS, line: TABLE_LINE, element: columnsLine });
 
 /** One process somebody opened, with the name it had when they opened it. */
 interface OpenProcess {
@@ -159,17 +200,36 @@ watch(rows, (current) => {
     </p>
 
     <div class="min-h-0 flex-1 overflow-auto">
-      <table :class="TABLE.page.table" :aria-label="t('inspect.processes.title')">
+      <table
+        ref="columnsLine"
+        :class="cn(TABLE.page.table, 'table-fixed')"
+        :style="{ ...columnVars, minWidth: `${columnsMinWidth}px` }"
+        :aria-label="t('inspect.processes.title')"
+      >
         <thead :class="TABLE.page.head">
           <tr :class="TABLE.page.headRow">
-            <th class="w-20 text-right" :class="TABLE.page.headCell">
-              <span class="flex items-center justify-end gap-1">
+            <th class="relative w-[var(--col-pid)] text-center" :class="TABLE.page.headCell">
+              <span class="flex items-center justify-center gap-1">
                 PID
                 <LoaderCircle v-if="monitor.readingProcesses" :size="10" class="animate-spin" />
               </span>
+              <ColumnResizeHandle
+                v-bind="columnEdge('pid', 'PID')"
+                data-column="pid"
+                @move="moveColumn('pid', $event)"
+                @reset="resetColumn('pid')"
+              />
             </th>
-            <th class="w-20 text-left" :class="TABLE.page.headCell">{{ t("inspect.process.user") }}</th>
-            <th class="w-24 text-right" :class="TABLE.page.headCell">
+            <th class="relative w-[var(--col-user)] text-center" :class="TABLE.page.headCell">
+              {{ t("inspect.process.user") }}
+              <ColumnResizeHandle
+                v-bind="columnEdge('user', t('inspect.process.user'))"
+                data-column="user"
+                @move="moveColumn('user', $event)"
+                @reset="resetColumn('user')"
+              />
+            </th>
+            <th class="relative w-[var(--col-memory)] text-center" :class="TABLE.page.headCell">
               <SortHeader
                 :label="t('monitor.processes.memory')"
                 :sorted="monitor.processSort === 'memory'"
@@ -177,9 +237,15 @@ watch(rows, (current) => {
                 :hint="t('inspect.process.sortBy', { column: t('monitor.processes.memory') })"
                 @sort="orderBy('memory', 'descending')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('memory', t('monitor.processes.memory'))"
+                data-column="memory"
+                @move="moveColumn('memory', $event)"
+                @reset="resetColumn('memory')"
+              />
             </th>
             <th
-              class="w-20 text-right"
+              class="relative w-[var(--col-cpu)] text-center"
               :class="TABLE.page.headCell"
               :title="t('inspect.process.cpuSinceRead')"
               :aria-sort="
@@ -193,9 +259,15 @@ watch(rows, (current) => {
                 :hint="t('inspect.process.sortBy', { column: t('monitor.processes.cpu') })"
                 @sort="orderBy('cpu', 'descending')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('cpu', t('monitor.processes.cpu'))"
+                data-column="cpu"
+                @move="moveColumn('cpu', $event)"
+                @reset="resetColumn('cpu')"
+              />
             </th>
             <th
-              class="w-40 text-left"
+              class="relative w-[var(--col-name)] text-center"
               :class="TABLE.page.headCell"
               :aria-sort="
                 monitor.processSort === 'name' ? (monitor.processDescending ? 'descending' : 'ascending') : 'none'
@@ -208,9 +280,31 @@ watch(rows, (current) => {
                 :hint="t('inspect.process.sortBy', { column: t('inspect.process.name') })"
                 @sort="orderBy('name', 'ascending')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('name', t('inspect.process.name'))"
+                data-column="name"
+                @move="moveColumn('name', $event)"
+                @reset="resetColumn('name')"
+              />
             </th>
-            <th class="text-left" :class="TABLE.page.headCell">{{ t("inspect.process.command") }}</th>
-            <th class="w-56 text-left" :class="TABLE.page.headCell">{{ t("inspect.process.executable") }}</th>
+            <th class="relative w-[var(--col-command)] text-center" :class="TABLE.page.headCell">
+              {{ t("inspect.process.command") }}
+              <ColumnResizeHandle
+                v-bind="columnEdge('command', t('inspect.process.command'))"
+                data-column="command"
+                @move="moveColumn('command', $event)"
+                @reset="resetColumn('command')"
+              />
+            </th>
+            <th class="relative w-[var(--col-executable)] text-center" :class="TABLE.page.headCell">
+              {{ t("inspect.process.executable") }}
+              <ColumnResizeHandle
+                v-bind="columnEdge('executable', t('inspect.process.executable'))"
+                data-column="executable"
+                @move="moveColumn('executable', $event)"
+                @reset="resetColumn('executable')"
+              />
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -232,15 +326,11 @@ watch(rows, (current) => {
             <td class="truncate font-mono" :class="TABLE.page.cell" :title="row.sample.name">
               {{ row.sample.name }}
             </td>
-            <td
-              class="max-w-0 truncate font-mono text-muted-foreground"
-              :class="TABLE.page.cell"
-              :title="row.sample.command"
-            >
+            <td class="truncate font-mono text-muted-foreground" :class="TABLE.page.cell" :title="row.sample.command">
               {{ row.sample.command }}
             </td>
             <td
-              class="max-w-0 truncate font-mono text-muted-foreground"
+              class="truncate font-mono text-muted-foreground"
               :class="TABLE.page.cell"
               :title="row.sample.executable ?? ''"
             >

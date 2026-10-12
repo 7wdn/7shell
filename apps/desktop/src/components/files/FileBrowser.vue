@@ -35,10 +35,13 @@ import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
+import ColumnResizeHandle from "@/components/ui/ColumnResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
+import { useColumnWidths } from "@/composables/useColumnWidths";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
+import { type ColumnLine, type ColumnWidth } from "@/lib/columns";
 import {
   extensionOf,
   familyOf,
@@ -75,6 +78,40 @@ import { usePreferencesStore } from "@/stores/preferences";
 import type { SftpEntry } from "@/types/session";
 
 const props = defineProps<{ handle: string }>();
+
+/**
+ * The listing's columns, and what each of them may be.
+ *
+ * Every one of them carries a width and an edge that can be dragged, the name column included: what
+ * a drag means for a column is the same question wherever it sits, and a column whose edge answered
+ * to nothing would read as a broken one rather than as a column with a rule of its own. The floors
+ * are where a column would stop saying anything — a name long enough to tell two files apart, a size
+ * four digits wide, a type as long as a word, a date in the shape this build writes dates, a mode as
+ * long as a mode, an owner with a group beside it.
+ *
+ * The widths are what this build draws them at on a panel with no room to spare. A panel with room to
+ * spare divides it between the columns nobody has moved, which is what `lib/columns.ts` is about.
+ */
+const LISTING_COLUMNS: readonly ColumnWidth[] = [
+  { key: "name", defaultPx: 320, minPx: 160 },
+  { key: "size", defaultPx: 80, minPx: 56 },
+  { key: "kind", defaultPx: 80, minPx: 64 },
+  { key: "modified", defaultPx: 160, minPx: 112 },
+  { key: "mode", defaultPx: 96, minPx: 64 },
+  { key: "owner", defaultPx: 112, minPx: 80 },
+];
+
+/**
+ * What the listing's line spends around its columns: `px-3` on each side of the heading strip, and
+ * `gap-2` between the cells.
+ *
+ * The rows spend the same — `p-1.5` on the list plus `px-1.5` on a row is the same twelve pixels,
+ * and the same gaps — which is what keeps a heading over its own column. These numbers are written
+ * here rather than read out of the stylesheet because they *are* the stylesheet: a class changed
+ * without this line is a heading that no longer sits over its column, and the e2e run is where that
+ * shows up.
+ */
+const LISTING_LINE: ColumnLine = { paddingPx: 12, gapPx: 8 };
 
 const preferences = usePreferencesStore();
 
@@ -147,6 +184,23 @@ const busy = ref(false);
 const listing = ref<HTMLDivElement | null>(null);
 /** A drag in progress over the empty space: where it started and what the rows measured. */
 let drag: { from: Point; rows: RowBand[]; moved: boolean } | null = null;
+
+/**
+ * The strip the headings are drawn in, and the columns those headings stand for.
+ *
+ * Its width is the room the columns have, which is why it is measured rather than counted: the
+ * sidebar's divider, the file panel's divider and the window itself all change it without touching
+ * a single column. What comes back from here is what the template draws with — the widths, the
+ * least width the line may be drawn at, and what each heading's edge needs.
+ */
+const columnsLine = ref<HTMLDivElement | null>(null);
+const {
+  vars: columnVars,
+  minWidth: columnsMinWidth,
+  edge: columnEdge,
+  move: moveColumn,
+  reset: resetColumn,
+} = useColumnWidths({ table: "files", columns: LISTING_COLUMNS, line: LISTING_LINE, element: columnsLine });
 
 /**
  * How much of the listing is drawn, and what the layout says about the rest.
@@ -1059,6 +1113,13 @@ function openAreaMenu(event: MouseEvent): void {
       <DirectoryTree v-if="twoPanes" :handle="props.handle" :current-path="browser.path" @navigate="goTo" />
 
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <!--
+          The widths are written here and not on the strip that carries the headings, because a custom
+          property reaches what is *inside* the element it is written on and the rows are the strip's
+          sibling rather than its child. Written on the strip alone, the headings are drawn at the
+          width somebody set and the rows at their content's width — which is exactly what the e2e run
+          caught, the two of them a third of the panel apart.
+        -->
         <div
           ref="listing"
           role="listbox"
@@ -1066,6 +1127,7 @@ function openAreaMenu(event: MouseEvent): void {
           tabindex="0"
           :aria-label="t('files.listing')"
           :aria-activedescendant="selection.lead === null ? undefined : rowId(selection.lead)"
+          :style="columnVars"
           :class="
             cn(
               'relative flex min-h-0 flex-1 flex-col overflow-auto outline-none',
@@ -1087,10 +1149,12 @@ function openAreaMenu(event: MouseEvent): void {
             other. The tables on the inspect pages carry the same background for the same reason.
           -->
           <div
+            ref="columnsLine"
             data-listing-header
-            class="sticky top-0 flex items-center gap-2 border-b border-border bg-background px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+            class="sticky top-0 flex gap-2 border-b border-border bg-background px-3 py-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase"
+            :style="{ minWidth: `${columnsMinWidth}px` }"
           >
-            <span class="min-w-0 flex-1">
+            <span class="relative flex w-[var(--col-name)] shrink-0 items-center justify-center">
               <SortHeader
                 :label="t('files.name')"
                 :sorted="order.column === 'name'"
@@ -1098,8 +1162,14 @@ function openAreaMenu(event: MouseEvent): void {
                 :hint="t('files.sortBy', { column: t('files.name') })"
                 @sort="orderBy('name')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('name', t('files.name'))"
+                data-column="name"
+                @move="moveColumn('name', $event)"
+                @reset="resetColumn('name')"
+              />
             </span>
-            <span class="w-20 shrink-0 text-right">
+            <span class="relative flex w-[var(--col-size)] shrink-0 items-center justify-center">
               <SortHeader
                 :label="t('files.size')"
                 :sorted="order.column === 'size'"
@@ -1107,8 +1177,14 @@ function openAreaMenu(event: MouseEvent): void {
                 :hint="t('files.sortBy', { column: t('files.size') })"
                 @sort="orderBy('size')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('size', t('files.size'))"
+                data-column="size"
+                @move="moveColumn('size', $event)"
+                @reset="resetColumn('size')"
+              />
             </span>
-            <span class="w-20 shrink-0">
+            <span class="relative flex w-[var(--col-kind)] shrink-0 items-center justify-center">
               <SortHeader
                 :label="t('files.type')"
                 :sorted="order.column === 'kind'"
@@ -1116,8 +1192,14 @@ function openAreaMenu(event: MouseEvent): void {
                 :hint="t('files.sortBy', { column: t('files.type') })"
                 @sort="orderBy('kind')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('kind', t('files.type'))"
+                data-column="kind"
+                @move="moveColumn('kind', $event)"
+                @reset="resetColumn('kind')"
+              />
             </span>
-            <span class="w-40 shrink-0 text-right">
+            <span class="relative flex w-[var(--col-modified)] shrink-0 items-center justify-center">
               <SortHeader
                 :label="t('files.modified')"
                 :sorted="order.column === 'modified'"
@@ -1125,8 +1207,14 @@ function openAreaMenu(event: MouseEvent): void {
                 :hint="t('files.sortBy', { column: t('files.modified') })"
                 @sort="orderBy('modified')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('modified', t('files.modified'))"
+                data-column="modified"
+                @move="moveColumn('modified', $event)"
+                @reset="resetColumn('modified')"
+              />
             </span>
-            <span class="w-24 shrink-0">
+            <span class="relative flex w-[var(--col-mode)] shrink-0 items-center justify-center">
               <SortHeader
                 :label="t('files.permissions')"
                 :sorted="order.column === 'mode'"
@@ -1134,14 +1222,26 @@ function openAreaMenu(event: MouseEvent): void {
                 :hint="t('files.sortBy', { column: t('files.permissions') })"
                 @sort="orderBy('mode')"
               />
+              <ColumnResizeHandle
+                v-bind="columnEdge('mode', t('files.permissions'))"
+                data-column="mode"
+                @move="moveColumn('mode', $event)"
+                @reset="resetColumn('mode')"
+              />
             </span>
-            <span class="w-28 shrink-0">
+            <span class="relative flex w-[var(--col-owner)] shrink-0 items-center justify-center">
               <SortHeader
                 :label="t('files.owner')"
                 :sorted="order.column === 'owner'"
                 :descending="order.descending"
                 :hint="t('files.sortBy', { column: t('files.owner') })"
                 @sort="orderBy('owner')"
+              />
+              <ColumnResizeHandle
+                v-bind="columnEdge('owner', t('files.owner'))"
+                data-column="owner"
+                @move="moveColumn('owner', $event)"
+                @reset="resetColumn('owner')"
               />
             </span>
           </div>
@@ -1156,8 +1256,11 @@ function openAreaMenu(event: MouseEvent): void {
           <!--
             The rows that are drawn, and two spacers standing in for the ones that are not: the
             listing is as tall as its whole contents, and only a screenful of it exists.
+
+            The list carries the same least width the headings do, for the same reason: a panel too
+            narrow for the columns scrolls them rather than squeezing the name column to nothing.
           -->
-          <ul class="p-1.5">
+          <ul class="p-1.5" :style="{ minWidth: `${columnsMinWidth}px` }">
             <li v-if="drawnWindow.before > 0" aria-hidden="true" :style="{ height: `${drawnWindow.before}px` }"></li>
             <li v-for="entry in drawn" :key="entry.path" :data-path="entry.path">
               <div
@@ -1177,19 +1280,25 @@ function openAreaMenu(event: MouseEvent): void {
                 @dblclick="enter(entry)"
                 @contextmenu="openEntryMenu($event, entry)"
               >
-                <span class="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left" :title="entry.name">
+                <span class="flex w-[var(--col-name)] shrink-0 items-center gap-2 py-0.5 text-left" :title="entry.name">
                   <component :is="entryIcon(entry)" :size="13" class="shrink-0 text-muted-foreground" />
                   <span class="truncate text-xs">{{ entry.name }}</span>
                 </span>
 
-                <span class="w-20 shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
+                <span class="w-[var(--col-size)] shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
                   sizeOf(entry)
                 }}</span>
-                <span class="w-20 shrink-0 truncate text-[10px] text-muted-foreground">{{ typeOf(entry) }}</span>
-                <span class="w-40 shrink-0 text-right text-[10px] text-muted-foreground">{{ modifiedOf(entry) }}</span>
-                <span class="w-20 shrink-0 font-mono text-[10px] text-muted-foreground">{{ modeOf(entry) }}</span>
+                <span class="w-[var(--col-kind)] shrink-0 truncate text-[10px] text-muted-foreground">{{
+                  typeOf(entry)
+                }}</span>
+                <span class="w-[var(--col-modified)] shrink-0 text-right text-[10px] text-muted-foreground">{{
+                  modifiedOf(entry)
+                }}</span>
+                <span class="w-[var(--col-mode)] shrink-0 font-mono text-[10px] text-muted-foreground">{{
+                  modeOf(entry)
+                }}</span>
                 <span
-                  class="w-28 shrink-0 truncate font-mono text-[10px] text-muted-foreground"
+                  class="w-[var(--col-owner)] shrink-0 truncate font-mono text-[10px] text-muted-foreground"
                   :title="ownershipOf(entry)"
                   >{{ ownershipOf(entry) }}</span
                 >

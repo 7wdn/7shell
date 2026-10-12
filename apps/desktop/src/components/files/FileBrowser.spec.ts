@@ -686,3 +686,185 @@ describe("selecting rows", () => {
     expect(field.value, "an answer does not put the old path back under somebody's hands").toBe("/home/user/logs");
   });
 });
+
+/**
+ * The columns: one width per column, shared by the heading and the rows.
+ *
+ * The two used to write their widths down separately — `w-24` over `w-20` — and were sixteen pixels
+ * apart for as long as nobody looked, so what is asserted here is that they cannot be: a heading and
+ * the cell under it read the same variable, and a drag writes that variable and nothing else.
+ *
+ * A test document lays nothing out, so the room the columns have is told rather than measured: the
+ * width is defined on the strip and the observers are then run, which is what a real one does when
+ * the window changes size. Without that the handle is told nothing about the room — nought — and
+ * every drag stops at the column's own floor.
+ */
+describe("the columns of the listing", () => {
+  /** Whatever asked to be told when the strip changes size, so that a case can tell it. */
+  let watching: (() => void)[] = [];
+
+  beforeEach(() => {
+    watching = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(notify: () => void) {
+          watching.push(notify);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** The strip the headings are drawn in, whose width is the room the columns have. */
+  function header(): HTMLElement {
+    const strip = listing()?.querySelector<HTMLElement>("[data-listing-header]");
+    if (!strip) {
+      throw new Error("the listing drew no headings");
+    }
+    return strip;
+  }
+
+  /** Says how wide the strip is, and lets whatever is watching it hear about it. */
+  async function room(width: number): Promise<void> {
+    Object.defineProperty(header(), "clientWidth", { value: width });
+    for (const notify of watching) {
+      notify();
+    }
+    await nextTick();
+  }
+
+  /** The edge of one column, as it is drawn. */
+  function edge(key: string): HTMLElement {
+    const found = listing()?.querySelector<HTMLElement>(`[data-column-divider][data-column='${key}']`);
+    if (!found) {
+      throw new Error(`no edge is drawn for the ${key} column`);
+    }
+    return found;
+  }
+
+  /** The width a column is drawn at, as the scroller both the strip and the rows are inside is told. */
+  function columnWidth(key: string): string {
+    return listing()?.style.getPropertyValue(`--col-${key}`) ?? "";
+  }
+
+  /** The width variable a cell is drawn with, or nothing for a cell that is not a column of its own. */
+  function widthOfCell(cell: Element | undefined): string | null {
+    if (!(cell instanceof HTMLElement)) {
+      return null;
+    }
+    return /w-\[var\((--col-[\w-]+)\)\]/.exec(cell.className)?.[1] ?? null;
+  }
+
+  /** Drags a column's edge this many pixels to the right, the way a pointer does. */
+  async function dragEdge(key: string, delta: number): Promise<void> {
+    const element = edge(key);
+    element.setPointerCapture = vi.fn();
+    element.releasePointerCapture = vi.fn();
+    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 400 }));
+    element.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 400 + delta }));
+    element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    await nextTick();
+  }
+
+  it("gives every column one width, which its heading and its rows both read", async () => {
+    await render(unsorted);
+
+    const edges = [...header().querySelectorAll<HTMLElement>("[data-column-divider]")];
+    const cells = [...(rows()[0]?.children ?? [])];
+
+    // Every column, the name one included: a column whose edge answered to nothing would read as a
+    // broken one rather than as a column with a rule of its own.
+    expect(edges.map((mark) => widthOfCell(mark.parentElement ?? undefined))).toEqual([
+      "--col-name",
+      "--col-size",
+      "--col-kind",
+      "--col-modified",
+      "--col-mode",
+      "--col-owner",
+    ]);
+    expect(edges.map((mark) => widthOfCell(mark.parentElement ?? undefined))).toEqual(cells.map(widthOfCell));
+    // And the width is written where both of them can read it — the element they are both inside —
+    // rather than on the strip, which the rows are beside rather than within.
+    expect(header().style.getPropertyValue("--col-size"), "the strip declares no width of its own").toBe("");
+  });
+
+  it("tells the line how narrow it may be drawn, so a narrow panel scrolls instead of squeezing", async () => {
+    await render(unsorted);
+
+    // Twelve pixels of padding on each side, eight between six cells, and the six columns at
+    // 320 + 80 + 80 + 160 + 96 + 112.
+    expect(header().style.minWidth).toBe("912px");
+    expect(listing()?.querySelector<HTMLElement>("ul.p-1\\.5")?.style.minWidth).toBe("912px");
+  });
+
+  it("divides the room a panel has to spare between the columns nobody has moved", async () => {
+    await render(unsorted);
+
+    // 1200 wide, 64 spent on chrome: the columns have 1136 and ask for 848, so each of the six takes
+    // 48 of the 288 left over.
+    await room(1200);
+
+    expect(columnWidth("name")).toBe("368px");
+    expect(columnWidth("size")).toBe("128px");
+    expect(columnWidth("owner")).toBe("160px");
+  });
+
+  it("leaves a column that has been moved out of that division", async () => {
+    await render(unsorted);
+    await room(1200);
+    await dragEdge("size", 40);
+
+    // The size column is the one somebody put at 168, and the other five divide what is left — 200 of
+    // it, 40 each, so the name column is drawn at 360 rather than at the 368 it was drawn at before.
+    expect(columnWidth("size")).toBe("168px");
+    expect(columnWidth("name")).toBe("360px");
+  });
+
+  it("widens a column when its edge is dragged, and the rows follow it", async () => {
+    await render(unsorted);
+    await room(900);
+
+    expect(columnWidth("size")).toBe("80px");
+    await dragEdge("size", 40);
+
+    expect(columnWidth("size")).toBe("120px");
+  });
+
+  it("lets a drag go as wide as the pointer asks, however wide the panel is", async () => {
+    await render(unsorted);
+    await room(900);
+
+    // No ceiling: a column wider than the panel is what the strip's own scrollbar is for, and the
+    // line's least width grows with it so that there is something to scroll.
+    await dragEdge("size", 2000);
+
+    expect(columnWidth("size")).toBe("2080px");
+    expect(header().style.minWidth).toBe("2912px");
+  });
+
+  it("keeps every column off its own floor", async () => {
+    await render(unsorted);
+    await room(900);
+
+    await dragEdge("name", -2000);
+
+    expect(columnWidth("name"), "a name column narrower than this says nothing").toBe("160px");
+  });
+
+  it("hands a column back to the width the panel draws it at when its edge is double-clicked", async () => {
+    await render(unsorted);
+    await room(900);
+    await dragEdge("size", 40);
+
+    edge("size").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await nextTick();
+
+    expect(columnWidth("size")).toBe("80px");
+  });
+});
