@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  7Shell mark: the seven and its cursor on transparency, for a README, a site header or a favicon —
+  anywhere a dark tile would be a square nobody asked for. The paths are the ones art/icon.svg
+  draws, on the same 1024 coordinates; the viewBox is the ink plus 30px, so the mark fills a 24px
+  logo box instead of sitting in the middle of it. Change the paths here and there together.
+
+  One colour, where the tile is two. The tile can afford a near-white cursor because it brings its
+  own dark plate; a mark on a page has no plate, and a near-white cursor is invisible on white — and
+  swapping it for the page's ink only moves the problem to a dark page. The accent is the one value
+  that reads on both, so a page uses the accent and nothing else.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="576" height="592" viewBox="224 216 576 592" role="img" aria-label="7Shell">
+  <title>7Shell</title>
+  <g fill="none" stroke="#4da3ff" stroke-width="100" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M304 296 L664 296 L420 728" />
+    <path d="M570 728 L720 728" />
+  </g>
+</svg>

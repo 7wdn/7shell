@@ -1,31 +1,31 @@
 <script setup lang="ts">
 /**
- * The product mark: a prompt, a chevron followed by an underscore.
+ * The product mark: the application icon, the size of a title bar.
  *
- * Drawn as SVG rather than shipped as a bitmap so it stays crisp at any size and takes its
- * colour from the design tokens. `art/icon.png` is the same shape for places that need a file.
+ * `art/icon.svg` is the artwork, and this is that file's own geometry mapped onto a 32-unit box by
+ * the plate it sits on — the same 30.5/928 the coordinates below were worked out with, plus the
+ * 0.75 the plate is inset by — so the mark in the title bar and the icon in the taskbar are one
+ * drawing at two sizes. Change them together.
+ *
+ * It is drawn in the icon's own colours rather than the design tokens, and that is deliberate: a
+ * mark that took its colour from the theme would be a different picture from the one the taskbar
+ * and the installer show, and it would be a grey one, because the palettes' accent for text is not
+ * this blue. The icon carries its own dark plate, which is what lets one picture read on a light
+ * title bar and a dark one without knowing which it is on.
  */
 withDefaults(defineProps<{ size?: number }>(), { size: 18 });
 </script>
 
 <template>
   <svg :width="size" :height="size" viewBox="0 0 32 32" fill="none" role="img" aria-label="7Shell" class="shrink-0">
-    <rect
-      x="0.75"
-      y="0.75"
-      width="30.5"
-      height="30.5"
-      rx="7.5"
-      class="fill-primary/10 stroke-border"
-      stroke-width="1.5"
-    />
+    <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.84" fill="#12161d" stroke="#2b3342" stroke-width="0.13" />
     <path
-      d="M11 10.5 L17.5 16 L11 21.5"
-      class="stroke-primary"
-      stroke-width="2.4"
+      d="M9.16 8.9 L21 8.9 L12.98 23.1"
+      stroke="#4da3ff"
+      stroke-width="3.29"
       stroke-linecap="round"
       stroke-linejoin="round"
     />
-    <rect x="19.5" y="19.6" width="6.5" height="2.6" rx="1.3" class="fill-foreground/70" />
+    <path d="M17.91 23.1 L22.84 23.1" stroke="#e6ebf5" stroke-width="3.29" stroke-linecap="round" />
   </svg>
 </template>

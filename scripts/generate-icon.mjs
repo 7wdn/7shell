@@ -1,25 +1,27 @@
 #!/usr/bin/env node
-// Draws the placeholder application mark as a PNG, with no image library and no
-// borrowed artwork. Replace `art/icon.png` with the real mark when it exists and
-// re-run `pnpm icons`; nothing else has to change.
+// Rasterises `art/icon.svg` into `art/icon.png`, with no image library and no borrowed artwork: it
+// reads the drawing out of the SVG and paints it, so the vector file stays the one place the mark
+// is defined and this stays a step rather than a second copy of it. `tauri icon` then cuts the
+// platform sets out of that PNG.
 //
 //   node scripts/generate-icon.mjs   ->   art/icon.png   ->   pnpm icons
+//
+// It understands the shapes that one file contains and nothing else: a single <rect> wearing a
+// stroke for the plate, and a single <g> of round-capped, round-joined paths made of M and L. What
+// it cannot read is an error, not a guess — a stroke that quietly failed to draw is an icon that
+// ships wrong, and nobody looks at an icon twice.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 
 import { REPO_ROOT } from "./lib/descriptors.mjs";
 
-const SIZE = 1024;
+const ARTWORK = path.join(REPO_ROOT, "art", "icon.svg");
 const OUTPUT = path.join(REPO_ROOT, "art", "icon.png");
 
-const COLOR = {
-  plate: [0x12 / 255, 0x16 / 255, 0x1d / 255],
-  ring: [0x2b / 255, 0x33 / 255, 0x42 / 255],
-  chevron: [0x4d / 255, 0xa3 / 255, 0xff / 255],
-  underscore: [0xe6 / 255, 0xeb / 255, 0xf5 / 255],
-};
+const drawing = parseDrawing(await readFile(ARTWORK, "utf8"));
+const SIZE = drawing.size;
 
 /** Premultiplied RGBA, so compositing is a plain source-over add. */
 const canvas = new Float64Array(SIZE * SIZE * 4);
@@ -69,27 +71,32 @@ function forEachPixelInBox(left, top, right, bottom, visit) {
   }
 }
 
-function paintRoundedRect(left, top, right, bottom, radius, color) {
+function paintRoundedRect(left, top, right, bottom, radius, colour) {
   forEachPixelInBox(left, top, right, bottom, (x, y) => {
     const distance = roundedRectDistance(x + 0.5, y + 0.5, left, top, right, bottom, radius);
     const coverage = clamp(0.5 - distance, 0, 1);
     if (coverage > 0) {
-      blend(x, y, color, coverage);
+      blend(x, y, colour, coverage);
     }
   });
 }
 
-function paintRing(left, top, right, bottom, radius, lineWidth, color) {
+function paintRing(left, top, right, bottom, radius, lineWidth, colour) {
   forEachPixelInBox(left, top, right, bottom, (x, y) => {
     const distance = Math.abs(roundedRectDistance(x + 0.5, y + 0.5, left, top, right, bottom, radius));
     const coverage = clamp(lineWidth / 2 + 0.5 - distance, 0, 1);
     if (coverage > 0) {
-      blend(x, y, color, coverage);
+      blend(x, y, colour, coverage);
     }
   });
 }
 
-function paintStroke(points, halfWidth, color) {
+/**
+ * Filling everything within halfWidth of the nearest segment is the same set as a stroked polyline
+ * with round caps and round joins: the capsules of the segments, plus the disc each one carries at
+ * the joint they share. So this one distance test draws all three.
+ */
+function paintStroke(points, halfWidth, colour) {
   const xs = points.map(([x]) => x);
   const ys = points.map(([, y]) => y);
   const left = Math.min(...xs) - halfWidth;
@@ -106,26 +113,116 @@ function paintStroke(points, halfWidth, color) {
     }
     const coverage = clamp(halfWidth + 0.5 - nearest, 0, 1);
     if (coverage > 0) {
-      blend(x, y, color, coverage);
+      blend(x, y, colour, coverage);
     }
   });
 }
 
-function draw() {
-  paintRoundedRect(48, 48, SIZE - 48, SIZE - 48, 208, COLOR.plate);
-  paintRing(48, 48, SIZE - 48, SIZE - 48, 208, 4, COLOR.ring);
+function draw({ plate, paths, half }) {
+  paintRoundedRect(plate.left, plate.top, plate.right, plate.bottom, plate.radius, plate.fill);
+  paintRing(plate.left, plate.top, plate.right, plate.bottom, plate.radius, plate.strokeWidth, plate.stroke);
+  for (const { points, colour } of paths) {
+    paintStroke(points, half, colour);
+  }
+}
 
-  // A prompt: a chevron followed by an underscore.
-  paintStroke(
-    [
-      [384, 352],
-      [556, 512],
-      [384, 672],
-    ],
-    38,
-    COLOR.chevron,
-  );
-  paintRoundedRect(608, 640, 812, 716, 38, COLOR.underscore);
+function element(source, name) {
+  const match = source.match(new RegExp(`<${name}\\b[^>]*>`));
+  if (match === null) {
+    throw new Error(`art/icon.svg has no <${name}>`);
+  }
+  return match[0];
+}
+
+function attribute(elementSource, name) {
+  const match = elementSource.match(new RegExp(`\\b${name}="([^"]*)"`));
+  return match === null ? null : match[1];
+}
+
+function number(elementSource, name) {
+  const value = attribute(elementSource, name);
+  const parsed = value === null ? Number.NaN : Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${name} is missing or not a number: ${elementSource}`);
+  }
+  return parsed;
+}
+
+function colour(elementSource, name) {
+  const value = attribute(elementSource, name);
+  const match = value === null ? null : /^#([0-9a-f]{6})$/i.exec(value);
+  if (match === null) {
+    throw new Error(`${name} is missing or not a #rrggbb colour: ${elementSource}`);
+  }
+  const hex = Number.parseInt(match[1], 16);
+  return [((hex >> 16) & 0xff) / 255, ((hex >> 8) & 0xff) / 255, (hex & 0xff) / 255];
+}
+
+/** The `d` this file uses: one M, then Ls, each with an absolute x and y. */
+function pointList(data) {
+  const tokens = data === null ? [] : (data.match(/[A-Za-z]|-?\d*\.?\d+/g) ?? []);
+  const points = [];
+  let index = 0;
+  while (index < tokens.length) {
+    const expected = points.length === 0 ? "M" : "L";
+    if (tokens[index] !== expected) {
+      throw new Error(`expected ${expected} in "${data}", found "${tokens[index]}"`);
+    }
+    const x = Number(tokens[index + 1]);
+    const y = Number(tokens[index + 2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new Error(`"${expected}" in "${data}" is missing a coordinate`);
+    }
+    points.push([x, y]);
+    index += 3;
+  }
+  if (points.length < 2) {
+    throw new Error(`a path needs at least two points: "${data}"`);
+  }
+  return points;
+}
+
+function parseDrawing(source) {
+  const root = element(source, "svg");
+  const viewBox = (attribute(root, "viewBox") ?? "").split(/[\s,]+/).map(Number);
+  const square = viewBox.length === 4 && viewBox[0] === 0 && viewBox[1] === 0 && viewBox[2] === viewBox[3];
+  if (!square) {
+    throw new Error(`expected a square viewBox starting at 0 0, got "${attribute(root, "viewBox")}"`);
+  }
+
+  const plateSource = element(source, "rect");
+  const left = number(plateSource, "x");
+  const top = number(plateSource, "y");
+  const plate = {
+    left,
+    top,
+    right: left + number(plateSource, "width"),
+    bottom: top + number(plateSource, "height"),
+    radius: number(plateSource, "rx"),
+    fill: colour(plateSource, "fill"),
+    stroke: colour(plateSource, "stroke"),
+    strokeWidth: number(plateSource, "stroke-width"),
+  };
+
+  const group = element(source, "g");
+  if (attribute(group, "fill") !== "none") {
+    throw new Error(`the <g> has to set fill="none": ${group}`);
+  }
+  for (const property of ["stroke-linecap", "stroke-linejoin"]) {
+    if (attribute(group, property) !== "round") {
+      throw new Error(`only ${property}="round" is drawn, not "${attribute(group, property)}"`);
+    }
+  }
+
+  const paths = [...source.matchAll(/<path\b[^>]*>/g)].map(([pathSource]) => ({
+    points: pointList(attribute(pathSource, "d")),
+    colour: colour(pathSource, "stroke"),
+  }));
+  if (paths.length === 0) {
+    throw new Error("art/icon.svg draws no <path>");
+  }
+
+  return { size: viewBox[2], plate, paths, half: number(group, "stroke-width") / 2 };
 }
 
 function crc32(buffer) {
@@ -183,7 +280,7 @@ function encodePng() {
   ]);
 }
 
-draw();
+draw(drawing);
 await mkdir(path.dirname(OUTPUT), { recursive: true });
 await writeFile(OUTPUT, encodePng());
-console.log(`wrote ${path.relative(REPO_ROOT, OUTPUT).split(path.sep).join("/")}`);
+console.log(`wrote ${path.relative(REPO_ROOT, OUTPUT).split(path.sep).join("/")} at ${SIZE}px from art/icon.svg`);

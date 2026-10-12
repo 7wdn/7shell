@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  7Shell application icon: the seven, drawn as one shell prompt.
+
+  A prompt's chevron and the digit seven are the same figure. Take `>` and turn it so its upper arm
+  lies flat along the top and its lower arm falls steeply away: what is left is a seven. That is the
+  whole of what the mark has to say about the product — a seven, and a shell — and it costs no
+  second element to say it. The one thing added is the prompt's cursor, under the leg's foot: the
+  element the placeholder mark already had, in the colour it already had, so the icon a taskbar has
+  been showing is recognisably the same family rather than a new one.
+
+  Flat colour, four values, all of them already in the interface palette. No gradient and no
+  outline: at 16px a taskbar render keeps the silhouette of a seven and nothing else, and a
+  gradient is the first thing to turn to mud there.
+
+  Geometry on a 1024 canvas. The mark's ink — the stroke, not the path — spans x 254..770,
+  y 246..778, which sits on the plate with 206px to the left and right of it and 198px above and
+  below. Equal margins on opposite sides, and the bar is held short enough that the ink box is very
+  nearly square (516 by 532), which is what keeps the mark from looking like it is leaning out of a
+  square plate towards its top left:
+
+    plate    48..976, corner radius 208, ring 4px wide centred on the edge
+    seven    M 304 296 -> 664 296 -> 420 728      bar 360 long, leg 496 at 60.5 degrees
+    cursor   M 570 728 -> 720 728                 150 long, on the leg's baseline, 50px clear of
+                                                  the foot's cap and ending near the vertex, so the
+                                                  tile does not grow a tail on its bottom right
+    stroke   100 wide, round caps, round join
+
+  The bar is the one measurement with room in it: it sets how wide the mark reads, and a seven whose
+  bar is long reads as a slab rather than as a numeral. Its right end is the vertex the leg hangs
+  from and does not move; shortening it means pulling the left end in.
+
+  art/mark.svg is the same two paths with the plate taken away and a tighter viewBox. They are two
+  files because a taskbar wants the tile and a page wants the mark; change the paths in both.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="7Shell">
+  <title>7Shell</title>
+  <rect x="48" y="48" width="928" height="928" rx="208" fill="#12161d" stroke="#2b3342" stroke-width="4" />
+  <g fill="none" stroke-width="100" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M304 296 L664 296 L420 728" stroke="#4da3ff" />
+    <path d="M570 728 L720 728" stroke="#e6ebf5" />
+  </g>
+</svg>
