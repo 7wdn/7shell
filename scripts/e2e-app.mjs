@@ -49,6 +49,12 @@ const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
  * What gets closed is the port, not just the application. An interrupted run leaves its dev server
  * behind, and that server is what makes this run's `tauri dev` die with "Port 1420 is already in
  * use" while the window it had already opened loads the interface from the stale one.
+ *
+ * The debugging port is checked as well, and it is the one case that is refused rather than closed:
+ * the tests *attach* to whatever answers there, so a process this command does not own — a browser
+ * somebody left running with a debugging port, which 9222 usually is — would be driven instead of
+ * the application, and every case would fail with a timeout in the wrong window. Killing it is not
+ * this script's business, so it says what is in the way and stops.
  */
 async function closeRunningInstance() {
   const running = listenersOn(DEV_PORT).length > 0 || listenersOn(DEBUG_PORT).length > 0;
@@ -66,13 +72,29 @@ async function closeRunningInstance() {
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (await portIsFree(DEV_PORT)) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  if (!(await portIsFree(DEV_PORT))) {
+    console.error(`e2e: something still holds port ${DEV_PORT}, and it is not the application`);
+    process.exit(2);
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (await portIsFree(DEBUG_PORT)) {
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
 
-  console.error(`e2e: something still holds port ${DEV_PORT}, and it is not the application`);
-  process.exit(2);
+  console.error(
+    `e2e: port ${DEBUG_PORT} is still answering, and this command did not start it. The tests attach ` +
+      "to whatever is there, so a browser somebody left with a debugging port would be driven " +
+      "instead of the application. Close it, or pick another port: SEVENSHELL_E2E_PORT=<port> pnpm app:e2e",
+  );
+  process.exit(3);
 }
 
 /** Waits for the debugging endpoint to answer, or gives up saying what it waited for. */
