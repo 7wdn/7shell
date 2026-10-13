@@ -8,11 +8,18 @@ All notable changes to 7Shell are documented in this file. The format is
 
 ### Added
 
-- **The release channel has a place in the title bar.** An icon that says what the channel said — the
-  version itself when a release is published, the state in its tooltip while a check is out or after
-  one failed — and pressing it asks, or leads to the page that installs what it found. The question it
-  answers is one people ask before there is an answer, so it is there whether or not there is anything
-  to say.
+- **The update centre: what is published, and the four things to do about it.** Opening the release
+  entry in the title bar (or the update block on the About page) opens a window that asks the channel
+  again as it opens, says what is published over what is running, and draws the release notes. From
+  there a version can be **downloaded in the background** — the work continues with the window closed,
+  and the entry in the title bar carries the percentage — and installed later with **restart and
+  update**, which is the moment the window is actually replaced. **Ignore this version** stops a
+  release being mentioned anywhere until it is taken back on the About page, and **open the download
+  page** hands the release's own page to the system's browser.
+- **A release and an installation are two steps now, in the shell as well as on screen.** The archive
+  is downloaded and verified when somebody asks for it, and waits there — keyed by the version it was
+  signed for, so a later check cannot have an older archive installed under a newer name. A call that
+  installs without a download still downloads first, so both paths work.
 
 ### Changed
 
@@ -21,6 +28,9 @@ All notable changes to 7Shell are documented in this file. The format is
   fifteen — when the channel could not be read, because "the network is not up yet" is not an answer
   and a failed check should not look like "you are up to date". The retries belong to the check, so
   the page about the build keeps its own button for asking by hand.
+- **The page about the build describes; the update centre acts.** Its install button opened a download
+  of tens of megabytes with no way to say "not now" or "not this version"; it now leads to the window
+  where those are the choices.
 
 ### Fixed
 

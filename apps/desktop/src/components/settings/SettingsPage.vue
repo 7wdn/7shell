@@ -325,6 +325,10 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
     return "";
   }
   switch (row.field) {
+    case "ignoredUpdateVersion":
+      // No row writes this one — the window that offers a release is where it is set — so the value
+      // here is only ever read back on the page that describes the release.
+      return preferences.ignoredUpdateVersion ?? "";
     case "themeMode":
       return preferences.themeMode;
     case "themePalette":

@@ -118,6 +118,21 @@ export function updateInstall(): Promise<void> {
   return invoke<void>("update_install");
 }
 
+/**
+ * Downloads the checked release and keeps it, installing nothing.
+ *
+ * The step between the two is the point: what is downloaded is not what is running, and somebody who
+ * is in the middle of something decides when the window is allowed to be replaced.
+ */
+export function updateDownload(): Promise<void> {
+  return invoke<void>("update_download");
+}
+
+/** Opens the page a version is published on, in the system's own browser. */
+export function updateOpenReleasePage(version: string): Promise<void> {
+  return invoke<void>("update_open_release_page", { version });
+}
+
 export async function onUpdateProgress(listener: (payload: UpdateProgress) => void): Promise<Unlisten> {
   return listen<UpdateProgress>("update:progress", (event) => listener(event.payload));
 }

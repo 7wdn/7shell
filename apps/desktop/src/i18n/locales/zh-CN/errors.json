@@ -63,7 +63,8 @@
     "update": {
       "checkFailed": "无法读取更新通道，可能有新版本但没有被发现。",
       "notAvailable": "没有已检查、待安装的更新。",
-      "installFailed": "无法安装这次更新。"
+      "installFailed": "无法安装这次更新。",
+      "releasePageFailed": "无法打开这次版本的发布页面。"
     },
     "app": {
       "notReady": "应用仍在启动中。",

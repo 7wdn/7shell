@@ -803,6 +803,12 @@ pub struct AppSettings {
     /// own check included.
     #[serde(default = "update_check_on")]
     pub update_check_on_startup: bool,
+    /// A version somebody has said they do not want to hear about again.
+    ///
+    /// A version rather than a switch: "not this one" is the decision people make, and turning the
+    /// check off would stop news of everything after it too. Absent means nobody has said anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignored_update_version: Option<String>,
     /// Whether a directory travels as one archive instead of file by file.
     ///
     /// Off unless somebody turns it on, unlike the monitor above: this one changes what a transfer
@@ -1026,6 +1032,7 @@ impl Default for AppSettings {
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
             update_check_on_startup: update_check_on(),
+            ignored_update_version: None,
             background_image: BackgroundImage::default(),
             packed_transfer: false,
             command_completion: command_completion_on(),

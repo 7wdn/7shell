@@ -16,7 +16,21 @@
       "installing": "Installing — the application restarts when it is done.",
       "notInstalled": "This is a development build, not an installed application: there is no installed copy for an update to replace.",
       "autoLabel": "Check for updates at startup",
-      "autoHelp": "The only request this build makes on its own. It sends the request and nothing about you, your machine or what you are working on — and pressing the button above does the same thing whenever you would rather ask by hand."
+      "autoHelp": "The only request this build makes on its own. It sends the request and nothing about you, your machine or what you are working on — and pressing the button above does the same thing whenever you would rather ask by hand.",
+      "centre": "Update centre",
+      "centreHelp": "The release channel: what is published, and what can be done about it.",
+      "availableBadge": "An update is available",
+      "publishedOver": "Version {version} is published; this build is {current}.",
+      "newest": "This is the newest release ({version}).",
+      "ready": "Version {version} has been downloaded. Restart to update.",
+      "download": "Download",
+      "downloadInBackground": "Background download",
+      "ignoreVersion": "Ignore this version",
+      "ignoredOne": "Version {version} is being ignored.",
+      "listenAgain": "Hear about it again",
+      "restartAndUpdate": "Restart and update",
+      "openReleasePage": "Open the download page",
+      "openCentre": "Open the update centre"
     },
     "nav": {
       "label": "Settings categories",
@@ -102,7 +116,7 @@
         "actions": "Actions"
       }
     },
-  "palette": {
+    "palette": {
       "default": "White",
       "mist": "Mist grey",
       "graphite": "Titanium grey",
@@ -390,7 +404,7 @@
       },
       "actions": {
         "uploadClipboard": "Upload the files on the clipboard",
-      "toggleTransfers": "Show the transfers",
+        "toggleTransfers": "Show the transfers",
         "terminalFind": "Find in the terminal",
         "completionAccept": "Take the row the arrows are on",
         "completionTrigger": "Open the completion list"

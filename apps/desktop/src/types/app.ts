@@ -424,6 +424,8 @@ export interface AppSettings {
    * which is why the switch that stops it is on the page where the manual check lives.
    */
   readonly updateCheckOnStartup: boolean;
+  /** A version somebody has said they do not want to hear about again. Absent means nobody has. */
+  readonly ignoredUpdateVersion?: string;
   /** The stack the interface draws its text in. Absent means the one this build ships with. */
   readonly uiFont?: string;
   /** How large the terminal draws its text, in pixels. */

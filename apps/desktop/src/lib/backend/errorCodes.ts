@@ -60,6 +60,7 @@ export const ERROR_CATALOG = {
   "UPDATE-CHECK-FAILED": "errors.update.checkFailed",
   "UPDATE-NOT-AVAILABLE": "errors.update.notAvailable",
   "UPDATE-INSTALL-FAILED": "errors.update.installFailed",
+  "UPDATE-RELEASE-PAGE-FAILED": "errors.update.releasePageFailed",
   // Application
   "APP-NOT-READY": "errors.app.notReady",
   "APP-NO-TRANSPORT": "errors.app.noTransport",

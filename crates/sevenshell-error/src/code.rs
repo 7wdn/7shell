@@ -142,6 +142,8 @@ error_catalog! {
     UpdateNotPending => "UPDATE-NOT-AVAILABLE", "errors.update.notAvailable";
     #[doc = "A checked release could not be downloaded or installed."]
     UpdateInstallFailed => "UPDATE-INSTALL-FAILED", "errors.update.installFailed";
+    #[doc = "The page a release is published on could not be opened."]
+    UpdateReleasePageFailed => "UPDATE-RELEASE-PAGE-FAILED", "errors.update.releasePageFailed";
 
     // -- Application -------------------------------------------------------
     #[doc = "A required service is not ready yet, for example the vault during startup."]

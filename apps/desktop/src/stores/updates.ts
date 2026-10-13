@@ -15,6 +15,7 @@ import { computed, ref } from "vue";
 
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { usePreferencesStore } from "@/stores/preferences";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 
 /**
@@ -41,6 +42,7 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 export const useUpdatesStore = defineStore("updates", () => {
+  const preferences = usePreferencesStore();
   /** The last answer, or nothing while the channel has not been asked in this session. */
   const answer = ref<UpdateCheck | null>(null);
   const asking = ref(false);
@@ -48,6 +50,15 @@ export const useUpdatesStore = defineStore("updates", () => {
   /** How far an installation has got, while one is running. */
   const progress = ref<UpdateProgress | null>(null);
   const installing = ref(false);
+  /** The version whose archive is downloaded and waiting, or nothing while none is. */
+  const downloadedVersion = ref<string | null>(null);
+  /**
+   * Whether the window about the channel is open.
+   *
+   * Here rather than in the title bar that opens it, because two places open it — the entry in the
+   * title bar and the page about the build — and the dialog itself is drawn once, at the root.
+   */
+  const dialogOpen = ref(false);
 
   /**
    * The release the channel offers, when it offers one.
@@ -55,7 +66,16 @@ export const useUpdatesStore = defineStore("updates", () => {
    * A computed rather than a second piece of state: "there is an update" is a reading of the answer,
    * and a copy of it could disagree with the answer it came from.
    */
-  const release = computed(() => (answer.value?.kind === "available" ? answer.value.release : null));
+  const release = computed(() => {
+    const offered = answer.value?.kind === "available" ? answer.value.release : null;
+    // A version somebody said they do not want to hear about again is not drawn anywhere: not on the
+    // entry, not on the settings button, and not in the dialog. The answer itself is kept, so the
+    // page about the build can say that the version is being skipped rather than that nothing is new.
+    if (offered && offered.version === preferences.ignoredUpdateVersion) {
+      return null;
+    }
+    return offered;
+  });
 
   /**
    * Asks the channel.
@@ -78,6 +98,54 @@ export const useUpdatesStore = defineStore("updates", () => {
       failure.value = asShellError(error, "update_check");
     } finally {
       asking.value = false;
+    }
+  }
+
+  /**
+   * Downloads the release the last check found and keeps it.
+   *
+   * The step before installing, and the whole of why the two are separate: what is downloaded is not
+   * what is running, and somebody in the middle of something decides when the window may be replaced.
+   */
+  async function download(): Promise<void> {
+    if (installing.value || downloadedVersion.value !== null) {
+      return;
+    }
+
+    installing.value = true;
+    failure.value = null;
+    progress.value = null;
+    const stop = await backend.events.onUpdateProgress((payload) => {
+      progress.value = payload;
+    });
+
+    try {
+      await backend.updates.download();
+      downloadedVersion.value = release.value?.version ?? null;
+    } catch (error) {
+      failure.value = asShellError(error, "update_download");
+    } finally {
+      stop();
+      installing.value = false;
+    }
+  }
+
+  /**
+   * Says that a version is not to be mentioned again, and says it in the file.
+   *
+   * Written through the preferences store rather than kept here: it is a preference, it outlives the
+   * window, and the next run reads it before this store exists.
+   */
+  async function ignore(version: string): Promise<void> {
+    await preferences.setIgnoredUpdateVersion(version);
+  }
+
+  /** Asks the system to open the page a version is published on. */
+  async function openReleasePage(version: string): Promise<void> {
+    try {
+      await backend.updates.openReleasePage(version);
+    } catch (error) {
+      failure.value = asShellError(error, "update_release_page");
     }
   }
 
@@ -139,5 +207,20 @@ export const useUpdatesStore = defineStore("updates", () => {
     }
   }
 
-  return { answer, asking, failure, progress, installing, release, check, checkAfterStartup, install };
+  return {
+    answer,
+    asking,
+    failure,
+    progress,
+    installing,
+    downloadedVersion,
+    dialogOpen,
+    release,
+    check,
+    checkAfterStartup,
+    download,
+    ignore,
+    openReleasePage,
+    install,
+  };
 });

@@ -33,6 +33,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import ContextMenu from "@/components/shell/ContextMenu.vue";
 import TitleBar from "@/components/shell/TitleBar.vue";
 import ToastViewport from "@/components/shell/ToastViewport.vue";
+import UpdateCenter from "@/components/shell/UpdateCenter.vue";
 import TransferPanel from "@/components/shell/TransferPanel.vue";
 import Wallpaper from "@/components/shell/Wallpaper.vue";
 import UnlockScreen from "@/components/vault/UnlockScreen.vue";
@@ -530,6 +531,8 @@ onBeforeUnmount(() => {
       happened, and it has to be drawable wherever the person is when it does — including
       while they are still on the gate screen, which is why it is not inside the branch below.
     -->
+    <UpdateCenter />
+
     <ToastViewport />
   </div>
 </template>

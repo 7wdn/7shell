@@ -92,6 +92,46 @@ pub fn command_for(platform: Platform, path: &Path, show: Show, exists: bool) ->
     }
 }
 
+/// Asks the system to open a URL in whatever it uses for the web.
+///
+/// A sibling of [`show`] rather than a general "open whatever this is": the two differ in what they
+/// are for, and a caller that had to say which is which could get it wrong. The address is not
+/// checked here — it is built by the caller out of things this build knows, and the one place that
+/// takes a value from a manifest validates it before it gets this far.
+pub fn open_url(url: &str) -> Result<(), ShellError> {
+    let (program, args) = url_command_for(Platform::current(), url);
+    let mut command = std::process::Command::new(&program);
+    command.args(&args);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| ShellError::fs_open_failed(format!("{program} could not be run: {error}")))
+}
+
+/// The program that opens a URL, and what it is given.
+///
+/// Named per platform for the same reason the file case is: the three systems each have their own
+/// way, and this build is not guessing on the two it cannot test.
+pub fn url_command_for(platform: Platform, url: &str) -> (String, Vec<String>) {
+    match platform {
+        // `start` is the shell's own way to the browser, and the empty argument is what keeps a URL
+        // with an `&` in it from being read as part of the command.
+        Platform::Windows => (
+            "cmd".to_owned(),
+            vec!["/c".to_owned(), "start".to_owned(), String::new(), url.to_owned()],
+        ),
+        Platform::MacOs => ("open".to_owned(), vec![url.to_owned()]),
+        Platform::Linux => ("xdg-open".to_owned(), vec![url.to_owned()]),
+    }
+}
+
 /// Asks the system to show the path, and does not wait for the answer.
 ///
 /// Not waited for because the file manager is not this application's child: waiting would hold the
@@ -166,6 +206,30 @@ mod tests {
         assert_eq!(
             command_for(Platform::Linux, &path("/home/me/half.bin"), Show::Select, true).1,
             vec!["/home/me".to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_url_is_opened_by_the_systems_own_way() {
+        assert_eq!(
+            url_command_for(Platform::Windows, "https://example.com/a?b=1&c=2"),
+            (
+                "cmd".to_owned(),
+                vec![
+                    "/c".to_owned(),
+                    "start".to_owned(),
+                    String::new(),
+                    "https://example.com/a?b=1&c=2".to_owned()
+                ]
+            )
+        );
+        assert_eq!(
+            url_command_for(Platform::MacOs, "https://example.com"),
+            ("open".to_owned(), vec!["https://example.com".to_owned()])
+        );
+        assert_eq!(
+            url_command_for(Platform::Linux, "https://example.com"),
+            ("xdg-open".to_owned(), vec!["https://example.com".to_owned()])
         );
     }
 

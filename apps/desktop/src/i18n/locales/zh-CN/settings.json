@@ -16,7 +16,21 @@
       "installing": "正在安装——完成后应用会重启。",
       "notInstalled": "这是开发构建，不是安装好的应用，没有可被更新替换的已安装副本。",
       "autoLabel": "启动时检查更新",
-      "autoHelp": "这是本构建唯一会主动发出的请求，不包含任何关于你、你的机器或你正在做的事的信息；也可以关掉它，用上面的按钮在想检查的时候手动检查。"
+      "autoHelp": "这是本构建唯一会主动发出的请求，不包含任何关于你、你的机器或你正在做的事的信息；也可以关掉它，用上面的按钮在想检查的时候手动检查。",
+      "centre": "更新中心",
+      "centreHelp": "更新通道：发布了什么，以及可以对它做什么。",
+      "availableBadge": "有可用更新",
+      "publishedOver": "版本 {version} 已发布，当前版本为 {current}。",
+      "newest": "已是最新版本（{version}）。",
+      "ready": "新版本 {version} 已下载，重启即可更新。",
+      "download": "下载",
+      "downloadInBackground": "后台下载",
+      "ignoreVersion": "忽略此版本",
+      "ignoredOne": "已忽略版本 {version}。",
+      "listenAgain": "重新提示",
+      "restartAndUpdate": "重启并更新",
+      "openReleasePage": "打开下载页",
+      "openCentre": "打开更新中心"
     },
     "nav": {
       "label": "设置分类",
@@ -102,7 +116,7 @@
         "actions": "操作"
       }
     },
-  "palette": {
+    "palette": {
       "default": "洁白",
       "mist": "雾灰",
       "graphite": "钛灰",
@@ -390,7 +404,7 @@
       },
       "actions": {
         "uploadClipboard": "上传剪贴板中的文件",
-      "toggleTransfers": "显示传输面板",
+        "toggleTransfers": "显示传输面板",
         "terminalFind": "在终端里查找",
         "completionAccept": "取用方向键指到的那一行",
         "completionTrigger": "打开联想列表"

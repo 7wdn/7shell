@@ -20,12 +20,10 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { isDesktopRuntime } from "@/lib/runtime";
-import { useTerminalsStore } from "@/stores/terminals";
 import { useUpdatesStore } from "@/stores/updates";
 
 const { t } = useI18n();
 const updates = useUpdatesStore();
-const terminals = useTerminalsStore();
 
 /** How far an installation has got, or nothing while there is no download to measure. */
 const percent = computed(() => {
@@ -53,8 +51,14 @@ const label = computed(() => {
   return t("settings.update.check");
 });
 
-async function ask(): Promise<void> {
-  await updates.check();
+/**
+ * Opens the centre, which is where an answer is asked for and read.
+ *
+ * Not a check from here: the window that opens asks, and it is the only place the answer is drawn —
+ * a click that asked and then opened a window with a stale answer in it would be two answers.
+ */
+function openCentre(): void {
+  updates.dialogOpen = true;
 }
 </script>
 
@@ -67,7 +71,7 @@ async function ask(): Promise<void> {
     class="flex h-8 items-center gap-1.5 rounded-md bg-primary px-2 font-mono text-[11px] leading-none text-primary-foreground transition-colors hover:bg-primary/90"
     :title="t('shell.update.available', { version: updates.release.version })"
     :aria-label="t('shell.update.available', { version: updates.release.version })"
-    @click="terminals.openSettings('about')"
+    @click="openCentre()"
   >
     <CloudDownload :size="13" />
     <span data-update-version>
@@ -82,8 +86,7 @@ async function ask(): Promise<void> {
     class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
     :title="label"
     :aria-label="label"
-    :disabled="updates.asking"
-    @click="ask()"
+    @click="openCentre()"
   >
     <CloudDownload :size="15" />
   </button>

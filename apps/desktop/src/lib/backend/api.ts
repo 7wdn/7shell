@@ -513,7 +513,10 @@ export const backend = {
    */
   updates: {
     check: (): Promise<UpdateCheck> => forward("update_check", () => desktop.updateCheck()),
+    download: (): Promise<void> => forward("update_download", () => desktop.updateDownload()),
     install: (): Promise<void> => forward("update_install", () => desktop.updateInstall()),
+    openReleasePage: (version: string): Promise<void> =>
+      forward("update_open_release_page", () => desktop.updateOpenReleasePage(version)),
   },
 
   events: {

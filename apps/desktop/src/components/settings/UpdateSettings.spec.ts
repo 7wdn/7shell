@@ -14,17 +14,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   updateCheck: vi.fn(),
+  updateDownload: vi.fn(),
   updateInstall: vi.fn(),
+  updateOpenReleasePage: vi.fn(),
   onUpdateProgress: vi.fn(),
 }));
 
 import UpdateSettings from "@/components/settings/UpdateSettings.vue";
 import { i18n } from "@/i18n";
-import { onUpdateProgress, updateCheck, updateInstall } from "@/lib/backend/tauri";
+import { onUpdateProgress, updateCheck, updateDownload } from "@/lib/backend/tauri";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useUpdatesStore } from "@/stores/updates";
 
 const checkMock = vi.mocked(updateCheck);
-const installMock = vi.mocked(updateInstall);
+const downloadMock = vi.mocked(updateDownload);
 const progressMock = vi.mocked(onUpdateProgress);
 
 let app: App | undefined;
@@ -64,7 +67,7 @@ function text(): string {
 
 beforeEach(() => {
   checkMock.mockReset();
-  installMock.mockReset().mockResolvedValue(undefined);
+  downloadMock.mockReset().mockResolvedValue(undefined);
   progressMock.mockReset().mockResolvedValue(() => {});
 });
 
@@ -87,7 +90,7 @@ describe("the update block", () => {
 
     expect(text()).toContain("0.1.1");
     expect(text()).toContain("a fixed transfer that stalled");
-    expect(text()).toContain("Install and restart");
+    expect(text()).toContain("Open the update centre");
   });
 
   it("does not draw a failed check as being up to date", async () => {
@@ -105,7 +108,7 @@ describe("the update block", () => {
 
     expect(host.querySelector("[data-update-problem]")?.textContent).toContain("UPDATE-CHECK-FAILED");
     expect(text()).not.toContain("Nothing newer");
-    expect(text()).not.toContain("Install and restart");
+    expect(text()).not.toContain("Open the update centre");
   });
 
   it("says what a development build is instead of pretending to check", async () => {
@@ -115,7 +118,7 @@ describe("the update block", () => {
     await press("Check for updates");
 
     expect(text()).toContain("development build");
-    expect(text()).not.toContain("Install and restart");
+    expect(text()).not.toContain("Open the update centre");
   });
 
   it("shows how far a download has got while it runs", async () => {
@@ -129,11 +132,14 @@ describe("the update block", () => {
       listener = register as typeof listener;
       return () => {};
     });
-    installMock.mockImplementation(() => new Promise<void>(() => {}));
+    downloadMock.mockImplementation(() => new Promise<void>(() => {}));
     await mount();
 
     await press("Check for updates");
-    await press("Install and restart");
+    // A download started from the window the button leads to, rather than from this page: the line
+    // below is this page still saying what is happening, wherever it was asked for.
+    void useUpdatesStore().download();
+    await nextTick();
     listener?.({ kind: "downloading", downloaded: 3 * 1024 * 1024, total: 6 * 1024 * 1024 });
     await nextTick();
 

@@ -1,9 +1,10 @@
 /**
  * The release entry in the title bar, as a person meets it.
  *
- * Three states and the two things that matter about each: what it *says* — the tooltip is the only
- * place an icon can say "checking" rather than "check" — and what pressing it does. The store's own
- * suite has the channel; what is checked here is that the entry reads it.
+ * Two things about each of its states: what it *says* — the tooltip is the only place an icon can
+ * say "checking" rather than "check", or that the channel could not be read — and that pressing it
+ * opens the window where the answer is looked at. It deliberately does not ask the channel itself:
+ * that window asks as it opens, and two asks for one click would be two answers.
  *
  * A development build is deliberately not covered: there is no installed copy for an update to
  * replace, and the entry is not drawn at all in a browser.
@@ -15,18 +16,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   updateCheck: vi.fn(),
+  updateDownload: vi.fn(),
   updateInstall: vi.fn(),
+  updateOpenReleasePage: vi.fn(),
   onUpdateProgress: vi.fn(async () => () => {}),
   settingsGet: vi.fn(),
   settingsSet: vi.fn(async () => {}),
-  sessionsList: vi.fn(async () => []),
-  groupsList: vi.fn(async () => []),
 }));
 
 import UpdateEntry from "@/components/shell/UpdateEntry.vue";
 import { i18n } from "@/i18n";
 import { updateCheck } from "@/lib/backend/tauri";
-import { useTerminalsStore } from "@/stores/terminals";
 import { useUpdatesStore } from "@/stores/updates";
 
 const checkMock = vi.mocked(updateCheck);
@@ -60,9 +60,9 @@ afterEach(() => {
 });
 
 describe("the release entry", () => {
-  it("offers to ask before anything is known, and asking is what it does", async () => {
-    checkMock.mockResolvedValue(published);
+  it("is there before anything is known, and opens the window where the answer is", async () => {
     const { host, unmount } = mount();
+    const updates = useUpdatesStore();
 
     const button = entry(host);
     expect(button, "the entry is there before there is an answer").not.toBeNull();
@@ -72,11 +72,11 @@ describe("the release entry", () => {
     button?.click();
     await nextTick();
 
-    expect(checkMock).toHaveBeenCalledTimes(1);
+    expect(updates.dialogOpen, "the window about the release is what it opens").toBe(true);
     unmount();
   });
 
-  it("carries the version once a release is published, and leads to the page that installs it", async () => {
+  it("carries the version once a release is published", async () => {
     const { host, unmount } = mount();
     const updates = useUpdatesStore();
     checkMock.mockResolvedValue(published);
@@ -90,14 +90,11 @@ describe("the release entry", () => {
 
     button?.click();
     await nextTick();
-
-    const terminals = useTerminalsStore();
-    expect(terminals.settingsRequest, "the page is asked to open where the update lives").toBe("about");
-    expect(terminals.activeTab?.kind, "and the page it leads to is open").toBe("settings");
+    expect(updates.dialogOpen).toBe(true);
     unmount();
   });
 
-  it("says it is checking while it is, and cannot be asked twice", async () => {
+  it("says it is checking while it is", async () => {
     let answer: (value: unknown) => void = () => {};
     checkMock.mockReturnValue(
       new Promise((resolve) => {
@@ -110,15 +107,12 @@ describe("the release entry", () => {
     const asking = updates.check();
     await nextTick();
 
-    const button = entry(host);
-    expect(button?.title, "an icon cannot say this by itself").toBe("Checking…");
-    expect(button?.disabled, "a second ask while the first is out is nothing to offer").toBe(true);
+    expect(entry(host)?.title, "an icon cannot say this by itself").toBe("Checking…");
 
-    answer({ kind: "up-to-date", currentVersion: "0.1.0" });
+    answer({ kind: "upToDate", currentVersion: "0.1.0" });
     await asking;
     await nextTick();
 
-    expect(entry(host)?.disabled).toBe(false);
     expect(entry(host)?.title).toBe("Check for updates");
     unmount();
   });

@@ -126,6 +126,13 @@ struct StoredSettings {
     /// hears about a new release from.
     #[serde(default = "update_check_on")]
     update_check_on_startup: bool,
+    /// A version somebody has said they do not want to hear about, which the channel keeps offering.
+    ///
+    /// A version rather than a switch, because "not this one" is the decision people make: turning
+    /// the check off entirely would stop news of everything after it. Absent, and a blank string, both
+    /// read as nobody having said anything.
+    #[serde(default)]
+    ignored_update_version: Option<String>,
     /// Absent in a file written before there was a packed transfer, which reads as off — the default
     /// the feature ships with. A file written by a build that has it cannot be read back by one that
     /// does not, but that is what the schema version is for.
@@ -248,6 +255,7 @@ impl StoredSettings {
             show_tray_icon: settings.show_tray_icon,
             quit_on_close: settings.quit_on_close,
             update_check_on_startup: settings.update_check_on_startup,
+            ignored_update_version: settings.ignored_update_version.clone(),
             packed_transfer: settings.packed_transfer,
             command_completion: settings.command_completion,
             keybindings: settings.keybindings.clone(),
@@ -297,6 +305,7 @@ impl StoredSettings {
             show_tray_icon: self.show_tray_icon,
             quit_on_close: self.quit_on_close,
             update_check_on_startup: self.update_check_on_startup,
+            ignored_update_version: self.ignored_update_version.filter(|version| !version.trim().is_empty()),
             packed_transfer: self.packed_transfer,
             command_completion: self.command_completion,
             keybindings: self.keybindings,
@@ -434,6 +443,7 @@ mod tests {
             show_tray_icon: tray_icon_on(),
             quit_on_close: false,
             update_check_on_startup: update_check_on(),
+            ignored_update_version: None,
             packed_transfer: false,
             command_completion: command_completion_on(),
             keybindings: BTreeMap::new(),

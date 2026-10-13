@@ -63,7 +63,8 @@
     "update": {
       "checkFailed": "The update channel could not be read, so a newer release may exist without being found.",
       "notAvailable": "There is no checked update waiting to be installed.",
-      "installFailed": "The update could not be installed."
+      "installFailed": "The update could not be installed.",
+      "releasePageFailed": "The page this release is published on could not be opened."
     },
     "app": {
       "notReady": "The application is still starting up.",

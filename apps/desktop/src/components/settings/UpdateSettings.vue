@@ -12,10 +12,11 @@
  * What is *not* drawn is a success state, because there is nowhere to draw it: the application is
  * replaced and restarted by the time the call could return.
  */
-import { Download, LoaderCircle, RefreshCw } from "@lucide/vue";
+import { CloudDownload, LoaderCircle, RefreshCw } from "@lucide/vue";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
+import UpdateNotes from "@/components/shell/UpdateNotes.vue";
 import Switch from "@/components/ui/Switch.vue";
 import { describeShellError } from "@/i18n/errors";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -26,6 +27,14 @@ const updates = useUpdatesStore();
 const preferences = usePreferencesStore();
 
 const release = computed(() => updates.release);
+
+/**
+ * The version somebody has said they do not want to hear about again.
+ *
+ * Shown here because this is the page about the build, and "why is nothing being said about the new
+ * release" is a question whose answer is a setting — with the way out of it beside the answer.
+ */
+const ignored = computed(() => preferences.ignoredUpdateVersion);
 
 const buttonLabel = computed(() => {
   if (updates.asking) {
@@ -103,6 +112,22 @@ function translate(key: string, params?: Record<string, string>): string {
 
     <p v-if="summary" class="text-xs text-muted-foreground">{{ summary }}</p>
 
+    <div
+      v-if="ignored"
+      data-update-ignored
+      class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2"
+    >
+      <p class="text-xs text-muted-foreground">{{ t("settings.update.ignoredOne", { version: ignored }) }}</p>
+      <button
+        type="button"
+        data-update-listen
+        class="rounded-md border border-border px-2 py-0.5 text-xs transition-colors hover:bg-accent"
+        @click="preferences.setIgnoredUpdateVersion(null)"
+      >
+        {{ t("settings.update.listenAgain") }}
+      </button>
+    </div>
+
     <!--
       A release to install, with what it says about itself. The notes are published prose and are
       drawn as prose: they are the one place in this window where somebody else's words appear, and
@@ -119,19 +144,18 @@ function translate(key: string, params?: Record<string, string>): string {
 
         <button
           type="button"
-          class="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="updates.installing"
-          @click="updates.install()"
+          data-update-open-centre
+          class="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
+          @click="updates.dialogOpen = true"
         >
-          <LoaderCircle v-if="updates.installing" :size="13" class="animate-spin" />
-          <Download v-else :size="13" />
-          {{ t("settings.update.install") }}
+          <CloudDownload :size="13" />
+          {{ t("settings.update.openCentre") }}
         </button>
       </div>
 
       <div v-if="release.notes" class="min-w-0 space-y-1">
         <h4 class="text-xs font-medium text-muted-foreground">{{ t("settings.update.notes") }}</h4>
-        <p class="text-xs whitespace-pre-wrap select-text">{{ release.notes }}</p>
+        <UpdateNotes :markdown="release.notes" class="select-text" />
       </div>
     </div>
 

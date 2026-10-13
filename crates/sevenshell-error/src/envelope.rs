@@ -576,6 +576,14 @@ impl ShellError {
         Self::new(ErrorCode::UpdateInstallFailed, Origin::new(Subsystem::App)).with_detail(detail)
     }
 
+    /// The release page could not be opened. Nothing was sent anywhere: this is the local system
+    /// refusing to run a browser.
+    pub fn update_release_page_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::UpdateReleasePageFailed, Origin::new(Subsystem::App))
+            .with_outcome(OperationOutcome::NotSent)
+            .with_detail(detail)
+    }
+
     // -- Application -------------------------------------------------------
 
     pub fn app_not_ready() -> Self {

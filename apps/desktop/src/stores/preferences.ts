@@ -107,6 +107,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   sidebarOpen: true,
   monitorEnabled: true,
   updateCheckOnStartup: true,
+  ignoredUpdateVersion: undefined,
   packedTransfer: false,
   commandCompletion: true,
   keybindings: {},
@@ -329,6 +330,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * can still ask by hand when they choose to.
    */
   const updateCheckOnStartup = ref(true);
+  /**
+   * The version somebody has said they do not want to hear about again.
+   *
+   * A version rather than a switch, because "not this one" is the decision people make: turning the
+   * check off would stop news of everything after it too. It is written where the dialog's button is
+   * pressed, and the About page is where it is taken back.
+   */
+  const ignoredUpdateVersion = ref<string | null>(null);
   /**
    * Whether a remote directory is moved as one archive rather than file by file.
    *
@@ -632,6 +641,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       sidebarOpen.value = settings.sidebarOpen;
       monitorEnabled.value = settings.monitorEnabled;
       updateCheckOnStartup.value = settings.updateCheckOnStartup;
+      ignoredUpdateVersion.value = settings.ignoredUpdateVersion ?? null;
       packedTransfer.value = settings.packedTransfer;
       commandCompletion.value = settings.commandCompletion;
       keybindings.value = { ...settings.keybindings };
@@ -724,6 +734,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         sidebarOpen: sidebarOpen.value,
         monitorEnabled: monitorEnabled.value,
         updateCheckOnStartup: updateCheckOnStartup.value,
+        ignoredUpdateVersion: ignoredUpdateVersion.value ?? undefined,
         packedTransfer: packedTransfer.value,
         commandCompletion: commandCompletion.value,
         keybindings: { ...keybindings.value },
@@ -1033,6 +1044,19 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setUpdateCheckOnStartup(auto: boolean): Promise<void> {
     updateCheckOnStartup.value = auto;
     dirty.value = true;
+  }
+
+  /**
+   * Says which version is not to be mentioned again, or forgets it.
+   *
+   * Written at once rather than left for Apply, because it is pressed in a dialog somebody may close
+   * at any moment — a "not this one" that needed a second confirmation on another page would be one
+   * people press twice and believe once.
+   */
+  async function setIgnoredUpdateVersion(version: string | null): Promise<void> {
+    ignoredUpdateVersion.value = version;
+    dirty.value = true;
+    await commit();
   }
 
   /**
@@ -1418,6 +1442,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sidebarOpen,
     monitorEnabled,
     updateCheckOnStartup,
+    ignoredUpdateVersion,
+    setIgnoredUpdateVersion,
     packedTransfer,
     commandCompletion,
     keybindings,
