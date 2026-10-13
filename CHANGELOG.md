@@ -4,6 +4,22 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The terminal ignored its own font settings — in installed builds only.** Everything the terminal
+  draws with lives in a stylesheet that xterm writes at runtime: the family and the size of its text,
+  the foreground and the sixteen colours, the cursor and the height of a row. A packaged build's
+  content security policy blocked it — Tauri adds a nonce to `style-src`, and a nonce turns
+  `'unsafe-inline'` off for the whole document — so the stylesheet sat in the page, complete and never
+  applied, and the pane drew in the interface's own proportional font at the interface's own size.
+  Changing *font size* or *terminal font* changed nothing, and the terminal was monochrome. `tauri dev`
+  was never affected, because the page comes from the dev server, which sends no policy at all: every
+  test in this repository runs the development application, which is why it shipped this way. Tauri now
+  leaves `style-src` alone (`src-tauri/tauri.conf.json`), and `scripts/tests/windowCsp.test.mjs` is
+  what keeps it that way.
+
 ## [0.1.1] - 2026-10-12
 
 Two things the first build got wrong on Windows, both of them settings nobody had written rather than

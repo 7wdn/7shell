@@ -251,6 +251,24 @@ Rust, which hands back a token. The content security policy is set for productio
 only in development, where the dev server and hot reload need it (`csp` and `devCsp` in
 `src-tauri/tauri.conf.json`).
 
+**The policy is only enforced in a packaged build.** Tauri attaches it to the responses it serves
+itself; in development the page comes from the dev server, which sends no policy at all. Everything
+below therefore describes the installed application, and the development application is the one
+thing that cannot show a difference.
+
+**`style-src` allows an inline stylesheet, and that is a requirement rather than a convenience.**
+The terminal draws itself out of a stylesheet it writes at runtime — the family and the size of its
+text, the foreground and the sixteen colours, the cursor, the selection and the height of a row are
+all in it — because those are settings, and a setting cannot live in a stylesheet that was compiled
+before it was chosen. A policy that carries a nonce in `style-src` turns `'unsafe-inline'` off for
+the whole document, and the element xterm writes is then present, complete and never applied: the
+terminal draws in whatever it inherits and stops answering its own settings. That is exactly what
+shipped in 0.1.0 and 0.1.1, in installed builds only — every test in this repository runs the
+development application. Tauri is therefore told not to rewrite this one directive
+(`dangerousDisableAssetCspModification` in `src-tauri/tauri.conf.json`), the reason is asserted by
+`scripts/tests/windowCsp.test.mjs`, and the failure it prevents is worth stating plainly: a
+stylesheet that arrives at runtime can only be verified in a packaged window.
+
 ## Reporting
 
 See [SECURITY.md](https://github.com/7wdn/7shell/blob/main/SECURITY.md).
