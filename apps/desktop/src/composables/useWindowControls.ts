@@ -24,8 +24,11 @@ export interface WindowControls {
   readonly showControls: ComputedRef<boolean>;
   /** True when the window is currently maximized. */
   readonly isMaximized: Ref<boolean>;
+  /** True while the window has been told to stay above every other one. */
+  readonly isAlwaysOnTop: Ref<boolean>;
   minimize(): Promise<void>;
   toggleMaximize(): Promise<void>;
+  toggleAlwaysOnTop(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -37,6 +40,14 @@ export function useWindowControls(platform: PlatformName): WindowControls {
   const isMac = computed(() => platform().toLowerCase() === "macos");
   const showControls = computed(() => isDesktop && !isMac.value);
   const isMaximized = ref(false);
+  /**
+   * Whether the window stays above the others.
+   *
+   * The window's own state rather than a setting somebody chose: a window that came back pinned after
+   * a restart is a window somebody has to unpin before they can see what is behind it, and nobody
+   * asked for that. What the button offers is for as long as the window is open.
+   */
+  const isAlwaysOnTop = ref(false);
 
   let unsubscribe: (() => void) | undefined;
 
@@ -47,6 +58,26 @@ export function useWindowControls(platform: PlatformName): WindowControls {
       // The window may be closing, or a browser may be answering: leaving the glyph as
       // "maximize" is the harmless state either way.
       console.warn("the maximized state could not be read", error);
+    }
+  }
+
+  async function refreshAlwaysOnTop(): Promise<void> {
+    try {
+      isAlwaysOnTop.value = await backend.window.isAlwaysOnTop();
+    } catch (error) {
+      // Same as the glyph above: a window that cannot be asked is one drawn unpinned, which is what
+      // it was anyway until somebody pinned it.
+      console.warn("the always-on-top state could not be read", error);
+    }
+  }
+
+  /** Flips it, and draws what the window says afterwards rather than what was asked for. */
+  async function toggleAlwaysOnTop(): Promise<void> {
+    try {
+      await backend.window.setAlwaysOnTop(!isAlwaysOnTop.value);
+      await refreshAlwaysOnTop();
+    } catch (error) {
+      console.warn("always on top failed", error);
     }
   }
 
@@ -64,7 +95,7 @@ export function useWindowControls(platform: PlatformName): WindowControls {
       return;
     }
     unsubscribe = await backend.window.onResized(() => void refreshMaximized());
-    await refreshMaximized();
+    await Promise.all([refreshMaximized(), refreshAlwaysOnTop()]);
   });
 
   onBeforeUnmount(() => {
@@ -76,8 +107,10 @@ export function useWindowControls(platform: PlatformName): WindowControls {
     isMac,
     showControls,
     isMaximized,
+    isAlwaysOnTop,
     minimize: () => run("minimize", () => backend.window.minimize()),
     toggleMaximize: () => run("toggle maximize", () => backend.window.toggleMaximize()),
+    toggleAlwaysOnTop,
     close: () => run("close", () => backend.window.close()),
   };
 }

@@ -8,6 +8,13 @@ All notable changes to 7Shell are documented in this file. The format is
 
 ### Added
 
+- **The window can be kept on top.** A pin between the release entry and the transfers button holds the
+  window above the others for as long as it is on. The state is the window's own: the toggle asks the
+  window and then draws what the window says, so a window that refuses is drawn unpinned rather than
+  lit over a promise it did not keep — and nothing about it is written down, because a window that came
+  back pinned after a restart is one somebody has to unpin to see anything behind it. The release entry
+  also moved to the left of that pin: what is published, whether this window stays on top, and then the
+  buttons that open pages.
 - **The update centre: what is published, and the four things to do about it.** Opening the release
   entry in the title bar (or the update block on the About page) opens a window that asks the channel
   again as it opens, says what is published over what is running, and draws the release notes. From

@@ -4,7 +4,9 @@
       "minimize": "Minimize",
       "maximize": "Maximize",
       "restore": "Restore",
-      "close": "Close"
+      "close": "Close",
+      "keepOnTop": "Keep on top",
+      "stopKeepingOnTop": "Stop keeping on top"
     },
     "sidebar": {
       "collapse": "Collapse sidebar",

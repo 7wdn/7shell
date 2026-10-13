@@ -51,7 +51,10 @@ const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
  * use" while the window it had already opened loads the interface from the stale one.
  */
 async function closeRunningInstance() {
-  console.log("e2e: an instance is running; closing it for the test run");
+  const running = listenersOn(DEV_PORT).length > 0 || listenersOn(DEBUG_PORT).length > 0;
+  if (running) {
+    console.log("e2e: an instance is running; closing it for the test run");
+  }
 
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/F", "/IM", "sevenshell-desktop.exe"], { stdio: "ignore", shell: true });
@@ -112,9 +115,14 @@ function stopApp(app) {
 }
 
 async function main() {
-  if (!(await portIsFree(DEV_PORT))) {
-    await closeRunningInstance();
-  }
+  // Every run, not only when the dev server is in the way.
+  //
+  // The application holds the debugging port the tests attach to, and a *released* application —
+  // the one somebody installed — holds it while the dev server is nowhere in sight. A run that only
+  // looked at the dev port would then attach to the installed window and drive the person's own
+  // sessions and settings, and read a settings file the application it drove never wrote. What this
+  // closes is expected rather than an error: see the note above about who is at the keyboard.
+  await closeRunningInstance();
 
   // Every run starts from nothing: a previous run's vault would turn "create the vault" into
   // "unlock the vault", and the tests would be describing a different application each time.

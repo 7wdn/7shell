@@ -118,6 +118,9 @@ export const backend = {
     toggleMaximize: (): Promise<void> => forward("window.toggleMaximize", () => desktop.windowToggleMaximize()),
     isMaximized: (): Promise<boolean> => forward("window.isMaximized", () => desktop.windowIsMaximized()),
     close: (): Promise<void> => forward("window.close", () => desktop.windowClose()),
+    isAlwaysOnTop: (): Promise<boolean> => forward("window.isAlwaysOnTop", () => desktop.windowIsAlwaysOnTop()),
+    setAlwaysOnTop: (alwaysOnTop: boolean): Promise<void> =>
+      forward("window.setAlwaysOnTop", () => desktop.windowSetAlwaysOnTop(alwaysOnTop)),
 
     /**
      * Applies the appearance to what the interface does not draw: the window's own chrome and the

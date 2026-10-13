@@ -7,6 +7,8 @@ vi.mock("@/lib/backend/tauri", () => ({
   windowToggleMaximize: vi.fn(),
   windowIsMaximized: vi.fn(),
   windowClose: vi.fn(),
+  windowIsAlwaysOnTop: vi.fn(),
+  windowSetAlwaysOnTop: vi.fn(),
   onWindowResized: vi.fn(),
 }));
 
@@ -14,8 +16,10 @@ import { useWindowControls, type WindowControls } from "@/composables/useWindowC
 import {
   onWindowResized,
   windowClose,
+  windowIsAlwaysOnTop,
   windowIsMaximized,
   windowMinimize,
+  windowSetAlwaysOnTop,
   windowToggleMaximize,
 } from "@/lib/backend/tauri";
 
@@ -24,6 +28,8 @@ const toggleMaximizeMock = vi.mocked(windowToggleMaximize);
 const closeMock = vi.mocked(windowClose);
 const isMaximizedMock = vi.mocked(windowIsMaximized);
 const onResizedMock = vi.mocked(onWindowResized);
+const isAlwaysOnTopMock = vi.mocked(windowIsAlwaysOnTop);
+const setAlwaysOnTopMock = vi.mocked(windowSetAlwaysOnTop);
 
 /** Mounts a throwaway component so the composable's lifecycle hooks actually run. */
 function mount(platform: string): { controls: WindowControls; unmount: () => void } {
@@ -50,6 +56,8 @@ describe("useWindowControls", () => {
     closeMock.mockReset().mockResolvedValue(undefined);
     isMaximizedMock.mockReset().mockResolvedValue(false);
     onResizedMock.mockReset().mockResolvedValue(() => {});
+    isAlwaysOnTopMock.mockReset().mockResolvedValue(false);
+    setAlwaysOnTopMock.mockReset().mockResolvedValue(undefined);
   });
 
   it("draws its own buttons on Windows and Linux", () => {
@@ -114,5 +122,52 @@ describe("useWindowControls", () => {
     expect(onResizedMock).not.toHaveBeenCalled();
 
     vi.mocked(isDesktopRuntime).mockReturnValue(true);
+  });
+});
+
+/**
+ * Keeping the window on top, which is the window's own state.
+ *
+ * What this file is for is the half a component cannot see: the toggle *asks* the window for the
+ * opposite of what it last knew, and then draws what the window says — not what it asked for. A
+ * window that cannot be pinned (a platform refusing, a permission missing) would otherwise be drawn
+ * as pinned, and the second press would ask to unpin something that was never pinned.
+ */
+describe("keeping the window on top", () => {
+  it("reads the window's own state when it mounts", async () => {
+    isAlwaysOnTopMock.mockResolvedValue(true);
+    const { controls } = mount("windows");
+    await settle();
+
+    expect(controls.isAlwaysOnTop.value, "a window already pinned is drawn pinned").toBe(true);
+  });
+
+  it("asks for the opposite of what the window last said", async () => {
+    isAlwaysOnTopMock.mockResolvedValueOnce(false);
+    const { controls } = mount("windows");
+    await settle();
+
+    // What the window will answer after the press: this one pinned, and then not.
+    isAlwaysOnTopMock.mockResolvedValue(true);
+    await controls.toggleAlwaysOnTop();
+    expect(setAlwaysOnTopMock).toHaveBeenLastCalledWith(true);
+    expect(controls.isAlwaysOnTop.value).toBe(true);
+
+    isAlwaysOnTopMock.mockResolvedValue(false);
+    await controls.toggleAlwaysOnTop();
+    expect(setAlwaysOnTopMock).toHaveBeenLastCalledWith(false);
+    expect(controls.isAlwaysOnTop.value).toBe(false);
+  });
+
+  it("draws what the window says rather than what was asked for", async () => {
+    const { controls } = mount("windows");
+    await settle();
+
+    // A window that refuses: the press asked to pin it, and it says it is still not pinned.
+    setAlwaysOnTopMock.mockResolvedValue(undefined);
+    isAlwaysOnTopMock.mockResolvedValue(false);
+    await controls.toggleAlwaysOnTop();
+
+    expect(controls.isAlwaysOnTop.value, "the button follows the window, not the click").toBe(false);
   });
 });

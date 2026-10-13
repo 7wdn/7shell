@@ -1317,6 +1317,38 @@ test("the window draws the background picture the settings name, and lets it thr
  * checked against the running binary itself, by hand, and the two predicates behind it have their own
  * unit cases.
  */
+/**
+ * The pin, which is a window rather than a page.
+ *
+ * No page can say whether the operating system was actually told to keep this window above the
+ * others — that is a window-level fact — so the case asks the shell after each press, through the
+ * same window API the interface uses, and leaves the window unpinned for whatever runs next: a
+ * pinned window would sit over every screenshot the later cases take.
+ */
+test("the window can be kept on top, and the shell is what says so", async () => {
+  const { page, close } = await openApp();
+  try {
+    const pinned = (): Promise<boolean> =>
+      page.evaluate(() => window.__TAURI_INTERNALS__.invoke("plugin:window|is_always_on_top", { label: "main" }));
+
+    const pin = page.locator("[data-window-pin]");
+    await expect(pin).toBeVisible();
+    await expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(await pinned(), "a window starts like every other one").toBe(false);
+
+    await pin.click();
+    await expect(pin, "the button says what the window was told").toHaveAttribute("aria-pressed", "true");
+    await expect.poll(pinned, { message: "the shell is what actually knows" }).toBe(true);
+
+    // Let go of it, so the cases after this one are not run under a window that covers them.
+    await pin.click();
+    await expect(pin).toHaveAttribute("aria-pressed", "false");
+    await expect.poll(pinned).toBe(false);
+  } finally {
+    await close();
+  }
+});
+
 test("the tray icon and the close behaviour are choices, written where the shell reads them", async () => {
   const { page, close } = await openApp();
   try {

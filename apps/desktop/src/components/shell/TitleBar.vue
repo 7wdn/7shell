@@ -11,7 +11,7 @@
  *
  * On macOS the bar keeps its native traffic lights, so the content is inset to make room.
  */
-import { ArrowUpDown, ChevronsRight, ListChecks, Moon, Settings, Sun, SunMoon } from "@lucide/vue";
+import { ArrowUpDown, ChevronsRight, ListChecks, Moon, Pin, PinOff, Settings, Sun, SunMoon } from "@lucide/vue";
 import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -32,9 +32,8 @@ const terminals = useTerminalsStore();
 const files = useFilesStore();
 const updates = useUpdatesStore();
 
-const { isMac, showControls, isMaximized, minimize, toggleMaximize, close } = useWindowControls(
-  () => app.info?.os ?? "",
-);
+const { isMac, showControls, isMaximized, isAlwaysOnTop, minimize, toggleMaximize, toggleAlwaysOnTop, close } =
+  useWindowControls(() => app.info?.os ?? "");
 
 const version = computed(() => (app.info ? `v${app.info.version}` : ""));
 
@@ -126,6 +125,33 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
     <div data-tauri-drag-region class="h-full min-w-4 flex-1"></div>
 
     <!--
+      The release channel first, then the pin: what is published, and whether this window stays above
+      the others. Both are about the application rather than about anything open in it, which is why
+      they stand at the edge of the bar rather than beside the pages they would open.
+    -->
+    <UpdateEntry />
+
+    <!--
+      Keeping the window on top. The window's own state, drawn from what it says: a pinned window is
+      one somebody wants over the terminal they are reading, and the pin is how it is let go again.
+    -->
+    <button
+      type="button"
+      data-window-pin
+      class="grid size-8 place-items-center rounded-md transition-colors"
+      :class="
+        isAlwaysOnTop ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+      "
+      :title="isAlwaysOnTop ? t('shell.window.stopKeepingOnTop') : t('shell.window.keepOnTop')"
+      :aria-label="isAlwaysOnTop ? t('shell.window.stopKeepingOnTop') : t('shell.window.keepOnTop')"
+      :aria-pressed="isAlwaysOnTop"
+      @click="toggleAlwaysOnTop()"
+    >
+      <PinOff v-if="isAlwaysOnTop" :size="15" />
+      <Pin v-else :size="15" />
+    </button>
+
+    <!--
       The way to the transfers without one, and the reason it is here rather than in a menu: the panel
       used to appear only when a transfer did, which left somebody who wanted to look at it — or at
       the folder downloads land in — waiting for one to happen. It carries the count of what is still
@@ -188,12 +214,6 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
     >
       <component :is="modeIcon" :size="15" />
     </button>
-
-    <!--
-      The release channel, before the gear that leads to the page about it: the icon when there is
-      nothing to say, and the version itself when a release is published.
-    -->
-    <UpdateEntry />
 
     <button
       type="button"

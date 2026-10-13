@@ -208,6 +208,20 @@ export function windowClose(): Promise<void> {
 }
 
 /**
+ * Whether this window was told to stay above every other one.
+ *
+ * The window's own answer, which is why it is read rather than remembered: what was asked for and
+ * what the window is doing are two things, and only the window knows the second.
+ */
+export function windowIsAlwaysOnTop(): Promise<boolean> {
+  return getCurrentWindow().isAlwaysOnTop();
+}
+
+export function windowSetAlwaysOnTop(alwaysOnTop: boolean): Promise<void> {
+  return getCurrentWindow().setAlwaysOnTop(alwaysOnTop);
+}
+
+/**
  * Says whether closing the window would throw something away.
  *
  * Armed, a close request comes back as `quit-requested` instead of closing; disarmed, the window
