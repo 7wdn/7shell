@@ -8,6 +8,9 @@
       "keepOnTop": "置顶",
       "stopKeepingOnTop": "取消置顶"
     },
+    "vault": {
+      "lock": "锁定保险库"
+    },
     "sidebar": {
       "collapse": "收起侧边栏",
       "expand": "展开侧边栏",

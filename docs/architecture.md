@@ -363,6 +363,13 @@ buttons and its own drag region. macOS keeps its native chrome in the overlay st
 traffic lights and their behaviour are the platform's to own; the title bar insets its content
 instead of imitating them.
 
+The bar is the window's and its buttons are the vault's: while the vault is shut, every control that
+opens something drawn from it — the sidebar's handle, the release entry, the pin, the transfers, the
+batch panel, the mode and the settings — is not drawn, and what is left is the mark, the version, the
+drag region and the three window buttons. The window is a gate at that moment, and a gate still has
+to be movable and closable; a control that leads into a locked store, meanwhile, is a control that
+can only answer with an error.
+
 The window is also created hidden and revealed only once the interface reports a drawn frame
 (`app_ready`, called from the shell component after the theme and the language are settled). An
 un-painted webview is an opaque white rectangle — the browser control's own default background,

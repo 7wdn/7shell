@@ -17,10 +17,15 @@ application will not save a session until there is one.
   are lost with it. Minimum length is eight characters, and the confirmation field has to match.
 - **Create vault** writes the file and unlocks it.
 
-Later starts open on **Unlock the vault**, which asks for the same password. If it is gone, the
-unlock screen offers a way forward that deletes nothing: **Move the unopenable vault aside** renames
-the file beside itself (`vault.json.old`, then `.2.old`, and so on) and creates a new vault in its
-place. Renaming the file back restores it.
+Later starts open on **Unlock the vault**, which asks for the same password. Under the form are two
+quiet ways out for a password that is gone, and neither of them deletes anything:
+
+- **Forgot the password? Archive and reset** asks once, then renames the file beside itself
+  (`vault.json.old`, then `.2.old`, and so on) and leaves the create form on screen. Renaming the file
+  back restores it.
+- **Switch or manage archived vaults** lists those renamed files with when they were written and how
+  big they are. One can be tried with a password, made the live vault again, or read into the vault
+  that is open — and the folder they live in opens from the same dialog.
 
 ![The create-the-vault screen: a password field, a confirmation field and the Create vault button](/screenshots/create-vault.png)
 

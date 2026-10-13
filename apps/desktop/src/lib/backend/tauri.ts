@@ -41,6 +41,7 @@ import type {
   SessionExportSummary,
   SessionGroup,
   SessionImportOutcome,
+  SessionImportSummary,
   SftpListing,
   SftpOutcome,
   TerminalClosed,
@@ -48,6 +49,7 @@ import type {
   TransferInfo,
   UploadAnswer,
   UploadOutcome,
+  VaultArchive,
   VaultState,
 } from "@/types/session";
 import type {
@@ -258,6 +260,17 @@ export async function onQuitRequested(listener: () => void): Promise<Unlisten> {
   return listen("quit-requested", () => listener());
 }
 
+/**
+ * Calls `listener` when the vault was locked somewhere the interface cannot see.
+ *
+ * The tray menu is drawn by the operating system, so locking from it happens with no page involved:
+ * this is how the window finds out, and without it the shell would go on drawing a library whose
+ * vault is shut. The same event is what `vault_lock` would have produced, only it knows.
+ */
+export async function onVaultLocked(listener: () => void): Promise<Unlisten> {
+  return listen("vault-locked", () => listener());
+}
+
 /** Calls `listener` whenever the window is resized, and resolves with the unsubscribe. */
 export async function onWindowResized(listener: () => void): Promise<Unlisten> {
   return getCurrentWindow().onResized(() => listener());
@@ -301,6 +314,31 @@ export function vaultChangePassword(current: string, next: string): Promise<void
 /** Resolves to the name the unopenable vault file was given. */
 export function vaultSetAside(): Promise<string> {
   return invoke<string>("vault_set_aside");
+}
+
+/** The archived libraries beside the live one, most recently written first. */
+export function vaultArchives(): Promise<VaultArchive[]> {
+  return invoke<VaultArchive[]>("vault_archives");
+}
+
+/** Whether a password opens one archive. Rejects with `VAULT-UNLOCK-FAILED` when it does not. */
+export function vaultArchiveVerify(name: string, password: string): Promise<void> {
+  return invoke<void>("vault_archive_verify", { name, password });
+}
+
+/** Resolves to the name the replaced library was given, or `null` when there was none in place. */
+export function vaultArchiveActivate(name: string): Promise<string | null> {
+  return invoke<string | null>("vault_archive_activate", { name });
+}
+
+/** Adds an archive's sessions, groups and logins to the open vault, and says how many. */
+export function vaultArchiveImport(name: string, password: string): Promise<SessionImportSummary> {
+  return invoke<SessionImportSummary>("vault_archive_import", { name, password });
+}
+
+/** Opens the folder the vault and its archives live in, in the system's file manager. */
+export function vaultRevealFolder(): Promise<void> {
+  return invoke<void>("vault_reveal_folder");
 }
 
 // -- Sessions and groups -----------------------------------------------------

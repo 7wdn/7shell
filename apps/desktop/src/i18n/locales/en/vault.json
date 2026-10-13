@@ -2,6 +2,8 @@
   "vault": {
     "checking": "Looking for the vault…",
     "unavailable": "The vault could not be read, so it is not known whether one exists on this device.",
+    "showPassword": "Show the password",
+    "hidePassword": "Hide the password",
     "create": {
       "title": "Create the vault",
       "description": "The vault password protects every credential saved on this device. It is not stored anywhere and cannot be recovered: if it is lost, the saved sessions and keys are lost with it.",
@@ -16,17 +18,47 @@
     },
     "unlock": {
       "title": "Unlock the vault",
-      "description": "Enter the vault password to reach the saved sessions and their credentials.",
+      "description": "Enter the master password to unlock the session and credential store.",
       "password": "Password",
       "passwordPlaceholder": "Vault password",
       "submit": "Unlock",
       "submitBusy": "Unlocking…"
     },
     "setAside": {
-      "explanation": "Cannot open it? If the password is gone, the file on this device can be renamed and kept — nothing is deleted — and a new vault created in its place.",
-      "submit": "Move the unopenable vault aside",
-      "confirm": "Click again to confirm: rename it and create a new vault",
       "moved": "Kept as {name}. Rename it back to restore it."
+    },
+    "reset": {
+      "link": "Forgot the password? Archive and reset",
+      "title": "Archive the current vault?",
+      "message": "The vault file on this device is renamed and kept — nothing is deleted — and a new vault is created in its place.",
+      "confirm": "Archive it"
+    },
+    "history": {
+      "link": "Switch or manage archived vaults",
+      "title": "Archived vaults",
+      "description": "Archived vaults were found on this device. One can be made the live vault and unlocked again, or its credentials can be merged into the current vault once that one is open.",
+      "loading": "Looking for archived vaults…",
+      "empty": "No archived vaults on this device yet. A vault that cannot be opened is kept here once it has been moved aside.",
+      "openFolder": "Open the folder",
+      "close": "Close",
+      "unknownTime": "unknown time",
+      "passwordPlaceholder": "Password for this vault",
+      "test": "Try a password",
+      "verify": "Check",
+      "verifying": "Checking…",
+      "verified": "That password opens this vault.",
+      "import": "Import its sessions",
+      "importing": "Importing…",
+      "importNeedsUnlock": "Unlock the master vault before merging an import into it.",
+      "imported": "{sessions} sessions, {groups} groups and {secrets} credentials were added.",
+      "importedMissingKeys": "{count} of them name a key this device does not hold.",
+      "importedDroppedHops": "{count} jumped through a session the archive did not carry.",
+      "activate": "Make it the live vault",
+      "activateNeedsLock": "Lock the vault you are in before switching to another one.",
+      "activateTitle": "Switch to this vault?",
+      "activateMessage": "The current vault is renamed and kept as an archive, and the selected file takes its place as the live vault — no data is lost. Unlocking afterwards needs the password that archive was written with.",
+      "activateConfirm": "Confirm the switch",
+      "activated": "{name} is the live vault now. Unlock it with its own password."
     }
   }
 }

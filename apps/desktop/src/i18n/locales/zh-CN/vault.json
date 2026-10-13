@@ -2,6 +2,8 @@
   "vault": {
     "checking": "正在查找保险库…",
     "unavailable": "无法读取保险库，因此无法确定本机是否已创建。",
+    "showPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "create": {
       "title": "创建保险库",
       "description": "保险库密码用于保护保存在本机的全部凭据。它不会以任何形式留存，也无法找回：一旦遗失，已保存的会话与密钥将一并丢失。",
@@ -16,17 +18,47 @@
     },
     "unlock": {
       "title": "解锁保险库",
-      "description": "输入保险库密码以访问已保存的会话及其凭据。",
+      "description": "请输入主密码以解锁会话与凭据存储。",
       "password": "密码",
       "passwordPlaceholder": "保险库密码",
       "submit": "解锁",
       "submitBusy": "正在解锁…"
     },
     "setAside": {
-      "explanation": "打不开？如果密码确实想不起来了，可以把这份文件改名留在旁边——不会删除任何东西——然后创建一个新的保险库。",
-      "submit": "把打不开的保险库移到旁边",
-      "confirm": "再点一次确认：改名保留，并创建新的保险库",
       "moved": "已保留为 {name}。把它改回原名即可恢复。"
+    },
+    "reset": {
+      "link": "忘记密码？归档并重置",
+      "title": "确认归档当前保险库？",
+      "message": "系统将把现有保险库文件自动重命名归档（不会删除任何数据），并为您创建一个全新的保险库。",
+      "confirm": "确认归档"
+    },
+    "history": {
+      "link": "切换或管理历史保险库",
+      "title": "历史保险库",
+      "description": "检测到本地历史归档。您可以将其设为主库重新解锁，或在解锁当前库后将历史凭据导入合并。",
+      "loading": "正在查找历史归档…",
+      "empty": "本机还没有历史归档。打不开的保险库在被移开保留后，会出现在这里。",
+      "openFolder": "打开所在文件夹",
+      "close": "关闭",
+      "unknownTime": "时间未知",
+      "passwordPlaceholder": "该保险库的密码",
+      "test": "测试解锁",
+      "verify": "验证",
+      "verifying": "正在验证…",
+      "verified": "密码正确，可以打开这份保险库。",
+      "import": "导入其中的会话",
+      "importing": "正在导入…",
+      "importNeedsUnlock": "需先解锁主保险库方可合并导入",
+      "imported": "已导入 {sessions} 个会话、{groups} 个分组、{secrets} 条凭据。",
+      "importedMissingKeys": "其中 {count} 个引用了本机没有的密钥。",
+      "importedDroppedHops": "其中 {count} 个引用了该归档未包含的跳板会话。",
+      "activate": "设为当前活跃库",
+      "activateNeedsLock": "需要先锁定当前保险库，才能切换到另一份。",
+      "activateTitle": "切换到这份保险库？",
+      "activateMessage": "当前保险库将自动重命名归档，并由选中的文件接替为主库（数据均完整保留）。切换后需使用该归档库对应的原密码解锁。",
+      "activateConfirm": "确认切换",
+      "activated": "已把 {name} 设为活跃库，请用它的密码解锁。"
     }
   }
 }

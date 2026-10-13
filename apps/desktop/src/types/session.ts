@@ -176,6 +176,19 @@ export type OpenOutcome =
 
 export type VaultState = "missing" | "locked" | "unlocked";
 
+/**
+ * One archived vault file that sits beside the live one.
+ *
+ * The name and never the directory: which archive this is, is the whole of what the interface is
+ * told, and the shell joins the two on its own side.
+ */
+export interface VaultArchive {
+  readonly name: string;
+  /** When the file was last written, in seconds since the Unix epoch. */
+  readonly modifiedAt: number;
+  readonly sizeBytes: number;
+}
+
 /** A secret travelling inwards. There is no type for one travelling out. */
 export interface SecretInput {
   readonly value: string;

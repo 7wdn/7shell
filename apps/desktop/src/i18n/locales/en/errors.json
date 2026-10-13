@@ -5,7 +5,7 @@
       "locked": "The vault is locked.",
       "kdfFailed": "The vault key could not be derived.",
       "corrupt": "The vault file could not be read.",
-      "unlockFailed": "The vault did not open. The password is wrong, or the file is not the one that was saved."
+      "unlockFailed": "Unlock failed: the password is wrong, or the vault file failed verification."
     },
     "ssh": {
       "hostKeyUnknown": "The server at {host}:{port} presented a host key that has not been seen before.",

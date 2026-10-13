@@ -362,7 +362,32 @@
     },
     "security": {
       "keys": "Keys this device holds",
-      "hosts": "Host keys this device trusts"
+      "hosts": "Host keys this device trusts",
+      "vault": "Vault",
+      "password": {
+        "title": "Master password",
+        "help": "The password that opens the vault. Changing it re-encrypts the file, and the current one is asked for again even though the vault is open — an unlocked window is not by itself permission to change what opens it.",
+        "current": "Current password",
+        "next": "New password",
+        "nextPlaceholder": "At least 8 characters",
+        "confirm": "Confirm the new password",
+        "tooShort": "Use at least 8 characters.",
+        "mismatch": "The two passwords do not match.",
+        "same": "The new password is the current one.",
+        "submit": "Change the master password",
+        "submitting": "Changing…",
+        "changed": "The vault now opens with the new password."
+      },
+      "lock": {
+        "title": "Lock the vault",
+        "help": "Drops the derived key and the decrypted document. Open terminals keep running — they are authenticated already — and the unlock screen comes back.",
+        "action": "Lock now"
+      },
+      "archives": {
+        "title": "Archived vaults",
+        "help": "Vaults that were moved aside, listed by name. One can be tried, switched to, or read into the vault that is open.",
+        "action": "Manage archived vaults"
+      }
     },
     "commands": {
       "hint": "The lines that have been kept, and the short text that brings each one up in the command line. This is the same library the panel under a terminal edits.",

@@ -16,6 +16,8 @@ next reads as two different features.
 | **connection** | The configured way to reach a host: protocol, address, auth, jump chain. | profile, bookmark |
 | **vault** | The encrypted file holding credentials and settings. | keychain, store |
 | **unlock / lock** | Deriving the vault key from the password; discarding it. | open/close, login |
+| **archive** | A vault file renamed beside the live one, because it could not be opened or because a switch replaced it. Kept, never deleted. | backup, copy, trash (nothing is thrown away, and a copy is not this) |
+| **live vault** | The archive's opposite: the file the application is answering from. | current, active (both are true and neither says what it is the *other* of) |
 | **host key** | The server's public key, verified before authenticating. | fingerprint (that is a property of a key) |
 | **fingerprint** | The short hash shown for a key. | hash, thumbprint |
 | **trust** | Recording a host key so it is accepted next time. | accept, allow |
@@ -53,6 +55,8 @@ next reads as two different features.
 | connection | 连接 | 配置、书签 |
 | vault | 保险库 | 密钥库、钥匙串 |
 | unlock / lock | 解锁／锁定 | 打开／关闭 |
+| archive | 归档 | 备份、副本、回收站（不会丢掉任何东西，而副本不是这个意思） |
+| live vault | 活跃库 | 当前、正在使用（都对，但都没说出它是谁的对立面） |
 | host key | 主机键 | 指纹（指纹是主机键的一个属性） |
 | fingerprint | 指纹 | 哈希、指纹码 |
 | trust | 信任 | 接受、允许 |

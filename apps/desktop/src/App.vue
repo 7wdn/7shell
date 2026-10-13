@@ -87,6 +87,7 @@ let stopDropEvents: (() => void) | undefined;
 let stopPaste: (() => void) | undefined;
 let stopContextMenu: (() => void) | undefined;
 let stopQuitRequested: (() => void) | undefined;
+let stopVaultLocked: (() => void) | undefined;
 
 const backendFailure = computed(() => (app.failure ? describeShellError(translate, app.failure) : null));
 
@@ -364,6 +365,10 @@ onMounted(async () => {
   // have to keep arriving while the person is somewhere else.
   batch.listen();
   stopQuitRequested = await backend.events.onQuitRequested(() => void askedToQuit());
+  // Registered at the top as well as through the store, for the same reason the close question is:
+  // it arrives from a menu the operating system draws, at a moment when no page was involved, and
+  // the window has to put the gate back up whether or not anybody is looking at the vault.
+  stopVaultLocked = await backend.events.onVaultLocked(() => vault.markLocked());
   await preferences.load();
   await app.load();
   await reportFirstFrame();
@@ -382,6 +387,7 @@ onBeforeUnmount(() => {
   stopPaste?.();
   stopContextMenu?.();
   stopQuitRequested?.();
+  stopVaultLocked?.();
 });
 </script>
 

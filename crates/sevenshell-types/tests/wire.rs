@@ -24,7 +24,7 @@ use sevenshell_types::{
     SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
     SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
     TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome,
-    VaultState,
+    VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -603,6 +603,17 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(&ThemePalette::Claude, "ThemePalette");
     check(&ThemePalette::Default, "ThemePalette");
     check(&VaultState::Unlocked, "VaultState");
+    let archived = check(
+        &VaultArchive {
+            name: "vault.json.old".to_owned(),
+            modified_at: 1,
+            size_bytes: 2048,
+        },
+        "VaultArchive",
+    );
+    // The two fields the archive list reads by: snake_case here draws an empty column, not an error.
+    assert_eq!(archived["modifiedAt"], serde_json::json!(1));
+    assert_eq!(archived["sizeBytes"], serde_json::json!(2048));
     check(
         &SessionGroup {
             id: "g1".to_owned(),

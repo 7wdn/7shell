@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
     CommandHistoryEntry, CompletionWord, KeyInfo, KnownHostEntry, Session, SessionGroup, SessionImportSummary, Snippet,
-    SnippetGroup,
+    SnippetGroup, VaultArchive,
 };
 use zeroize::Zeroizing;
 
@@ -344,29 +344,198 @@ impl Vault {
             return Err(ShellError::store_io("lock the vault before setting it aside"));
         }
 
+        let file_name = self.file_name()?;
+        let candidate = self.free_archive_name(&file_name).ok_or_else(too_many_archives)?;
+        let target = self.path.with_file_name(&candidate);
+
+        std::fs::rename(&self.path, &target)
+            .map_err(|error| ShellError::store_io(format!("the vault file could not be moved aside: {error}")))?;
+        Ok(candidate)
+    }
+
+    /// Every archived vault that sits beside this one, most recently written first.
+    ///
+    /// Only the names this crate itself writes are listed. A sibling file that merely looks like one
+    /// — a hand-made copy, a document with a similar name, a directory — is not an archive, and
+    /// offering it as "a library you could switch back to" would be offering something that cannot
+    /// be opened here.
+    pub fn archives(&self) -> Result<Vec<VaultArchive>, ShellError> {
         let Some(file_name) = self.path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
-            return Err(ShellError::store_io("the vault file has no name to rename"));
+            return Ok(Vec::new());
         };
 
-        for attempt in 1..=99 {
-            let candidate = if attempt == 1 {
-                format!("{file_name}.old")
-            } else {
-                format!("{file_name}.{attempt}.old")
-            };
-            let target = self.path.with_file_name(&candidate);
-            if target.exists() {
+        let entries = match std::fs::read_dir(self.directory()) {
+            Ok(entries) => entries,
+            // A configuration directory that does not exist yet is a device with no archives, which
+            // is an answer rather than a failure.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => {
+                return Err(ShellError::store_io(format!(
+                    "cannot read {}: {error}",
+                    self.directory().display()
+                )));
+            }
+        };
+
+        let mut archives = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !is_archive_name(&file_name, &name) {
                 continue;
             }
-
-            std::fs::rename(&self.path, &target)
-                .map_err(|error| ShellError::store_io(format!("the vault file could not be moved aside: {error}")))?;
-            return Ok(candidate);
+            // Something that cannot be measured or is not a file is skipped rather than listed as an
+            // empty row: this list is for choosing a library, and a row that cannot say how big it is
+            // is one that would be chosen by name alone.
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            if !metadata.is_file() {
+                continue;
+            }
+            archives.push(VaultArchive {
+                name,
+                modified_at: modified_at(&metadata),
+                size_bytes: metadata.len(),
+            });
         }
 
-        Err(ShellError::store_io(
-            "there are already too many previous vault files beside this one",
-        ))
+        archives.sort_by(|left, right| {
+            right
+                .modified_at
+                .cmp(&left.modified_at)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        Ok(archives)
+    }
+
+    /// Whether a password opens an archived vault, without making it the active one.
+    ///
+    /// The archive is opened in a value of its own that is dropped at the end of this call, so the
+    /// key it derives and the document it decrypts are wiped here, and the vault this is a method
+    /// on is not touched at all: somebody trying a password from a list has not decided anything
+    /// yet, and looking must not be the same act as switching.
+    pub fn verify_archive(&self, name: &str, password: &str) -> Result<(), ShellError> {
+        let archive = Vault::open_at(self.archive_path(name)?);
+        archive.unlock(password)
+    }
+
+    /// Makes an archived vault the active one, and archives the one that is active now.
+    ///
+    /// A swap rather than an overwrite, and both halves are renames: the library that was in use
+    /// keeps existing under the next free archive name, so "the wrong one" is one rename away from
+    /// being undone and nothing is ever deleted. The answer is the name it was given, or nothing
+    /// when there was no vault in place to move.
+    ///
+    /// Refused while this vault is open: the file underneath it is about to stop being the one it
+    /// was opened from, and a vault that went on answering from a file that is no longer there is
+    /// the kind of state nobody can reason about.
+    pub fn activate_archive(&self, name: &str) -> Result<Option<String>, ShellError> {
+        if matches!(&*self.slot(), Slot::Unlocked(_)) {
+            return Err(ShellError::store_io("lock the vault before switching to another one"));
+        }
+
+        let archived = self.archive_path(name)?;
+        let file_name = self.file_name()?;
+
+        let moved = if self.path.is_file() {
+            let candidate = self.free_archive_name(&file_name).ok_or_else(too_many_archives)?;
+            let target = self.path.with_file_name(&candidate);
+            std::fs::rename(&self.path, &target)
+                .map_err(|error| ShellError::store_io(format!("the vault file could not be moved aside: {error}")))?;
+            Some(candidate)
+        } else {
+            None
+        };
+
+        if let Err(error) = std::fs::rename(&archived, &self.path) {
+            // Put back what was just moved. A switch that fails half way must leave a vault where
+            // there was one, and the file that was in use is the one that has to still open.
+            if let Some(candidate) = &moved {
+                let _ = std::fs::rename(self.path.with_file_name(candidate), &self.path);
+            }
+            return Err(ShellError::store_io(format!(
+                "the archived vault could not be put in place: {error}"
+            )));
+        }
+
+        Ok(moved)
+    }
+
+    /// Adds everything an archived vault holds to the active one.
+    ///
+    /// The archive is read as a bundle and put through the plan an imported file goes through — what
+    /// is already here gets a fresh id, a reference only ever points at something inside the library
+    /// it came from, and what could not be carried is counted — so a switch that turns out to be a
+    /// merge follows the same rules as an import and no second set of them.
+    ///
+    /// The bundle is built and consumed inside this call and never written anywhere: between two
+    /// documents in this process, a login travels in memory. Which is why this is not the export
+    /// path — nothing here can produce a file, sealed or otherwise.
+    pub fn import_archive(&self, name: &str, password: &str, now: u64) -> Result<SessionImportSummary, ShellError> {
+        let archive = Vault::open_at(self.archive_path(name)?);
+        archive.unlock(password)?;
+
+        let bundle = SessionBundle {
+            format: transfer::BUNDLE_FORMAT.to_owned(),
+            version: transfer::BUNDLE_VERSION,
+            exported_at: now,
+            sessions: archive.sessions()?,
+            groups: archive.groups()?,
+            secrets: archive.secret_entries()?,
+        };
+        // Dropped before anything is written: what this call had to hold open is wiped here, and
+        // only the bundle — the shape an import already knows how to read — travels on.
+        drop(archive);
+
+        self.import_bundle(bundle)
+    }
+
+    /// The vault file's own name, which every archive name is built from.
+    fn file_name(&self) -> Result<String, ShellError> {
+        self.path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .ok_or_else(|| ShellError::store_io("the vault file has no name to work with"))
+    }
+
+    /// The directory the vault file lives in, which is also where its archives are.
+    fn directory(&self) -> PathBuf {
+        match self.path.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+            _ => PathBuf::from("."),
+        }
+    }
+
+    /// The next name an archive of this vault can take: `vault.json.old`, then `vault.json.2.old`,
+    /// and so on.
+    ///
+    /// One generator for the whole crate, so that what one code path writes is exactly what the
+    /// other lists: an archive this cannot name is an archive the interface would never offer back.
+    fn free_archive_name(&self, file_name: &str) -> Option<String> {
+        (1..=MAX_ARCHIVES)
+            .map(|attempt| archive_name(file_name, attempt))
+            .find(|candidate| !self.path.with_file_name(candidate).exists())
+    }
+
+    /// The path of one archive, refused unless its name is one this crate wrote.
+    ///
+    /// This check is the whole reason the method exists: a name arrives from the interface, and a
+    /// name is a path unless something refuses to let it be one. A `..`, a separator, an absolute
+    /// path and a name that is not shaped like an archive are all the same refusal — what the
+    /// interface may choose with is *which* archive, never where to look.
+    fn archive_path(&self, name: &str) -> Result<PathBuf, ShellError> {
+        let file_name = self.file_name()?;
+        if !is_archive_name(&file_name, name) {
+            return Err(ShellError::store_io(format!(
+                "`{name}` is not an archived vault of this one"
+            )));
+        }
+
+        let path = self.path.with_file_name(name);
+        if !path.is_file() {
+            return Err(ShellError::vault_not_found());
+        }
+        Ok(path)
     }
 
     /// Re-encrypts the document under a new password.
@@ -798,6 +967,62 @@ impl std::fmt::Debug for Vault {
     }
 }
 
+/// How many archives one vault file may collect before this build stops making new ones.
+///
+/// A ceiling rather than a policy: `vault.json.2.old` … `vault.json.99.old` is more libraries than
+/// anybody switches between, and a name that has to be found by trying is one that needs a limit.
+const MAX_ARCHIVES: u32 = 99;
+
+/// The name attempt number `attempt` of an archive of `file_name` gets.
+///
+/// The first one carries no number, because `vault.json.old` is what this build has always written
+/// and a file somebody has been keeping since then must keep its name.
+fn archive_name(file_name: &str, attempt: u32) -> String {
+    if attempt == 1 {
+        format!("{file_name}.old")
+    } else {
+        format!("{file_name}.{attempt}.old")
+    }
+}
+
+/// Whether a name is one this crate writes for an archive of `file_name`.
+///
+/// Shape is the whole test: `vault.json.old` or `vault.json.<digits>.old`, and nothing else. A
+/// separator cannot survive it and neither can a `..`, which is what makes a name that arrived from
+/// the interface safe to join to a directory.
+fn is_archive_name(file_name: &str, candidate: &str) -> bool {
+    let Some(rest) = candidate.strip_prefix(file_name) else {
+        return false;
+    };
+    if rest == ".old" {
+        return true;
+    }
+
+    let Some(rest) = rest.strip_prefix('.') else {
+        return false;
+    };
+    let Some(digits) = rest.strip_suffix(".old") else {
+        return false;
+    };
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// When a file was last written, in seconds since the Unix epoch.
+///
+/// Zero when the platform will not say, which the interface draws as "unknown" rather than as 1970.
+fn modified_at(metadata: &std::fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
+}
+
+fn too_many_archives() -> ShellError {
+    ShellError::store_io("there are already too many previous vault files beside this one")
+}
+
 /// Replaces `path` atomically: a temporary file in the same directory, flushed, then renamed.
 ///
 /// An interrupted write leaves the previous vault readable; the temporary file is removed on
@@ -1180,6 +1405,246 @@ mod tests {
             .expect_err("an open vault is not moved out from under its commands");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::StoreIo);
+    }
+
+    #[test]
+    fn the_archives_beside_a_vault_are_the_ones_this_build_wrote() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+
+        vault.create("master").expect("create");
+        vault.lock();
+        let first = vault.set_aside().expect("set aside");
+        vault.create("second").expect("create again");
+        vault.lock();
+        let second = vault.set_aside().expect("set aside again");
+
+        // Siblings that are not archives of this vault, one of each kind a directory collects.
+        std::fs::write(directory.path().join("settings.json"), b"{}").expect("write");
+        std::fs::write(directory.path().join("vault.json.old.bak"), b"x").expect("write");
+        std::fs::write(directory.path().join("vault.jsonx.old"), b"x").expect("write");
+        std::fs::create_dir(directory.path().join("vault.json.3.old")).expect("mkdir");
+
+        let archives = vault.archives().expect("archives");
+        let names: Vec<&str> = archives.iter().map(|entry| entry.name.as_str()).collect();
+
+        assert_eq!(
+            names.len(),
+            2,
+            "only the archives this build wrote are listed: {names:?}"
+        );
+        assert!(names.contains(&first.as_str()) && names.contains(&second.as_str()));
+        assert!(
+            archives.iter().all(|entry| entry.size_bytes > 0),
+            "and each one says how big it is"
+        );
+        assert!(
+            archives.iter().all(|entry| entry.modified_at > 0),
+            "and when it was written"
+        );
+    }
+
+    #[test]
+    fn a_name_that_is_not_an_archive_never_reaches_the_disk() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+        vault.lock();
+
+        // A file outside the vault's directory, which a name with a `..` in it would reach.
+        let outside = directory.path().join("somewhere-else.json");
+        std::fs::write(&outside, b"not a vault").expect("write");
+
+        for name in [
+            "../somewhere-else.json",
+            r"..\somewhere-else.json",
+            "nested/vault.json.old",
+            r"C:\vault.json.old",
+            "vault.json",
+            "vault.json.old.bak",
+            "settings.json.old",
+            "",
+        ] {
+            let error = vault
+                .verify_archive(name, "master")
+                .expect_err("a name that is not an archive is refused");
+            assert_eq!(
+                error.code(),
+                sevenshell_error::ErrorCode::StoreIo,
+                "`{name}` was not refused as a bad name"
+            );
+        }
+
+        assert!(outside.exists(), "nothing outside the vault's directory was touched");
+    }
+
+    #[test]
+    fn an_archive_opens_with_its_own_password_and_leaves_the_active_vault_alone() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+
+        vault.create("first").expect("create");
+        vault.save_session(sample_session("s1", "web-1"), None).expect("save");
+        vault.lock();
+        let archive = vault.set_aside().expect("set aside");
+
+        vault.create("second").expect("create again");
+        let before = std::fs::read(&path).expect("read");
+
+        vault
+            .verify_archive(&archive, "first")
+            .expect("the archive opens with the password it was written under");
+        let refused = vault
+            .verify_archive(&archive, "second")
+            .expect_err("and not with the other one");
+        assert_eq!(refused.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
+
+        assert_eq!(
+            std::fs::read(&path).expect("read again"),
+            before,
+            "looking changed nothing"
+        );
+        assert_eq!(
+            vault.status(),
+            VaultStatus::Unlocked,
+            "and the active vault is still open"
+        );
+    }
+
+    #[test]
+    fn switching_to_an_archive_keeps_the_library_that_was_in_use() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+
+        vault.create("first").expect("create");
+        vault.save_session(sample_session("s1", "web-1"), None).expect("save");
+        vault.lock();
+        let archive = vault.set_aside().expect("set aside");
+
+        vault.create("second").expect("create again");
+        vault.save_session(sample_session("s2", "web-2"), None).expect("save");
+        vault.lock();
+
+        let moved = vault.activate_archive(&archive).expect("switch");
+
+        // The name the library in use gets is the first one free *beside the archive being
+        // activated*, which still holds `vault.json.old` while the decision is made.
+        assert_eq!(
+            moved.as_deref(),
+            Some("vault.json.2.old"),
+            "the library that was in use was archived, not deleted"
+        );
+        assert!(
+            !path.with_file_name(&archive).exists(),
+            "and the archive it became is the vault file, not a copy of itself"
+        );
+        let switched = Vault::open_at(path.clone());
+        switched.unlock("first").expect("the archive is the active vault now");
+        let sessions = switched.sessions().expect("sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "web-1");
+
+        let previous = Vault::open_at(path.with_file_name(moved.expect("a name")));
+        previous.unlock("second").expect("and the previous library still opens");
+        assert_eq!(previous.sessions().expect("sessions")[0].name, "web-2");
+    }
+
+    #[test]
+    fn an_archive_can_be_put_in_place_when_there_is_no_vault_beside_it() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("first").expect("create");
+        vault.lock();
+        let archive = vault.set_aside().expect("set aside");
+        assert_eq!(vault.status(), VaultStatus::Missing);
+
+        let moved = vault.activate_archive(&archive).expect("nothing to move aside");
+
+        assert_eq!(moved, None, "there was no library in place to archive");
+        assert_eq!(vault.status(), VaultStatus::Locked);
+        Vault::open_at(path)
+            .unlock("first")
+            .expect("it is the active vault now");
+    }
+
+    #[test]
+    fn switching_is_refused_while_the_vault_is_open() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("first").expect("create");
+        vault.lock();
+        let archive = vault.set_aside().expect("set aside");
+        vault.create("second").expect("create again");
+
+        let error = vault
+            .activate_archive(&archive)
+            .expect_err("an open vault is not switched under its commands");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::StoreIo);
+        assert_eq!(vault.status(), VaultStatus::Unlocked, "and it is exactly as it was");
+    }
+
+    #[test]
+    fn an_archive_brings_its_sessions_groups_and_logins_into_the_active_vault() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+
+        vault.create("first").expect("create");
+        vault.save_group(sample_group("g1")).expect("save group");
+        vault
+            .save_session(
+                Session {
+                    group_id: Some("g1".to_owned()),
+                    ..sample_session("s1", "web-1")
+                },
+                Some(SessionSecret::Password("hunter2".to_owned())),
+            )
+            .expect("save");
+        vault.lock();
+        let archive = vault.set_aside().expect("set aside");
+
+        vault.create("second").expect("create again");
+        let summary = vault.import_archive(&archive, "first", 1).expect("import");
+        assert_eq!((summary.sessions, summary.groups, summary.secrets), (1, 1, 1));
+
+        let sessions = vault.sessions().expect("sessions");
+        assert_eq!(sessions.len(), 1);
+        assert!(sessions[0].auth.has_secret, "the login came with it");
+        assert_eq!(stored_secret(&vault, &sessions[0].id), "hunter2");
+
+        // A second import is a second copy rather than a replacement, which is the rule an imported
+        // file already follows.
+        vault.import_archive(&archive, "first", 1).expect("import again");
+        assert_eq!(vault.sessions().expect("sessions").len(), 2);
+
+        let refused = vault.import_archive(&archive, "second", 1).expect_err("wrong password");
+        assert_eq!(refused.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
+        assert_eq!(vault.sessions().expect("sessions").len(), 2, "nothing was added");
+    }
+
+    #[test]
+    fn an_archive_cannot_be_read_into_a_locked_vault() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("first").expect("create");
+        vault.lock();
+        let archive = vault.set_aside().expect("set aside");
+        vault.create("second").expect("create again");
+        vault.lock();
+
+        let error = vault
+            .import_archive(&archive, "first", 1)
+            .expect_err("a locked vault gains nothing");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultLocked);
     }
 
     /// One character of a base64 blob, changed to another character of the alphabet.

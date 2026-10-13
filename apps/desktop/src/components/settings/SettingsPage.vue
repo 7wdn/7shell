@@ -49,6 +49,7 @@ import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
 import SyncSettings from "@/components/settings/SyncSettings.vue";
 import TrustedKeys from "@/components/settings/TrustedKeys.vue";
 import UpdateSettings from "@/components/settings/UpdateSettings.vue";
+import VaultSettings from "@/components/settings/VaultSettings.vue";
 import {
   CUSTOM_COLOR_LABEL_KEYS,
   SETTINGS_CATEGORIES,
@@ -903,6 +904,8 @@ function translate(key: string, params?: Record<string, string>): string {
                 <SyncSettings v-else-if="category === 'sync'" />
 
                 <div v-else-if="category === 'security'" class="space-y-5">
+                  <!-- The vault first: everything under it is held by it. -->
+                  <VaultSettings />
                   <div class="space-y-2">
                     <h4 class="text-sm font-medium text-muted-foreground">{{ t("settings.security.keys") }}</h4>
                     <KnownKeys />

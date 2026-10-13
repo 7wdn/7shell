@@ -221,6 +221,18 @@ impl ShellState {
     pub fn quit_approved(&self) -> bool {
         self.quit_approved.load(Ordering::Relaxed)
     }
+
+    /// Locks the vault, and drops every question that was waiting on it.
+    ///
+    /// One place rather than two, because there are two ways in: the command the interface calls and
+    /// the tray icon, which has no interface at all. An import or a restore waiting for a passphrase
+    /// goes with it — the next call would write into a locked vault — and "what locking means" must
+    /// not be a thing the two entrances can come to disagree about.
+    pub fn lock_vault(&self) {
+        self.pending_import.clear();
+        self.pending_restore.clear();
+        self.vault.lock();
+    }
 }
 
 #[cfg(test)]

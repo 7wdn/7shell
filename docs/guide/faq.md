@@ -26,7 +26,9 @@ What is inside:
 
 `vault.json` cannot be read without the vault password. There is no recovery: if the password is
 gone, the unlock screen can rename the file aside (`vault.json.old`, then `.2.old`) and create a new
-vault in its place, and nothing is deleted — but what was in the file stays unreadable.
+vault in its place, and nothing is deleted — but what was in the file stays unreadable. The same
+screen lists those renamed files, so one can be tried with a password, switched back to, or read
+into the vault that is open; the folder they live in is in the table above.
 
 `settings.json` is plain JSON on purpose: anybody who can read your home directory can read it,
 which is exactly why no secret may be written into it. Both files are written atomically — a
@@ -41,8 +43,8 @@ No account, no telemetry, no analytics. The outbound traffic is:
 1. **The connections you ask for** — the hosts you have saved and opened.
 2. **A sync server, if you configure one.** Uploads are the file described below, sent to the server
    you named. A timed upload runs only while the window is open, because the timer lives in the
-   interface and the vault is locked when the window is closed; there is no background process
-   holding a key. A download is never automatic.
+   interface; nothing uploads on a schedule from a process nobody is looking at. A download is never
+   automatic.
 3. **The update check, the only request the application makes on its own.** It reads the release
    channel on GitHub and sends nothing about you, your machine or what you are working on.
    Settings → About carries the switch ("Check for updates at startup"); the button beside it asks by

@@ -514,6 +514,23 @@ pub enum VaultState {
     Unlocked,
 }
 
+/// One archived vault file that sits beside the active one.
+///
+/// A library nobody could open is renamed rather than deleted — `vault.json.old`, then
+/// `vault.json.2.old`, and so on — and this is how one of those is shown and chosen again. The name
+/// travels and the directory does not: the interface may say *which* archive, never where archives
+/// live, and the shell joins the two on its own side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultArchive {
+    /// The file's own name, exactly as it is on disk.
+    pub name: String,
+    /// When the file was last written, in seconds since the Unix epoch.
+    pub modified_at: u64,
+    /// How large the file is, in bytes.
+    pub size_bytes: u64,
+}
+
 /// A secret travelling *inwards* from the interface, never outwards.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

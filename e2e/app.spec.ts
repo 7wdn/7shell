@@ -7,7 +7,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -199,6 +199,164 @@ test("a vault can be created and the shell opens", async () => {
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "shell.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * Locking the vault on purpose, and the libraries a forgotten password leaves behind.
+ *
+ * One case rather than four, because each step is only meaningful after the last one: the vault is
+ * locked from the settings page, the gate comes back with the two quiet ways out under the form, an
+ * archived copy of the same vault is made from *outside* the application (which is what a moved-aside
+ * vault is — the rename happens in Rust, and a copy of the file is the same thing on disk), the
+ * dialog finds it and tries its password, and switching to it leaves the gate asking for the password
+ * of the file that is now in place.
+ *
+ * The run continues after this, so the case ends with the vault open again and the library as it was:
+ * what it leaves behind is an archive beside the live file.
+ */
+test("the vault locks on purpose, and an archived library can be switched back in", async () => {
+  const { page, close } = await openApp();
+  // The password the first case created the vault with, which is also the copy's.
+  const password = "seven-shell-e2e";
+  const config = path.dirname(SETTINGS_FILE);
+  const archiveName = "vault.json.old";
+
+  try {
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Security", exact: true }).click();
+
+    // The archived copy, made before the lock: the file the application is about to stop holding.
+    await copyFile(path.join(config, "vault.json"), path.join(config, archiveName));
+
+    // Open, the bar carries the application's controls — this is the state the case below leaves.
+    const bar = page.getByRole("banner");
+    await expect(bar.getByRole("button", { name: "Settings" })).toBeVisible();
+    await expect(bar.locator("[data-window-pin]")).toBeVisible();
+
+    // The lock sits at the far end of them, past the gear: the button for somebody on their way out
+    // is the last one before the window's own, which is why where it stands is asserted and not only
+    // that it is there.
+    const lock = bar.locator("[data-vault-lock]");
+    await expect(lock).toBeVisible();
+    await expect(lock).toHaveAttribute("aria-label", "Lock the vault");
+    const gearBox = await settingsButton(page).boundingBox();
+    const lockBox = await lock.boundingBox();
+    if (!gearBox || !lockBox) {
+      throw new Error("the bar has no boxes to compare");
+    }
+    expect(lockBox.x, "the lock stands to the right of the settings").toBeGreaterThan(gearBox.x);
+
+    await lock.click();
+
+    // The gate, saying what it wants and offering the two quiet ways out under it.
+    await expect(page.getByRole("heading", { name: "Unlock the vault" })).toBeVisible();
+    await expect(page.getByText("Enter the master password to unlock the session and credential store.")).toBeVisible();
+
+    // A password that does not open it is answered under the field — with the code, because that is
+    // what somebody quotes — and the answer goes the moment the value it was about is corrected.
+    // That second half is why the sentence cannot be stored: a refusal held until the next submit
+    // stands over a field that no longer says what it was about.
+    const unlockField = page.getByPlaceholder("Vault password");
+    await unlockField.fill("not the password");
+    await page.getByRole("button", { name: "Unlock" }).click();
+    const refusal = page.locator("#vault-unlock-error");
+    await expect(refusal).toBeVisible();
+    await expect(refusal).toContainText("Unlock failed: the password is wrong, or the vault file failed verification.");
+    await expect(refusal).toContainText("VAULT-UNLOCK-FAILED");
+    await unlockField.fill("still not the password");
+    await expect(refusal, "the refusal was about the value that changed").toHaveCount(0);
+
+    // Each way out is a button the size of its words: a click on the empty half of the line is a
+    // click on nothing. That is the difference between a link and a row, and only a layout can say
+    // so — hence here, aimed at the blank space *beside* the words, inside the same row. The aim
+    // matters: a point past the end of the words would miss a row-wide button too, so what is
+    // clicked is the strip the old full-width button covered.
+    const reset = page.getByRole("button", { name: "Forgot the password? Archive and reset" });
+    await expect(reset).toBeVisible();
+    const words = await reset.boundingBox();
+    const strip = await reset.locator("xpath=..").boundingBox();
+    if (!words || !strip) {
+      throw new Error("the archive-and-reset link has no box to aim beside");
+    }
+    await page.mouse.click(strip.x + 12, words.y + words.height / 2);
+    await expect(page.getByRole("dialog"), "nothing was pressed, so nothing was asked").toHaveCount(0);
+
+    await reset.click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // Shut, the bar is the window's and nothing else: every one of those controls opens something
+    // drawn from a vault nobody has opened, and what stays is the mark, the version and the three
+    // window buttons — which are also the only way out of a window whose interface is a gate.
+    await expect(bar.getByRole("button", { name: "Minimize" })).toBeVisible();
+    await expect(bar.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+    await expect(settingsButton(page), "the way into the settings is gone").toHaveCount(0);
+    await expect(bar.getByRole("button", { name: "Batch execution" })).toHaveCount(0);
+    await expect(bar.locator("[data-window-pin]")).toHaveCount(0);
+    await expect(bar.locator("[data-transfers-toggle]")).toHaveCount(0);
+    await expect(bar.locator("[data-theme-toggle]")).toHaveCount(0);
+    await expect(bar.locator("[data-update-entry]")).toHaveCount(0);
+    await expect(lock, "and the lock goes with the rest of them").toHaveCount(0);
+
+    await page.getByRole("button", { name: "Switch or manage archived vaults" }).click();
+    const dialog = page.getByRole("dialog");
+    const row = dialog.locator("li").filter({ hasText: archiveName }).first();
+    await expect(row).toBeVisible();
+
+    // Trying a password decides nothing: it is answered in the row that asked. The eye is checked
+    // here because the field is a real one in a real window: the value underneath has to change
+    // type rather than the character being drawn differently.
+    await row.getByRole("button", { name: "Try a password" }).click();
+    const field = row.getByPlaceholder("Password for this vault");
+    await field.fill(password);
+    await expect(field).toHaveAttribute("type", "password");
+    await row.getByRole("button", { name: "Show the password" }).click();
+    await expect(field, "the eye shows what was typed").toHaveAttribute("type", "text");
+    await row.getByRole("button", { name: "Hide the password" }).click();
+    await expect(field).toHaveAttribute("type", "password");
+
+    await row.getByRole("button", { name: "Check" }).click();
+    await expect(row.getByText("That password opens this vault.")).toBeVisible();
+    // And with the vault shut there is nothing to import *into*: the control refuses and says why on
+    // hover. It carries `aria-disabled` rather than `disabled` because of that sentence — a
+    // `disabled` control is skipped by hit testing, so nothing hovering it ever fires and the
+    // tooltip could not open — so what is asserted is the refusal and the sentence, not the
+    // attribute alone.
+    const importControl = row.getByRole("button", { name: "Import its sessions" });
+    await expect(importControl).toHaveAttribute("aria-disabled", "true");
+
+    const reason = page.getByRole("tooltip");
+    await expect(reason, "the reason is not on screen until it is asked for").toBeHidden();
+    await importControl.hover();
+    await expect(reason, "and hovering really is what shows it").toBeVisible();
+    await expect(reason).toHaveText("Unlock the master vault before merging an import into it.");
+
+    await row.getByRole("button", { name: "Make it the live vault" }).click();
+    await expect(row.getByText("Switch to this vault?")).toBeVisible();
+    // The two panels are exclusive: the card that is about to be switched to is not still holding a
+    // password field, which is what keeps either of them readable without scrolling.
+    await expect(field, "the password panel put itself away").toHaveCount(0);
+    await row.getByRole("button", { name: "Confirm the switch" }).click();
+
+    // The dialog is done, and the gate says which library is live now.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByText(`${archiveName} is the live vault now.`)).toBeVisible();
+
+    await page.getByPlaceholder("Vault password").fill(password);
+    await page.getByRole("button", { name: "Unlock" }).click();
+    await expect(page.getByLabel("Search sessions")).toBeVisible();
+    // And the bar is the application's again, which is the other half of the rule above.
+    await expect(settingsButton(page), "the controls come back with the vault").toBeVisible();
+    await expect(bar.locator("[data-window-pin]")).toBeVisible();
+
+    // The library that was in use is an archive beside the one that arrived rather than gone.
+    const replaced = path.join(config, "vault.json.2.old");
+    await expect.poll(async () => (await readFile(replaced)).length).toBeGreaterThan(0);
   } finally {
     await close();
   }

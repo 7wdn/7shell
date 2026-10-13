@@ -5,7 +5,7 @@
       "locked": "保险库已锁定。",
       "kdfFailed": "无法派生保险库密钥。",
       "corrupt": "保险库文件无法读取。",
-      "unlockFailed": "保险库没有打开。密码不正确，或者文件已经不是当初保存的那一份。"
+      "unlockFailed": "解锁失败：密码错误或保险库文件校验未通过。"
     },
     "ssh": {
       "hostKeyUnknown": "{host}:{port} 提供的主机键此前从未见过。",

@@ -39,10 +39,12 @@ import type {
   SessionExportSummary,
   SessionGroup,
   SessionImportOutcome,
+  SessionImportSummary,
   TerminalClosed,
   TerminalData,
   UploadAnswer,
   UploadOutcome,
+  VaultArchive,
   VaultState,
 } from "@/types/session";
 import type {
@@ -167,6 +169,27 @@ export const backend = {
      * the name the old file now has, which is the only thing a person needs to find it again.
      */
     setAside: (): Promise<string> => forward("vault_set_aside", () => desktop.vaultSetAside()),
+    /** The archived libraries beside the live one, most recently written first. */
+    archives: (): Promise<VaultArchive[]> => forward("vault_archives", () => desktop.vaultArchives()),
+    /**
+     * Whether a password opens one archive, without making it the live one.
+     *
+     * A refusal arrives as the ordinary `VAULT-UNLOCK-FAILED`, which is what the field it was typed
+     * in shows: trying a password decides nothing, and the live vault is untouched either way.
+     */
+    verifyArchive: (name: string, password: string): Promise<void> =>
+      forward("vault_archive_verify", () => desktop.vaultArchiveVerify(name, password)),
+    /**
+     * Makes an archive the live vault, archiving the library that was live. Returns the name the
+     * replaced library was given, or `null` when there was no file in place.
+     */
+    activateArchive: (name: string): Promise<string | null> =>
+      forward("vault_archive_activate", () => desktop.vaultArchiveActivate(name)),
+    /** Adds an archive's sessions, groups and logins to the open vault, and says how many. */
+    importArchive: (name: string, password: string): Promise<SessionImportSummary> =>
+      forward("vault_archive_import", () => desktop.vaultArchiveImport(name, password)),
+    /** Opens the folder the vault and its archives live in. The interface names no path. */
+    revealFolder: (): Promise<void> => forward("vault_reveal_folder", () => desktop.vaultRevealFolder()),
   },
 
   /** Remote files, and the transfers that move them. */
@@ -549,6 +572,12 @@ export const backend = {
      */
     onQuitRequested: (listener: () => void): Promise<Unlisten> =>
       isDesktopRuntime() ? desktop.onQuitRequested(listener) : Promise.resolve(() => {}),
+    /**
+     * A vault that was locked where the interface could not see it — the tray menu, which the
+     * operating system draws. The next thing that happens is the gate coming back on screen.
+     */
+    onVaultLocked: (listener: () => void): Promise<Unlisten> =>
+      isDesktopRuntime() ? desktop.onVaultLocked(listener) : Promise.resolve(() => {}),
   },
 };
 

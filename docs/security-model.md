@@ -103,6 +103,27 @@ in its place. Nothing is deleted, the way back is a rename, and the interface is
 *name* rather than where it lives. The alternative was a person staring at an unlock screen with no
 way forward, which is how someone concludes that a tool has lost their data.
 
+**Those renamed files are libraries, and the rules about them are rules about names.** The same
+screen lists them, so one can be tried with a password, made the live vault again, or read into the
+vault that is open. Three consequences are deliberate:
+
+- **A name from the interface is a path unless something refuses to let it be one.** The list carries
+  names and never a directory, and the shell accepts one only if it is shaped exactly like an archive
+  this build writes (`vault.json.old`, `vault.json.<digits>.old`) and is actually there — so a `..`,
+  a separator and an absolute path are all the same refusal, checked in `sevenshell-vault` rather than
+  trusted to the caller.
+- **Trying a password decides nothing.** The archive is opened in a value of its own and dropped at
+  the end of the call: the live vault is untouched, and a wrong password is the ordinary
+  `VAULT-UNLOCK-FAILED`, answered under the field it was typed in. Looking is never switching.
+- **Switching is two renames, and reading one in is an import.** Making an archive live renames the
+  library in use to the next free archive name *first*, so nothing is overwritten and a failure in the
+  second rename puts the first one back. Pulling one library into another goes through the plan an
+  imported file goes through — adds, never replaces; a fresh id where one is taken; a reference only
+  ever to something inside the library it came from — and the bundle it travels as is built and
+  consumed in memory inside one call, so no credential reaches a file, a log line or the interface.
+  What could not be carried (a key this device does not hold, a hop the archive left out) is counted
+  and said out loud.
+
 **Two kinds of state, two homes.** Secrets go in the vault and nowhere else. The settings file
 holds only what a user would not mind someone reading: theme, language, and later window state.
 Keeping that line sharp is what makes it safe to write the settings file with plain JSON and to

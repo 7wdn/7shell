@@ -8,6 +8,9 @@
       "keepOnTop": "Keep on top",
       "stopKeepingOnTop": "Stop keeping on top"
     },
+    "vault": {
+      "lock": "Lock the vault"
+    },
     "sidebar": {
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
