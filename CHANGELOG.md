@@ -4,7 +4,10 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.2] - 2026-10-13
+
+The update channel, end to end: what is published is now something the window can show, download and
+install — and the three fixes the first installed builds turned up while that was being built.
 
 ### Added
 
