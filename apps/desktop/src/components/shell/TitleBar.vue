@@ -132,8 +132,10 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
     <UpdateEntry />
 
     <!--
-      Keeping the window on top. The window's own state, drawn from what it says: a pinned window is
-      one somebody wants over the terminal they are reading, and the pin is how it is let go again.
+      Keeping the window on top. The window's own state, drawn from what it says — and drawn the way
+      the world draws it: a pin crossed out is the one that means "not on top", and a pin filled in is
+      the state itself. The tooltip is the other half: it says what pressing does, which is "keep on
+      top" while it is not, and "stop" while it is.
     -->
     <button
       type="button"
@@ -147,8 +149,8 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       :aria-pressed="isAlwaysOnTop"
       @click="toggleAlwaysOnTop()"
     >
-      <PinOff v-if="isAlwaysOnTop" :size="15" />
-      <Pin v-else :size="15" />
+      <Pin v-if="isAlwaysOnTop" :size="15" class="fill-current" />
+      <PinOff v-else :size="15" />
     </button>
 
     <!--

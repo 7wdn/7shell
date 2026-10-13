@@ -1331,18 +1331,30 @@ test("the window can be kept on top, and the shell is what says so", async () =>
     const pinned = (): Promise<boolean> =>
       page.evaluate(() => window.__TAURI_INTERNALS__.invoke("plugin:window|is_always_on_top", { label: "main" }));
 
+    // The mark as well as the state: a pin crossed out is the one that means "not on top", and it is
+    // the way round the world draws it — the pair is easy to swap, and swapping it is exactly the
+    // mistake somebody reported.
+    const mark = (): Promise<string> =>
+      page
+        .locator("[data-window-pin] svg")
+        .first()
+        .evaluate((node) => node.getAttribute("class") ?? "");
+
     const pin = page.locator("[data-window-pin]");
     await expect(pin).toBeVisible();
     await expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(await mark(), "not on top is the pin with a line through it").toContain("lucide-pin-off");
     expect(await pinned(), "a window starts like every other one").toBe(false);
 
     await pin.click();
     await expect(pin, "the button says what the window was told").toHaveAttribute("aria-pressed", "true");
+    expect(await mark(), "on top is the pin itself").toContain("lucide-pin ");
     await expect.poll(pinned, { message: "the shell is what actually knows" }).toBe(true);
 
     // Let go of it, so the cases after this one are not run under a window that covers them.
     await pin.click();
     await expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(await mark()).toContain("lucide-pin-off");
     await expect.poll(pinned).toBe(false);
   } finally {
     await close();
