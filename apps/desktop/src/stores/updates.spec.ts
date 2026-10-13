@@ -9,7 +9,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 }));
 
 import { onUpdateProgress, updateCheck, updateInstall } from "@/lib/backend/tauri";
-import { useUpdatesStore } from "@/stores/updates";
+import { RETRY_DELAYS_MS, STARTUP_CHECK_DELAY_MS, useUpdatesStore } from "@/stores/updates";
 import type { UpdateProgress } from "@/types/update";
 
 const checkMock = vi.mocked(updateCheck);
@@ -136,5 +136,82 @@ describe("the update channel as the interface reads it", () => {
 
     expect(updates.failure?.code).toBe("UPDATE-INSTALL-FAILED");
     expect(updates.installing).toBe(false);
+  });
+});
+
+/**
+ * The check the window does not wait for.
+ *
+ * The three waits are what a person cannot see and what a slow link turns into a slow start: the
+ * first is the whole point of the deferral — the window is up and the vault is opening before the
+ * channel is asked anything — and the others are what makes a failed check worth trusting, because an
+ * answer that never arrives is not "you are up to date".
+ */
+describe("the check that waits for the window", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not ask until the window has had its moment", async () => {
+    checkMock.mockResolvedValue(published);
+    const updates = useUpdatesStore();
+
+    const asking = updates.checkAfterStartup();
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS - 1);
+    expect(checkMock, "the channel was asked before the window could settle").not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    await asking;
+
+    expect(checkMock).toHaveBeenCalledTimes(1);
+    expect(updates.release?.version).toBe("0.1.1");
+  });
+
+  it("asks again after a failure, and stops once there is an answer", async () => {
+    checkMock.mockRejectedValueOnce({
+      version: 1,
+      code: "UPDATE-CHECK-FAILED",
+      messageKey: "errors.update.checkFailed",
+      origin: { subsystem: "app" },
+    });
+    checkMock.mockResolvedValueOnce(published);
+    const updates = useUpdatesStore();
+
+    const asking = updates.checkAfterStartup();
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS);
+    expect(checkMock, "the first ask happened").toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0]);
+    await asking;
+
+    expect(checkMock, "a failed check is asked again").toHaveBeenCalledTimes(2);
+    expect(updates.release?.version).toBe("0.1.1");
+    expect(updates.failure).toBeNull();
+
+    // Nothing left to wait for: the answer arrived, so the remaining waits are not spent.
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+    expect(checkMock, "an answer is not asked for again").toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after the last wait rather than asking forever", async () => {
+    checkMock.mockRejectedValue({
+      version: 1,
+      code: "UPDATE-CHECK-FAILED",
+      messageKey: "errors.update.checkFailed",
+      origin: { subsystem: "app" },
+    });
+    const updates = useUpdatesStore();
+
+    const asking = updates.checkAfterStartup();
+    const waits = RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0);
+    await vi.advanceTimersByTimeAsync(STARTUP_CHECK_DELAY_MS + waits + 1_000);
+    await asking;
+
+    expect(checkMock).toHaveBeenCalledTimes(1 + RETRY_DELAYS_MS.length);
+    expect(updates.failure, "the last failure is what the page about the build says").not.toBeNull();
   });
 });

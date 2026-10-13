@@ -20,20 +20,13 @@ import {
   SYSTEM_UI_FONT,
   UI_SCALE_PERCENTS,
   type CustomColors,
+  type SettingsCategoryId,
   type ThemePalette,
 } from "@/types/app";
 
-export type SettingsCategoryId =
-  | "appearance"
-  | "terminal"
-  | "workspace"
-  | "files"
-  | "security"
-  | "shortcuts"
-  | "commands"
-  | "words"
-  | "sync"
-  | "about";
+// Named here as well as in the types, because this is where the rows that draw one are written —
+// `import type { SettingsCategoryId } from "./rows"` stays the way the page spells it.
+export type { SettingsCategoryId };
 
 /** The categories, in the order the navigation draws them. */
 export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [

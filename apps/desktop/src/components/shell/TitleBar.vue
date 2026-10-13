@@ -16,6 +16,7 @@ import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppMark from "@/components/brand/AppMark.vue";
+import UpdateEntry from "@/components/shell/UpdateEntry.vue";
 import WindowControls from "@/components/shell/WindowControls.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import { useAppStore } from "@/stores/app";
@@ -187,6 +188,12 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
     >
       <component :is="modeIcon" :size="15" />
     </button>
+
+    <!--
+      The release channel, before the gear that leads to the page about it: the icon when there is
+      nothing to say, and the version itself when a release is published.
+    -->
+    <UpdateEntry />
 
     <button
       type="button"

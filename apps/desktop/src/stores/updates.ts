@@ -17,6 +17,29 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 
+/**
+ * How long the startup check waits after the window is up.
+ *
+ * Long enough that the window, the vault and the first session are all somebody else's problem by the
+ * time it runs, short enough that a release published while somebody was away is on their screen
+ * before they have finished reading the tab bar.
+ */
+export const STARTUP_CHECK_DELAY_MS = 3_000;
+
+/**
+ * How long a failed check waits before trying again, and how many times it tries.
+ *
+ * The first is short because a network that is not up yet is usually up a moment later; the last is
+ * fifteen minutes, which is about as long as somebody leaves an application open before looking at it
+ * again. After the last one the channel is simply unread until the next run or a manual check.
+ */
+export const RETRY_DELAYS_MS = [60_000, 300_000, 900_000] as const;
+
+/** Waits. A timer rather than a sleeping loop: nothing here is holding anything up. */
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export const useUpdatesStore = defineStore("updates", () => {
   /** The last answer, or nothing while the channel has not been asked in this session. */
   const answer = ref<UpdateCheck | null>(null);
@@ -87,5 +110,34 @@ export const useUpdatesStore = defineStore("updates", () => {
     }
   }
 
-  return { answer, asking, failure, progress, installing, release, check, install };
+  /**
+   * Asks the channel a moment after the window is up, and asks again when it could not be read.
+   *
+   * Late on purpose. This is the one request the application makes on its own, and it is the one
+   * request nobody is waiting for: a window that appears only after a release server has answered is
+   * a window that takes as long to open as the network does, which is exactly what a slow link — or a
+   * blocked one — turns a fast application into. Waiting also means the first frame, the vault and
+   * everything else the person is looking at have already happened.
+   *
+   * Asked again because the answer is what the mark on the title bar is made of, and a check that
+   * failed because the network was not up yet is not an answer. The waits are the ones a person
+   * cannot notice: a minute, then five, then fifteen, after which the mark is simply absent until
+   * somebody starts the application again or asks for a check themselves.
+   */
+  async function checkAfterStartup(): Promise<void> {
+    await wait(STARTUP_CHECK_DELAY_MS);
+    await check();
+
+    for (const delay of RETRY_DELAYS_MS) {
+      // Only a failure is worth asking about again: an answer — even "nothing newer is published" —
+      // is the channel having been read.
+      if (failure.value === null) {
+        return;
+      }
+      await wait(delay);
+      await check();
+    }
+  }
+
+  return { answer, asking, failure, progress, installing, release, check, checkAfterStartup, install };
 });

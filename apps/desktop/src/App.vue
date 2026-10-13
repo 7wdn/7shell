@@ -330,22 +330,22 @@ async function reportFirstFrame(): Promise<void> {
 }
 
 /**
- * Asks the update channel at startup, when the settings say to.
+ * Asks the update channel once the window is up, when the settings say to.
  *
  * Deliberately not awaited by the startup that calls it and deliberately not reported anywhere: the
- * answer is a *page's* — the mark on the settings button and the block on the About page — and the
- * window must not wait for a release server to draw itself. Nothing is said out loud either: a
- * message that leaves on its own would be a second home for the same fact, and the one it has is
- * still there an hour later.
+ * answer is a *page's* — the mark on the title bar, and the block on the About page — and the window
+ * must not wait for a release server to draw itself. Nothing is said out loud either: a message that
+ * leaves on its own would be a second home for the same fact, and the one it has is still there an
+ * hour later.
  *
- * A failure is kept in the store rather than shouted here, and it is shown on the page that asked —
- * where somebody who wants to retry is already looking.
+ * A failure is kept in the store rather than shouted here — and asked again there, rather than here:
+ * the retries belong to the check, not to the startup that started it.
  */
-async function checkForUpdates(): Promise<void> {
+function checkForUpdates(): void {
   if (!preferences.updateCheckOnStartup) {
     return;
   }
-  await updates.check();
+  void updates.checkAfterStartup();
 }
 
 onMounted(async () => {
@@ -365,10 +365,11 @@ onMounted(async () => {
   stopQuitRequested = await backend.events.onQuitRequested(() => void askedToQuit());
   await preferences.load();
   await app.load();
-  // Started, not awaited: the mark it may put on the settings button appearing a moment later is
-  // the whole of what it changes on screen.
-  void checkForUpdates();
   await reportFirstFrame();
+  // Started here rather than before the first frame — and not awaited either way: it is the one
+  // request this application makes on its own, and it is the one nobody is waiting for. See
+  // `updates.checkAfterStartup`.
+  checkForUpdates();
   await vault.initialize();
 });
 

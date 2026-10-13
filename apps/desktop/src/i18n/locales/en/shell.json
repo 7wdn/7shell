@@ -18,6 +18,10 @@
       "unsaved": "An editor has unsaved changes.",
       "transfers": "A transfer is still running.",
       "confirm": "Quit"
+    },
+    "update": {
+      "available": "Update to {version}",
+      "unreadable": "The update channel could not be read"
     }
   }
 }

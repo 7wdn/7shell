@@ -18,6 +18,10 @@
       "unsaved": "有编辑器还没保存改动。",
       "transfers": "还有传输正在进行。",
       "confirm": "退出"
+    },
+    "update": {
+      "available": "更新到 {version}",
+      "unreadable": "无法读取更新通道"
     }
   }
 }

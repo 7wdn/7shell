@@ -64,6 +64,7 @@ import type {
   TunnelFailure,
 } from "@/types/session";
 import type { HostSystem } from "@/types/system";
+import type { SettingsCategoryId } from "@/types/app";
 
 /** What the backend answers when an attempt was called off, which is not a failure. */
 export const CANCELLED_OPEN = "SESSION-OPEN-CANCELLED";
@@ -226,6 +227,14 @@ export const useTerminalsStore = defineStore("terminals", () => {
    */
   const openedOrder = ref<string[]>([]);
   const activeTabId = ref<string | null>(null);
+  /**
+   * The category the settings page was asked to open on, waiting for it to be taken.
+   *
+   * A ref rather than a plain variable because the page may already be open: what the title bar's mark
+   * does is a *request* the page reacts to, not a value it reads once when it is built. The page
+   * watches it and empties it through `takeSettingsCategory`.
+   */
+  const settingsRequest = ref<SettingsCategoryId | null>(null);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
   const connectingSessionIds = ref<string[]>([]);
   /**
@@ -517,8 +526,16 @@ export const useTerminalsStore = defineStore("terminals", () => {
    *
    * One page rather than one per click: there is a single settings file, and two pages drawing it
    * would be two answers on screen about the same value.
+   *
+   * A category may be named, which is what the mark in the title bar does: what says a release is
+   * published leads to the page about the build rather than to whatever was looked at last. The page
+   * takes it — and empties it — so a gear pressed afterwards opens where it always did.
    */
-  function openSettings(): void {
+  function openSettings(category: SettingsCategoryId | null = null): void {
+    if (category !== null) {
+      settingsRequest.value = category;
+    }
+
     const showing = tabs.value.find((entry): entry is SettingsTab => entry.kind === "settings");
     if (showing) {
       activeTabId.value = showing.id;
@@ -526,6 +543,18 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
 
     addTab({ kind: "settings", id: crypto.randomUUID() });
+  }
+
+  /**
+   * The category the settings page was asked to open on, or nothing.
+   *
+   * Read and cleared by the page, because it belongs to one asking: a page that kept it would follow
+   * the next person into the category the last one wanted.
+   */
+  function takeSettingsCategory(): SettingsCategoryId | null {
+    const wanted = settingsRequest.value;
+    settingsRequest.value = null;
+    return wanted;
   }
 
   /**
@@ -1137,6 +1166,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openFiles,
     openInspect,
     openSettings,
+    settingsRequest,
+    takeSettingsCategory,
     closeSettings,
     openBatch,
     writableHandles,

@@ -6,6 +6,22 @@ All notable changes to 7Shell are documented in this file. The format is
 
 ## [Unreleased]
 
+### Added
+
+- **The release channel has a place in the title bar.** An icon that says what the channel said — the
+  version itself when a release is published, the state in its tooltip while a check is out or after
+  one failed — and pressing it asks, or leads to the page that installs what it found. The question it
+  answers is one people ask before there is an answer, so it is there whether or not there is anything
+  to say.
+
+### Changed
+
+- **The update check waits for the window.** It used to run while the interface was still starting;
+  now it runs a few seconds after the window is on screen, and asks again — after a minute, five and
+  fifteen — when the channel could not be read, because "the network is not up yet" is not an answer
+  and a failed check should not look like "you are up to date". The retries belong to the check, so
+  the page about the build keeps its own button for asking by hand.
+
 ### Fixed
 
 - **A second launch started a second application.** Two shells mean two tray icons, two writers to

@@ -35,7 +35,7 @@
  */
 import { RotateCcw, Search, X } from "@lucide/vue";
 import { TooltipProvider } from "reka-ui";
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SettingsControl from "@/components/settings/SettingsControl.vue";
@@ -100,6 +100,27 @@ const updates = useUpdatesStore();
 
 const query = ref("");
 const category = ref<SettingsCategoryId>("appearance");
+
+/**
+ * Follows a request for a particular category.
+ *
+ * The mark in the title bar makes one — "a release is published" leads to the page about the build —
+ * and it has to work whether the page is being opened or is already on screen, which is why this
+ * watches rather than reads once. The search is cleared on the way: a page about the build filtered by
+ * whatever was typed before would be a page with most of itself missing.
+ */
+watch(
+  () => terminals.settingsRequest,
+  (wanted) => {
+    if (wanted === null) {
+      return;
+    }
+    query.value = "";
+    category.value = wanted;
+    terminals.takeSettingsCategory();
+  },
+  { immediate: true },
+);
 
 /** The settings this category draws as fields, and the ones it draws as cards under them. */
 const fieldRows = computed(() => fieldRowsOfCategory(category.value));

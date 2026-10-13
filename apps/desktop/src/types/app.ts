@@ -239,6 +239,26 @@ export const DEFAULT_BACKGROUND_TRANSPARENCY = 15;
 export const DEFAULT_BACKGROUND_BLUR = 4;
 
 /**
+ * Which group of settings the settings page is showing.
+ *
+ * The page's own vocabulary, here rather than beside the rows that draw it because something outside
+ * the page names one: the mark in the title bar that says a release is published leads to the page
+ * about the build, and a store reaching into a component for a type would be the dependency the wrong
+ * way round. The order the navigation draws them in lives with the navigation.
+ */
+export type SettingsCategoryId =
+  | "appearance"
+  | "terminal"
+  | "workspace"
+  | "files"
+  | "security"
+  | "shortcuts"
+  | "commands"
+  | "words"
+  | "sync"
+  | "about";
+
+/**
  * The sizes the terminal may be drawn at, in pixels, and the one a fresh install has.
  *
  * From `sevenshell_types`: a closed range with its ends on the slider, because a terminal is measured
