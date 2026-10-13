@@ -179,7 +179,27 @@ jobs:
             echo "notarization: no Apple credentials, so the macOS build is signed ad hoc at best" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          pnpm tauri build ${TARGET:+--target "$TARGET"} --config "$extra"
+          # The bundler's last step for macOS builds a DMG by mounting a volume and asking Finder to
+          # lay it out, and on a runner neither of those is reliable: it fails with "Resource busy" or
+          # with Finder refusing the AppleScript, neither of which is about what is being built, and
+          # then succeeds on the next try. So this tries three times, and before each retry detaches
+          # the volume a failed attempt left mounted — that leftover mount is what "Resource busy"
+          # means. Nothing else is masked: a compile error or a missing file fails three times and the
+          # step still fails, with the last attempt's output in the log.
+          for attempt in 1 2 3; do
+            if pnpm tauri build ${TARGET:+--target "$TARGET"} --config "$extra"; then
+              break
+            fi
+            if [ "$attempt" = "3" ]; then
+              echo "::error::the build failed three times; the last attempt is what failed"
+              exit 1
+            fi
+            echo "::warning::the build failed (attempt $attempt of 3); clearing up and trying again"
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              hdiutil detach "/Volumes/7Shell" -force > /dev/null 2>&1 || true
+            fi
+            sleep 10
+          done
 
       # The platform's own files, and the update manifest's entry for it: which archives exist is read
       # back from what the bundler wrote rather than predicted here.
