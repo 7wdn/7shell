@@ -8,6 +8,16 @@ All notable changes to 7Shell are documented in this file. The format is
 
 ### Fixed
 
+- **A second launch started a second application.** Two shells mean two tray icons, two writers to
+  one vault file and two sets of live sessions against the same servers. A launch now hands its
+  request to the instance already running — which brings its window forward, from the tray if that is
+  where it is — and the new process ends without opening anything.
+- **A window closed into the tray while the application was still starting came back on its own.**
+  The window is created hidden and put on screen when the interface reports its first painted frame,
+  or by a three-second deadline when it never does. Both asked whether the window was visible, and a
+  window somebody has just closed into the tray is not visible either — so whichever came first undid
+  the close, which is why it happened "sometimes", and mostly at startup. The shell records that the
+  window was put away on purpose, and only the tray icon (or a second launch) clears that.
 - **The terminal ignored its own font settings — in installed builds only.** Everything the terminal
   draws with lives in a stylesheet that xterm writes at runtime: the family and the size of its text,
   the foreground and the sixteen colours, the cursor and the height of a row. A packaged build's

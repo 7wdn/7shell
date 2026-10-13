@@ -84,6 +84,14 @@ pub struct ShellState {
     close_to_tray: AtomicBool,
     /// Whether the tray icon is on screen, which is what a window can be put away *to*.
     tray_shown: AtomicBool,
+    /// Whether the person put the window away and has not asked for it back.
+    ///
+    /// Two things inside the shell put the window on screen by themselves — the interface saying it
+    /// has a frame, and the deadline that covers an interface which never says so — and neither of
+    /// them can tell "nobody has shown this yet" from "somebody has just closed it into the tray":
+    /// both read as a window that is not visible. So the answer is remembered here, at the one place
+    /// the window is hidden on purpose, and the two of them ask before they show anything.
+    window_put_away: AtomicBool,
     /// Whether the interface has answered the close question and meant "quit".
     ///
     /// The same shape as the guard above and for the same reason: only the interface can see what is
@@ -116,6 +124,7 @@ impl ShellState {
                 quit_guard: AtomicBool::new(false),
                 close_to_tray: AtomicBool::new(true),
                 tray_shown: AtomicBool::new(false),
+                window_put_away: AtomicBool::new(false),
                 quit_approved: AtomicBool::new(false),
             },
             events,
@@ -191,6 +200,16 @@ impl ShellState {
 
     pub fn tray_shown(&self) -> bool {
         self.tray_shown.load(Ordering::Relaxed)
+    }
+
+    /// Records that the window was put away on purpose, or that somebody has asked for it back.
+    pub fn set_window_put_away(&self, put_away: bool) {
+        self.window_put_away.store(put_away, Ordering::Relaxed);
+    }
+
+    /// Whether the window is in the tray rather than merely not shown yet.
+    pub fn window_put_away(&self) -> bool {
+        self.window_put_away.load(Ordering::Relaxed)
     }
 
     /// Says that the close question has been asked and answered, so the next request is obeyed.

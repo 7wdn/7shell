@@ -20,7 +20,30 @@ use sevenshell_core::Core;
 use tauri::{Emitter as _, Manager as _};
 
 pub fn run() {
-    tauri::Builder::default()
+    // Before the builder, so that "the window is on screen after N ms" measures everything a person
+    // waits for rather than everything after the shell was already up.
+    window_chrome::mark_start();
+
+    // One application per machine, and it is registered before every other plugin: it is the one that
+    // decides a second launch has nothing to start, and a shell that had already built its window and
+    // its tray would have paid for both before finding out.
+    //
+    // Only in a shipped build. Starting a second one in development is how somebody works — the
+    // installed application and the one being edited side by side, or the test run that starts its own
+    // — and a refusal there would leave them looking at nothing at all; two writers to one vault is a
+    // choice a developer is allowed to make. What must never run twice is the application somebody
+    // installed, and that is the build this is compiled into.
+    #[cfg(debug_assertions)]
+    let builder = tauri::Builder::default();
+    #[cfg(not(debug_assertions))]
+    let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        // A second launch is somebody asking for the window — the same thing a click on the tray icon
+        // is, out of the tray included.
+        log::info!("a second launch asked for the window; the one already running is brought forward");
+        tray::reveal(app);
+    }));
+
+    builder
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         // Registered for its Rust API alone: the interface reaches the channel through the two
@@ -66,8 +89,14 @@ pub fn run() {
 
                 match action {
                     // Away and still running: the icon is what brings it back, and the sessions the
-                    // window was holding keep running while it is gone.
+                    // window was holding keep running while it is gone. Recorded rather than only
+                    // done, because the two things that show the window by themselves — the
+                    // interface's first frame and the reveal deadline — cannot tell this apart from
+                    // a window nobody has shown yet, and would put it back on screen.
                     close::CloseAction::Hide => {
+                        if let Some(shell_state) = window.try_state::<state::ShellState>() {
+                            shell_state.set_window_put_away(true);
+                        }
                         api.prevent_close();
                         let _ = window.hide();
                     }

@@ -150,9 +150,14 @@ fn build(app: &AppHandle, locale: &str) -> tauri::Result<()> {
 /// Brings the window back: shown, out of the way of nothing, and focused.
 ///
 /// All three, because an icon that restores a window behind another one — or minimized — is an icon
-/// somebody presses twice and then stops trusting.
+/// somebody presses twice and then stops trusting. This is also the one thing that undoes having put
+/// the window away, which is what the close decision leaves behind it (see `ShellState`): asking for
+/// the window is exactly what the flag is waiting to hear.
 pub fn reveal(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        if let Some(state) = app.try_state::<ShellState>() {
+            state.set_window_put_away(false);
+        }
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();

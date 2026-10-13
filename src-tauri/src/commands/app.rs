@@ -1,9 +1,9 @@
 use sevenshell_error::ShellError;
 use sevenshell_types::AppInfo;
-use tauri::{State, WebviewWindow};
+use tauri::{Manager as _, State, WebviewWindow};
 
 use crate::state::ShellState;
-use crate::window_chrome::reveal_main_window;
+use crate::window_chrome::{reveal_main_window, reveal_on_first_frame};
 
 /// Facts about the running application: name, version, platform, and the descriptor
 /// tables the interface and Rust both derive from `descriptors/`.
@@ -18,9 +18,18 @@ pub fn app_info() -> Result<AppInfo, ShellError> {
 /// white webview. This is the only thing that reveals it early: `window_chrome`'s deadline reveals
 /// it anyway when this never arrives, which is what keeps a frontend that fails to start from
 /// leaving no window behind at all.
+///
+/// Not when the window is in the tray: somebody who closed it there while the interface was still
+/// loading has said where they want it, and what brings it back is the icon they closed it to.
 #[tauri::command]
 pub fn app_ready(window: WebviewWindow) {
-    reveal_main_window(&window);
+    let put_away = window
+        .try_state::<ShellState>()
+        .is_some_and(|state| state.window_put_away());
+
+    if reveal_on_first_frame(put_away) {
+        reveal_main_window(&window);
+    }
 }
 
 /// Says whether closing the window would throw something away.

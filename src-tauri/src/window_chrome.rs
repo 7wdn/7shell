@@ -14,7 +14,8 @@
 //! reveal is the interface's call to [`reveal_main_window`], and the deadline below is what keeps a
 //! frontend that never gets that far from leaving a process with no window at all.
 
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use tauri::{Emitter, Manager, Runtime};
 
@@ -211,12 +212,50 @@ pub fn watch_system_theme<R: Runtime>(app: &tauri::AppHandle<R>) {
 /// frontend that fails to start would otherwise leave a process with nothing on screen to close.
 pub const REVEAL_DEADLINE: Duration = Duration::from_secs(3);
 
+/// When the process started counting, so that the log can say how long the window took.
+///
+/// `Instant` has no zero a log can print, and the shell's own `.info` lines start inside its setup —
+/// so "the application took ten seconds to open" is a report no line in the log can answer, which is
+/// what it was until this was added. An `Option` rather than a bare `Instant` because the tests are
+/// the ones that never set it.
+static SINCE_START: OnceLock<Instant> = OnceLock::new();
+
+/// Marks the moment the startup times in the log are measured from.
+pub fn mark_start() {
+    let _ = SINCE_START.set(Instant::now());
+}
+
+/// How long the process has been running, where anybody has said when it started.
+fn since_start() -> Option<Duration> {
+    SINCE_START.get().map(Instant::elapsed)
+}
+
+/// Whether the interface's word — "there is a frame on screen" — puts the window up.
+///
+/// Not when the window is in the tray. The interface reporting a frame means the *application* is
+/// ready, not that anybody has asked for the window, and a close into the tray during a slow start
+/// was undone by exactly this: the window came back the moment the interface finished loading.
+pub fn reveal_on_first_frame(put_away: bool) -> bool {
+    !put_away
+}
+
 /// Whether the deadline should put the window on screen.
 ///
-/// Only a window nobody has shown yet: showing one that is already up would also take the focus back
-/// from whatever the person switched to while the application was starting.
-pub fn reveal_on_deadline(visible: bool) -> bool {
-    !visible
+/// Only a window nobody has shown yet, and not one somebody put away: the two look identical from
+/// here — both are windows that are not visible — which is how a close into the tray came undone
+/// three seconds after it happened.
+pub fn reveal_on_deadline(visible: bool, put_away: bool) -> bool {
+    !visible && !put_away
+}
+
+/// Whether the window is in the tray, as the shell's state has it.
+///
+/// A window with no state is one this shell never built — nothing to ask, and nothing to protect:
+/// what it is showing is nobody's decision to keep.
+fn window_put_away<R: Runtime>(window: &tauri::WebviewWindow<R>) -> bool {
+    window
+        .try_state::<crate::state::ShellState>()
+        .is_some_and(|state| state.window_put_away())
 }
 
 /// Applies the platform's window chrome and arms the deadline that reveals the window.
@@ -249,7 +288,17 @@ pub fn prepare_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
 
 /// Shows the window and gives it the focus: the interface has a frame on screen, or waited long
 /// enough that it is not coming.
+///
+/// Says how long it took, because this is the only moment that answers "the application is slow to
+/// start": the window is on screen when the interface has a painted frame, so the time from the
+/// process starting to this line is what somebody waits for.
 pub fn reveal_main_window<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    if let Some(elapsed) = since_start() {
+        log::info!(
+            "the window is on screen {}ms after the process started",
+            elapsed.as_millis()
+        );
+    }
     if let Err(error) = window.show() {
         log::warn!("the window could not be shown: {error}");
     }
@@ -272,7 +321,7 @@ fn arm_reveal_deadline<R: Runtime>(window: &tauri::WebviewWindow<R>) {
             false
         });
 
-        if reveal_on_deadline(visible) {
+        if reveal_on_deadline(visible, window_put_away(&window)) {
             log::warn!(
                 "the interface did not report a drawn frame within {REVEAL_DEADLINE:?}, so the window is shown without one"
             );
@@ -359,13 +408,30 @@ mod tests {
 
     #[test]
     fn the_deadline_shows_a_window_that_nothing_has_shown_yet() {
-        assert!(reveal_on_deadline(false));
+        assert!(reveal_on_deadline(false, false));
     }
 
     #[test]
     fn the_deadline_leaves_a_window_the_interface_already_showed_alone() {
         // Showing an already visible window would take the focus back from whatever the person
         // switched to while the application was starting.
-        assert!(!reveal_on_deadline(true));
+        assert!(!reveal_on_deadline(true, false));
+    }
+
+    #[test]
+    fn a_window_in_the_tray_is_not_shown_by_the_deadline() {
+        // The case this pair exists for: closed into the tray while the interface was still loading,
+        // which used to be undone three seconds later — a window nobody had shown yet and a window
+        // somebody put away are both "not visible".
+        assert!(!reveal_on_deadline(false, true));
+        assert!(!reveal_on_deadline(true, true));
+    }
+
+    #[test]
+    fn the_first_frame_shows_the_window_unless_somebody_put_it_away() {
+        assert!(reveal_on_first_frame(false));
+        // The other half of the same story: the interface finishing its startup is not somebody
+        // asking for the window back — the tray icon is.
+        assert!(!reveal_on_first_frame(true));
     }
 }

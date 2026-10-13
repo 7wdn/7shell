@@ -77,6 +77,10 @@ tauri-plugin-dialog = "2"
 # and the public key live in the bundle configuration, so a build with no key still compiles and
 # still runs — it just has nothing to verify an update against, and says so.
 tauri-plugin-updater = "2"
+# One application per machine: a second launch hands its request to the one already running rather
+# than starting a shell of its own — two shells would mean two trays, two vaults on one file and two
+# sets of live sessions against the same servers.
+tauri-plugin-single-instance = "2"
 
 sevenshell-error = { version = "0.1.1", path = "crates/sevenshell-error" }
 sevenshell-platform = { version = "0.1.1", path = "crates/sevenshell-platform" }
