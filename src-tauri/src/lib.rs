@@ -53,6 +53,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             window_chrome::prepare_main_window(app.handle());
+            window_chrome::silence_browser_keys(app.handle());
             apply_startup_window_theme(app.handle());
             window_chrome::watch_system_theme(app.handle());
 

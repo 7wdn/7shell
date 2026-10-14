@@ -24,6 +24,16 @@ clipboard-win = { version = "5.4", features = ["std"] }
 # WebView2 the media query that would answer this reports light whatever the system is, so an
 # interface following the system would be following a lie.
 winreg = "0.55"
+# The switch that turns the WebView2's own browser keys off — its find bar, reload, print, the zoom
+# keys, DevTools — for a window that is an application and not a browser. It has to be the same
+# crate build tauri reaches the webview with: the COM interface crossed through `with_webview` is
+# this crate's type, and a version split between the two dependencies fails at compile time.
+webview2-com = "0.39"
+# The `Interface` trait, which narrows one WebView2 interface to a later one. The browser-key
+# switch sits on `ICoreWebView2Settings3`, and the settings object the controller hands out is the
+# first version of that interface; reaching across is a cast this trait provides. Same story as the
+# entry above: it has to be the build tauri's own dependency graph resolved.
+windows-core = "0.62"
 # The families a machine has, for the interface font and the terminal font. A system source rather
 # than a reader of the font files: the names have to come back spelled the way this machine spells
 # them, which on a Chinese installation means 微软雅黑 rather than Microsoft YaHei — a name table

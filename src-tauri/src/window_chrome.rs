@@ -258,6 +258,58 @@ fn window_put_away<R: Runtime>(window: &tauri::WebviewWindow<R>) -> bool {
         .is_some_and(|state| state.window_put_away())
 }
 
+/// Turns off the keys WebView2 answers by itself, because this is not a browser.
+///
+/// WebView2 handles a handful of the browser's own keys before the interface ever sees them, and two
+/// of them are things a person meets on the first day: Ctrl+F and F3 open its find bar over
+/// whatever is on screen — over the shell's own chrome, and beside the terminal's own find when one
+/// is open — and F5 or Ctrl+R reload the page, throwing the open tabs and the terminal on them away
+/// without asking. Ctrl+P, the zoom keys and F12 (DevTools) come along with the same switch.
+///
+/// What the switch leaves alone is the webview's text editing — copy, cut, paste, undo, select all
+/// — and the terminal's find key never belonged to the browser: xterm claims it before anything
+/// else looks at it. The other two webviews answer none of these keys for themselves, so there is
+/// nothing to turn off there.
+#[cfg(windows)]
+pub fn silence_browser_keys<R: Runtime>(app: &tauri::AppHandle<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        log::warn!("the main window was not found, so the webview keeps the browser's keys");
+        return;
+    };
+
+    if let Err(error) = window.with_webview(|webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+        use windows_core::Interface as _;
+
+        // SAFETY: reads through the COM controller the runtime just handed over, each checked; a
+        // runtime that cannot answer leaves the keys as they were rather than bringing the start
+        // down over a keyboard shortcut.
+        let switched = unsafe {
+            webview
+                .controller()
+                .CoreWebView2()
+                .and_then(|core| core.Settings())
+                .ok()
+                .and_then(|settings| settings.cast::<ICoreWebView2Settings3>().ok())
+                .map(|settings| settings.SetAreBrowserAcceleratorKeysEnabled(false))
+        };
+
+        match switched {
+            Some(Ok(())) => {}
+            Some(Err(error)) => log::warn!("the webview's browser keys could not be turned off: {error}"),
+            None => log::warn!(
+                "this WebView2 runtime has no switch for its browser keys; Ctrl+F keeps opening its find bar"
+            ),
+        }
+    }) {
+        log::warn!("the webview could not be reached to turn its browser keys off: {error}");
+    }
+}
+
+/// Nothing to turn off: no other webview answers the browser's keys for itself.
+#[cfg(not(windows))]
+pub fn silence_browser_keys<R: Runtime>(_app: &tauri::AppHandle<R>) {}
+
 /// Applies the platform's window chrome and arms the deadline that reveals the window.
 ///
 /// The window is not shown here. It is shown when the interface says it has a frame, or by the
