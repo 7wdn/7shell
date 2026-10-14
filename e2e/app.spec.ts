@@ -383,9 +383,6 @@ test("the home page opens a session from its own list, and says so when it canno
     await expect(board.getByRole("heading", { name: "Quick start" })).toBeVisible();
     await expect(board.getByText("No sessions yet", { exact: false })).toBeVisible();
     await expect(board.getByRole("heading", { name: "Common operations" })).toBeVisible();
-    // Nothing has been sent yet in a window this fresh, which is the other half of the panel.
-    await expect(board.getByRole("heading", { name: "History" })).toBeVisible();
-    await expect(board.getByText("Nothing sent yet.", { exact: false })).toBeVisible();
     // "Getting started" is the other home page's card, and which one is drawn is its own case.
 
     // Saved through the sidebar's own button, so what appears below is the same library read from

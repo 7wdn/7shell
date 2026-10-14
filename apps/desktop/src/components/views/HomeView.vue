@@ -20,10 +20,8 @@ import {
   CircleDashed,
   Download,
   FolderTree,
-  History,
   ListChecks,
   LoaderCircle,
-  MousePointerClick,
   Plus,
   Server,
   Settings,
@@ -33,7 +31,7 @@ import {
   Terminal,
   X,
 } from "@lucide/vue";
-import { computed, markRaw, onMounted } from "vue";
+import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SessionFailure from "@/components/sessions/SessionFailure.vue";
@@ -42,8 +40,6 @@ import { describeShellError } from "@/i18n/errors";
 import type { ShellError } from "@/lib/backend/errors";
 import { claimedCapabilities, unclaimedCapabilities } from "@/lib/descriptors/claims";
 import { importReceipt } from "@/lib/sessions/receipt";
-import { useAppStore } from "@/stores/app";
-import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
@@ -52,18 +48,12 @@ import { useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
 
 const { t } = useI18n();
-const app = useAppStore();
 const editor = useSessionEditorStore();
 const library = useSessionsStore();
 const preferences = usePreferencesStore();
 const recents = useRecentSessionsStore();
 const terminals = useTerminalsStore();
-const commands = useCommandsStore();
 const { toast } = useToast();
-
-// What was run lives in the vault rather than in a file, so it is read when the page appears — and
-// the page is only ever drawn with the vault unlocked, which is what the shell means.
-onMounted(() => void commands.load());
 
 function endpoint(session: Session): string {
   return `${session.user}@${session.host}:${session.port}`;
@@ -92,14 +82,6 @@ const tiles = computed(() => [
   { key: "groups", icon: markRaw(FolderTree), label: t("home.tile.groups"), value: library.groups.length },
   { key: "open", icon: markRaw(SquareTerminal), label: t("home.tile.open"), value: terminals.openSessionCount },
 ]);
-
-/** The commands sent most recently, newest first — the working page's third panel. */
-const recentCommands = computed(() => commands.history.slice(0, 6));
-
-/** When a command was sent, in the reader's own convention. */
-function sentAt(at: number): string {
-  return new Date(at * 1000).toLocaleString();
-}
 
 /**
  * The four things this build does, for the introduction's cards.
@@ -185,11 +167,6 @@ function failureOf(session: Session): ShellError | undefined {
   return terminals.failures[session.id];
 }
 
-/** The line under everything: what this is, which version, and which machine it is running on. */
-const stamp = computed(() =>
-  ["7Shell", app.info ? `v${app.info.version}` : "", app.platform].filter(Boolean).join(" · "),
-);
-
 const working = computed(() => preferences.homeLayout === "workspace");
 
 function translate(key: string, params?: Record<string, string>): string {
@@ -198,11 +175,15 @@ function translate(key: string, params?: Record<string, string>): string {
 </script>
 
 <template>
-  <div data-home class="mx-auto flex min-h-full w-full min-w-0 max-w-5xl flex-col justify-center gap-6 px-8 py-10">
+  <div
+    data-home
+    class="mx-auto flex min-h-full w-full min-w-0 max-w-5xl flex-col gap-6 px-8 py-10"
+    :class="working ? 'justify-start' : 'justify-center'"
+  >
     <!--
-      The working page: what the library holds, the hosts used last, the actions that start
-      something, and what was run. In that order, and the order is the argument — the numbers first
-      because they are the answer to "is anything here", then the two ways in, then history.
+      The working page: what the library holds, the actions that start something, and the hosts used
+      last. In that order, and the order is the argument — the numbers first because they are the
+      answer to "is anything here", then the two ways in.
     -->
     <template v-if="working">
       <section class="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3">
@@ -220,7 +201,29 @@ function translate(key: string, params?: Record<string, string>): string {
         </div>
       </section>
 
-      <div class="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+      <!--
+        The operations, then quick start, one row each: the two are read on their own, and a card
+        sharing a row with another is a card that has to be measured against it.
+      -->
+      <div class="grid min-w-0 grid-cols-1 gap-4">
+        <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+          <div class="border-b border-border px-4 py-3">
+            <h2 class="text-sm font-medium">{{ t("home.actions.title") }}</h2>
+          </div>
+          <div class="grid min-w-0 grid-cols-2 gap-1 p-2 sm:grid-cols-4">
+            <button
+              v-for="action in actions"
+              :key="action.key"
+              type="button"
+              class="flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-3 text-sm transition-colors hover:bg-accent/60"
+              @click="action.run()"
+            >
+              <component :is="action.icon" :size="16" class="shrink-0 text-muted-foreground" />
+              <span class="min-w-0 truncate">{{ action.label }}</span>
+            </button>
+          </div>
+        </section>
+
         <!--
           The hosts somebody was just on. A row opens a terminal, exactly as the sidebar's rows do —
           the same store action, so a host key still to be decided, a cancelled attempt and a failed
@@ -285,56 +288,7 @@ function translate(key: string, params?: Record<string, string>): string {
             </p>
           </div>
         </section>
-
-        <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
-          <div class="border-b border-border px-4 py-3">
-            <h2 class="text-sm font-medium">{{ t("home.actions.title") }}</h2>
-          </div>
-          <div class="grid min-w-0 gap-1 p-2">
-            <button
-              v-for="action in actions"
-              :key="action.key"
-              type="button"
-              class="flex min-w-0 items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent/60"
-              @click="action.run()"
-            >
-              <component :is="action.icon" :size="16" class="shrink-0 text-muted-foreground" />
-              <span class="min-w-0 flex-1 truncate">{{ action.label }}</span>
-              <ArrowRight :size="14" class="shrink-0 text-muted-foreground/60" />
-            </button>
-
-            <p
-              class="mt-2 flex min-w-0 items-start gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs leading-5 text-muted-foreground"
-            >
-              <MousePointerClick :size="14" class="mt-0.5 shrink-0" />
-              <span class="min-w-0">{{ t("home.actions.tip") }}</span>
-            </p>
-          </div>
-        </section>
       </div>
-
-      <!--
-        What was run, newest first — the panel that is about what somebody *did* rather than about
-        what they have. Read from the command library, which keeps it in the vault rather than in a
-        file, so an empty answer here is a real one: nothing has been sent yet.
-      -->
-      <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
-        <div class="flex items-center gap-2 border-b border-border px-4 py-3">
-          <History :size="15" class="text-muted-foreground" />
-          <h2 class="text-sm font-medium">{{ t("commands.history") }}</h2>
-        </div>
-        <ul v-if="recentCommands.length > 0" class="divide-y divide-border">
-          <li
-            v-for="(entry, index) in recentCommands"
-            :key="`${entry.at}-${index}`"
-            class="flex min-w-0 items-baseline gap-3 px-4 py-2"
-          >
-            <code class="min-w-0 flex-1 truncate font-mono text-xs">{{ entry.command }}</code>
-            <span class="shrink-0 text-[11px] text-muted-foreground">{{ sentAt(entry.at) }}</span>
-          </li>
-        </ul>
-        <p v-else class="px-4 py-6 text-sm text-muted-foreground">{{ t("commands.historyEmpty") }}</p>
-      </section>
     </template>
 
     <!--
@@ -468,11 +422,5 @@ function translate(key: string, params?: Record<string, string>): string {
         </button>
       </div>
     </template>
-
-    <div
-      class="mt-1 flex min-w-0 flex-col items-center gap-1 text-center text-[11px] leading-5 text-muted-foreground/70"
-    >
-      <p>{{ stamp }}</p>
-    </div>
   </div>
 </template>
