@@ -190,6 +190,12 @@ async function main() {
       ...process.env,
       SEVENSHELL_CONFIG_DIR: DATA_DIR,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${DEBUG_PORT}`,
+      // The webview's own data folder, which is not the settings directory above: WebView2 keeps
+      // it beside the application's local data unless told otherwise, so without this line a run's
+      // form history, cookies and cache land in the person's real profile. That was found by
+      // reading it back — the autofill table held thousands of the tests' own `labuser` entries —
+      // and it is the same throwaway room as the rest of the run: wiped with it, ignored like it.
+      WEBVIEW2_USER_DATA_FOLDER: path.join(REPO_ROOT, "e2e", ".run", "webview2"),
     },
   });
 
