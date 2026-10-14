@@ -32,7 +32,6 @@ import {
   ArrowDownUp,
   ArrowRight,
   Check,
-  ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsLeft,
@@ -903,9 +902,9 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
   >
     <section class="flex min-h-0 flex-1 flex-col px-3 pt-3">
       <!--
-        The row the panel is operated from: bringing the library in or sending it out on the left —
-        the one thing that is about the whole list rather than a row, and the place a word about the
-        panel would otherwise go — and the controls that act on the list on the right.
+        The row the panel is operated from: starting a session on the left — the one action the
+        panel is for, drawn in the same words and colours the home page gives it — and the controls
+        that act on the list on the right, the library's own menu among them.
 
         Label and glyphs are set at the size the rows are set at, the way the headings are: a
         toolbar a size down from the list it heads reads as belonging to a different panel. Like
@@ -984,16 +983,12 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
         <template v-else>
           <button
             type="button"
-            data-session-transfer
-            class="inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="t('sessions.list.importExport')"
-            :aria-label="t('sessions.list.importExport')"
-            aria-haspopup="true"
-            @click="openTransferMenu($event)"
+            class="inline-flex h-7 min-w-0 items-center gap-1.5 rounded-md bg-primary px-3 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
+            :title="t('sessions.list.add')"
+            @click="startNew()"
           >
-            <ArrowDownUp :size="14" class="shrink-0" />
-            <span class="min-w-0 truncate">{{ t("sessions.list.importExport") }}</span>
-            <ChevronDown :size="12" class="shrink-0 opacity-60" />
+            <Plus :size="14" class="shrink-0" />
+            <span class="min-w-0 truncate">{{ t("sessions.list.add") }}</span>
           </button>
 
           <span class="min-w-0 flex-1"></span>
@@ -1019,12 +1014,14 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
             </button>
             <button
               type="button"
+              data-session-transfer
               class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              :title="t('sessions.list.add')"
-              :aria-label="t('sessions.list.add')"
-              @click="startNew()"
+              :title="t('sessions.list.importExport')"
+              :aria-label="t('sessions.list.importExport')"
+              aria-haspopup="true"
+              @click="openTransferMenu($event)"
             >
-              <Plus :size="14" />
+              <ArrowDownUp :size="14" />
             </button>
             <button
               type="button"

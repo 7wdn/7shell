@@ -619,8 +619,13 @@ describe("the rows", () => {
     // 12px against the rows' 14px, with 12px glyphs beside the rows' 14px folder — so a person
     // reads two sizes in one panel. What says it is the list's own row is the size, not a
     // toolbar's type.
-    expect(transferButton().classList.contains("text-sm")).toBe(true);
-    expect(transferButton().querySelector("svg")?.getAttribute("width")).toBe("14");
+    const start = [...host.querySelectorAll<HTMLElement>("header button")].find(
+      (button) => button.textContent?.trim() === "New session",
+    );
+    expect(start, "the header starts a session").toBeDefined();
+    expect(start?.classList.contains("text-sm")).toBe(true);
+    expect(start?.classList.contains("bg-primary"), "and it is the panel's one action").toBe(true);
+    expect(start?.querySelector("svg")?.getAttribute("width")).toBe("14");
 
     const glyphs = [...host.querySelectorAll<SVGElement>("header > span.shrink-0 button svg")];
     expect(glyphs.length, "the header carries its five buttons").toBe(5);

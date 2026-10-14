@@ -1183,15 +1183,16 @@ test("a double-click on a control takes no text", async () => {
     const ranges = () => page.evaluate(() => window.getSelection()?.rangeCount ?? 0);
     const selected = () => page.evaluate(() => window.getSelection()?.toString() ?? "");
 
-    // The strip beside the library's own controls.
-    const transfer = await page.locator("[data-session-transfer]").boundingBox();
-    if (!transfer) {
-      throw new Error("the library's controls have no box");
+    // The gap between the start button and the library's own controls.
+    const start = await sidebar(page).getByRole("button", { name: "New session" }).boundingBox();
+    const collapseAll = await sidebar(page).getByRole("button", { name: "Collapse all" }).boundingBox();
+    if (!start || !collapseAll) {
+      throw new Error("the library's header has no box");
     }
     await page.evaluate(() => window.getSelection()?.removeAllRanges());
     await page.mouse.dblclick(
-      Math.round(transfer.x + transfer.width + 8),
-      Math.round(transfer.y + transfer.height / 2),
+      Math.round((start.x + start.width + collapseAll.x) / 2),
+      Math.round(start.y + start.height / 2),
     );
     await expect.poll(ranges, { message: "a double-click on the strip selects nothing" }).toBe(0);
 
