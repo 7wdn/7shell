@@ -21,6 +21,10 @@
  * which is the only way to get there first: xterm listens for the same event on the element it draws
  * into, and on a Mac it uses it to select the word under the pointer — which would throw away the
  * selection somebody had already made, immediately before copying it.
+ *
+ * A selection also raises a small toolbar of its own — copy, hand it to the shell, find — so the
+ * three things a person does with a highlight are reachable without a right-click. Where it stands
+ * is read from the renderer's own selection boxes; `lib/terminal/selection.ts` carries that story.
  */
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -31,12 +35,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 
 import { useContextMenu } from "@/composables/useContextMenu";
-import { terminalMenu } from "@/lib/menu/terminal";
+import { terminalMenu, terminalSelectionTools } from "@/lib/menu/terminal";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import type { MenuAction } from "@/lib/menu/types";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
+import { formatShortcutDisplay } from "@/lib/shortcuts/display";
 import { bindingFor } from "@/lib/shortcuts/registry";
 import { registerTerminalSink } from "@/lib/terminal/bus";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
+import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
@@ -79,6 +86,8 @@ const props = defineProps<{
 const terminals = useTerminalsStore();
 const { openMenu } = useContextMenu();
 const container = ref<HTMLDivElement | null>(null);
+/** The pane itself, which is what the selection toolbar is positioned against and clamped inside. */
+const paneBox = ref<HTMLDivElement | null>(null);
 
 /** What has been typed since the last Enter, so a `cd` in it can be read for the file panel. */
 const typed = new TypedCommands();
@@ -181,6 +190,10 @@ function applySize(): void {
   }
   announced = { columns: cols, rows };
   void terminals.resize(props.handle, cols, rows);
+  // A new size is new rows under the selection, which is where the toolbar is standing.
+  if (toolsAt.value !== null) {
+    void repositionTools();
+  }
 }
 
 function scheduleFit(): void {
@@ -191,6 +204,26 @@ function scheduleFit(): void {
     resizeTimer = undefined;
     applySize();
   }, FIT_DEBOUNCE_MS);
+}
+
+/**
+ * What the terminal's two surfaces ask of the pane — its right-click menu and the toolbar over a
+ * selection.
+ *
+ * Built fresh whenever one of them is put together rather than kept in a constant: nothing here has
+ * to be told when the terminal behind it comes or goes, so a pane still open on a connection that
+ * has ended cannot hand keystrokes to a terminal that is gone.
+ */
+function terminalActions() {
+  return {
+    // Through the terminal rather than around it: `paste` is the same path a real paste takes,
+    // which is what makes a bracketed paste and a multi-line paste behave the way they should.
+    paste: (text: string) => terminal?.paste(text),
+    selectAll: () => terminal?.selectAll(),
+    clear: () => terminal?.clear(),
+    dropSelection: () => terminal?.clearSelection(),
+    find: (needle: string) => openSearch(needle),
+  };
 }
 
 /**
@@ -207,23 +240,34 @@ function onContextMenu(event: MouseEvent): void {
   openMenu(
     event,
     { key: MENU_TITLES.terminal },
-    terminalMenu(
-      { selection: instance.getSelection(), interactive: props.interactive },
-      {
-        // Through the terminal rather than around it: `paste` is the same path a real paste takes,
-        // which is what makes a bracketed paste and a multi-line paste behave the way they should.
-        paste: (text) => instance.paste(text),
-        selectAll: () => instance.selectAll(),
-        clear: () => instance.clear(),
-      },
-    ),
+    terminalMenu({ selection: instance.getSelection(), interactive: props.interactive }, terminalActions()),
   );
 }
 
-/** Opens the bar, or focuses it when it is already open. */
-function openSearch(): void {
+/**
+ * Opens the bar, or focuses it when it is already open.
+ *
+ * A needle — the toolbar's magnifier hands over the selection it was pressed over — is put in the
+ * field and searched at once, because the reason that button was pressed is the text underneath it,
+ * and a bar that opened empty would be asking somebody to copy by hand what they had just
+ * highlighted.
+ *
+ * Only the first line that says anything is taken: a selection can cover several rows and a find
+ * field holds one line. That line is trimmed at both ends and otherwise left alone — what is being
+ * looked for is what was highlighted.
+ */
+function openSearch(needle?: string): void {
+  const seeded = needle?.split("\n").find((line) => line.trim() !== "");
+  if (seeded !== undefined) {
+    query.value = seeded.trim();
+  }
   searching.value = true;
-  void nextTick(() => searchInput.value?.select());
+  void nextTick(() => {
+    searchInput.value?.select();
+    if (seeded !== undefined) {
+      runSearch();
+    }
+  });
 }
 
 /**
@@ -239,6 +283,27 @@ function closeSearch(): void {
   terminal?.focus();
 }
 
+/**
+ * The colours a found match is drawn in.
+ *
+ * Read from the pane's own palette, like the terminal's colours are, so a match is the same muted
+ * highlight a selection is in either theme. The active one is told apart by an outline rather than by
+ * a second background — a distinction that survives a light terminal as well as a dark one.
+ *
+ * These are asked for by `runSearch` and not only for the drawing: the addon reports how many matches
+ * there are — which is the count the bar prints — only when it was given something to draw them
+ * with, so the marks and the count are one thing.
+ */
+function searchDecorations() {
+  return {
+    matchBackground: token("--terminal-selection", container.value),
+    matchOverviewRuler: "#00000000",
+    activeMatchBackground: token("--terminal-selection", container.value),
+    activeMatchBorder: token("--terminal-yellow", container.value),
+    activeMatchColorOverviewRuler: "#00000000",
+  };
+}
+
 /** Walks the matches, which is what typing and Enter both do. */
 function runSearch(backwards = false): void {
   const needle = query.value;
@@ -248,12 +313,155 @@ function runSearch(backwards = false): void {
     return;
   }
 
-  const options = { caseSensitive: caseSensitive.value, incremental: true };
+  const options = { caseSensitive: caseSensitive.value, incremental: true, decorations: searchDecorations() };
   if (backwards) {
     searchAddon.findPrevious(needle, options);
   } else {
     searchAddon.findNext(needle, options);
   }
+}
+
+/**
+ * The little toolbar over a selection, and where it stands.
+ *
+ * `null` is the whole of its visibility: it exists while a selection is drawn on screen, and the
+ * place it stands is also the flag that it is standing, so the two cannot come apart. Nothing is
+ * remembered about a selection that has been handled — there is no reason to keep text the terminal
+ * is no longer showing.
+ */
+const toolsAt = ref<{ left: number; top: number } | null>(null);
+const toolsBox = ref<HTMLDivElement | null>(null);
+const toolsSelection = ref("");
+/** Whether a press began in the terminal and has not been released yet — see `onWindowPointerUp`. */
+let pressed = false;
+
+/** The toolbar's entries, rebuilt as the selection under it, or the terminal's liveness, changes. */
+const toolEntries = computed(() =>
+  terminalSelectionTools({ selection: toolsSelection.value, interactive: props.interactive }, terminalActions()),
+);
+
+function hideTools(): void {
+  toolsAt.value = null;
+}
+
+/**
+ * Puts the toolbar against the selection, and says whether any of it is still on screen.
+ *
+ * A selection the person scrolled away from has no drawn segments left, so there is nothing to
+ * stand over: false is where the caller puts the toolbar away. Read from the renderer's own
+ * selection boxes rather than computed from cells — `selectionShape` in `lib/terminal/selection.ts`
+ * carries why — and read again on every scroll, because the highlight is glued to the rows and not
+ * to the pane.
+ */
+async function positionTools(): Promise<boolean> {
+  const surface = container.value;
+  const pane = paneBox.value;
+  if (surface === null || pane === null) {
+    return false;
+  }
+  const selection = selectionShape(surface);
+  if (selection === null) {
+    return false;
+  }
+  const paneRect = pane.getBoundingClientRect();
+  const placed = (width: number, height: number) => placeSelectionTools(selection, paneRect, { width, height });
+
+  const drawn = toolsBox.value;
+  if (drawn !== null) {
+    toolsAt.value = placed(drawn.offsetWidth, drawn.offsetHeight);
+    return true;
+  }
+
+  // Not drawn yet, so it has no size to be placed with: it is put at the end of the selection and
+  // moved once it has been in the document for a tick — a frame nobody sees, and less than a
+  // toolbar whose first appearance is somewhere it does not belong.
+  toolsAt.value = {
+    left: selection.end.right - paneRect.left - TOOLS_ANCHOR_INSET_PX,
+    top: selection.end.bottom - paneRect.top + TOOLS_GAP_PX,
+  };
+  await nextTick();
+  const fresh = toolsBox.value;
+  if (fresh !== null && toolsAt.value !== null) {
+    toolsAt.value = placed(fresh.offsetWidth, fresh.offsetHeight);
+  }
+  return true;
+}
+
+/** Re-aims a toolbar that is already up, and takes it away when there is nothing left to aim at. */
+async function repositionTools(): Promise<void> {
+  if (!(await positionTools())) {
+    hideTools();
+  }
+}
+
+/**
+ * Shows the toolbar over the selection.
+ *
+ * A frame first, and the same sense of "drawn" the shell's own first-frame report uses: xterm paints
+ * the selection layer on an animation frame of its own, so reading the document in the same turn as
+ * the release that made the selection would measure the frame before it.
+ */
+function revealTools(): void {
+  void (async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const instance = terminal;
+    if (!instance?.hasSelection()) {
+      hideTools();
+      return;
+    }
+    toolsSelection.value = instance.getSelection();
+    await repositionTools();
+  })();
+}
+
+/**
+ * The press that can begin a selection, and the release that ends one.
+ *
+ * The release is watched for on the window rather than on the terminal: a drag that reaches the end
+ * of a line usually carries the pointer out of the pane, and the selection is made all the same. The
+ * flag is what keeps a release that belongs to somebody else — a click on another pane's button —
+ * from drawing a toolbar over a selection nobody was just making.
+ */
+function onSurfacePointerDown(event: PointerEvent): void {
+  pressed = event.button === 0;
+}
+
+function onWindowPointerUp(): void {
+  if (!pressed) {
+    return;
+  }
+  pressed = false;
+  revealTools();
+}
+
+/**
+ * Pressing the toolbar's own buttons is not "going elsewhere": the press that runs one must not take
+ * it away before the click lands. Any other press does take it away — the same rule the context
+ * menus follow.
+ */
+function onDocumentPointerDown(event: PointerEvent): void {
+  pressed = false;
+  const target = event.target;
+  if (target instanceof Node && toolsBox.value?.contains(target) === true) {
+    return;
+  }
+  hideTools();
+}
+
+/** What a button says when pointed at: its name, and the key of the one action that has a real one. */
+function toolsTooltip(entry: MenuAction): string {
+  const name = t(entry.labelKey);
+  if (entry.shortcut === undefined) {
+    return name;
+  }
+  return `${name} (${formatShortcutDisplay(bindingFor(entry.shortcut, preferences.keybindings), app.platform)})`;
+}
+
+/** Runs one, and hands the keyboard back: the toolbar is a menu that happens to be drawn as buttons. */
+function runTool(entry: MenuAction): void {
+  hideTools();
+  terminal?.focus();
+  void entry.run();
 }
 
 onMounted(() => {
@@ -271,6 +479,10 @@ onMounted(() => {
     // The menu that opens on a right-click works on the selection somebody made before opening it,
     // and this would replace that selection with one word.
     rightClickSelectsWord: false,
+    // The find addon draws every match with the decoration API, which xterm still keeps behind this
+    // switch: without it a search that asks for decorations throws instead of reporting, and the bar
+    // loses its marks and its match count with it. Nothing else here reaches for a proposed API.
+    allowProposedApi: true,
   });
   const fit = new FitAddon();
   instance.loadAddon(fit);
@@ -320,6 +532,24 @@ onMounted(() => {
     }
     return false;
   });
+
+  instance.onSelectionChange(() => {
+    // The highlight is what the toolbar is about: with nothing selected there is nothing to stand
+    // over, whatever else asked for it to be there.
+    if (!instance.hasSelection()) {
+      hideTools();
+    }
+  });
+  instance.onScroll(() => {
+    // The rows move under the highlight, so a toolbar left where it was would point at something
+    // else. Followed rather than dismissed: scrolling is somebody looking around, not walking away.
+    if (toolsAt.value !== null) {
+      void repositionTools();
+    }
+  });
+
+  document.addEventListener("pointerdown", onDocumentPointerDown, true);
+  window.addEventListener("pointerup", onWindowPointerUp);
 
   observer = new ResizeObserver(() => scheduleFit());
   observer.observe(element);
@@ -391,6 +621,8 @@ onBeforeUnmount(() => {
   if (resizeTimer !== undefined) {
     clearTimeout(resizeTimer);
   }
+  document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+  window.removeEventListener("pointerup", onWindowPointerUp);
   observer?.disconnect();
   unregister?.();
   osc7?.dispose();
@@ -400,17 +632,47 @@ onBeforeUnmount(() => {
 
 <template>
   <!--
-    The surface, and the find bar over it. The wrapper exists for the bar: the bar is positioned
-    against the terminal rather than pushing it, so a search does not re-fit the terminal and
-    reflow the very output somebody is searching.
+    The surface, and the two things that stand over it: the find bar, and the toolbar about a
+    selection. The wrapper exists for them — both are positioned against the terminal rather than
+    pushing it, so neither a search nor a selection re-fits the terminal and reflows the very output
+    being worked with.
   -->
-  <div class="relative min-h-0 min-w-0 flex-1">
+  <div ref="paneBox" class="relative min-h-0 min-w-0 flex-1">
     <div
       ref="container"
       class="terminal-surface h-full overflow-hidden bg-[var(--terminal-background)]"
       :class="paletteClass"
       @contextmenu.capture="onContextMenu"
+      @pointerdown="onSurfacePointerDown"
     ></div>
+
+    <!--
+      The toolbar over a selection: the same three things the right-click menu offers — copy, hand
+      the selection to the shell, find — one gesture closer. Icons only, so each button says what it
+      is through its label and its tooltip rather than through a word the rows behind it would show
+      through.
+    -->
+    <div
+      v-if="toolsAt"
+      ref="toolsBox"
+      role="toolbar"
+      :aria-label="t('terminal.selection.label')"
+      class="absolute z-20 flex items-center gap-0.5 rounded-md border border-border bg-card/95 p-0.5 shadow-lg"
+      :style="{ left: `${toolsAt.left}px`, top: `${toolsAt.top}px` }"
+    >
+      <button
+        v-for="entry in toolEntries"
+        :key="entry.id"
+        type="button"
+        class="grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        :title="toolsTooltip(entry)"
+        :aria-label="t(entry.labelKey)"
+        :disabled="entry.disabled === true"
+        @click="runTool(entry)"
+      >
+        <component :is="entry.icon" v-if="entry.icon" :size="13" />
+      </button>
+    </div>
 
     <div
       v-if="searching"

@@ -18,7 +18,7 @@ import { fileAreaMenu, fileEntryMenu } from "./files";
 import { connectionMenu, environmentMenu, listenerMenu, processDetailMenu, processRowMenu } from "./inspect";
 import { diskMenu, monitorProcessMenu } from "./monitor";
 import { sessionMenu, groupMenu, tunnelMenu } from "./sessions";
-import { terminalMenu } from "./terminal";
+import { terminalMenu, terminalSelectionTools } from "./terminal";
 import { transferMenu } from "./transfers";
 import type { MenuEntry } from "./types";
 import { tabMenu } from "./workspace";
@@ -111,7 +111,16 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
       title: MENU_TITLES.terminal,
       entries: terminalMenu(
         { selection: "x", interactive: true },
-        { paste: nothing, selectAll: nothing, clear: nothing },
+        { paste: nothing, selectAll: nothing, clear: nothing, dropSelection: nothing },
+      ),
+    },
+    {
+      // The toolbar over a selection is not a context menu, but it is built from the same entries
+      // and carries the same keys — so it is checked here like every other list of them.
+      title: MENU_TITLES.terminal,
+      entries: terminalSelectionTools(
+        { selection: "x", interactive: true },
+        { paste: nothing, dropSelection: nothing, find: nothing },
       ),
     },
     {

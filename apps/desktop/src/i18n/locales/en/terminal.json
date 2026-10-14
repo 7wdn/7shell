@@ -32,6 +32,9 @@
       "caseSensitive": "Match case",
       "close": "Close the search",
       "none": "none"
+    },
+    "selection": {
+      "label": "Selection actions"
     }
   }
 }

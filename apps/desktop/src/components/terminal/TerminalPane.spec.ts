@@ -29,6 +29,12 @@ const builtTerminals: { options: Record<string, unknown> }[] = [];
 let pasted: string[] = [];
 let selectedAll = 0;
 let cleared = 0;
+/** The handlers the pane registered with the terminal, so a test can make xterm report. */
+let selectionChanged: (() => void) | undefined;
+let scrolled: (() => void) | undefined;
+let droppedSelections = 0;
+/** Every search the pane ran, with the options it ran it with. */
+let searched: { needle: string; options?: { decorations?: unknown } }[] = [];
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -67,6 +73,14 @@ vi.mock("@xterm/xterm", () => ({
       return selection;
     }
 
+    hasSelection(): boolean {
+      return selection !== "";
+    }
+
+    clearSelection(): void {
+      droppedSelections += 1;
+    }
+
     paste(text: string): void {
       pasted.push(text);
     }
@@ -77,6 +91,16 @@ vi.mock("@xterm/xterm", () => ({
 
     clear(): void {
       cleared += 1;
+    }
+
+    onSelectionChange(handler: () => void): { dispose: () => void } {
+      selectionChanged = handler;
+      return { dispose: () => {} };
+    }
+
+    onScroll(handler: () => void): { dispose: () => void } {
+      scrolled = handler;
+      return { dispose: () => {} };
     }
   },
 }));
@@ -89,7 +113,9 @@ vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 vi.mock("@xterm/addon-search", () => ({
   SearchAddon: class {
     onDidChangeResults(): void {}
-    findNext(): void {}
+    findNext(needle: string, options?: { decorations?: unknown }): void {
+      searched.push({ needle, options });
+    }
     findPrevious(): void {}
     clearDecorations(): void {}
   },
@@ -101,6 +127,13 @@ vi.mock("@/lib/terminal/bus", async (importOriginal) => ({
   registerTerminalSink: vi.fn(() => () => {}),
 }));
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
+// Only the copy half of the clipboard module is replaced: the paste half is what the cases below
+// drive through the backend's own clipboard call, and a wholesale mock would replace the thing
+// under test.
+vi.mock("@/lib/menu/clipboard", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/menu/clipboard")>()),
+  copyText: vi.fn(async () => true),
+}));
 vi.mock("@/lib/backend/tauri", () => ({
   clipboardText: vi.fn(),
   sessionOpen: vi.fn(),
@@ -122,6 +155,7 @@ import { createPinia, setActivePinia } from "pinia";
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { clipboardText, filesList, filesOpen, sessionOpen, transfersOpen, tunnelsOpen } from "@/lib/backend/tauri";
+import { copyText } from "@/lib/menu/clipboard";
 import type { MenuAction } from "@/lib/menu/types";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -136,6 +170,8 @@ const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const transfersOpenMock = vi.mocked(transfersOpen);
 /** The clipboard as Rust reads it, which is the only way this build can read one at all. */
 const clipboardTextMock = vi.mocked(clipboardText);
+/** Copying, watched where the entries call it rather than through the platform's clipboard. */
+const copyTextMock = vi.mocked(copyText);
 
 const session: Session = {
   id: "session-1",
@@ -193,7 +229,7 @@ async function mountPane(interactive = true): Promise<void> {
   await nextTick();
 
   // A pane that registered nothing would make every case below pass by doing nothing at all.
-  if (!onData || !oscHandlers.has(7)) {
+  if (!onData || !oscHandlers.has(7) || !selectionChanged || !scrolled) {
     throw new Error("the pane registered no handlers with its terminal");
   }
 
@@ -217,6 +253,11 @@ beforeEach(async () => {
   pasted = [];
   selectedAll = 0;
   cleared = 0;
+  selectionChanged = undefined;
+  scrolled = undefined;
+  droppedSelections = 0;
+  searched = [];
+  copyTextMock.mockClear();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -225,6 +266,10 @@ beforeEach(async () => {
       disconnect(): void {}
     },
   );
+  // The pane reads the renderer on an animation frame, so the frame is made a timer: a test that
+  // dispatches a release and then waits a few milliseconds has waited out everything on the other
+  // side of it.
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 1));
   sessionOpenMock.mockReset();
   filesOpenMock.mockReset();
   filesListMock.mockReset();
@@ -314,7 +359,14 @@ describe("a terminal's right-click menu", () => {
     const { visible, entries } = useContextMenu();
     expect(visible.value).toBe(true);
     expect(event.defaultPrevented).toBe(true);
-    expect(entries.value.map((entry) => entry.id)).toEqual(["copy", "paste", "select-all", "sep-screen", "clear"]);
+    expect(entries.value.map((entry) => entry.id)).toEqual([
+      "copy",
+      "paste",
+      "paste-selection",
+      "select-all",
+      "sep-screen",
+      "clear",
+    ]);
     expect(action("copy").disabled).toBeFalsy();
   });
 
@@ -355,6 +407,17 @@ describe("a terminal's right-click menu", () => {
     expect(action("paste").disabled).toBe(true);
   });
 
+  it("hands the selection to the terminal itself, without a clipboard in between", async () => {
+    selection = "systemctl status nginx";
+    rightClick();
+
+    await action("paste-selection").run();
+
+    expect(pasted).toEqual(["systemctl status nginx"]);
+    expect(droppedSelections).toBe(1);
+    expect(clipboardTextMock).not.toHaveBeenCalled();
+  });
+
   it("selects everything and clears the screen through the terminal", () => {
     rightClick();
 
@@ -363,6 +426,230 @@ describe("a terminal's right-click menu", () => {
 
     expect(selectedAll).toBe(1);
     expect(cleared).toBe(1);
+  });
+});
+
+/**
+ * The toolbar over a selection.
+ *
+ * A test document lays nothing out, so the renderer's selection layer is drawn here by hand — these
+ * are the boxes `selectionBox` reads, and where the buttons land in a real window is the end-to-end
+ * run's question. What this file can see is the wiring: which gestures raise the toolbar, what the
+ * buttons do to the terminal they stand over, and that a terminal with nothing drawn gets no toolbar.
+ */
+describe("the toolbar over a selection", () => {
+  function rect(left: number, top: number, right: number, bottom: number): DOMRect {
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    } as DOMRect;
+  }
+
+  /**
+   * The selection as xterm really draws one: the line's own segment, and the band across the row
+   * that a one-line selection is given and that has no height of its own.
+   *
+   * The segment's box is handed back because a test moves it: that is what the renderer does when
+   * the terminal scrolls, and following it is the whole of what the toolbar does about a scroll.
+   */
+  function drawSelection(): { left: number; top: number; right: number; bottom: number } {
+    const box = { left: 40, top: 20, right: 160, bottom: 34 };
+    const surface = pane as HTMLElement;
+    const layer = document.createElement("div");
+    layer.className = "xterm-selection";
+    const part = document.createElement("div");
+    part.getBoundingClientRect = () => rect(box.left, box.top, box.right, box.bottom);
+    const band = document.createElement("div");
+    band.getBoundingClientRect = () => rect(0, box.bottom, 400, box.bottom);
+    layer.append(part, band);
+    surface.append(layer);
+    surface.getBoundingClientRect = () => rect(0, 0, 400, 300);
+    (surface.parentElement as HTMLElement).getBoundingClientRect = () => rect(0, 0, 400, 300);
+    return box;
+  }
+
+  /** A selection drag: the press, the release, and the frames drawn on either side of them. */
+  async function dragSelect(): Promise<void> {
+    pane?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0 }));
+    await settle();
+  }
+
+  /** Waits out the frame the pane reads the renderer on, and the ticks that follow it. */
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await nextTick();
+    await nextTick();
+  }
+
+  const tools = (): HTMLElement | null => document.querySelector('[role="toolbar"]');
+
+  /** One of the toolbar's buttons, by the name it answers to. */
+  function toolButton(name: string): HTMLButtonElement {
+    const found = tools()?.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`);
+    if (!found) {
+      throw new Error(`the toolbar has no button called ${name}`);
+    }
+    return found;
+  }
+
+  it("stands over a selection once the drag is released", async () => {
+    selection = "systemctl status nginx";
+    drawSelection();
+
+    await dragSelect();
+
+    expect(tools()).not.toBeNull();
+    const labels = [...(tools()?.querySelectorAll("button") ?? [])].map((button) => button.getAttribute("aria-label"));
+    expect(labels).toEqual(["Copy", "Paste selection", "Find in terminal"]);
+    // Hung from the end of the selection — the segment stops at 160 — and not from the band across
+    // the row, which would put the toolbar at the far edge of the pane instead.
+    expect(tools()?.style.left).toBe("148px");
+    expect(tools()?.style.top).toBe("40px");
+  });
+
+  it("stands away while nothing is selected", async () => {
+    selection = "";
+    drawSelection();
+
+    await dragSelect();
+
+    expect(tools()).toBeNull();
+  });
+
+  it("stands away when the selection goes", async () => {
+    selection = "nginx.conf";
+    drawSelection();
+    await dragSelect();
+    expect(tools()).not.toBeNull();
+
+    selection = "";
+    selectionChanged?.();
+    await nextTick();
+
+    expect(tools()).toBeNull();
+  });
+
+  it("stands away when the selection is scrolled out of the drawn rows", async () => {
+    selection = "nginx.conf";
+    drawSelection();
+    await dragSelect();
+    expect(tools()).not.toBeNull();
+
+    // What scrolling the selection away leaves behind: the layer redraws without it.
+    pane?.querySelector(".xterm-selection")?.remove();
+    scrolled?.();
+    await settle();
+
+    expect(tools()).toBeNull();
+  });
+
+  it("follows the rows when the terminal scrolls under it", async () => {
+    selection = "nginx.conf";
+    const drawn = drawSelection();
+    await dragSelect();
+    const before = tools()?.style.top;
+
+    drawn.top = 120;
+    drawn.bottom = 134;
+    scrolled?.();
+    await settle();
+
+    expect(tools()?.style.top).not.toBe(before);
+  });
+
+  it("copies what is selected", async () => {
+    selection = "docker compose up";
+    drawSelection();
+    await dragSelect();
+
+    toolButton("Copy").click();
+    await nextTick();
+
+    expect(copyTextMock).toHaveBeenCalledWith("docker compose up");
+    // Used, and gone: the toolbar is a menu that happens to be drawn as buttons.
+    expect(tools()).toBeNull();
+  });
+
+  it("hands the selection to the shell without a clipboard in between", async () => {
+    selection = "docker compose up";
+    drawSelection();
+    await dragSelect();
+
+    toolButton("Paste selection").click();
+    await nextTick();
+
+    expect(pasted).toEqual(["docker compose up"]);
+    expect(droppedSelections).toBe(1);
+    expect(clipboardTextMock).not.toHaveBeenCalled();
+    expect(tools()).toBeNull();
+  });
+
+  it("opens the find bar over the selection", async () => {
+    selection = "nginx.conf";
+    drawSelection();
+    await dragSelect();
+
+    toolButton("Find in terminal").click();
+    await nextTick();
+    await nextTick();
+
+    const field = document.querySelector<HTMLInputElement>('input[aria-label="Find in terminal"]');
+    expect(field, "the bar is up").not.toBeNull();
+    expect(field?.value, "and holds what was highlighted").toBe("nginx.conf");
+    expect(tools()).toBeNull();
+  });
+
+  it("takes the first line that says anything for the find field", async () => {
+    // A selection can cover several rows and a find field holds one line, so the needle is the first
+    // row with words on it — trimmed, because what somebody highlighted by hand has a margin in it.
+    selection = "\n  nginx.conf  \nlisten 80;";
+    drawSelection();
+    await dragSelect();
+
+    toolButton("Find in terminal").click();
+    await nextTick();
+    await nextTick();
+
+    const field = document.querySelector<HTMLInputElement>('input[aria-label="Find in terminal"]');
+    expect(field?.value).toBe("nginx.conf");
+  });
+
+  it("searches what it was handed, asking for the marks the match count is made of", async () => {
+    // The count the bar prints comes from the addon's results event, and the addon only reports when
+    // it was given colours to draw the matches with — so the request for the marks and the request
+    // for the count are one and the same, which is what this pins down.
+    selection = "nginx.conf";
+    drawSelection();
+    await dragSelect();
+
+    toolButton("Find in terminal").click();
+    await nextTick();
+    await nextTick();
+
+    const last = searched.at(-1);
+    expect(last?.needle, "the search was run, over the selection").toBe("nginx.conf");
+    expect(last?.options?.decorations, "and with something to draw the matches with").toBeDefined();
+  });
+
+  it("keeps paste selection out of a terminal that has ended", async () => {
+    unmount?.();
+    document.body.innerHTML = "";
+    await mountPane(false);
+    selection = "old output";
+    drawSelection();
+
+    await dragSelect();
+
+    expect(toolButton("Paste selection").disabled).toBe(true);
+    expect(toolButton("Copy").disabled, "the scrollback of an ended terminal is still readable").toBe(false);
   });
 });
 

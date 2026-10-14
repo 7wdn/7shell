@@ -20,6 +20,7 @@
     "environment": "环境变量操作",
     "copy": "复制",
     "paste": "粘贴",
+    "pasteSelection": "粘贴选中",
     "selectAll": "全选",
     "clear": "清屏",
     "new": "新建",

@@ -2593,6 +2593,78 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await pathBar.press("Enter");
     await expect(page.getByText(`${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
 
+    // The toolbar over a selection, and the button that hands one to the shell without a clipboard
+    // in between. A line is printed first so the drag has something whose text is knowable: xterm
+    // draws the cells to a canvas but keeps the rows as elements, so the row can be found and
+    // dragged across — and what was pasted is provable the way everything else here is proved, by
+    // the shell running it and the file it makes turning up in the listing.
+    await bar.fill(`echo touch /tmp/${stamp}-pasted`);
+    await bar.press("Enter");
+    const echoed = page.locator(".xterm-rows > div", { hasText: `touch /tmp/${stamp}-pasted` }).last();
+    await expect(echoed).toBeVisible({ timeout: 30_000 });
+    const line = await echoed.boundingBox();
+    if (!line) {
+      throw new Error("the echoed line was not drawn");
+    }
+
+    /** Drags across the printed line, which is the gesture the toolbar exists for. */
+    const dragAcrossTheLine = async (): Promise<void> => {
+      await page.mouse.move(line.x + 2, line.y + line.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(line.x + line.width * 0.6, line.y + line.height / 2, { steps: 6 });
+      await page.mouse.up();
+    };
+
+    await dragAcrossTheLine();
+
+    const tools = page.getByRole("toolbar", { name: "Selection actions" });
+    await expect(tools).toBeVisible();
+    const toolsAt = await tools.boundingBox();
+    const drawnLine = await echoed.boundingBox();
+    if (!toolsAt || !drawnLine) {
+      throw new Error("the toolbar or the line it belongs to was not drawn");
+    }
+    // Hung from where the drag stopped: below the line the selection was made on, its first button
+    // at the point the highlight ends. This is what reading the renderer's own layer wrongly costs
+    // — a one-line selection also carries a full-width band with no height, and a toolbar measured
+    // against that box stands at the far edge of the pane instead.
+    expect(toolsAt.y, "below the line the selection was made on").toBeGreaterThan(drawnLine.y);
+    expect(toolsAt.y - drawnLine.y, "and not further than a line or so").toBeLessThan(drawnLine.height * 2);
+    const stopped = line.x + line.width * 0.6;
+    expect(Math.abs(toolsAt.x + 12 - stopped), "the first button at the end of the highlight").toBeLessThan(24);
+    await page.screenshot({ path: path.join(ARTIFACTS, "selection-tools.png"), fullPage: false });
+
+    // The magnifier opens the find bar over what was highlighted — the whole reason to press it over
+    // a selection rather than writing the needle out by hand afterwards.
+    await tools.getByRole("button", { name: "Find in terminal" }).click();
+    const seededBar = page.getByPlaceholder("Find in terminal");
+    await expect(seededBar).toBeVisible();
+    await expect(seededBar, "filled with the line the drag covered").toHaveValue(`touch /tmp/${stamp}-pasted`);
+    // Counted, not only filled in: the bar searches what it was handed as it opens. Read from inside
+    // the bar, because a bare `n/n` on this screen also matches the monitor's own readings.
+    await expect(seededBar.locator("xpath=..").getByText(/\d+\/\d+/), "and the matches are being counted").toBeVisible({
+      timeout: 15_000,
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, "selection-find.png"), fullPage: false });
+    await page.keyboard.press("Escape");
+    await expect(seededBar).toHaveCount(0);
+
+    // Highlighted again, because the toolbar goes when one of its buttons is used and the paste half
+    // of this case still needs one to be up.
+    await dragAcrossTheLine();
+    await expect(tools).toBeVisible();
+    await tools.getByRole("button", { name: "Paste selection" }).click();
+    // Handed over, the highlight goes with it — and the toolbar has nothing left to stand over.
+    await expect(tools).toHaveCount(0);
+    await page.keyboard.press("Enter");
+
+    // And the shell ran what was pasted: the same listing, one file richer.
+    await pathBar.fill("/");
+    await pathBar.press("Enter");
+    await pathBar.fill("/tmp");
+    await pathBar.press("Enter");
+    await expect(page.getByText(`${stamp}-pasted`).first()).toBeVisible({ timeout: 30_000 });
+
     // Newest first, so the two files this case just made are in the part of the listing that is
     // drawn: /tmp holds more rows than a screen after a few runs of this suite, and the panel draws
     // the ones somebody can see.

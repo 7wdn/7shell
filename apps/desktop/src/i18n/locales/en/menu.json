@@ -20,6 +20,7 @@
     "environment": "Variable actions",
     "copy": "Copy",
     "paste": "Paste",
+    "pasteSelection": "Paste selection",
     "selectAll": "Select all",
     "clear": "Clear the screen",
     "new": "New",
