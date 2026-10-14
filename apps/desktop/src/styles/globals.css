@@ -790,6 +790,17 @@
   }
 
   /*
+   * The platform draws a reveal button into every password field, in the platform's own colours —
+   * and beside the eye the fields that offer one draw themselves (the gate, the archived-vaults
+   * dialog, the sync secrets) that is two controls in one field saying the same thing, at two
+   * weights. The built-in one is what is hidden, the search rule above over again: a password
+   * field shows the eye this window gave it, and a field this window gave none to shows none.
+   */
+  input[type="password"]::-ms-reveal {
+    display: none;
+  }
+
+  /*
    * What a control is made of is not text.
    *
    * A button, a heading, a column heading and a field's name are all things the interface *says*;
