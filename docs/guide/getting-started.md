@@ -3,10 +3,6 @@
 This page follows a first run in the order the application asks its questions: the vault, a saved
 session, the host key, the terminal, the files, and where the settings live.
 
-The page the application draws with nothing open says its own status: this is an early development
-build that has had no security review and has never been released, so a production credential is the
-one thing not to put into it yet.
-
 ## 1. Create the vault
 
 The first start opens on **Create the vault**. There is no vault on the device yet, and the

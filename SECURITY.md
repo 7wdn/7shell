@@ -43,9 +43,3 @@ The desktop application, the Rust crates, the descriptors, the build and release
 the supply chain of the dependencies themselves. Out of scope: attacks that require an already
 compromised machine or a malicious server you deliberately connected to — although a server
 that can make the client leak something *is* in scope, and is interesting.
-
-## Status
-
-There has been **no security review and no release**. The interface says so on its own footer,
-and the README says so at the top. Until that changes, treat this as a project to experiment
-with, not one to trust with access to real infrastructure.

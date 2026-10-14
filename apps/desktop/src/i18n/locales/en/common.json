@@ -10,9 +10,6 @@
       "ready": "Backend ready",
       "failed": "Backend unavailable"
     },
-    "notice": {
-      "early": "Early development. This build has had no security review and has never been released — do not use it with production credentials yet."
-    },
     "resizeColumn": "Resize the {column} column"
   }
 }

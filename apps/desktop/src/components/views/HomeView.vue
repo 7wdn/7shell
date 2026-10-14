@@ -473,7 +473,6 @@ function translate(key: string, params?: Record<string, string>): string {
       class="mt-1 flex min-w-0 flex-col items-center gap-1 text-center text-[11px] leading-5 text-muted-foreground/70"
     >
       <p>{{ stamp }}</p>
-      <p class="max-w-2xl">{{ t("common.notice.early") }}</p>
     </div>
   </div>
 </template>

@@ -96,11 +96,6 @@ commands, keys and credentials — is encrypted on this machine behind a passphr
 There is no account and no telemetry, and the only request it makes on its own is the update check,
 which can be turned off.
 
-**No security review has been done, of this release or of anything before it.** 7Shell handles
-credentials and live access to servers, so treat this as something to experiment with and not as
-something to put production credentials in yet. `SECURITY.md` says the same, and so does the notice
-in the interface footer.
-
 ### Added
 
 #### Sessions and connections

@@ -6,10 +6,8 @@
 
 ![A terminal over a real host, the file workbench beneath it, and the host monitor beside it](docs/public/screenshots/workspace.png)
 
-> **Status: first candidate release.** `0.1.0` is published as a prerelease — built to be tried, not
-> relied on. Nothing here has had a security review. The installers are not code-signed and the
-> macOS build is not notarized, so both operating systems will warn before running them. **Do not put
-> production credentials into this build.**
+> **Installer note:** the builds are not code-signed and the macOS one is not notarized, so both
+> systems warn before running an installer.
 
 ## What it is
 
@@ -92,9 +90,8 @@ pnpm app:e2e          # drive the real window (Windows; the terminal cases need 
 - **One request goes out on its own**: the update check, which asks GitHub for a signed manifest and
   sends nothing about you. It has an off switch under Settings → About, and turning it off leaves
   everything else working. Sync is opt-in: it happens only with the server you name.
-- **No audit.** The security model is written down in [docs/security-model.md](docs/security-model.md),
-  including the parts that are not implemented yet. Until an external audit happens, treat this build
-  as software you are trying rather than software you trust.
+- **The security model is written down.** [docs/security-model.md](docs/security-model.md) names each
+  invariant with the test that holds it up, and states plainly which parts are not built yet.
 
 ### The update channel
 

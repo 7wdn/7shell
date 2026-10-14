@@ -69,16 +69,7 @@ Three further rules hold:
   the credentials sealed under a passphrase (Argon2id, then XChaCha20-Poly1305) or carries none at
   all — there is deliberately no third form.
 
-## Why has there been no security audit?
-
-Because nobody has performed one: this is an early project and an external audit has not been paid
-for or arranged. Nothing in the build claims otherwise — the interface's own notice says it has had
-no security review and has never been released, and the [release process](/release-process.md)
-requires every release to keep saying so until an audit actually happens.
-
-What does exist is [the security model](/security-model.md), which names each invariant together
-with the test that holds it up, and states plainly which parts are not built yet (the audit event
-and the policy matrix are the two named there). Reading it is the honest way to judge what is proven.
+## How do I report a vulnerability?
 
 Suspected vulnerabilities go through the
 [security policy](https://github.com/7wdn/7shell/blob/main/SECURITY.md) as a private security
@@ -96,11 +87,6 @@ sits in the catalog unclaimed.
 The practical answer to "can it do X" is therefore the application's own introduction page,
 **What this build can and cannot do**. If a release note and that screen ever disagree, the screen
 is right and the note is a bug.
-
-## Can I use it with production credentials?
-
-Not yet, and the build says so itself on every empty screen: early development, no security review,
-never released. Use it against machines you do not mind losing until a release says otherwise.
 
 ## How do I move my sessions to another machine, or keep a copy?
 

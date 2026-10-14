@@ -38,9 +38,6 @@ update channel follows the promotion — installed builds are never offered a ca
    is the gate: a release whose notes were never written fails before anything is built, because a
    release with an empty body is a release nobody can decide about.
 3. The version bumped with `pnpm sync:versions`, and `version.json` committed.
-4. For the first release only: the README's status line, `SECURITY.md` and the notice in the
-   interface footer all still say "no security review" — a release does not change that until an
-   audit has actually happened.
 
 ## Cutting the release
 
