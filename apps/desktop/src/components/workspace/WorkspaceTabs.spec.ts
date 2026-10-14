@@ -62,6 +62,10 @@ async function renderTabs(
     failure: null,
     panel: tab.panel ?? null,
   }));
+  // The order these tabs were opened in, which the store keeps beside the tabs themselves: it is
+  // what says which copy of a session a tab is, so a case here writes the pair the way the store
+  // keeps it.
+  terminals.openedOrder = tabs.map((tab) => tab.id);
   terminals.activeTabId = tabs[0]?.id ?? null;
 
   app = createApp({ render: () => h(WorkspaceTabs) }).use(i18n);
@@ -100,6 +104,15 @@ function strip(): HTMLElement {
     throw new Error("the workspace has no tab strip");
   }
   return found;
+}
+
+/** What the tab with this id says on screen. */
+function tabName(id: string): string {
+  const label = host.querySelector<HTMLElement>(`[data-tab="${id}"] span.truncate[title]`);
+  if (!label) {
+    throw new Error(`the strip draws no tab called ${id}`);
+  }
+  return label.textContent?.trim() ?? "";
 }
 
 /** What a button says about being the half on screen, which is what its own lit state means. */
@@ -240,6 +253,18 @@ describe("the bar's own choices", () => {
     ]);
 
     expect(host.querySelectorAll("[data-tab-group]")).toHaveLength(0);
+  });
+
+  it("numbers a session's copies rather than drawing two tabs that read the same", async () => {
+    await renderTabs([
+      { kind: "terminal", id: "tab-1", session },
+      { kind: "terminal", id: "tab-2", session },
+      { kind: "terminal", id: "tab-3", session: other },
+    ]);
+
+    // The first tab of a session keeps its own name; the copies after it say which copy they are,
+    // and another session's tab is not counted among them.
+    expect([tabName("tab-1"), tabName("tab-2"), tabName("tab-3")]).toEqual(["web", "web (1)", "db"]);
   });
 
   it("orders the tabs by name when that is the choice", async () => {

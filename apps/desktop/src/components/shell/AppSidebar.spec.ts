@@ -22,6 +22,8 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionsExport: vi.fn(async () => undefined),
   sessionsImport: vi.fn(async () => undefined),
   sessionOpenCancel: vi.fn(async () => false),
+  // The menu's own open is a real open when the question about a second tab is answered yes.
+  sessionOpen: vi.fn(async () => undefined),
   groupsList: vi.fn(async () => []),
   groupSave: vi.fn(async (group: SessionGroup) => group),
   groupDelete: vi.fn(async () => {}),
@@ -41,17 +43,20 @@ import {
   groupDelete,
   groupSave,
   groupsList,
+  sessionOpen,
   sessionSave,
   sessionDelete,
   sessionOpenCancel,
   sessionsExport,
   sessionsImport,
   sessionsList,
+  settingsSet,
   terminalClose,
 } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry, MenuSubmenu } from "@/lib/menu/types";
 import { forgetExportPassphrase } from "@/lib/sessions/exportPassphrase";
 import { ShellError } from "@/lib/backend/errors";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { Session, SessionGroup } from "@/types/session";
@@ -182,6 +187,17 @@ function passphraseConfirmation(): HTMLInputElement {
     throw new Error("the export dialog does not ask for the passphrase twice");
   }
   return field;
+}
+
+/**
+ * The question about a session that is already open, once it is on screen.
+ *
+ * The menu entry runs asynchronously — the store is asked whether there is a question at all — so
+ * the dialog arrives a turn later than the click that asked for it.
+ */
+async function reopenQuestion(): Promise<HTMLElement> {
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+  return confirmDialog();
 }
 
 function rowElement(key: string): HTMLElement {
@@ -469,6 +485,16 @@ function resetBackend(): void {
   vi.mocked(sessionsExport).mockReset().mockResolvedValue(undefined);
   vi.mocked(sessionsImport).mockReset().mockResolvedValue(undefined);
   vi.mocked(sessionOpenCancel).mockReset().mockResolvedValue(false);
+  vi.mocked(sessionOpen)
+    .mockReset()
+    .mockImplementation(async (sessionId: string) => ({
+      kind: "opened" as const,
+      handle: `handle-${sessionId}`,
+      sessionId,
+      tunnels: [],
+      tunnelFailures: [],
+    }));
+  vi.mocked(settingsSet).mockReset().mockResolvedValue(undefined);
   vi.mocked(sessionDelete)
     .mockReset()
     .mockImplementation(async () => {});
@@ -987,6 +1013,98 @@ describe("a session's menu", () => {
     await vi.waitFor(() =>
       expect(drawnRows().indexOf("session:session-1")).toBeGreaterThan(drawnRows().indexOf("group:group-2")),
     );
+  });
+
+  it("draws both entries whatever the settings say a session opens as", async () => {
+    await render([work], [db]);
+    const row = host.querySelector<HTMLElement>('[title="Open a terminal for db"]');
+
+    // The terminal entry carries the settings' shape; the file manager stands beside it either way,
+    // because it is a tab of its own rather than the panel a split brings with it.
+    for (const layout of ["split", "terminal"] as const) {
+      usePreferencesStore().sessionLayout = layout;
+      const entries = await rightClick(row);
+      expect(entries.some((entry) => entry.kind === "action" && entry.id === "open")).toBe(true);
+      expect(entries.some((entry) => entry.kind === "action" && entry.id === "open-files")).toBe(true);
+    }
+  });
+
+  it("goes to the tab a session already has when its row is pressed, rather than opening a second one", async () => {
+    await render([work], [db]);
+    openTerminalFor(db);
+    // The remembered answer says "another tab", and the row's own press is not the entry point that
+    // reads it: that one is the menu's open, two entries up.
+    usePreferencesStore().sessionReopen = "new-tab";
+    const open = useTerminalsStore().tabs[0]?.id ?? "";
+    useTerminalsStore().openSettings();
+    expect(useTerminalsStore().activeTabId).not.toBe(open);
+
+    // The row's own press: the title is on the button that is the press target.
+    host.querySelector<HTMLElement>('[title="Open a terminal for db"]')?.click();
+
+    await vi.waitFor(() => expect(useTerminalsStore().activeTabId).toBe(open));
+    expect(vi.mocked(sessionOpen), "no second connection is asked for").not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]'), "and nothing is asked").toBeNull();
+  });
+
+  it("asks before a second tab, and opens it when the question is answered yes", async () => {
+    await render([work], [db]);
+    openTerminalFor(db);
+
+    const entries = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for db"]'));
+    pick(entries, "open").run();
+
+    // The question names the session it is about rather than saying "this session".
+    const question = await reopenQuestion();
+    expect(question.textContent).toContain("db");
+    dialogButton("Open in a new tab")?.click();
+
+    // A second tab about the same session, which is what the answer was about.
+    await vi.waitFor(() => expect(useTerminalsStore().tabs).toHaveLength(2));
+    expect(vi.mocked(sessionOpen)).toHaveBeenCalledWith("session-2");
+  });
+
+  it("goes to the tab that is open when the question is answered no, and opens nothing", async () => {
+    await render([work], [db]);
+    openTerminalFor(db);
+    const open = useTerminalsStore().tabs[0]?.id ?? "";
+    useTerminalsStore().openSettings();
+    expect(useTerminalsStore().activeTabId).not.toBe(open);
+
+    const entries = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for db"]'));
+    pick(entries, "open").run();
+    await reopenQuestion();
+    dialogButton("Cancel")?.click();
+
+    // Answering "no" is not a dead end: the tab somebody already has is brought forward.
+    await vi.waitFor(() => expect(useTerminalsStore().activeTabId).toBe(open));
+    expect(vi.mocked(sessionOpen)).not.toHaveBeenCalled();
+    expect(useTerminalsStore().tabs).toHaveLength(2);
+  });
+
+  it("remembers the answer when the box was ticked, so the next open does not ask again", async () => {
+    await render([work], [db]);
+    openTerminalFor(db);
+    const open = useTerminalsStore().tabs[0]?.id ?? "";
+
+    const entries = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for db"]'));
+    pick(entries, "open").run();
+    const question = await reopenQuestion();
+    question.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click();
+    await nextTick();
+    dialogButton("Cancel")?.click();
+
+    await vi.waitFor(() => expect(usePreferencesStore().sessionReopen).toBe("focus"));
+    expect(vi.mocked(settingsSet), "a remembered answer is written down at once").toHaveBeenCalled();
+    await questionsClosed();
+
+    const again = await rightClick(host.querySelector<HTMLElement>('[title="Open a terminal for db"]'));
+    pick(again, "open").run();
+    await nextTick();
+
+    // Which is what the second open obeys: no question, and somebody is taken to the tab they have.
+    expect(useTerminalsStore().activeTabId).toBe(open);
+    expect(vi.mocked(sessionOpen)).not.toHaveBeenCalled();
   });
 });
 

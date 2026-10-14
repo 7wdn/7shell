@@ -640,6 +640,25 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     },
   },
   {
+    // The answer the dialog remembers, with a row of its own so it can be changed or turned back
+    // into a question: a remembered answer that only the dialog could write would be one nobody
+    // could take back.
+    id: "session-reopen",
+    category: "workspace",
+    field: "sessionReopen",
+    titleKey: "settings.rows.sessionReopen.title",
+    summaryKey: "settings.rows.sessionReopen.summary",
+    helpKey: "settings.rows.sessionReopen.help",
+    control: {
+      kind: "select",
+      options: [
+        { value: "ask", labelKey: "settings.sessionReopen.ask" },
+        { value: "new-tab", labelKey: "settings.sessionReopen.newTab" },
+        { value: "focus", labelKey: "settings.sessionReopen.focus" },
+      ],
+    },
+  },
+  {
     id: "monitor",
     category: "workspace",
     field: "monitorEnabled",

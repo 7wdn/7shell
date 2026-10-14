@@ -201,9 +201,11 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
       ),
     },
     {
+      // One block, because there is one menu: nothing about a session's entries depends on the shape
+      // the settings give a session, so a shape passed in would be a shape nothing could differ on.
       title: MENU_TITLES.session,
       entries: sessionMenu(session, [group], {
-        openTerminal: nothing,
+        open: nothing,
         openFiles: nothing,
         edit: nothing,
         remove: nothing,

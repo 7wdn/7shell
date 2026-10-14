@@ -2,8 +2,9 @@
  * The remote directories a file browser is looking at, and the transfers moving bytes for them.
  *
  * The workspace store owns the tabs; this one owns what is inside them. Keeping that line means the
- * tab rules (one browser per session, a host key decision before a handle) live in one place while
- * the directory state — which changes with every click — sits next to the transfers it can start.
+ * tab rules (which ask goes to a browser that exists rather than opening another, a host key
+ * decision before a handle) live in one place while the directory state — which changes with every
+ * click — sits next to the transfers it can start.
  *
  * Two rules the backend imposes are visible here:
  *

@@ -20,11 +20,11 @@ use sevenshell_types::{
     LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage,
     ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget,
     Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
-    SessionLayout, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow,
-    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
-    SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome,
-    VaultArchive, VaultState,
+    SessionLayout, SessionReopen, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt,
+    SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt,
+    SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
+    TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer,
+    UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -537,6 +537,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             terminal_theme: ThemeMode::System,
             files_layout: FilesLayout::List,
             session_layout: SessionLayout::Terminal,
+            session_reopen: SessionReopen::NewTab,
             terminal_panel_height: Some(320),
             sidebar_width: Some(300),
             files_tree_width: Some(224),
@@ -594,6 +595,9 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(&TabPlacement::Bottom, "TabPlacement");
     check(&TabGroupMode::Session, "TabGroupMode");
     check(&TabSortMode::CreatedAsc, "TabSortMode");
+    // The remembered answer about a session that is already open: `new-tab` and not `newTab`, which
+    // is the shape the interface compares against.
+    check(&SessionReopen::NewTab, "SessionReopen");
     check(&TabMaxWidth::Wide, "TabMaxWidth");
     check(&BackgroundDisplayMode::Center, "BackgroundDisplayMode");
     check(&BackgroundImage::default(), "BackgroundImage");

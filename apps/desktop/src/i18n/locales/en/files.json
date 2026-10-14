@@ -1,6 +1,6 @@
 {
   "files": {
-    "open": "Open files for {name}",
+    "open": "File manager",
     "tab": {
       "close": "Close file browser",
       "failedTitle": "This file browser could not be opened.",

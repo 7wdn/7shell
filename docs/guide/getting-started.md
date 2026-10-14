@@ -87,6 +87,11 @@ Trusting the key opens the terminal in a tab of its own. What is worth knowing:
 
 - Every terminal is one session, and there can be several at once. Each has its own scrollback,
   font and colour palette (Settings → SSH terminal), and scrollback survives switching tabs.
+- Opening a session from its own menu when it is already open asks whether to open another tab, and
+  the second tab of a session is numbered (`lab`, `lab (1)`, `lab (2)`). **Remember my choice** in
+  that question turns the answer into a setting (Settings → Workspace). Clicking the session row
+  itself never asks and never opens a second tab: it goes to the tab that is open, or opens the
+  session when there is none.
 - The window can be resized and the terminal follows; the shell is told the new size.
 - **Find in terminal** (`Mod+F`, which is Ctrl on Windows and Linux and Command on macOS) opens the
   search box above the terminal.
@@ -102,8 +107,9 @@ Trusting the key opens the terminal in a tab of its own. What is worth knowing:
 
 **Open the file panel under this terminal** on the strip beneath the terminal puts the file browser
 in the same tab, following the shell's directory — a `cd` in the terminal takes the panel with it.
-The session's own row menu has **Open files for {name}**, which opens the browser on its own
-connection instead.
+The session's own row menu has **File manager**, which opens the browser in a tab of its own instead:
+a place to browse from rather than the panel that follows this shell, and it stands beside **Open
+terminal** whatever shape a session opens in (Settings → Workspace).
 
 - The layout is a directory tree beside the listing, or the listing alone (Settings → Files).
 - **New folder** and **New file** create, **Rename** and **Delete** act on the row under the

@@ -3,7 +3,8 @@
     "list": {
       "empty": "还没有会话。新建一个即可把地址、用户与凭据放在一起。",
       "add": "新建会话",
-      "open": "为 {name} 打开终端",
+      "open": "打开终端",
+      "openHint": "为 {name} 打开终端",
       "connecting": "正在连接 {name}…",
       "system": "远程系统：{name}",
       "edit": "编辑会话",
@@ -193,6 +194,13 @@
         "record": "记录这次会话",
         "recordNote": "录制是一个普通文件，保存终端显示过的一切，格式为 asciinema 这类播放器可读取的 asciicast。文件放在设置旁边的 recordings 目录里。"
       }
+    },
+    "reopen": {
+      "title": "在新标签页打开",
+      "message": "“{name}” 已在工作区打开，是否新建标签页？",
+      "confirm": "在新标签页打开",
+      "remember": "记住我的选择",
+      "rememberNote": "仅对右键菜单的“打开终端”生效，后续可在“设置 - 工作区”中修改。"
     },
     "hostKey": {
       "opening": "正在打开 {name}",

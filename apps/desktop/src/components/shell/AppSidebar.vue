@@ -142,6 +142,15 @@ type PendingRemoval =
 const pendingRemoval = ref<PendingRemoval | null>(null);
 
 /**
+ * The question about a session that is already open, and whether the answer should be remembered.
+ *
+ * One value rather than a boolean beside a session, so that closing the dialog and remembering
+ * something about it cannot get out of step: the choice travels with the question it is about, and
+ * an abandoned dialog takes its unticked checkbox with it.
+ */
+const pendingReopen = ref<{ readonly session: Session; remember: boolean } | null>(null);
+
+/**
  * The name being typed over a group's own, and which group that is.
  *
  * One field for both cases, because they are the same case: a group that was just made is one whose
@@ -767,13 +776,17 @@ function markOf(key: string): string | null {
  *
  * Deleting from the menu asks the same question the trash button asks rather than doing it — the
  * menu only decides *what* is being removed, and the one dialog decides whether it is.
+ *
+ * A session's menu offers a terminal and the file manager, both of them whatever the "opening a
+ * session" setting says a session looks like: the entry that carries the settings' shape is the
+ * terminal, and the file manager is a tab of its own rather than the shell's panel.
  */
 function openSessionMenu(event: MouseEvent, session: Session): void {
   openMenu(
     event,
     { key: MENU_TITLES.session },
     sessionMenu(session, library.groups, {
-      openTerminal: (target) => void terminals.open(target),
+      open: (target) => void openFromMenu(target),
       openFiles: (target) => void terminals.openFiles(target),
       edit: startEdit,
       remove: (target) => {
@@ -784,6 +797,59 @@ function openSessionMenu(event: MouseEvent, session: Session): void {
       newGroup: (target) => void newGroupForSession(target),
     }),
   );
+}
+
+/**
+ * The menu's open, and the question a session that is already open puts in front of it.
+ *
+ * The store decides whether there is a question at all — see `terminals.reopen`, which is also where
+ * the remembered answer is read — and hands it back here, where a dialog can be drawn over the row
+ * the menu was opened on. Nothing about the row's own click comes through here: that open stays the
+ * plain one, question-free, which is the reason the decision was put in the menu's path and not in
+ * the store's `open`.
+ */
+async function openFromMenu(session: Session): Promise<void> {
+  const action = await terminals.reopen(session);
+  if (action === "ask") {
+    pendingReopen.value = { session, remember: false };
+  }
+}
+
+/**
+ * The answer was yes: another tab, and the choice remembered when it was asked to be.
+ *
+ * Remembering is written immediately rather than with a page's Apply, because the dialog can be
+ * answered at any moment and the next open is where the answer matters.
+ */
+async function confirmReopen(): Promise<void> {
+  const asked = pendingReopen.value;
+  pendingReopen.value = null;
+  if (!asked) {
+    return;
+  }
+  if (asked.remember) {
+    await preferences.setSessionReopen("new-tab");
+  }
+  await terminals.open(asked.session);
+}
+
+/**
+ * The answer was no, or the dialog was left some other way — Escape, a click outside, the cancel
+ * button. All of them are the same answer: not a second tab.
+ *
+ * Somebody who asked to open a session ends up at the tab that is already open for it, which is what
+ * makes "no" an answer rather than a dead end. The checkbox still remembers it if it was ticked.
+ */
+async function declineReopen(): Promise<void> {
+  const asked = pendingReopen.value;
+  pendingReopen.value = null;
+  if (!asked) {
+    return;
+  }
+  terminals.focusSession(asked.session.id);
+  if (asked.remember) {
+    await preferences.setSessionReopen("focus");
+  }
 }
 
 /**
@@ -1297,12 +1363,17 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                     @contextmenu="openSessionMenu($event, row.session)"
                     @mousedown="startDrag($event, { kind: 'session', id: row.session.id }, row.session.name)"
                   >
-                    <!-- The row says a name and an address; hovering it says the rest. -->
+                    <!--
+                      The row says a name and an address; hovering it says the rest. Pressing it goes
+                      to the session: it opens one that is closed and brings one that is already open
+                      to the front. Asking for another tab is the menu's own open, which is also the
+                      only entry point that asks anything — see `terminals.goTo` and `reopen`.
+                    -->
                     <button
                       type="button"
                       class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
-                      :title="t('sessions.list.open', { name: row.session.name })"
-                      @click="terminals.open(row.session)"
+                      :title="t('sessions.list.openHint', { name: row.session.name })"
+                      @click="terminals.goTo(row.session)"
                     >
                       <!--
                         The mark of the machine, once its host has said which machine it is. Until
@@ -1554,6 +1625,32 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
       @confirm="confirmRemoval()"
       @update:open="pendingRemoval = null"
     />
+    <!--
+      The question about a session that is already open, asked by the menu's own open rather than by
+      the row's click. It is drawn over everything like the removal's question, and for the same
+      reason: it is about the row but not *in* it. The checkbox inside is the whole difference from
+      the other dialogs — an answer that is the same every time is an answer worth keeping — and the
+      entries beside it say what each gives up, so nobody ticks it without knowing what they chose.
+    -->
+    <ConfirmDialog
+      v-if="pendingReopen"
+      :open="true"
+      :title="t('sessions.reopen.title')"
+      :message="t('sessions.reopen.message', { name: pendingReopen.session.name })"
+      :confirm-label="t('sessions.reopen.confirm')"
+      @confirm="confirmReopen()"
+      @update:open="declineReopen()"
+    >
+      <label class="mt-3 flex items-start gap-2 text-xs">
+        <input v-model="pendingReopen.remember" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
+        <span>
+          <span>{{ t("sessions.reopen.remember") }}</span>
+          <span class="mt-0.5 block text-[11px] text-muted-foreground">
+            {{ t("sessions.reopen.rememberNote") }}
+          </span>
+        </span>
+      </label>
+    </ConfirmDialog>
     <!--
       The edge, and the drag that moves it. Drawn inside the panel and hanging over its edge so the
       target is easy to hit; the width it reports goes to the settings, because a sidebar somebody

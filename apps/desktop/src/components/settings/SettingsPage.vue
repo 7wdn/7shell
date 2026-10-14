@@ -89,6 +89,7 @@ import {
   type CustomColors,
   type FilesLayout,
   type SessionLayout,
+  type SessionReopen,
   type ThemeMode,
   type ThemePalette,
 } from "@/types/app";
@@ -379,6 +380,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.locale;
     case "sessionLayout":
       return preferences.sessionLayout;
+    case "sessionReopen":
+      return preferences.sessionReopen;
     case "monitorEnabled":
       return preferences.monitorEnabled;
     case "filesLayout":
@@ -476,6 +479,9 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "sessionLayout":
       void preferences.setSessionLayout(value as SessionLayout);
+      return;
+    case "sessionReopen":
+      void preferences.setSessionReopen(value as SessionReopen);
       return;
     case "monitorEnabled":
       void preferences.setMonitorEnabled(value === true);

@@ -60,6 +60,7 @@ import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import { tabMenu } from "@/lib/menu/workspace";
+import { sessionTabTitle } from "@/lib/sessions/reopen";
 import { MIN_PANE_PX } from "@/lib/workspace/split";
 import { TAB_MAX_WIDTH_PX } from "@/types/app";
 import { cn } from "@/lib/utils";
@@ -195,7 +196,9 @@ function tabLabel(tab: WorkspaceTab): string {
     case "batch":
       return t("batch.title");
     default:
-      return tab.session.name;
+      // A session opened twice is drawn twice, and a strip of two identical names is a strip
+      // somebody clicks wrong: the second one says which copy it is (see `lib/sessions/reopen`).
+      return sessionTabTitle(tab.session.name, terminals.copyOf(tab.id));
   }
 }
 

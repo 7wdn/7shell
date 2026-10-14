@@ -3,7 +3,8 @@
     "list": {
       "empty": "No sessions yet. Add one to keep an address, a user and the credentials for it together.",
       "add": "New session",
-      "open": "Open a terminal for {name}",
+      "open": "Open terminal",
+      "openHint": "Open a terminal for {name}",
       "connecting": "Connecting to {name}…",
       "system": "Remote system: {name}",
       "edit": "Edit session",
@@ -193,6 +194,13 @@
         "record": "Write this session down",
         "recordNote": "A recording is a plain file on disk holding everything the terminal shows, in a format players like asciinema read. It goes in the recordings folder beside the settings."
       }
+    },
+    "reopen": {
+      "title": "Open in a new tab",
+      "message": "“{name}” is already open in the workspace. Open a new tab?",
+      "confirm": "Open in a new tab",
+      "remember": "Remember my choice",
+      "rememberNote": "It applies to the menu's own “Open terminal” only, and can be changed later in “Settings - Workspace”."
     },
     "hostKey": {
       "opening": "Opening {name}",

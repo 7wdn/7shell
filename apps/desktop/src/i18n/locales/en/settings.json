@@ -77,6 +77,11 @@
       "split": "Terminal and files",
       "terminal": "Terminal only"
     },
+    "sessionReopen": {
+      "ask": "Ask every time",
+      "newTab": "Open in a new tab",
+      "focus": "Go to the tab that is open"
+    },
     "terminal": {
       "light": "Always light",
       "dark": "Always dark",
@@ -314,6 +319,11 @@
         "title": "Opening a session",
         "summary": "A terminal on its own, or with the files under it.",
         "help": "The split opens the files for the same host under the terminal, in one tab, and follows the shell's directory — a cd in the terminal takes the panel with it. Either way it can be closed or opened per tab, on the strip under the terminal."
+      },
+      "sessionReopen": {
+        "title": "A session that is already open",
+        "summary": "What the session list's menu does with one: ask, open another tab, or go to the tab that is there.",
+        "help": "It applies to the menu's own “Open terminal”, and “Remember my choice” in the question it asks writes the answer here. Clicking a session row is not affected: it goes to the tab that is open, opens no second one, and asks nothing."
       },
       "monitor": {
         "title": "Host monitor",

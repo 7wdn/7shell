@@ -20,15 +20,24 @@
  * so this is the store that already holds the answer. Keeping them in one place is what lets the
  * sidebar draw them and stops the same failed forward from being reported once per component.
  *
- * A terminal tab can carry a file panel below it. That panel draws the *same* browser a file tab
- * would have drawn — one browser per session, moved rather than duplicated, because two listings
- * of one directory have no way to tell which of them is right. The panel also shares the tab's
- * fate: its SFTP channel rides on the connection the terminal opened, so the browser is closed
- * before the terminal is, and the other order would cut the channel out from under it.
+ * A terminal tab can carry a file panel below it, and a session opened twice has one per terminal:
+ * each panel follows its own shell's directory, which is what a panel is for, and a second place to
+ * work is what opening a session again asks for. The file manager is the other half of that pair:
+ * a tab of its own, opened from the session's menu whatever shape a session opens in, so what
+ * somebody browses in it is theirs rather than the shell's. Nothing is moved between tabs for any of
+ * them: every panel and every file manager tab opens its own browser, because each follows something
+ * of its own, and a browser a tab did not open is a browser it must not close. The panel shares its
+ * tab's fate: its SFTP channel rides on the session's connection, so the browser is closed before
+ * the terminal is, and the other order would cut the channel out from under it.
  *
  * Whether a session opens as one half or two is a setting rather than something to ask for each
  * time — that is how somebody's work looks, not a decision per connection. Nothing here is fixed by
  * it: the panel is a toggle away on the terminal's own strip, and closing it costs one click.
+ *
+ * Whether a session that is *already* open opens again is a question instead, asked from the session
+ * list's menu and rememberable there — see [`reopen`]. A second terminal about one host is a thing
+ * somebody asks for; the row's own click is the other thing, "go to that session", which opens it
+ * when it is closed and puts it on screen when it is not — see [`goTo`].
  *
  * A third kind of tab is neither a terminal nor a browser: the monitor's pages, which are about a
  * host rather than connected to it. They are opened from the monitor and hold a session rather than
@@ -48,6 +57,7 @@ import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { sessionEndpoint } from "@/lib/menu/sessions";
+import { type ReopenAction, reopenAction, sessionCopyIndex } from "@/lib/sessions/reopen";
 import { readSystemCache, rememberSystem, writeSystemCache } from "@/lib/system/cache";
 import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
 import { useBatchStore } from "@/stores/batch";
@@ -348,18 +358,22 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
-   * Opens the file browser for a saved session.
+   * Opens the file manager for a saved session: its own tab, whatever shape a session opens in.
    *
-   * One browser per session: the backend would happily open a second one over the same connection,
-   * and two listings of the same directory would then drift apart with no way to tell which is
-   * which. A second ask goes to whatever is drawing the browser that exists — a file tab, or the
-   * panel of the terminal that is carrying it.
+   * The entry stands beside the terminal rather than being something the terminal brings with it,
+   * which is why it is not [`openPanel`]: a browser already standing in a *terminal's* panel does
+   * not satisfy this one — that panel follows its own shell's directory, while somebody asking for
+   * the file manager is asking for a place of their own to browse from. A file tab that already
+   * exists is gone back to instead of duplicated: it is the same kind of thing, and a second copy of
+   * it would drift.
    */
   async function openFiles(session: Session): Promise<void> {
     // A browser that is already up is still this session being used, which is why the record is
     // above the early return rather than inside the attempt below it.
     recents.record(session.id);
-    const showing = tabs.value.find((entry) => sessionOf(entry)?.id === session.id && browserHandleOf(entry) !== null);
+    const showing = tabs.value.find(
+      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === session.id && entry.handle !== null,
+    );
     if (showing) {
       activeTabId.value = showing.id;
       return;
@@ -377,6 +391,107 @@ export const useTerminalsStore = defineStore("terminals", () => {
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
+  }
+
+  /**
+   * The tabs a session has open right now: a shell that is running, or a browser that is up.
+   *
+   * Not the monitor's pages, which are about a host without being connected to it, and not a tab
+   * that ended or failed: "the session is open" is a question about a connection, and a tab whose
+   * only content is the reason there is none is not an answer to it.
+   */
+  function openTabsOf(sessionId: string): WorkspaceTab[] {
+    return tabs.value.filter((tab) =>
+      tab.kind === "terminal" || tab.kind === "files" ? tab.session.id === sessionId && tab.status === "open" : false,
+    );
+  }
+
+  /**
+   * Brings the tab about a session forward, and says whether there was one.
+   *
+   * The newest by the order the tabs were opened in rather than by where the bar happens to be
+   * drawing them — what somebody means by "the one I have" is the last one they opened. A tab of
+   * this session that is already on screen is left where it is: the answer "not a new tab" should
+   * not also move somebody off the tab they were reading.
+   */
+  function focusSession(sessionId: string): boolean {
+    const open = openTabsOf(sessionId);
+    if (open.length === 0) {
+      return false;
+    }
+    const standing = open.find((tab) => tab.id === activeTabId.value);
+    const target = standing ?? newestOf(open);
+    if (target) {
+      activeTabId.value = target.id;
+    }
+    return true;
+  }
+
+  function newestOf(open: readonly WorkspaceTab[]): WorkspaceTab | null {
+    const order = openedOrder.value;
+    return [...open].sort((left, right) => order.indexOf(left.id) - order.indexOf(right.id)).at(-1) ?? null;
+  }
+
+  /**
+   * Opens a session from the session list's own menu, where "again" is a real answer.
+   *
+   * A session with nothing open takes the ordinary open, in the shape the settings give a session.
+   * One that is already open follows the remembered answer: another tab, the tab that is already
+   * there, or the question — which is left to the caller, because a dialog belongs to the place the
+   * menu was opened from. The row's own click is not this function: that one goes to the session
+   * rather than asking about it — see [`goTo`].
+   */
+  async function reopen(session: Session): Promise<ReopenAction> {
+    const action = reopenAction(openTabsOf(session.id).length, preferences.sessionReopen);
+    if (action === "open") {
+      await open(session);
+      return "open";
+    }
+    if (action === "focus") {
+      focusSession(session.id);
+    }
+    return action;
+  }
+
+  /**
+   * What a click on a session's row means: go there.
+   *
+   * A session that is open is brought forward rather than opened a second time. The row is how
+   * somebody returns to what they have — and clicking a row twice is a double-click, which nobody
+   * means as "two shells" — while asking for another tab is the menu's own open, with the question
+   * it carries. Nothing here reads a remembered answer or asks anything: a session with nothing open
+   * is opened the ordinary way, and one that is open is put on screen.
+   */
+  async function goTo(session: Session): Promise<void> {
+    // Recorded before the early return, like the file browser's own open: a session somebody is
+    // going back to is still a session they reached for.
+    recents.record(session.id);
+    if (focusSession(session.id)) {
+      return;
+    }
+    await open(session);
+  }
+
+  /**
+   * Which copy of its session each tab is, by tab id: 0 for the first, 1 for the second.
+   *
+   * Only the tabs whose label is a session's name are counted — a terminal and its file manager —
+   * and `lib/sessions/reopen` owns the rest of the rule.
+   */
+  const sessionCopies = computed<Record<string, number>>(() =>
+    sessionCopyIndex(
+      tabs.value.flatMap((tab) =>
+        tab.kind === "terminal" || tab.kind === "files"
+          ? [{ id: tab.id, sessionId: tab.session.id, kind: tab.kind }]
+          : [],
+      ),
+      openedOrder.value,
+    ),
+  );
+
+  /** Which copy of its session a tab is, by tab id. See `lib/sessions/reopen`. */
+  function copyOf(tabId: string): number {
+    return sessionCopies.value[tabId] ?? 0;
   }
 
   /**
@@ -835,9 +950,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
   /**
    * Opens the file panel under a terminal.
    *
-   * A session has one browser, so if a file tab is already drawing it, that browser moves here and
-   * the tab goes. What the person asked for is the files *under this terminal*, not a second copy
-   * of the same directory somewhere else.
+   * The panel opens a browser of its own, always. What it draws is the files under *this* terminal,
+   * following this shell's `cd`, and nothing standing elsewhere is the same thing: a file manager
+   * tab is a place somebody chose to browse from, and another terminal's panel belongs to that
+   * shell. A browser is therefore never moved between tabs — each one is opened where it is drawn,
+   * and closed with the tab that drew it. (Moving one used to take the other tab with it, which
+   * closed a whole shell in one case and a file manager's tab in the other.)
    */
   async function openPanel(tab: TerminalTab): Promise<void> {
     // Nothing to open when the panel is already there, is on its way, or is holding a browser that
@@ -846,16 +964,6 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
     tab.panel = { handle: null, status: "opening", failure: null };
-
-    const holder = tabs.value.find(
-      (entry) => sessionOf(entry)?.id === tab.session.id && browserHandleOf(entry) !== null,
-    );
-    const adopted = holder ? browserHandleOf(holder) : null;
-    if (holder && adopted !== null) {
-      tab.panel = { handle: adopted, status: "open", failure: null };
-      forget(holder.id);
-      return;
-    }
 
     try {
       acceptPanel(tab, await files.open(tab.session.id));
@@ -1164,6 +1272,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
     initialize,
     open,
     openFiles,
+    reopen,
+    goTo,
+    openTabsOf,
+    focusSession,
+    copyOf,
     openInspect,
     openSettings,
     settingsRequest,

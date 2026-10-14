@@ -64,7 +64,7 @@ function submenu(entries: readonly MenuEntry[], id: string): MenuSubmenu {
 
 function sessionActions() {
   return {
-    openTerminal: vi.fn(),
+    open: vi.fn(),
     openFiles: vi.fn(),
     edit: vi.fn(),
     remove: vi.fn(),
@@ -73,16 +73,31 @@ function sessionActions() {
   };
 }
 
+/**
+ * The menu as the sidebar builds it.
+ *
+ * Nothing about it depends on the shape a session opens in — the entries are the same either way —
+ * which is why there is no shape to pass: the terminal entry carries whatever the settings make a
+ * session look like, and the file manager stands beside it always.
+ */
+function menu(
+  target: Session,
+  groups: readonly SessionGroup[],
+  actions: ReturnType<typeof sessionActions>,
+): MenuEntry[] {
+  return sessionMenu(target, groups, actions);
+}
+
 beforeEach(() => {
   vi.mocked(copyText).mockClear();
 });
 
 describe("a saved session's menu", () => {
-  it("opens both halves, edits, deletes and copies the address", () => {
-    const entries = sessionMenu(session, [], sessionActions());
+  it("opens the terminal, edits, deletes and copies the address", () => {
+    const entries = menu(session, [], sessionActions());
 
     expect(entries.filter((entry) => entry.kind === "action").map((entry) => entry.id)).toEqual([
-      "open-terminal",
+      "open",
       "open-files",
       "edit",
       "move-to-new-group",
@@ -92,23 +107,16 @@ describe("a saved session's menu", () => {
     expect(pick(entries, "remove").danger).toBe(true);
   });
 
-  it("names the session in the two entries that open something", () => {
-    const entries = sessionMenu(session, [], sessionActions());
-
-    expect(pick(entries, "open-terminal").params).toEqual({ name: "web" });
-    expect(pick(entries, "open-files").params).toEqual({ name: "web" });
-  });
-
   it("hands each entry the session it belongs to", () => {
     const wired = sessionActions();
-    const entries = sessionMenu(session, [], wired);
+    const entries = menu(session, [], wired);
 
-    pick(entries, "open-terminal").run();
+    pick(entries, "open").run();
     pick(entries, "open-files").run();
     pick(entries, "edit").run();
     pick(entries, "remove").run();
 
-    expect(wired.openTerminal).toHaveBeenCalledWith(session);
+    expect(wired.open).toHaveBeenCalledWith(session);
     expect(wired.openFiles).toHaveBeenCalledWith(session);
     expect(wired.edit).toHaveBeenCalledWith(session);
     expect(wired.remove).toHaveBeenCalledWith(session);
@@ -117,16 +125,29 @@ describe("a saved session's menu", () => {
   it("copies the address the way the row writes it", () => {
     expect(sessionEndpoint(session)).toBe("root@example.test:2222");
 
-    pick(sessionMenu(session, [], sessionActions()), "copy-endpoint").run();
+    pick(menu(session, [], sessionActions()), "copy-endpoint").run();
 
     expect(copyText).toHaveBeenCalledWith("root@example.test:2222");
+  });
+
+  it("keeps the file manager whatever the settings say a session looks like", () => {
+    // The menu is built without being told a shape at all — there is no shape it could ask for —
+    // and the entry is there with its own icon and its own action beside the terminal's.
+    const wired = sessionActions();
+    const entries = menu(session, [], wired);
+
+    expect(pick(entries, "open-files").icon).toBeDefined();
+    expect(pick(entries, "open-files").labelKey).toBe("files.open");
+
+    pick(entries, "open-files").run();
+    expect(wired.openFiles).toHaveBeenCalledWith(session);
   });
 });
 
 describe("moving a session into a group", () => {
   it("offers making a group when there is none to move into, without a submenu in the way", () => {
     const wired = sessionActions();
-    const entries = sessionMenu(session, [], wired);
+    const entries = menu(session, [], wired);
 
     expect(entries.some((entry) => entry.kind === "submenu")).toBe(false);
     // A submenu holding one entry and a separator is a door in front of a door, so with no groups
@@ -139,7 +160,7 @@ describe("moving a session into a group", () => {
 
   it("lists no group first, then the groups in the order the tree draws them, each by its path", () => {
     const rack: SessionGroup = { id: "group-3", name: "Rack", order: 0, parentId: work.id, pinned: false };
-    const entries = sessionMenu(session, [lab, work, rack], sessionActions());
+    const entries = menu(session, [lab, work, rack], sessionActions());
     const move = submenu(entries, "move-to-group");
 
     expect(move.entries.map((entry) => (entry.kind === "action" ? entry.id : entry.kind))).toEqual([
@@ -162,7 +183,7 @@ describe("moving a session into a group", () => {
 
   it("makes a group for the session, and moves it in", () => {
     const wired = sessionActions();
-    const move = submenu(sessionMenu(session, [work], wired), "move-to-group");
+    const move = submenu(menu(session, [work], wired), "move-to-group");
 
     pick(move.entries, "move-to-new-group").run();
 
@@ -173,7 +194,7 @@ describe("moving a session into a group", () => {
   it("shows where the session is now, and moves it where it was sent", () => {
     const wired = sessionActions();
     const inWork = { ...session, groupId: work.id };
-    const move = submenu(sessionMenu(inWork, [work, lab], wired), "move-to-group");
+    const move = submenu(menu(inWork, [work, lab], wired), "move-to-group");
 
     expect(pick(move.entries, "move-to-group-1").checked).toBe(true);
     expect(pick(move.entries, "move-to-group-2").checked).toBe(false);
@@ -188,7 +209,7 @@ describe("moving a session into a group", () => {
 
   it("reads a session whose group is gone as one that is in no group", () => {
     const orphan = { ...session, groupId: "group-that-is-gone" };
-    const move = submenu(sessionMenu(orphan, [work], sessionActions()), "move-to-group");
+    const move = submenu(menu(orphan, [work], sessionActions()), "move-to-group");
 
     expect(pick(move.entries, "move-to-ungrouped").checked).toBe(true);
     expect(pick(move.entries, "move-to-group-1").checked).toBe(false);

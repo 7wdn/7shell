@@ -1,6 +1,6 @@
 {
   "files": {
-    "open": "为 {name} 打开文件",
+    "open": "文件管理器",
     "tab": {
       "close": "关闭文件浏览器",
       "failedTitle": "该文件浏览器无法打开。",

@@ -67,6 +67,42 @@ impl SessionLayout {
     }
 }
 
+/// What opening a session that is already open does, from the session list's own menu.
+///
+/// The answer only ever applies to that menu. Clicking a session row is not a decision about the
+/// tabs somebody already has — it is the plain "open it" the row has always been — so this setting
+/// is deliberately not read there.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionReopen {
+    /// Ask, which is what a fresh install does: a second tab is a thing somebody asks for, not one
+    /// they discover by clicking, and the question is where the remembering starts.
+    #[default]
+    Ask,
+    /// Open another tab without asking: what somebody who works in several shells at once wants,
+    /// and what the question would otherwise put in front of them every time.
+    NewTab,
+    /// Go to the tab that is already open without asking: what somebody who only ever meant "show
+    /// me that one" wants.
+    Focus,
+}
+
+impl SessionReopen {
+    pub const ALL: &'static [SessionReopen] = &[SessionReopen::Ask, SessionReopen::NewTab, SessionReopen::Focus];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::NewTab => "new-tab",
+            Self::Focus => "focus",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|choice| choice.as_str() == id)
+    }
+}
+
 /// How the interface picks its colours.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -737,6 +773,13 @@ pub struct AppSettings {
     /// How a session opens: the terminal on its own, or the terminal with its file panel under it.
     #[serde(default)]
     pub session_layout: SessionLayout,
+    /// What the session list's own menu does with a session that is already open.
+    ///
+    /// A remembered answer rather than something to say again every time: the question about a
+    /// second tab has the same answer for the same person, and asking it a fourth time is asking
+    /// somebody to dismiss a dialog they have already answered.
+    #[serde(default)]
+    pub session_reopen: SessionReopen,
     /// How tall the file panel under a terminal is, in pixels.
     ///
     /// A wish rather than a measurement: the interface clamps it against the window it has, so a
@@ -1023,6 +1066,7 @@ impl Default for AppSettings {
             terminal_theme: ThemeMode::default(),
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
+            session_reopen: SessionReopen::default(),
             terminal_panel_height: None,
             sidebar_width: None,
             files_tree_width: None,
@@ -1086,6 +1130,7 @@ impl AppSettings {
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
+            && self.session_reopen == SessionReopen::Ask
             && self.terminal_panel_height.is_none()
             && self.sidebar_width.is_none()
             && self.files_tree_width.is_none()

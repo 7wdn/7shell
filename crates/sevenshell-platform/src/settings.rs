@@ -19,8 +19,8 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
-    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, SnippetProvider, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default,
+    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, SessionReopen, SnippetProvider, TabGroupMode,
+    TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default,
     background_transparency_default, command_completion_on, monitor_on, normalize_sync_auto_upload_minutes,
     normalize_terminal_font_size, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
     terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
@@ -103,6 +103,10 @@ struct StoredSettings {
     /// default — the split — rather than as the terminal alone.
     #[serde(default)]
     session_layout: String,
+    /// Absent in a file written before the session list's menu remembered an answer about a session
+    /// that is already open, which reads as the default — asking.
+    #[serde(default)]
+    session_reopen: String,
     /// Absent in a file written before the terminal had a file panel, which reads as "the divider
     /// has never been moved".
     #[serde(default)]
@@ -245,6 +249,7 @@ impl StoredSettings {
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
             files_layout: settings.files_layout.as_str().to_owned(),
             session_layout: settings.session_layout.as_str().to_owned(),
+            session_reopen: settings.session_reopen.as_str().to_owned(),
             terminal_panel_height: settings.terminal_panel_height,
             sidebar_width: settings.sidebar_width,
             files_tree_width: settings.files_tree_width,
@@ -295,6 +300,7 @@ impl StoredSettings {
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
+            session_reopen: SessionReopen::from_id(&self.session_reopen).unwrap_or_default(),
             terminal_panel_height: self.terminal_panel_height,
             sidebar_width: self.sidebar_width,
             files_tree_width: self.files_tree_width,
@@ -433,6 +439,7 @@ mod tests {
             terminal_theme,
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
+            session_reopen: SessionReopen::default(),
             terminal_panel_height: None,
             sidebar_width: None,
             files_tree_width: None,
@@ -583,6 +590,11 @@ mod tests {
             "absent means the default, and the default opens both halves"
         );
         assert_eq!(
+            loaded.session_reopen,
+            SessionReopen::Ask,
+            "a file written before the menu could remember anything is not a person who answered"
+        );
+        assert_eq!(
             loaded.terminal_panel_height, None,
             "absent means the divider has never been moved"
         );
@@ -702,6 +714,9 @@ mod tests {
         let path = directory.path().join("settings.json");
         let written = AppSettings {
             session_layout: SessionLayout::Terminal,
+            // Not the default, so the round trip proves a remembered answer survives rather than the
+            // question coming back.
+            session_reopen: SessionReopen::NewTab,
             terminal_panel_height: Some(320),
             // Not the defaults, so the round trip proves that the two widths a divider was left at
             // come back rather than the file forgetting half of what it was given.

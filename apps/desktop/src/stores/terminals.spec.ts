@@ -659,9 +659,9 @@ describe("terminals store", () => {
     expect(tab.panel).toEqual({ handle: "f1", status: "open", failure: null });
   });
 
-  it("moves the browser a file tab is already drawing into the panel", async () => {
+  it("opens the panel its own browser rather than taking the file manager's tab", async () => {
     sessionOpenMock.mockResolvedValue(opened());
-    filesOpenMock.mockResolvedValue(filesOpened());
+    filesOpenMock.mockResolvedValueOnce(filesOpened()).mockResolvedValueOnce({ ...filesOpened(), handle: "f2" });
 
     const store = useTerminalsStore();
     open();
@@ -670,16 +670,19 @@ describe("terminals store", () => {
     const tab = terminalTabOrFail(store);
     await store.togglePanel(tab);
 
-    // One browser, drawn in one place: two listings of a directory have no way to say which is
-    // right, so the one that exists moves rather than a second one being opened beside it.
-    expect(filesOpenMock).toHaveBeenCalledTimes(1);
-    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal"]);
-    expect(tab.panel?.handle).toBe("f1");
+    // The file manager's tab is somebody's place to browse from, and the panel is the shell's own —
+    // neither stands in for the other, so the tab keeps the browser it opened and the panel opens
+    // one of its own. (This used to fold the tab into the panel and close it, which is what made a
+    // file manager vanish when a second terminal was opened.)
+    expect(filesOpenMock).toHaveBeenCalledTimes(2);
+    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal", "files"]);
+    expect(filesTab(store)?.handle).toBe("f1");
+    expect(tab.panel?.handle).toBe("f2");
   });
 
-  it("opens no second browser when the panel is the thing already drawing one", async () => {
+  it("opens the file manager in a tab of its own even when the panel is already drawing a browser", async () => {
     sessionOpenMock.mockResolvedValue(opened());
-    filesOpenMock.mockResolvedValue(filesOpened());
+    filesOpenMock.mockResolvedValueOnce(filesOpened()).mockResolvedValueOnce({ ...filesOpened(), handle: "f2" });
 
     const store = useTerminalsStore();
     open();
@@ -687,8 +690,39 @@ describe("terminals store", () => {
     await store.togglePanel(terminalTabOrFail(store));
     await store.openFiles(session);
 
-    expect(filesOpenMock).toHaveBeenCalledTimes(1);
-    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal"]);
+    // The panel is the shell's own — it follows the shell's `cd` — while the file manager's entry is
+    // a place of one's own to browse from. Neither stands in for the other, so this is a second
+    // browser rather than the focus the panel used to get.
+    expect(filesOpenMock).toHaveBeenCalledTimes(2);
+    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal", "files"]);
+    expect(terminalTabOrFail(store).panel?.handle).toBe("f1");
+    expect(filesTab(store)?.handle).toBe("f2");
+  });
+
+  it("leaves the file manager's tab standing when a second terminal opens with its own panel", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    filesOpenMock
+      .mockResolvedValueOnce(filesOpened())
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f2" })
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f3" });
+
+    const store = useTerminalsStore();
+    open();
+    // A terminal with its panel (f1), the file manager in a tab of its own (f2), and then a second
+    // terminal — the menu's own open, answered yes — which brings a panel with it (f3).
+    await store.open(session);
+    await store.openFiles(session);
+    await store.open(session);
+
+    // Three tabs, and each browser where it was opened: a file manager tab that a later terminal's
+    // panel swallowed is the bug this is here for.
+    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal", "files", "terminal"]);
+    const [first, files, second] = store.tabs as [TerminalTab, FilesTab, TerminalTab];
+    expect(first.panel?.handle).toBe("f1");
+    expect(files.handle).toBe("f2");
+    expect(second.panel?.handle).toBe("f3");
+    expect(filesOpenMock).toHaveBeenCalledTimes(3);
   });
 
   it("closes the browser before the terminal whose connection carries it", async () => {
@@ -1038,5 +1072,184 @@ describe("pages about a host", () => {
 
     const tab = store.tabs[0];
     expect(tab && store.browserHandleOf(tab)).toBeNull();
+  });
+});
+
+/**
+ * Two ways into a session, and what each does with one that is already open.
+ *
+ * The menu's own open asks — the remembered answers live in the settings, and a fresh install asks,
+ * which is the question the sidebar draws a dialog for. The row's own click never asks and never
+ * makes a second tab: it goes to the session, which is what clicking a row twice has to mean.
+ */
+describe("opening a session that is already open", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    usePreferencesStore().sessionLayout = "terminal";
+    usePreferencesStore().sessionReopen = "ask";
+    localStorage.clear();
+    sessionOpenMock.mockReset();
+    sessionSystemMock.mockReset().mockResolvedValue({ name: null, kernel: null, distro: null, distroLike: [] });
+    filesOpenMock.mockReset();
+    tunnelsOpenMock.mockReset().mockResolvedValue([]);
+  });
+
+  it("opens the session when it has nothing open, whatever was remembered about opening it again", async () => {
+    usePreferencesStore().sessionReopen = "focus";
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+
+    expect(await store.reopen(session)).toBe("open");
+    expect(store.tabs).toHaveLength(1);
+    expect(store.tabs[0]?.kind).toBe("terminal");
+  });
+
+  it("asks about a second tab when nothing has been remembered, and opens nothing while it does", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    expect(await store.reopen(session)).toBe("ask");
+    expect(store.tabs).toHaveLength(1);
+    expect(sessionOpenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a second terminal, numbered as a copy, when a new tab was remembered", async () => {
+    usePreferencesStore().sessionReopen = "new-tab";
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    expect(await store.reopen(session)).toBe("open");
+    expect(store.tabs).toHaveLength(2);
+    const [first, second] = store.tabs;
+    expect(first && store.copyOf(first.id)).toBe(0);
+    expect(second && store.copyOf(second.id)).toBe(1);
+    // The second terminal is the one somebody asked for, so it is the one on screen.
+    expect(store.activeTabId).toBe(second?.id);
+  });
+
+  it("gives the second terminal its own files, and leaves the first tab standing where it was", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    filesOpenMock.mockResolvedValueOnce(filesOpened()).mockResolvedValueOnce({ ...filesOpened(), handle: "f2" });
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    // The same open a remembered answer would have run, in the shape that puts files under every
+    // terminal: what the second one must not do is take the first one's browser — and the tab it
+    // lives in — because a browser is drawn in one place at a time.
+    await store.open(session);
+
+    expect(store.tabs).toHaveLength(2);
+    const [first, second] = store.tabs as [TerminalTab, TerminalTab];
+    expect(first.panel?.handle).toBe("f1");
+    expect(second.panel?.handle).toBe("f2");
+    expect(filesOpenMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("goes to the tab that is open when focusing was remembered, and opens nothing", async () => {
+    usePreferencesStore().sessionReopen = "focus";
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    store.openSettings();
+    expect(store.activeTabId).not.toBe(tab.id);
+
+    expect(await store.reopen(session)).toBe("focus");
+    expect(store.tabs.filter((entry) => entry.kind === "terminal")).toHaveLength(1);
+    expect(store.activeTabId).toBe(tab.id);
+  });
+
+  it("counts a file manager beside a terminal as no copy of it", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.openFiles(session);
+
+    expect(store.tabs).toHaveLength(2);
+    expect(store.tabs.map((tab) => store.copyOf(tab.id))).toEqual([0, 0]);
+  });
+
+  it("reads a terminal that ended as the session not being open", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    endedListeners.forEach((listener) => listener("handle-1", "the shell exited"));
+
+    expect(store.openTabsOf(session.id)).toEqual([]);
+    // So the menu's open is the ordinary one again — there is nothing to ask about.
+    expect(await store.reopen(session)).toBe("open");
+  });
+
+  it("says there was nothing to focus when the session has no open tab", () => {
+    const store = useTerminalsStore();
+    open();
+
+    expect(store.focusSession(session.id)).toBe(false);
+  });
+
+  it("opens the session when the row is clicked and nothing is open for it", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+
+    await store.goTo(session);
+
+    expect(store.tabs).toHaveLength(1);
+    expect(sessionOpenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("brings the open tab forward when the row is clicked again, and reads no remembered answer", async () => {
+    // The remembered answer says "always another tab", and the row's click must not obey it: that
+    // answer belongs to the menu's own open, which is the only entry point that asks.
+    usePreferencesStore().sessionReopen = "new-tab";
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.goTo(session);
+    const tab = terminalTabOrFail(store);
+    store.openSettings();
+    expect(store.activeTabId).not.toBe(tab.id);
+
+    await store.goTo(session);
+
+    expect(store.tabs.filter((entry) => entry.kind === "terminal")).toHaveLength(1);
+    expect(store.activeTabId).toBe(tab.id);
+    expect(sessionOpenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the ordinary way when the only tab about the session has ended", async () => {
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    const store = useTerminalsStore();
+    open();
+    await store.goTo(session);
+    endedListeners.forEach((listener) => listener("handle-1", "the shell exited"));
+
+    // "Go to it" has nowhere to go: what is left is a tab with a reason in it, not a connection.
+    await store.goTo(session);
+
+    expect(store.tabs).toHaveLength(2);
+    expect(store.tabs.filter((entry) => entry.kind === "terminal" && entry.status === "open")).toHaveLength(1);
+  });
+
+  it("opens another tab whenever it is asked to open, which is what a reconnect does", async () => {
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    const store = useTerminalsStore();
+    open();
+
+    await store.open(session);
+    await store.open(session);
+
+    expect(store.tabs).toHaveLength(2);
   });
 });

@@ -43,8 +43,8 @@ pub use session::{
 pub use settings::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
     CornerStyle, CustomColors, FilesLayout, HomeLayout, SYNC_AUTO_UPLOAD_MINUTES_DEFAULT, SYNC_AUTO_UPLOAD_MINUTES_MAX,
-    SYNC_AUTO_UPLOAD_MINUTES_MIN, SessionLayout, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN, TabGroupMode,
-    TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS,
+    SYNC_AUTO_UPLOAD_MINUTES_MIN, SessionLayout, SessionReopen, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN,
+    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS,
     background_blur_default, background_transparency_default, command_completion_on, monitor_on,
     normalize_sync_auto_upload_minutes, normalize_terminal_font_size, normalize_ui_scale, sidebar_on,
     sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,

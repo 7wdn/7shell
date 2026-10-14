@@ -347,6 +347,19 @@ export type FilesLayout = "tree" | "list";
 /** How a session opens, from `sevenshell_types::SessionLayout`. */
 export type SessionLayout = "terminal" | "split";
 
+/**
+ * What the session list's own menu does with a session that is already open, from
+ * `sevenshell_types::SessionReopen`.
+ *
+ * `ask` is the fresh install: a remembered answer is one somebody gave, and until they have, the
+ * question is asked. It is read only where a session is opened from the list's menu — clicking the
+ * row itself is the plain open it has always been, and stays that way.
+ */
+export type SessionReopen = "ask" | "new-tab" | "focus";
+
+/** The question, until a dialog's "remember my choice" answers it. */
+export const DEFAULT_SESSION_REOPEN: SessionReopen = "ask";
+
 /** Non-secret preferences, from `sevenshell_types::AppSettings`. */
 export interface AppSettings {
   readonly themeMode: ThemeMode;
@@ -357,6 +370,8 @@ export interface AppSettings {
   readonly filesLayout: FilesLayout;
   /** Whether opening a session opens a terminal on its own, or one with its file panel. */
   readonly sessionLayout: SessionLayout;
+  /** What the session list's menu does when the session it opens is already open. */
+  readonly sessionReopen: SessionReopen;
   /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */
   readonly terminalPanelHeight?: number;
   /** How wide the session sidebar is, in pixels. Absent means nobody has moved the divider. */

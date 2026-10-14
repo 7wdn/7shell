@@ -512,11 +512,13 @@ test("a saved session offers its own menu on a right-click", async () => {
     // A menu is chrome: its rows are verbs, and a drag across one is somebody leaving in a hurry.
     // The class is in the markup; the computed style is what the browser actually does with it.
     await expect(menu).toHaveCSS("user-select", "none");
-    // The row of its own rather than a submenu, because this library has no group to move into yet:
-    // the entry that makes one is drawn where the list of destinations would have been.
+    // Six rows: a terminal and the file manager, both of them whatever the settings say a session
+    // looks like — the files a split brings are the shell's panel, while this entry is a tab of its
+    // own. The row that makes a group is a row of its own rather than a submenu, because this
+    // library has no group to move into yet.
     await expect(menu.getByRole("menuitem")).toHaveText([
-      "Open a terminal for lab",
-      "Open files for lab",
+      "Open terminal",
+      "File manager",
       "Edit session",
       "Move to a new group",
       "Delete session",
@@ -525,6 +527,29 @@ test("a saved session offers its own menu on a right-click", async () => {
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "context-menu.png"), fullPage: false });
+
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+
+    // Change the shape a session opens in, and the menu is the same menu: the terminal entry is the
+    // one that carries that shape, and the file manager stands beside it either way. Asserted in the
+    // window rather than in the file, because what could break is the wiring.
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Workspace", exact: true }).click();
+    await settings.getByRole("combobox", { name: "Opening a session" }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "Terminal only" }).click();
+    await applySettings(page);
+
+    await row.click({ button: "right" });
+    await expect(menu.getByRole("menuitem")).toHaveText([
+      "Open terminal",
+      "File manager",
+      "Edit session",
+      "Move to a new group",
+      "Delete session",
+      "Copy address",
+    ]);
 
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
@@ -4366,6 +4391,86 @@ test("a panel split down the middle can be resized, and the width is written dow
     ).toBe(0);
 
     await page.screenshot({ path: path.join(ARTIFACTS, "command-library-resized.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * Opening a session that is already open, on a host that really answers.
+ *
+ * The store's suite says what the decision does with a mocked backend, and the sidebar's says which
+ * question is drawn. What only a real host shows is the whole way through: the menu's own open, the
+ * question, the second connection, and *two* tabs — one of them the tab somebody already had, which
+ * is the half that cannot be seen from a mock. A second terminal brings its own files with it, and
+ * that panel used to take the browser out of the first tab and close it.
+ *
+ * It sits at the end of the file, after the cases that meet the host key question: it connects, and
+ * the key this run trusts is the first case's business rather than this one's.
+ */
+test("opening a session that is already open asks, and a yes makes a second tab", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const name = `lab-reopen-${Date.now() % 100000}`;
+    // The account and password are this run's own rather than the helper's fixed user name: the lab
+    // needs a credential, and a session with none cannot open at all.
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const tabs = page.locator("[data-workspace-tabs] [data-tab]");
+    await sessionRow(page, name).click();
+    // A key this device already trusts does not ask, and the cases before this one have connected.
+    await page
+      .getByRole("button", { name: "Trust this key and connect" })
+      .click({ timeout: 5000 })
+      .catch(() => {});
+    await expect(tabs).toHaveCount(1, { timeout: 60_000 });
+
+    // The menu's own open, which is the one that asks about a second tab.
+    await sessionRow(page, name).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Open terminal", exact: true }).click();
+    const question = page.getByRole("dialog");
+    await expect(question).toContainText("is already open");
+    await question.getByRole("button", { name: "Open in a new tab" }).click();
+
+    // Two tabs, named as the copies they are: the one that was there is still there, which is what
+    // the panel of the new one must not take away.
+    await expect(tabs).toHaveCount(2, { timeout: 60_000 });
+    await expect(tabs.nth(0)).toContainText(name);
+    await expect(tabs.nth(1)).toContainText(`${name} (1)`);
+
+    // The file manager in a tab of its own — the menu entry that is always there, whatever the
+    // settings say a session opens as.
+    await sessionRow(page, name).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "File manager", exact: true }).click();
+    await expect(tabs).toHaveCount(3, { timeout: 60_000 });
+
+    // And a third terminal, which is where the file manager's tab used to disappear: the panel that
+    // comes with it folded that tab in and closed it, so a person asking for one more shell lost
+    // the place they were browsing from. The question is waited out first, so the one this opens is
+    // the only one on screen.
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await sessionRow(page, name).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Open terminal", exact: true }).click();
+    await expect(question).toContainText("is already open");
+    await question.getByRole("button", { name: "Open in a new tab" }).click();
+    await expect(tabs).toHaveCount(4, { timeout: 60_000 });
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "session-reopen.png"), fullPage: false });
   } finally {
     await close();
   }

@@ -155,6 +155,23 @@ describe("the home page", () => {
     await vi.waitFor(() => expect(sessionOpenMock).toHaveBeenCalledWith(beta.id));
   });
 
+  it("goes to the tab that is already open for the row rather than opening a second one", async () => {
+    render();
+    quickRow(beta.id).click();
+    // The tab itself is waited for rather than only the call: the answer is what makes it, and
+    // reading the list before it lands would read it empty.
+    await vi.waitFor(() => expect(useTerminalsStore().tabs).toHaveLength(1));
+    const open = useTerminalsStore().tabs[0]?.id ?? "";
+    useTerminalsStore().openSettings();
+    expect(useTerminalsStore().activeTabId).not.toBe(open);
+    sessionOpenMock.mockClear();
+
+    quickRow(beta.id).click();
+
+    await vi.waitFor(() => expect(useTerminalsStore().activeTabId).toBe(open));
+    expect(sessionOpenMock, "the row goes to what is open, it does not open again").not.toHaveBeenCalled();
+  });
+
   it("says there are no sessions rather than drawing an empty card", () => {
     useSessionsStore().sessions = [];
     render();

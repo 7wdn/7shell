@@ -240,8 +240,8 @@ function translate(key: string, params?: Record<string, string>): string {
               <button
                 type="button"
                 class="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2.5 text-left"
-                :title="t('sessions.list.open', { name: session.name })"
-                @click="terminals.open(session)"
+                :title="t('sessions.list.openHint', { name: session.name })"
+                @click="terminals.goTo(session)"
               >
                 <Server :size="14" class="shrink-0 text-muted-foreground" />
                 <span class="min-w-0 flex-1">

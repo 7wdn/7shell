@@ -5,6 +5,14 @@
  * still asks its question in the row rather than here: the confirmation belongs next to the name it
  * is about, and there is exactly one of them.
  *
+ * What the menu offers for opening a session is two entries, whatever the settings say a session
+ * looks like: a terminal, and the file manager on its own. A session that opens as two halves
+ * already has the files under its terminal — that panel is the shell's companion, following its
+ * `cd` — while the file manager entry is a tab of its own, which is a place to browse rather than a
+ * place to type. The terminal entry is the menu's own open, not the row's click: a session that is
+ * already open is something this menu has an answer for (see `terminals.reopen`), and the row's
+ * click never asks.
+ *
  * The address is the one thing worth copying, and it is copied the way the sidebar prints it — with
  * the user and the port — because that is the string somebody pastes into another tool. A group's
  * menu copies its name, which is the only one of its fields anybody has a use for elsewhere.
@@ -38,7 +46,16 @@ import { copyText } from "./clipboard";
 import type { MenuEntry, MenuLeaf } from "./types";
 
 export interface SessionMenuActions {
-  readonly openTerminal: (session: Session) => void;
+  /**
+   * The menu's own open: the terminal, or the terminal and its files when the settings say a session
+   * opens as two halves.
+   *
+   * It is not the row's click, even though both ask for the same session: the menu is where somebody
+   * chooses *how* to open a session that is already open, and the entry that decides that is this
+   * one — see `terminals.reopen`.
+   */
+  readonly open: (session: Session) => void;
+  /** The file manager in a tab of its own, which is what its entry always means. */
   readonly openFiles: (session: Session) => void;
   readonly edit: (session: Session) => void;
   readonly remove: (session: Session) => void;
@@ -104,17 +121,18 @@ export function sessionMenu(
   return [
     {
       kind: "action",
-      id: "open-terminal",
+      id: "open",
       labelKey: "sessions.list.open",
-      params: { name: session.name },
       icon: Terminal,
-      run: () => actions.openTerminal(session),
+      run: () => actions.open(session),
     },
+    // Beside the terminal rather than instead of it, and drawn whatever the settings say a session
+    // looks like: the files a split brings are the shell's own panel (they follow its `cd`), while
+    // this entry is the file manager in a tab somebody browses in — two different things.
     {
       kind: "action",
       id: "open-files",
       labelKey: "files.open",
-      params: { name: session.name },
       icon: Folder,
       run: () => actions.openFiles(session),
     },

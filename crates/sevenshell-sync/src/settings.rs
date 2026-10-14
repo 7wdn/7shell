@@ -14,13 +14,13 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_types::{
-    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette,
+    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, SessionReopen,
+    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette,
 };
 
 /// How many settings travel when nothing optional is set. Pinned by a test against the field list
 /// below, because a count a dialog reads out loud is a number somebody will notice being wrong.
-const REQUIRED_SETTINGS: u32 = 18;
+const REQUIRED_SETTINGS: u32 = 19;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +30,7 @@ pub struct PortableSettings {
     pub terminal_theme: ThemeMode,
     pub files_layout: FilesLayout,
     pub session_layout: SessionLayout,
+    pub session_reopen: SessionReopen,
     pub sidebar_open: bool,
     pub monitor_enabled: bool,
     pub packed_transfer: bool,
@@ -62,6 +63,7 @@ impl PortableSettings {
             terminal_theme: settings.terminal_theme,
             files_layout: settings.files_layout,
             session_layout: settings.session_layout,
+            session_reopen: settings.session_reopen,
             sidebar_open: settings.sidebar_open,
             monitor_enabled: settings.monitor_enabled,
             packed_transfer: settings.packed_transfer,
@@ -93,6 +95,7 @@ impl PortableSettings {
         settings.terminal_theme = self.terminal_theme;
         settings.files_layout = self.files_layout;
         settings.session_layout = self.session_layout;
+        settings.session_reopen = self.session_reopen;
         settings.sidebar_open = self.sidebar_open;
         settings.monitor_enabled = self.monitor_enabled;
         settings.packed_transfer = self.packed_transfer;

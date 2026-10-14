@@ -33,6 +33,7 @@ import {
   DEFAULT_CORNER_STYLE,
   DEFAULT_QUIT_ON_CLOSE,
   DEFAULT_SHOW_TRAY_ICON,
+  DEFAULT_SESSION_REOPEN,
   DEFAULT_TAB_GROUP_MODE,
   DEFAULT_TAB_LAYOUT,
   DEFAULT_TAB_MAX_WIDTH,
@@ -60,6 +61,7 @@ import {
   type FilesLayout,
   type ResolvedTheme,
   type SessionLayout,
+  type SessionReopen,
   type ThemeMode,
   type ThemePalette,
 } from "@/types/app";
@@ -100,6 +102,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   terminalTheme: "system",
   filesLayout: "tree",
   sessionLayout: "split",
+  sessionReopen: DEFAULT_SESSION_REOPEN,
   terminalPanelHeight: undefined,
   sidebarWidth: undefined,
   filesTreeWidth: undefined,
@@ -225,6 +228,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * per tab, on the strip under the terminal.
    */
   const sessionLayout = ref<SessionLayout>("split");
+  /**
+   * What the session list's menu does when the session it opens is already open.
+   *
+   * A remembered answer rather than a rule of its own: the dialog that asks about a second tab is
+   * where this is set, and "remember my choice" is what turns the question into a preference. It is
+   * read by that one path — clicking a session row is not a decision about the tabs somebody has —
+   * which is why the setting is not consulted anywhere else.
+   */
+  const sessionReopen = ref<SessionReopen>(DEFAULT_SESSION_REOPEN);
   /**
    * How tall the file panel under a terminal is, in pixels; null until somebody moves the divider.
    *
@@ -634,6 +646,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       terminalTheme.value = settings.terminalTheme;
       filesLayout.value = settings.filesLayout;
       sessionLayout.value = settings.sessionLayout;
+      sessionReopen.value = settings.sessionReopen;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       sidebarWidth.value = settings.sidebarWidth ?? null;
       filesTreeWidth.value = settings.filesTreeWidth ?? null;
@@ -727,6 +740,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         terminalTheme: terminalTheme.value,
         filesLayout: filesLayout.value,
         sessionLayout: sessionLayout.value,
+        sessionReopen: sessionReopen.value,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         sidebarWidth: sidebarWidth.value ?? undefined,
         filesTreeWidth: filesTreeWidth.value ?? undefined,
@@ -1020,6 +1034,22 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setSessionLayout(layout: SessionLayout): Promise<void> {
     sessionLayout.value = layout;
     dirty.value = true;
+  }
+
+  /**
+   * Remembers what the session list's menu does with a session that is already open, and writes it
+   * at once.
+   *
+   * Written rather than left for an Apply, for the reason the ignored version is: the answer is
+   * given in a dialog somebody may close at any moment, and a remembered choice that needed a second
+   * confirmation on another page would be one people make twice and believe once. The settings page
+   * has a row for the same value, so what was remembered can be changed, or turned back into a
+   * question, without editing a file.
+   */
+  async function setSessionReopen(choice: SessionReopen): Promise<void> {
+    sessionReopen.value = choice;
+    dirty.value = true;
+    await commit();
   }
 
   /**
@@ -1365,6 +1395,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "sessionLayout":
           sessionLayout.value = FRESH.sessionLayout;
           break;
+        case "sessionReopen":
+          sessionReopen.value = FRESH.sessionReopen;
+          break;
         case "terminalPanelHeight":
           terminalPanelHeight.value = null;
           break;
@@ -1435,6 +1468,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalTheme,
     filesLayout,
     sessionLayout,
+    sessionReopen,
     terminalPanelHeight,
     sidebarWidth,
     filesTreeWidth,
@@ -1498,6 +1532,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setTerminalTheme,
     setFilesLayout,
     setSessionLayout,
+    setSessionReopen,
     setMonitorEnabled,
     setUpdateCheckOnStartup,
     setPackedTransfer,
