@@ -4,6 +4,101 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-10-14
+
+The terminal gets the two things a highlight was always for — taking it, and using it — and three
+corners that had one action each have the rest: the vault gate opens onto what past libraries exist,
+the session list opens a file manager of its own, and the monitor is a button rather than a trip
+through the settings.
+
+### Added
+
+- **A selection in the terminal has actions of its own.** A highlight raises three buttons under the
+  point it stops at — copy, hand the text to the shell, find — and the right-click menu carries
+  **Paste selection** beside Paste: what is selected reaches the shell the way a paste does, without
+  the clipboard and without a copy in between, and the highlight is dropped once it has been handed
+  over. The magnifier opens the find field over the selection rather than empty, and that work is
+  also where the bar's match count and match marks started working at all: the search addon only
+  reports results when it was given colours to draw them with, and xterm keeps that drawing behind
+  its proposed-API switch. The buttons hang from the end of the last line the highlight covers, and
+  a selection the person scrolls out of the drawn rows takes them away rather than leaving them
+  pointing at nothing.
+- **The vault gate has ways out, and past libraries come back.** The archived vaults beside the live
+  one — `vault.json.old` and its numbered siblings — are listed by name and never by path, tried with
+  their own password, made the live vault again, or read into the vault that is open; a switch is two
+  renames, so the library in use is archived rather than replaced, and nothing about an archive
+  leaves this process. The foot of the gate carries two quiet ways out, with the archive-and-reset
+  question asked once in a dialog that says what survives. A refusal under a password field goes when
+  the value it was about is edited, the eye on the field stays put through an error, and the title
+  bar belongs to the window while the vault is shut — the mark, the version, the three window
+  buttons, and nothing drawn from a locked store.
+- **The session list opens a file manager of its own.** Its menu offers two things to open whatever
+  the workspace setting says a session looks like: a terminal in the shape the setting gives it, and
+  the file manager in a tab of its own — a place to browse from rather than the shell's companion.
+  Opening a terminal for a session that is already open asks about a second tab, and the answer can
+  be remembered and taken back on the Workspace page; clicking a session's row is the other thing and
+  never asks. Tabs about one session are numbered so they can be told apart (`lab`, `lab (1)`), per
+  session and per kind. Two bugs went with it, both about a browser a tab did not open: a terminal's
+  panel no longer adopts another tab's browser and closes it, and the file manager does not stand in
+  for a panel or the other way round.
+- **The monitor is one click from anywhere.** It was reachable from its settings switch and from its
+  own close button — which is only there while the panel is — and it samples only while it is shown,
+  so putting it away is also how the sampling stops. The button sits right of Batch execution and
+  marks its state the way the transfers button does.
+
+### Changed
+
+- **The workspace overview reads from the top.** The page the setting draws starts at its top now
+  rather than centring; Common operations stands above Quick start with its four buttons side by
+  side where the width is there and two by two where it is not. The tip explaining where the library
+  is, the history card, and the version stamp at the foot are gone — what was sent lives in the
+  command library, and the title bar already says which build this is.
+- **The library's new-session button stands on its own.** The `+` was one control in a row of five
+  view toggles, which is where nobody finds the panel's whole reason; it is a labelled button on the
+  left now, carrying the words the home page gives the same action, and Import / Export is an icon in
+  the row it left. The default sidebar width grew with the type so the English label is not
+  truncated, and the header row is drawn at the size of the rows it heads.
+- **The early-days disclaimers are gone.** The READMEs, `SECURITY.md`, the guide and the home view no
+  longer carry a block saying the application is early, unaudited and unreleased. What stays is what
+  is fact rather than posture: the installer note about code signing and notarization, the route for
+  reporting a vulnerability, and the pointers to the security model.
+
+### Fixed
+
+- **The webview's own keys are off, and the browser keys with them.** WebView2 handled a handful of
+  the browser's keys before the interface saw them: Ctrl+F opened its find bar over the settings page
+  with the caret in its own box, and beside the terminal's find widget, which appeared at the same
+  moment; F5 and Ctrl+R reloaded the page and took the open tabs and their terminals with them;
+  Ctrl+P, the zoom keys and F12 came along. The switch is the platform's own and leaves the keys that
+  edit text alone, and the terminal's find key was never the browser's — xterm claims it first, so
+  the widget opens exactly as before. Windows only, because Windows is the only one of the three
+  webviews that answers these keys for itself.
+- **The platform's own autofill is off, and the field history with it.** The webview kept a
+  suggestion history for ordinary text fields and offered it back under every user, host and port a
+  session form has — values from outside the session, the person's own among them. The history lives
+  in the webview's own data folder; the window now turns it off at the source, which is also where
+  the platform's documentation points when it warns that a per-field `autocomplete="off"` is not
+  always honored.
+- **A double-click on a control takes no text with it.** While a menu is open its scroll lock has the
+  whole application out of hit testing, so the second press of such a gesture lands on the document,
+  and the platform's word selection then takes the first selectable text anywhere in the window — a
+  selection planted over the library search's placeholder, which Copy handed out as if it had been
+  typed. A selection that begins on the document is refused at the moment it starts, which is before
+  anything is painted; a word inside a real field still selects, and the dialog's own lock upgraded
+  with the dropdown library.
+- **A password field shows one eye.** WebView2 draws a reveal button into every password field of its
+  own accord, so the fields that offer an eye themselves — the gate, the archived-vaults dialog, the
+  sync secrets — had two controls at two weights over one masked value. The built-in one is hidden,
+  the same way the search field's clear button is.
+- **A question is chrome, and a field inside one stays text.** A confirmation dialog could be dragged
+  across and what it said came away as a selection; questions refuse selection like the rest of the
+  chrome now, and a field inside one — the export passphrase — stays text, which is said once in the
+  stylesheet rather than at each field.
+- **The macOS Intel disk image builds.** 0.1.2's Intel leg built the application and then died in
+  `bundle_dmg.sh` — mounting a volume and asking Finder to lay the window out, neither of which a
+  runner does reliably. The bundling is tried three times now, detaching the volume a failed attempt
+  left mounted before each retry, and nothing is masked: a real error fails the same way three times.
+
 ## [0.1.2] - 2026-10-13
 
 The update channel, end to end: what is published is now something the window can show, download and
