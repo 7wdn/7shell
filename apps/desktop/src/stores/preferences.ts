@@ -129,9 +129,11 @@ const FRESH: Omit<AppSettings, "locale"> = {
  * How wide the session sidebar starts out, until somebody moves the divider beside it.
  *
  * Wide enough for the panel's own toolbar — the import/export control and five buttons — without
- * the label being cut off, which is the point at which the panel stops saying what it is.
+ * the label being cut off, which is the point at which the panel stops saying what it is. That
+ * toolbar is set at the size of the rows it heads, and at 14px the English label took the row a
+ * few pixels past what 280 could hold: 300 leaves the same margin the smaller type had.
  */
-export const DEFAULT_SIDEBAR_WIDTH = 280;
+export const DEFAULT_SIDEBAR_WIDTH = 300;
 
 /**
  * How tall the file panel under a terminal starts out, until somebody moves the divider.

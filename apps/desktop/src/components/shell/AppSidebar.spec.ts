@@ -612,6 +612,23 @@ describe("the rows", () => {
     expect(rowElement("session:session-2").querySelector("span.text-sm")).not.toBeNull();
   });
 
+  it("draws the panel's own row at the size the rows are drawn at", async () => {
+    await render([work], [db]);
+
+    // The header had the drift the headings had before it: a size down from the list it heads —
+    // 12px against the rows' 14px, with 12px glyphs beside the rows' 14px folder — so a person
+    // reads two sizes in one panel. What says it is the list's own row is the size, not a
+    // toolbar's type.
+    expect(transferButton().classList.contains("text-sm")).toBe(true);
+    expect(transferButton().querySelector("svg")?.getAttribute("width")).toBe("14");
+
+    const glyphs = [...host.querySelectorAll<SVGElement>("header > span.shrink-0 button svg")];
+    expect(glyphs.length, "the header carries its five buttons").toBe(5);
+    for (const glyph of glyphs) {
+      expect(glyph.getAttribute("width"), `${glyph.classList.value} is drawn at the list's size`).toBe("14");
+    }
+  });
+
   it("keeps a heading the same size while its name is being typed over", async () => {
     await render([work], [db]);
 

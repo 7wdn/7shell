@@ -906,6 +906,9 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
         The row the panel is operated from: bringing the library in or sending it out on the left —
         the one thing that is about the whole list rather than a row, and the place a word about the
         panel would otherwise go — and the controls that act on the list on the right.
+
+        Label and glyphs are set at the size the rows are set at, the way the headings are: a
+        toolbar a size down from the list it heads reads as belonging to a different panel.
       -->
       <header class="mb-2 flex shrink-0 items-center gap-1">
         <!--
@@ -914,7 +917,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
           be answering a question nobody asked, and the count is the thing to look at instead.
         -->
         <template v-if="library.selecting">
-          <span class="min-w-0 truncate text-xs font-medium text-muted-foreground">
+          <span class="min-w-0 truncate text-sm font-medium text-muted-foreground">
             {{ t("shell.sidebar.sessions") }}
           </span>
           <span class="shrink-0 text-[11px] font-normal text-muted-foreground/80" data-session-selected-count>
@@ -929,7 +932,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('sessions.list.addGroup')"
               @click="newGroupForSelection()"
             >
-              <FolderPlus :size="12" />
+              <FolderPlus :size="14" />
             </button>
             <button
               type="button"
@@ -940,7 +943,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               aria-haspopup="true"
               @click="openMoveSelectedMenu($event)"
             >
-              <FolderInput :size="12" />
+              <FolderInput :size="14" />
             </button>
             <button
               type="button"
@@ -949,7 +952,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('sessions.list.removeSelected', { count: library.selected.size }, library.selected.size)"
               @click="deleteSelectedOpen = true"
             >
-              <Trash2 :size="12" />
+              <Trash2 :size="14" />
             </button>
             <button
               type="button"
@@ -959,9 +962,9 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="selectAllLabel"
               @click="toggleAllSessions()"
             >
-              <Check v-if="allSessionsPicked" :size="12" class="text-primary" />
-              <Minus v-else-if="library.selected.size > 0" :size="12" class="text-primary" />
-              <Square v-else :size="12" class="stroke-[1.7]" />
+              <Check v-if="allSessionsPicked" :size="14" class="text-primary" />
+              <Minus v-else-if="library.selected.size > 0" :size="14" class="text-primary" />
+              <Square v-else :size="14" class="stroke-[1.7]" />
             </button>
             <button
               type="button"
@@ -971,7 +974,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('sessions.list.exitSelection')"
               @click="library.clearSelection()"
             >
-              <X :size="12" />
+              <X :size="14" />
             </button>
           </span>
         </template>
@@ -979,13 +982,13 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
           <button
             type="button"
             data-session-transfer
-            class="inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            class="inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             :title="t('sessions.list.importExport')"
             :aria-label="t('sessions.list.importExport')"
             aria-haspopup="true"
             @click="openTransferMenu($event)"
           >
-            <ArrowDownUp :size="13" class="shrink-0" />
+            <ArrowDownUp :size="14" class="shrink-0" />
             <span class="min-w-0 truncate">{{ t("sessions.list.importExport") }}</span>
             <ChevronDown :size="12" class="shrink-0 opacity-60" />
           </button>
@@ -1000,7 +1003,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('sessions.list.collapseAll')"
               @click="library.collapseAll()"
             >
-              <ChevronsDownUp :size="12" />
+              <ChevronsDownUp :size="14" />
             </button>
             <button
               type="button"
@@ -1009,7 +1012,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('sessions.list.addGroup')"
               @click="startGroupCreate(null)"
             >
-              <FolderPlus :size="12" />
+              <FolderPlus :size="14" />
             </button>
             <button
               type="button"
@@ -1018,7 +1021,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('sessions.list.add')"
               @click="startNew()"
             >
-              <Plus :size="12" />
+              <Plus :size="14" />
             </button>
             <button
               type="button"
@@ -1028,7 +1031,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :disabled="library.status === 'loading'"
               @click="library.load()"
             >
-              <RefreshCw :size="12" :class="library.status === 'loading' ? 'animate-spin' : ''" />
+              <RefreshCw :size="14" :class="library.status === 'loading' ? 'animate-spin' : ''" />
             </button>
             <button
               type="button"
@@ -1037,7 +1040,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               :aria-label="t('shell.sidebar.collapse')"
               @click="emit('collapse')"
             >
-              <ChevronsLeft :size="12" />
+              <ChevronsLeft :size="14" />
             </button>
           </span>
         </template>
