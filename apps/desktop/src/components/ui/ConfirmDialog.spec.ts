@@ -148,6 +148,16 @@ describe("what the question says", () => {
     await openIt();
     expect(dialog().textContent).toContain("extra content");
   });
+
+  it("refuses to be dragged across, because a question is not a document", async () => {
+    mount({ details: ["/etc/nginx/nginx.conf"] });
+    await openIt();
+
+    // What a question names is read and copied from the row's own menu; a selection smeared over it
+    // is noise somebody then has to clear. The field a caller may put inside it stays text — that
+    // half is the stylesheet's, and `scripts/tests/selection.test.mjs` reads the rule there.
+    expect(dialog().classList.contains("select-none"), "a drag across the question takes nothing away").toBe(true);
+  });
 });
 
 describe("answering", () => {

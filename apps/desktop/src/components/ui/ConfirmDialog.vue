@@ -25,6 +25,11 @@
  * It never closes itself. `open` belongs to the caller, because whether the question should stay on
  * screen while the answer is carried out depends on what the answer does — a delete that can be
  * cancelled is gone at once, while one that walks a directory stays up and says it is working.
+ *
+ * A question is chrome, so it refuses to be dragged across: what it names is read and copied from
+ * the row's own menu, and a selection smeared over a dialog is noise somebody then has to clear. The
+ * field a caller may put inside it — the passphrase on an export — is the one thing that stays text,
+ * which the stylesheet says once for every field there is (see `docs/ui-conventions.md`).
  */
 import { LoaderCircle, TriangleAlert } from "@lucide/vue";
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
@@ -117,7 +122,7 @@ function handBackFocus(event: Event): void {
     <DialogPortal>
       <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
       <DialogContent
-        class="fixed top-1/2 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-xl focus:outline-none"
+        class="fixed top-1/2 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-xl select-none focus:outline-none"
         @interact-outside="keepOpenWhileLoading"
         @escape-key-down="keepOpenWhileLoading"
         @open-auto-focus="rememberAsker"

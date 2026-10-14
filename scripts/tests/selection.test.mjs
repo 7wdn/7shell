@@ -34,6 +34,7 @@ const REFUSING = [
   { file: "shell/AppSidebar.vue", what: "the session library" },
   { file: "shell/ContextMenu.vue", what: "the menus, both levels" },
   { file: "shell/SidebarResizeHandle.vue", what: "the handle that widens the sidebar" },
+  { file: "ui/ConfirmDialog.vue", what: "the questions, which ask rather than show readings" },
   { file: "ui/ColumnResizeHandle.vue", what: "the edge between two columns, which is dragged to resize" },
   { file: "ui/SideDivider.vue", what: "the line between a panel's two halves, which is dragged to resize" },
   { file: "shell/TransferPanel.vue", what: "the list of transfers, whose rows are pressed" },
@@ -136,5 +137,23 @@ test("a control, a heading and a name are not text", () => {
       new RegExp(`(^|[,\\s])${element}\\s*[,{]`, "m"),
       `${element} is one of the shapes this interface says things with`,
     );
+  }
+});
+
+/**
+ * The field a refusing surface holds.
+ *
+ * `select-none` on a confirmation dialog would take the passphrase field inside it with it, if the
+ * stylesheet did not hand the fields back: the rule lives in the layer above this one, and a dialog
+ * that refuses is exactly the surface a field is a guest in. Checked against the rules that set
+ * `user-select: text`, so a rule that names something else does not stand in for it.
+ */
+test("a field is text, even inside a surface that refuses selection", () => {
+  const sheet = readFileSync(STYLES, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+  const base = sheet.slice(sheet.indexOf("@layer base"));
+  const named = [...base.matchAll(/([^{}]+)\{[^}]*user-select:\s*text[^}]*\}/g)].map((match) => match[1]).join(", ");
+
+  for (const element of ["input", "textarea"]) {
+    assert.match(named, new RegExp(`(^|[,\\s])${element}([,\\s{]|$)`), `${element} is a field, and a field is text`);
   }
 });

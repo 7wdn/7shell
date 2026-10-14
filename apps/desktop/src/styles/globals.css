@@ -810,6 +810,21 @@
   h3 {
     user-select: none;
   }
+
+  /*
+   * A field is always text, wherever it stands.
+   *
+   * Both of the rules around this one take selection *away* — the shapes above, and the surfaces
+   * that refuse outright for what they are (a confirmation dialog asks rather than shows). A field
+   * inside one of those is a guest: the passphrase on an export sits in a dialog that refuses, and
+   * the person typing into it still has to be able to select what they typed. Said here rather than
+   * at each field, so a field written later into a refusing surface is covered by having been
+   * written.
+   */
+  input,
+  textarea {
+    user-select: text;
+  }
 }
 
 /*

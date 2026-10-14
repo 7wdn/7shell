@@ -38,6 +38,11 @@ somebody paste this somewhere?
 6. **The terminal is its own world.** xterm draws to a canvas and keeps its own selection: dragging
    selects, the right-click menu copies, and the DOM takes no part. That is the terminal behaving
    like a terminal, and the rules above do not apply inside its screen.
+7. **A question is chrome.** A confirmation dialog asks rather than shows: its message, its buttons
+   and the box some of them carry are not text, and what it names is copied from the row's own menu
+   instead. The field some of them hold — a passphrase, a name being typed — stays text, because a
+   field always is (rule 4), and the stylesheet hands fields back rather than every caller
+   remembering to.
 
 | Surface | Selectable | Why |
 |---|---|---|
@@ -55,7 +60,8 @@ somebody paste this somewhere?
 | Terminal screen | yes, its own way | xterm's selection and menu, not the DOM's |
 | Host pages: system, processes, network | yes | readings, paths and command lines — the surfaces people copy from |
 | The settings page | no | a page of controls: the readings inside it — the build's facts, the keys and hosts, an error, the search field — are exempted one by one |
-| Dialogs, the home page, the batch panel, the command library | yes | values, and the labels beside them where the row is not a form control |
+| A confirmation dialog | no | it asks rather than shows; the field one of them may hold is the exception |
+| The home page, the batch panel, the command library, the dialogs that read | yes | values, and the labels beside them where the row is not a form control |
 | Error banners and toasts | yes | an error is quoted somewhere |
 
 Measured in a real window rather than asserted from the markup: a selection over the monitor panel,
