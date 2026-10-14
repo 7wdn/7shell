@@ -297,6 +297,7 @@ test("the vault locks on purpose, and an archived library can be switched back i
     await expect(bar.getByRole("button", { name: "Close", exact: true })).toBeVisible();
     await expect(settingsButton(page), "the way into the settings is gone").toHaveCount(0);
     await expect(bar.getByRole("button", { name: "Batch execution" })).toHaveCount(0);
+    await expect(bar.getByRole("button", { name: "Host monitor" })).toHaveCount(0);
     await expect(bar.locator("[data-window-pin]")).toHaveCount(0);
     await expect(bar.locator("[data-transfers-toggle]")).toHaveCount(0);
     await expect(bar.locator("[data-theme-toggle]")).toHaveCount(0);
@@ -443,6 +444,18 @@ test("the host monitor is on, and hiding it is one setting", async () => {
     // The rows are drawn with dashes rather than with zeroes — an empty column is not a reading —
     // and with no host known there is nothing to copy either.
     await expect(panel.getByRole("button", { name: "Copy the host name" })).toBeDisabled();
+
+    // The bar's toggle is the same preference, one click from anywhere: it carries its state, puts
+    // the panel away, and brings it back — the gesture the panel's own close button cannot offer
+    // once the panel is gone.
+    const monitorToggle = page.getByRole("banner").getByRole("button", { name: "Host monitor" });
+    await expect(monitorToggle).toHaveAttribute("aria-pressed", "true");
+    await monitorToggle.click();
+    await expect(panel).toHaveCount(0);
+    await expect(monitorToggle).toHaveAttribute("aria-pressed", "false");
+    await monitorToggle.click();
+    await expect(panel).toBeVisible();
+    await expect(monitorToggle).toHaveAttribute("aria-pressed", "true");
 
     // The panel is an instrument rather than a document: a drag across it selects nothing, and the
     // pointer does not turn into an I-beam over the readings. One class is what makes that happen,

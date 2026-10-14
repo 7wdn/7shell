@@ -11,7 +11,19 @@
  *
  * On macOS the bar keeps its native traffic lights, so the content is inset to make room.
  */
-import { ArrowUpDown, ChevronsRight, ListChecks, Lock, Moon, Pin, PinOff, Settings, Sun, SunMoon } from "@lucide/vue";
+import {
+  Activity,
+  ArrowUpDown,
+  ChevronsRight,
+  ListChecks,
+  Lock,
+  Moon,
+  Pin,
+  PinOff,
+  Settings,
+  Sun,
+  SunMoon,
+} from "@lucide/vue";
 import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -216,9 +228,10 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       </button>
 
       <!--
-      Batch execution, then the mode, then the gear. The three are ordered by what they are about:
-      the two that put a page in the workspace stand together, and the two that are about the window
-      itself — how it is lit, and the settings for everything — come last.
+      Batch execution and the monitor, then the mode, then the gear. They are ordered by what they
+      are about: the two that put something beside the workspace — a page to work in, a panel to
+      watch — stand together, and the two that are about the window itself — how it is lit, and the
+      settings for everything — come last.
     -->
       <button
         type="button"
@@ -232,6 +245,32 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
         @click="terminals.openBatch()"
       >
         <ListChecks :size="15" />
+      </button>
+
+      <!--
+        The monitor, one click from anywhere.
+
+        It is a thing turned on and off as the work changes — the panel samples only while it is
+        shown, so putting it away is also how the sampling stops — and until now that gesture meant
+        a trip through the settings page or a click on the panel's own close button, which is only
+        there while the panel is. A toggle rather than a page-opener, so it carries its state the
+        way the transfers button does.
+      -->
+      <button
+        type="button"
+        data-monitor-toggle
+        class="grid size-8 place-items-center rounded-md transition-colors"
+        :class="
+          preferences.monitorEnabled
+            ? 'bg-accent text-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        "
+        :title="t('monitor.title')"
+        :aria-label="t('monitor.title')"
+        :aria-pressed="preferences.monitorEnabled"
+        @click="preferences.setMonitorEnabled(!preferences.monitorEnabled)"
+      >
+        <Activity :size="15" />
       </button>
 
       <button
