@@ -28,7 +28,8 @@
           "y": 18
         },
         "hiddenTitle": true,
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "generalAutofillEnabled": false
       }
     ],
     "security": {
