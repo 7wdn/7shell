@@ -1162,6 +1162,71 @@ test("a setting can be found by name, and a category can be put back to its defa
 });
 
 /**
+ * A double-click on a control takes no text.
+ *
+ * The platform's word selection, asked for a word where the interface refuses selection, does not
+ * stop at the thing under the pointer — it takes the first selectable text anywhere in the window,
+ * which is the library's search field: a double-click on a dropdown in the settings page painted a
+ * selection over its placeholder, and Copy handed the placeholder out as if it had been typed. The
+ * shell refuses a selection that starts on the document itself (`refuseDocumentSelection` in
+ * App.vue), and the library's header refuses selection like the list below it. The second half of
+ * the case is the rule that must survive both: a word taken inside a real field stays selected.
+ */
+test("a double-click on a control takes no text", async () => {
+  const { page, close } = await openApp();
+  try {
+    await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible();
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+
+    const ranges = () => page.evaluate(() => window.getSelection()?.rangeCount ?? 0);
+    const selected = () => page.evaluate(() => window.getSelection()?.toString() ?? "");
+
+    // The strip beside the library's own controls.
+    const transfer = await page.locator("[data-session-transfer]").boundingBox();
+    if (!transfer) {
+      throw new Error("the library's controls have no box");
+    }
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await page.mouse.dblclick(
+      Math.round(transfer.x + transfer.width + 8),
+      Math.round(transfer.y + transfer.height / 2),
+    );
+    await expect.poll(ranges, { message: "a double-click on the strip selects nothing" }).toBe(0);
+
+    // A dropdown on the settings page, which is where the stray selection was noticed.
+    const trigger = settings.locator('button[role="combobox"], button[aria-haspopup="listbox"]').first();
+    const triggerBox = await trigger.boundingBox();
+    if (!triggerBox) {
+      throw new Error("the appearance dropdown has no box");
+    }
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await page.mouse.dblclick(
+      Math.round(triggerBox.x + triggerBox.width / 2),
+      Math.round(triggerBox.y + triggerBox.height / 2),
+    );
+    await expect.poll(ranges, { message: "a double-click on a dropdown selects nothing" }).toBe(0);
+    await page.keyboard.press("Escape");
+
+    // And a word inside a field is still a word.
+    const field = settings.getByPlaceholder("Search settings");
+    await field.fill("seven");
+    const fieldBox = await field.boundingBox();
+    if (!fieldBox) {
+      throw new Error("the settings search has no box");
+    }
+    await page.mouse.dblclick(Math.round(fieldBox.x + 30), Math.round(fieldBox.y + fieldBox.height / 2));
+    await expect.poll(selected, { message: "a word in a field keeps its own double-click" }).toContain("seven");
+    await field.fill("");
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } finally {
+    await page.keyboard.press("Escape").catch(() => undefined);
+    await close();
+  }
+});
+
+/**
  * The bar at the foot of the settings page: apply, close, and the one way out that throws something
  * away.
  *

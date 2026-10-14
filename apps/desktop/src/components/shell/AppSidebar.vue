@@ -908,9 +908,12 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
         panel would otherwise go — and the controls that act on the list on the right.
 
         Label and glyphs are set at the size the rows are set at, the way the headings are: a
-        toolbar a size down from the list it heads reads as belonging to a different panel.
+        toolbar a size down from the list it heads reads as belonging to a different panel. Like
+        the list, the row refuses selection — it holds controls and the gap between them, nothing
+        anybody reads — which is also what keeps a double-click on that gap from finding a word of
+        somebody else's.
       -->
-      <header class="mb-2 flex shrink-0 items-center gap-1">
+      <header class="mb-2 flex shrink-0 select-none items-center gap-1">
         <!--
           Picking rows out replaces the panel's own controls with the ones that act on what is
           picked: a toolbar that still offered "new session" while a selection is being built would

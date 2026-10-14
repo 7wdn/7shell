@@ -86,6 +86,7 @@ let stopDragEvents: (() => void) | undefined;
 let stopDropEvents: (() => void) | undefined;
 let stopPaste: (() => void) | undefined;
 let stopContextMenu: (() => void) | undefined;
+let stopStraySelection: (() => void) | undefined;
 let stopQuitRequested: (() => void) | undefined;
 let stopVaultLocked: (() => void) | undefined;
 
@@ -306,6 +307,27 @@ function suppressDefaultMenu(event: MouseEvent): void {
 }
 
 /**
+ * The selection that tries to start on the document itself.
+ *
+ * A double-click asks the platform to select the word under the pointer, and where the pointer is
+ * over something that refuses selection the platform does not stop there — it keeps looking, and
+ * takes the first selectable text it can find anywhere in the window. That is the library's search
+ * field: while a menu is open its scroll lock has already taken the whole application out of hit
+ * testing, so the second press lands on the document itself, and a selection is planted over the
+ * field's placeholder — Copy then hands the placeholder out as if it were typed.
+ *
+ * Refused at selectstart, which is the moment before anything is painted: a selection that begins
+ * on the document is a selection of nothing. What starts on something a person pointed at is
+ * untouched — a word inside a field included — because this only answers for the document itself.
+ */
+function refuseDocumentSelection(event: Event): void {
+  const target = event.target as Node | null;
+  if (target === document.documentElement || target === document.body) {
+    event.preventDefault();
+  }
+}
+
+/**
  * Tells the shell there is a frame on screen, which is when it shows the window.
  *
  * The window is created hidden, so this is what puts it on screen, and it is deliberately late in
@@ -360,6 +382,8 @@ onMounted(async () => {
   stopPaste = () => window.removeEventListener("keydown", onGlobalKey);
   window.addEventListener("contextmenu", suppressDefaultMenu, { capture: true });
   stopContextMenu = () => window.removeEventListener("contextmenu", suppressDefaultMenu, { capture: true });
+  document.addEventListener("selectstart", refuseDocumentSelection, { capture: true });
+  stopStraySelection = () => document.removeEventListener("selectstart", refuseDocumentSelection, { capture: true });
   stopTerminalEvents = terminals.initialize();
   // Registered here rather than by the panel: a run outlives a look at another tab, and its rows
   // have to keep arriving while the person is somewhere else.
@@ -386,6 +410,7 @@ onBeforeUnmount(() => {
   stopDropEvents?.();
   stopPaste?.();
   stopContextMenu?.();
+  stopStraySelection?.();
   stopQuitRequested?.();
   stopVaultLocked?.();
 });
