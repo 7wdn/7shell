@@ -4797,15 +4797,12 @@ test("a new folder is asked for in a dialog, and renamed where its name is writt
     await expect(row).toBeVisible({ timeout: 30_000 });
 
     // The name is edited in the row it belongs to, not in a form at the top of the panel. The
-    // gesture is retried as a whole: a menu dismisses itself when the directory is re-read, which
-    // is a refresh the create just caused to be in flight.
-    const renameEntry = page.getByRole("menuitem", { name: "Rename", exact: true });
-    await expect(async () => {
-      await row.click({ timeout: 5_000 });
-      await row.click({ button: "right", timeout: 5_000 });
-      await expect(renameEntry).toBeVisible({ timeout: 3_000 });
-      await renameEntry.click({ timeout: 3_000 });
-    }).toPass({ timeout: 30_000 });
+    // gesture is the slow double-click a file manager uses: select, pause past the platform's
+    // double-click time, then click the name again.
+    const nameCell = row.locator("[data-file-name]");
+    await nameCell.click({ timeout: 5_000 });
+    await page.waitForTimeout(700);
+    await nameCell.click({ timeout: 5_000 });
     const rename = page.getByRole("textbox", { name: "New name" });
     await expect(rename).toBeVisible();
     await expect(rename).toHaveValue(folder);

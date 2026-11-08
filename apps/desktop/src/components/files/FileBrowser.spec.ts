@@ -157,11 +157,19 @@ async function clickRow(index: number, ...modifiers: ("ctrl" | "shift" | "meta")
   row?.dispatchEvent(
     new MouseEvent("click", {
       bubbles: true,
+      detail: 1,
       ctrlKey: modifiers.includes("ctrl"),
       shiftKey: modifiers.includes("shift"),
       metaKey: modifiers.includes("meta"),
     }),
   );
+  await nextTick();
+}
+
+/** Clicks the name cell of a row, with the click count the browser would report. */
+async function clickName(index: number, detail = 1): Promise<void> {
+  const name = rows()[index]?.querySelector<HTMLElement>("[data-file-name]");
+  name?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail }));
   await nextTick();
 }
 
@@ -434,6 +442,65 @@ describe("selecting rows", () => {
     await vi.waitFor(() =>
       expect(vi.mocked(filesRename)).toHaveBeenCalledWith(HANDLE, "/home/user/a.txt", "/home/user/renamed.txt"),
     );
+  });
+
+  it("names the row on a slow second click on its name", async () => {
+    await render(many);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(10_000);
+      await clickName(1);
+      expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+
+      vi.setSystemTime(11_000);
+      await clickName(1);
+
+      expect(rows()[1]?.querySelector('input[aria-label="New name"]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves a fast double-click to opening the row", async () => {
+    await render(many);
+    vi.mocked(filesList).mockClear();
+
+    await clickName(0, 1);
+    await clickName(0, 2);
+    rows()[0]?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+    await vi.waitFor(() => expect(vi.mocked(filesList)).toHaveBeenCalledWith(HANDLE, "/home/user/logs"));
+    expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+  });
+
+  it("does not pair clicks that are too far apart", async () => {
+    await render(many);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(10_000);
+      await clickName(1);
+      vi.setSystemTime(12_500);
+      await clickName(1);
+
+      expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not rename when the second click is outside the name", async () => {
+    await render(many);
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(10_000);
+      await clickName(1);
+      vi.setSystemTime(10_500);
+      await clickRow(1);
+
+      expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens the one selected row on Enter, and nothing when several are chosen", async () => {

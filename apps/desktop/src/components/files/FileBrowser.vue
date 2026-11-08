@@ -177,6 +177,15 @@ const crumbs = computed(() => (browser.value ? crumbsOf(browser.value.path) : []
 const selection = ref<Selection>(NOTHING_SELECTED);
 /** The rectangle being dragged over the listing, in the listing's own coordinates. */
 const marquee = ref<Band | null>(null);
+/**
+ * The last plain click on a row, and when it happened.
+ *
+ * This is the first half of a slow double-click: the second click arrives after the platform's
+ * double-click time (so the browser reports `detail` 1 again) and turns the name into a field.
+ */
+let lastRowClick: { path: string; at: number } | null = null;
+/** How long the two clicks of a slow double-click may be apart. */
+const SLOW_CLICK_WINDOW_MS = 2_000;
 const typedPath = ref("");
 /** Which kind of thing is being named, and nothing while no prompt is open. */
 const creating = ref<"folder" | "file" | null>(null);
@@ -511,6 +520,7 @@ watch(
 );
 
 function enter(entry: SftpEntry): void {
+  forgetSlowClick();
   selection.value = selectOne(entry.path);
   open(entry);
 }
@@ -532,6 +542,7 @@ function open(entry: SftpEntry): void {
 }
 
 function go(path: string): void {
+  forgetSlowClick();
   selection.value = clear();
   void files.navigate(props.handle, path);
 }
@@ -543,17 +554,44 @@ function go(path: string): void {
  * takes everything between the last plain click and here, and a ctrl-click adds or removes one row.
  * The platform matters for the last of those — on a Mac the modifier is Command, because **Ctrl+click
  * is the secondary click there** and stealing it would take the context menu away.
+ *
+ * A second plain click on the name, after the platform's double-click time and within
+ * {@link SLOW_CLICK_WINDOW_MS}, is the slow double-click a file manager uses for renaming. The
+ * browser's own `detail` is what tells the two apart: the second click of a fast double-click is
+ * `detail` 2 and is left to `dblclick`, which opens the row.
  */
 function clickRow(event: MouseEvent, entry: SftpEntry): void {
   if (event.shiftKey) {
+    forgetSlowClick();
     selection.value = selectRange(selection.value, rows.value, entry.path);
   } else if (modifies(event)) {
+    forgetSlowClick();
     selection.value = toggle(selection.value, entry.path);
   } else {
+    const slowSecond =
+      event.detail === 1 &&
+      lastRowClick?.path === entry.path &&
+      Date.now() - lastRowClick.at <= SLOW_CLICK_WINDOW_MS &&
+      selection.value.paths.length === 1 &&
+      selection.value.paths[0] === entry.path &&
+      (event.target as HTMLElement | null)?.closest("[data-file-name]") !== null;
+    if (slowSecond) {
+      forgetSlowClick();
+      startRename(entry);
+      return;
+    }
+
     selection.value = selectOne(entry.path);
+    // A fast double-click's second click is detail 2: the row is being opened, not named.
+    lastRowClick = event.detail === 1 ? { path: entry.path, at: Date.now() } : null;
   }
   // The keyboard is now in the listing, so an arrow key straight afterwards walks these rows.
   listing.value?.focus();
+}
+
+/** Any other gesture took the first click away from the slow double-click it could have started. */
+function forgetSlowClick(): void {
+  lastRowClick = null;
 }
 
 /** Cmd on a Mac, Ctrl everywhere else. */
@@ -743,6 +781,7 @@ function onListingPointerUp(): void {
 
 function startNew(kind: "folder" | "file"): void {
   cancelPrompts();
+  forgetSlowClick();
   if (browser.value) {
     browser.value.failure = null;
   }
@@ -752,6 +791,7 @@ function startNew(kind: "folder" | "file"): void {
 
 function startRename(entry: SftpEntry): void {
   cancelPrompts();
+  forgetSlowClick();
   renaming.value = entry.path;
   renameText.value = entry.name;
   reveal(entry.path);
@@ -764,6 +804,7 @@ function startRename(entry: SftpEntry): void {
 /** Asking to delete: the entries are collected once, and the question is asked over everything else. */
 function startRemove(entries: readonly SftpEntry[]): void {
   cancelPrompts();
+  forgetSlowClick();
   removal.value = [...entries];
 }
 
@@ -993,6 +1034,7 @@ function closeEditor(open: boolean): void {
  * chosen rows means everywhere else.
  */
 function openEntryMenu(event: MouseEvent, entry: SftpEntry): void {
+  forgetSlowClick();
   if (!selection.value.paths.includes(entry.path)) {
     selection.value = selectOne(entry.path);
   }
@@ -1326,7 +1368,11 @@ function openAreaMenu(event: MouseEvent): void {
                 @dblclick="enter(entry)"
                 @contextmenu="openEntryMenu($event, entry)"
               >
-                <span class="flex w-[var(--col-name)] shrink-0 items-center gap-2 py-0.5 text-left" :title="entry.name">
+                <span
+                  data-file-name
+                  class="flex w-[var(--col-name)] shrink-0 items-center gap-2 py-0.5 text-left"
+                  :title="entry.name"
+                >
                   <component :is="entryIcon(entry)" :size="13" class="shrink-0 text-muted-foreground" />
                   <input
                     v-if="renaming === entry.path"
