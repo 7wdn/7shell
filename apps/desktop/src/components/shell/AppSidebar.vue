@@ -1383,15 +1383,14 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                       @click="terminals.goTo(row.session)"
                     >
                       <!--
-                        The mark of the machine, once its host has said which machine it is. Until
-                        then — and for a system this build has no mark for — the row keeps the plain
-                        terminal it always had: a row is a saved session first and a host second.
-                        The mark keeps its own default box, which is the wider one: a picture with
-                        white space around it has to be drawn larger to read the same size as the
-                        glyph it replaces.
+                        A remote desktop is a Windows desktop by definition in this build, so its
+                        row carries the Windows mark without a probe. Every other row keeps the mark
+                        of the machine once its host has said which machine it is, and the plain
+                        terminal until then — a row is a saved session first and a host second.
                       -->
+                      <SystemIcon v-if="row.session.protocol !== 'ssh'" :system="null" mark="windows" />
                       <SystemIcon
-                        v-if="hasMark(row.session)"
+                        v-else-if="hasMark(row.session)"
                         :system="terminals.systemOf(row.session)"
                         :label="markTitle(row.session)"
                       />

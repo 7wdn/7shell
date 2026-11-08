@@ -612,6 +612,17 @@ describe("the rows", () => {
     expect(rowElement("session:session-2").querySelector("span.text-sm")).not.toBeNull();
   });
 
+  it("draws the Windows mark on a remote desktop row", async () => {
+    const desktop: Session = { ...web, id: "session-9", name: "desktop", protocol: "rdp", port: 3389 };
+    await render([], [desktop]);
+
+    // There is no probe to ask which system is on the far side: a remote desktop in this build is a
+    // Windows desktop, and the row says so with the mark the SSH rows use when a host reports it.
+    const mark = rowElement("session:session-9").querySelector(".os-mark");
+    expect(mark, "the row carries a shipped system mark").not.toBeNull();
+    expect(mark?.querySelector("svg"), "the mark is the Windows drawing").not.toBeNull();
+  });
+
   it("draws the panel's own row at the size the rows are drawn at", async () => {
     await render([work], [db]);
 

@@ -10,12 +10,19 @@
  */
 import { computed } from "vue";
 
-import { systemMark, systemMarkup } from "@/lib/system/icons";
+import { type SystemMark, systemMark, systemMarkup } from "@/lib/system/icons";
 import type { HostSystem } from "@/types/system";
 
 const props = defineProps<{
   /** What the host said it is. "Nothing to draw" is a normal answer rather than a failure. */
   readonly system: HostSystem | null;
+  /**
+   * A mark chosen by the caller rather than read from the host.
+   *
+   * A remote desktop is the case this exists for: the session is a Windows desktop by definition,
+   * so there is no probe to ask and no answer to wait for.
+   */
+  readonly mark?: SystemMark | null;
   /**
    * The box the mark is drawn in, in pixels.
    *
@@ -29,7 +36,7 @@ const props = defineProps<{
   readonly label?: string | null;
 }>();
 
-const markup = computed(() => systemMarkup(systemMark(props.system)));
+const markup = computed(() => systemMarkup(props.mark ?? systemMark(props.system)));
 const box = computed(() => `${props.size ?? 16}px`);
 </script>
 
