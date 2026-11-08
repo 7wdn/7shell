@@ -8,6 +8,10 @@
 //!   cargo test -p sevenshell-core --test live_monitor -- --ignored
 //! ```
 //!
+//! A host that maps a different port onto the lab's sshd names that inside port with
+//! `SEVENSHELL_TEST_REMOTE_PORT` (the Docker override moves host `3222` onto container `2222`); the
+//! network page reads the sockets on the port the server listens on inside the lab.
+//!
 //! What only a real server can show: that the one command the monitor runs is a command a login
 //! shell accepts, that the markers survive the trip, and that the counters come back as numbers a
 //! second sample can be subtracted from. The parsing itself is proved against text in
@@ -54,6 +58,13 @@ impl Lab {
 
 fn environment(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.trim().is_empty())
+}
+
+/// The port the lab's sshd listens on **inside** the lab, when the host maps a different one.
+fn remote_port(connect_port: u16) -> u16 {
+    environment("SEVENSHELL_TEST_REMOTE_PORT")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(connect_port)
 }
 
 /// A vault holding one session for the lab, with its password stored.
@@ -414,6 +425,9 @@ async fn the_network_page_sees_the_port_this_test_is_connected_on() {
         eprintln!("SEVENSHELL_TEST_PORT is not a port number; skipping");
         return;
     };
+    // The connection is made at the host's mapped port; the sockets this test reads are the ones
+    // inside the lab.
+    let port = remote_port(port);
     let Some(mut lab) = lab() else {
         return;
     };

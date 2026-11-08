@@ -8,6 +8,11 @@
 //!   cargo test -p sevenshell-core --test live_connection -- --ignored
 //! ```
 //!
+//! A host that maps a different port onto the lab's sshd names that inside port with
+//! `SEVENSHELL_TEST_REMOTE_PORT` (for the Docker port override, `3222` maps to `2222`). The
+//! forward and jump-host cases take their far-side target from it; without it they use the port the
+//! test connects to, which is only the same number on a direct mapping.
+//!
 //! This is the test that proves the pieces fit: a vault that stores a session and its password, a
 //! host key that has to be trusted before anything is sent, a terminal that opens, and output that
 //! comes back through the registry.
@@ -73,6 +78,16 @@ fn lab_credentials() -> Option<(String, u16, String, String)> {
             None
         }
     }
+}
+
+/// The port the lab's sshd listens on **inside** the lab, when the host maps a different one.
+///
+/// A direct mapping (`2222` to `2222`) needs nothing; the Docker override that moves the host port
+/// for a reserved range names the inside port with `SEVENSHELL_TEST_REMOTE_PORT`.
+fn remote_port(connect_port: u16) -> u16 {
+    environment("SEVENSHELL_TEST_REMOTE_PORT")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(connect_port)
 }
 
 /// A vault holding one session for the lab, with its password stored.
@@ -290,6 +305,9 @@ async fn a_terminal_works_through_a_jump_host() {
     let mut through = lab.vault.sessions().expect("sessions")[0].clone();
     through.id = "lab-through".to_owned();
     through.name = "lab (through the hop)".to_owned();
+    // The hop is reached at the host's mapped port; the target is reached from the far side, where
+    // the sshd is on its own port. On a direct mapping the two are the same number.
+    through.port = remote_port(through.port);
     through.jump = vec!["lab-hop".to_owned()];
     lab.vault
         .save_session(
@@ -341,7 +359,7 @@ async fn a_saved_forward_answers_a_local_port_from_the_far_side() {
         bind_port: 0,
         mode: ForwardMode::Local,
         target_host: "127.0.0.1".to_owned(),
-        target_port: lab.vault.sessions().expect("sessions")[0].port,
+        target_port: remote_port(lab.vault.sessions().expect("sessions")[0].port),
     }];
     lab.vault
         .save_session(
@@ -458,7 +476,7 @@ async fn a_dynamic_forward_answers_what_a_client_asks_for() {
     }
 
     let (handle, port) = bound.expect("the forward is up");
-    let lab_port = lab.vault.sessions().expect("sessions")[0].port;
+    let lab_port = remote_port(lab.vault.sessions().expect("sessions")[0].port);
 
     // A name rather than an address: `localhost` means the far side, whichever machine this is.
     let banner = socks5_ssh_banner(port, "localhost", lab_port).await;
