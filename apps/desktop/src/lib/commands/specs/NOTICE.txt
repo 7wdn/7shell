@@ -1,0 +1,32 @@
+Command completion specifications
+=================================
+
+`fig-specs.json` is a data-only snapshot derived from the public Fig / Amazon Q
+autocomplete corpus:
+
+- specifications: https://github.com/withfig/autocomplete
+  commit aef52acff84c45edde61ae610cc2c964802b9a38, MIT License
+  (Copyright (c) 2021 Hercules Labs Inc. (Fig)); see the upstream LICENSE.
+- shape: the same corpus as read by the Amazon Q autocomplete parser
+  (https://github.com/aws/amazon-q-developer-cli, MIT OR Apache-2.0).
+
+The snapshot keeps names, descriptions, nested subcommands, options, positional
+arguments, static suggestions and declarative generator argv arrays. It drops
+functions (custom generators, dynamic spec builders and post-processing) and
+generic shell strings; generators are executed as argv arrays, never as a shell
+line. The data is generated once from a local checkout of the pinned corpus and
+committed as data rather than as executable modules, so no third-party code runs
+in the interface.
+
+The file is curated rather than complete: it carries a broad allowlist of the
+corpus's smaller specifications plus the operations commands that matter to an
+SSH client (kubectl, systemctl, helm, docker-compose, tmux, rsync and others).
+The deep cloud-provider trees (the multi-megabyte AWS, Azure and gcloud
+subcommand files) are left out because they would multiply the application size
+many times over. A small number of specifications absent from the corpus
+(journalctl, ip, ss, free, whoami, watch, nohup, apk) were written for this
+project, and kubectl's everyday resource names are static data because its own
+generator is a function script that a data-only snapshot cannot run.
+
+This file is not part of 7Shell's original specification set. Keep this notice
+with the data when it is redistributed.

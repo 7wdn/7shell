@@ -10,6 +10,7 @@
 import { isDesktopRuntime } from "@/lib/runtime";
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
+import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
 import type {
   CommandHistoryEntry,
   CompletionWord,
@@ -493,6 +494,18 @@ export const backend = {
     // The verdict for a command is not a batch feature and does not live here: `commands.classify`
     // is the one place it is asked for, and the same answer is what the batch gate enforces.
     run: (request: BatchRequest): Promise<BatchOutcome> => forward("batch_run", () => desktop.batchRun(request)),
+  },
+
+  /**
+   * One command specification generator, run on the machine behind an open terminal.
+   *
+   * This is not a general execution path: the Rust side accepts a program name and an argv array,
+   * quotes every argument, asks the policy classifier, and holds the call to a keystroke-sized
+   * deadline. It never writes into the terminal's own channel.
+   */
+  completion: {
+    execute: (request: CompletionExecuteRequest): Promise<CompletionExecuteResult> =>
+      forward("completion_execute", () => desktop.completionExecute(request)),
   },
 
   /**

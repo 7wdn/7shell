@@ -32,7 +32,7 @@ use sevenshell_types::PresentedHostKey;
 
 pub use agent::agent_public_keys;
 pub use credential::{Credential, KeyDescription, describe_key};
-pub use exec::{ExecOutcome, MAX_OUTPUT_BYTES};
+pub use exec::{ExecCapture, ExecOutcome, MAX_OUTPUT_BYTES};
 pub use hostkey::{fingerprint, probe_host_key, probe_host_key_via};
 pub use keygen::{GeneratedKey, generate, public_line};
 pub use route::{BoxedStream, LocalForward, Route, TunnelHandle, TunnelStream};

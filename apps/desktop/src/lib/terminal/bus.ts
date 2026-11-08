@@ -36,6 +36,7 @@ const ENDING_MEMORY = 32;
 
 const sinks = new Map<string, TerminalSink>();
 const endListeners = new Set<TerminalEndListener>();
+const inputResets = new Map<string, () => void>();
 const pending = new Map<string, Uint8Array[]>();
 const pendingBytes = new Map<string, number>();
 const endings = new Map<string, string | undefined>();
@@ -61,6 +62,7 @@ export function stopTerminalBus(): void {
   started = false;
   sinks.clear();
   endListeners.clear();
+  inputResets.clear();
   pending.clear();
   pendingBytes.clear();
   endings.clear();
@@ -92,6 +94,26 @@ export function onTerminalEnded(listener: TerminalEndListener): () => void {
   return () => {
     endListeners.delete(listener);
   };
+}
+
+/**
+ * Claims the right to be told when a line is written into a terminal from somewhere other than its
+ * own keyboard — the command bar above it, a saved command sent from the library. The pane's line
+ * tracking cannot see those bytes, and a completion built from a line the shell no longer has is
+ * worse than no completion.
+ */
+export function registerInputReset(handle: string, reset: () => void): () => void {
+  inputResets.set(handle, reset);
+  return () => {
+    if (inputResets.get(handle) === reset) {
+      inputResets.delete(handle);
+    }
+  };
+}
+
+/** Tells the pane drawing `handle` that its tracked line is no longer the shell's line. */
+export function resetTerminalInput(handle: string): void {
+  inputResets.get(handle)?.();
 }
 
 /** Whether this handle has already ended, and what the server said, if anyone has asked. */

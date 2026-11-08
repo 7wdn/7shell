@@ -13,7 +13,7 @@
  */
 
 /** One word as it was found, before anything is read into it. */
-interface ScannedWord {
+export interface ScannedWord {
   readonly start: number;
   readonly end: number;
   readonly text: string;
@@ -46,7 +46,7 @@ function isAssignment(text: string): boolean {
 }
 
 /** Everything before the caret, cut into words, separators and comments. */
-function scan(line: string, caret: number): ScannedWord[] {
+export function scan(line: string, caret: number): ScannedWord[] {
   const words: ScannedWord[] = [];
   let index = 0;
 
@@ -134,7 +134,7 @@ function scan(line: string, caret: number): ScannedWord[] {
  * meant to be the command. `at` is what makes the position after it countable: `sudo systemctl ` is
  * the first word after the command, not the second.
  */
-function commandBefore(words: readonly ScannedWord[]): { command: string | null; at: number } {
+export function commandBefore(words: readonly ScannedWord[]): { command: string | null; at: number } {
   for (const [at, word] of words.entries()) {
     const text = word.text;
     if (isAssignment(text) || WRAPPERS.has(text.toLowerCase())) {

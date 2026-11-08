@@ -19,6 +19,7 @@ sevenshell-sftp = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }
 tokio = { workspace = true }
+log = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

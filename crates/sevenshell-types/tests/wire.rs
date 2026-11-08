@@ -14,17 +14,17 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
-    BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionWord, CornerStyle, CpuCounters,
-    CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout,
-    ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage,
-    LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage,
-    ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget,
-    Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
-    SessionLayout, SessionReopen, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt,
-    SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt,
-    SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
-    TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer,
-    UploadOutcome, VaultArchive, VaultState,
+    BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord,
+    CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView,
+    EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, KeyAlgorithm,
+    KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
+    PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
+    SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
+    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, Snippet, SnippetGroup, SnippetProvider,
+    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
+    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
+    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -1171,4 +1171,43 @@ fn an_update_answer_serializes_with_camel_case_fields() {
 
     let installing = check(&UpdateProgress::Installing, "UpdateProgress::Installing");
     assert_eq!(installing["kind"], serde_json::json!("installing"));
+}
+
+#[test]
+fn completion_results_serialize_with_camel_case_fields() {
+    let result = check(
+        &CompletionExecuteResult {
+            exit_code: Some(0),
+            stdout: "main\n".to_owned(),
+            stderr: String::new(),
+            truncated: false,
+            timed_out: false,
+        },
+        "CompletionExecuteResult",
+    );
+    assert_eq!(
+        result,
+        serde_json::json!({
+            "exitCode": 0,
+            "stdout": "main\n",
+            "stderr": "",
+            "truncated": false,
+            "timedOut": false,
+        })
+    );
+
+    let silent = check(
+        &CompletionExecuteResult {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: true,
+            timed_out: true,
+        },
+        "CompletionExecuteResult::timedOut",
+    );
+    assert!(
+        silent["exitCode"].is_null(),
+        "a generator that ran out of time has no exit status"
+    );
 }

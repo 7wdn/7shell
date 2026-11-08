@@ -53,6 +53,8 @@
         "command": "command",
         "builtin": "shell builtin",
         "subcommand": "subcommand",
+        "option": "flag",
+        "argument": "argument",
         "path": "on the host"
       },
       "command": {

@@ -27,12 +27,14 @@ import { describeErrorFields } from "@/i18n/errors";
 import { acceptanceBoost, recordAccepted } from "@/lib/commands/acceptance";
 import { COMMAND_CATALOG, descriptionKeyFor } from "@/lib/commands/catalog";
 import { buildCommandCompletions } from "@/lib/commands/completion";
+import { loadSpecs, specsLoaded } from "@/lib/commands/specs/load";
 import { subcommandKeyFor, subcommandsOf } from "@/lib/commands/subcommands";
 import { noteFor, wordsFor } from "@/lib/commands/words";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { bindingFor } from "@/lib/shortcuts/registry";
 import { useAppStore } from "@/stores/app";
 import { useCommandsStore } from "@/stores/commands";
+import { useCompletionStore } from "@/stores/completion";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore, type TerminalTab } from "@/stores/terminals";
@@ -41,6 +43,7 @@ import { useWordsStore } from "@/stores/words";
 const { t, te } = useI18n();
 const app = useAppStore();
 const commands = useCommandsStore();
+const completion = useCompletionStore();
 const files = useFilesStore();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
@@ -49,8 +52,10 @@ const words = useWordsStore();
 const line = ref("");
 const showHistory = ref(false);
 const field = ref<HTMLInputElement | null>(null);
-/** True while an input method is composing: those keys are writing, not choosing. */
+/** True while any input method is composing: those keys are writing, not choosing. */
 const composing = ref(false);
+/** True while the field holds the keyboard; a generated answer arriving later may refresh it. */
+const focused = ref(false);
 /** The row the pointer is over, or `null` when it is over none. See `highlighted`. */
 const pointed = ref<number | null>(null);
 
@@ -91,6 +96,11 @@ const remote = useRemotePaths(() => {
   return browser === null ? null : { handle: browser.handle, cwd: browser.shellPath };
 });
 
+/** The terminal this bar is under: the connection a generated value is asked of. */
+function completionHandle(): string {
+  return terminals.activeTerminalHandle() ?? "";
+}
+
 const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move, take } = useCommandCompletion(
   line,
   (text, caret) =>
@@ -106,6 +116,9 @@ const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move,
       // What somebody added comes before what we ship, and their own line about a word wins over
       // ours: this is where the two halves of "what comes after this command" become one list.
       subcommands: (command) => wordsFor(command, words.words, subcommandsOf(command)),
+      // The same words without the shipped table: a specification does not replace what somebody
+      // added for a command it happens to know.
+      userWords: (command) => wordsFor(command, words.words, []),
       describeSubcommand: (command, word) => {
         const own = noteFor(command, word, words.words);
         if (own !== null) {
@@ -127,6 +140,15 @@ const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move,
           });
           return remote.entries(directory);
         },
+      },
+      // The command specifications, when they have arrived. Their grammar answers the nested
+      // subcommands, flags and argument values; history, saved lines and paths are still merged in.
+      specs: specsLoaded(),
+      sessionHandle: completionHandle(),
+      cwd: terminals.shellDirectory(completionHandle()) ?? remote.base,
+      values: {
+        cached: (key) => completion.cached(key),
+        warm: (slot) => completion.warm(slot),
       },
     }),
 );
@@ -162,6 +184,15 @@ function onInput(): void {
     return;
   }
   refresh(caretOf());
+}
+
+function onFocus(): void {
+  focused.value = true;
+}
+
+function onBlur(): void {
+  focused.value = false;
+  hide();
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -294,7 +325,23 @@ onMounted(async () => {
   if (!words.loaded) {
     await words.load();
   }
+  void loadSpecs().then(() => {
+    if (focused.value && preferences.commandCompletion && line.value !== "") {
+      refresh(caretOf());
+    }
+  });
 });
+
+// A generated value can arrive after the keystroke that asked for it. The line may have moved on,
+// and the builder reads the current line again rather than the one the request was made from.
+watch(
+  () => completion.version,
+  () => {
+    if (focused.value && preferences.commandCompletion) {
+      refresh(caretOf());
+    }
+  },
+);
 
 function toggleHistory(): void {
   showHistory.value = !showHistory.value;
@@ -368,7 +415,8 @@ function reuse(entry: string): void {
       @keydown.enter.prevent="send"
       @compositionstart="onCompositionStart"
       @compositionend="onCompositionEnd"
-      @blur="hide"
+      @focus="onFocus"
+      @blur="onBlur"
     />
 
     <span

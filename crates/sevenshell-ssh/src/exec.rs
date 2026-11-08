@@ -42,6 +42,20 @@ impl ExecOutcome {
     }
 }
 
+/// What a command said, when the caller set its own output ceiling.
+///
+/// No marker is appended for truncated output: a caller with a small ceiling is reading the text as
+/// data (completion candidates, for instance), and a sentence about truncation would become a
+/// candidate of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecCapture {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<u32>,
+    pub duration: Duration,
+    pub truncated: bool,
+}
+
 impl SshSession {
     /// Runs one command and waits for it to finish.
     ///
@@ -49,6 +63,25 @@ impl SshSession {
     /// this exists to prevent; the connection is left open afterwards, so one connection can run
     /// several commands in a row.
     pub async fn exec(&self, command: &str, timeout: Duration) -> Result<ExecOutcome, ShellError> {
+        let captured = self.exec_capture(command, timeout, MAX_OUTPUT_BYTES).await?;
+        Ok(ExecOutcome {
+            stdout: as_text(captured.stdout, captured.truncated),
+            stderr: as_text(captured.stderr, captured.truncated),
+            exit_code: captured.exit_code,
+            duration: captured.duration,
+        })
+    }
+
+    /// Runs one command with a caller-supplied output ceiling.
+    ///
+    /// The ceiling is checked as the streams arrive rather than after they have been collected: a
+    /// caller that asks for a completion's worth of text must not pay for megabytes first.
+    pub async fn exec_capture(
+        &self,
+        command: &str,
+        timeout: Duration,
+        max_output_bytes: usize,
+    ) -> Result<ExecCapture, ShellError> {
         let started = Instant::now();
         let mut channel = self.open_command_channel().await?;
 
@@ -60,6 +93,7 @@ impl SshSession {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let mut exit_code = None;
+        let mut truncated = false;
 
         let collect = async {
             // Read until the channel closes. An `Eof` arrives before the exit status often enough
@@ -74,7 +108,8 @@ impl SshSession {
                     _ => {}
                 }
 
-                if stdout.len() + stderr.len() > MAX_OUTPUT_BYTES {
+                if stdout.len() + stderr.len() > max_output_bytes {
+                    truncated = true;
                     break;
                 }
             }
@@ -89,13 +124,12 @@ impl SshSession {
             }
         }
 
-        let too_much = stdout.len() + stderr.len() > MAX_OUTPUT_BYTES;
-
-        Ok(ExecOutcome {
-            stdout: as_text(stdout, too_much),
-            stderr: as_text(stderr, too_much),
+        Ok(ExecCapture {
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
             exit_code,
             duration: started.elapsed(),
+            truncated,
         })
     }
 
@@ -110,9 +144,9 @@ impl SshSession {
 /// A command's output is bytes, and some of those bytes are not text: a `cat` of a binary file, a
 /// locale the server does not have. Showing replacement characters is better than refusing to show
 /// the output at all, and it says the same thing the person would see in a terminal.
-fn as_text(bytes: Vec<u8>, truncated: bool) -> String {
-    let mut text = String::from_utf8_lossy(&bytes).into_owned();
-    if truncated || bytes.len() > MAX_OUTPUT_BYTES {
+fn as_text(text: String, truncated: bool) -> String {
+    let mut text = text;
+    if truncated {
         text.push_str("\n… output was cut off: the command produced more than this will keep\n");
     }
     text

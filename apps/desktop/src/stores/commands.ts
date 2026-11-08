@@ -20,6 +20,7 @@ import { asShellError, type ShellError } from "@/lib/backend/errors";
 import { BUILTIN_COMMANDS, libraryIsShipped } from "@/lib/commands/builtin";
 import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { fillSlots, slotsIn, SLOTS } from "@/lib/commands/slots";
+import { resetTerminalInput } from "@/lib/terminal/bus";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { RiskAssessment } from "@/types/batch";
 import type { CommandHistoryEntry, SendFailure, Snippet, SnippetGroup } from "@/types/snippet";
@@ -383,6 +384,11 @@ export const useCommandsStore = defineStore("commands", () => {
       sendFailure.value = asShellError(error, "command_send");
     } finally {
       sending.value = false;
+      // The shells' input lines were rewritten by a sent line, not by their own keyboards: the
+      // completion trackers can no longer say what is on them.
+      for (const handle of handles) {
+        resetTerminalInput(handle);
+      }
     }
   }
 
@@ -417,6 +423,7 @@ export const useCommandsStore = defineStore("commands", () => {
       sendFailure.value = asShellError(error, "command_send");
     } finally {
       sending.value = false;
+      resetTerminalInput(handle);
     }
   }
 

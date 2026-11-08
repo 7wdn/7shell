@@ -15,6 +15,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
+import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
@@ -822,6 +823,11 @@ export function clipboardText(): Promise<string> {
 /** Runs one command across the hosts in the request, with progress arriving on `batch:event`. */
 export function batchRun(request: BatchRequest): Promise<BatchOutcome> {
   return invoke<BatchOutcome>("batch_run", { request });
+}
+
+/** Runs one completion generator on the terminal's own connection. */
+export function completionExecute(request: CompletionExecuteRequest): Promise<CompletionExecuteResult> {
+  return invoke<CompletionExecuteResult>("completion_execute", { request });
 }
 
 // -- Saved commands ----------------------------------------------------------

@@ -3018,6 +3018,113 @@ test("the command bar completes what somebody is typing", async () => {
 });
 
 /**
+ * Completion at the terminal's own prompt, including a value read from the host.
+ *
+ * The bar's case above proves the sources and the keyboard on a normal input; this one proves the
+ * second surface: the line is the shell's own, the list is anchored over the terminal, Tab writes
+ * the candidate into that line with the shell's readline, and an argument whose values live on the
+ * host arrives after the round trip. The lab is Alpine, so `apk info` is the host's own answer.
+ *
+ * It also pins the two keyboard rules that are easy to get wrong: Tab takes a row, and Enter runs
+ * the line as it stands rather than the row under the keyboard.
+ */
+test("the terminal completes its own line, and reads a value from the host", async () => {
+  // A live connection: the first host-key question and the terminal can take longer than the suite's
+  // default budget on a lab that has just been rebuilt.
+  test.setTimeout(180_000);
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    // A terminal of this case's own: the panes of other tabs stay mounted, and a second list would
+    // make every locator below ambiguous.
+    const closeTerminal = page.getByRole("button", { name: "Close terminal" });
+    for (let attempt = 0; attempt < 8 && (await closeTerminal.count()) > 0; attempt += 1) {
+      await closeTerminal
+        .first()
+        .click({ timeout: 5_000 })
+        .catch(() => undefined);
+      await page.waitForTimeout(100);
+    }
+
+    const name = `inline-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    await sessionRow(page, name).click();
+    await expect(question.or(page.locator(".xterm")).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(page.locator(".xterm").filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(".xterm-rows")).toContainText(/[$#]/, { timeout: 30_000 });
+
+    // The line is typed into the terminal itself, not into the bar.
+    await page.locator(".xterm").filter({ visible: true }).click();
+    await page.keyboard.type("git ch", { delay: 60 });
+
+    const menu = page.locator("[data-completion-menu]").filter({ visible: true });
+    await expect(menu).toBeVisible({ timeout: 15_000 });
+    await expect(menu.getByRole("option").filter({ hasText: "checkout" })).toBeVisible();
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "completion-terminal.png"), fullPage: false });
+
+    // Tab takes the row and the shell's line becomes the candidate; the row is left with a space,
+    // which is the question "what comes after it".
+    await page.keyboard.press("Tab");
+    await expect(page.locator(".xterm-rows > div", { hasText: "git checkout" }).last()).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.screenshot({ path: path.join(ARTIFACTS, "completion-terminal-after-tab.png"), fullPage: false });
+
+    // The argument's values come from the host: `apk info` is run on the lab and its package list
+    // is what reaches the menu. The lab is Alpine, so the command is there without a fixture.
+    await page.keyboard.press("Control+c");
+    await expect(menu, "the previous line's list goes with the line").toHaveCount(0);
+    await page.keyboard.type("apk inf", { delay: 60 });
+    await expect(menu.getByRole("option", { name: /^info\b/ })).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press("Tab");
+    await expect(page.locator(".xterm-rows > div", { hasText: "apk info" }).last()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const value = menu
+      .getByRole("option")
+      .filter({ hasText: /busybox|musl|alpine-keys/ })
+      .first();
+    await expect(value).toBeVisible({ timeout: 15_000 });
+    await page.screenshot({ path: path.join(ARTIFACTS, "completion-terminal-values.png"), fullPage: false });
+    const label = (await value.evaluate((element) => element.querySelector("span")?.textContent ?? "")).trim();
+    expect(label).not.toBe("");
+    await value.click({ timeout: 10_000 });
+    await expect(page.locator(".xterm-rows > div", { hasText: `apk info ${label}` }).last()).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // Enter is the shell's while the list is open: it runs the line rather than taking the row.
+    await page.keyboard.press("Enter");
+    await expect(menu).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
  * The keys this device trusts, read and revoked from the settings.
  *
  * The other half of "a host key is verified before anything is sent": until now a key that was

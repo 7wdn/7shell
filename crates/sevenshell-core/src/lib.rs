@@ -9,6 +9,7 @@
 
 mod archive;
 mod batch;
+mod completion;
 mod files;
 mod keys;
 mod monitor;

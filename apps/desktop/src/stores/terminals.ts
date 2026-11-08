@@ -56,6 +56,7 @@ import { i18n } from "@/i18n";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { joinPath } from "@/lib/files/format";
 import { sessionEndpoint } from "@/lib/menu/sessions";
 import { type ReopenAction, reopenAction, sessionCopyIndex } from "@/lib/sessions/reopen";
 import { readSystemCache, rememberSystem, writeSystemCache } from "@/lib/system/cache";
@@ -237,6 +238,15 @@ export const useTerminalsStore = defineStore("terminals", () => {
    */
   const openedOrder = ref<string[]>([]);
   const activeTabId = ref<string | null>(null);
+  /**
+   * Where each terminal's shell says it is, by handle.
+   *
+   * Recorded even when no file panel is open: the completion's generated values are read in the
+   * shell's own directory, and a generator that ran somewhere else would offer the wrong names. An
+   * absolute report is taken as it is; a relative `cd` is only resolved when a panel's browser knows
+   * the directory it is relative to.
+   */
+  const shellPaths = ref<Record<string, string>>({});
   /**
    * The category the settings page was asked to open on, waiting for it to be taken.
    *
@@ -1035,20 +1045,37 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
-   * The shell in a terminal is somewhere else now: take the file panel under it along.
+   * The shell in a terminal is somewhere else now: take the file panel under it along, and remember
+   * it for the completion even when no panel is open.
    *
-   * Only the panel. A file tab is somebody browsing — they may well be looking somewhere other than
-   * where their shell is, on purpose — while the panel is attached to the terminal, and following
-   * is what attached means. A terminal with no panel has nothing to take along, and nothing to
-   * report: this is a convenience for a mode that is on screen, not a record of where shells are.
+   * Only the panel follows. A file tab is somebody browsing — they may well be looking somewhere other
+   * than where their shell is, on purpose — while the panel is attached to the terminal, and following
+   * is what attached means.
    */
   async function followDirectory(handle: string, directory: string): Promise<void> {
     const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
     const panel = tab?.panel?.handle;
-    if (!panel) {
+    if (panel === undefined || panel === null) {
+      const base = shellPaths.value[handle];
+      if (directory.startsWith("/")) {
+        shellPaths.value = { ...shellPaths.value, [handle]: directory };
+      } else if (base !== undefined && directory !== "" && directory !== "-" && !directory.startsWith("~")) {
+        // A relative `cd` with no panel to resolve it: the shell's last known directory is the
+        // starting point. `~`, `cd -` and a bare `cd` need the shell's own answer, which is not here.
+        shellPaths.value = { ...shellPaths.value, [handle]: joinPath(base, directory) };
+      }
       return;
     }
     await files.followDirectory(panel, directory);
+    const browser = files.browser(panel);
+    if (browser !== null) {
+      shellPaths.value = { ...shellPaths.value, [handle]: browser.shellPath };
+    }
+  }
+
+  /** Where a terminal's shell last said it was, or `null` before it has said anything. */
+  function shellDirectory(handle: string): string | null {
+    return shellPaths.value[handle] ?? null;
   }
 
   /**
@@ -1219,6 +1246,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   function forget(id: string): void {
+    const closing = tabs.value.find((entry) => entry.id === id);
+    if (closing?.kind === "terminal" && closing.handle !== null && closing.handle in shellPaths.value) {
+      const next = { ...shellPaths.value };
+      delete next[closing.handle];
+      shellPaths.value = next;
+    }
     tabs.value = tabs.value.filter((entry) => entry.id !== id);
     openedOrder.value = openedOrder.value.filter((entry) => entry !== id);
     if (activeTabId.value === id) {
@@ -1293,6 +1326,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     togglePanel,
     browserHandleOf,
     followDirectory,
+    shellDirectory,
     confirmTrust,
     confirmReplace,
     dismiss,

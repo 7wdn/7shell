@@ -54,15 +54,54 @@ export async function portIsFree(port) {
  *
  * `netstat` rather than another socket probe: a probe can only say "taken", and what a stale run
  * needs is the PID to stop. Windows-only, like the rest of the process handling around it.
+ *
+ * On Windows the answer comes from PowerShell: this machine's `netstat -ano` omits some TCP
+ * listeners entirely (an IPv6 socket bound by Node is one of them), while `Get-NetTCPConnection`
+ * reports them. The state is not filtered on: this system reports it blank for those sockets, and
+ * a socket whose local port is the one asked about belongs to the process holding that port either
+ * way. The netstat path remains for platforms where PowerShell is not what answers.
  */
 export function listenersOn(port) {
+  if (process.platform === "win32") {
+    const powershell = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess`,
+      ],
+      { encoding: "utf8" },
+    );
+    if (powershell.status === 0) {
+      return [
+        ...new Set(
+          (powershell.stdout ?? "")
+            .split(/\s+/)
+            .map((pid) => pid.trim())
+            .filter((pid) => pid !== "" && /^[0-9]+$/.test(pid)),
+        ),
+      ];
+    }
+  }
+
+  return listenersOnWithNetstat(port);
+}
+
+/** The fallback for a platform without PowerShell: a listening socket's foreign address ends in :0. */
+function listenersOnWithNetstat(port) {
   const lineHasPort = new RegExp(`:${port}\\s`);
 
   return [
     ...new Set(
       (spawnSync("netstat", ["-ano"], { encoding: "utf8", shell: true }).stdout ?? "")
         .split("\n")
-        .filter((line) => lineHasPort.test(line) && line.includes("LISTENING"))
+        .filter((line) => {
+          if (!lineHasPort.test(line)) {
+            return false;
+          }
+          const foreign = line.trim().split(/\s+/)[2] ?? "";
+          return foreign.endsWith(":0");
+        })
         .map((line) => line.trim().split(/\s+/).pop())
         .filter((pid) => pid && /^[0-9]+$/.test(pid)),
     ),

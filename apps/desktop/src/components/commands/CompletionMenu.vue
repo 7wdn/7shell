@@ -11,13 +11,20 @@
  * `aria-activedescendant`: the keyboard never leaves the input, so the caret stays where it was while
  * somebody is choosing — the same shape the context menu has, for the same reason.
  */
-import { Bookmark, CornerDownRight, FolderOpen, History, Shell, Terminal } from "@lucide/vue";
-import { nextTick, ref, watch, type Component } from "vue";
+import { Bookmark, CornerDownRight, FolderOpen, History, Shell, SlidersHorizontal, Terminal } from "@lucide/vue";
+import { computed, nextTick, ref, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type { CompletionCandidate, CompletionKind } from "@/lib/commands/completion";
 import type { MatchRange } from "@/lib/commands/match";
 import { cn } from "@/lib/utils";
+
+export interface MenuAnchor {
+  readonly left: number;
+  readonly top?: number;
+  readonly bottom?: number;
+  readonly maxHeight?: number;
+}
 
 const props = defineProps<{
   candidates: readonly CompletionCandidate[];
@@ -25,6 +32,11 @@ const props = defineProps<{
   active: number;
   /** What this list's ids start with, so the input can name the row it is on. */
   listId: string;
+  /**
+   * Where the list goes, in the parent's own pixels. The command bar leaves this out and the list
+   * sits above it; the terminal passes the cursor's cell so the list follows the line.
+   */
+  anchor?: MenuAnchor | null;
 }>();
 
 const emit = defineEmits<{
@@ -41,6 +53,9 @@ const ICONS: Readonly<Record<CompletionKind, Component>> = {
   // The arrow the editor in this window uses for "something you can call": a subcommand is a word
   // that belongs to the program in front of it rather than to the shell.
   subcommand: CornerDownRight,
+  // A flag is a switch on the program in front of it; an argument value is what the program expects.
+  option: SlidersHorizontal,
+  argument: CornerDownRight,
   saved: Bookmark,
   history: History,
   path: FolderOpen,
@@ -51,12 +66,28 @@ const ICON_COLOURS: Readonly<Record<CompletionKind, string>> = {
   builtin: "text-completion-builtin",
   // The amber of "a word the shell or a program owns", which is what a subcommand is.
   subcommand: "text-completion-builtin",
+  option: "text-completion-option",
+  argument: "text-completion-argument",
   saved: "text-completion-saved",
   history: "text-completion-history",
   path: "text-completion-path",
 };
 
 const list = ref<HTMLElement | null>(null);
+const anchored = computed(() => props.anchor !== undefined && props.anchor !== null);
+
+const style = computed(() => {
+  const anchor = props.anchor;
+  if (anchor === undefined || anchor === null) {
+    return undefined;
+  }
+  return {
+    left: `${anchor.left}px`,
+    ...(anchor.top === undefined ? {} : { top: `${anchor.top}px` }),
+    ...(anchor.bottom === undefined ? {} : { bottom: `${anchor.bottom}px` }),
+    ...(anchor.maxHeight === undefined ? {} : { maxHeight: `${anchor.maxHeight}px` }),
+  };
+});
 
 /**
  * A piece of text, split where the prefix answered.
@@ -97,7 +128,16 @@ watch(
     ref="list"
     role="listbox"
     :aria-label="t('commands.completion.label')"
-    class="absolute bottom-full left-0 z-30 mb-1 max-h-[min(280px,calc(100vh-32px))] w-full min-w-[280px] max-w-[min(760px,calc(100vw-24px))] overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg"
+    :class="
+      cn(
+        'absolute z-30 mb-1 max-h-[min(280px,calc(100vh-32px))] overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg',
+        anchored
+          ? 'min-w-[280px] max-w-[min(460px,calc(100vw-24px))]'
+          : 'bottom-full left-0 w-full min-w-[280px] max-w-[min(760px,calc(100vw-24px))]',
+      )
+    "
+    :style="style"
+    data-completion-menu
     @mousedown.prevent
   >
     <div

@@ -15,12 +15,27 @@
 import { matchText, NO_MATCH, type MatchRange } from "@/lib/commands/match";
 import { entryMatches, looksLikePath, pathQueryAt, takesPaths } from "@/lib/commands/paths";
 import { fillSlots, slotsIn } from "@/lib/commands/slots";
+import {
+  buildSpecCompletions,
+  specCommandCandidates,
+  type SpecCandidate,
+  type SpecValueSource,
+} from "@/lib/commands/specs/engine";
+import type { SpecCatalog } from "@/lib/commands/specs/types";
 import { completionSiteAt, type CompletionSite } from "@/lib/commands/tokenize";
 import type { CatalogEntry, CatalogKind } from "@/lib/commands/catalog";
 import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
 import type { SftpEntry } from "@/types/session";
 
-export type CompletionKind = "command" | "builtin" | "subcommand" | "saved" | "history" | "path";
+export type CompletionKind =
+  | "command"
+  | "builtin"
+  | "subcommand"
+  | "option"
+  | "argument"
+  | "saved"
+  | "history"
+  | "path";
 
 export interface CompletionCandidate {
   readonly label: string;
@@ -73,12 +88,31 @@ export interface CompletionRequest {
   readonly describe: (name: string) => string | null;
   /** What a command is usually followed by, in the order worth reading. */
   readonly subcommands: (command: string) => readonly string[];
+  /**
+   * Words somebody added for a command, without the shipped table.
+   *
+   * A specification answers a command's grammar, but it does not know an in-house subcommand or a
+   * team's own name for one. These are offered on top of the specification, and they win a tie: what
+   * somebody added is a better guess than what a corpus ships.
+   */
+  readonly userWords?: (command: string) => readonly string[];
   /** The one line about one of those words, or `null` when this build has none for it. */
   readonly describeSubcommand: (command: string, word: string) => string | null;
   /** The word for a kind, shown where a candidate has nothing better to say. */
-  readonly kindLabel: (kind: CatalogKind | "subcommand" | "path") => string;
+  readonly kindLabel: (kind: CatalogKind | "subcommand" | "option" | "argument" | "path") => string;
   /** Where an argument that is a path is read from. Left out when there is no host to ask. */
   readonly paths?: PathSource;
+  /**
+   * Parsed command specifications, when they have arrived. Their grammar replaces the hand-written
+   * table for the commands they know; the other sources are still merged in.
+   */
+  readonly specs?: SpecCatalog | null;
+  /** The terminal whose connection can answer a generator's question. */
+  readonly sessionHandle?: string;
+  /** The shell's directory, when it is known. */
+  readonly cwd?: string | null;
+  /** Generated value lists the caller has already asked for. */
+  readonly values?: SpecValueSource;
   /**
    * What taking a row before is worth, for a row somebody has taken before.
    *
@@ -96,6 +130,8 @@ const SOURCE_BOOST: Readonly<Record<CompletionKind, number>> = {
   // Under the table and over the history: what the host actually has in a directory is a better guess
   // than what somebody typed once, and a worse one than the words the command is usually given.
   path: 380,
+  option: 390,
+  argument: 380,
   history: 300,
   command: 100,
   builtin: 60,
@@ -103,6 +139,14 @@ const SOURCE_BOOST: Readonly<Record<CompletionKind, number>> = {
 
 const EXACT_BOOST = 10_000;
 const DEFAULT_LIMIT = 200;
+
+/**
+ * A word somebody added outranks a specification's own subcommand at the same match quality.
+ *
+ * The specification is a corpus about the command in general; the word is about this person's
+ * machine. When both answer the prefix, the personal one is the better guess.
+ */
+const USER_WORD_BOOST = 460;
 
 /** How much history an empty word offers: the recent part of it, not the whole thing. */
 const RECENT_HISTORY = 20;
@@ -278,6 +322,7 @@ function fromSubcommands(
   words: readonly string[],
   describe: (command: string, word: string) => string | null,
   kindLabel: (kind: CatalogKind | "subcommand") => string,
+  baseScore = SOURCE_BOOST.subcommand,
 ): CompletionCandidate[] {
   const candidates: CompletionCandidate[] = [];
   for (const [index, word] of words.entries()) {
@@ -292,7 +337,7 @@ function fromSubcommands(
       insert: word,
       kind: "subcommand",
       from: site.start,
-      score: match.score + SOURCE_BOOST.subcommand - index,
+      score: match.score + baseScore - index,
       wholeLine: false,
       trailingSpace: true,
       labelRanges: match.ranges,
@@ -375,21 +420,33 @@ export function buildCommandCompletions(request: CompletionRequest): readonly Co
 /** The word itself: what this application knows as a command. */
 function atCommandWord(request: CompletionRequest, site: CompletionSite): CompletionCandidate[] {
   const listing = site.prefix === "";
+  const fromSpecs =
+    !listing && request.specs !== null && request.specs !== undefined
+      ? fromSpecCandidates(
+          specCommandCandidates(request.specs, site.prefix, site.start, request.limit),
+          site,
+          request.kindLabel,
+        )
+      : [];
   return [
     ...fromSaved(request.sources.saved, site),
     ...fromHistory(listing ? request.sources.history.slice(0, RECENT_HISTORY) : request.sources.history, site),
     // What we ship is offered while somebody is typing a word, not as a list to browse: an empty
     // word is a question about their own lines, not an invitation to read a catalogue.
     ...(listing ? [] : fromCatalog(request.sources.catalog, site, request.describe, request.kindLabel)),
+    // The corpus is wider than the hand-written catalogue; where both know a command the catalogue's
+    // row wins the tie, because its one-line description is translated.
+    ...fromSpecs,
   ];
 }
 
 /**
  * What the first word after the command can be.
  *
- * The table says what a command is followed by, not what its second argument is, so it is only asked
- * at the first position — while the history and the host's own directories are worth asking at any of
- * them: `cp a b /tm` is the fourth word, and `/tm` is still a path.
+ * A specification, when the command has one, replaces the hand-written table for that command: it
+ * knows the nested subcommands, options and argument values, and it says when an argument is a file
+ * or folder list. The history and the host's own directories are still worth asking at any position
+ * — `cp a b /tm` is the fourth word, and `/tm` is still a path.
  */
 function atArgument(request: CompletionRequest, site: CompletionSite): CompletionCandidate[] {
   const command = site.command;
@@ -397,17 +454,94 @@ function atArgument(request: CompletionRequest, site: CompletionSite): Completio
     return [];
   }
 
-  const words = site.index === 1 ? request.subcommands(command) : [];
+  const spec =
+    request.specs !== null && request.specs !== undefined
+      ? buildSpecCompletions({
+          line: request.line,
+          caret: request.caret,
+          catalog: request.specs,
+          handle: request.sessionHandle ?? "",
+          cwd: request.cwd ?? null,
+          values: request.values,
+          commandNames: request.sources.catalog.map((entry) => entry.name),
+        })
+      : null;
+
+  // The hand-written table is a fallback for commands no specification covers. The words somebody
+  // added are not: they are offered beside a specification and win a tie with it, because a
+  // specification has never heard of an in-house subcommand or this team's name for one.
+  const words = spec === null && site.index === 1 ? request.subcommands(command) : [];
+  const personal =
+    spec !== null && site.index === 1 && request.userWords !== undefined
+      ? fromSubcommands(
+          command,
+          site,
+          request.userWords(command),
+          request.describeSubcommand,
+          request.kindLabel,
+          USER_WORD_BOOST,
+        )
+      : [];
   const paths =
-    request.paths !== undefined && (looksLikePath(site.prefix) || takesPaths(command))
+    request.paths !== undefined && (spec?.wantsPath === true || looksLikePath(site.prefix) || takesPaths(command))
       ? fromPaths(request.paths, site, request.kindLabel)
       : [];
 
   return [
+    ...(spec === null ? [] : fromSpecCandidates(spec.candidates, site, request.kindLabel)),
+    ...personal,
     ...fromSubcommands(command, site, words, request.describeSubcommand, request.kindLabel),
     ...fromHistoryArguments(command, site, request.sources.history),
     ...paths,
   ];
+}
+
+/**
+ * The specification's candidates, in this engine's terms.
+ *
+ * The specification already filtered by prefix; the score is rebuilt with the same tiers the
+ * interface's own matching uses, so a command's own words rank beside history and saved lines rather
+ * than below or above them by accident.
+ */
+function fromSpecCandidates(
+  candidates: readonly SpecCandidate[],
+  site: CompletionSite,
+  kindLabel: (kind: CatalogKind | "subcommand" | "option" | "argument" | "path") => string,
+): CompletionCandidate[] {
+  return candidates.map((candidate) => {
+    const match = prefixScore(candidate.label, site.prefix);
+    return {
+      label: candidate.label,
+      detail: candidate.detail ?? kindLabel(candidate.kind),
+      insert: candidate.insert,
+      kind: candidate.kind,
+      from: candidate.from,
+      score: (match === NO_MATCH ? 0 : match) + candidate.score,
+      wholeLine: false,
+      trailingSpace: candidate.trailingSpace,
+      labelRanges: candidate.labelRanges,
+      detailRanges: [],
+    };
+  });
+}
+
+/** The tiers of `matchText`, without its fuzzy tail: a flag or subcommand is answered by its prefix. */
+function prefixScore(label: string, prefix: string): number {
+  if (prefix === "") {
+    return 0;
+  }
+  const haystack = label.toLowerCase();
+  const needle = prefix.toLowerCase();
+  if (label === prefix) {
+    return 3000 - label.length;
+  }
+  if (haystack === needle) {
+    return 2900 - label.length;
+  }
+  if (haystack.startsWith(needle)) {
+    return 2000 - label.length;
+  }
+  return NO_MATCH;
 }
 
 /**

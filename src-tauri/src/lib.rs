@@ -181,6 +181,7 @@ pub fn run() {
             commands::known_hosts::known_host_trust,
             commands::known_hosts::known_host_forget,
             commands::batch::batch_run,
+            commands::completion::completion_execute,
             commands::snippets::snippets_open,
             commands::snippets::snippet_group_save,
             commands::snippets::snippet_group_delete,

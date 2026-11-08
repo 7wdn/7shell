@@ -35,13 +35,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useTerminalCompletion } from "@/composables/useTerminalCompletion";
+import CompletionMenu from "@/components/commands/CompletionMenu.vue";
 import { terminalMenu, terminalSelectionTools } from "@/lib/menu/terminal";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import type { MenuAction } from "@/lib/menu/types";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { formatShortcutDisplay } from "@/lib/shortcuts/display";
 import { bindingFor } from "@/lib/shortcuts/registry";
-import { registerTerminalSink } from "@/lib/terminal/bus";
+import { registerInputReset, registerTerminalSink } from "@/lib/terminal/bus";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
 import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
 import { useAppStore } from "@/stores/app";
@@ -98,12 +100,64 @@ const FIT_DEBOUNCE_MS = 60;
 let terminal: Terminal | undefined;
 let fitAddon: FitAddon | undefined;
 let unregister: (() => void) | undefined;
+let unregisterInputReset: (() => void) | undefined;
 let osc7: { dispose: () => void } | undefined;
 let observer: ResizeObserver | undefined;
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 /** The last size the backend was told, so a debounced fit that changed nothing says nothing. */
 let announced = { columns: 0, rows: 0 };
 let probe: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * Completion at this terminal's own prompt.
+ *
+ * The composable owns the tracked line, the menu's position and the keyboard's ownership rules; the
+ * pane owns the xterm instance and the bytes. Its output hook is the sink below, so a list is never
+ * drawn while a command is still printing.
+ */
+const {
+  candidates: completionCandidates,
+  active: completionActive,
+  visible: completionVisible,
+  anchor: completionAnchor,
+  ghost: completionGhost,
+  ghostAnchor: completionGhostAnchor,
+  feed: feedCompletion,
+  output: completionOutput,
+  onKey: handleCompletionKey,
+  accept: acceptCompletion,
+  reposition: repositionCompletion,
+  hide: hideCompletion,
+  reset: resetCompletion,
+} = useTerminalCompletion({
+  handle: () => props.handle,
+  active: () => props.active,
+  interactive: () => props.interactive,
+  focused: () =>
+    terminal !== undefined &&
+    document.activeElement !== null &&
+    terminal.element?.contains(document.activeElement) === true,
+  terminal: () => terminal,
+  pane: () => paneBox.value,
+  send: (data) => {
+    void terminals.send(props.handle, encoder.encode(data));
+  },
+});
+
+const ghostStyle = computed(() => {
+  const anchor = completionGhostAnchor.value;
+  if (anchor === null) {
+    return undefined;
+  }
+  return {
+    left: `${anchor.left}px`,
+    top: `${anchor.top}px`,
+    height: `${anchor.cellHeight}px`,
+    lineHeight: `${anchor.cellHeight}px`,
+    fontSize: `${preferences.terminalFontSize}px`,
+    fontFamily: preferences.wornTerminalFont,
+  };
+});
 
 /**
  * The terminal palette is the one in the stylesheet, like every other colour in the interface.
@@ -448,6 +502,11 @@ function onDocumentPointerDown(event: PointerEvent): void {
   hideTools();
 }
 
+/** The terminal lost the keyboard: a list about the line somebody was typing belongs to it. */
+function onPaneFocusOut(): void {
+  hideCompletion();
+}
+
 /** What a button says when pointed at: its name, and the key of the one action that has a real one. */
 function toolsTooltip(entry: MenuAction): string {
   const name = t(entry.labelKey);
@@ -497,6 +556,12 @@ onMounted(() => {
   // read from the table rather than spelled out here, so whatever prints it and whatever listens for
   // it cannot end up naming different keys.
   instance.attachCustomKeyEventHandler((event) => {
+    // The completion gets the first look: while its menu is open it owns the arrows and Tab, and
+    // its rule for Enter is "always the shell's". A key it does not take falls through to the
+    // terminal as before.
+    if (handleCompletionKey(event)) {
+      return false;
+    }
     if (
       event.type === "keydown" &&
       matchesShortcut(event, bindingFor("terminal.find", preferences.keybindings), app.platform)
@@ -510,17 +575,23 @@ onMounted(() => {
 
   terminal = instance;
   fitAddon = fit;
-  unregister = registerTerminalSink(props.handle, (bytes) => instance.write(bytes));
+  unregisterInputReset = registerInputReset(props.handle, resetCompletion);
+  unregister = registerTerminalSink(props.handle, (bytes) => {
+    completionOutput();
+    instance.write(bytes);
+  });
   instance.onData((data) => {
     if (!props.interactive) {
       return;
     }
     // Read before it leaves: a `cd` typed here is the one thing that says where the shell is on a
-    // host that does not report it, and the file panel under this terminal follows it.
+    // host that does not report it, and the file panel under this terminal follows it. The
+    // completion's own line is fed at the same moment, so both see the same bytes.
     const directory = typed.feed(data);
     if (directory !== null) {
       void terminals.followDirectory(props.handle, directory);
     }
+    feedCompletion(data);
     void terminals.send(props.handle, encoder.encode(data));
   });
   // And the exact report, where the far side is configured to give one. It says nothing about the
@@ -546,10 +617,12 @@ onMounted(() => {
     if (toolsAt.value !== null) {
       void repositionTools();
     }
+    repositionCompletion();
   });
 
   document.addEventListener("pointerdown", onDocumentPointerDown, true);
   window.addEventListener("pointerup", onWindowPointerUp);
+  element.addEventListener("focusout", onPaneFocusOut);
 
   observer = new ResizeObserver(() => scheduleFit());
   observer.observe(element);
@@ -617,14 +690,34 @@ watch(
   },
 );
 
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) {
+      hideCompletion();
+    }
+  },
+);
+
+watch(
+  () => props.interactive,
+  (interactive) => {
+    if (!interactive) {
+      resetCompletion();
+    }
+  },
+);
+
 onBeforeUnmount(() => {
   if (resizeTimer !== undefined) {
     clearTimeout(resizeTimer);
   }
   document.removeEventListener("pointerdown", onDocumentPointerDown, true);
   window.removeEventListener("pointerup", onWindowPointerUp);
+  container.value?.removeEventListener("focusout", onPaneFocusOut);
   observer?.disconnect();
   unregister?.();
+  unregisterInputReset?.();
   osc7?.dispose();
   terminal?.dispose();
 });
@@ -645,6 +738,22 @@ onBeforeUnmount(() => {
       @contextmenu.capture="onContextMenu"
       @pointerdown="onSurfacePointerDown"
     ></div>
+
+    <!--
+      The completion list and the ghost suggestion, both anchored at the cursor's cell. The list is
+      the same component the command bar uses; only where it stands differs. The ghost is not a row
+      and cannot be clicked: it is the rest of a line somebody ran before, taken with the right
+      arrow.
+    -->
+    <CompletionMenu
+      v-if="completionVisible"
+      :candidates="completionCandidates"
+      :active="completionActive"
+      :list-id="`terminal-completion-${handle}`"
+      :anchor="completionAnchor"
+      @take="acceptCompletion"
+    />
+    <span v-if="completionGhost !== null" class="terminal-ghost" :style="ghostStyle">{{ completionGhost }}</span>
 
     <!--
       The toolbar over a selection: the same three things the right-click menu offers — copy, hand
@@ -767,5 +876,20 @@ onBeforeUnmount(() => {
 .terminal-surface :deep(.xterm-viewport),
 .terminal-surface :deep(.xterm-screen) {
   background-color: var(--terminal-background);
+}
+
+/* The rest of a line somebody ran before, drawn where the terminal's own text would be. It is not
+   selectable and not clickable: the right arrow is the only way to take it. */
+.terminal-ghost {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  white-space: pre;
+  letter-spacing: 0;
+  font-variant-ligatures: none;
+  color: var(--terminal-foreground);
+  opacity: 0.42;
 }
 </style>

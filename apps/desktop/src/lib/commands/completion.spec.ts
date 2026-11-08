@@ -7,6 +7,7 @@ import {
   type CompletionSources,
   type PathSource,
 } from "@/lib/commands/completion";
+import type { SpecCatalog, SpecCommand } from "@/lib/commands/specs/types";
 import { subcommandsOf } from "@/lib/commands/subcommands";
 import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
 import type { SftpEntry } from "@/types/session";
@@ -418,5 +419,55 @@ describe("the trigger a saved command was given", () => {
     const off = saved("重启", "systemctl restart #1", [], "res", false);
 
     expect(build("", { saved: [off] })).toEqual([]);
+  });
+});
+
+describe("a specification and the words somebody added", () => {
+  const gitSpec: SpecCommand = {
+    names: ["git"],
+    subcommands: [{ names: ["status"], description: "Show the working tree" }],
+  };
+  const specs: SpecCatalog = {
+    registry: { git: gitSpec },
+    byName: new Map([["git", gitSpec]]),
+    commandNames: ["git"],
+  };
+
+  function withSpec(line: string, userWords: readonly string[], notes: Readonly<Record<string, string>> = {}) {
+    return buildCommandCompletions({
+      line,
+      caret: line.length,
+      sources: { saved: [], history: [], catalog: [command("git")] },
+      describe: () => null,
+      subcommands: () => [],
+      userWords: (name) => (name === "git" ? userWords : []),
+      describeSubcommand: (_name, word) => notes[word] ?? null,
+      kindLabel: (kind) => kind,
+      specs,
+      sessionHandle: "terminal-1",
+      cwd: null,
+    });
+  }
+
+  it("offers a personal word the specification does not know, with its own note", () => {
+    const candidates = withSpec("git st", ["staging"], { staging: "Our staging environment" });
+    const staging = candidates.find((candidate) => candidate.label === "staging");
+
+    expect(staging?.detail).toBe("Our staging environment");
+    expect(candidates.some((candidate) => candidate.label === "status")).toBe(true);
+  });
+
+  it("puts the personal word ahead of the specification's own word at the same match", () => {
+    const candidates = withSpec("git st", ["staging"]);
+
+    expect(candidates[0]?.label).toBe("staging");
+  });
+
+  it("lets the personal note answer for a word the specification also knows", () => {
+    const candidates = withSpec("git st", ["status"], { status: "What our deploy checks" });
+    const statuses = candidates.filter((candidate) => candidate.label === "status");
+
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.detail).toBe("What our deploy checks");
   });
 });

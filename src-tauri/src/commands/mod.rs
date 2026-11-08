@@ -12,6 +12,7 @@ pub mod app;
 pub mod background;
 pub mod batch;
 pub mod clipboard;
+pub mod completion;
 pub mod files;
 pub mod fonts;
 pub mod keys;

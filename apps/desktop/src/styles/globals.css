@@ -33,15 +33,18 @@
   --success: oklch(0.62 0.16 152);
   --warning: oklch(0.72 0.15 82);
   /*
-   * The four kinds of row the command line's completion draws, one colour each. Colour is the only
-   * thing telling four lists apart inside one menu — what we ship, the shell's own words, what
-   * somebody saved, what they have already run — so each of them has to be readable at a glance.
+   * The kinds of row the command line's completion draws, one colour each. Colour is the only thing
+   * telling the lists apart inside one menu — what we ship, the shell's own words, a command's
+   * subcommands, its flags, an argument value, what somebody saved, what they have already run — so
+   * each of them has to be readable at a glance.
    */
   --completion-command: oklch(0.6 0.15 152);
   --completion-builtin: oklch(0.66 0.15 70);
   --completion-saved: oklch(0.55 0.2 295);
   --completion-history: oklch(0.6 0.13 240);
   --completion-path: oklch(0.62 0.12 200);
+  --completion-option: oklch(0.62 0.16 30);
+  --completion-argument: oklch(0.58 0.08 220);
   --ring: oklch(0.709 0 0);
 
   /*
@@ -140,6 +143,8 @@
   --completion-saved: oklch(0.72 0.16 300);
   --completion-history: oklch(0.75 0.11 240);
   --completion-path: oklch(0.78 0.1 200);
+  --completion-option: oklch(0.76 0.15 35);
+  --completion-argument: oklch(0.72 0.09 220);
   --ring: oklch(0.6208 0.0075 277.1);
 }
 
@@ -738,6 +743,8 @@
   --color-completion-saved: var(--completion-saved);
   --color-completion-history: var(--completion-history);
   --color-completion-path: var(--completion-path);
+  --color-completion-option: var(--completion-option);
+  --color-completion-argument: var(--completion-argument);
   --color-ring: var(--ring);
 
   /*

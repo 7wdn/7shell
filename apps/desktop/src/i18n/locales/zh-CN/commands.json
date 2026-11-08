@@ -53,6 +53,8 @@
         "command": "命令",
         "builtin": "shell 内建",
         "subcommand": "子命令",
+        "option": "选项",
+        "argument": "参数值",
         "path": "主机上的路径"
       },
       "command": {
