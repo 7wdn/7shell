@@ -26,6 +26,7 @@
     },
     "group": {
       "new": "New group",
+      "newDefault": "New group",
       "name": "Group name",
       "add": "Add",
       "default": "Default",

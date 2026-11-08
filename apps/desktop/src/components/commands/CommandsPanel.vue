@@ -13,7 +13,7 @@
  * it only happens when more than one shell is being written to.
  */
 import { ChevronDown, ChevronUp, FolderPlus, Pencil, Play, Plus, Save, Trash2, TriangleAlert } from "@lucide/vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
@@ -25,6 +25,7 @@ import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
+import type { SnippetGroup } from "@/types/snippet";
 
 const { t } = useI18n();
 const commands = useCommandsStore();
@@ -34,8 +35,13 @@ const preferences = usePreferencesStore();
 /** Which group the list on the left is showing. */
 const openGroup = ref<string>("");
 
-const newGroupName = ref("");
-const addingGroup = ref(false);
+const groupNameText = ref("");
+/** The group whose name is being typed over, and nothing while no group is. */
+const renaming = ref<string | null>(null);
+/** The field drawn over a group's name while it is being renamed. */
+const renameField = ref<HTMLInputElement | null>(null);
+/** One group write at a time, so pressing Create twice does not make two groups. */
+const groupBusy = ref(false);
 
 /**
  * The group somebody asked to remove.
@@ -45,9 +51,6 @@ const addingGroup = ref(false);
  * memory.
  */
 const removing = ref<{ id: string; name: string; count: number } | null>(null);
-
-/** The group being renamed, and what the field holds while it is. */
-const renaming = ref<{ id: string; name: string } | null>(null);
 
 onMounted(async () => {
   await commands.load();
@@ -119,24 +122,74 @@ function canMove(direction: -1 | 1): boolean {
   return index >= 0 && group.commands[index + direction] !== undefined;
 }
 
-async function saveGroup(): Promise<void> {
-  if (newGroupName.value.trim() === "") {
+/**
+ * A new group is made first and named afterwards, in the row it already owns.
+ *
+ * That is the same shape the session sidebar uses, and for the same reason: a group is a name and
+ * nothing else, so a form somewhere else would be asking for a name while hiding the thing the name
+ * belongs to. The default is a placeholder until the field closes; abandoning the field leaves the
+ * group with it, which is what the row is already showing.
+ */
+async function startGroupCreate(): Promise<void> {
+  if (groupBusy.value) {
     return;
   }
-  await commands.addGroup(newGroupName.value);
-  newGroupName.value = "";
-  addingGroup.value = false;
+  groupBusy.value = true;
+  const created = await commands.addGroup(t("commands.group.newDefault"));
+  groupBusy.value = false;
+  if (!created) {
+    return;
+  }
+  openGroup.value = created.id;
+  startGroupRename(created);
 }
 
-/** Finishes a rename, whichever way it was started. */
-async function renameGroup(): Promise<void> {
-  const target = renaming.value;
-  if (!target) {
+function startGroupRename(group: SnippetGroup): void {
+  groupNameText.value = group.name;
+  renaming.value = group.id;
+  void nextTick().then(() => {
+    renameField.value?.focus();
+    renameField.value?.select();
+  });
+}
+
+function cancelGroupRename(): void {
+  renaming.value = null;
+  groupNameText.value = "";
+}
+
+/** The field stands where the name stood; a `ref` inside a list arrives the same way it does there. */
+function takeRenameField(field: unknown): void {
+  renameField.value = (field as HTMLInputElement | null) ?? null;
+}
+
+/**
+ * Closes the field before the write, so the blur that follows Enter cannot run it twice. An empty
+ * name, or the one it already had, is a cancel; a refusal puts the field back with what was typed
+ * still in it.
+ */
+async function submitGroupRename(group: SnippetGroup): Promise<void> {
+  if (renaming.value !== group.id || groupBusy.value) {
     return;
   }
-  await commands.renameGroup(target.id, newGroupName.value);
   renaming.value = null;
-  newGroupName.value = "";
+  const name = groupNameText.value.trim();
+  if (name === "" || name === group.name) {
+    groupNameText.value = "";
+    return;
+  }
+
+  groupBusy.value = true;
+  const worked = await commands.renameGroup(group.id, name);
+  groupBusy.value = false;
+  if (worked) {
+    groupNameText.value = "";
+    return;
+  }
+  renaming.value = group.id;
+  await nextTick();
+  renameField.value?.focus();
+  renameField.value?.select();
 }
 </script>
 
@@ -156,41 +209,15 @@ async function renameGroup(): Promise<void> {
         </span>
         <button
           type="button"
-          class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
           :title="t('commands.group.new')"
           :aria-label="t('commands.group.new')"
-          @click="addingGroup = !addingGroup"
+          :disabled="groupBusy"
+          @click="startGroupCreate()"
         >
           <FolderPlus :size="12" />
         </button>
       </header>
-
-      <div v-if="addingGroup || renaming" class="flex items-center gap-1 border-b border-border px-2 py-1.5">
-        <input
-          v-model="newGroupName"
-          class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 py-1 text-[11px] focus:outline-none"
-          :placeholder="t('commands.group.name')"
-          @keydown.enter="renaming ? renameGroup() : saveGroup()"
-        />
-        <button
-          type="button"
-          class="rounded-sm border border-border px-1.5 py-1 text-[11px]"
-          @click="renaming ? renameGroup() : saveGroup()"
-        >
-          {{ renaming ? t("commands.group.rename") : t("commands.group.add") }}
-        </button>
-        <button
-          type="button"
-          class="rounded-sm px-1 py-1 text-[11px] text-muted-foreground hover:text-foreground"
-          @click="
-            renaming = null;
-            addingGroup = false;
-            newGroupName = '';
-          "
-        >
-          {{ t("common.action.close") }}
-        </button>
-      </div>
 
       <ul class="shrink-0 overflow-auto border-b border-border py-1">
         <li v-for="group in commands.groups" :key="group.id">
@@ -198,25 +225,36 @@ async function renameGroup(): Promise<void> {
             class="group flex items-center gap-1 px-2 py-1 transition-colors"
             :class="group.id === openGroup ? 'bg-accent/60' : 'hover:bg-accent/30'"
           >
-            <button type="button" class="min-w-0 flex-1 truncate text-left" @click="openGroup = group.id">
+            <input
+              v-if="renaming === group.id"
+              :ref="takeRenameField"
+              :value="groupNameText"
+              type="text"
+              class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-xs select-text focus:border-primary focus:outline-none"
+              :aria-label="t('commands.group.name')"
+              @input="groupNameText = ($event.target as HTMLInputElement).value"
+              @keydown.enter.prevent="submitGroupRename(group)"
+              @keydown.escape.prevent="cancelGroupRename()"
+              @blur="submitGroupRename(group)"
+            />
+            <button v-else type="button" class="min-w-0 flex-1 truncate text-left" @click="openGroup = group.id">
               {{ group.name === "" ? t("commands.group.default") : group.name }}
             </button>
-            <span class="shrink-0 text-[10px] text-muted-foreground">{{ group.commands.length }}</span>
+            <span v-if="renaming !== group.id" class="shrink-0 text-[10px] text-muted-foreground">{{
+              group.commands.length
+            }}</span>
             <button
-              v-if="group.id !== DEFAULT_GROUP_ID"
+              v-if="renaming !== group.id && group.id !== DEFAULT_GROUP_ID"
               type="button"
               class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground"
               :title="t('commands.group.rename')"
               :aria-label="t('commands.group.rename')"
-              @click="
-                renaming = { id: group.id, name: group.name };
-                newGroupName = group.name;
-              "
+              @click="startGroupRename(group)"
             >
               <Pencil :size="10" />
             </button>
             <button
-              v-if="group.id !== DEFAULT_GROUP_ID"
+              v-if="renaming !== group.id && group.id !== DEFAULT_GROUP_ID"
               type="button"
               class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground"
               :title="t('commands.group.remove')"
@@ -228,6 +266,14 @@ async function renameGroup(): Promise<void> {
           </div>
         </li>
       </ul>
+
+      <!-- A group write can fail while no command is open, so its reason needs a place of its own. -->
+      <p
+        v-if="problem && !commands.draft"
+        class="mx-2 mb-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px]"
+      >
+        {{ problem.message }}
+      </p>
 
       <header class="flex items-center justify-between border-b border-border px-2 py-1.5">
         <span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">

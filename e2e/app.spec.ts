@@ -4730,3 +4730,90 @@ test("opening a session that is already open asks, and a yes makes a second tab"
     await close();
   }
 });
+
+/**
+ * A name is typed where it will live: a dialog for something that does not exist yet, and the row
+ * itself for something that does. The two used to be one strip above the listing, which made the
+ * new folder look like the path bar's cousin and put a rename field nowhere near the row.
+ */
+test("a new folder is asked for in a dialog, and renamed where its name is written", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `files-${stamp}`;
+    const folder = `folder-${stamp}`;
+    const renamed = `renamed-${stamp}`;
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    await sessionRow(page, name).click();
+    await expect(question.or(filesToggle).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(filesToggle).toBeVisible({ timeout: 30_000 });
+
+    // A session opens in the split layout by default, so its file panel is already coming up.
+    // Waiting first is what keeps this from toggling a panel that is still opening; the button's
+    // own pressed state covers the slower case, where the panel exists but has not finished.
+    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    const openedByLayout = await pathBar
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!openedByLayout && (await filesToggle.getAttribute("aria-pressed")) !== "true") {
+      await filesToggle.click();
+    }
+    await expect(pathBar).toBeVisible({ timeout: 60_000 });
+
+    // The dialog, with the keyboard already in the field: a prompt that has to be clicked into is
+    // the strip this case was written to replace.
+    const dialog = page.getByRole("dialog");
+    await page.getByRole("button", { name: "New folder", exact: true }).click({ timeout: 10_000 });
+    await expect(dialog).toBeVisible();
+    const field = dialog.getByRole("textbox", { name: "Folder name" });
+    await expect(field).toBeFocused();
+    await field.fill(folder);
+    await dialog.getByRole("button", { name: "Create", exact: true }).click({ timeout: 10_000 });
+    await expect(dialog).toHaveCount(0);
+
+    const row = page.getByRole("option").filter({ hasText: folder });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+
+    // The name is edited in the row it belongs to, not in a form at the top of the panel. The
+    // gesture is retried as a whole: a menu dismisses itself when the directory is re-read, which
+    // is a refresh the create just caused to be in flight.
+    const renameEntry = page.getByRole("menuitem", { name: "Rename", exact: true });
+    await expect(async () => {
+      await row.click({ timeout: 5_000 });
+      await row.click({ button: "right", timeout: 5_000 });
+      await expect(renameEntry).toBeVisible({ timeout: 3_000 });
+      await renameEntry.click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+    const rename = page.getByRole("textbox", { name: "New name" });
+    await expect(rename).toBeVisible();
+    await expect(rename).toHaveValue(folder);
+    await rename.fill(renamed);
+    await rename.press("Enter");
+
+    await expect(page.getByRole("option").filter({ hasText: renamed })).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await close();
+  }
+});

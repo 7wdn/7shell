@@ -19,17 +19,24 @@ import {
   ArrowUp,
   ChevronRight,
   File,
-  FilePlus,
   FileSymlink,
   Folder,
   ClipboardPaste,
   FolderPlus,
   HardDrive,
   LoaderCircle,
-  Pencil,
   Upload,
   X,
 } from "@lucide/vue";
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from "reka-ui";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -174,9 +181,12 @@ const typedPath = ref("");
 /** Which kind of thing is being named, and nothing while no prompt is open. */
 const creating = ref<"folder" | "file" | null>(null);
 const newName = ref("");
+const createField = ref<HTMLInputElement | null>(null);
 /** The path being renamed, so a server refusal can leave the typed name in place. */
 const renaming = ref<string | null>(null);
 const renameText = ref("");
+/** The field drawn over the name of the row being renamed, wherever in the listing that is. */
+const renameField = ref<HTMLInputElement | null>(null);
 /** The entries whose deletion is being confirmed. Never a bare click, and never only one at a time. */
 const removal = ref<SftpEntry[] | null>(null);
 const editing = ref<SftpEntry | null>(null);
@@ -732,20 +742,28 @@ function onListingPointerUp(): void {
 }
 
 function startNew(kind: "folder" | "file"): void {
-  cancelPrompt();
+  cancelPrompts();
+  if (browser.value) {
+    browser.value.failure = null;
+  }
   newName.value = "";
   creating.value = kind;
 }
 
 function startRename(entry: SftpEntry): void {
-  cancelPrompt();
+  cancelPrompts();
   renaming.value = entry.path;
   renameText.value = entry.name;
+  reveal(entry.path);
+  void nextTick().then(() => {
+    renameField.value?.focus();
+    renameField.value?.select();
+  });
 }
 
 /** Asking to delete: the entries are collected once, and the question is asked over everything else. */
 function startRemove(entries: readonly SftpEntry[]): void {
-  cancelPrompt();
+  cancelPrompts();
   removal.value = [...entries];
 }
 
@@ -760,9 +778,44 @@ function submitTypedPath(): void {
   go(path);
 }
 
-function cancelPrompt(): void {
+/** Closes whichever of the two name prompts is open, without writing anything. */
+function cancelPrompts(): void {
   creating.value = null;
   renaming.value = null;
+}
+
+function cancelCreate(): void {
+  creating.value = null;
+  newName.value = "";
+}
+
+function cancelRename(): void {
+  renaming.value = null;
+  renameText.value = "";
+  void nextTick().then(() => listing.value?.focus());
+}
+
+/**
+ * The dialog takes the keyboard when it opens; otherwise the name it is asking for is a field
+ * somebody has to find and click before they can start typing.
+ */
+watch(creating, (kind) => {
+  if (kind === null) {
+    return;
+  }
+  void nextTick().then(() => {
+    createField.value?.focus();
+    createField.value?.select();
+  });
+});
+
+/** reka-ui's own first focusable is the close button; the name is what this dialog is about. */
+function focusCreateField(event: Event): void {
+  event.preventDefault();
+  void nextTick().then(() => {
+    createField.value?.focus();
+    createField.value?.select();
+  });
 }
 
 /**
@@ -776,7 +829,7 @@ async function createEntry(): Promise<void> {
   const current = browser.value;
   const kind = creating.value;
   const name = newName.value.trim();
-  if (!current || kind === null || name === "") {
+  if (!current || kind === null || name === "" || busy.value) {
     return;
   }
 
@@ -796,18 +849,53 @@ async function createEntry(): Promise<void> {
   }
 }
 
-async function submitRename(): Promise<void> {
+/** The field stands where the name stood; the guard keeps a blur from writing a name twice. */
+function takeRenameField(field: unknown): void {
+  renameField.value = (field as HTMLInputElement | null) ?? null;
+}
+
+/**
+ * Renames the row whose name is being typed over.
+ *
+ * The editing state is closed **before** the write, so the blur that follows Enter cannot run the
+ * same rename a second time. An empty name, or the one it already had, is a cancel rather than a
+ * write. A refusal puts the field back with what was typed still in it — the reason is drawn in the
+ * panel's own problem box, and retyping a name somebody just typed is not a thing to ask for.
+ */
+async function submitRename(returnFocus = false): Promise<void> {
   const current = browser.value;
   const from = renaming.value;
-  const name = renameText.value.trim();
-  if (!current || from === null || name === "") {
+  if (!current || from === null || busy.value) {
     return;
   }
+
+  renaming.value = null;
+  const name = renameText.value.trim();
+  const target = joinPath(current.path, name);
+  if (name === "" || name === from.split("/").pop()) {
+    renameText.value = "";
+    if (returnFocus) {
+      listing.value?.focus();
+    }
+    return;
+  }
+
   busy.value = true;
-  const worked = await files.rename(props.handle, from, joinPath(current.path, name));
+  const worked = await files.rename(props.handle, from, target);
   busy.value = false;
-  if (worked) {
-    renaming.value = null;
+  if (!worked) {
+    renaming.value = from;
+    await nextTick();
+    renameField.value?.focus();
+    renameField.value?.select();
+    return;
+  }
+
+  selection.value = selectOne(target);
+  reveal(target);
+  if (returnFocus) {
+    await nextTick();
+    listing.value?.focus();
   }
 }
 
@@ -1041,69 +1129,6 @@ function openAreaMenu(event: MouseEvent): void {
         </button>
       </form>
 
-      <form
-        v-if="creating !== null"
-        class="mt-1.5 flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5"
-        @submit.prevent="createEntry()"
-      >
-        <FolderPlus v-if="creating === 'folder'" :size="12" class="shrink-0 text-muted-foreground" />
-        <FilePlus v-else :size="12" class="shrink-0 text-muted-foreground" />
-        <input
-          v-model="newName"
-          type="text"
-          class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] focus:outline-none"
-          :aria-label="creating === 'folder' ? t('files.newFolderName') : t('files.newFileName')"
-          :placeholder="creating === 'folder' ? t('files.newFolderName') : t('files.newFileName')"
-        />
-        <button
-          type="submit"
-          class="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="busy || newName.trim() === ''"
-        >
-          {{ t("files.create") }}
-        </button>
-        <button
-          type="button"
-          class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="t('files.cancel')"
-          :aria-label="t('files.cancel')"
-          @click="cancelPrompt()"
-        >
-          <X :size="11" />
-        </button>
-      </form>
-
-      <form
-        v-if="renaming !== null"
-        class="mt-1.5 flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1.5"
-        @submit.prevent="submitRename()"
-      >
-        <Pencil :size="12" class="shrink-0 text-muted-foreground" />
-        <input
-          v-model="renameText"
-          type="text"
-          class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] focus:outline-none"
-          :aria-label="t('files.rename.name')"
-          :placeholder="t('files.rename.name')"
-        />
-        <button
-          type="submit"
-          class="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="busy || renameText.trim() === ''"
-        >
-          {{ t("files.rename.submit") }}
-        </button>
-        <button
-          type="button"
-          class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="t('files.cancel')"
-          :aria-label="t('files.cancel')"
-          @click="cancelPrompt()"
-        >
-          <X :size="11" />
-        </button>
-      </form>
-
       <p v-if="problem" class="mt-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px]">
         <span>{{ problem.message }}</span>
         <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
@@ -1303,7 +1328,23 @@ function openAreaMenu(event: MouseEvent): void {
               >
                 <span class="flex w-[var(--col-name)] shrink-0 items-center gap-2 py-0.5 text-left" :title="entry.name">
                   <component :is="entryIcon(entry)" :size="13" class="shrink-0 text-muted-foreground" />
-                  <span class="truncate text-xs">{{ entry.name }}</span>
+                  <input
+                    v-if="renaming === entry.path"
+                    :ref="takeRenameField"
+                    :value="renameText"
+                    type="text"
+                    spellcheck="false"
+                    class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1 py-0.5 text-xs select-text focus:border-primary focus:outline-none"
+                    :aria-label="t('files.rename.name')"
+                    @input="renameText = ($event.target as HTMLInputElement).value"
+                    @click.stop
+                    @dblclick.stop
+                    @keydown.stop
+                    @keydown.enter.prevent="submitRename(true)"
+                    @keydown.escape.prevent="cancelRename()"
+                    @blur="submitRename()"
+                  />
+                  <span v-else class="truncate text-xs">{{ entry.name }}</span>
                 </span>
 
                 <span class="w-[var(--col-size)] shrink-0 text-right font-mono text-[10px] text-muted-foreground">{{
@@ -1347,6 +1388,80 @@ function openAreaMenu(event: MouseEvent): void {
       :path="editing?.path ?? ''"
       @update:open="closeEditor"
     />
+
+    <!--
+      Making something is a question about a name, and a question is chrome: it is asked over the
+      listing rather than typed into a strip above it. The field takes the keyboard as the dialog
+      opens, Enter is the create button, and Escape leaves without making anything.
+    -->
+    <DialogRoot :open="creating !== null" @update:open="(open: boolean) => !open && cancelCreate()">
+      <DialogPortal>
+        <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+        <DialogContent
+          class="fixed top-1/2 left-1/2 z-50 w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-xl focus:outline-none"
+          @open-auto-focus="focusCreateField"
+          @interact-outside="busy && $event.preventDefault()"
+          @escape-key-down="busy && $event.preventDefault()"
+        >
+          <header class="flex items-center justify-between border-b border-border px-4 py-3">
+            <DialogTitle class="text-sm font-medium">
+              {{ creating === "folder" ? t("files.newFolder") : t("files.newFile") }}
+            </DialogTitle>
+            <DialogDescription class="sr-only">
+              {{ creating === "folder" ? t("files.newFolderName") : t("files.newFileName") }}
+            </DialogDescription>
+            <DialogClose
+              class="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :aria-label="t('files.cancel')"
+              :disabled="busy"
+            >
+              <X :size="15" />
+            </DialogClose>
+          </header>
+
+          <form class="space-y-2 px-4 py-4" @submit.prevent="createEntry()">
+            <label class="block text-xs font-medium" for="file-create-name">
+              {{ creating === "folder" ? t("files.newFolderName") : t("files.newFileName") }}
+            </label>
+            <input
+              id="file-create-name"
+              ref="createField"
+              v-model="newName"
+              type="text"
+              spellcheck="false"
+              class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              :aria-label="creating === 'folder' ? t('files.newFolderName') : t('files.newFileName')"
+              :placeholder="creating === 'folder' ? t('files.newFolderName') : t('files.newFileName')"
+            />
+            <p v-if="problem" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+              <span>{{ problem.message }}</span>
+              <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
+            </p>
+          </form>
+
+          <footer
+            class="flex flex-col-reverse gap-2 rounded-b-lg border-t border-border bg-muted/40 px-4 py-3 sm:flex-row sm:justify-end"
+          >
+            <button
+              type="button"
+              class="rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="busy"
+              @click="cancelCreate()"
+            >
+              {{ t("files.cancel") }}
+            </button>
+            <button
+              type="button"
+              class="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="busy || newName.trim() === ''"
+              @click="createEntry()"
+            >
+              {{ t("files.create") }}
+            </button>
+          </footer>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
 
     <!--
       The question, over the panel rather than inside its header: what is being asked about is the

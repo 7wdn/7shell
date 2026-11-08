@@ -20,6 +20,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesList: vi.fn(async (_handle: string, path: string) => ({ path, entries: [] })),
   filesOpen: vi.fn(),
   filesClose: vi.fn(),
+  filesRename: vi.fn(async () => {}),
   transfersOpen: vi.fn(async () => []),
   settingsGet: vi.fn(),
   settingsSet: vi.fn(async () => {}),
@@ -28,7 +29,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
-import { filesCreateFile, filesDownload, filesList, settingsSet } from "@/lib/backend/tauri";
+import { filesCreateFile, filesDownload, filesList, filesRename, settingsSet } from "@/lib/backend/tauri";
 import type { MenuAction, MenuEntry } from "@/lib/menu/types";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -199,6 +200,7 @@ beforeEach(() => {
   document.body.append(host);
   vi.mocked(filesCreateFile).mockClear();
   vi.mocked(filesDownload).mockClear();
+  vi.mocked(filesRename).mockClear();
 });
 
 afterEach(() => {
@@ -285,10 +287,11 @@ describe("the directory's own menu", () => {
     pick(newMenu.entries, "new-file").run();
     await nextTick();
 
-    // The prompt that appears says which of the two it is, and it is answered in the panel — in its
-    // own form, which is found through the field rather than as "the panel's first form".
-    const field = host.querySelector<HTMLInputElement>('input[aria-label="File name"]');
-    expect(field, "the file prompt is open").not.toBeNull();
+    // The prompt that appears says which of the two it is, and it is a dialog over the panel: the
+    // field is found through the dialog rather than as "the panel's first form".
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
+    const field = dialog?.querySelector<HTMLInputElement>('input[aria-label="File name"]');
+    expect(field ?? null, "the file prompt is open").not.toBeNull();
     if (field) {
       field.value = "notes.txt";
       field.dispatchEvent(new Event("input"));
@@ -394,16 +397,17 @@ describe("selecting rows", () => {
     expect(confirmDialog().textContent).toContain("This cannot be undone");
   });
 
-  it("renames the one row, and only when there is one", async () => {
+  it("renames where the name is written, and only when there is one row", async () => {
     await render(many);
 
     await clickRow(1);
     await press("F2");
-    expect(host.querySelector('input[aria-label="New name"]')).not.toBeNull();
+    const field = rows()[1]?.querySelector<HTMLInputElement>('input[aria-label="New name"]');
+    expect(field, "the row itself is the field").not.toBeNull();
+    expect(field?.value).toBe("a.txt");
 
-    // Closed the way the panel closes it, rather than by submitting it: this case is about what F2
-    // offers, not about what renaming does.
-    host.querySelector<HTMLButtonElement>("form button[type='button']")?.click();
+    // Escape leaves the row's name alone and puts the field away.
+    field?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     await nextTick();
     expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
 
@@ -412,6 +416,24 @@ describe("selecting rows", () => {
     await press("F2");
 
     expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+  });
+
+  it("writes the name typed in the row", async () => {
+    await render(many);
+
+    await clickRow(1);
+    await press("F2");
+    const field = rows()[1]?.querySelector<HTMLInputElement>('input[aria-label="New name"]');
+    if (!field) {
+      throw new Error("the row is not being renamed");
+    }
+    field.value = "renamed.txt";
+    field.dispatchEvent(new Event("input"));
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() =>
+      expect(vi.mocked(filesRename)).toHaveBeenCalledWith(HANDLE, "/home/user/a.txt", "/home/user/renamed.txt"),
+    );
   });
 
   it("opens the one selected row on Enter, and nothing when several are chosen", async () => {

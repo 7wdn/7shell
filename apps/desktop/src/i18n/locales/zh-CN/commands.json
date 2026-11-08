@@ -26,6 +26,7 @@
     },
     "group": {
       "new": "新建分类",
+      "newDefault": "新建分类",
       "name": "分类名称",
       "add": "添加",
       "default": "默认分类",
