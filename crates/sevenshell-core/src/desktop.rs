@@ -1,361 +1,319 @@
-//! Remote desktops: the trust decision before one opens, and the handles afterwards.
+//! Remote desktops, handed to the Windows client that does them best.
 //!
-//! RDP has no SSH host key. The TLS certificate a server presents is recorded in the same trust
-//! table under the `x509` kind, keyed by host and port like any other entry; a new certificate is a
-//! question and a changed one is a stop. The order matters: the certificate is read before any
-//! credential is offered, which is why the probe and the open are two separate steps.
+//! The protocol does not live in this process. On Windows the system client (`mstsc.exe`) is given
+//! a temporary `.rdp` file: it brings GPU rendering, clipboard, audio and local-drive redirection
+//! that a second implementation would spend a long time approaching.
+//!
+//! The file is written here and never named to the interface. A stored password is included as a
+//! DPAPI blob scoped to the current Windows user, so it never appears on a command line or in the
+//! file in readable form; an account without a stored password is left to the client's own
+//! credential prompt. The file is removed a minute after the client starts.
+//!
+//! Every other platform refuses: the product offers remote desktops on Windows only, rather than
+//! pretending a different client would behave the same.
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use sevenshell_error::ShellError;
-use sevenshell_rdp::{DesktopCommand, DesktopEvent, DesktopSession, InputEvent, MouseButton, OpenRequest, Target};
-use sevenshell_types::{
-    AuthMethod, DesktopInput, DesktopMouseButton, DesktopOutcome, KnownHostEntry, OpenDesktop, PresentedCertificate,
-    Protocol, Session,
-};
-use tokio::sync::{Mutex, mpsc};
-use tokio::task::JoinHandle;
-use zeroize::Zeroizing;
+use sevenshell_types::Protocol;
 
-use crate::sessions::{Core, now_seconds};
+use crate::sessions::Core;
 
-/// The `key_type` an RDP certificate is stored under, so the table can hold both kinds.
-const CERTIFICATE_KEY_TYPE: &str = "x509";
-
-/// One event from an open desktop, tagged with the handle it belongs to.
-#[derive(Debug)]
-pub enum DesktopSessionEvent {
-    Frame {
-        handle: String,
-        /// The session the frame belongs to, so a frame that arrives before the handle is wired
-        /// to its channel can still find the channel that was registered for the attempt.
-        session_id: String,
-        /// One IPC batch: `count` as a little-endian `u32`, then per frame `x, y, width, height`
-        /// as `u16` and RGBA8. Encoded here so the host does not have to know the RDP crate's types.
-        bytes: Vec<u8>,
-    },
-    Resized {
-        handle: String,
-        width: u16,
-        height: u16,
-    },
-    Closed {
-        handle: String,
-    },
-    Failed {
-        handle: String,
-        error: ShellError,
-    },
-}
-
-/// One IPC message holds a whole batch: `count` as a little-endian `u32`, then for each frame
-/// `x, y, width, height` as `u16` and its RGBA8 bytes. Batching is what keeps a Windows frame of
-/// dozens of tiles from becoming dozens of IPC messages.
-fn encode_frames(frames: &[sevenshell_rdp::Frame]) -> Vec<u8> {
-    let capacity = 4 + frames.iter().map(|frame| 8 + frame.rgba.len()).sum::<usize>();
-    let mut bytes = Vec::with_capacity(capacity);
-    let count = u32::try_from(frames.len()).expect("a frame batch fits in u32");
-    bytes.extend_from_slice(&count.to_le_bytes());
-    for frame in frames {
-        bytes.extend_from_slice(&frame.x.to_le_bytes());
-        bytes.extend_from_slice(&frame.y.to_le_bytes());
-        bytes.extend_from_slice(&frame.width.to_le_bytes());
-        bytes.extend_from_slice(&frame.height.to_le_bytes());
-        bytes.extend_from_slice(&frame.rgba);
-    }
-    bytes
-}
-
-struct OpenDesktopSession {
-    session_id: String,
-    width: u16,
-    height: u16,
-    session: Arc<DesktopSession>,
-    forwarder: JoinHandle<()>,
-}
-
-/// Every open desktop, addressed by a handle that is never reused.
-pub(crate) struct Desktops {
-    sessions: Mutex<HashMap<String, OpenDesktopSession>>,
-    events: mpsc::UnboundedSender<DesktopSessionEvent>,
-    next_handle: AtomicU64,
-}
-
-impl Desktops {
-    pub(crate) fn new(events: mpsc::UnboundedSender<DesktopSessionEvent>) -> Self {
-        Self {
-            sessions: Mutex::new(HashMap::new()),
-            events,
-            next_handle: AtomicU64::new(1),
-        }
-    }
-
-    async fn open(
-        &self,
-        session_id: &str,
-        target: Target,
-        password: Zeroizing<String>,
-        expected_certificate: String,
-    ) -> Result<DesktopOutcome, ShellError> {
-        let handle = format!("d{}", self.next_handle.fetch_add(1, Ordering::Relaxed));
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        let session = DesktopSession::open(
-            OpenRequest {
-                target,
-                password,
-                expected_certificate,
-                desktop: Default::default(),
-            },
-            sender,
-        )
-        .await?;
-        let (width, height) = session.size();
-        let session = Arc::new(session);
-
-        let events = self.events.clone();
-        let handle_for_task = handle.clone();
-        let session_for_task = session_id.to_owned();
-        let forwarder = tokio::spawn(async move {
-            while let Some(event) = receiver.recv().await {
-                let event = match event {
-                    DesktopEvent::Frames(frames) => DesktopSessionEvent::Frame {
-                        handle: handle_for_task.clone(),
-                        session_id: session_for_task.clone(),
-                        bytes: encode_frames(&frames),
-                    },
-                    DesktopEvent::Resized { width, height } => DesktopSessionEvent::Resized {
-                        handle: handle_for_task.clone(),
-                        width,
-                        height,
-                    },
-                    DesktopEvent::Closed => DesktopSessionEvent::Closed {
-                        handle: handle_for_task.clone(),
-                    },
-                    DesktopEvent::Failed(error) => DesktopSessionEvent::Failed {
-                        handle: handle_for_task.clone(),
-                        error,
-                    },
-                };
-                if events.send(event).is_err() {
-                    break;
-                }
-            }
-        });
-
-        self.sessions.lock().await.insert(
-            handle.clone(),
-            OpenDesktopSession {
-                session_id: session_id.to_owned(),
-                width,
-                height,
-                session,
-                forwarder,
-            },
-        );
-
-        Ok(DesktopOutcome::Opened {
-            handle,
-            session_id: session_id.to_owned(),
-            width,
-            height,
-        })
-    }
-
-    async fn session(&self, handle: &str) -> Result<Arc<DesktopSession>, ShellError> {
-        self.sessions
-            .lock()
-            .await
-            .get(handle)
-            .map(|open| Arc::clone(&open.session))
-            .ok_or_else(|| ShellError::app_internal("the remote desktop is no longer open"))
-    }
-
-    async fn close(&self, handle: &str) {
-        let Some(open) = self.sessions.lock().await.remove(handle) else {
-            return;
-        };
-        open.session.close().await;
-        open.forwarder.abort();
-    }
-
-    pub(crate) async fn close_all(&self) {
-        let handles: Vec<String> = self.sessions.lock().await.keys().cloned().collect();
-        for handle in handles {
-            self.close(&handle).await;
-        }
-    }
-
-    async fn open_sessions(&self) -> Vec<OpenDesktop> {
-        let sessions = self.sessions.lock().await;
-        let mut open: Vec<OpenDesktop> = sessions
-            .iter()
-            .map(|(handle, session)| OpenDesktop {
-                handle: handle.clone(),
-                session_id: session.session_id.clone(),
-                width: session.width,
-                height: session.height,
-            })
-            .collect();
-        open.sort_by(|left, right| left.handle.cmp(&right.handle));
-        open
-    }
-}
+/// How long the temporary `.rdp` stays on disk after the client is started.
+#[cfg(windows)]
+const RDP_FILE_LIFETIME: Duration = Duration::from_secs(60);
 
 impl Core {
-    /// Opens a remote desktop, or reports which certificate decision has to be made first.
-    ///
-    /// The probe sends nothing but a TLS handshake: no credential is offered until a fingerprint
-    /// has been compared with one a person accepted.
-    pub async fn open_desktop(&self, session_id: &str) -> Result<DesktopOutcome, ShellError> {
+    /// Opens a remote desktop in the system client.
+    #[cfg(windows)]
+    pub async fn open_desktop(&self, session_id: &str) -> Result<(), ShellError> {
         let session = self.session(session_id)?;
         if session.protocol != Protocol::Rdp {
             return Err(ShellError::app_unsupported("this session is not a remote desktop"));
         }
 
-        let password = match session.auth.method {
-            AuthMethod::Password | AuthMethod::KeyboardInteractive => {
-                match self.vault.secret_for_session(&session.id)? {
-                    Some(secret) => Zeroizing::new(secret.into_value()),
-                    // A Windows account may genuinely have a blank password — mstsc and the
-                    // reference client both connect that way. An empty field therefore means
-                    // "send an empty password", not "refuse to connect". If the server refuses it,
-                    // the refusal comes back as an authentication failure, which is the truth.
-                    None => Zeroizing::new(String::new()),
-                }
-            }
-            _ => {
-                return Err(ShellError::app_unsupported(
-                    "remote desktops authenticate with a password in this build",
-                ));
-            }
-        };
-
-        let target = target_of(&session);
-        let presented = sevenshell_rdp::probe(&target).await?;
-        let trusted = self
+        let password = self
             .vault
-            .find_known_host(&session.host, session.port)?
-            .filter(|entry| entry.key_type == CERTIFICATE_KEY_TYPE);
-
-        match trusted {
-            None => Ok(DesktopOutcome::CertificateUnknown { certificate: presented }),
-            Some(trusted) if trusted.fingerprint != presented.fingerprint => Ok(DesktopOutcome::CertificateMismatch {
-                certificate: presented,
-                trusted,
-            }),
-            Some(_) => {
-                self.desktops
-                    .open(session_id, target, password, presented.fingerprint)
-                    .await
-            }
-        }
+            .secret_for_session(&session.id)?
+            .map(|secret| secret.into_value());
+        let document = rdp_document(&session, password.as_deref())?;
+        launch(&session, document).await
     }
 
-    /// Records the certificate a person has just accepted, replacing any earlier one for the
-    /// endpoint. The next open re-reads the certificate and compares again.
-    pub fn trust_desktop_certificate(&self, certificate: &PresentedCertificate) -> Result<(), ShellError> {
-        self.vault.trust_host(KnownHostEntry {
-            host: certificate.host.clone(),
-            port: certificate.port,
-            key_type: CERTIFICATE_KEY_TYPE.to_owned(),
-            public_key: certificate.certificate.clone(),
-            fingerprint: certificate.fingerprint.clone(),
-            added_at: now_seconds(),
-        })
-    }
-
-    pub async fn desktop_input(&self, handle: &str, input: DesktopInput) -> Result<(), ShellError> {
-        let session = self.desktops.session(handle).await?;
-        let commands = session.commands();
-        match input {
-            DesktopInput::Text { text } => {
-                for character in text.chars() {
-                    let _ = commands
-                        .send(DesktopCommand::Input(InputEvent::Unicode {
-                            character,
-                            pressed: true,
-                        }))
-                        .await;
-                    let _ = commands
-                        .send(DesktopCommand::Input(InputEvent::Unicode {
-                            character,
-                            pressed: false,
-                        }))
-                        .await;
-                }
-            }
-            other => {
-                if let Some(event) = input_event(other) {
-                    let _ = commands.send(DesktopCommand::Input(event)).await;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub async fn desktop_resize(&self, handle: &str, width: u16, height: u16) -> Result<(), ShellError> {
-        let session = self.desktops.session(handle).await?;
-        let _ = session.commands().send(DesktopCommand::Resize { width, height }).await;
-        Ok(())
-    }
-
-    /// Asks the far side to repaint everything, for a canvas that has just mounted.
-    pub async fn desktop_refresh(&self, handle: &str) -> Result<(), ShellError> {
-        let session = self.desktops.session(handle).await?;
-        let _ = session.commands().send(DesktopCommand::Refresh).await;
-        Ok(())
-    }
-
-    pub async fn desktop_close(&self, handle: &str) -> Result<(), ShellError> {
-        self.desktops.close(handle).await;
-        Ok(())
-    }
-
-    pub async fn open_desktops(&self) -> Vec<OpenDesktop> {
-        self.desktops.open_sessions().await
-    }
-
-    /// The desktop event stream, taken once by whichever host drains it.
-    pub fn take_desktop_events(&self) -> Option<mpsc::UnboundedReceiver<DesktopSessionEvent>> {
-        self.desktop_events
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
+    /// Remote desktops are a Windows feature of this build.
+    #[cfg(not(windows))]
+    pub async fn open_desktop(&self, _session_id: &str) -> Result<(), ShellError> {
+        Err(ShellError::app_unsupported(
+            "the Windows Remote Desktop client is only available on Windows",
+        ))
     }
 }
 
-fn target_of(session: &Session) -> Target {
+/// Builds the `.rdp` document handed to the system client.
+///
+/// The defaults come from the session's [`DesktopSettings`](sevenshell_types::DesktopSettings):
+/// a 1280×1024 window, the local drives mapped and the clipboard shared. The server's certificate
+/// warning is left alone — an RDP certificate is usually self-signed, and suppressing the warning
+/// would hide a real change too.
+#[cfg(windows)]
+fn rdp_document(session: &sevenshell_types::Session, password: Option<&str>) -> Result<String, ShellError> {
     let (domain, user) = match session.user.split_once('\\') {
-        Some((domain, user)) => (domain.to_owned(), user.to_owned()),
-        None => (String::new(), session.user.clone()),
+        Some((domain, user)) => (domain, user),
+        None => ("", session.user.as_str()),
     };
+    let width = session.desktop.width.max(640);
+    let height = session.desktop.height.max(480);
+    let (window_x, window_y) = window_position(width, height);
 
-    Target {
-        host: session.host.clone(),
-        port: session.port,
-        user,
-        domain,
+    let mut lines = vec![
+        format!("full address:s:{}:{}", session.host, session.port),
+        format!("username:s:{user}"),
+        format!("screen mode id:i:{}", if session.desktop.fullscreen { 2 } else { 1 }),
+        format!("desktopwidth:i:{width}"),
+        format!("desktopheight:i:{height}"),
+        // A normal window at the configured size, not a maximized one: show state 1 is
+        // SW_SHOWNORMAL, and the rectangle is where the window opens on this screen.
+        format!(
+            "winposstr:s:0,1,{window_x},{window_y},{},{}",
+            window_x + i32::from(width),
+            window_y + i32::from(height)
+        ),
+        "session bpp:i:32".to_owned(),
+        // The window is resizable and the remote picture scales with it. Dynamic resolution is
+        // deliberately left off: the resolution a person chose is the resolution they get.
+        "smart sizing:i:1".to_owned(),
+        "displayconnectionbar:i:1".to_owned(),
+        "autoreconnection enabled:i:1".to_owned(),
+        "redirectclipboard:i:1".to_owned(),
+        "audiomode:i:0".to_owned(),
+        "authentication level:i:2".to_owned(),
+        "promptcredentialonce:i:0".to_owned(),
+        // The local-network experience: wallpaper, themes and composition stay on. The keys are
+        // written explicitly rather than left to the client's connection-quality guess.
+        "connection type:i:7".to_owned(),
+        "networkautodetect:i:1".to_owned(),
+        "bandwidthautodetect:i:1".to_owned(),
+        "disable wallpaper:i:0".to_owned(),
+        "allow font smoothing:i:1".to_owned(),
+        "allow desktop composition:i:1".to_owned(),
+        "disable full window drag:i:0".to_owned(),
+        "disable menu anims:i:0".to_owned(),
+        "disable themes:i:0".to_owned(),
+        "bitmapcachepersistenable:i:1".to_owned(),
+        "use multimon:i:0".to_owned(),
+    ];
+
+    if session.desktop.redirect_drives {
+        // The reference maps every local drive by default; the remote can read and write them, so
+        // this is the setting a person is told about rather than a quiet default.
+        lines.push("drivestoredirect:s:*".to_owned());
+    }
+
+    if !domain.is_empty() {
+        lines.push(format!("domain:s:{domain}"));
+    }
+
+    match password {
+        Some(password) => {
+            lines.push(format!("password 51:b:{}", protect_password(password)?));
+            lines.push("prompt for credentials:i:0".to_owned());
+        }
+        None => {
+            // A blank password is a legitimate account state, and the server decides whether to
+            // accept it. Let the client ask rather than inventing one here.
+            lines.push("prompt for credentials:i:1".to_owned());
+        }
+    }
+
+    Ok(format!("{}\r\n", lines.join("\r\n")))
+}
+
+#[cfg(windows)]
+async fn launch(session: &sevenshell_types::Session, document: String) -> Result<(), ShellError> {
+    let path = std::env::temp_dir().join(format!(
+        "7Shell - {} - {}.rdp",
+        file_stem(&session.name),
+        &uuid::Uuid::new_v4().simple().to_string()[..8]
+    ));
+    std::fs::write(&path, document)
+        .map_err(|error| ShellError::rdp_launch_failed(format!("the desktop file could not be written: {error}")))?;
+
+    let started = std::process::Command::new("mstsc.exe").arg(&path).spawn();
+    if let Err(error) = started {
+        let _ = std::fs::remove_file(&path);
+        return Err(ShellError::rdp_launch_failed(format!(
+            "the Windows Remote Desktop client could not be started: {error}"
+        )));
+    }
+
+    // The client has read the file by the time its process exists; keeping it around only widens
+    // the window in which a DPAPI blob sits on disk.
+    tokio::spawn(async move {
+        tokio::time::sleep(RDP_FILE_LIFETIME).await;
+        let _ = std::fs::remove_file(path);
+    });
+
+    Ok(())
+}
+
+/// Encrypts the password for the `.rdp` file, for the current Windows user only.
+///
+/// `mstsc` stores this value as the UTF-16LE password protected with `CryptProtectData` and no
+/// additional entropy. The blob is useless to another account on the same machine and to anyone
+/// reading the temporary file.
+#[cfg(windows)]
+fn protect_password(password: &str) -> Result<String, ShellError> {
+    use windows::Win32::Foundation::{HLOCAL, LocalFree};
+    use windows::Win32::Security::Cryptography::{CRYPT_INTEGER_BLOB, CryptProtectData};
+    use windows::core::PCWSTR;
+
+    let mut data: Vec<u8> = password.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let input = CRYPT_INTEGER_BLOB {
+        cbData: u32::try_from(data.len()).expect("a password fits in u32"),
+        pbData: data.as_mut_ptr(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB::default();
+
+    unsafe {
+        CryptProtectData(
+            &input,
+            PCWSTR::null(),
+            None,
+            None,
+            None,
+            0x1, // CRYPTPROTECT_UI_FORBIDDEN
+            &mut output,
+        )
+        .map_err(|error| {
+            ShellError::rdp_launch_failed(format!("the password could not be protected for the client: {error}"))
+        })?;
+
+        let bytes = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
+        let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
+        Ok(to_hex(&bytes))
     }
 }
 
-fn input_event(input: DesktopInput) -> Option<InputEvent> {
-    Some(match input {
-        DesktopInput::PointerMove { x, y } => InputEvent::MouseMove { x, y },
-        DesktopInput::PointerButton { button, pressed } => InputEvent::MouseButton {
-            button: match button {
-                DesktopMouseButton::Left => MouseButton::Left,
-                DesktopMouseButton::Right => MouseButton::Right,
-                DesktopMouseButton::Middle => MouseButton::Middle,
-                DesktopMouseButton::Back => MouseButton::Back,
-                DesktopMouseButton::Forward => MouseButton::Forward,
-            },
-            pressed,
-        },
-        DesktopInput::Wheel { vertical, units } => InputEvent::Wheel { vertical, units },
-        DesktopInput::Key { scancode, pressed } => InputEvent::Key { scancode, pressed },
-        // Text is expanded into Unicode key events before this is reached.
-        DesktopInput::Text { .. } => return None,
-    })
+#[cfg(windows)]
+fn to_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut text = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(text, "{byte:02x}");
+    }
+    text
+}
+
+/// A file name that reads like the session in the client's title bar, and is legal on Windows.
+#[cfg(windows)]
+fn file_stem(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .filter(|character| character.is_alphanumeric() || matches!(character, ' ' | '-' | '_' | '.'))
+        .take(40)
+        .collect();
+    let safe = safe.trim().trim_end_matches('.').trim();
+    if safe.is_empty() {
+        "desktop".to_owned()
+    } else {
+        safe.to_owned()
+    }
+}
+
+/// Where a normal window of this size sits on the primary screen: centred, above the taskbar.
+#[cfg(windows)]
+fn window_position(width: u16, height: u16) -> (i32, i32) {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+
+    let screen_width = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    let screen_height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+    let x = ((screen_width - i32::from(width)) / 2).max(0);
+    // 48 pixels is roughly the taskbar; a window that overlaps it would open partly off-screen on
+    // a 1080p display, which is the common case.
+    let y = ((screen_height - i32::from(height) - 48) / 2).max(0);
+    (x, y)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use sevenshell_types::{AuthMethod, Session, SessionAuth, TerminalSettings};
+
+    fn session() -> Session {
+        Session {
+            id: "desktop-1".to_owned(),
+            name: "desktop".to_owned(),
+            group_id: None,
+            protocol: Protocol::Rdp,
+            host: "desktop.example".to_owned(),
+            port: 3389,
+            user: "DOMAIN\\alice".to_owned(),
+            auth: SessionAuth::with_password(AuthMethod::Password),
+            terminal: TerminalSettings::default(),
+            desktop: sevenshell_types::DesktopSettings::default(),
+            jump: Vec::new(),
+            forwards: Vec::new(),
+            updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn the_document_names_the_host_and_maps_the_local_drives() {
+        let document = rdp_document(&session(), None).expect("a document");
+
+        assert!(document.contains("full address:s:desktop.example:3389"));
+        assert!(document.contains("username:s:alice"));
+        assert!(document.contains("domain:s:DOMAIN"));
+        assert!(
+            document.contains("drivestoredirect:s:*"),
+            "local drives are on by default"
+        );
+        assert!(document.contains("redirectclipboard:i:1"));
+        assert!(document.contains("smart sizing:i:1"), "the window must be resizable");
+        assert!(
+            document.contains("winposstr:s:0,1,"),
+            "the window opens normal, not maximized"
+        );
+        assert!(
+            !document.contains("dynamic resolution:i:1"),
+            "the chosen resolution stays the remote resolution"
+        );
+        assert!(document.contains("disable wallpaper:i:0"), "the wallpaper stays on");
+        // Nothing was stored, so the client asks — a blank password is the account's business.
+        assert!(document.contains("prompt for credentials:i:1"));
+        assert!(!document.contains("password 51:b:"));
+        assert!(document.ends_with("\r\n"));
+    }
+
+    #[test]
+    fn the_document_uses_the_sessions_screen_settings() {
+        let mut session = session();
+        session.desktop.width = 1920;
+        session.desktop.height = 1080;
+        session.desktop.fullscreen = true;
+        session.desktop.redirect_drives = false;
+
+        let document = rdp_document(&session, None).expect("a document");
+
+        assert!(document.contains("screen mode id:i:2"));
+        assert!(document.contains("desktopwidth:i:1920"));
+        assert!(document.contains("desktopheight:i:1080"));
+        assert!(
+            !document.contains("drivestoredirect:"),
+            "mapping is off for this session"
+        );
+    }
+
+    #[test]
+    fn a_stored_password_is_sealed_and_never_written_in_plain_text() {
+        let document = rdp_document(&session(), Some("hunter2")).expect("a document");
+
+        assert!(document.contains("password 51:b:"));
+        assert!(
+            !document.contains("hunter2"),
+            "the password must not be readable in the file"
+        );
+        assert!(document.contains("prompt for credentials:i:0"));
+    }
 }

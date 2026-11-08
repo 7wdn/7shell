@@ -45,6 +45,9 @@
     "platformAgent": {
       "label": "Uses the platform key agent"
     },
+    "systemClient": {
+      "label": "Opens in the system remote desktop client"
+    },
     "desktopView": {
       "label": "Remote desktop view"
     },

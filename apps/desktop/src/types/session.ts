@@ -98,11 +98,23 @@ export interface Session {
   readonly user: string;
   readonly auth: SessionAuth;
   readonly terminal: TerminalSettings;
+  /** What a remote desktop asks of the system client. Absent on SSH sessions and older exports. */
+  readonly desktop?: DesktopSettings;
   /** Saved sessions to reach this one through, in order: the first is connected to directly. */
   readonly jump?: readonly string[];
   /** Ports to forward while this session is open. */
   readonly forwards?: readonly LocalForward[];
   readonly updatedAt: number;
+}
+
+/** The fields the RDP editor groups under "display" and "mapping". */
+export interface DesktopSettings {
+  /** Window size in pixels; ignored when `fullscreen` is on. */
+  width: number;
+  height: number;
+  fullscreen: boolean;
+  /** Whether the local drives are mapped into the session. */
+  redirectDrives: boolean;
 }
 
 /** A forward that is up right now. */
@@ -368,63 +380,3 @@ export interface SessionImportSummary {
 export type SessionImportOutcome =
   | { readonly kind: "imported"; readonly summary: SessionImportSummary }
   | { readonly kind: "needsPassphrase"; readonly fileName: string };
-
-/** A TLS certificate a remote desktop presented, before anybody has decided to trust it. */
-export interface PresentedCertificate {
-  readonly host: string;
-  readonly port: number;
-  /** `SHA256:` and the base64 digest, the spelling SSH fingerprints already use. */
-  readonly fingerprint: string;
-  /** The certificate itself, base64 DER. */
-  readonly certificate: string;
-}
-
-/** What opening a remote desktop answered. */
-export type DesktopOutcome =
-  | { readonly kind: "certificateUnknown"; readonly certificate: PresentedCertificate }
-  | {
-      readonly kind: "certificateMismatch";
-      readonly certificate: PresentedCertificate;
-      readonly trusted: KnownHostEntry;
-    }
-  | {
-      readonly kind: "opened";
-      readonly handle: string;
-      readonly sessionId: string;
-      readonly width: number;
-      readonly height: number;
-    };
-
-/** A remote desktop that is open. */
-export interface OpenDesktop {
-  readonly handle: string;
-  readonly sessionId: string;
-  readonly width: number;
-  readonly height: number;
-}
-
-export type DesktopMouseButton = "left" | "right" | "middle" | "back" | "forward";
-
-/** Input the page sends to a remote desktop. */
-export type DesktopInput =
-  | { readonly kind: "pointerMove"; readonly x: number; readonly y: number }
-  | {
-      readonly kind: "pointerButton";
-      readonly button: DesktopMouseButton;
-      readonly pressed: boolean;
-    }
-  | { readonly kind: "wheel"; readonly vertical: boolean; readonly units: number }
-  | { readonly kind: "key"; readonly scancode: number; readonly pressed: boolean }
-  /** A composed string from an input method, sent as Unicode key events. */
-  | { readonly kind: "text"; readonly text: string };
-
-/** The far side changed the desktop size. */
-export interface DesktopResized {
-  readonly handle: string;
-  readonly width: number;
-  readonly height: number;
-}
-
-export interface DesktopEnded {
-  readonly handle: string;
-}

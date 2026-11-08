@@ -34,11 +34,10 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 **Current state:** the crates that exist are `sevenshell-error`, `sevenshell-types`,
 `sevenshell-platform` (where data lives, including the settings file), `sevenshell-vault` (the
 encrypted store), `sevenshell-policy` (what may be run, and how dangerous it is), `sevenshell-ssh`
-(host key verification, authentication, a terminal channel), `sevenshell-rdp` (the RDP session and
-its certificate trust), `sevenshell-session` (the registry of open terminals), `sevenshell-sftp` (the
-far side of the file workbench), `sevenshell-sync` (a copy of the library that travels: what a
-snapshot holds, and where it goes) and `sevenshell-core` (the order of operations), with
-`sevenshell-desktop` as the window and the command surface. The host
+(host key verification, authentication, a terminal channel), `sevenshell-session` (the registry of
+open terminals), `sevenshell-sftp` (the far side of the file workbench), `sevenshell-sync` (a copy
+of the library that travels: what a snapshot holds, and where it goes) and `sevenshell-core` (the
+order of operations), with `sevenshell-desktop` as the window and the command surface. The host
 crates for a command line and an agent interface arrive with the features that need them, so that
 nothing exists without a test.
 
@@ -50,25 +49,23 @@ implementation of the file format.
 
 ## Remote desktops
 
-A remote desktop is a tab of its own. `sevenshell-rdp` speaks RDP itself (the IronRDP crates), which
-is what keeps the password in this process and lets the same window carry a Windows desktop on all
-three platforms. The trust anchor is the TLS certificate: `probe` performs the X.224 negotiation and
-the TLS handshake and returns the certificate without authenticating; `Core::open_desktop` compares
-its SHA-256 fingerprint with the one recorded for the endpoint and answers `certificateUnknown` or
-`certificateMismatch` instead of connecting. The session that follows performs the same TLS upgrade
-and compares the fingerprint again before CredSSP or the login exchange can run. Standard RDP
-security (RC4) is refused.
+A remote desktop is not carried by this process. On Windows, `Core::open_desktop` writes a temporary
+`.rdp` file — address, account, the session's window size or full-screen choice, clipboard sharing,
+and local drives when the session asks for them — and starts the system client (`mstsc.exe`). The
+client brings GPU rendering, audio, clipboard and drive redirection that a second RDP implementation
+would take a long time to approach; it also owns the window, so a desktop is not a workspace tab.
 
-Frames cross to the webview as changed rectangles over a raw IPC channel — eight header bytes, then
-RGBA — and the canvas copies each one at its own position. Input travels the other way as PC
-scancodes and pointer events; the server draws the pointer into the bitmap, so there is no second
-cursor to composite. The clipboard, audio, drive redirection and RD Gateway are not part of this
-slice.
+The file is written in Rust and never named to the interface. A stored password is sealed with DPAPI
+for the current Windows user before it goes into the file, and the file is removed a minute after
+the client starts; an account with no stored password is left to the client's own prompt. The
+certificate warning is the system client's: RDP certificates are usually self-signed, and hiding
+that warning would also hide a real change.
 
-`sevenshell-rdp` depends on individual IronRDP crates rather than on the `ironrdp` facade: the
-published facade still pins a connector whose CredSSP stack needs a pre-release
-`curve25519-dalek`, which cannot resolve beside the stable one `russh` needs. The note in the
-workspace `Cargo.toml` says when the facade can be used again.
+The protocol is Windows-only. The descriptor marks its runtime as `external`, the editor filters it
+out on other platforms, and the core refuses there rather than offering a substitute. The size,
+full-screen choice and drive mapping are stored per session (`DesktopSettings`), so two desktops on
+one machine can differ. Drive mapping is on by default, matching what the reference dialog calls
+regular: the remote can read and write the local drives while a session is open.
 
 ## Opening a session
 

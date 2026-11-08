@@ -2,9 +2,9 @@ name: Lab
 
 # The live tests need a real server, so they are not part of the offline check suite. They run
 # here instead: on a schedule, on demand, and on any pull request that touches the code they
-# exercise. Without this job the riskiest areas — the handshake and host key verification, jump
-# hosts, tunnels, SFTP, and the RDP certificate decision — would only ever be tested on the machine
-# of whoever remembered to run `make lab-verify`.
+# exercise. Without this job the four riskiest areas — the handshake and host key verification,
+# jump hosts, tunnels and SFTP — would only ever be tested on the machine of whoever remembered to
+# run `make lab-verify`.
 
 on:
   schedule:
@@ -66,43 +66,3 @@ jobs:
       - name: Stop the lab
         if: always()
         run: docker compose -f deploy/lab/openssh/compose.yaml down -v
-
-  desktop:
-    name: Live tests against a real xrdp
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Start the RDP lab
-        run: docker compose -f deploy/lab/rdp/compose.yaml up -d --build
-
-      - name: Wait for xrdp to answer
-        run: |
-          for attempt in $(seq 1 60); do
-            if (exec 3<>/dev/tcp/127.0.0.1/13389) 2>/dev/null; then
-              echo "xrdp is listening after $((attempt * 2))s"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "xrdp never came up"
-          docker compose -f deploy/lab/rdp/compose.yaml logs
-          exit 1
-
-      - name: Live tests
-        env:
-          SEVENSHELL_TEST_RDP_HOST: 127.0.0.1
-          SEVENSHELL_TEST_RDP_PORT: "13389"
-          SEVENSHELL_TEST_RDP_USER: labuser
-          SEVENSHELL_TEST_RDP_PASSWORD: labpassword
-        run: cargo test -p sevenshell-rdp --test live_desktop -- --ignored --test-threads=1
-
-      - name: The container's own log, when something failed
-        if: failure()
-        run: docker compose -f deploy/lab/rdp/compose.yaml logs
-
-      - name: Stop the lab
-        if: always()
-        run: docker compose -f deploy/lab/rdp/compose.yaml down -v

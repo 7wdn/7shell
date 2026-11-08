@@ -35,6 +35,7 @@ import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { useAppStore } from "@/stores/app";
 import {
   useSessionEditorStore,
   type ForwardDraft,
@@ -49,6 +50,7 @@ const props = defineProps<{ open: boolean; session: Session | null }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
 
 const { t } = useI18n();
+const app = useAppStore();
 const library = useSessionsStore();
 const editor = useSessionEditorStore();
 
@@ -70,12 +72,50 @@ const forwardModes = computed<SelectOption[]>(() => [
 /** The hop the picker is pointing at, until it is added and the picker goes back to its prompt. */
 const hopToAdd = ref("");
 
-/** The connection kinds the descriptors offer, named in the interface's own words. */
+/**
+ * The connection kinds the descriptors offer, named in the interface's own words.
+ *
+ * Remote desktop is a Windows feature of this build: it hands the session to the system client,
+ * and no other platform is offered a substitute.
+ */
 const protocolOptions = computed<SelectOption[]>(() =>
-  PROTOCOLS.map((protocol) => ({ value: protocol.id, label: t(protocol.labelKey) })),
+  PROTOCOLS.filter((protocol) => protocol.id !== "rdp" || app.info?.os === "windows").map((protocol) => ({
+    value: protocol.id,
+    label: t(protocol.labelKey),
+  })),
 );
 
 const isDesktop = computed(() => editor.protocol !== "ssh");
+
+/** The sizes the reference dialog offers before somebody types their own. */
+const RESOLUTIONS = [
+  { width: 1280, height: 1024 },
+  { width: 1366, height: 768 },
+  { width: 1600, height: 900 },
+  { width: 1920, height: 1080 },
+  { width: 2560, height: 1440 },
+] as const;
+
+const resolutionOptions = computed<SelectOption[]>(() => [
+  ...RESOLUTIONS.map((size) => ({ value: `${size.width}x${size.height}`, label: `${size.width}×${size.height}` })),
+  { value: "custom", label: t("sessions.editor.display.custom") },
+]);
+
+/** Which preset the two dimension fields currently spell, or `custom` when they spell none. */
+const resolution = computed(() => {
+  const width = Number(editor.desktopWidth.trim());
+  const height = Number(editor.desktopHeight.trim());
+  const preset = RESOLUTIONS.find((size) => size.width === width && size.height === height);
+  return preset ? `${preset.width}x${preset.height}` : "custom";
+});
+
+function setResolution(value: string): void {
+  const preset = RESOLUTIONS.find((size) => `${size.width}x${size.height}` === value);
+  if (preset) {
+    editor.desktopWidth = String(preset.width);
+    editor.desktopHeight = String(preset.height);
+  }
+}
 
 /** Every group there is, with "no group" first — the answer a session starts out with. */
 const groupOptions = computed<SelectOption[]>(() => [
@@ -431,6 +471,50 @@ async function forgetKey(): Promise<void> {
               </button>
               <p v-if="submitted && errors.key" class="text-[11px] text-destructive">{{ errors.key }}</p>
             </div>
+          </section>
+
+          <section v-if="isDesktop">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.display.title") }}</h3>
+            <div class="mt-2 flex items-center gap-2">
+              <Select
+                :model-value="resolution"
+                :options="resolutionOptions"
+                class="w-36 shrink-0"
+                :aria-label="t('sessions.editor.display.resolution')"
+                @update:model-value="setResolution($event as string)"
+              />
+              <input
+                v-model="editor.desktopWidth"
+                type="text"
+                inputmode="numeric"
+                class="w-20 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none disabled:opacity-50"
+                :disabled="editor.desktopFullscreen"
+                :aria-label="t('sessions.editor.display.width')"
+              />
+              <span class="text-xs text-muted-foreground">×</span>
+              <input
+                v-model="editor.desktopHeight"
+                type="text"
+                inputmode="numeric"
+                class="w-20 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none disabled:opacity-50"
+                :disabled="editor.desktopFullscreen"
+                :aria-label="t('sessions.editor.display.height')"
+              />
+            </div>
+            <label class="mt-2 flex items-center gap-2 text-xs">
+              <input v-model="editor.desktopFullscreen" type="checkbox" class="size-3.5 rounded-sm border-border" />
+              {{ t("sessions.editor.display.fullscreen") }}
+            </label>
+            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.display.note") }}</p>
+          </section>
+
+          <section v-if="isDesktop">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.mapping.title") }}</h3>
+            <label class="mt-2 flex items-center gap-2 text-xs">
+              <input v-model="editor.desktopDrives" type="checkbox" class="size-3.5 rounded-sm border-border" />
+              {{ t("sessions.editor.mapping.drives") }}
+            </label>
+            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.mapping.note") }}</p>
           </section>
 
           <section v-if="!isDesktop">

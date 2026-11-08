@@ -139,6 +139,7 @@ fn capabilities_are_grouped_and_ordered() {
                 | CapabilityGroup::Session
                 | CapabilityGroup::Auth
                 | CapabilityGroup::Trust
+                | CapabilityGroup::Desktop
         ));
     }
 }

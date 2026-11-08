@@ -327,54 +327,9 @@ impl ShellError {
 
     // -- RDP ---------------------------------------------------------------
 
-    pub fn rdp_unreachable(host: &str, port: u16, detail: impl AsRef<str>) -> Self {
-        Self::new(ErrorCode::RdpUnreachable, rdp_origin(host, port))
-            .with_param("host", host)
-            .with_param("port", port.to_string())
-            .with_detail(detail)
-            .with_outcome(OperationOutcome::NotSent)
-    }
-
-    pub fn rdp_tls_failed(host: &str, port: u16, detail: impl AsRef<str>) -> Self {
-        Self::new(ErrorCode::RdpTlsFailed, rdp_origin(host, port))
-            .with_param("host", host)
-            .with_param("port", port.to_string())
-            .with_detail(detail)
-            .with_outcome(OperationOutcome::NotSent)
-    }
-
-    /// The certificate presented differs from the one a person accepted. Nothing was authenticated.
-    pub fn rdp_certificate_changed(host: &str, port: u16) -> Self {
-        Self::new(ErrorCode::RdpCertificateChanged, rdp_origin(host, port))
-            .with_param("host", host)
-            .with_param("port", port.to_string())
-            .with_outcome(OperationOutcome::Rejected)
-    }
-
-    pub fn rdp_auth_failed(host: &str, port: u16) -> Self {
-        Self::new(ErrorCode::RdpAuthFailed, rdp_origin(host, port))
-            .with_param("host", host)
-            .with_param("port", port.to_string())
-            .with_outcome(OperationOutcome::Sent)
-    }
-
-    pub fn rdp_protocol_failed(host: &str, port: u16, detail: impl AsRef<str>) -> Self {
-        Self::new(ErrorCode::RdpProtocolFailed, rdp_origin(host, port))
-            .with_param("host", host)
-            .with_param("port", port.to_string())
-            .with_detail(detail)
-            .with_outcome(OperationOutcome::Unknown)
-    }
-
-    pub fn rdp_session_closed(host: &str, port: u16, detail: impl AsRef<str>) -> Self {
-        Self::new(ErrorCode::RdpSessionClosed, rdp_origin(host, port))
-            .with_param("host", host)
-            .with_param("port", port.to_string())
-            .with_detail(detail)
-    }
-
-    pub fn rdp_resize_failed(detail: impl AsRef<str>) -> Self {
-        Self::new(ErrorCode::RdpResizeFailed, Origin::new(Subsystem::Rdp))
+    /// The `.rdp` file could not be written, or the system client refused to start.
+    pub fn rdp_launch_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::RdpLaunchFailed, Origin::new(Subsystem::Rdp))
             .with_detail(detail)
             .with_outcome(OperationOutcome::NotSent)
     }
@@ -670,12 +625,6 @@ impl ShellError {
 fn ssh_origin(host: &str, port: u16) -> Origin {
     Origin::new(Subsystem::Ssh)
         .with_adapter("russh")
-        .with_peer(format!("{host}:{port}"))
-}
-
-fn rdp_origin(host: &str, port: u16) -> Origin {
-    Origin::new(Subsystem::Rdp)
-        .with_adapter("ironrdp")
         .with_peer(format!("{host}:{port}"))
 }
 

@@ -108,25 +108,32 @@
       "planned": false
     },
     {
+      "key": "systemClient",
+      "order": 145,
+      "group": "desktop",
+      "labelKey": "capability.systemClient.label",
+      "planned": false
+    },
+    {
       "key": "desktopView",
       "order": 150,
       "group": "desktop",
       "labelKey": "capability.desktopView.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "desktopInput",
       "order": 160,
       "group": "desktop",
       "labelKey": "capability.desktopInput.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "desktopResize",
       "order": 170,
       "group": "desktop",
       "labelKey": "capability.desktopResize.label",
-      "planned": false
+      "planned": true
     },
     {
       "key": "desktopClipboard",
@@ -165,13 +172,11 @@
       "order": 20,
       "labelKey": "protocol.rdp.label",
       "defaultPort": 3389,
-      "runtime": "native",
+      "runtime": "external",
       "transport": "tcp",
-      "supportLevel": "operate",
+      "supportLevel": "connect",
       "capabilities": [
-        "desktopView",
-        "desktopInput",
-        "desktopResize"
+        "systemClient"
       ]
     }
   ],

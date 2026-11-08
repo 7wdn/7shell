@@ -12,7 +12,6 @@ import enBatch from "./locales/en/batch.json";
 import enCapability from "./locales/en/capability.json";
 import enCommands from "./locales/en/commands.json";
 import enCommon from "./locales/en/common.json";
-import enDesktop from "./locales/en/desktop.json";
 import enErrors from "./locales/en/errors.json";
 import enFiles from "./locales/en/files.json";
 import enHome from "./locales/en/home.json";
@@ -33,7 +32,6 @@ import zhCnBatch from "./locales/zh-CN/batch.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
 import zhCnCommands from "./locales/zh-CN/commands.json";
 import zhCnCommon from "./locales/zh-CN/common.json";
-import zhCnDesktop from "./locales/zh-CN/desktop.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
 import zhCnFiles from "./locales/zh-CN/files.json";
 import zhCnHome from "./locales/zh-CN/home.json";
@@ -103,7 +101,6 @@ const messages = {
     ...enInspect,
     ...enMenu,
     ...enSync,
-    ...enDesktop,
   },
   "zh-CN": {
     ...zhCnCommands,
@@ -126,7 +123,6 @@ const messages = {
     ...zhCnInspect,
     ...zhCnMenu,
     ...zhCnSync,
-    ...zhCnDesktop,
   },
 };
 

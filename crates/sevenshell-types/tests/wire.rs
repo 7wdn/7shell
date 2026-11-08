@@ -15,16 +15,16 @@ use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
     BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord,
-    CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DesktopOutcome, DiskUsage,
-    DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem,
-    KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
-    OpenTunnel, PresentedCertificate, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol,
-    RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
-    SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen,
-    Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary,
-    SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
-    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
-    ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView,
+    EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, KeyAlgorithm,
+    KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
+    PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
+    SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
+    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, Snippet, SnippetGroup, SnippetProvider,
+    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
+    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
+    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -469,6 +469,7 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
             has_secret: true,
         },
         terminal: TerminalSettings::default(),
+        desktop: sevenshell_types::DesktopSettings::default(),
         jump: vec!["hop-1".to_owned()],
         forwards: vec![LocalForward {
             id: "f1".to_owned(),
@@ -485,6 +486,26 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
     assert_eq!(json["jump"], serde_json::json!(["hop-1"]));
     assert_eq!(json["forwards"][0]["targetPort"], serde_json::json!(5432));
     assert_eq!(json["auth"]["key"]["hasPassphrase"], serde_json::json!(true));
+    assert_eq!(json["desktop"]["width"], serde_json::json!(1280));
+    assert_eq!(json["desktop"]["redirectDrives"], serde_json::json!(true));
+}
+
+#[test]
+fn desktop_settings_serialize_with_camel_case_fields() {
+    let json = check(
+        &sevenshell_types::DesktopSettings {
+            width: 1920,
+            height: 1080,
+            fullscreen: true,
+            redirect_drives: false,
+        },
+        "DesktopSettings",
+    );
+
+    assert_eq!(json["width"], serde_json::json!(1920));
+    assert_eq!(json["height"], serde_json::json!(1080));
+    assert_eq!(json["fullscreen"], serde_json::json!(true));
+    assert_eq!(json["redirectDrives"], serde_json::json!(false));
 }
 
 #[test]
@@ -1210,45 +1231,4 @@ fn completion_results_serialize_with_camel_case_fields() {
         silent["exitCode"].is_null(),
         "a generator that ran out of time has no exit status"
     );
-}
-
-#[test]
-fn a_desktop_decision_carries_the_certificate_and_never_a_credential() {
-    let certificate = PresentedCertificate {
-        host: "desktop.example".to_owned(),
-        port: 3389,
-        fingerprint: "SHA256:AAAA".to_owned(),
-        certificate: "MIIB".to_owned(),
-    };
-
-    let json = check(
-        &DesktopOutcome::CertificateUnknown {
-            certificate: certificate.clone(),
-        },
-        "DesktopOutcome",
-    );
-    assert_eq!(json["kind"], serde_json::json!("certificateUnknown"));
-    assert_eq!(json["certificate"]["fingerprint"], serde_json::json!("SHA256:AAAA"));
-
-    let json = check(
-        &DesktopOutcome::CertificateMismatch {
-            certificate,
-            trusted: trusted(),
-        },
-        "DesktopOutcome",
-    );
-    assert_eq!(json["kind"], serde_json::json!("certificateMismatch"));
-    assert_eq!(json["trusted"]["keyType"], serde_json::json!("ssh-ed25519"));
-
-    let json = check(
-        &DesktopOutcome::Opened {
-            handle: "d1".to_owned(),
-            session_id: "session-1".to_owned(),
-            width: 1280,
-            height: 800,
-        },
-        "DesktopOutcome",
-    );
-    assert_eq!(json["sessionId"], serde_json::json!("session-1"));
-    assert_eq!(json["width"], serde_json::json!(1280));
 }

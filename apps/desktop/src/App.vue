@@ -25,7 +25,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 
 import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
-import DesktopCertificatePrompt from "@/components/desktop/DesktopCertificatePrompt.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import ImportPassphraseDialog from "@/components/sessions/ImportPassphraseDialog.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
@@ -492,13 +491,6 @@ onBeforeUnmount(() => {
       @trust="terminals.confirmTrust()"
       @replace="terminals.confirmReplace()"
       @cancel="terminals.dismiss()"
-    />
-
-    <DesktopCertificatePrompt
-      v-if="terminals.desktopDecision"
-      :decision="terminals.desktopDecision"
-      @trust="terminals.answerDesktopCertificate()"
-      @cancel="terminals.dismissDesktopDecision()"
     />
 
     <!--

@@ -22,13 +22,7 @@ export const ERROR_CATALOG = {
   "SSH-KEY-INVALID": "errors.ssh.keyInvalid",
   "SSH-KEY-UNSUPPORTED": "errors.ssh.keyUnsupported",
   // RDP
-  "RDP-UNREACHABLE": "errors.rdp.unreachable",
-  "RDP-TLS-FAILED": "errors.rdp.tlsFailed",
-  "RDP-CERTIFICATE-CHANGED": "errors.rdp.certificateChanged",
-  "RDP-AUTH-FAILED": "errors.rdp.authFailed",
-  "RDP-PROTOCOL-FAILED": "errors.rdp.protocolFailed",
-  "RDP-SESSION-CLOSED": "errors.rdp.sessionClosed",
-  "RDP-RESIZE-FAILED": "errors.rdp.resizeFailed",
+  "RDP-LAUNCH-FAILED": "errors.rdp.launchFailed",
   // SFTP
   "SFTP-NOT-FOUND": "errors.sftp.notFound",
   "SFTP-PERMISSION-DENIED": "errors.sftp.permissionDenied",

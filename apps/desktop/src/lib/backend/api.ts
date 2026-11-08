@@ -24,19 +24,13 @@ import type { HostSystem } from "@/types/system";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CreatedKey,
-  DesktopEnded,
-  DesktopInput,
-  DesktopOutcome,
-  DesktopResized,
   DownloadFolderView,
   KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
-  OpenDesktop,
   OpenOutcome,
   OpenTerminal,
   OpenTunnel,
-  PresentedCertificate,
   PresentedHostKey,
   SftpListing,
   SftpOutcome,
@@ -432,24 +426,12 @@ export const backend = {
     closeTunnel: (id: string): Promise<void> => forward("tunnel_close", () => desktop.tunnelClose(id)),
   },
 
-  /** Remote desktops. Frames arrive through the callback, not through an event. */
+  /**
+   * Remote desktops. On Windows the shell starts the system client; nothing pixel-shaped crosses
+   * this boundary.
+   */
   desktop: {
-    /**
-     * May answer that a certificate decision is needed first; nothing is authenticated until it is
-     * made. `onFrame` receives the raw IPC buffers of the session as they arrive.
-     */
-    open: (sessionId: string, onFrame: (buffer: ArrayBuffer) => void): Promise<DesktopOutcome> =>
-      forward("desktop_open", () => desktop.desktopOpen(sessionId, desktop.desktopChannel(onFrame))),
-    trust: (certificate: PresentedCertificate): Promise<void> =>
-      forward("desktop_trust", () => desktop.desktopTrust(certificate)),
-    input: (handle: string, input: DesktopInput): Promise<void> =>
-      forward("desktop_input", () => desktop.desktopInput(handle, input)),
-    resize: (handle: string, width: number, height: number): Promise<void> =>
-      forward("desktop_resize", () => desktop.desktopResize(handle, width, height)),
-    /** Asks for a full repaint, for a canvas that has just mounted. */
-    refresh: (handle: string): Promise<void> => forward("desktop_refresh", () => desktop.desktopRefresh(handle)),
-    close: (handle: string): Promise<void> => forward("desktop_close", () => desktop.desktopClose(handle)),
-    list: (): Promise<OpenDesktop[]> => forward("desktops_open", () => desktop.desktopsOpen()),
+    open: (sessionId: string): Promise<void> => forward("desktop_open", () => desktop.desktopOpen(sessionId)),
   },
 
   /**
@@ -598,16 +580,6 @@ export const backend = {
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalClosed, listener),
-    /** The far side changed the size of an open desktop. */
-    onDesktopResized: (listener: (payload: DesktopResized) => void): Promise<Unlisten> =>
-      subscribe(desktop.onDesktopResized, listener),
-    /** A desktop ended without a failure. */
-    onDesktopClosed: (listener: (payload: DesktopEnded) => void): Promise<Unlisten> =>
-      subscribe(desktop.onDesktopClosed, listener),
-    /** A desktop ended because something went wrong; the error is the envelope to localize. */
-    onDesktopFailed: (
-      listener: (payload: { readonly handle: string; readonly error: unknown }) => void,
-    ): Promise<Unlisten> => subscribe(desktop.onDesktopFailed, listener),
     /** Whether a drag is over the window, for the drop hint. */
     onFilesDrag: (listener: (payload: DragPayload) => void): Promise<Unlisten> =>
       subscribe(desktop.onFilesDrag, listener),

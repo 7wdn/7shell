@@ -7,6 +7,7 @@
       "openDesktop": "打开远程桌面",
       "openHint": "为 {name} 打开终端",
       "openDesktopHint": "为 {name} 打开远程桌面",
+      "desktopLaunched": "已在 Windows 远程桌面中打开。",
       "connecting": "正在连接 {name}…",
       "system": "远程系统：{name}",
       "edit": "编辑会话",
@@ -114,7 +115,21 @@
       "namePlaceholder": "生产环境 Web 服务器",
       "protocol": "连接类型",
       "desktop": {
-        "note": "远程桌面使用密码登录。域账号写成 域\\用户名（例如 CORP\\alice）。桌面尺寸会跟随窗口。"
+        "note": "远程桌面在 Windows 的远程桌面客户端中打开：剪贴板与本地驱动器由它处理。域账号写成 域\\用户名（例如 CORP\\alice）。已保存的密码会以当前 Windows 用户加密写入临时连接文件；留空则由客户端询问密码。"
+      },
+      "display": {
+        "title": "显示",
+        "resolution": "分辨率",
+        "custom": "自定义",
+        "width": "宽度",
+        "height": "高度",
+        "fullscreen": "全屏",
+        "note": "尺寸对下一次连接生效；全屏时忽略尺寸。"
+      },
+      "mapping": {
+        "title": "映射",
+        "drives": "本地驱动器",
+        "note": "把本机驱动器映射进会话。会话期间远端可以读写这些驱动器。"
       },
       "host": "主机",
       "hostPlaceholder": "example.com",
@@ -131,7 +146,7 @@
         "storedPlaceholder": "已保存密码——留空则保持不变",
         "stored": "已保存密码。此处不输入新密码就会继续沿用原有密码。",
         "notStored": "此会话尚未保存密码，保存一个之前无法连接。",
-        "blankAllowed": "留空表示使用空密码连接——Windows 账户可能本来就没有密码。"
+        "blankAllowed": "留空则由 Windows 客户端询问密码——账户可能本来就没有密码。"
       },
       "key": {
         "dialogTitle": "选择私钥文件",

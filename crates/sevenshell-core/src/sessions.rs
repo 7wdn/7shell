@@ -93,10 +93,6 @@ pub struct Core {
     pub(crate) next_file: std::sync::atomic::AtomicU64,
     pub(crate) next_transfer: std::sync::atomic::AtomicU64,
     tunnels: Mutex<HashMap<String, TunnelRecord>>,
-    /// The remote desktops that are open, and the handles the host addresses them by.
-    pub(crate) desktops: crate::desktop::Desktops,
-    /// The desktop event stream, taken once by the host that drains it.
-    pub(crate) desktop_events: std::sync::Mutex<Option<mpsc::UnboundedReceiver<crate::desktop::DesktopSessionEvent>>>,
     /// The opens that are still going, so one of them can be called off.
     ///
     /// Keyed by session rather than by attempt: the interface knows which row was clicked, not which
@@ -110,7 +106,6 @@ impl Core {
     /// Builds the core around a vault, and returns it with the receiver its terminal output arrives on.
     pub fn new(vault: Arc<Vault>) -> (Arc<Self>, mpsc::Receiver<CoreEvent>) {
         let (registry, events) = SessionRegistry::start();
-        let (desktop_events, desktop_receiver) = mpsc::unbounded_channel();
         (
             Arc::new(Self {
                 vault,
@@ -120,8 +115,6 @@ impl Core {
                 next_file: std::sync::atomic::AtomicU64::new(1),
                 next_transfer: std::sync::atomic::AtomicU64::new(1),
                 tunnels: Mutex::new(HashMap::new()),
-                desktops: crate::desktop::Desktops::new(desktop_events),
-                desktop_events: std::sync::Mutex::new(Some(desktop_receiver)),
                 opens_in_flight: Mutex::new(HashMap::new()),
                 timeout: OPEN_TIMEOUT,
             }),
@@ -371,7 +364,6 @@ impl Core {
             let _ = self.close_tunnel(&id).await;
         }
         self.registry.close_all().await;
-        self.desktops.close_all().await;
     }
 
     /// Records a host key a person has just accepted.
@@ -776,6 +768,7 @@ mod tests {
             user: "someone".to_owned(),
             auth: SessionAuth::with_password(AuthMethod::Password),
             terminal: TerminalSettings::default(),
+            desktop: sevenshell_types::DesktopSettings::default(),
             jump: Vec::new(),
             forwards: Vec::new(),
             updated_at: 0,
@@ -793,30 +786,6 @@ mod tests {
             .expect_err("no such session");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionNotFound);
-    }
-
-    #[tokio::test]
-    async fn a_remote_desktop_without_a_stored_password_tries_an_empty_one() {
-        let (_directory, vault, _) = vault_with_a_session();
-        let mut desktop = sample("desktop-1", "desktop");
-        desktop.protocol = sevenshell_types::Protocol::Rdp;
-        desktop.port = 3389;
-        vault.save_session(desktop, None).expect("save");
-        let (core, _events) = Core::new(vault);
-
-        // Nothing listens on 3389 in the fixture. Reaching the network — and failing there — proves
-        // the empty password was not refused locally: a blank password is a legitimate credential,
-        // which is how mstsc connects to an account that has none.
-        let error = core
-            .open_desktop("desktop-1")
-            .await
-            .expect_err("nothing is listening on the fixture's port");
-
-        assert_eq!(
-            error.code(),
-            sevenshell_error::ErrorCode::RdpUnreachable,
-            "an empty password must be attempted rather than refused: {error}"
-        );
     }
 
     #[tokio::test]

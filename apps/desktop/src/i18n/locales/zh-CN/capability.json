@@ -45,6 +45,9 @@
     "platformAgent": {
       "label": "使用系统密钥代理"
     },
+    "systemClient": {
+      "label": "由系统远程桌面客户端打开"
+    },
     "desktopView": {
       "label": "远程桌面画面"
     },

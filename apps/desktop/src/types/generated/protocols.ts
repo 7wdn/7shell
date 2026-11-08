@@ -32,6 +32,7 @@ export type CapabilityKey =
   | "interactive"
   | "keyMaterial"
   | "platformAgent"
+  | "systemClient"
   | "desktopView"
   | "desktopInput"
   | "desktopResize"
@@ -39,9 +40,9 @@ export type CapabilityKey =
 
 export type CapabilityGroup = "terminal" | "session" | "transfer" | "network" | "auth" | "desktop";
 
-export type ProtocolRuntime = "native";
+export type ProtocolRuntime = "native" | "external";
 
-export type SupportLevel = "operate";
+export type SupportLevel = "operate" | "connect";
 
 export interface ProtocolDescriptor {
   readonly id: ProtocolId;
@@ -81,10 +82,10 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     id: "rdp",
     labelKey: "protocol.rdp.label",
     defaultPort: 3389,
-    runtime: "native",
+    runtime: "external",
     transport: "tcp",
-    supportLevel: "operate",
-    capabilities: ["desktopView", "desktopInput", "desktopResize"],
+    supportLevel: "connect",
+    capabilities: ["systemClient"],
   },
 ];
 
@@ -137,6 +138,7 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "interactive", group: "auth", labelKey: "capability.interactive.label" },
   { key: "keyMaterial", group: "auth", labelKey: "capability.keyMaterial.label" },
   { key: "platformAgent", group: "auth", labelKey: "capability.platformAgent.label" },
+  { key: "systemClient", group: "desktop", labelKey: "capability.systemClient.label" },
   { key: "desktopView", group: "desktop", labelKey: "capability.desktopView.label" },
   { key: "desktopInput", group: "desktop", labelKey: "capability.desktopInput.label" },
   { key: "desktopResize", group: "desktop", labelKey: "capability.desktopResize.label" },

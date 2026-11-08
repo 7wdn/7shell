@@ -35,7 +35,6 @@ import {
   List,
   ListChecks,
   LoaderCircle,
-  Monitor,
   Network,
   PanelBottom,
   RotateCw,
@@ -49,7 +48,6 @@ import { useI18n } from "vue-i18n";
 import BatchPanel from "@/components/batch/BatchPanel.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
-import DesktopPane from "@/components/desktop/DesktopPane.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
@@ -220,8 +218,6 @@ function closeLabel(tab: WorkspaceTab): string {
   switch (tab.kind) {
     case "files":
       return t("files.tab.close");
-    case "desktop":
-      return t("desktop.tab.close");
     case "inspect":
       return t("inspect.tab.close");
     case "settings":
@@ -528,7 +524,6 @@ function tabStyle(): Record<string, string> | undefined {
             <span v-if="dotClass(entry.tab)" class="size-1.5 shrink-0 rounded-full" :class="dotClass(entry.tab)"></span>
             <Terminal v-if="entry.tab.kind === 'terminal'" :size="12" class="shrink-0" />
             <Folder v-else-if="entry.tab.kind === 'files'" :size="12" class="shrink-0" />
-            <Monitor v-else-if="entry.tab.kind === 'desktop'" :size="12" class="shrink-0" />
             <Settings v-else-if="entry.tab.kind === 'settings'" :size="12" class="shrink-0" />
             <ListChecks v-else-if="entry.tab.kind === 'batch'" :size="12" class="shrink-0" />
             <Cpu v-else-if="entry.tab.view === 'system'" :size="12" class="shrink-0" />
@@ -756,30 +751,6 @@ function tabStyle(): Record<string, string> | undefined {
               {{ t("files.tab.retry") }}
             </button>
           </div>
-        </footer>
-      </template>
-
-      <template v-else-if="tab.kind === 'desktop'">
-        <DesktopPane
-          v-if="tab.handle"
-          :key="`${tab.id}:${tab.handle}`"
-          :tab="tab"
-          :active="tab.id === terminals.activeTabId"
-          :interactive="tab.status === 'open'"
-          class="min-h-0 flex-1"
-        />
-        <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-          <CircleAlert :size="18" class="text-destructive" />
-          <p class="text-xs text-muted-foreground">{{ t("desktop.tab.failedTitle") }}</p>
-        </div>
-
-        <footer
-          class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1 cursor-default select-none"
-        >
-          <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
-            {{ tab.session.user }}@{{ tab.session.host }}:{{ tab.session.port }}
-          </span>
-          <span class="shrink-0 font-mono text-[10px] text-muted-foreground">{{ tab.width }}×{{ tab.height }}</span>
         </footer>
       </template>
 

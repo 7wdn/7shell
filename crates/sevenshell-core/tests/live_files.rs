@@ -54,6 +54,7 @@ fn lab() -> Option<Lab> {
         user,
         auth: SessionAuth::with_password(AuthMethod::Password),
         terminal: TerminalSettings::default(),
+        desktop: sevenshell_types::DesktopSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 0,

@@ -23,6 +23,9 @@ pub struct Session {
     pub user: String,
     pub auth: SessionAuth,
     pub terminal: TerminalSettings,
+    /// What a remote desktop asks of the system client. Ignored by SSH sessions.
+    #[serde(default)]
+    pub desktop: DesktopSettings,
     /// Saved sessions to reach this one through, in order: the first is connected to directly.
     ///
     /// References rather than copies, because a hop is a session like any other: editing it once
@@ -236,6 +239,51 @@ impl Default for TerminalSettings {
             keepalive_seconds: 30,
             forward_agent: false,
             record: false,
+        }
+    }
+}
+
+/// What a remote desktop asks of the system client.
+///
+/// These are the fields the reference dialog groups under "显示" and "映射": the size of the
+/// desktop, whether it takes the whole screen, and whether the local drives are mapped into the
+/// session. They are stored per session because two desktops on one machine rarely want the same
+/// window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopSettings {
+    /// Window size in pixels. Ignored when `fullscreen` is on.
+    #[serde(default = "default_desktop_width")]
+    pub width: u16,
+    #[serde(default = "default_desktop_height")]
+    pub height: u16,
+    #[serde(default)]
+    pub fullscreen: bool,
+    /// Whether the local drives are mapped into the session. On by default, like the reference
+    /// dialog; the remote can then read and write them while the session is open.
+    #[serde(default = "drives_mapped_by_default")]
+    pub redirect_drives: bool,
+}
+
+fn default_desktop_width() -> u16 {
+    1280
+}
+
+fn default_desktop_height() -> u16 {
+    1024
+}
+
+fn drives_mapped_by_default() -> bool {
+    true
+}
+
+impl Default for DesktopSettings {
+    fn default() -> Self {
+        Self {
+            width: default_desktop_width(),
+            height: default_desktop_height(),
+            fullscreen: false,
+            redirect_drives: true,
         }
     }
 }

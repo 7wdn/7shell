@@ -21,7 +21,6 @@ const RANKS = new Map([
   ["sevenshell-vault", 2],
   ["sevenshell-policy", 2],
   ["sevenshell-ssh", 3],
-  ["sevenshell-rdp", 3],
   ["sevenshell-sync", 3],
   ["sevenshell-session", 4],
   ["sevenshell-sftp", 4],

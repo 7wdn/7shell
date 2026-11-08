@@ -57,10 +57,9 @@ pub fn run() {
             apply_startup_window_theme(app.handle());
             window_chrome::watch_system_theme(app.handle());
 
-            let (shell_state, events, desktop_events) = state::ShellState::new();
+            let (shell_state, events) = state::ShellState::new();
             commands::terminal::pump_events(app.handle().clone(), events);
             app.manage(shell_state);
-            commands::desktop::pump_desktops(app.handle().clone(), desktop_events);
 
             // After the state is managed rather than before: what the settings say about closing is
             // recorded *in* that state, and a shell that read them into nothing would decide every
@@ -206,12 +205,6 @@ pub fn run() {
             commands::terminal::tunnels_open,
             commands::terminal::tunnel_close,
             commands::desktop::desktop_open,
-            commands::desktop::desktop_trust,
-            commands::desktop::desktop_input,
-            commands::desktop::desktop_resize,
-            commands::desktop::desktop_refresh,
-            commands::desktop::desktop_close,
-            commands::desktop::desktops_open,
             commands::monitor::monitor_sample,
             commands::monitor::monitor_processes,
             commands::monitor::monitor_process_detail,

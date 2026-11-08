@@ -15,7 +15,15 @@ import { computed, ref } from "vue";
 
 import { useSessionsStore } from "@/stores/sessions";
 import { PROTOCOLS, protocolById, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
-import type { ForwardMode, KeyInfo, LocalForward, SecretInput, Session, TerminalSettings } from "@/types/session";
+import type {
+  DesktopSettings,
+  ForwardMode,
+  KeyInfo,
+  LocalForward,
+  SecretInput,
+  Session,
+  TerminalSettings,
+} from "@/types/session";
 
 /** What `TerminalSettings::default()` uses in Rust: the wire type has no "not set" for these. */
 const DEFAULT_TERMINAL: TerminalSettings = {
@@ -23,6 +31,14 @@ const DEFAULT_TERMINAL: TerminalSettings = {
   keepaliveSeconds: 30,
   forwardAgent: false,
   record: false,
+};
+
+/** What `DesktopSettings::default()` uses in Rust: the reference dialog's regular setup. */
+const DEFAULT_DESKTOP: DesktopSettings = {
+  width: 1280,
+  height: 1024,
+  fullscreen: false,
+  redirectDrives: true,
 };
 
 /** Bounds of a TCP port, and the one case where zero is a real answer: asking for a free one. */
@@ -53,6 +69,15 @@ export interface HopEntry {
 
 function portNumber(text: string): number {
   return Number(text.trim());
+}
+
+/** A dimension that stays inside what the system client will accept, with a sane fallback. */
+function clampDimension(text: string, minimum: number, maximum: number, fallback: number): number {
+  const value = Number(text.trim());
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(Math.max(Math.round(value), minimum), maximum);
 }
 
 /** Whether the text is a whole number a port may hold: zero only where the system picks one. */
@@ -146,6 +171,17 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
    */
   const terminal = ref<TerminalSettings>({ ...DEFAULT_TERMINAL });
 
+  /**
+   * The remote desktop's display and mapping settings.
+   *
+   * Dimensions are held as text while they are being typed, for the same reason ports are: an
+   * empty field is not zero, and an input that has to hold a number cannot represent "cleared".
+   */
+  const desktopWidth = ref(String(DEFAULT_DESKTOP.width));
+  const desktopHeight = ref(String(DEFAULT_DESKTOP.height));
+  const desktopFullscreen = ref(DEFAULT_DESKTOP.fullscreen);
+  const desktopDrives = ref(DEFAULT_DESKTOP.redirectDrives);
+
   /** The route as the list draws it, in the order it is connected. A missing session stays a row. */
   const hops = computed<HopEntry[]>(() =>
     jumps.value.map((id) => ({ id, session: library.sessions.find((session) => session.id === id) })),
@@ -228,6 +264,11 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     jumps.value = [...(session?.jump ?? [])];
     forwards.value = (session?.forwards ?? []).map(draftFrom);
     terminal.value = { ...(session?.terminal ?? DEFAULT_TERMINAL) };
+    const desktop = session?.desktop ?? DEFAULT_DESKTOP;
+    desktopWidth.value = String(desktop.width);
+    desktopHeight.value = String(desktop.height);
+    desktopFullscreen.value = desktop.fullscreen;
+    desktopDrives.value = desktop.redirectDrives;
   }
 
   /**
@@ -255,6 +296,12 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
         hasSecret: existing?.auth.hasSecret ?? false,
       },
       terminal: { ...terminal.value },
+      desktop: {
+        width: clampDimension(desktopWidth.value, 640, 3840, DEFAULT_DESKTOP.width),
+        height: clampDimension(desktopHeight.value, 480, 2160, DEFAULT_DESKTOP.height),
+        fullscreen: desktopFullscreen.value,
+        redirectDrives: desktopDrives.value,
+      },
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
@@ -334,6 +381,10 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     jumps,
     forwards,
     terminal,
+    desktopWidth,
+    desktopHeight,
+    desktopFullscreen,
+    desktopDrives,
     hops,
     hopChoices,
     sessionProblems,

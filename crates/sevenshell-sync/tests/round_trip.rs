@@ -35,6 +35,7 @@ fn session(id: &str, name: &str) -> Session {
         user: "root".to_owned(),
         auth: SessionAuth::with_password(AuthMethod::Password),
         terminal: TerminalSettings::default(),
+        desktop: sevenshell_types::DesktopSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 1_700_000_000,

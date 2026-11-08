@@ -4,7 +4,6 @@
 //! terminals, plus the receiver their output arrives on). Both are created once, in `setup`, and
 //! handed to every command through managed state.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -12,7 +11,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sevenshell_core::Core;
 use sevenshell_vault::Vault;
-use tauri::ipc::{Channel, Response};
 
 use crate::dropped::PendingDrops;
 use crate::uploads::PendingUploads;
@@ -100,23 +98,13 @@ pub struct ShellState {
     /// unsaved, so only the interface can say that it has been dealt with. Without it, a window set to
     /// hide would hide again on the way out of its own quit question.
     quit_approved: AtomicBool,
-    /// Where each open desktop's pixels go.
-    ///
-    /// Keyed by the handle after a desktop opens, and by the session id while a certificate decision
-    /// is still being made. The interface creates the channel and hands it over with the open; the
-    /// shell keeps it for the lifetime of the session.
-    desktop_channels: Mutex<HashMap<String, Channel<Response>>>,
 }
 
 impl ShellState {
     /// Opens the vault at its usual place and builds the core around it.
     ///
     /// The vault is *not* unlocked here: it starts locked, and the interface asks for the password.
-    pub fn new() -> (
-        Self,
-        tokio::sync::mpsc::Receiver<sevenshell_core::CoreEvent>,
-        tokio::sync::mpsc::UnboundedReceiver<sevenshell_core::DesktopSessionEvent>,
-    ) {
+    pub fn new() -> (Self, tokio::sync::mpsc::Receiver<sevenshell_core::CoreEvent>) {
         let path = sevenshell_vault::default_path().unwrap_or_else(|| {
             log::warn!("the configuration directory could not be located; the vault will not persist");
             std::path::PathBuf::from("vault.json")
@@ -124,9 +112,6 @@ impl ShellState {
 
         let vault = Arc::new(Vault::open_at(path));
         let (core, events) = Core::new(Arc::clone(&vault));
-        let desktop_events = core
-            .take_desktop_events()
-            .expect("the core is built with exactly one desktop event stream");
         (
             Self {
                 vault,
@@ -141,10 +126,8 @@ impl ShellState {
                 tray_shown: AtomicBool::new(false),
                 window_put_away: AtomicBool::new(false),
                 quit_approved: AtomicBool::new(false),
-                desktop_channels: Mutex::new(HashMap::new()),
             },
             events,
-            desktop_events,
         )
     }
 
@@ -249,44 +232,6 @@ impl ShellState {
         self.pending_import.clear();
         self.pending_restore.clear();
         self.vault.lock();
-    }
-
-    /// Remembers where the frames for an attempt should go, before the attempt can produce any.
-    pub fn remember_desktop_channel(&self, session_id: &str, channel: &Channel<Response>) {
-        self.desktop_channels().insert(session_id.to_owned(), channel.clone());
-    }
-
-    /// Moves the channel from the session id it was registered under to the handle the desktop
-    /// actually got.
-    pub fn attach_desktop_channel(&self, session_id: &str, handle: &str) {
-        let mut channels = self.desktop_channels();
-        if let Some(channel) = channels.remove(session_id) {
-            channels.insert(handle.to_owned(), channel);
-        }
-    }
-
-    pub fn desktop_channel(&self, handle: &str) -> Option<Channel<Response>> {
-        self.desktop_channels().get(handle).cloned()
-    }
-
-    /// The channel registered for an attempt that has not produced a handle yet.
-    pub fn desktop_channel_for_session(&self, session_id: &str) -> Option<Channel<Response>> {
-        self.desktop_channels().get(session_id).cloned()
-    }
-
-    pub fn forget_desktop_channel(&self, handle: &str) {
-        self.desktop_channels().remove(handle);
-    }
-
-    pub fn forget_desktop_session(&self, session_id: &str) {
-        self.desktop_channels().remove(session_id);
-    }
-
-    fn desktop_channels(&self) -> std::sync::MutexGuard<'_, HashMap<String, Channel<Response>>> {
-        match self.desktop_channels.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        }
     }
 }
 

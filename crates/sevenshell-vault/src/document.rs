@@ -38,8 +38,9 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// the list and write it back empty. Version 7 added the password for a sync server — a value an
 /// older build would drop on its next write, which would look exactly like "the password was
 /// forgotten". Version 8 added the access tokens for code-hosting accounts, which an older build
-/// would drop in exactly the same way: the token that was kept would simply be gone.
-pub const VAULT_SCHEMA_VERSION: u32 = 8;
+/// would drop in exactly the same way: the token that was kept would simply be gone. Version 9
+/// added a remote desktop's size, screen mode and drive mapping, for the same reason.
+pub const VAULT_SCHEMA_VERSION: u32 = 9;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -833,6 +834,7 @@ mod tests {
             user: "root".to_owned(),
             auth: SessionAuth::with_password(AuthMethod::Password),
             terminal: TerminalSettings::default(),
+            desktop: sevenshell_types::DesktopSettings::default(),
             jump: Vec::new(),
             forwards: Vec::new(),
             updated_at: 1,

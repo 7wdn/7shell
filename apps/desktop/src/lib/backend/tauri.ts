@@ -8,7 +8,7 @@
  * transport-specific calls.
  */
 
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -29,18 +29,12 @@ import type {
 } from "@/types/snippet";
 import type {
   CreatedKey,
-  DesktopEnded,
-  DesktopInput,
-  DesktopOutcome,
-  DesktopResized,
   DownloadFolderView,
   KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
-  OpenDesktop,
   OpenOutcome,
   OpenTerminal,
-  PresentedCertificate,
   PresentedHostKey,
   SecretInput,
   OpenTunnel,
@@ -615,44 +609,13 @@ export function terminalsOpen(): Promise<OpenTerminal[]> {
 // -- Remote desktops ---------------------------------------------------------
 
 /**
- * Opens a desktop and attaches the channel its pixels arrive on.
+ * Opens a desktop in the system client.
  *
- * `Channel<ArrayBuffer>` rather than a JSON event: a frame is a dense pixel buffer, and base64 in
- * an event would inflate it by a third and make the webview decode it again.
+ * On Windows the shell writes a temporary `.rdp` file and starts `mstsc.exe`; no pixels cross this
+ * boundary. Other platforms are refused by the shell.
  */
-export function desktopOpen(sessionId: string, channel: Channel<ArrayBuffer>): Promise<DesktopOutcome> {
-  return invoke<DesktopOutcome>("desktop_open", { sessionId, channel });
-}
-
-export function desktopTrust(certificate: PresentedCertificate): Promise<void> {
-  return invoke<void>("desktop_trust", { certificate });
-}
-
-export function desktopInput(handle: string, input: DesktopInput): Promise<void> {
-  return invoke<void>("desktop_input", { handle, input });
-}
-
-export function desktopResize(handle: string, width: number, height: number): Promise<void> {
-  return invoke<void>("desktop_resize", { handle, width, height });
-}
-
-export function desktopRefresh(handle: string): Promise<void> {
-  return invoke<void>("desktop_refresh", { handle });
-}
-
-export function desktopClose(handle: string): Promise<void> {
-  return invoke<void>("desktop_close", { handle });
-}
-
-export function desktopsOpen(): Promise<OpenDesktop[]> {
-  return invoke<OpenDesktop[]>("desktops_open");
-}
-
-/** A channel whose messages are frame buffers, with the page's handler already attached. */
-export function desktopChannel(onFrame: (buffer: ArrayBuffer) => void): Channel<ArrayBuffer> {
-  const channel = new Channel<ArrayBuffer>();
-  channel.onmessage = onFrame;
-  return channel;
+export function desktopOpen(sessionId: string): Promise<void> {
+  return invoke<void>("desktop_open", { sessionId });
 }
 
 export function tunnelsOpen(): Promise<OpenTunnel[]> {
@@ -952,20 +915,6 @@ export async function onTerminalData(listener: (payload: TerminalData) => void):
 
 export async function onTerminalClosed(listener: (payload: TerminalClosed) => void): Promise<Unlisten> {
   return listen<TerminalClosed>("terminal:closed", (event) => listener(event.payload));
-}
-
-export async function onDesktopResized(listener: (payload: DesktopResized) => void): Promise<Unlisten> {
-  return listen<DesktopResized>("desktop:resized", (event) => listener(event.payload));
-}
-
-export async function onDesktopClosed(listener: (payload: DesktopEnded) => void): Promise<Unlisten> {
-  return listen<DesktopEnded>("desktop:closed", (event) => listener(event.payload));
-}
-
-export async function onDesktopFailed(
-  listener: (payload: { readonly handle: string; readonly error: unknown }) => void,
-): Promise<Unlisten> {
-  return listen<{ handle: string; error: unknown }>("desktop:failed", (event) => listener(event.payload));
 }
 
 export async function onFilesDrag(listener: (payload: DragPayload) => void): Promise<Unlisten> {

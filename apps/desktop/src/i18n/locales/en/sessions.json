@@ -7,6 +7,7 @@
       "openDesktop": "Open remote desktop",
       "openHint": "Open a terminal for {name}",
       "openDesktopHint": "Open the remote desktop for {name}",
+      "desktopLaunched": "Opened in Windows Remote Desktop.",
       "connecting": "Connecting to {name}…",
       "system": "Remote system: {name}",
       "edit": "Edit session",
@@ -114,7 +115,21 @@
       "namePlaceholder": "Production web server",
       "protocol": "Connection type",
       "desktop": {
-        "note": "A remote desktop signs in with a password. A domain account is written DOMAIN\\user (for example CORP\\alice). The size follows the window."
+        "note": "A remote desktop opens in the Windows Remote Desktop client: clipboard and local drives are handled there. A domain account is written DOMAIN\\user (for example CORP\\alice). A stored password is sealed for this Windows user; leave it empty and the client asks."
+      },
+      "display": {
+        "title": "Display",
+        "resolution": "Resolution",
+        "custom": "Custom",
+        "width": "Width",
+        "height": "Height",
+        "fullscreen": "Full screen",
+        "note": "The size applies to the next connection; full screen ignores it."
+      },
+      "mapping": {
+        "title": "Mapping",
+        "drives": "Local drives",
+        "note": "Map this computer's drives into the session. The remote can read and write them while it is open."
       },
       "host": "Host",
       "hostPlaceholder": "example.com",
@@ -131,7 +146,7 @@
         "storedPlaceholder": "Saved password — leave empty to keep it",
         "stored": "A password is already stored. It is kept unless a new one is typed here.",
         "notStored": "No password is stored for this session yet, so it cannot connect until one is saved.",
-        "blankAllowed": "Leave this empty to connect with a blank password — a Windows account may not have one."
+        "blankAllowed": "Leave this empty and the Windows client asks for the password — an account may not have one."
       },
       "key": {
         "dialogTitle": "Choose a private key",

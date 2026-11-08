@@ -20,7 +20,6 @@ mod system;
 
 pub use archive::{ARCHIVE_TIMEOUT, archive_name, shell_quote};
 pub use batch::{BatchEvent, DEFAULT_PARALLEL, MAX_HOST_TIMEOUT, MAX_PARALLEL, MIN_HOST_TIMEOUT, classify_command};
-pub use desktop::DesktopSessionEvent;
 pub use files::{FileSession, LocalEnd};
 pub use monitor::SAMPLE_TIMEOUT;
 pub use sessions::{Core, CoreEvent, OPEN_TIMEOUT, TransferRecord};

@@ -90,26 +90,34 @@ capabilities:
     group: auth
     labelKey: capability.platformAgent.label
 
+  - key: systemClient
+    order: 145
+    group: desktop
+    labelKey: capability.systemClient.label
+
   - key: desktopView
     order: 150
     group: desktop
     labelKey: capability.desktopView.label
+    # Registered for the in-process engine that this build no longer carries. The vocabulary stays
+    # so a future build can claim it; nothing here pretends the desktop is drawn by this process.
+    planned: true
 
   - key: desktopInput
     order: 160
     group: desktop
     labelKey: capability.desktopInput.label
+    planned: true
 
   - key: desktopResize
     order: 170
     group: desktop
     labelKey: capability.desktopResize.label
+    planned: true
 
   - key: desktopClipboard
     order: 180
     group: desktop
     labelKey: capability.desktopClipboard.label
-    # Registered before it is built: the channel is in IronRDP, but the interface side of the
-    # clipboard (what "copy" means in a WebView2 that has its own permission model) has not been
-    # wired or tested, and a capability is only claimed by the change that proves it.
+    # The system client shares the clipboard; this build does not implement the channel itself.
     planned: true
