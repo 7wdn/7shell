@@ -104,6 +104,28 @@ const downloadFolder: DownloadFolderView = { current: "fsdownload", history: ["f
 
 const nothing = () => {};
 
+const fileActions = {
+  open: nothing,
+  download: nothing,
+  edit: nothing,
+  rename: nothing,
+  permissions: nothing,
+  properties: nothing,
+  transferClipboard: nothing,
+  togglePacked: nothing,
+  remove: nothing,
+};
+
+const areaActions = {
+  newFolder: nothing,
+  newFile: nothing,
+  upload: nothing,
+  uploadClipboard: nothing,
+  paste: nothing,
+  refresh: nothing,
+  togglePacked: nothing,
+};
+
 /** One menu per region, each built from the smallest input it accepts. */
 function menus(): readonly { readonly title: string; readonly entries: readonly MenuEntry[] }[] {
   return [
@@ -125,17 +147,13 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
     },
     {
       title: MENU_TITLES.file,
-      entries: fileEntryMenu(
-        [file],
-        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
-        { packed: false },
-      ),
+      entries: fileEntryMenu([file], fileActions, { packed: false }),
     },
     {
       title: MENU_TITLES.file,
       entries: fileEntryMenu(
         [directory],
-        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
+        fileActions,
         // Packed, so the one entry a directory gains is in the list below rather than only in the
         // locale files: a key nothing asks for is a key nothing checks.
         { packed: true },
@@ -143,49 +161,21 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
     },
     {
       title: MENU_TITLES.file,
-      entries: fileEntryMenu(
-        [link],
-        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
-        { packed: false },
-      ),
+      entries: fileEntryMenu([link], fileActions, { packed: false }),
     },
     {
       // Several rows at once, which is the only shape the counted labels exist in.
       title: MENU_TITLES.files,
-      entries: fileEntryMenu(
-        [file, directory, link],
-        { open: nothing, download: nothing, edit: nothing, rename: nothing, remove: nothing },
-        { packed: true },
-      ),
+      entries: fileEntryMenu([file, directory, link], fileActions, { packed: true }),
     },
     {
       title: MENU_TITLES.directory,
-      entries: fileAreaMenu(
-        { path: "/", packed: false },
-        {
-          newFolder: nothing,
-          newFile: nothing,
-          upload: nothing,
-          paste: nothing,
-          refresh: nothing,
-          togglePacked: nothing,
-        },
-      ),
+      entries: fileAreaMenu({ path: "/", packed: false, clipboard: null }, areaActions),
     },
     {
       // Built again with packing on, because one of those rows says something else when it is.
       title: MENU_TITLES.directory,
-      entries: fileAreaMenu(
-        { path: "/", packed: true },
-        {
-          newFolder: nothing,
-          newFile: nothing,
-          upload: nothing,
-          paste: nothing,
-          refresh: nothing,
-          togglePacked: nothing,
-        },
-      ),
+      entries: fileAreaMenu({ path: "/", packed: true, clipboard: { mode: "copy", count: 1 } }, areaActions),
     },
     {
       title: MENU_TITLES.downloadFolder,

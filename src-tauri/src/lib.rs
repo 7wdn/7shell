@@ -214,6 +214,8 @@ pub fn run() {
             commands::files::files_create_folder,
             commands::files::files_create_file,
             commands::files::files_rename,
+            commands::files::files_set_permissions,
+            commands::files::files_paste,
             commands::files::files_delete,
             commands::files::files_read_text,
             commands::files::files_write_text,

@@ -52,7 +52,16 @@
       "download": "Download",
       "edit": "Edit",
       "rename": "Rename",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
       "remove": "Delete"
+    },
+    "copy": {
+      "done": "Copied {count} item(s)"
+    },
+    "cut": {
+      "done": "Cut {count} item(s)"
     },
     "rename": {
       "name": "New name",
@@ -135,7 +144,46 @@
     },
     "paste": {
       "label": "Paste",
-      "title": "Upload the files on the clipboard ({shortcut})"
+      "uploadLabel": "Upload clipboard files",
+      "title": "Upload the files on the clipboard ({shortcut})",
+      "done": "Pasted {count} item(s)",
+      "failed": "{count} item(s) could not be pasted",
+      "conflictTitle": "Some names already exist",
+      "conflictMessage": "These names already exist in the target directory. Continuing replaces them, and that cannot be undone.",
+      "conflictConfirm": "Replace and paste"
+    },
+    "properties": {
+      "action": "Properties",
+      "title": "File properties",
+      "path": "Path",
+      "kind": "Kind",
+      "size": "Size",
+      "modified": "Modified",
+      "permissions": "Permissions (octal)",
+      "owner": "Owner",
+      "linkTarget": "Link target",
+      "apply": "Apply permissions",
+      "invalid": "Enter octal permission bits between 0 and 7777.",
+      "saved": "Permissions updated.",
+      "close": "Close"
+    },
+    "chmod": {
+      "action": "Change permissions",
+      "title": "Change permissions",
+      "roles": {
+        "owner": "Owner",
+        "group": "Group",
+        "others": "Others"
+      },
+      "columns": {
+        "read": "Read",
+        "write": "Write",
+        "execute": "Execute"
+      },
+      "hint": "Runs chmod with the octal permission bits.",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "updated": "Permissions updated."
     }
   }
 }

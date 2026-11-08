@@ -237,6 +237,9 @@ export interface SftpEntry {
   /** The owner's name, or the number the server sent when its accounts do not name it. */
   readonly owner?: string;
   readonly group?: string;
+  /** The numbers behind those names, for the properties page that shows both. */
+  readonly uid?: number;
+  readonly gid?: number;
   readonly linkTarget?: string;
 }
 
@@ -244,6 +247,20 @@ export interface SftpListing {
   /** The path the server resolved, which is what the breadcrumbs show. */
   readonly path: string;
   readonly entries: readonly SftpEntry[];
+}
+
+/** One path a paste copied or moved, and what became of it. */
+export interface SftpPasteItem {
+  readonly source: string;
+  readonly target: string;
+  readonly ok: boolean;
+  readonly error?: string;
+}
+
+/** What pasting a clipboard's paths answered: existing targets to ask about, or the per-item outcome. */
+export interface SftpPasteOutcome {
+  readonly conflicts: readonly string[];
+  readonly results: readonly SftpPasteItem[];
 }
 
 /** What opening a file browser answered. */

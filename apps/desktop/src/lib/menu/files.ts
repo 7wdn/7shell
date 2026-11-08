@@ -28,9 +28,12 @@ import {
   FileText,
   FolderOpen,
   FolderPlus,
+  Info,
+  Lock,
   Pencil,
   Plus,
   RefreshCw,
+  Scissors,
   Trash2,
   Upload,
 } from "@lucide/vue";
@@ -51,6 +54,12 @@ export interface FileEntryActions {
   readonly download: (entries: readonly SftpEntry[], packed: boolean) => void;
   readonly edit: (entry: SftpEntry) => void;
   readonly rename: (entry: SftpEntry) => void;
+  /** The focused chmod dialog: the nine boxes and the octal draft. */
+  readonly permissions: (entry: SftpEntry) => void;
+  readonly properties: (entry: SftpEntry) => void;
+  /** Puts the selection on the connection's clipboard, to be copied or moved on paste. */
+  readonly transferClipboard: (mode: "copy" | "cut") => void;
+  readonly togglePacked: () => void;
   readonly remove: (entries: readonly SftpEntry[]) => void;
 }
 
@@ -126,14 +135,28 @@ export function fileEntryMenu(
     });
   }
 
-  if (chosen.length > 0) {
-    chosen.push({ kind: "separator", id: "sep-manage" });
+  // A directory's download and a selection's download are what the switch decides, so it is shown
+  // where that decision is about to be made.
+  if (many || only?.kind === "directory") {
+    chosen.push({
+      kind: "action",
+      id: "packed",
+      labelKey: "menu.packedTransfer",
+      checked: options.packed,
+      run: () => actions.togglePacked(),
+    });
   }
 
-  // One name can be changed at a time: renaming five rows would need five names typed, and the panel
-  // has one rename field.
+  const separate = (id: string): void => {
+    if (chosen.length > 0 && chosen[chosen.length - 1]?.kind !== "separator") {
+      chosen.push({ kind: "separator", id });
+    }
+  };
+
+  // Managing the rows: one name is changed at a time; the clipboard takes the whole selection.
+  const manage: MenuEntry[] = [];
   if (only !== undefined) {
-    chosen.push({
+    manage.push({
       kind: "action",
       id: "rename",
       labelKey: "files.action.rename",
@@ -141,18 +164,28 @@ export function fileEntryMenu(
       run: () => actions.rename(only),
     });
   }
-
-  chosen.push(
+  manage.push(
     {
       kind: "action",
-      id: "remove",
-      labelKey: many ? "menu.deleteItems" : "files.action.remove",
-      params: many ? { count } : undefined,
-      icon: Trash2,
-      danger: true,
-      run: () => actions.remove(entries),
+      id: "copy",
+      labelKey: "files.action.copy",
+      icon: Copy,
+      run: () => actions.transferClipboard("copy"),
     },
-    { kind: "separator", id: "sep-copy" },
+    {
+      kind: "action",
+      id: "cut",
+      labelKey: "files.action.cut",
+      icon: Scissors,
+      run: () => actions.transferClipboard("cut"),
+    },
+  );
+  separate("sep-manage");
+  chosen.push(...manage);
+
+  // What the rows are, as text: names, paths, and a link's target.
+  separate("sep-copy");
+  chosen.push(
     {
       kind: "action",
       id: "copy-name",
@@ -182,6 +215,40 @@ export function fileEntryMenu(
     });
   }
 
+  // The two permission faces: the focused editor, and the page that also says what this is.
+  if (only !== undefined) {
+    separate("sep-info");
+    chosen.push(
+      {
+        kind: "action",
+        id: "permissions",
+        labelKey: "files.chmod.action",
+        icon: Lock,
+        run: () => actions.permissions(only),
+      },
+      {
+        kind: "action",
+        id: "properties",
+        labelKey: "files.properties.action",
+        icon: Info,
+        run: () => actions.properties(only),
+      },
+    );
+  }
+
+  // Deleting is the last thing on the menu, whatever else it offers: it is the one that cannot be
+  // taken back, and a row that sits beside copy-path is a row somebody reaches by habit.
+  separate("sep-delete");
+  chosen.push({
+    kind: "action",
+    id: "remove",
+    labelKey: many ? "menu.deleteItems" : "files.action.remove",
+    params: many ? { count } : undefined,
+    icon: Trash2,
+    danger: true,
+    run: () => actions.remove(entries),
+  });
+
   return chosen;
 }
 
@@ -190,13 +257,17 @@ export interface FileAreaState {
   readonly path: string;
   /** Whether transfers are packed, which is what the switch in this menu is set to. */
   readonly packed: boolean;
+  /** What copy/cut put on this connection's clipboard, or null when nothing is pasteable here. */
+  readonly clipboard: { readonly mode: "copy" | "cut"; readonly count: number } | null;
 }
 
 export interface FileAreaActions {
   readonly newFolder: () => void;
   readonly newFile: () => void;
   readonly upload: () => void;
-  /** Uploads whatever files the clipboard is holding, which is what Ctrl+V does here. */
+  /** Uploads whatever files the system clipboard is holding, which is what Ctrl+V does here. */
+  readonly uploadClipboard: () => void;
+  /** Copies or moves this connection's file clipboard into the directory on screen. */
   readonly paste: () => void;
   readonly refresh: () => void;
   readonly togglePacked: () => void;
@@ -217,14 +288,22 @@ export function fileAreaMenu(state: FileAreaState, actions: FileAreaActions): Me
     },
     {
       kind: "action",
-      id: "paste",
-      labelKey: "files.paste.label",
+      id: "upload-clipboard",
+      labelKey: "files.paste.uploadLabel",
       icon: ClipboardPaste,
       // The one accelerator worth printing anywhere in this menu: the shell really does register it,
       // and only while a browser is on screen — which is exactly when this menu can be opened. It is
       // written as a binding rather than as a sentence, so the platform it is drawn on decides
       // whether that reads `Ctrl + V` or `⌘ V`.
       shortcut: "global.uploadClipboard",
+      run: () => actions.uploadClipboard(),
+    },
+    {
+      kind: "action",
+      id: "paste",
+      labelKey: "files.action.paste",
+      icon: ClipboardPaste,
+      disabled: state.clipboard === null,
       run: () => actions.paste(),
     },
     {

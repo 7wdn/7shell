@@ -45,6 +45,7 @@ import type {
   SessionImportSummary,
   SftpListing,
   SftpOutcome,
+  SftpPasteOutcome,
   TerminalClosed,
   TerminalData,
   TransferInfo,
@@ -674,6 +675,22 @@ export function filesCreateFile(handle: string, path: string): Promise<void> {
 
 export function filesRename(handle: string, from: string, to: string): Promise<void> {
   return invoke<void>("files_rename", { handle, from, to });
+}
+
+/** Changes an entry's permission bits, in octal. */
+export function filesSetPermissions(handle: string, path: string, mode: number): Promise<void> {
+  return invoke<void>("files_set_permissions", { handle, path, mode });
+}
+
+/** Copies or moves a clipboard's paths into a directory; conflicts are an answer, not an error. */
+export function filesPaste(
+  handle: string,
+  sources: readonly string[],
+  destination: string,
+  moving: boolean,
+  overwrite: boolean,
+): Promise<SftpPasteOutcome> {
+  return invoke<SftpPasteOutcome>("files_paste", { handle, sources, destination, moving, overwrite });
 }
 
 export function filesDelete(handle: string, path: string, kind: string): Promise<void> {

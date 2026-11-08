@@ -20,11 +20,11 @@ use sevenshell_types::{
     KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
     PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
     SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
-    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, Snippet, SnippetGroup, SnippetProvider,
-    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
-    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
-    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet,
+    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
+    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
+    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
+    ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -1231,4 +1231,35 @@ fn completion_results_serialize_with_camel_case_fields() {
         silent["exitCode"].is_null(),
         "a generator that ran out of time has no exit status"
     );
+}
+
+#[test]
+fn a_paste_outcome_serializes_with_camel_case_fields() {
+    let asked = check(
+        &SftpPasteOutcome {
+            conflicts: vec!["/home/user/logs".to_owned()],
+            results: Vec::new(),
+        },
+        "SftpPasteOutcome::conflicts",
+    );
+    assert_eq!(asked["conflicts"], serde_json::json!(["/home/user/logs"]));
+
+    let done = check(
+        &SftpPasteOutcome {
+            conflicts: Vec::new(),
+            results: vec![SftpPasteItem {
+                source: "/home/user/notes.txt".to_owned(),
+                target: "/home/user/archive/notes.txt".to_owned(),
+                ok: false,
+                error: Some("cp: permission denied".to_owned()),
+            }],
+        },
+        "SftpPasteOutcome::results",
+    );
+    assert_eq!(
+        done["results"][0]["target"],
+        serde_json::json!("/home/user/archive/notes.txt")
+    );
+    assert_eq!(done["results"][0]["error"], serde_json::json!("cp: permission denied"));
+    assert_eq!(done["results"][0]["ok"], serde_json::json!(false));
 }

@@ -42,12 +42,15 @@ import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
+import FilePermissionsDialog from "@/components/files/FilePermissionsDialog.vue";
+import FilePropertiesDialog from "@/components/files/FilePropertiesDialog.vue";
 import ColumnResizeHandle from "@/components/ui/ColumnResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SideDivider from "@/components/ui/SideDivider.vue";
 import SortHeader from "@/components/ui/SortHeader.vue";
 import { useColumnWidths } from "@/composables/useColumnWidths";
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import { type ColumnLine, type ColumnWidth } from "@/lib/columns";
 import {
@@ -147,6 +150,68 @@ function pasteFiles(): void {
   }
 }
 
+/** Puts the picked rows on this connection's clipboard, for a copy or a cut. */
+function rememberClipboard(mode: "copy" | "cut"): void {
+  const current = browser.value;
+  const entries = chosen.value;
+  if (!current || entries.length === 0) {
+    return;
+  }
+  files.rememberClipboard(
+    mode,
+    current.sessionId,
+    entries.map((entry) => entry.path),
+  );
+  toast(t(mode === "copy" ? "files.copy.done" : "files.cut.done", { count: entries.length }), "receipt");
+}
+
+/**
+ * Pastes this connection's clipboard into the directory on screen.
+ *
+ * The first answer may be the targets that already exist; that answer changed nothing, so the
+ * question is asked before the second request. A cut takes the clipboard away once something has
+ * actually moved, and a copy stays for a second paste.
+ */
+async function pasteClipboard(overwrite = false): Promise<void> {
+  const current = browser.value;
+  const clip = files.clipboard;
+  if (!current || !clip || clip.sessionId !== current.sessionId || pasting.value) {
+    return;
+  }
+
+  pasting.value = true;
+  const outcome = await files.paste(props.handle, clip.paths, current.path, clip.mode === "cut", overwrite);
+  pasting.value = false;
+  if (!outcome) {
+    pasteConflicts.value = null;
+    return;
+  }
+  if (outcome.conflicts.length > 0) {
+    pasteConflicts.value = [...outcome.conflicts];
+    return;
+  }
+  pasteConflicts.value = null;
+
+  const done = outcome.results.filter((item) => item.ok);
+  const failed = outcome.results.filter((item) => !item.ok);
+  if (clip.mode === "cut" && done.length > 0) {
+    files.clearClipboard();
+  }
+  if (done.length > 0) {
+    const targets = done.map((item) => item.target);
+    selection.value = {
+      paths: targets,
+      anchor: targets[0] ?? null,
+      lead: targets[targets.length - 1] ?? null,
+    };
+    reveal(targets[0] ?? "");
+    toast(t("files.paste.done", { count: done.length }), "receipt");
+  }
+  if (failed.length > 0) {
+    toast(t("files.paste.failed", { count: failed.length }), "failure");
+  }
+}
+
 /** Goes where the tree asked, through the same path the listing uses. */
 function goTo(path: string): void {
   void files.navigate(props.handle, path);
@@ -155,6 +220,7 @@ function goTo(path: string): void {
 const { t } = useI18n();
 const files = useFilesStore();
 const { openMenu } = useContextMenu();
+const { toast } = useToast();
 const app = useAppStore();
 
 /** How the clipboard key is spelled on this platform, for the button that tells somebody about it. */
@@ -163,6 +229,15 @@ const pasteShortcut = computed(() =>
 );
 
 const browser = computed(() => files.browser(props.handle));
+/** What this browser can paste: the clipboard is only meaningful on the connection it came from. */
+const pasteable = computed(() => {
+  const clip = files.clipboard;
+  const current = browser.value;
+  if (!clip || !current || clip.sessionId !== current.sessionId) {
+    return null;
+  }
+  return { mode: clip.mode, count: clip.paths.length };
+});
 const problem = computed(() => (browser.value?.failure ? describeShellError(translate, browser.value.failure) : null));
 const parent = computed(() => (browser.value ? parentPath(browser.value.path) : null));
 const crumbs = computed(() => (browser.value ? crumbsOf(browser.value.path) : []));
@@ -199,6 +274,10 @@ const renameField = ref<HTMLInputElement | null>(null);
 /** The entries whose deletion is being confirmed. Never a bare click, and never only one at a time. */
 const removal = ref<SftpEntry[] | null>(null);
 const editing = ref<SftpEntry | null>(null);
+const permissions = ref<SftpEntry | null>(null);
+const properties = ref<SftpEntry | null>(null);
+const pasteConflicts = ref<string[] | null>(null);
+const pasting = ref(false);
 const busy = ref(false);
 /** The listing itself, which is what takes focus and carries the keyboard. */
 const listing = ref<HTMLDivElement | null>(null);
@@ -885,6 +964,14 @@ async function createEntry(): Promise<void> {
 
   creating.value = null;
   newName.value = "";
+  // The answer to "did it work" is the row itself: select it and bring it into view, wherever the
+  // server's sort put it. Done after the re-read inside the store, so the path is one of the rows
+  // on screen rather than something this side hopes was created.
+  selection.value = selectOne(path);
+  await nextTick();
+  measureListing();
+  reveal(path);
+  await nextTick();
   if (kind === "file") {
     editing.value = { name, path, kind: "file", size: 0 };
   }
@@ -1054,6 +1141,14 @@ function openEntryMenu(event: MouseEvent, entry: SftpEntry): void {
           editing.value = target;
         },
         rename: startRename,
+        permissions: (target) => {
+          permissions.value = target;
+        },
+        properties: (target) => {
+          properties.value = target;
+        },
+        transferClipboard: rememberClipboard,
+        togglePacked: () => void preferences.setPackedTransfer(!preferences.packedTransfer),
         remove: startRemove,
       },
       { packed: preferences.packedTransfer },
@@ -1077,12 +1172,13 @@ function openAreaMenu(event: MouseEvent): void {
     event,
     { key: MENU_TITLES.directory },
     fileAreaMenu(
-      { path: current.path, packed: preferences.packedTransfer },
+      { path: current.path, packed: preferences.packedTransfer, clipboard: pasteable.value },
       {
         newFolder: () => startNew("folder"),
         newFile: () => startNew("file"),
         upload,
-        paste: pasteFiles,
+        uploadClipboard: pasteFiles,
+        paste: () => void pasteClipboard(),
         refresh: () => void files.navigate(props.handle, current.path),
         togglePacked: () => void preferences.setPackedTransfer(!preferences.packedTransfer),
       },
@@ -1435,6 +1531,20 @@ function openAreaMenu(event: MouseEvent): void {
       @update:open="closeEditor"
     />
 
+    <FilePropertiesDialog
+      :open="properties !== null"
+      :entry="properties"
+      :handle="props.handle"
+      @update:open="(open: boolean) => !open && (properties = null)"
+    />
+
+    <FilePermissionsDialog
+      :open="permissions !== null"
+      :entry="permissions"
+      :handle="props.handle"
+      @update:open="(open: boolean) => !open && (permissions = null)"
+    />
+
     <!--
       Making something is a question about a name, and a question is chrome: it is asked over the
       listing rather than typed into a strip above it. The field takes the keyboard as the dialog
@@ -1526,6 +1636,20 @@ function openAreaMenu(event: MouseEvent): void {
       :loading="busy"
       @confirm="remove(removal)"
       @update:open="removal = null"
+    />
+
+    <!-- The first paste answer changed nothing: these are the names standing in its way. -->
+    <ConfirmDialog
+      v-if="pasteConflicts"
+      :open="true"
+      :title="t('files.paste.conflictTitle')"
+      :message="t('files.paste.conflictMessage')"
+      :details="pasteConflicts"
+      :confirm-label="t('files.paste.conflictConfirm')"
+      danger
+      :loading="pasting"
+      @confirm="pasteClipboard(true)"
+      @update:open="(open: boolean) => !open && (pasteConflicts = null)"
     />
   </div>
 </template>

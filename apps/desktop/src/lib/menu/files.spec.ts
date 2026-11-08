@@ -49,6 +49,10 @@ function actions() {
     download: vi.fn(),
     edit: vi.fn(),
     rename: vi.fn(),
+    permissions: vi.fn(),
+    properties: vi.fn(),
+    transferClipboard: vi.fn(),
+    togglePacked: vi.fn(),
     remove: vi.fn(),
   };
 }
@@ -58,10 +62,19 @@ function areaActions() {
     newFolder: vi.fn(),
     newFile: vi.fn(),
     upload: vi.fn(),
+    uploadClipboard: vi.fn(),
     paste: vi.fn(),
     refresh: vi.fn(),
     togglePacked: vi.fn(),
   };
+}
+
+function areaState(
+  path = "/var/log",
+  packed = false,
+  clipboard: { mode: "copy" | "cut"; count: number } | null = null,
+) {
+  return { path, packed, clipboard };
 }
 
 beforeEach(() => {
@@ -75,10 +88,16 @@ describe("a remote file's menu", () => {
       "edit",
       "sep-manage",
       "rename",
-      "remove",
+      "copy",
+      "cut",
       "sep-copy",
       "copy-name",
       "copy-path",
+      "sep-info",
+      "permissions",
+      "properties",
+      "sep-delete",
+      "remove",
     ]);
   });
 
@@ -86,12 +105,19 @@ describe("a remote file's menu", () => {
     const directory = entry({ name: "logs", path: "/home/user/logs", kind: "directory" });
     expect(ids(fileEntryMenu([directory], actions(), plain))).toEqual([
       "open",
+      "packed",
       "sep-manage",
       "rename",
-      "remove",
+      "copy",
+      "cut",
       "sep-copy",
       "copy-name",
       "copy-path",
+      "sep-info",
+      "permissions",
+      "properties",
+      "sep-delete",
+      "remove",
     ]);
   });
 
@@ -100,12 +126,19 @@ describe("a remote file's menu", () => {
     expect(ids(fileEntryMenu([directory], actions(), packed))).toEqual([
       "open",
       "download-archive",
+      "packed",
       "sep-manage",
       "rename",
-      "remove",
+      "copy",
+      "cut",
       "sep-copy",
       "copy-name",
       "copy-path",
+      "sep-info",
+      "permissions",
+      "properties",
+      "sep-delete",
+      "remove",
     ]);
   });
 
@@ -117,10 +150,16 @@ describe("a remote file's menu", () => {
     const socket = entry({ name: "sshd.sock", path: "/run/sshd.sock", kind: "other" });
     expect(ids(fileEntryMenu([socket], actions(), plain))).toEqual([
       "rename",
-      "remove",
+      "copy",
+      "cut",
       "sep-copy",
       "copy-name",
       "copy-path",
+      "sep-info",
+      "permissions",
+      "properties",
+      "sep-delete",
+      "remove",
     ]);
   });
 
@@ -140,12 +179,38 @@ describe("a remote file's menu", () => {
     pick(entries, "download").run();
     pick(entries, "edit").run();
     pick(entries, "rename").run();
+    pick(entries, "permissions").run();
+    pick(entries, "properties").run();
     pick(entries, "remove").run();
 
     expect(wired.download).toHaveBeenCalledWith([target], false);
     expect(wired.edit).toHaveBeenCalledWith(target);
     expect(wired.rename).toHaveBeenCalledWith(target);
+    expect(wired.permissions).toHaveBeenCalledWith(target);
+    expect(wired.properties).toHaveBeenCalledWith(target);
     expect(wired.remove).toHaveBeenCalledWith([target]);
+  });
+
+  it("keeps deleting last, whatever else the menu offers", () => {
+    const directory = entry({ name: "logs", path: "/home/user/logs", kind: "directory" });
+    for (const menu of [
+      fileEntryMenu([entry()], actions(), plain),
+      fileEntryMenu([directory], actions(), packed),
+      fileEntryMenu([entry({ kind: "symlink", linkTarget: "/srv" })], actions(), plain),
+    ]) {
+      expect(ids(menu).at(-1)).toBe("remove");
+    }
+  });
+
+  it("puts the selection on the clipboard as a copy or a cut", () => {
+    const wired = actions();
+    const entries = fileEntryMenu([entry()], wired, plain);
+
+    pick(entries, "copy").run();
+    pick(entries, "cut").run();
+
+    expect(wired.transferClipboard).toHaveBeenNthCalledWith(1, "copy");
+    expect(wired.transferClipboard).toHaveBeenNthCalledWith(2, "cut");
   });
 
   it("copies the name and the path", () => {
@@ -194,7 +259,19 @@ describe("a menu over several rows", () => {
     expect(entries).not.toContain("open");
     expect(entries).not.toContain("edit");
     expect(entries).not.toContain("rename");
+    expect(entries).not.toContain("permissions");
+    expect(entries).not.toContain("properties");
     expect(entries).not.toContain("copy-target");
+    expect(entries.at(-1)).toBe("remove");
+  });
+
+  it("keeps the packing switch where the selection's download is decided", () => {
+    const wired = actions();
+    const entries = fileEntryMenu(three, wired, packed);
+
+    expect(pick(entries, "packed").checked).toBe(true);
+    pick(entries, "packed").run();
+    expect(wired.togglePacked).toHaveBeenCalledOnce();
   });
 
   it("takes all of them when the packed switch is on, whatever they are", () => {
@@ -234,12 +311,13 @@ describe("a menu over several rows", () => {
 
 describe("the directory's own menu", () => {
   it("offers the panel's actions, the packing switch and the two kinds of new", () => {
-    const entries = fileAreaMenu({ path: "/var/log", packed: false }, areaActions());
+    const entries = fileAreaMenu(areaState(), areaActions());
 
     expect(ids(entries)).toEqual([
       "refresh",
       "sep-transfer",
       "upload",
+      "upload-clipboard",
       "paste",
       "packed",
       "sep-new",
@@ -251,17 +329,30 @@ describe("the directory's own menu", () => {
   });
 
   it("prints the one shortcut that really works here, as a binding the menu layer spells out", () => {
-    const entries = fileAreaMenu({ path: "/var/log", packed: false }, areaActions());
+    const entries = fileAreaMenu(areaState(), areaActions());
 
-    expect(pick(entries, "paste").shortcut, "by action, so the settings decide the key").toBe("global.uploadClipboard");
+    expect(pick(entries, "upload-clipboard").shortcut, "by action, so the settings decide the key").toBe(
+      "global.uploadClipboard",
+    );
+  });
+
+  it("lets a paste be picked only when this connection's clipboard has something", () => {
+    const empty = fileAreaMenu(areaState(), areaActions());
+    expect(pick(empty, "paste").disabled).toBe(true);
+
+    const wired = areaActions();
+    const ready = fileAreaMenu(areaState("/var/log", false, { mode: "copy", count: 2 }), wired);
+    expect(pick(ready, "paste").disabled).toBeFalsy();
+    pick(ready, "paste").run();
+    expect(wired.paste).toHaveBeenCalledOnce();
   });
 
   it("says whether packing is on, and turns it over when pressed", () => {
-    const off = fileAreaMenu({ path: "/var/log", packed: false }, areaActions());
+    const off = fileAreaMenu(areaState(), areaActions());
     expect(pick(off, "packed").checked).toBe(false);
 
     const wired = areaActions();
-    const on = fileAreaMenu({ path: "/var/log", packed: true }, wired);
+    const on = fileAreaMenu(areaState("/var/log", true), wired);
     expect(pick(on, "packed").checked).toBe(true);
 
     pick(on, "packed").run();
@@ -269,8 +360,8 @@ describe("the directory's own menu", () => {
   });
 
   it("renames uploading when packing turns it into an unpacking", () => {
-    const plain = fileAreaMenu({ path: "/var/log", packed: false }, areaActions());
-    const packed = fileAreaMenu({ path: "/var/log", packed: true }, areaActions());
+    const plain = fileAreaMenu(areaState(), areaActions());
+    const packed = fileAreaMenu(areaState("/var/log", true), areaActions());
 
     expect(pick(plain, "upload").labelKey).toBe("files.upload");
     expect(pick(packed, "upload").labelKey).toBe("menu.packedUpload");
@@ -278,7 +369,7 @@ describe("the directory's own menu", () => {
 
   it("opens the two prompts through their own entries", () => {
     const wired = areaActions();
-    const entries = fileAreaMenu({ path: "/var/log", packed: false }, wired);
+    const entries = fileAreaMenu(areaState(), wired);
     const newEntries = submenu(entries, "new");
 
     pick(newEntries, "new-folder").run();
@@ -289,7 +380,7 @@ describe("the directory's own menu", () => {
   });
 
   it("refuses to copy a directory nobody has read yet", () => {
-    const entries = fileAreaMenu({ path: "", packed: false }, areaActions());
+    const entries = fileAreaMenu(areaState(""), areaActions());
 
     expect(pick(entries, "copy-path").disabled).toBe(true);
   });

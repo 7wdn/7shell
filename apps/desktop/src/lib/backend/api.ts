@@ -34,6 +34,7 @@ import type {
   PresentedHostKey,
   SftpListing,
   SftpOutcome,
+  SftpPasteOutcome,
   TransferInfo,
   SecretInput,
   Session,
@@ -205,6 +206,18 @@ export const backend = {
       forward("files_create_file", () => desktop.filesCreateFile(handle, path)),
     rename: (handle: string, from: string, to: string): Promise<void> =>
       forward("files_rename", () => desktop.filesRename(handle, from, to)),
+    /** `mode` is the low twelve bits, octal digits already parsed by the caller. */
+    setPermissions: (handle: string, path: string, mode: number): Promise<void> =>
+      forward("files_set_permissions", () => desktop.filesSetPermissions(handle, path, mode)),
+    /** Copies or moves a clipboard's paths into `destination`; conflicts come back as a question. */
+    paste: (
+      handle: string,
+      sources: readonly string[],
+      destination: string,
+      moving: boolean,
+      overwrite: boolean,
+    ): Promise<SftpPasteOutcome> =>
+      forward("files_paste", () => desktop.filesPaste(handle, sources, destination, moving, overwrite)),
     remove: (handle: string, path: string, kind: string): Promise<void> =>
       forward("files_delete", () => desktop.filesDelete(handle, path, kind)),
     readText: (handle: string, path: string): Promise<string> =>

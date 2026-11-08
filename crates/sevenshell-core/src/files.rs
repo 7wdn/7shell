@@ -7,14 +7,18 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use crate::archive;
 use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
 use sevenshell_error::ShellError;
 use sevenshell_sftp::{SftpSession, TransferProgress};
-use sevenshell_ssh::SshSession;
-use sevenshell_types::{EntryKind, SftpListing, SftpOutcome, TransferDirection, TransferInfo, TransferState};
+use sevenshell_ssh::{ExecOutcome, SshSession};
+use sevenshell_types::{
+    EntryKind, SftpListing, SftpOutcome, SftpPasteItem, SftpPasteOutcome, TransferDirection, TransferInfo,
+    TransferState,
+};
 
 /// One open file browser: the connection it rides on, and its SFTP channel.
 pub struct FileSession {
@@ -39,6 +43,12 @@ impl FileSession {
         self.session_id.clone()
     }
 }
+
+/// How long a remote-side copy or move may run before it is treated as hung.
+///
+/// Copying a directory is a long command rather than a stuck one; this is the budget for the far
+/// side's `cp`/`mv`, not a hurry for a copy that is working.
+const PASTE_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The local end of one transfer, for the two things only this side can do with it.
 ///
@@ -120,6 +130,139 @@ impl Core {
 
     pub async fn rename_entry(&self, handle: &str, from: &str, to: &str) -> Result<(), ShellError> {
         self.file_session(handle).await?.sftp.rename(from, to).await
+    }
+
+    /// Changes the permission bits of one entry.
+    pub async fn set_permissions(&self, handle: &str, path: &str, mode: u32) -> Result<(), ShellError> {
+        if mode & !0o7777 != 0 {
+            return Err(ShellError::sftp_operation_failed(
+                path,
+                "permission bits must be between 0000 and 7777",
+            ));
+        }
+        self.file_session(handle).await?.sftp.set_permissions(path, mode).await
+    }
+
+    /// Copies or moves a clipboard's paths into one directory.
+    ///
+    /// The far side does the work: a recursive copy through SFTP would read every byte back and
+    /// send it out again, while the server's own `cp -a` keeps it local and preserves the metadata
+    /// an archive-mode copy is expected to preserve. Paths are quoted for the shell one at a time —
+    /// a file may be called `x; rm -rf /`.
+    ///
+    /// Nothing is changed when a target already exists: the conflicts come back first, and the
+    /// caller asks whether to replace them. Answering yes runs the same request with `overwrite`.
+    pub async fn paste_entries(
+        &self,
+        handle: &str,
+        sources: &[String],
+        destination: &str,
+        moving: bool,
+        overwrite: bool,
+    ) -> Result<SftpPasteOutcome, ShellError> {
+        let files = self.file_session(handle).await?;
+        let destination = destination.trim_end_matches('/');
+        let destination = if destination.is_empty() { "/" } else { destination };
+
+        let mut planned = Vec::with_capacity(sources.len());
+        for source in sources {
+            let source = source.trim_end_matches('/');
+            if source.is_empty() || source == "/" {
+                return Err(ShellError::sftp_operation_failed(
+                    source,
+                    "the filesystem root cannot be copied or moved",
+                ));
+            }
+            let name = source.rsplit('/').next().unwrap_or(source);
+            let target = join_remote(destination, name);
+            planned.push((source.to_owned(), target));
+        }
+
+        let mut settled = Vec::new();
+        let mut conflicts = Vec::new();
+        let mut runnable = Vec::new();
+        for (source, target) in planned {
+            if source == target {
+                // Pasting a cut back into the directory it came from is already where it belongs.
+                settled.push(SftpPasteItem {
+                    source,
+                    target,
+                    ok: moving,
+                    error: (!moving).then(|| "the source and target are the same path".to_owned()),
+                });
+                continue;
+            }
+            if !overwrite && files.sftp.exists(&target).await? {
+                conflicts.push(target);
+                continue;
+            }
+            runnable.push((source, target));
+        }
+
+        if !conflicts.is_empty() {
+            // The question half of this answer: nothing has been executed, so a "no" has left the
+            // directory exactly as it was.
+            return Ok(SftpPasteOutcome {
+                conflicts,
+                results: Vec::new(),
+            });
+        }
+
+        let mut results = settled;
+        for (source, target) in runnable {
+            if overwrite
+                && files.sftp.exists(&target).await?
+                && let Err(error) = files.sftp.remove_path(&target).await
+            {
+                results.push(SftpPasteItem {
+                    source,
+                    target,
+                    ok: false,
+                    error: Some(error.to_string()),
+                });
+                continue;
+            }
+
+            let command = if moving {
+                format!(
+                    "mv -f -- {} {}",
+                    archive::shell_quote(&source),
+                    archive::shell_quote(&target)
+                )
+            } else {
+                format!(
+                    "cp -a -- {} {}",
+                    archive::shell_quote(&source),
+                    archive::shell_quote(&target)
+                )
+            };
+            let outcome = files.connection().exec(&command, PASTE_TIMEOUT).await;
+            match outcome {
+                Ok(done) if done.exit_code == Some(0) => results.push(SftpPasteItem {
+                    source,
+                    target,
+                    ok: true,
+                    error: None,
+                }),
+                Ok(done) => results.push(SftpPasteItem {
+                    source,
+                    target,
+                    ok: false,
+                    error: Some(brief_report(&done)),
+                }),
+                Err(error) => results.push(SftpPasteItem {
+                    source,
+                    target,
+                    ok: false,
+                    error: Some(error.to_string()),
+                }),
+            }
+        }
+
+        Ok(SftpPasteOutcome {
+            conflicts: Vec::new(),
+            results,
+        })
     }
 
     /// Deletes a file, or a directory and everything under it.
@@ -920,6 +1063,27 @@ fn join_remote(directory: &str, name: &str) -> String {
     } else {
         format!("{directory}/{name}")
     }
+}
+
+/// What a failed remote command said, kept to the first line or two.
+fn brief_report(outcome: &ExecOutcome) -> String {
+    let text = if outcome.stderr.trim().is_empty() {
+        outcome.stdout.trim()
+    } else {
+        outcome.stderr.trim()
+    };
+    let status = outcome
+        .exit_code
+        .map_or_else(|| "no exit status".to_owned(), |code| code.to_string());
+    let mut report = if text.is_empty() {
+        format!("exit {status}")
+    } else {
+        format!("exit {status}: {text}")
+    };
+    if report.chars().count() > 400 {
+        report = report.chars().take(400).collect::<String>() + "…";
+    }
+    report
 }
 
 /// The file browser's own answer to a decision, which is the terminal's answer with its own kind.

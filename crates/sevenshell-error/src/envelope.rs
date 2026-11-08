@@ -354,6 +354,13 @@ impl ShellError {
             .with_detail(detail)
     }
 
+    /// A remote-side file operation failed, with what the far side said kept as the detail.
+    pub fn sftp_operation_failed(remote_path: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SftpOperationFailed, Origin::new(Subsystem::Sftp))
+            .with_param("path", remote_path)
+            .with_detail(detail)
+    }
+
     /// Something is already at this path, so the name cannot be created.
     ///
     /// Its own code rather than a transfer failure with a detail, because the panel shows the

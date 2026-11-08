@@ -10,6 +10,8 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesCreateFolder: vi.fn(),
   filesRename: vi.fn(),
   filesDelete: vi.fn(),
+  filesPaste: vi.fn(),
+  filesSetPermissions: vi.fn(),
   filesDownload: vi.fn(),
   filesUpload: vi.fn(),
   filesUploadAnswer: vi.fn(),
@@ -39,6 +41,8 @@ import {
   filesList,
   filesOpen,
   filesRename,
+  filesPaste,
+  filesSetPermissions,
   filesUpload,
   filesUploadAnswer,
   transferClearSettled,
@@ -66,6 +70,8 @@ const filesListMock = vi.mocked(filesList);
 const filesCreateFolderMock = vi.mocked(filesCreateFolder);
 const filesRenameMock = vi.mocked(filesRename);
 const filesDeleteMock = vi.mocked(filesDelete);
+const filesPasteMock = vi.mocked(filesPaste);
+const filesSetPermissionsMock = vi.mocked(filesSetPermissions);
 const filesDownloadMock = vi.mocked(filesDownload);
 const filesUploadDroppedMock = vi.mocked(droppedUpload);
 const clipboardFilesMock = vi.mocked(clipboardFiles);
@@ -151,6 +157,8 @@ describe("files store", () => {
     filesCreateFolderMock.mockReset().mockResolvedValue(undefined);
     filesRenameMock.mockReset().mockResolvedValue(undefined);
     filesDeleteMock.mockReset().mockResolvedValue(undefined);
+    filesPasteMock.mockReset().mockResolvedValue({ conflicts: [], results: [] });
+    filesSetPermissionsMock.mockReset().mockResolvedValue(undefined);
     filesDownloadMock.mockReset().mockResolvedValue([]);
     filesUploadMock.mockReset().mockResolvedValue({ kind: "cancelled" });
     filesCloseMock.mockReset().mockResolvedValue(undefined);
@@ -251,6 +259,63 @@ describe("files store", () => {
     await store.removeMany(handle, [entry("renamed", "directory")]);
     expect(filesDeleteMock).toHaveBeenCalledWith(handle, "/home/user/renamed", "directory");
     expect(filesListMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("changes permissions and reads the mode the server now reports", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user", ["notes.txt"])));
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.setPermissions(handle, "/home/user/notes.txt", 0o600);
+
+    expect(filesSetPermissionsMock).toHaveBeenCalledWith(handle, "/home/user/notes.txt", 0o600);
+    expect(filesListMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the clipboard for the connection it was taken from", () => {
+    const store = useFilesStore();
+
+    store.rememberClipboard("cut", sessionId, ["/home/user/notes.txt"]);
+    expect(store.clipboard).toEqual({
+      mode: "cut",
+      sessionId,
+      paths: ["/home/user/notes.txt"],
+    });
+
+    store.clearClipboard();
+    expect(store.clipboard).toBeNull();
+
+    store.rememberClipboard("copy", sessionId, []);
+    expect(store.clipboard, "an empty selection is nothing to paste").toBeNull();
+  });
+
+  it("does not re-read when a paste only comes back with conflicts", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user", ["notes.txt"])));
+    filesPasteMock.mockResolvedValue({
+      conflicts: ["/home/user/notes.txt"],
+      results: [],
+    });
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    const outcome = await store.paste(handle, ["/home/other/notes.txt"], "/home/user", false, false);
+
+    expect(outcome?.conflicts).toEqual(["/home/user/notes.txt"]);
+    expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("re-reads when a paste changed at least one item", async () => {
+    filesOpenMock.mockResolvedValue(opened(listing("/home/user", ["notes.txt"])));
+    filesPasteMock.mockResolvedValue({
+      conflicts: [],
+      results: [{ source: "/home/other/notes.txt", target: "/home/user/notes.txt", ok: true }],
+    });
+
+    const store = useFilesStore();
+    await store.open(sessionId);
+    await store.paste(handle, ["/home/other/notes.txt"], "/home/user", true, false);
+
+    expect(filesListMock).toHaveBeenCalledWith(handle, "/home/user");
   });
 
   it("keeps the failure and the last listing when a change is refused", async () => {

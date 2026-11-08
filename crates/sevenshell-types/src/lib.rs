@@ -41,9 +41,9 @@ pub use risk::{RiskAssessment, RiskLevel, RiskReason};
 pub use session::{
     CreatedKey, DesktopSettings, DownloadFolderView, EntryKind, ForwardMode, KeyAlgorithm, KeyInfo, KnownHostEntry,
     LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, SecretInput, Session, SessionAuth, SessionExportSummary,
-    SessionGroup, SessionImportOutcome, SessionImportSummary, SftpEntry, SftpListing, SftpOutcome, TerminalSettings,
-    TransferDirection, TransferInfo, TransferState, TunnelFailure, UploadAnswer, UploadOutcome, VaultArchive,
-    VaultState,
+    SessionGroup, SessionImportOutcome, SessionImportSummary, SftpEntry, SftpListing, SftpOutcome, SftpPasteItem,
+    SftpPasteOutcome, TerminalSettings, TransferDirection, TransferInfo, TransferState, TunnelFailure, UploadAnswer,
+    UploadOutcome, VaultArchive, VaultState,
 };
 pub use settings::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,

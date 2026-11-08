@@ -1264,3 +1264,119 @@ async fn a_gigabyte_crosses_without_being_held_in_memory() {
     let _ = std::fs::remove_file(&downloaded);
     clear_workspace(&lab, &handle, &workspace).await;
 }
+
+/// Copy, cut and `chmod` against the real server, including a name the shell would otherwise obey.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn copying_moving_and_changing_permissions_on_a_real_server() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+
+    let home = lab
+        .core
+        .list_files(&handle, ".")
+        .await
+        .expect("list the home directory");
+    let workspace = format!("{}/7shell-live-paste", home.path.trim_end_matches('/'));
+    clear_workspace(&lab, &handle, &workspace).await;
+    lab.core
+        .create_folder(&handle, &workspace)
+        .await
+        .expect("create workspace");
+
+    let source = format!("{workspace}/copy me");
+    let target = format!("{workspace}/target");
+    lab.core.create_folder(&handle, &source).await.expect("create source");
+    lab.core.create_folder(&handle, &target).await.expect("create target");
+    lab.core
+        .write_text_file(&handle, &format!("{source}/it's.txt"), "quoted name\n")
+        .await
+        .expect("write a file");
+
+    lab.core
+        .set_permissions(&handle, &format!("{source}/it's.txt"), 0o600)
+        .await
+        .expect("change permissions");
+    let listing = lab.core.list_files(&handle, &source).await.expect("list source");
+    let file = listing
+        .entries
+        .iter()
+        .find(|entry| entry.name == "it's.txt")
+        .expect("the file is listed");
+    assert_eq!(
+        file.mode.map(|mode| mode & 0o777),
+        Some(0o600),
+        "chmod reached the server"
+    );
+    assert!(
+        file.uid.is_some() && file.gid.is_some(),
+        "the numeric owner and group come with the listing for the properties page"
+    );
+
+    let copied = lab
+        .core
+        .paste_entries(&handle, std::slice::from_ref(&source), &target, false, false)
+        .await
+        .expect("copy into the target");
+    assert!(copied.conflicts.is_empty(), "a new target has no conflicts");
+    assert!(
+        copied.results.iter().all(|item| item.ok),
+        "the copy succeeded: {copied:?}"
+    );
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{target}/copy me/it's.txt"))
+            .await
+            .expect("read the copy"),
+        "quoted name\n"
+    );
+
+    let blocked = lab
+        .core
+        .paste_entries(&handle, std::slice::from_ref(&source), &target, false, false)
+        .await
+        .expect("ask about the existing target");
+    assert_eq!(blocked.conflicts, vec![format!("{target}/copy me")]);
+    assert!(blocked.results.is_empty(), "a conflict changed nothing");
+
+    let replaced = lab
+        .core
+        .paste_entries(&handle, std::slice::from_ref(&source), &target, false, true)
+        .await
+        .expect("copy over the existing target");
+    assert!(
+        replaced.results.iter().all(|item| item.ok),
+        "the overwrite succeeded: {replaced:?}"
+    );
+
+    let moved = format!("{workspace}/moved");
+    lab.core
+        .create_folder(&handle, &moved)
+        .await
+        .expect("create move target");
+    let cut = lab
+        .core
+        .paste_entries(&handle, std::slice::from_ref(&source), &moved, true, false)
+        .await
+        .expect("move into the target");
+    assert!(cut.results.iter().all(|item| item.ok), "the move succeeded: {cut:?}");
+    assert!(
+        lab.core.list_files(&handle, &source).await.is_err(),
+        "the source is gone after a cut"
+    );
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{moved}/copy me/it's.txt"))
+            .await
+            .expect("read the moved file"),
+        "quoted name\n"
+    );
+
+    lab.core
+        .delete_entry(&handle, &workspace, EntryKind::Directory)
+        .await
+        .expect("remove the workspace");
+    lab.core.close_files(&handle).await.expect("close the browser");
+}

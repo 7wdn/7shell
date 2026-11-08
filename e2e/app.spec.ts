@@ -4795,6 +4795,9 @@ test("a new folder is asked for in a dialog, and renamed where its name is writt
 
     const row = page.getByRole("option").filter({ hasText: folder });
     await expect(row).toBeVisible({ timeout: 30_000 });
+    // What was just made is the answer, so it is selected and brought into view.
+    await expect(row).toHaveAttribute("aria-selected", "true");
+    await expect(row).toBeInViewport();
 
     // The name is edited in the row it belongs to, not in a form at the top of the panel. The
     // gesture is the slow double-click a file manager uses: select, pause past the platform's
@@ -4810,6 +4813,137 @@ test("a new folder is asked for in a dialog, and renamed where its name is writt
     await rename.press("Enter");
 
     await expect(page.getByRole("option").filter({ hasText: renamed })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("option").filter({ hasText: renamed })).toHaveAttribute("aria-selected", "true");
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * Copy, paste and permissions through the menus a person actually uses.
+ *
+ * The copy is a remote-side `cp -a` and the permissions are a chmod; neither is visible from the
+ * window unless the listing is re-read, so both assertions are about the row that comes back.
+ */
+test("a copy pastes into another folder, and properties change its mode", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `paste-${stamp}`;
+    const source = `source-${stamp}`;
+    const destination = `dest-${stamp}`;
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    await sessionRow(page, name).click();
+    await expect(question.or(filesToggle).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(filesToggle).toBeVisible({ timeout: 30_000 });
+    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    const openedByLayout = await pathBar
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!openedByLayout && (await filesToggle.getAttribute("aria-pressed")) !== "true") {
+      await filesToggle.click();
+    }
+    await expect(pathBar).toBeVisible({ timeout: 60_000 });
+
+    const createFolder = async (folder: string): Promise<Locator> => {
+      await page.getByRole("button", { name: "New folder", exact: true }).click({ timeout: 5_000 });
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("textbox", { name: "Folder name" }).fill(folder);
+      await dialog.getByRole("button", { name: "Create", exact: true }).click({ timeout: 5_000 });
+      await expect(dialog).toHaveCount(0);
+      const row = page.getByRole("option").filter({ hasText: folder });
+      await expect(row).toBeVisible({ timeout: 30_000 });
+      return row;
+    };
+
+    // The source is made last so the listing is scrolled to it; the destination is reached through
+    // the path bar afterwards, because a virtualized row outside the drawn window has no element to
+    // point at.
+    await createFolder(destination);
+    const sourceRow = await createFolder(source);
+    const homePath = (await pathBar.inputValue()).replace(/\/$/, "");
+
+    // The menu dismisses itself when the listing scrolls, and creating a folder just scrolled it to
+    // the new row. The gesture is retried as a whole rather than half-done twice.
+    const copyEntry = page.getByRole("menuitem", { name: "Copy", exact: true });
+    await expect(async () => {
+      await sourceRow.click({ timeout: 3_000 });
+      await sourceRow.click({ button: "right", timeout: 3_000 });
+      await expect(copyEntry).toBeVisible({ timeout: 3_000 });
+      await copyEntry.click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+
+    // The destination row is in the virtual listing, but not necessarily drawn after the scroll the
+    // copy gesture caused. The path bar is the way in that does not depend on where a row is drawn.
+    await pathBar.fill(`${homePath}/${destination}`);
+    await pathBar.press("Enter");
+    await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: destination })).toBeVisible(
+      {
+        timeout: 30_000,
+      },
+    );
+
+    const listing = page.getByRole("listbox", { name: "Files" });
+    await listing.click({ button: "right", position: { x: 12, y: 12 }, timeout: 5_000 });
+    await page.getByRole("menuitem", { name: "Paste", exact: true }).click({ timeout: 5_000 });
+
+    const pasted = page.getByRole("option").filter({ hasText: source });
+    await expect(pasted).toBeVisible({ timeout: 30_000 });
+    await expect(pasted).toHaveAttribute("aria-selected", "true");
+
+    const propertiesEntry = page.getByRole("menuitem", { name: "Properties", exact: true });
+    await expect(async () => {
+      await pasted.click({ timeout: 3_000 });
+      await pasted.click({ button: "right", timeout: 3_000 });
+      await expect(propertiesEntry).toBeVisible({ timeout: 3_000 });
+      await propertiesEntry.click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+    const properties = page.getByRole("dialog");
+    await expect(properties).toBeVisible();
+    await properties.getByRole("textbox", { name: "Permissions (octal)" }).fill("700");
+    await properties.getByRole("button", { name: "Apply permissions" }).click({ timeout: 5_000 });
+    await expect(properties.getByText("Permissions updated.")).toBeVisible({ timeout: 10_000 });
+    await properties.getByRole("button", { name: "Close", exact: true }).last().click({ timeout: 5_000 });
+
+    // The other face of the same operation: the focused permissions dialog. Ticking a box and
+    // reading the octal draft back is what says the matrix and the field are one value.
+    const permissionsEntry = page.getByRole("menuitem", { name: "Change permissions", exact: true });
+    await expect(async () => {
+      await pasted.click({ timeout: 3_000 });
+      await pasted.click({ button: "right", timeout: 3_000 });
+      await expect(permissionsEntry).toBeVisible({ timeout: 3_000 });
+      await permissionsEntry.click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+    const permissions = page.getByRole("dialog");
+    await expect(permissions).toBeVisible();
+    const permissionField = permissions.getByRole("textbox", { name: "Permissions (octal)" });
+    await expect(permissionField).toHaveValue("0700");
+    await permissions.getByRole("checkbox", { name: "Group Read" }).check();
+    await expect(permissionField).toHaveValue("0740");
+    await permissions.getByRole("button", { name: "Confirm", exact: true }).click({ timeout: 5_000 });
+    await expect(permissions).toHaveCount(0);
   } finally {
     await close();
   }

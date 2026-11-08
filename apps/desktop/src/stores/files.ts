@@ -34,6 +34,7 @@ import type {
   SftpEntry,
   SftpListing,
   SftpOutcome,
+  SftpPasteOutcome,
   TransferDirection,
   TransferInfo,
   TransferState,
@@ -43,6 +44,18 @@ import type {
 
 /** How often the transfer list is read while something is still moving. */
 export const TRANSFER_POLL_MS = 500;
+
+/**
+ * What a copy or cut put on the SFTP clipboard.
+ *
+ * Scoped to the connection it was taken from: a path means nothing on another server, and the
+ * copy itself is a command run by that server rather than bytes travelling through this machine.
+ */
+export interface SftpClipboard {
+  readonly mode: "copy" | "cut";
+  readonly sessionId: string;
+  readonly paths: readonly string[];
+}
 
 /** A transfer that stopped because it failed, and that nobody has been told about yet. */
 export interface UnattendedTransferFailure {
@@ -80,6 +93,8 @@ export interface FileBrowser {
 
 export const useFilesStore = defineStore("files", () => {
   const browsers = ref<Record<string, FileBrowser>>({});
+  /** What copy or cut remembered, and which connection it belongs to. */
+  const clipboard = ref<SftpClipboard | null>(null);
   /** Every transfer the backend still remembers, running or finished, newest last. */
   const transfers = ref<TransferInfo[]>([]);
   /** A failure from reading the transfer list or stopping one. Shown next to the transfers. */
@@ -288,6 +303,60 @@ export const useFilesStore = defineStore("files", () => {
 
   function rename(handle: string, from: string, to: string): Promise<boolean> {
     return run(handle, "files_rename", () => backend.files.rename(handle, from, to));
+  }
+
+  /** Changes an entry's permission bits, then reads the directory so the mode column is the server's. */
+  function setPermissions(handle: string, path: string, mode: number): Promise<boolean> {
+    return run(handle, "files_set_permissions", () => backend.files.setPermissions(handle, path, mode));
+  }
+
+  /**
+   * Puts a copy or cut clipboard on a connection.
+   *
+   * Kept here rather than in a browser because the same connection can have more than one browser
+   * open, and a copy in one of them should be pasteable in another.
+   */
+  function rememberClipboard(mode: "copy" | "cut", sessionId: string, paths: readonly string[]): void {
+    clipboard.value = paths.length > 0 ? { mode, sessionId, paths: [...paths] } : null;
+  }
+
+  function clearClipboard(): void {
+    clipboard.value = null;
+  }
+
+  /**
+   * Copies or moves the clipboard into a directory.
+   *
+   * A conflict answer changed nothing, so the directory is not re-read; an answer with at least one
+   * successful item is, because what is on screen is then the server's side of the operation.
+   */
+  async function paste(
+    handle: string,
+    sources: readonly string[],
+    destination: string,
+    moving: boolean,
+    overwrite: boolean,
+  ): Promise<SftpPasteOutcome | null> {
+    const current = browsers.value[handle];
+    if (!current) {
+      return null;
+    }
+
+    current.failure = null;
+    try {
+      const outcome = await backend.files.paste(handle, sources, destination, moving, overwrite);
+      if (outcome.results.some((item) => item.ok)) {
+        await read(handle, current.path);
+        revision.value += 1;
+      }
+      return outcome;
+    } catch (error) {
+      const open = browsers.value[handle];
+      if (open) {
+        open.failure = asShellError(error, "files_paste");
+      }
+      return null;
+    }
   }
 
   /**
@@ -807,6 +876,11 @@ export const useFilesStore = defineStore("files", () => {
     createFolder,
     createFile,
     rename,
+    setPermissions,
+    clipboard,
+    rememberClipboard,
+    clearClipboard,
+    paste,
     removeMany,
     download,
     upload,

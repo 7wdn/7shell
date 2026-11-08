@@ -52,7 +52,16 @@
       "download": "下载",
       "edit": "编辑",
       "rename": "重命名",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
       "remove": "删除"
+    },
+    "copy": {
+      "done": "已复制 {count} 项"
+    },
+    "cut": {
+      "done": "已剪切 {count} 项"
     },
     "rename": {
       "name": "新名称",
@@ -135,7 +144,46 @@
     },
     "paste": {
       "label": "粘贴",
-      "title": "上传剪贴板中的文件（{shortcut}）"
+      "uploadLabel": "上传剪贴板文件",
+      "title": "上传剪贴板中的文件（{shortcut}）",
+      "done": "已粘贴 {count} 项",
+      "failed": "{count} 项粘贴失败",
+      "conflictTitle": "目标已存在",
+      "conflictMessage": "下面这些名称在目标目录里已经存在。继续会覆盖它们，且无法撤销。",
+      "conflictConfirm": "覆盖并粘贴"
+    },
+    "properties": {
+      "action": "属性",
+      "title": "文件属性",
+      "path": "路径",
+      "kind": "类型",
+      "size": "大小",
+      "modified": "修改时间",
+      "permissions": "权限（八进制）",
+      "owner": "属主",
+      "linkTarget": "链接目标",
+      "apply": "应用权限",
+      "invalid": "请输入 0–7777 之间的八进制权限位。",
+      "saved": "权限已更新。",
+      "close": "关闭"
+    },
+    "chmod": {
+      "action": "修改权限",
+      "title": "修改权限",
+      "roles": {
+        "owner": "所有者",
+        "group": "组",
+        "others": "其他"
+      },
+      "columns": {
+        "read": "读",
+        "write": "写",
+        "execute": "执行"
+      },
+      "hint": "以八进制权限位执行 chmod。",
+      "confirm": "确认",
+      "cancel": "取消",
+      "updated": "权限已更新。"
     }
   }
 }

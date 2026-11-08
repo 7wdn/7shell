@@ -25,7 +25,8 @@
       "permissionDenied": "服务器拒绝访问 {path}。",
       "exists": "该位置已存在同名文件或目录：{path}。",
       "archiveFailed": "打包或解压 {path} 失败。",
-      "transferFailed": "{path} 的传输失败。"
+      "transferFailed": "{path} 的传输失败。",
+      "operationFailed": "{path} 的操作失败。"
     },
     "fs": {
       "grantUnknown": "该文件不是通过文件对话框选择的，因此无法读取。",

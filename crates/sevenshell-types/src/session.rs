@@ -399,6 +399,11 @@ pub struct SftpEntry {
     /// The group the entry belongs to, named the same way as `owner`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<String>,
+    /// The numbers behind the two names, for the properties page that shows both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gid: Option<u32>,
     /// Resolved link target, for a symlink the server told us about.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_target: Option<String>,
@@ -411,6 +416,29 @@ pub struct SftpListing {
     /// The canonical path the server resolved, which is what the breadcrumbs should show.
     pub path: String,
     pub entries: Vec<SftpEntry>,
+}
+
+/// One item a paste moved or copied, and what became of it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpPasteItem {
+    pub source: String,
+    pub target: String,
+    pub ok: bool,
+    /// Why this one failed, when it did. A batch reports per item rather than stopping at the first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What pasting a clipboard's paths into a directory answered.
+///
+/// `conflicts` is the question half: when it is not empty nothing was changed, and the caller may
+/// ask whether the existing targets should be replaced and try again with overwrite.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SftpPasteOutcome {
+    pub conflicts: Vec<String>,
+    pub results: Vec<SftpPasteItem>,
 }
 
 /// What opening a file session answered.

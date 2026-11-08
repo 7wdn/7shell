@@ -80,6 +80,8 @@ error_catalog! {
     SftpArchiveFailed => "SFTP-ARCHIVE-FAILED", "errors.sftp.archiveFailed";
     #[doc = "A transfer failed part-way through."]
     SftpTransferFailed => "SFTP-TRANSFER-FAILED", "errors.sftp.transferFailed";
+    #[doc = "A file operation the far side runs itself (copy, move, chmod) failed."]
+    SftpOperationFailed => "SFTP-OPERATION-FAILED", "errors.sftp.operationFailed";
 
     // -- Local file grants -------------------------------------------------
     #[doc = "The file token is not known to this process."]

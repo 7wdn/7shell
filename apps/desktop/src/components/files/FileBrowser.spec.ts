@@ -708,7 +708,18 @@ describe("selecting rows", () => {
     const entries = await rightClickRow(2);
 
     expect(useContextMenu().title.value).toEqual({ key: "menu.files", params: { count: "2" } });
-    expect(ids(entries)).toEqual(["download", "sep-manage", "remove", "sep-copy", "copy-name", "copy-path"]);
+    expect(ids(entries)).toEqual([
+      "download",
+      "packed",
+      "sep-manage",
+      "copy",
+      "cut",
+      "sep-copy",
+      "copy-name",
+      "copy-path",
+      "sep-delete",
+      "remove",
+    ]);
     expect(pick(entries, "remove").labelKey).toBe("menu.deleteItems");
     expect(ids(entries)).not.toContain("rename");
   });

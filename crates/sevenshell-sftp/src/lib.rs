@@ -335,6 +335,39 @@ impl SftpSession {
             .map_err(|error| failure(&error, path))
     }
 
+    /// Removes whatever is at this path, choosing by what the name is rather than by what followed it.
+    ///
+    /// The metadata is read without following a link: a link is a name of its own, and deleting it
+    /// must never walk into the directory it points at.
+    pub async fn remove_path(&self, path: &str) -> Result<(), ShellError> {
+        let attributes = self
+            .inner
+            .symlink_metadata(path.to_owned())
+            .await
+            .map_err(|error| failure(&error, path))?;
+
+        if attributes.is_dir() {
+            self.remove_dir_recursive(path).await
+        } else {
+            self.remove_file(path).await
+        }
+    }
+
+    /// Changes the permission bits of a file or directory.
+    ///
+    /// Only the permission bits are sent: SFTP's attributes are a set of optional fields, and a
+    /// field this call does not set is one the server leaves alone.
+    pub async fn set_permissions(&self, path: &str, mode: u32) -> Result<(), ShellError> {
+        let attributes = FileAttributes {
+            permissions: Some(mode),
+            ..FileAttributes::default()
+        };
+        self.inner
+            .set_metadata(path.to_owned(), attributes)
+            .await
+            .map_err(|error| failure(&error, path))
+    }
+
     /// Removes a directory and everything under it.
     ///
     /// Recursive on purpose and by hand: SFTP has no recursive delete, and a half-deleted tree is
@@ -663,6 +696,8 @@ fn describe_entry(name: String, path: String, attributes: &FileAttributes, names
         mode: attributes.permissions,
         owner: attributes.uid.map(|uid| named(&names.users, uid)),
         group: attributes.gid.map(|gid| named(&names.groups, gid)),
+        uid: attributes.uid,
+        gid: attributes.gid,
         link_target: None,
     }
 }

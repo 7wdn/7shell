@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use sevenshell_error::ShellError;
 use sevenshell_platform::downloads::{self, DownloadFolder};
 use sevenshell_types::{
-    DownloadFolderView, EntryKind, SftpListing, SftpOutcome, TransferInfo, UploadAnswer, UploadOutcome,
+    DownloadFolderView, EntryKind, SftpListing, SftpOutcome, SftpPasteOutcome, TransferInfo, UploadAnswer,
+    UploadOutcome,
 };
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -54,6 +55,36 @@ pub async fn files_rename(
     to: String,
 ) -> Result<(), ShellError> {
     state.core().rename_entry(&handle, &from, &to).await
+}
+
+/// Changes an entry's permission bits.
+#[tauri::command]
+pub async fn files_set_permissions(
+    state: State<'_, ShellState>,
+    handle: String,
+    path: String,
+    mode: u32,
+) -> Result<(), ShellError> {
+    state.core().set_permissions(&handle, &path, mode).await
+}
+
+/// Copies or moves a clipboard's paths into a directory.
+///
+/// Conflicts are an answer rather than an error: the caller asks about them and, if the answer is
+/// yes, sends the same request with `overwrite`.
+#[tauri::command]
+pub async fn files_paste(
+    state: State<'_, ShellState>,
+    handle: String,
+    sources: Vec<String>,
+    destination: String,
+    moving: bool,
+    overwrite: bool,
+) -> Result<SftpPasteOutcome, ShellError> {
+    state
+        .core()
+        .paste_entries(&handle, &sources, &destination, moving, overwrite)
+        .await
 }
 
 /// Deletes a file, or a directory and everything under it.

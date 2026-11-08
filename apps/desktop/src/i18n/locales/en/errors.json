@@ -25,7 +25,8 @@
       "permissionDenied": "The server refused access to {path}.",
       "exists": "Something with that name is already there: {path}.",
       "archiveFailed": "Packing or unpacking {path} failed.",
-      "transferFailed": "The transfer of {path} failed."
+      "transferFailed": "The transfer of {path} failed.",
+      "operationFailed": "The operation on {path} failed."
     },
     "fs": {
       "grantUnknown": "That file was not chosen through the file dialog, so it cannot be read.",
