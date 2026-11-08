@@ -2,7 +2,8 @@
 // Do not edit. Edit the YAML and run `pnpm generate:descriptors`.
 
 export type ProtocolId =
-  | "ssh";
+  | "ssh"
+  | "rdp";
 
 export type Protocol = ProtocolId;
 
@@ -30,9 +31,13 @@ export type CapabilityKey =
   | "secret"
   | "interactive"
   | "keyMaterial"
-  | "platformAgent";
+  | "platformAgent"
+  | "desktopView"
+  | "desktopInput"
+  | "desktopResize"
+  | "desktopClipboard";
 
-export type CapabilityGroup = "terminal" | "session" | "transfer" | "network" | "auth";
+export type CapabilityGroup = "terminal" | "session" | "transfer" | "network" | "auth" | "desktop";
 
 export type ProtocolRuntime = "native";
 
@@ -71,6 +76,15 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     transport: "tcp",
     supportLevel: "operate",
     capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "forwarding", "dynamicForwarding", "recording", "jumpHost"],
+  },
+  {
+    id: "rdp",
+    labelKey: "protocol.rdp.label",
+    defaultPort: 3389,
+    runtime: "native",
+    transport: "tcp",
+    supportLevel: "operate",
+    capabilities: ["desktopView", "desktopInput", "desktopResize"],
   },
 ];
 
@@ -123,10 +137,14 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "interactive", group: "auth", labelKey: "capability.interactive.label" },
   { key: "keyMaterial", group: "auth", labelKey: "capability.keyMaterial.label" },
   { key: "platformAgent", group: "auth", labelKey: "capability.platformAgent.label" },
+  { key: "desktopView", group: "desktop", labelKey: "capability.desktopView.label" },
+  { key: "desktopInput", group: "desktop", labelKey: "capability.desktopInput.label" },
+  { key: "desktopResize", group: "desktop", labelKey: "capability.desktopResize.label" },
+  { key: "desktopClipboard", group: "desktop", labelKey: "capability.desktopClipboard.label" },
 ];
 
 export const CAPABILITY_GROUP_ORDER: readonly CapabilityGroup[] = [
-  "terminal", "session", "transfer", "network", "auth",
+  "terminal", "session", "transfer", "network", "auth", "desktop",
 ];
 
 export function protocolById(id: string): ProtocolDescriptor | undefined {

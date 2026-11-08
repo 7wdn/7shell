@@ -1,0 +1,9 @@
+services:
+  xrdp:
+    build: .
+    ports:
+      # Not 3389: a Windows host already listening on 3389 is exactly the machine this is being
+      # tested from, and the point of the lab is to be a second one.
+      - "13389:3389"
+    shm_size: "512m"
+    restart: unless-stopped

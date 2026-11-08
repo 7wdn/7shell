@@ -4,7 +4,9 @@
       "empty": "No sessions yet. Add one to keep an address, a user and the credentials for it together.",
       "add": "New session",
       "open": "Open terminal",
+      "openDesktop": "Open remote desktop",
       "openHint": "Open a terminal for {name}",
+      "openDesktopHint": "Open the remote desktop for {name}",
       "connecting": "Connecting to {name}…",
       "system": "Remote system: {name}",
       "edit": "Edit session",
@@ -110,6 +112,10 @@
       "description": "Where the machine is, who to log in as, and how this build authenticates.",
       "name": "Name",
       "namePlaceholder": "Production web server",
+      "protocol": "Connection type",
+      "desktop": {
+        "note": "A remote desktop signs in with a password. A domain account is written DOMAIN\\user (for example CORP\\alice). The size follows the window."
+      },
       "host": "Host",
       "hostPlaceholder": "example.com",
       "port": "Port",
@@ -124,7 +130,8 @@
         "placeholder": "Password",
         "storedPlaceholder": "Saved password — leave empty to keep it",
         "stored": "A password is already stored. It is kept unless a new one is typed here.",
-        "notStored": "No password is stored for this session yet, so it cannot connect until one is saved."
+        "notStored": "No password is stored for this session yet, so it cannot connect until one is saved.",
+        "blankAllowed": "Leave this empty to connect with a blank password — a Windows account may not have one."
       },
       "key": {
         "dialogTitle": "Choose a private key",

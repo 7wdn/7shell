@@ -15,7 +15,7 @@ import type { MenuEntry } from "./types";
 
 export interface TabMenuState {
   /** Which half of the workspace this is: neither page has a stream to reconnect. */
-  readonly kind: "terminal" | "files" | "inspect" | "settings" | "batch";
+  readonly kind: "terminal" | "files" | "desktop" | "inspect" | "settings" | "batch";
   /** `null` for a page, which has no stream of its own to have ended. */
   readonly status: "open" | "ended" | "failed" | null;
   /** Whether it is already drawing a browser: one with a handle must not be opened a second time. */

@@ -4,7 +4,9 @@
       "empty": "还没有会话。新建一个即可把地址、用户与凭据放在一起。",
       "add": "新建会话",
       "open": "打开终端",
+      "openDesktop": "打开远程桌面",
       "openHint": "为 {name} 打开终端",
+      "openDesktopHint": "为 {name} 打开远程桌面",
       "connecting": "正在连接 {name}…",
       "system": "远程系统：{name}",
       "edit": "编辑会话",
@@ -110,6 +112,10 @@
       "description": "目标机器的位置、登录用户，以及此版本支持的认证方式。",
       "name": "名称",
       "namePlaceholder": "生产环境 Web 服务器",
+      "protocol": "连接类型",
+      "desktop": {
+        "note": "远程桌面使用密码登录。域账号写成 域\\用户名（例如 CORP\\alice）。桌面尺寸会跟随窗口。"
+      },
       "host": "主机",
       "hostPlaceholder": "example.com",
       "port": "端口",
@@ -124,7 +130,8 @@
         "placeholder": "密码",
         "storedPlaceholder": "已保存密码——留空则保持不变",
         "stored": "已保存密码。此处不输入新密码就会继续沿用原有密码。",
-        "notStored": "此会话尚未保存密码，保存一个之前无法连接。"
+        "notStored": "此会话尚未保存密码，保存一个之前无法连接。",
+        "blankAllowed": "留空表示使用空密码连接——Windows 账户可能本来就没有密码。"
       },
       "key": {
         "dialogTitle": "选择私钥文件",

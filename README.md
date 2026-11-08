@@ -31,6 +31,7 @@ it, never in advance.
 | Host key verification: trust a new key, stop on a changed one, review and revoke what is trusted | Working, tested against a real sshd |
 | Authentication: password, private key (with passphrase), keyboard-interactive, and the system key agent | Working, tested against a real sshd |
 | Terminals: several tabs, resize, keep-alive, reconnect, search, links, and a palette per session | Working |
+| Remote desktops (RDP): a Windows desktop in a tab, with TLS certificate trust, keyboard and mouse, and resizing | Working, tested against a real xrdp server and a Windows 10 host over NLA (HYBRID_EX) |
 | Jump hosts: a route through other saved sessions, every hop verified as if it were the destination | Working, tested against a real sshd |
 | Port forwarding: a local port reaching the far side (`-L`), and a local SOCKS5 port (`-D`) | Working, tested against a real sshd |
 | The file workbench: two directories side by side, create, rename, delete, edit text, upload, download | Working, tested against a real sshd |
@@ -44,7 +45,10 @@ it, never in advance.
 
 **Not implemented:** remote forwarding (the third kind — refused rather than half-done), agent
 forwarding (implemented, deliberately unclaimed until a real far side has been proved to use it),
-Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. The command line and agent interfaces
+Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. RDP clipboard, audio, drive
+redirection and RD Gateway are not built yet either — the descriptor vocabulary registers clipboard
+as planned until it is implemented and tested; drive redirection stays out of scope while the rule
+that the interface never touches a local path is enforced. The command line and agent interfaces
 and the plugin platform are 1.x work: the architecture keeps room for them, and no code for them
 exists yet.
 

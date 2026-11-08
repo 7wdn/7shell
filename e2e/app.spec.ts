@@ -4730,3 +4730,123 @@ test("opening a session that is already open asks, and a yes makes a second tab"
     await close();
   }
 });
+
+/**
+ * A remote desktop from the form to the pixels.
+ *
+ * This is the one path no unit test can reach: the canvas is fed by a raw IPC channel, and whether
+ * the bytes that leave Rust draw anything is only visible in a real window. The certificate is
+ * unknown on a fresh run, so the test also drives the trust prompt — and the far side is the xrdp
+ * container in `deploy/lab/rdp`, listening on 13389.
+ */
+test("a remote desktop asks about its certificate and draws the far side", async () => {
+  const { page, close } = await openApp();
+  // The default is the xrdp lab. Point these at a Windows host to exercise NLA instead:
+  // SEVENSHELL_TEST_RDP_HOST / _PORT / _USER / _PASSWORD. An empty password is a real case — a
+  // Windows account may not have one — so it is left empty in the form rather than filled.
+  const rdpHost = process.env.SEVENSHELL_TEST_RDP_HOST ?? "127.0.0.1";
+  const rdpPort = process.env.SEVENSHELL_TEST_RDP_PORT ?? "13389";
+  const rdpUser = process.env.SEVENSHELL_TEST_RDP_USER ?? "labuser";
+  const rdpPassword = process.env.SEVENSHELL_TEST_RDP_PASSWORD ?? "labpassword";
+  const againstLab = rdpHost === "127.0.0.1";
+  try {
+    // Running this case alone starts from the gate; the full suite has already made the vault.
+    // Wait for one of the two states first: `isVisible` does not wait, and the gate is drawn a
+    // moment after the window appears.
+    const shellButton = page.getByRole("button", { name: "Import / Export" });
+    const create = page.getByRole("button", { name: "Create vault" });
+    await expect(create.or(shellButton).first()).toBeVisible({ timeout: 30_000 });
+    if (await create.isVisible()) {
+      await page.getByPlaceholder("At least 8 characters").fill("seven-shell-e2e");
+      await page.getByPlaceholder("Type the password again").fill("seven-shell-e2e");
+      await create.click();
+      await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible({ timeout: 30_000 });
+    }
+    const unlock = page.getByRole("button", { name: "Unlock", exact: true });
+    if (await unlock.isVisible()) {
+      await page.getByPlaceholder("Vault password").fill("seven-shell-e2e");
+      await unlock.click();
+      await expect(page.getByRole("button", { name: "Import / Export" })).toBeVisible({ timeout: 30_000 });
+    }
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill("rdp-lab");
+    await editor.getByPlaceholder("example.com").fill(rdpHost);
+    await editor.getByPlaceholder("root").fill(rdpUser);
+    if (rdpPassword !== "") {
+      await editor.locator("#session-secret").fill(rdpPassword);
+    }
+
+    const protocol = editor.getByRole("combobox", { name: "Connection type" });
+    await protocol.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Remote desktop (RDP)" }).click();
+    await expect(protocol).toHaveText("Remote desktop (RDP)");
+    // Choosing the protocol took the port with it, and only because it was still the old default.
+    await expect(editor.locator("#session-port")).toHaveValue("3389");
+    await editor.locator("#session-port").fill(rdpPort);
+    // The SSH-only sections are gone rather than merely ignored.
+    await expect(editor.getByRole("heading", { name: "Jump hosts" })).toHaveCount(0);
+
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sidebar(page).getByTitle("Open the remote desktop for rdp-lab").click();
+    await expect(page.getByRole("heading", { name: "Trust this certificate?" })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Trust and connect" }).click();
+
+    const canvas = page.locator("[data-desktop-canvas]");
+    await expect(canvas).toBeVisible({ timeout: 30_000 });
+
+    // The login screen xrdp draws is not a black rectangle. Read the backing store rather than a
+    // screenshot, because the question is whether the channel delivered pixels at all.
+    await expect
+      .poll(
+        async () =>
+          canvas.evaluate((element) => {
+            const surface = element as HTMLCanvasElement;
+            const context = surface.getContext("2d");
+            if (!context) {
+              return false;
+            }
+            const { data } = context.getImageData(0, 0, surface.width, surface.height);
+            for (let index = 0; index < data.length; index += 4) {
+              if (data[index] !== 0 || data[index + 1] !== 0 || data[index + 2] !== 0) {
+                return true;
+              }
+            }
+            return false;
+          }),
+        { timeout: 30_000 },
+      )
+      .toBe(true);
+
+    // Input, and the far side answering it: clicking the panel's own "Applications" entry opens
+    // its menu, which changes pixels. A canvas that never received the click would stay identical.
+    // Only on the lab: the panel coordinates are XFCE's, and a Windows desktop has no such entry.
+    if (againstLab) {
+      const fingerprint = () =>
+        canvas.evaluate((element) => {
+          const surface = element as HTMLCanvasElement;
+          const context = surface.getContext("2d");
+          if (!context) {
+            return 0;
+          }
+          const { data } = context.getImageData(0, 0, surface.width, surface.height);
+          let hash = 0;
+          for (let index = 0; index < data.length; index += 997) {
+            hash = (hash * 31 + (data[index] ?? 0)) | 0;
+          }
+          return hash;
+        });
+      const before = await fingerprint();
+      await canvas.click({ position: { x: 40, y: 60 } });
+      await expect.poll(fingerprint, { timeout: 10_000 }).not.toBe(before);
+    }
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "remote-desktop.png"), fullPage: false });
+  } finally {
+    await close();
+  }
+});

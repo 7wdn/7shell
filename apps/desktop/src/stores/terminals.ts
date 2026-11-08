@@ -56,6 +56,7 @@ import { i18n } from "@/i18n";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { forgetDesktopFrames, receiveDesktopFrame } from "@/lib/desktop/frames";
 import { joinPath } from "@/lib/files/format";
 import { sessionEndpoint } from "@/lib/menu/sessions";
 import { type ReopenAction, reopenAction, sessionCopyIndex } from "@/lib/sessions/reopen";
@@ -66,6 +67,8 @@ import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
 import type {
+  DesktopInput,
+  DesktopOutcome,
   KnownHostEntry,
   OpenOutcome,
   OpenTunnel,
@@ -84,6 +87,23 @@ export type TerminalTabStatus = "open" | "ended" | "failed";
 
 /** A file browser has no stream that can end: it opened, or it did not. */
 export type FilesTabStatus = "open" | "failed";
+
+/** A remote desktop that ended keeps its tab, like a terminal; a failed one carries its reason. */
+export type DesktopTabStatus = "open" | "ended" | "failed";
+
+/** A remote desktop, drawn as a tab. */
+export interface DesktopTab {
+  readonly kind: "desktop";
+  id: string;
+  readonly session: Session;
+  /** The handle the backend knows this desktop by, once there is one. */
+  handle: string | null;
+  status: DesktopTabStatus;
+  failure: ShellError | null;
+  /** The size the server agreed to, updated when it changes its mind. */
+  width: number;
+  height: number;
+}
 
 /**
  * What is to be opened once a host key decision has been answered.
@@ -184,7 +204,7 @@ export interface BatchTab {
   id: string;
 }
 
-export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab | BatchTab;
+export type WorkspaceTab = TerminalTab | FilesTab | DesktopTab | InspectTab | SettingsTab | BatchTab;
 
 /**
  * The session a tab is about, or nothing when it is about no host.
@@ -213,6 +233,12 @@ export type HostKeyDecision =
       readonly key: PresentedHostKey;
       readonly trusted: KnownHostEntry;
     };
+
+/** A certificate the backend is waiting on before it will authenticate an RDP session. */
+export type DesktopDecision = {
+  readonly session: Session;
+  readonly outcome: Extract<DesktopOutcome, { kind: "certificateUnknown" | "certificateMismatch" }>;
+};
 
 /**
  * What tells one failed forward from another when it is dismissed. The same saved forward failing
@@ -277,6 +303,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return params ? i18n.global.t(key, params) : i18n.global.t(key);
   }
   const decision = ref<HostKeyDecision | null>(null);
+  /** The certificate question a remote desktop is waiting on, when there is one. */
+  const desktopDecision = ref<DesktopDecision | null>(null);
   /** The forwards that are up, as the backend last described them. */
   const tunnels = ref<OpenTunnel[]>([]);
   /**
@@ -309,7 +337,21 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // Forwards can already be up by the time this store exists, and the sidebar draws what the
     // backend says rather than what this store happens to have seen.
     void refreshTunnels();
-    return onTerminalEnded(markEnded);
+
+    const stops: (() => void)[] = [onTerminalEnded(markEnded)];
+    void backend.events
+      .onDesktopResized(({ handle, width, height }) => markDesktopResized(handle, width, height))
+      .then((stop) => stops.push(stop));
+    void backend.events.onDesktopClosed(({ handle }) => markDesktopEnded(handle)).then((stop) => stops.push(stop));
+    void backend.events
+      .onDesktopFailed(({ handle, error }) => markDesktopFailed(handle, asShellError(error, "desktop")))
+      .then((stop) => stops.push(stop));
+
+    return () => {
+      for (const stop of stops) {
+        stop();
+      }
+    };
   }
 
   function markEnded(handle: string, reason?: string): void {
@@ -334,6 +376,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * died on arrival all end with a tab that is not open, and none of those is a place for a browser.
    */
   async function open(session: Session): Promise<void> {
+    // One entry point for every way a session is opened; a remote desktop is a tab of its own
+    // rather than a terminal that happens to have no shell.
+    if (session.protocol !== "ssh") {
+      await openDesktop(session);
+      return;
+    }
     if (connectingSessionIds.value.includes(session.id)) {
       return;
     }
@@ -378,6 +426,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * it would drift.
    */
   async function openFiles(session: Session): Promise<void> {
+    // A remote desktop has no SFTP side; the menu does not offer this, and a caller that reaches it
+    // some other way gets nothing rather than an SSH attempt against an RDP port.
+    if (session.protocol !== "ssh") {
+      return;
+    }
     // A browser that is already up is still this session being used, which is why the record is
     // above the early return rather than inside the attempt below it.
     recents.record(session.id);
@@ -412,7 +465,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
    */
   function openTabsOf(sessionId: string): WorkspaceTab[] {
     return tabs.value.filter((tab) =>
-      tab.kind === "terminal" || tab.kind === "files" ? tab.session.id === sessionId && tab.status === "open" : false,
+      tab.kind === "terminal" || tab.kind === "files" || tab.kind === "desktop"
+        ? tab.session.id === sessionId && tab.status === "open"
+        : false,
     );
   }
 
@@ -623,6 +678,114 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
 
     raiseDecision(session, { to: "files" }, outcome);
+  }
+
+  /**
+   * Opens a remote desktop, or raises the certificate question that has to come first.
+   *
+   * Frames are not events: the backend attaches a raw channel to the open, and its buffers are
+   * handed to the pane that draws this handle. The first ones can arrive before the handle is
+   * known, so they are held here until it is — the first frame is the whole desktop, and losing
+   * it would leave the canvas blank until something changed.
+   */
+  async function openDesktop(session: Session): Promise<void> {
+    if (connectingSessionIds.value.includes(session.id)) {
+      return;
+    }
+
+    recents.record(session.id);
+    connectingSessionIds.value.push(session.id);
+    let handle: string | null = null;
+    const early: ArrayBuffer[] = [];
+
+    try {
+      const outcome = await backend.desktop.open(session.id, (buffer) => {
+        if (handle) {
+          receiveDesktopFrame(handle, buffer);
+        } else if (early.length < 8) {
+          early.push(buffer);
+        }
+      });
+
+      if (outcome.kind === "opened") {
+        handle = outcome.handle;
+        for (const buffer of early) {
+          receiveDesktopFrame(handle, buffer);
+        }
+        acceptDesktop(session, outcome);
+        forgetFailure(session.id);
+      } else {
+        desktopDecision.value = { session, outcome };
+      }
+    } catch (error) {
+      recordFailure(session, asShellError(error, "desktop_open"));
+    } finally {
+      connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
+    }
+  }
+
+  function acceptDesktop(session: Session, outcome: Extract<DesktopOutcome, { kind: "opened" }>): void {
+    addTab({
+      kind: "desktop",
+      id: crypto.randomUUID(),
+      session,
+      handle: outcome.handle,
+      status: "open",
+      failure: null,
+      width: outcome.width,
+      height: outcome.height,
+    });
+  }
+
+  /** Answers the certificate question with "trust this one", and asks for the desktop again. */
+  async function answerDesktopCertificate(): Promise<void> {
+    const pending = desktopDecision.value;
+    if (!pending) {
+      return;
+    }
+
+    desktopDecision.value = null;
+    try {
+      await backend.desktop.trust(pending.outcome.certificate);
+    } catch (error) {
+      recordFailure(pending.session, asShellError(error, "desktop_trust"));
+      return;
+    }
+    await openDesktop(pending.session);
+  }
+
+  /** Answers it with "not this time": nothing was authenticated, and nothing is left pending. */
+  function dismissDesktopDecision(): void {
+    desktopDecision.value = null;
+  }
+
+  function desktopTab(handle: string): DesktopTab | undefined {
+    return tabs.value.find((entry): entry is DesktopTab => entry.kind === "desktop" && entry.handle === handle);
+  }
+
+  function markDesktopResized(handle: string, width: number, height: number): void {
+    const tab = desktopTab(handle);
+    if (tab) {
+      tab.width = width;
+      tab.height = height;
+    }
+  }
+
+  function markDesktopEnded(handle: string): void {
+    forgetDesktopFrames(handle);
+    const tab = desktopTab(handle);
+    if (tab) {
+      tab.status = "ended";
+    }
+  }
+
+  function markDesktopFailed(handle: string, failure: ShellError): void {
+    forgetDesktopFrames(handle);
+    const tab = desktopTab(handle);
+    if (tab) {
+      tab.status = "failed";
+      tab.failure = failure;
+    }
   }
 
   /**
@@ -898,6 +1061,22 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (!tab) {
       return;
     }
+    if (tab.kind === "desktop") {
+      // Closing is idempotent on the backend: a session that already ended is simply forgotten
+      // there, and one that failed still has a record to release.
+      if (tab.handle) {
+        try {
+          await backend.desktop.close(tab.handle);
+        } catch (error) {
+          tab.status = "failed";
+          tab.failure = asShellError(error, "desktop_close");
+          return;
+        }
+        forgetDesktopFrames(tab.handle);
+      }
+      forget(id);
+      return;
+    }
     if (tab.kind === "files") {
       await closeFilesTab(tab);
       return;
@@ -1036,9 +1215,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (tab.kind === "files") {
       return tab.handle;
     }
-    // A page about a host draws no browser, and neither does the settings page nor the batch
-    // panel, so there is nowhere for a dropped file to land in any of them.
-    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
+    // A page about a host draws no browser, and neither does the settings page, the batch panel or
+    // a remote desktop, so there is nowhere for a dropped file to land in any of them.
+    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch" || tab.kind === "desktop") {
       return null;
     }
     return tab.panel?.handle ?? null;
@@ -1169,6 +1348,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
     const { session } = tab;
+    if (tab.kind === "desktop") {
+      forget(id);
+      await openDesktop(session);
+      return;
+    }
     if (tab.kind === "files") {
       forget(id);
       await openFiles(session);
@@ -1288,6 +1472,45 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
+  /** Sends one input event to an open desktop. */
+  async function desktopInput(handle: string, input: DesktopInput): Promise<void> {
+    const tab = desktopTab(handle);
+    if (!tab || tab.status !== "open") {
+      return;
+    }
+    try {
+      await backend.desktop.input(handle, input);
+    } catch (error) {
+      tab.failure = asShellError(error, "desktop_input");
+    }
+  }
+
+  /** Tells the far side how big the canvas now is. */
+  async function desktopResize(handle: string, width: number, height: number): Promise<void> {
+    const tab = desktopTab(handle);
+    if (!tab || tab.status !== "open") {
+      return;
+    }
+    try {
+      await backend.desktop.resize(handle, width, height);
+    } catch (error) {
+      tab.failure = asShellError(error, "desktop_resize");
+    }
+  }
+
+  /** Asks for a full repaint after the canvas mounts. */
+  async function desktopRefresh(handle: string): Promise<void> {
+    const tab = desktopTab(handle);
+    if (!tab || tab.status !== "open") {
+      return;
+    }
+    try {
+      await backend.desktop.refresh(handle);
+    } catch (error) {
+      tab.failure = asShellError(error, "desktop_refresh");
+    }
+  }
+
   const activeTab = computed(() => tabs.value.find((entry) => entry.id === activeTabId.value) ?? null);
 
   return {
@@ -1305,6 +1528,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
     initialize,
     open,
     openFiles,
+    openDesktop,
+    desktopDecision,
+    answerDesktopCertificate,
+    dismissDesktopDecision,
     reopen,
     goTo,
     openTabsOf,
@@ -1340,6 +1567,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     activate,
     send,
     resize,
+    desktopInput,
+    desktopResize,
+    desktopRefresh,
     refreshTunnels,
     stopTunnel,
     dismissTunnelFailure,

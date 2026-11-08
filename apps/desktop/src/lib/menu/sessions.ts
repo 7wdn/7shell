@@ -122,20 +122,25 @@ export function sessionMenu(
     {
       kind: "action",
       id: "open",
-      labelKey: "sessions.list.open",
+      labelKey: session.protocol === "ssh" ? "sessions.list.open" : "sessions.list.openDesktop",
       icon: Terminal,
       run: () => actions.open(session),
     },
     // Beside the terminal rather than instead of it, and drawn whatever the settings say a session
     // looks like: the files a split brings are the shell's own panel (they follow its `cd`), while
-    // this entry is the file manager in a tab somebody browses in — two different things.
-    {
-      kind: "action",
-      id: "open-files",
-      labelKey: "files.open",
-      icon: Folder,
-      run: () => actions.openFiles(session),
-    },
+    // this entry is the file manager in a tab somebody browses in — two different things. A remote
+    // desktop has no SFTP side, so it has no file manager to offer.
+    ...(session.protocol === "ssh"
+      ? ([
+          {
+            kind: "action",
+            id: "open-files",
+            labelKey: "files.open",
+            icon: Folder,
+            run: () => actions.openFiles(session),
+          },
+        ] satisfies MenuEntry[])
+      : []),
     { kind: "separator", id: "sep-edit" },
     { kind: "action", id: "edit", labelKey: "sessions.list.edit", icon: Pencil, run: () => actions.edit(session) },
     ...(moveEntries.length > 0

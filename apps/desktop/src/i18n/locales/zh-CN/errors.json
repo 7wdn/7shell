@@ -17,6 +17,15 @@
       "keyInvalid": "无法读取该密钥。如果它带口令，口令也需要检查。",
       "keyUnsupported": "当前版本无法使用这种类型的密钥。"
     },
+    "rdp": {
+      "unreachable": "无法连接到 {host}:{port} 的远程桌面。",
+      "tlsFailed": "无法与 {host}:{port} 建立安全连接。",
+      "certificateChanged": "{host}:{port} 提供的证书与已信任的证书不一致。未向该服务器发送任何内容。",
+      "authFailed": "{host}:{port} 的远程桌面拒绝了这个凭据。",
+      "protocolFailed": "与 {host}:{port} 的远程桌面会话无法继续。",
+      "sessionClosed": "与 {host}:{port} 的远程桌面会话已结束。",
+      "resizeFailed": "无法调整远程桌面的尺寸。"
+    },
     "sftp": {
       "notFound": "服务器上不存在 {path}。",
       "permissionDenied": "服务器拒绝访问 {path}。",

@@ -14,7 +14,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
 import { useSessionsStore } from "@/stores/sessions";
-import { PROTOCOLS, type AuthMethodId } from "@/types/generated/protocols";
+import { PROTOCOLS, protocolById, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
 import type { ForwardMode, KeyInfo, LocalForward, SecretInput, Session, TerminalSettings } from "@/types/session";
 
 /** What `TerminalSettings::default()` uses in Rust: the wire type has no "not set" for these. */
@@ -124,6 +124,14 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const port = ref("");
   const user = ref("");
   const groupId = ref("");
+  /**
+   * Which kind of connection this is.
+   *
+   * A saved session keeps the protocol it was made with; a new one starts at the first descriptor,
+   * which is SSH. Switching it changes the port only when the port is still what the previous
+   * protocol would have chosen — a port somebody typed is theirs, not a default.
+   */
+  const protocol = ref<Protocol>(PROTOCOLS[0]?.id ?? "ssh");
   const method = ref<AuthMethodId>("password");
   const attachedKey = ref<KeyInfo | null>(null);
   const secret = ref("");
@@ -208,7 +216,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     editing.value = session;
     name.value = session?.name ?? "";
     host.value = session?.host ?? "";
-    port.value = String(session?.port ?? PROTOCOLS[0]?.defaultPort ?? "");
+    protocol.value = session?.protocol ?? PROTOCOLS[0]?.id ?? "ssh";
+    port.value = String(session?.port ?? protocolById(protocol.value)?.defaultPort ?? "");
     user.value = session?.user ?? "";
     groupId.value = session?.groupId ?? "";
     method.value = session?.auth.method ?? "password";
@@ -236,7 +245,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       id: existing?.id ?? crypto.randomUUID(),
       name: name.value.trim(),
       groupId: groupId.value === "" ? undefined : groupId.value,
-      protocol: existing?.protocol ?? PROTOCOLS[0]?.id ?? "ssh",
+      protocol: protocol.value,
       host: host.value.trim(),
       port: portNumber(port.value),
       user: user.value.trim(),
@@ -250,6 +259,28 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
     };
+  }
+
+  /**
+   * Changes the connection kind.
+   *
+   * A remote desktop authenticates with a password and has no SSH-only sections; the values those
+   * sections hold are kept, not cleared, so switching back and forth does not lose what was typed.
+   */
+  function setProtocol(next: Protocol): void {
+    if (next === protocol.value) {
+      return;
+    }
+
+    const previousDefault = protocolById(protocol.value)?.defaultPort;
+    protocol.value = next;
+    if (port.value.trim() === "" || Number(port.value) === previousDefault) {
+      port.value = String(protocolById(next)?.defaultPort ?? "");
+    }
+    if (next !== "ssh") {
+      method.value = "password";
+      attachedKey.value = null;
+    }
   }
 
   function addHop(id: string): void {
@@ -294,6 +325,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     port,
     user,
     groupId,
+    protocol,
     method,
     attachedKey,
     secret,
@@ -313,6 +345,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     fill,
     secretInput,
     draft,
+    setProtocol,
     addHop,
     removeHopAt,
     moveHop,

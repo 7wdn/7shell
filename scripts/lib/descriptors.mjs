@@ -16,7 +16,7 @@ export const MANIFEST_PATH = path.join(DESCRIPTORS_DIR, "descriptors.manifest.js
 export const GENERATED_TS_DIR = path.join(REPO_ROOT, "apps", "desktop", "src", "types", "generated");
 
 export const SCHEMA_VERSION = 1;
-export const GROUPS = ["terminal", "transfer", "network", "session", "auth", "trust"];
+export const GROUPS = ["terminal", "transfer", "network", "session", "auth", "trust", "desktop"];
 export const RUNTIMES = ["native", "sidecar", "external"];
 export const SUPPORT_LEVELS = ["connect", "browse", "operate"];
 export const PLATFORMS = ["windows", "macos", "linux"];

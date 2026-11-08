@@ -65,6 +65,22 @@ error_catalog! {
     #[doc = "The key is of a kind this build cannot use."]
     SshKeyUnsupported => "SSH-KEY-UNSUPPORTED", "errors.ssh.keyUnsupported";
 
+    // -- RDP ---------------------------------------------------------------
+    #[doc = "The remote desktop host could not be reached."]
+    RdpUnreachable => "RDP-UNREACHABLE", "errors.rdp.unreachable";
+    #[doc = "The TLS handshake with the remote desktop host failed."]
+    RdpTlsFailed => "RDP-TLS-FAILED", "errors.rdp.tlsFailed";
+    #[doc = "The certificate differs from the trusted one. Credentials were withheld."]
+    RdpCertificateChanged => "RDP-CERTIFICATE-CHANGED", "errors.rdp.certificateChanged";
+    #[doc = "The remote desktop host rejected the credentials."]
+    RdpAuthFailed => "RDP-AUTH-FAILED", "errors.rdp.authFailed";
+    #[doc = "The remote desktop protocol could not complete a step."]
+    RdpProtocolFailed => "RDP-PROTOCOL-FAILED", "errors.rdp.protocolFailed";
+    #[doc = "The remote desktop session ended."]
+    RdpSessionClosed => "RDP-SESSION-CLOSED", "errors.rdp.sessionClosed";
+    #[doc = "The remote desktop could not change its size."]
+    RdpResizeFailed => "RDP-RESIZE-FAILED", "errors.rdp.resizeFailed";
+
     // -- SFTP --------------------------------------------------------------
     #[doc = "The remote path does not exist."]
     SftpNotFound => "SFTP-NOT-FOUND", "errors.sftp.notFound";

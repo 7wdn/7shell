@@ -17,6 +17,15 @@
       "keyInvalid": "The key could not be read. If it has a passphrase, check that too.",
       "keyUnsupported": "This build cannot use that kind of key."
     },
+    "rdp": {
+      "unreachable": "Could not reach the remote desktop at {host}:{port}.",
+      "tlsFailed": "The secure connection to {host}:{port} could not be established.",
+      "certificateChanged": "The certificate from {host}:{port} does not match the trusted one. Nothing was sent to that server.",
+      "authFailed": "The remote desktop at {host}:{port} rejected these credentials.",
+      "protocolFailed": "The remote desktop session with {host}:{port} could not continue.",
+      "sessionClosed": "The remote desktop session with {host}:{port} has ended.",
+      "resizeFailed": "The remote desktop could not be resized."
+    },
     "sftp": {
       "notFound": "{path} does not exist on the server.",
       "permissionDenied": "The server refused access to {path}.",

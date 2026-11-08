@@ -43,7 +43,7 @@ import {
 } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
 import type { Session, ForwardMode } from "@/types/session";
-import { AUTH_METHODS, type AuthMethodId } from "@/types/generated/protocols";
+import { AUTH_METHODS, PROTOCOLS, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
 
 const props = defineProps<{ open: boolean; session: Session | null }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
@@ -69,6 +69,13 @@ const forwardModes = computed<SelectOption[]>(() => [
 
 /** The hop the picker is pointing at, until it is added and the picker goes back to its prompt. */
 const hopToAdd = ref("");
+
+/** The connection kinds the descriptors offer, named in the interface's own words. */
+const protocolOptions = computed<SelectOption[]>(() =>
+  PROTOCOLS.map((protocol) => ({ value: protocol.id, label: t(protocol.labelKey) })),
+);
+
+const isDesktop = computed(() => editor.protocol !== "ssh");
 
 /** Every group there is, with "no group" first — the answer a session starts out with. */
 const groupOptions = computed<SelectOption[]>(() => [
@@ -259,6 +266,20 @@ async function forgetKey(): Promise<void> {
         </header>
 
         <form class="max-h-[70vh] space-y-4 overflow-auto px-4 py-4" @submit.prevent="save()">
+          <div>
+            <label class="block text-xs font-medium" for="session-protocol">{{ t("sessions.editor.protocol") }}</label>
+            <Select
+              id="session-protocol"
+              :model-value="editor.protocol"
+              class="mt-1"
+              :options="protocolOptions"
+              @update:model-value="editor.setProtocol($event as Protocol)"
+            />
+            <p v-if="isDesktop" class="mt-1 text-[11px] text-muted-foreground">
+              {{ t("sessions.editor.desktop.note") }}
+            </p>
+          </div>
+
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
               <label class="block text-xs font-medium" for="session-name">{{ t("sessions.editor.name") }}</label>
@@ -319,9 +340,11 @@ async function forgetKey(): Promise<void> {
           </div>
 
           <section>
-            <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
-            <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
-            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
+            <template v-if="!isDesktop">
+              <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
+              <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
+              <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
+            </template>
 
             <div v-if="editor.method === 'password' || editor.method === 'keyboardInteractive'" class="mt-3">
               <label class="block text-xs font-medium" for="session-secret">{{
@@ -338,7 +361,13 @@ async function forgetKey(): Promise<void> {
                 "
               />
               <p class="mt-1 text-[11px] text-muted-foreground">
-                {{ storedSecret ? t("sessions.editor.secret.stored") : t("sessions.editor.secret.notStored") }}
+                {{
+                  storedSecret
+                    ? t("sessions.editor.secret.stored")
+                    : isDesktop
+                      ? t("sessions.editor.secret.blankAllowed")
+                      : t("sessions.editor.secret.notStored")
+                }}
               </p>
             </div>
 
@@ -404,7 +433,7 @@ async function forgetKey(): Promise<void> {
             </div>
           </section>
 
-          <section>
+          <section v-if="!isDesktop">
             <h3 class="text-xs font-medium">{{ t("sessions.editor.terminal.title") }}</h3>
 
             <label class="mt-2 flex items-start gap-2 text-xs">
@@ -433,7 +462,7 @@ async function forgetKey(): Promise<void> {
             </label>
           </section>
 
-          <section>
+          <section v-if="!isDesktop">
             <h3 class="text-xs font-medium">{{ t("sessions.editor.jumps.title") }}</h3>
             <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.jumps.note") }}</p>
 
@@ -523,7 +552,7 @@ async function forgetKey(): Promise<void> {
             </div>
           </section>
 
-          <section>
+          <section v-if="!isDesktop">
             <div class="flex items-center justify-between">
               <h3 class="text-xs font-medium">{{ t("sessions.editor.forwards.title") }}</h3>
               <button

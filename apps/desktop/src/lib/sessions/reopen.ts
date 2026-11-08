@@ -43,7 +43,7 @@ export interface SessionTabLike {
   readonly id: string;
   readonly sessionId: string;
   /** What kind of a tab it is: a terminal and its file manager are not copies of each other. */
-  readonly kind: "terminal" | "files";
+  readonly kind: "terminal" | "files" | "desktop";
 }
 
 /**

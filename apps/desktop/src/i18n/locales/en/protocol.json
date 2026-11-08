@@ -2,6 +2,9 @@
   "protocol": {
     "ssh": {
       "label": "SSH"
+    },
+    "rdp": {
+      "label": "Remote desktop (RDP)"
     }
   }
 }

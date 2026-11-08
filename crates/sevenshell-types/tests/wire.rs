@@ -15,16 +15,16 @@ use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
     BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord,
-    CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView,
-    EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, KeyAlgorithm,
-    KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
-    PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
-    SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
-    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, Snippet, SnippetGroup, SnippetProvider,
-    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
-    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
-    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DesktopOutcome, DiskUsage,
+    DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem,
+    KeyAlgorithm, KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome,
+    OpenTunnel, PresentedCertificate, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol,
+    RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
+    SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen,
+    Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary,
+    SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
+    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
+    ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -1210,4 +1210,45 @@ fn completion_results_serialize_with_camel_case_fields() {
         silent["exitCode"].is_null(),
         "a generator that ran out of time has no exit status"
     );
+}
+
+#[test]
+fn a_desktop_decision_carries_the_certificate_and_never_a_credential() {
+    let certificate = PresentedCertificate {
+        host: "desktop.example".to_owned(),
+        port: 3389,
+        fingerprint: "SHA256:AAAA".to_owned(),
+        certificate: "MIIB".to_owned(),
+    };
+
+    let json = check(
+        &DesktopOutcome::CertificateUnknown {
+            certificate: certificate.clone(),
+        },
+        "DesktopOutcome",
+    );
+    assert_eq!(json["kind"], serde_json::json!("certificateUnknown"));
+    assert_eq!(json["certificate"]["fingerprint"], serde_json::json!("SHA256:AAAA"));
+
+    let json = check(
+        &DesktopOutcome::CertificateMismatch {
+            certificate,
+            trusted: trusted(),
+        },
+        "DesktopOutcome",
+    );
+    assert_eq!(json["kind"], serde_json::json!("certificateMismatch"));
+    assert_eq!(json["trusted"]["keyType"], serde_json::json!("ssh-ed25519"));
+
+    let json = check(
+        &DesktopOutcome::Opened {
+            handle: "d1".to_owned(),
+            session_id: "session-1".to_owned(),
+            width: 1280,
+            height: 800,
+        },
+        "DesktopOutcome",
+    );
+    assert_eq!(json["sessionId"], serde_json::json!("session-1"));
+    assert_eq!(json["width"], serde_json::json!(1280));
 }

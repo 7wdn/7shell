@@ -89,3 +89,27 @@ capabilities:
     order: 140
     group: auth
     labelKey: capability.platformAgent.label
+
+  - key: desktopView
+    order: 150
+    group: desktop
+    labelKey: capability.desktopView.label
+
+  - key: desktopInput
+    order: 160
+    group: desktop
+    labelKey: capability.desktopInput.label
+
+  - key: desktopResize
+    order: 170
+    group: desktop
+    labelKey: capability.desktopResize.label
+
+  - key: desktopClipboard
+    order: 180
+    group: desktop
+    labelKey: capability.desktopClipboard.label
+    # Registered before it is built: the channel is in IronRDP, but the interface side of the
+    # clipboard (what "copy" means in a WebView2 that has its own permission model) has not been
+    # wired or tested, and a capability is only claimed by the change that proves it.
+    planned: true

@@ -14,12 +14,14 @@ sevenshell-types = { workspace = true }
 sevenshell-policy = { workspace = true }
 sevenshell-vault = { workspace = true }
 sevenshell-ssh = { workspace = true }
+sevenshell-rdp = { workspace = true }
 sevenshell-session = { workspace = true }
 sevenshell-sftp = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

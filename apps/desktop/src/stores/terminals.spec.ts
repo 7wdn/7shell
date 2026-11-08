@@ -16,6 +16,16 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesList: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
+  desktopOpen: vi.fn(),
+  desktopTrust: vi.fn(),
+  desktopInput: vi.fn(),
+  desktopResize: vi.fn(),
+  desktopClose: vi.fn(),
+  desktopsOpen: vi.fn(),
+  desktopChannel: vi.fn(),
+  onDesktopResized: vi.fn(async () => () => {}),
+  onDesktopClosed: vi.fn(async () => () => {}),
+  onDesktopFailed: vi.fn(async () => () => {}),
 }));
 // The bus is mocked rather than run: these tests are about what the store does with an event,
 // and the bus already has its own suite for delivering one.

@@ -20,6 +20,9 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesOpen: vi.fn(),
   snippetsOpen: vi.fn(async () => []),
   commandHistory: vi.fn(async () => []),
+  onDesktopResized: vi.fn(async () => () => {}),
+  onDesktopClosed: vi.fn(async () => () => {}),
+  onDesktopFailed: vi.fn(async () => () => {}),
 }));
 
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";

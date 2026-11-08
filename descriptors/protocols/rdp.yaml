@@ -1,0 +1,17 @@
+schemaVersion: 1
+order: 20
+id: rdp
+rustVariant: Rdp
+labelKey: protocol.rdp.label
+defaultPort: 3389
+runtime: native
+transport: tcp
+supportLevel: operate
+# The RDP session this build actually carries: a view of the far desktop, keyboard and mouse, and
+# the display-control channel that lets the window resize it. Clipboard is registered in the
+# vocabulary but not claimed until it works end to end; audio, drives and gateways are not here at
+# all, because nothing in this build speaks them yet.
+capabilities:
+  - desktopView
+  - desktopInput
+  - desktopResize

@@ -106,6 +106,34 @@
       "group": "auth",
       "labelKey": "capability.platformAgent.label",
       "planned": false
+    },
+    {
+      "key": "desktopView",
+      "order": 150,
+      "group": "desktop",
+      "labelKey": "capability.desktopView.label",
+      "planned": false
+    },
+    {
+      "key": "desktopInput",
+      "order": 160,
+      "group": "desktop",
+      "labelKey": "capability.desktopInput.label",
+      "planned": false
+    },
+    {
+      "key": "desktopResize",
+      "order": 170,
+      "group": "desktop",
+      "labelKey": "capability.desktopResize.label",
+      "planned": false
+    },
+    {
+      "key": "desktopClipboard",
+      "order": 180,
+      "group": "desktop",
+      "labelKey": "capability.desktopClipboard.label",
+      "planned": true
     }
   ],
   "protocols": [
@@ -129,6 +157,21 @@
         "dynamicForwarding",
         "recording",
         "jumpHost"
+      ]
+    },
+    {
+      "id": "rdp",
+      "rustVariant": "Rdp",
+      "order": 20,
+      "labelKey": "protocol.rdp.label",
+      "defaultPort": 3389,
+      "runtime": "native",
+      "transport": "tcp",
+      "supportLevel": "operate",
+      "capabilities": [
+        "desktopView",
+        "desktopInput",
+        "desktopResize"
       ]
     }
   ],

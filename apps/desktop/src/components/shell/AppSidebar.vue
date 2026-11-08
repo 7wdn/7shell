@@ -1375,7 +1375,11 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                     <button
                       type="button"
                       class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
-                      :title="t('sessions.list.openHint', { name: row.session.name })"
+                      :title="
+                        t(row.session.protocol === 'ssh' ? 'sessions.list.openHint' : 'sessions.list.openDesktopHint', {
+                          name: row.session.name,
+                        })
+                      "
                       @click="terminals.goTo(row.session)"
                     >
                       <!--
