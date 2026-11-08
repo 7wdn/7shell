@@ -59,4 +59,14 @@ ignore = [
   # good part of the machines it exists for. Nothing this repository changes can fix it, and a report
   # nobody can act on is what the setting above is about too.
   "RUSTSEC-2023-0071",
+  # Four extraction bugs in `zip` 4.6.1 (RUSTSEC-2026-0367/0368/0369/0429), all fixed in zip 9.0.0.
+  # The only reader of that crate is `tauri-plugin-updater`: it extracts this project's own update
+  # archives, which arrive through the signed release channel, not archives supplied by a user or a
+  # host. There is no version to move to from here — every published release of the plugin, including
+  # its current alpha, depends on zip 4 — so this is a report nobody in this repository can act on.
+  # Remove these when the plugin allows zip 9.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
 ]
