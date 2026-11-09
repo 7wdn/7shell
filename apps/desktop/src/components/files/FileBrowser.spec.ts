@@ -30,6 +30,7 @@ import FileBrowser from "@/components/files/FileBrowser.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { i18n } from "@/i18n";
 import { filesCreateFile, filesDownload, filesList, filesRename, settingsSet } from "@/lib/backend/tauri";
+import { ShellError } from "@/lib/backend/errors";
 import type { MenuAction, MenuEntry } from "@/lib/menu/types";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -1043,5 +1044,32 @@ describe("the line between the tree and the listing", () => {
 
     expect(divider()).toBeNull();
     expect(paneLeftOfIt()).toBeNull();
+  });
+});
+
+describe("a failure in the panel", () => {
+  it("can be put away instead of sitting in the header forever", async () => {
+    await render(unsorted);
+    const store = useFilesStore();
+    const browser = store.browsers[HANDLE];
+    if (!browser) {
+      throw new Error("the panel was not opened");
+    }
+    browser.failure = new ShellError({
+      version: 1,
+      code: "SFTP-EXISTS",
+      messageKey: "errors.sftp.exists",
+      messageParams: { path: "/home/user/notes.txt" },
+      origin: { subsystem: "sftp" },
+      outcome: "notSent",
+    });
+    await nextTick();
+
+    expect(host.querySelector('[role="alert"]'), "the failure is on screen").not.toBeNull();
+    host.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click();
+    await nextTick();
+
+    expect(browser.failure).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 });

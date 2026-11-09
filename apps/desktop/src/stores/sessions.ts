@@ -207,6 +207,11 @@ export const useSessionsStore = defineStore("sessions", () => {
     selected.value = new Set();
   }
 
+  /** Puts away a library failure: it is a message, not a state of the list. */
+  function dismissFailure(): void {
+    failure.value = null;
+  }
+
   /** Every session under a group, its subgroups included, which is what a group's tick covers. */
   function sessionsUnder(groupId: string): string[] {
     const inside = new Set<string>([groupId]);
@@ -622,6 +627,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     openSessionIds,
     status,
     failure,
+    dismissFailure,
     rows,
     load,
     save,

@@ -228,8 +228,8 @@ export const backend = {
     /** Uploads what a drop or a paste left behind. The interface never sees a path. */
     uploadDropped: (handle: string, directory: string, token: string, packed: boolean): Promise<UploadOutcome> =>
       forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token, packed)),
-    /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it. */
-    clipboardFiles: (): Promise<PendingFiles> => forward("clipboard_files", () => desktop.clipboardFiles()),
+    /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it; null means no files. */
+    clipboardFiles: (): Promise<PendingFiles | null> => forward("clipboard_files", () => desktop.clipboardFiles()),
     /**
      * Asks where to put it, in Rust. An empty answer means a dialog was dismissed.
      *

@@ -887,8 +887,13 @@ describe("files the operating system handed us", () => {
 
     const store = useFilesStore();
     await store.open("s1");
-    await store.uploadFromClipboard("f1", "/home", false);
+    const started = await store.uploadFromClipboard("f1", "/home", false);
+    expect(started.kind).toBe("ok");
     expect(filesUploadDroppedMock).toHaveBeenCalledWith("f1", "/home", "d9", false);
+
+    clipboardFilesMock.mockResolvedValue(null);
+    expect(await store.uploadFromClipboard("f1", "/home", false)).toEqual({ kind: "empty" });
+    expect(store.browser("f1")?.failure, "a clipboard with no files is not a failure").toBeNull();
 
     clipboardFilesMock.mockRejectedValue({
       version: 1,
@@ -898,9 +903,11 @@ describe("files the operating system handed us", () => {
       origin: { subsystem: "app" },
       outcome: "notSent",
     });
-    await store.uploadFromClipboard("f1", "/home", false);
+    const failed = await store.uploadFromClipboard("f1", "/home", false);
 
-    expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
+    expect(failed.kind).toBe("failed");
+    expect(failed.kind === "failed" ? failed.failure.code : "").toBe("APP-UNSUPPORTED");
+    expect(store.browser("f1")?.failure, "the listing's error line is not where a paste belongs").toBeNull();
   });
 });
 

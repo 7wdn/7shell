@@ -143,10 +143,16 @@ const twoPanes = computed(() => preferences.filesLayout === "tree");
  * cannot answer about itself: every open browser is mounted, including the ones behind other tabs,
  * and a shortcut registered by each of them would upload one clipboard into all of them at once.
  */
-function pasteFiles(): void {
+async function pasteFiles(): Promise<void> {
   const open = files.browser(props.handle);
-  if (open) {
-    void files.uploadFromClipboard(props.handle, open.path, preferences.packedTransfer);
+  if (!open) {
+    return;
+  }
+  const outcome = await files.uploadFromClipboard(props.handle, open.path, preferences.packedTransfer);
+  if (outcome.kind === "empty") {
+    toast(t("files.paste.noFiles"), "receipt");
+  } else if (outcome.kind === "failed") {
+    toast(describeShellError(translate, outcome.failure).message, "failure");
   }
 }
 
@@ -229,16 +235,23 @@ const pasteShortcut = computed(() =>
 );
 
 const browser = computed(() => files.browser(props.handle));
-/** What this browser can paste: the clipboard is only meaningful on the connection it came from. */
-const pasteable = computed(() => {
-  const clip = files.clipboard;
-  const current = browser.value;
-  if (!clip || !current || clip.sessionId !== current.sessionId) {
-    return null;
-  }
-  return { mode: clip.mode, count: clip.paths.length };
-});
+/** What this browser can paste: the clipboard is only meaningful on the connection it came from. */ const pasteable =
+  computed(() => {
+    const clip = files.clipboard;
+    const current = browser.value;
+    if (!clip || !current || clip.sessionId !== current.sessionId) {
+      return null;
+    }
+    return { mode: clip.mode, count: clip.paths.length };
+  });
 const problem = computed(() => (browser.value?.failure ? describeShellError(translate, browser.value.failure) : null));
+
+/** A failure from a change is a message, not a state of the directory: it can be put away. */
+function dismissFailure(): void {
+  if (browser.value) {
+    browser.value.failure = null;
+  }
+}
 const parent = computed(() => (browser.value ? parentPath(browser.value.path) : null));
 const crumbs = computed(() => (browser.value ? crumbsOf(browser.value.path) : []));
 
@@ -1267,10 +1280,25 @@ function openAreaMenu(event: MouseEvent): void {
         </button>
       </form>
 
-      <p v-if="problem" class="mt-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px]">
-        <span>{{ problem.message }}</span>
-        <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
-      </p>
+      <div
+        v-if="problem"
+        role="alert"
+        class="mt-1.5 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px]"
+      >
+        <span class="min-w-0 flex-1">
+          <span class="block">{{ problem.message }}</span>
+          <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
+        </span>
+        <button
+          type="button"
+          class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('common.action.close')"
+          :aria-label="t('common.action.close')"
+          @click="dismissFailure()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
     </header>
 
     <div class="flex min-h-0 flex-1">

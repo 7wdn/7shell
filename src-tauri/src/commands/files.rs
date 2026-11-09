@@ -557,12 +557,17 @@ pub async fn dropped_upload(
 
 /// The file list on the clipboard, as a token and the files' names.
 ///
-/// Windows is the only platform this build can read that from, and the other ones say so instead
-/// of pretending: `APP-UNSUPPORTED` names what is missing, which is what the interface shows.
+/// `None` means the clipboard holds no files — text, a picture or nothing at all. That is not an
+/// error: there is simply nothing to upload, and the interface says so without a failure envelope.
+/// Windows is the only platform this build can read a file list from; the other ones say
+/// `APP-UNSUPPORTED` rather than pretending.
 #[tauri::command]
-pub fn clipboard_files(state: State<'_, ShellState>) -> Result<crate::dropped::PendingFiles, ShellError> {
+pub fn clipboard_files(state: State<'_, ShellState>) -> Result<Option<crate::dropped::PendingFiles>, ShellError> {
     let paths = crate::dropped::clipboard_files()?;
-    state.pending_drops().remember(paths)
+    if paths.is_empty() {
+        return Ok(None);
+    }
+    state.pending_drops().remember(paths).map(Some)
 }
 
 /// Runs a blocking file dialog off the async runtime's threads.

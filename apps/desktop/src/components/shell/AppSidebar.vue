@@ -1195,10 +1195,24 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
         </div>
       </div>
 
-      <p v-if="problem" class="mb-2 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
-        <span class="block text-[11px]">{{ problem.message }}</span>
-        <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
-      </p>
+      <div
+        v-if="problem"
+        class="mb-2 flex shrink-0 items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5"
+      >
+        <span class="min-w-0 flex-1">
+          <span class="block text-[11px]">{{ problem.message }}</span>
+          <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ problem.code }}</span>
+        </span>
+        <button
+          type="button"
+          class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('common.action.close')"
+          :aria-label="t('common.action.close')"
+          @click="library.dismissFailure()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
 
       <!--
         Nothing in the panel is text to be selected. What a drag across these rows means is a drag —

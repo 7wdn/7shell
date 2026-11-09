@@ -13,7 +13,7 @@
  * answered shows nothing rather than a spinner that implies progress, and a run stopped by a host
  * key decision says so instead of looking like it is still going.
  */
-import { Check, CircleAlert, ListChecks, LoaderCircle, Play, RotateCw } from "@lucide/vue";
+import { Check, CircleAlert, ListChecks, LoaderCircle, Play, RotateCw, X } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -286,9 +286,23 @@ async function retryOne(sessionId: string): Promise<void> {
         {{ t("batch.state.approval") }}
       </div>
 
-      <div v-else-if="describedFailure" class="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs">
-        <p>{{ describedFailure.message }}</p>
-        <p class="font-mono text-[10px] text-muted-foreground">{{ describedFailure.code }}</p>
+      <div
+        v-else-if="describedFailure"
+        class="flex items-start gap-2 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs"
+      >
+        <span class="min-w-0 flex-1">
+          <p>{{ describedFailure.message }}</p>
+          <p class="font-mono text-[10px] text-muted-foreground">{{ describedFailure.code }}</p>
+        </span>
+        <button
+          type="button"
+          class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('common.action.close')"
+          :aria-label="t('common.action.close')"
+          @click="batch.dismissFailure()"
+        >
+          <X :size="11" />
+        </button>
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto">

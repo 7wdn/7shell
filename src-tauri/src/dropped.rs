@@ -93,7 +93,15 @@ impl PendingDrops {
 /// them reachable from here, and guessing would be worse than saying so.
 #[cfg(windows)]
 pub fn clipboard_files() -> Result<Vec<PathBuf>, ShellError> {
-    use clipboard_win::{formats::FileList, get_clipboard};
+    use clipboard_win::{formats::FileList, get_clipboard, is_format_avail};
+
+    // A clipboard holding text, a picture or nothing at all is not an unsupported clipboard: it
+    // simply has no files to upload. The caller turns that into "nothing to paste", which is a
+    // sentence somebody can act on, rather than an APP-UNSUPPORTED that makes it look like a bug.
+    let format: u32 = (&FileList).into();
+    if !is_format_avail(format) {
+        return Ok(Vec::new());
+    }
 
     let entries: Vec<String> = get_clipboard(FileList).map_err(|error| {
         ShellError::app_unsupported("reading files from the clipboard").with_detail(error.to_string())

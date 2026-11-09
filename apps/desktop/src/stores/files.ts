@@ -57,6 +57,15 @@ export interface SftpClipboard {
   readonly paths: readonly string[];
 }
 
+/**
+ * What pasting files off the system clipboard did.
+ *
+ * "empty" is the ordinary case of a clipboard holding text or a picture: nothing to upload, and
+ * nothing broken. A platform that cannot read a file list at all comes back as "failed" with the
+ * envelope, for the caller to put in a toast rather than into the listing's own error line.
+ */
+export type ClipboardUpload = { kind: "ok" } | { kind: "empty" } | { kind: "failed"; failure: ShellError };
+
 /** A transfer that stopped because it failed, and that nobody has been told about yet. */
 export interface UnattendedTransferFailure {
   readonly id: string;
@@ -261,8 +270,14 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
-  /** Reads the file list off the clipboard and uploads it. A platform that cannot says so. */
-  async function uploadFromClipboard(handle: string, directory: string, packed: boolean): Promise<void> {
+  /**
+   * Reads the file list off the clipboard and uploads it.
+   *
+   * A clipboard with no files is an answer, not a failure; a platform that cannot read a file list
+   * is returned to the caller so it can be a toast. Neither belongs in the listing's error line,
+   * which is about the directory that is on screen.
+   */
+  async function uploadFromClipboard(handle: string, directory: string, packed: boolean): Promise<ClipboardUpload> {
     const open = browsers.value[handle];
     if (open) {
       open.failure = null;
@@ -270,9 +285,13 @@ export const useFilesStore = defineStore("files", () => {
 
     try {
       const pending = await backend.files.clipboardFiles();
-      await uploadDropped(handle, directory, pending.token, packed);
+      if (pending === null) {
+        return { kind: "empty" };
+      }
+      await absorbUpload(await backend.files.uploadDropped(handle, directory, pending.token, packed));
+      return { kind: "ok" };
     } catch (error) {
-      reportFailure(handle, error);
+      return { kind: "failed", failure: asShellError(error, "dropped_upload") };
     }
   }
 

@@ -143,9 +143,10 @@
       "hint": "Drop to upload into {path}"
     },
     "paste": {
-      "label": "Paste",
+      "label": "Upload clipboard",
       "uploadLabel": "Upload clipboard files",
       "title": "Upload the files on the clipboard ({shortcut})",
+      "noFiles": "There are no files on the clipboard to upload.",
       "done": "Pasted {count} item(s)",
       "failed": "{count} item(s) could not be pasted",
       "conflictTitle": "Some names already exist",

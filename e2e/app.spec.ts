@@ -4944,6 +4944,19 @@ test("a copy pastes into another folder, and properties change its mode", async 
     await expect(permissionField).toHaveValue("0740");
     await permissions.getByRole("button", { name: "Confirm", exact: true }).click({ timeout: 5_000 });
     await expect(permissions).toHaveCount(0);
+
+    // A clipboard holding text is not a file list. It is "nothing to upload", not an unsupported
+    // platform, and the answer is a notice rather than an error line in the listing.
+    if (process.platform === "win32") {
+      execFileSync("powershell", ["-NoProfile", "-Command", "Set-Clipboard -Value 'not a file'"], {
+        stdio: "ignore",
+      });
+      await page.getByRole("button", { name: "Upload clipboard", exact: true }).click({ timeout: 5_000 });
+      await expect(page.getByText("There are no files on the clipboard to upload.")).toBeVisible({
+        timeout: 10_000,
+      });
+      await expect(page.getByText("APP-UNSUPPORTED")).toHaveCount(0);
+    }
   } finally {
     await close();
   }

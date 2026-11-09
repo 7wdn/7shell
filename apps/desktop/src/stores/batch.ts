@@ -180,6 +180,11 @@ export const useBatchStore = defineStore("batch", () => {
     failure.value = null;
   }
 
+  /** Puts away the failure line without taking the rows or the summary with it. */
+  function dismissFailure(): void {
+    failure.value = null;
+  }
+
   /**
    * A failure that happened while answering a decision — trusting a key that the vault refused,
    * for instance. It belongs here rather than in a terminal tab: the run it stopped was about
@@ -344,6 +349,7 @@ export const useBatchStore = defineStore("batch", () => {
     clearSelection,
     acknowledge,
     dismiss,
+    dismissFailure,
     reportFailure,
     run,
     runAcknowledged,

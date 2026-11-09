@@ -143,9 +143,10 @@
       "hint": "松开即上传到 {path}"
     },
     "paste": {
-      "label": "粘贴",
+      "label": "上传剪贴板",
       "uploadLabel": "上传剪贴板文件",
       "title": "上传剪贴板中的文件（{shortcut}）",
+      "noFiles": "剪贴板里没有可上传的文件。",
       "done": "已粘贴 {count} 项",
       "failed": "{count} 项粘贴失败",
       "conflictTitle": "目标已存在",

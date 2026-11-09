@@ -144,6 +144,11 @@ export const useCommandsStore = defineStore("commands", () => {
     acknowledged.value = false;
   }
 
+  /** Puts away a library failure the panel is showing: it is a message, not a state of the library. */
+  function dismissFailure(): void {
+    failure.value = null;
+  }
+
   function setValue(slot: number, value: string): void {
     const next = [...values.value];
     next[slot] = value;
@@ -457,6 +462,7 @@ export const useCommandsStore = defineStore("commands", () => {
     history,
     loaded,
     failure,
+    dismissFailure,
     draft,
     values,
     target,

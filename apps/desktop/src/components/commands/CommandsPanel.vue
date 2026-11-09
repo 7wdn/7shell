@@ -12,7 +12,7 @@
  * send, and then the button says so and asks again. That is the only case where anything waits, and
  * it only happens when more than one shell is being written to.
  */
-import { ChevronDown, ChevronUp, FolderPlus, Pencil, Play, Plus, Save, Trash2, TriangleAlert } from "@lucide/vue";
+import { ChevronDown, ChevronUp, FolderPlus, Pencil, Play, Plus, Save, Trash2, TriangleAlert, X } from "@lucide/vue";
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -268,12 +268,21 @@ async function submitGroupRename(group: SnippetGroup): Promise<void> {
       </ul>
 
       <!-- A group write can fail while no command is open, so its reason needs a place of its own. -->
-      <p
+      <div
         v-if="problem && !commands.draft"
-        class="mx-2 mb-1 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px]"
+        class="mx-2 mb-1 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px]"
       >
-        {{ problem.message }}
-      </p>
+        <span class="min-w-0 flex-1">{{ problem.message }}</span>
+        <button
+          type="button"
+          class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('common.action.close')"
+          :aria-label="t('common.action.close')"
+          @click="commands.dismissFailure()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
 
       <header class="flex items-center justify-between border-b border-border px-2 py-1.5">
         <span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -415,9 +424,23 @@ async function submitGroupRename(group: SnippetGroup): Promise<void> {
 
         <div class="flex-1"></div>
 
-        <div v-if="problem" class="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">
-          <p>{{ problem.message }}</p>
-          <p class="font-mono text-[10px] text-muted-foreground">{{ problem.code }}</p>
+        <div
+          v-if="problem"
+          class="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5"
+        >
+          <span class="min-w-0 flex-1">
+            <p>{{ problem.message }}</p>
+            <p class="font-mono text-[10px] text-muted-foreground">{{ problem.code }}</p>
+          </span>
+          <button
+            type="button"
+            class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('common.action.close')"
+            :aria-label="t('common.action.close')"
+            @click="commands.dismissFailure()"
+          >
+            <X :size="11" />
+          </button>
         </div>
 
         <ul v-if="unreached.length > 0" class="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5">

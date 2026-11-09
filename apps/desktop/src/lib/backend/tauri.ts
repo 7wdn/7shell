@@ -748,8 +748,8 @@ export function droppedUpload(
 }
 
 /** The file list on the clipboard, as a token and names. Refused on platforms that cannot read it. */
-export function clipboardFiles(): Promise<PendingFiles> {
-  return invoke<PendingFiles>("clipboard_files");
+export function clipboardFiles(): Promise<PendingFiles | null> {
+  return invoke<PendingFiles | null>("clipboard_files");
 }
 
 /** Asks one transfer to stop. The row stays, and goes on saying it was cancelled. */
