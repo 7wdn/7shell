@@ -109,7 +109,23 @@ function filesShowing(tab: WorkspaceTab): boolean {
   return panelShowing(tab) && panelTab.value[tab.id] !== "commands";
 }
 
-function showCommands(tab: TerminalTab): void {
+/**
+ * The commands half of the panel: show it, or put the panel away when it is already what is
+ * showing.
+ *
+ * The files half closes through the store because a browser is a record with a channel to let go
+ * of. The commands half has no record of its own — its visibility is this choice — so clicking it
+ * again has to forget the choice, and a browser left underneath (files, then commands) is closed
+ * with it so the panel does not stay up around nothing.
+ */
+async function showCommands(tab: TerminalTab): Promise<void> {
+  if (panelShowing(tab) && panelTab.value[tab.id] === "commands") {
+    if (tab.panel) {
+      await terminals.togglePanel(tab);
+    }
+    delete panelTab.value[tab.id];
+    return;
+  }
   panelTab.value[tab.id] = "commands";
 }
 
