@@ -8,6 +8,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { type AddressInfo, createServer, type Socket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -596,15 +597,26 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
     await expect(editor).toHaveCount(0);
 
     await sessionRow(page, name).click();
-    const screen = page.locator(".xterm-rows").first();
+    const screen = page.locator(".xterm-rows").filter({ visible: true }).first();
     await expect(screen).toBeAttached({ timeout: 30_000 });
 
     // This transport has no SFTP channel, so the split that opens files beside an SSH terminal
     // must not ask for one here: the failure used to be drawn as an unsupported-feature card under
     // a terminal that was working perfectly well.
-    const strip = page.locator("[data-terminal-strip]").first();
+    const strip = page.locator("[data-terminal-strip]").filter({ visible: true }).first();
     await expect(strip.getByRole("button", { name: "Files" })).toHaveCount(0);
     await expect(page.getByText("APP-UNSUPPORTED")).toHaveCount(0);
+
+    // Both halves of the panel are toggles. A second click on Commands used to leave the panel
+    // open with no way to close it, while the Files half closed as expected.
+    const commandsButton = strip.getByRole("button", { name: "Commands" });
+    const savedCommands = page.getByRole("main").getByText("Saved commands", { exact: true });
+    await commandsButton.click();
+    await expect(commandsButton).toHaveAttribute("aria-pressed", "true");
+    await expect(savedCommands).toBeVisible();
+    await commandsButton.click();
+    await expect(commandsButton).toHaveAttribute("aria-pressed", "false");
+    await expect(savedCommands).toHaveCount(0);
 
     // The marker is computed by the shell, not typed literally: seeing `seven-shell-42` proves the
     // line was executed, where the typed text alone would only prove keystrokes reached the screen.
@@ -612,6 +624,174 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
     await page.keyboard.type("echo seven-shell-$((6*7))");
     await page.keyboard.press("Enter");
     await expect(screen).toContainText("seven-shell-42", { timeout: 20_000 });
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A Telnet console is a saved session too, and this case gives it a real socket.
+ *
+ * The server is a few lines of Node rather than the lab, so the case runs wherever the application
+ * runs: what it proves is the form (no user, no password), the dial, and the byte path through the
+ * actual window. Negotiation is covered twice already — in-process and against the lab.
+ */
+test("a Telnet console dials the address and carries bytes", async () => {
+  const marker = `seven-shell-telnet-${Date.now() % 100000}`;
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.write("welcome\r\nlogin: ");
+    socket.on("data", (chunk: Buffer) => {
+      // The opening window report is binary; typed text is not. Every typed line gets the marker.
+      if (chunk.includes(0xff)) {
+        return;
+      }
+      socket.write(`${marker}\r\nlogin: `);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  const { page, close } = await openApp();
+  try {
+    const name = `telnet-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.locator("#session-protocol").click();
+    await page.getByRole("listbox").getByRole("option", { name: "Telnet" }).click();
+    await editor.getByPlaceholder("example.com").fill("127.0.0.1");
+    await editor.locator("#session-port").fill(String(port));
+
+    // A console asks for an address, not an account: the SSH-only row has to be gone.
+    await expect(editor.locator("#session-user")).toHaveCount(0);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+    const screen = page.locator(".xterm-rows").filter({ visible: true }).first();
+    await expect(screen).toContainText("login:", { timeout: 20_000 });
+
+    await page.getByRole("textbox", { name: "Terminal input" }).click();
+    await page.keyboard.type("hello");
+    await page.keyboard.press("Enter");
+    await expect(screen).toContainText(marker, { timeout: 20_000 });
+  } finally {
+    await close();
+    // The application still holds its end of the socket: waiting for a graceful close here would
+    // wait for a tab this case deliberately leaves open.
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+/**
+ * A raw TCP console: the same window, with nothing spoken on the way in or out.
+ *
+ * The server answers whatever arrives, so the marker proves the typed bytes reached the socket
+ * without a negotiation layer in front of them.
+ */
+test("a raw TCP console carries bytes with no negotiation", async () => {
+  const marker = `seven-shell-rawtcp-${Date.now() % 100000}`;
+  const sockets = new Set<Socket>();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+    socket.write("ready\r\n");
+    socket.on("data", () => socket.write(`${marker}\r\n`));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+
+  const { page, close } = await openApp();
+  try {
+    const name = `rawtcp-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.locator("#session-protocol").click();
+    await page.getByRole("listbox").getByRole("option", { name: "Raw TCP" }).click();
+    await editor.getByPlaceholder("example.com").fill("127.0.0.1");
+    await editor.locator("#session-port").fill(String(port));
+    await expect(editor.locator("#session-user")).toHaveCount(0);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+    const screen = page.locator(".xterm-rows").filter({ visible: true }).first();
+    await expect(screen).toContainText("ready", { timeout: 20_000 });
+
+    await page.getByRole("textbox", { name: "Terminal input" }).click();
+    await page.keyboard.type("hello");
+    await page.keyboard.press("Enter");
+    await expect(screen).toContainText(marker, { timeout: 20_000 });
+  } finally {
+    await close();
+    for (const socket of sockets) {
+      socket.destroy();
+    }
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+/**
+ * A WSL session, when the machine has one.
+ *
+ * The picker is the part that only exists here: it is filled from `wsl.exe`, which the case asks
+ * in the same encoding the application does. A runner without WSL skips rather than pretends.
+ */
+test("a WSL session starts an installed distribution", async () => {
+  test.skip(process.platform !== "win32", "WSL only exists on Windows");
+  const distros = (() => {
+    try {
+      const output = execFileSync("wsl.exe", ["-l", "-q"], { encoding: "buffer" });
+      return output
+        .toString("utf16le")
+        .replace(/^\uFEFF/, "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    } catch {
+      return [];
+    }
+  })();
+  test.skip(distros.length === 0, "no WSL distribution is installed");
+
+  const { page, close } = await openApp();
+  try {
+    const name = `wsl-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.locator("#session-protocol").click();
+    await page.getByRole("listbox").getByRole("option", { name: "WSL" }).click();
+
+    await expect(editor.locator("#session-host")).toHaveCount(0);
+    await editor.locator("#session-wsl-distro").click();
+    // The list is filled from `wsl.exe` after the editor opens, so waiting for the distribution
+    // itself is the assertion: a fixed count would race the load.
+    const distroOption = page.getByRole("listbox").getByRole("option", { name: distros[0], exact: true });
+    await expect(distroOption).toBeVisible({ timeout: 20_000 });
+    await distroOption.click();
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+    const screen = page.locator(".xterm-rows").filter({ visible: true }).first();
+    // A shell prompt, not merely a pane: keystrokes sent while `wsl.exe` is still starting are
+    // lost before the distribution's shell is reading the pseudo terminal.
+    await expect(screen).toContainText(/[$#]/, { timeout: 60_000 });
+
+    const input = page.getByRole("textbox", { name: "Terminal input" });
+    await input.focus();
+    await expect(input).toBeFocused();
+    await page.keyboard.type("echo seven-shell-wsl-$((6*7))");
+    await page.keyboard.press("Enter");
+    await expect(screen).toContainText("seven-shell-wsl-42", { timeout: 60_000 });
   } finally {
     await close();
   }

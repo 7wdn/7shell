@@ -12,6 +12,9 @@
     "serial": {
       "label": "Serial"
     },
+    "rawTcp": {
+      "label": "Raw TCP"
+    },
     "local": {
       "label": "Local terminal"
     },

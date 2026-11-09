@@ -30,34 +30,43 @@ env:
   SEVENSHELL_TEST_PORT: "2222"
   SEVENSHELL_TEST_USER: labuser
   SEVENSHELL_TEST_PASSWORD: labpassword
+  SEVENSHELL_TEST_TELNET_HOST: 127.0.0.1
+  SEVENSHELL_TEST_TELNET_PORT: "23230"
 
 jobs:
   live:
-    name: Live tests against a real sshd
+    name: Live tests against the lab
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Start the SSH lab
+      - name: Start the test lab
         run: docker compose -f deploy/lab/openssh/compose.yaml up -d
 
-      - name: Wait for sshd to answer
+      - name: Wait for sshd and telnetd to answer
         run: |
           for attempt in $(seq 1 60); do
-            if (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
-              echo "sshd is listening after $((attempt * 2))s"
+            ssh_ready=0
+            telnet_ready=0
+            (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null && ssh_ready=1
+            (exec 3<>/dev/tcp/127.0.0.1/23230) 2>/dev/null && telnet_ready=1
+            if [ "$ssh_ready" = 1 ] && [ "$telnet_ready" = 1 ]; then
+              echo "the lab is listening after $((attempt * 2))s"
               exit 0
             fi
             sleep 2
           done
-          echo "sshd never came up"
+          echo "the lab never came up"
           docker compose -f deploy/lab/openssh/compose.yaml logs
           exit 1
 
       - name: Live tests
         run: cargo test -p sevenshell-ssh -p sevenshell-core -- --ignored --test-threads=1
+
+      - name: Live Telnet test
+        run: cargo test -p sevenshell-term --test live_telnet -- --ignored --test-threads=1
 
       - name: The server's own log, when something failed
         if: failure()

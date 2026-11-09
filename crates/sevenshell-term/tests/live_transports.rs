@@ -6,7 +6,9 @@
 
 use std::time::Duration;
 
-use sevenshell_term::{SerialSpec, Size, TelnetSpec, TerminalEvent, open_local, open_telnet, open_wsl};
+use sevenshell_term::{
+    SerialSpec, Size, TcpSpec, TelnetSpec, TerminalEvent, open_local, open_raw_tcp, open_telnet, open_wsl,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -67,6 +69,14 @@ async fn a_telnet_console_negotiates_and_carries_bytes_both_ways() {
         socket.read_exact(&mut typed).await.expect("keystrokes");
         assert_eq!(&typed, b"root\r");
         socket.write_all(b"Password: ").await.expect("a second prompt");
+
+        // A resize after the session is up is a fresh window report, not only the opening one.
+        let mut resized = [0u8; 9];
+        socket
+            .read_exact(&mut resized)
+            .await
+            .expect("the resized window report");
+        assert_eq!(&resized, &[IAC, SB, OPT_NAWS, 0, 100, 0, 40, IAC, SE]);
         typed
     });
 
@@ -86,7 +96,36 @@ async fn a_telnet_console_negotiates_and_carries_bytes_both_ways() {
     collect(&mut events, "login: ", Duration::from_secs(5)).await;
     session.write(b"root\r").await.expect("the keystrokes go out");
     collect(&mut events, "Password: ", Duration::from_secs(5)).await;
+    session.resize(100, 40).await.expect("the window size goes out");
     assert_eq!(&server.await.expect("the server task"), b"root\r");
+    session.close().await.expect("the console closes");
+}
+
+#[tokio::test]
+async fn a_raw_tcp_console_carries_bytes_verbatim() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a loopback listener");
+    let address = listener.local_addr().expect("an address");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("a client");
+        socket.write_all(b"ready\r\n").await.expect("a greeting");
+        let mut typed = [0u8; 4];
+        socket.read_exact(&mut typed).await.expect("keystrokes");
+        typed
+    });
+
+    let (session, mut events) = open_raw_tcp(TcpSpec {
+        host: "127.0.0.1".to_owned(),
+        port: address.port(),
+        timeout: Duration::from_secs(5),
+    })
+    .await
+    .expect("the console opens");
+
+    collect(&mut events, "ready", Duration::from_secs(5)).await;
+    // No negotiation, no translation: exactly these four bytes.
+    session.write(b"ping").await.expect("the bytes go out");
+    assert_eq!(&server.await.expect("the server task"), b"ping");
+    session.resize(100, 40).await.expect("resize is a no-op");
     session.close().await.expect("the console closes");
 }
 

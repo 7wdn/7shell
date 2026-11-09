@@ -209,6 +209,20 @@
       ]
     },
     {
+      "id": "rawTcp",
+      "rustVariant": "RawTcp",
+      "order": 45,
+      "labelKey": "protocol.rawTcp.label",
+      "defaultPort": 23,
+      "runtime": "native",
+      "transport": "tcp",
+      "supportLevel": "operate",
+      "capabilities": [
+        "shell",
+        "recording"
+      ]
+    },
+    {
       "id": "local",
       "rustVariant": "Local",
       "order": 50,

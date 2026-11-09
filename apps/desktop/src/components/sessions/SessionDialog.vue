@@ -427,6 +427,9 @@ async function forgetKey(): Promise<void> {
             <p v-else-if="editor.protocol === 'telnet'" class="mt-1 text-[11px] text-muted-foreground">
               {{ t("sessions.editor.telnet.note") }}
             </p>
+            <p v-else-if="editor.protocol === 'rawTcp'" class="mt-1 text-[11px] text-muted-foreground">
+              {{ t("sessions.editor.rawTcp.note") }}
+            </p>
           </div>
 
           <div class="grid gap-4 sm:grid-cols-2">

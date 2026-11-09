@@ -128,6 +128,9 @@
         "backspaceDel": "DEL (0x7F)",
         "backspaceCtrlH": "Ctrl+H (0x08)"
       },
+      "rawTcp": {
+        "note": "Raw TCP negotiates nothing: bytes are sent and shown exactly as they are. The connection is cleartext, which suits a device's own line protocol."
+      },
       "serial": {
         "title": "Serial port",
         "port": "Port",

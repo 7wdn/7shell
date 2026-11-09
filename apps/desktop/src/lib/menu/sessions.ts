@@ -73,6 +73,7 @@ export interface SessionMenuActions {
 export function sessionEndpoint(session: Session, t?: (key: string) => string): string {
   switch (session.protocol) {
     case "telnet":
+    case "rawTcp":
       return `${session.host}:${session.port}`;
     case "serial":
       return `${session.serial?.port ?? ""} · ${session.serial?.baudRate ?? ""}`;

@@ -12,6 +12,9 @@
     "serial": {
       "label": "串口"
     },
+    "rawTcp": {
+      "label": "原始 TCP"
+    },
     "local": {
       "label": "本地终端"
     },

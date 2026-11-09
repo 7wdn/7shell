@@ -242,7 +242,11 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
 
   /** Whether this connection has a host and a port to type. A serial port and a shell do not. */
   const needsEndpoint = computed(
-    () => protocol.value === "ssh" || protocol.value === "telnet" || protocol.value === "rdp",
+    () =>
+      protocol.value === "ssh" ||
+      protocol.value === "telnet" ||
+      protocol.value === "rawTcp" ||
+      protocol.value === "rdp",
   );
 
   /** Whether this connection has a person to name. Only SSH and RDP do. */

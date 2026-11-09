@@ -79,10 +79,11 @@ saved configuration and defaults to `127.0.0.1`; nothing in the interface offers
 stops with the terminal it belongs to.
 
 **A terminal with no host key is a different trust decision, and the interface says so.** Telnet
-and serial consoles have no cryptographic identity to verify; a local shell and WSL are processes on
-this machine with no network identity at all. Invariants 2 and 3 do not apply to them, and nothing
-in this build pretends they do. Telnet is cleartext by definition — what is typed into it, passwords
-included, crosses the network unencrypted — and the editor says that next to the protocol choice.
+and raw TCP consoles have no cryptographic identity to verify; a local shell and WSL are processes
+on this machine with no network identity at all. Invariants 2 and 3 do not apply to them, and
+nothing in this build pretends they do. Telnet and raw TCP are cleartext by definition — what is
+typed into them, passwords included, crosses the network unencrypted — and the editor says that
+next to the protocol choice.
 Serial ports and serial line parameters are local device settings; a wrong baud rate is reported,
 never silently replaced. A local shell is started from an identifier (`pwsh`, `cmd`, `git-bash`)
 that this process resolves to a path, so the renderer still never names a local path; the extra

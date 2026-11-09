@@ -52,14 +52,15 @@ rust-lint: ## Lint the Rust workspace (warnings are errors)
 app-e2e: ## Run the end-to-end tests against the real application (Windows; needs the lab for the terminal case)
 	pnpm app:e2e
 
-lab-up: ## Start the SSH test lab (needs Docker)
+lab-up: ## Start the test lab (needs Docker)
 	cd deploy/lab/openssh && docker compose up -d
 
-lab-down: ## Stop and remove the SSH test lab
+lab-down: ## Stop and remove the test lab
 	cd deploy/lab/openssh && docker compose down
 
 lab-verify: ## Run the live tests against the lab (make lab-up first)
 	SEVENSHELL_TEST_HOST=127.0.0.1 SEVENSHELL_TEST_PORT=2222 SEVENSHELL_TEST_USER=labuser SEVENSHELL_TEST_PASSWORD=labpassword cargo test -p sevenshell-ssh -p sevenshell-core -- --ignored --test-threads=1
+	SEVENSHELL_TEST_TELNET_HOST=127.0.0.1 SEVENSHELL_TEST_TELNET_PORT=23230 cargo test -p sevenshell-term --test live_telnet -- --ignored --test-threads=1
 
 clean: ## Remove build output
 	rm -rf apps/desktop/dist target

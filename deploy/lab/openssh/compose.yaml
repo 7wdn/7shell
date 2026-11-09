@@ -1,4 +1,4 @@
-# The baseline SSH lab: one server, password authentication, an ed25519 host key.
+# The baseline lab: a real sshd for SSH, and a real telnetd for the console transport.
 #
 # Bound to loopback only. The credentials are deliberately trivial and are the ones the live tests
 # expect; this is a fixture, not a deployment.
@@ -26,4 +26,21 @@ services:
       # test that has to build its own fifty thousand files is testing the building.
       - ./init.d:/custom-cont-init.d:ro
     # Keep it around between test runs; `make lab-down` removes it when it is not wanted.
+    restart: unless-stopped
+
+  # A Telnet console, so the transport is proven against a server that negotiates options rather
+  # than only against the in-process one. Busybox telnetd daemonizes, so a quiet tail keeps the
+  # container alive; the shell is the login program, which is all a loopback fixture needs.
+  #
+  # The host port is 23230 rather than 23: on Windows this machine reserves 1779-2978 for Hyper-V,
+  # and a lab that cannot bind is a lab nobody can run.
+  telnetd:
+    image: alpine:3.20
+    container_name: sevenshell-lab-telnetd
+    command:
+      - /bin/sh
+      - -c
+      - apk add --no-cache busybox-extras >/dev/null && telnetd -l /bin/sh; exec tail -f /dev/null
+    ports:
+      - "127.0.0.1:23230:23"
     restart: unless-stopped

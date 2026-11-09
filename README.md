@@ -32,6 +32,7 @@ it, never in advance.
 | Authentication: password, private key (with passphrase), keyboard-interactive, and the system key agent | Working, tested against a real sshd |
 | Terminals: several tabs, resize, keep-alive, reconnect, search, links, and a palette per session | Working |
 | Telnet consoles: RFC 854 subset, window reporting, and the Enter/Backspace the device expects | Working, with an in-process test |
+| Raw TCP consoles: a plain socket with no negotiation, sent and shown byte for byte | Working, with an in-process test |
 | Serial consoles: device, baud rate, data bits, parity, stop bits and flow control | Working; line settings are tested, a physical device is not |
 | Local shells: PowerShell, Command Prompt, Git Bash and the Unix login shell, in a real pseudo terminal | Working, tested on Windows and Unix |
 | WSL: an installed distribution started through `wsl.exe` | Windows only; tested on a machine with WSL |

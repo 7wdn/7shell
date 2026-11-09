@@ -6,6 +6,7 @@ export type ProtocolId =
   | "rdp"
   | "telnet"
   | "serial"
+  | "rawTcp"
   | "local"
   | "wsl";
 
@@ -106,6 +107,15 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     defaultPort: null,
     runtime: "native",
     transport: "serial",
+    supportLevel: "operate",
+    capabilities: ["shell", "recording"],
+  },
+  {
+    id: "rawTcp",
+    labelKey: "protocol.rawTcp.label",
+    defaultPort: 23,
+    runtime: "native",
+    transport: "tcp",
     supportLevel: "operate",
     capabilities: ["shell", "recording"],
   },

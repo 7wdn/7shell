@@ -1,13 +1,13 @@
-# SSH test lab
+# Test lab
 
-A real `sshd` to test against, because everything interesting about an SSH client only shows up
-against a real server: host key verification, authentication, a pty, resize, and what a server says
-when it closes a channel.
+Real servers to test against, because everything interesting about a terminal client only shows up
+against one: host key verification, authentication, a pty, resize, and what a server says when it
+closes a channel.
 
 ```bash
-make lab-up        # start the server (needs Docker)
-make lab-verify    # run the live tests against it
-make lab-down      # stop it
+make lab-up        # start the servers (needs Docker)
+make lab-verify    # run the live tests against them
+make lab-down      # stop them
 ```
 
 The same thing runs in CI (`.github/workflows/lab.yml`): nightly, on demand, and on any pull request
@@ -17,6 +17,9 @@ they stop passing.
 The server listens on **127.0.0.1:2222** only — a loopback binding, so nothing on the network can
 reach it — and its credentials are deliberately trivial (`labuser` / `labpassword`). It is a test
 fixture, not something to expose.
+
+The Telnet console listens on **127.0.0.1:23230** (busybox `telnetd` from `alpine`), also loopback
+only. The host port is not 23 because this machine's Windows reserves 1779-2978 for Hyper-V.
 
 ## What the recipes will cover
 
@@ -39,6 +42,10 @@ SEVENSHELL_TEST_PORT=2222 \
 SEVENSHELL_TEST_USER=labuser \
 SEVENSHELL_TEST_PASSWORD=labpassword \
 cargo test -p sevenshell-ssh -p sevenshell-core -- --ignored
+
+SEVENSHELL_TEST_TELNET_HOST=127.0.0.1 \
+SEVENSHELL_TEST_TELNET_PORT=23230 \
+cargo test -p sevenshell-term --test live_telnet -- --ignored
 ```
 
 Tests that need the lab are `#[ignore]`d and read those variables. Without them they report that

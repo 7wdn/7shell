@@ -128,6 +128,9 @@
         "backspaceDel": "DEL (0x7F)",
         "backspaceCtrlH": "Ctrl+H (0x08)"
       },
+      "rawTcp": {
+        "note": "原始 TCP 不做任何协商：发什么就发什么，收到的字节原样显示。连接是明文的，适合设备自己的行协议。"
+      },
       "serial": {
         "title": "串口",
         "port": "端口",

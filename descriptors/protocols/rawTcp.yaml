@@ -1,0 +1,15 @@
+schemaVersion: 1
+order: 45
+id: rawTcp
+rustVariant: RawTcp
+labelKey: protocol.rawTcp.label
+defaultPort: 23
+runtime: native
+transport: tcp
+supportLevel: operate
+# A socket and the terminal: no option negotiation, no window report, and the keyboard is sent
+# verbatim. Some devices speak their own line protocol on a TCP port and Telnet's negotiation is
+# exactly what they do not want.
+capabilities:
+  - shell
+  - recording

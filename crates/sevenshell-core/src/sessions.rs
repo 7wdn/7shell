@@ -9,7 +9,7 @@ use sevenshell_session::{OpenTerminal, RecordingSpec, SessionRegistry};
 use sevenshell_ssh::{
     Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
 };
-use sevenshell_term::{LocalSpec, SerialSpec, TelnetSpec, WslSpec};
+use sevenshell_term::{LocalSpec, SerialSpec, TcpSpec, TelnetSpec, WslSpec};
 use sevenshell_types::{
     AuthMethod, ForwardMode, KnownHostEntry, LocalForward, LocalShell, OpenOutcome, OpenTunnel, PresentedHostKey,
     Protocol, SerialPortInfo, Session, TransferInfo, TunnelFailure,
@@ -192,7 +192,7 @@ impl Core {
                     "this session is a remote desktop, not a terminal",
                 ));
             }
-            Protocol::Telnet | Protocol::Serial | Protocol::Local | Protocol::Wsl => {
+            Protocol::Telnet | Protocol::RawTcp | Protocol::Serial | Protocol::Local | Protocol::Wsl => {
                 return self.open_stream_terminal_until_cancelled(&session, cancel).await;
             }
         }
@@ -325,6 +325,14 @@ impl Core {
             Protocol::Serial => {
                 let spec = SerialSpec::from(&session.serial);
                 until_cancelled(sevenshell_term::open_serial(spec), cancel).await?
+            }
+            Protocol::RawTcp => {
+                let spec = TcpSpec {
+                    host: session.host.clone(),
+                    port: session.port,
+                    timeout: self.timeout,
+                };
+                until_cancelled(sevenshell_term::open_raw_tcp(spec), cancel).await?
             }
             Protocol::Local => {
                 let spec = LocalSpec {
