@@ -5,6 +5,18 @@
     },
     "rdp": {
       "label": "远程桌面（RDP）"
+    },
+    "telnet": {
+      "label": "Telnet"
+    },
+    "serial": {
+      "label": "串口"
+    },
+    "local": {
+      "label": "本地终端"
+    },
+    "wsl": {
+      "label": "WSL"
     }
   }
 }

@@ -39,6 +39,7 @@ import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import type { ShellError } from "@/lib/backend/errors";
 import { claimedCapabilities, unclaimedCapabilities } from "@/lib/descriptors/claims";
+import { sessionEndpoint } from "@/lib/menu/sessions";
 import { importReceipt } from "@/lib/sessions/receipt";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
@@ -54,10 +55,6 @@ const preferences = usePreferencesStore();
 const recents = useRecentSessionsStore();
 const terminals = useTerminalsStore();
 const { toast } = useToast();
-
-function endpoint(session: Session): string {
-  return `${session.user}@${session.host}:${session.port}`;
-}
 
 /**
  * What this build can do, and what nothing claims yet.
@@ -250,7 +247,7 @@ function translate(key: string, params?: Record<string, string>): string {
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-sm">{{ session.name }}</span>
                   <span class="block truncate font-mono text-[11px] text-muted-foreground">{{
-                    endpoint(session)
+                    sessionEndpoint(session, t)
                   }}</span>
                 </span>
                 <SquareTerminal :size="15" class="shrink-0 text-muted-foreground" />

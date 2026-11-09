@@ -31,6 +31,12 @@ const batch = useBatchStore();
 const library = useSessionsStore();
 const terminals = useTerminalsStore();
 
+/**
+ * What a batch can run on: an SSH connection, because the command travels over its exec channel.
+ * A Telnet console, a serial port or a local shell has no such channel, so it is not offered.
+ */
+const hosts = computed(() => library.sessions.filter((session) => session.protocol === "ssh"));
+
 const LEVEL_STYLES: Record<RiskLevel, string> = {
   safe: "border-border bg-background text-muted-foreground",
   caution: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
@@ -133,12 +139,12 @@ async function retryOne(sessionId: string): Promise<void> {
         </div>
       </header>
 
-      <div v-if="library.sessions.length === 0" class="px-3 py-4 text-xs text-muted-foreground">
+      <div v-if="hosts.length === 0" class="px-3 py-4 text-xs text-muted-foreground">
         {{ t("batch.hosts.empty") }}
       </div>
 
       <ul v-else class="min-h-0 flex-1 overflow-auto py-1">
-        <li v-for="session in library.sessions" :key="session.id">
+        <li v-for="session in hosts" :key="session.id">
           <label
             class="flex cursor-pointer items-start gap-2 px-3 py-1.5 transition-colors hover:bg-accent/50"
             :class="batch.selected.has(session.id) ? 'bg-accent/30' : ''"

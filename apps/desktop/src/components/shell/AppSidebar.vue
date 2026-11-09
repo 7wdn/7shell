@@ -76,7 +76,7 @@ import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
 import { isTextEntry } from "@/lib/menu/editable";
 import { systemLabel, systemMark } from "@/lib/system/icons";
-import { groupMenu, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
+import { groupMenu, sessionEndpoint, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import type { MenuEntry } from "@/lib/menu/types";
 import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
@@ -236,7 +236,7 @@ function translate(key: string, params?: Record<string, string>): string {
 }
 
 function endpoint(session: Session): string {
-  return `${session.user}@${session.host}:${session.port}`;
+  return sessionEndpoint(session, t);
 }
 
 function startNew(): void {
@@ -1390,7 +1390,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                       type="button"
                       class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
                       :title="
-                        t(row.session.protocol === 'ssh' ? 'sessions.list.openHint' : 'sessions.list.openDesktopHint', {
+                        t(row.session.protocol === 'rdp' ? 'sessions.list.openDesktopHint' : 'sessions.list.openHint', {
                           name: row.session.name,
                         })
                       "
@@ -1402,7 +1402,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                         of the machine once its host has said which machine it is, and the plain
                         terminal until then — a row is a saved session first and a host second.
                       -->
-                      <SystemIcon v-if="row.session.protocol !== 'ssh'" :system="null" mark="windows" />
+                      <SystemIcon v-if="row.session.protocol === 'rdp'" :system="null" mark="windows" />
                       <SystemIcon
                         v-else-if="hasMark(row.session)"
                         :system="terminals.systemOf(row.session)"

@@ -117,6 +117,47 @@
       "desktop": {
         "note": "远程桌面在 Windows 的远程桌面客户端中打开：剪贴板与本地驱动器由它处理。域账号写成 域\\用户名（例如 CORP\\alice）。已保存的密码会以当前 Windows 用户加密写入临时连接文件；留空则由客户端询问密码。"
       },
+      "telnet": {
+        "note": "Telnet 是明文协议：终端里输入的内容（包括密码）不加密传输，只适合可信网络中的老设备。",
+        "title": "键盘",
+        "enter": "回车键",
+        "enterCrlf": "CRLF（回车+换行）",
+        "enterCr": "CR（仅回车）",
+        "enterLf": "LF（仅换行）",
+        "backspace": "退格键",
+        "backspaceDel": "DEL (0x7F)",
+        "backspaceCtrlH": "Ctrl+H (0x08)"
+      },
+      "serial": {
+        "title": "串口",
+        "port": "端口",
+        "noPorts": "未发现串口",
+        "baud": "波特率",
+        "baudPlaceholder": "常见值：9600、115200",
+        "dataBits": "数据位",
+        "parity": "校验位",
+        "parityNone": "无",
+        "parityEven": "偶校验",
+        "parityOdd": "奇校验",
+        "stopBits": "停止位",
+        "flowControl": "流控",
+        "flowNone": "无",
+        "flowRtsCts": "RTS/CTS（硬件）",
+        "flowXonXoff": "XON/XOFF（软件）"
+      },
+      "local": {
+        "title": "本地 Shell",
+        "shell": "Shell",
+        "defaultShell": "系统默认",
+        "args": "启动参数",
+        "argsPlaceholder": "可选"
+      },
+      "wsl": {
+        "title": "WSL",
+        "distro": "发行版",
+        "defaultDistro": "默认发行版",
+        "args": "启动参数"
+      },
       "display": {
         "title": "显示",
         "resolution": "分辨率",
@@ -205,7 +246,9 @@
         "host": "请填写主机名或地址。",
         "user": "请填写登录用户。",
         "port": "端口必须是 1 到 65535 之间的数字。",
-        "key": "公钥认证需要先附加一个密钥文件。"
+        "key": "公钥认证需要先附加一个密钥文件。",
+        "serialPort": "请选择串口。",
+        "serialBaud": "波特率必须是 50 到 4000000 之间的整数。"
       },
       "save": "保存",
       "cancel": "取消",

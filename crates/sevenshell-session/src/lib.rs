@@ -4,6 +4,11 @@
 //! owns the receiver and decides what to do with the bytes (the desktop shell turns them into
 //! window events). This crate keeps no credentials: whatever a session needed to authenticate was
 //! handed to `sevenshell-ssh` and dropped there.
+//!
+//! A handle may name either an SSH channel or one of the other transports (Telnet, serial, a local
+//! shell). Both produce the same two events, and only the SSH kind can open further channels —
+//! SFTP, the monitor and port forwarding ask for that and are told, in one sentence, why a serial
+//! port cannot answer.
 
 mod recording;
 
@@ -12,25 +17,41 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use sevenshell_error::ShellError;
-use sevenshell_ssh::{ChannelEvent, OpenRequest, SshSession};
+use sevenshell_ssh::{OpenRequest, SshSession};
+use sevenshell_term::StreamSession;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 
 pub use recording::{Recording, RecordingSpec};
-/// The events a terminal produces, re-exported so callers do not need the transport crate.
-pub use sevenshell_ssh::ChannelEvent as TerminalEvent;
+
+/// The events a terminal produces.
+///
+/// The same shape an SSH channel and every other transport produce, so the host matches once.
+#[derive(Debug)]
+pub enum TerminalEvent {
+    /// Bytes the terminal produced, in the order the device sent them.
+    Data(Vec<u8>),
+    /// The last event on the terminal. `reason` explains an end nobody asked for.
+    Closed { reason: Option<String> },
+}
 
 /// One event from one session, tagged with where it came from.
 #[derive(Debug)]
 pub struct SessionEvent {
     pub handle: String,
-    pub event: ChannelEvent,
+    pub event: TerminalEvent,
+}
+
+/// What is behind a handle.
+enum LiveSession {
+    Ssh(Arc<SshSession>),
+    Stream(Arc<StreamSession>),
 }
 
 /// A terminal that is open, and the task reading it.
 struct OpenSession {
     session_id: String,
-    session: Arc<SshSession>,
+    session: Arc<LiveSession>,
     forwarder: JoinHandle<()>,
 }
 
@@ -81,12 +102,43 @@ impl SessionRegistry {
         let (sender, receiver) = mpsc::channel(256);
         let session = SshSession::open(request, sender).await?;
 
-        let forwarder = self.forward(&handle, receiver, recording);
+        let forwarder = self.forward_ssh(&handle, receiver, recording);
         self.sessions.lock().await.insert(
             handle.clone(),
             OpenSession {
                 session_id: session_id.to_owned(),
-                session: Arc::new(session),
+                session: Arc::new(LiveSession::Ssh(Arc::new(session))),
+                forwarder,
+            },
+        );
+
+        Ok(handle)
+    }
+
+    /// Registers a terminal whose transport is not SSH, recording it when the caller asked for that.
+    ///
+    /// The transport is already open: its dial (or process start) happened before this call, so a
+    /// failure here can only be the recording's.
+    pub async fn open_stream(
+        self: &Arc<Self>,
+        session_id: &str,
+        session: StreamSession,
+        receiver: mpsc::Receiver<sevenshell_term::TerminalEvent>,
+        recording: Option<RecordingSpec>,
+    ) -> Result<String, ShellError> {
+        let handle = format!("t{}", self.next_handle.fetch_add(1, Ordering::Relaxed));
+
+        let recording = match &recording {
+            Some(spec) => Some(Recording::create(spec).await?),
+            None => None,
+        };
+
+        let forwarder = self.forward_stream(&handle, receiver, recording);
+        self.sessions.lock().await.insert(
+            handle.clone(),
+            OpenSession {
+                session_id: session_id.to_owned(),
+                session: Arc::new(LiveSession::Stream(Arc::new(session))),
                 forwarder,
             },
         );
@@ -96,14 +148,18 @@ impl SessionRegistry {
 
     /// Sends keystrokes or pasted text to a terminal.
     pub async fn write(&self, handle: &str, data: &[u8]) -> Result<(), ShellError> {
-        let session = self.session(handle).await?;
-        session.write(data).await
+        match self.session(handle).await?.as_ref() {
+            LiveSession::Ssh(session) => session.write(data).await,
+            LiveSession::Stream(session) => session.write(data).await,
+        }
     }
 
     /// Tells the remote side how big the terminal is now.
     pub async fn resize(&self, handle: &str, columns: u32, rows: u32) -> Result<(), ShellError> {
-        let session = self.session(handle).await?;
-        session.resize(columns, rows).await
+        match self.session(handle).await?.as_ref() {
+            LiveSession::Ssh(session) => session.resize(columns, rows).await,
+            LiveSession::Stream(session) => session.resize(columns, rows).await,
+        }
     }
 
     /// Closes one terminal and forgets it.
@@ -113,7 +169,10 @@ impl SessionRegistry {
             return Ok(());
         };
 
-        let result = open.session.close().await;
+        let result = match open.session.as_ref() {
+            LiveSession::Ssh(session) => session.close().await,
+            LiveSession::Stream(session) => session.close().await,
+        };
         open.forwarder.abort();
         result
     }
@@ -146,11 +205,19 @@ impl SessionRegistry {
     }
 
     /// The connection behind a handle, for a caller that needs to open channels on it.
+    ///
+    /// Only SSH has channels. A caller that reached a local shell or a serial port this way is told
+    /// which of the two things it has, rather than being handed a connection that would fail later.
     pub async fn session_of(&self, handle: &str) -> Result<Arc<SshSession>, ShellError> {
-        self.session(handle).await
+        match self.session(handle).await?.as_ref() {
+            LiveSession::Ssh(session) => Ok(Arc::clone(session)),
+            LiveSession::Stream(_) => Err(ShellError::app_unsupported(
+                "this terminal is not an SSH session, so it has no channels to open",
+            )),
+        }
     }
 
-    async fn session(&self, handle: &str) -> Result<Arc<SshSession>, ShellError> {
+    async fn session(&self, handle: &str) -> Result<Arc<LiveSession>, ShellError> {
         self.sessions
             .lock()
             .await
@@ -162,54 +229,95 @@ impl SessionRegistry {
             .ok_or_else(|| ShellError::session_not_found(handle))
     }
 
-    /// Forwards one terminal's output to the host, and forgets the session when it ends.
-    fn forward(
+    /// Forwards one SSH terminal's output to the host, and forgets the session when it ends.
+    fn forward_ssh(
         self: &Arc<Self>,
         handle: &str,
-        mut receiver: mpsc::Receiver<ChannelEvent>,
-        mut recording: Option<Recording>,
+        mut receiver: mpsc::Receiver<sevenshell_ssh::ChannelEvent>,
+        recording: Option<Recording>,
     ) -> JoinHandle<()> {
         let registry = Arc::clone(self);
         let events = self.events.clone();
         let forwarded = handle.to_owned();
+        let mut recording = recording;
 
         tokio::spawn(async move {
             while let Some(event) = receiver.recv().await {
-                let ended = matches!(event, ChannelEvent::Closed { .. });
-
-                // Recorded as it arrives and before it is forwarded: what the person saw and what
-                // the file holds have to be the same bytes, and waiting on the interface to keep up
-                // would make the recording a report about the interface instead.
-                if let (Some(recording), ChannelEvent::Data(bytes)) = (recording.as_mut(), &event) {
-                    recording.output(bytes).await;
-                }
-                // Backpressure is the point: if the interface cannot keep up, the remote reads
-                // pause rather than the bytes piling up in this process.
-                if events
-                    .send(SessionEvent {
-                        handle: forwarded.clone(),
-                        event,
-                    })
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-                if ended {
+                let (terminal_event, ended) = match event {
+                    sevenshell_ssh::ChannelEvent::Data(bytes) => (TerminalEvent::Data(bytes), false),
+                    sevenshell_ssh::ChannelEvent::Closed { reason } => (TerminalEvent::Closed { reason }, true),
+                };
+                let keep_going = publish(&forwarded, terminal_event, &mut recording, &events).await;
+                if !keep_going || ended {
                     break;
                 }
             }
 
-            if let Some(recording) = recording.take() {
-                recording.finish().await;
-            }
-
-            // The session ended on its own, so it is dropped here rather than waiting for a close
-            // call that will never come.
-            if let Some(open) = registry.sessions.lock().await.remove(&forwarded) {
-                open.forwarder.abort();
-            }
+            finish(&registry, &forwarded, recording).await;
         })
+    }
+
+    /// Forwards one non-SSH terminal's output to the host, and forgets the session when it ends.
+    fn forward_stream(
+        self: &Arc<Self>,
+        handle: &str,
+        mut receiver: mpsc::Receiver<sevenshell_term::TerminalEvent>,
+        recording: Option<Recording>,
+    ) -> JoinHandle<()> {
+        let registry = Arc::clone(self);
+        let events = self.events.clone();
+        let forwarded = handle.to_owned();
+        let mut recording = recording;
+
+        tokio::spawn(async move {
+            while let Some(event) = receiver.recv().await {
+                let (terminal_event, ended) = match event {
+                    sevenshell_term::TerminalEvent::Data(bytes) => (TerminalEvent::Data(bytes), false),
+                    sevenshell_term::TerminalEvent::Closed { reason } => (TerminalEvent::Closed { reason }, true),
+                };
+                let keep_going = publish(&forwarded, terminal_event, &mut recording, &events).await;
+                if !keep_going || ended {
+                    break;
+                }
+            }
+
+            finish(&registry, &forwarded, recording).await;
+        })
+    }
+}
+
+/// Records and forwards one event. Returns whether the host is still listening.
+async fn publish(
+    handle: &str,
+    event: TerminalEvent,
+    recording: &mut Option<Recording>,
+    events: &mpsc::Sender<SessionEvent>,
+) -> bool {
+    // Recorded as it arrives and before it is forwarded: what the person saw and what the file
+    // holds have to be the same bytes, and waiting on the interface to keep up would make the
+    // recording a report about the interface instead.
+    if let (Some(recording), TerminalEvent::Data(bytes)) = (recording.as_mut(), &event) {
+        recording.output(bytes).await;
+    }
+    // Backpressure is the point: if the interface cannot keep up, the remote reads pause rather
+    // than the bytes piling up in this process.
+    events
+        .send(SessionEvent {
+            handle: handle.to_owned(),
+            event,
+        })
+        .await
+        .is_ok()
+}
+
+async fn finish(registry: &Arc<SessionRegistry>, handle: &str, recording: Option<Recording>) {
+    if let Some(recording) = recording {
+        recording.finish().await;
+    }
+    // The session ended on its own, so it is dropped here rather than waiting for a close call
+    // that will never come.
+    if let Some(open) = registry.sessions.lock().await.remove(handle) {
+        open.forwarder.abort();
     }
 }
 

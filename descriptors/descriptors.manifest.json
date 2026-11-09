@@ -178,6 +178,65 @@
       "capabilities": [
         "systemClient"
       ]
+    },
+    {
+      "id": "telnet",
+      "rustVariant": "Telnet",
+      "order": 30,
+      "labelKey": "protocol.telnet.label",
+      "defaultPort": 23,
+      "runtime": "native",
+      "transport": "tcp",
+      "supportLevel": "operate",
+      "capabilities": [
+        "shell",
+        "resize",
+        "recording"
+      ]
+    },
+    {
+      "id": "serial",
+      "rustVariant": "Serial",
+      "order": 40,
+      "labelKey": "protocol.serial.label",
+      "defaultPort": null,
+      "runtime": "native",
+      "transport": "serial",
+      "supportLevel": "operate",
+      "capabilities": [
+        "shell",
+        "recording"
+      ]
+    },
+    {
+      "id": "local",
+      "rustVariant": "Local",
+      "order": 50,
+      "labelKey": "protocol.local.label",
+      "defaultPort": null,
+      "runtime": "native",
+      "transport": "pty",
+      "supportLevel": "operate",
+      "capabilities": [
+        "shell",
+        "resize",
+        "recording"
+      ]
+    },
+    {
+      "id": "wsl",
+      "rustVariant": "Wsl",
+      "order": 60,
+      "labelKey": "protocol.wsl.label",
+      "defaultPort": null,
+      "runtime": "native",
+      "transport": "pty",
+      "supportLevel": "operate",
+      "capabilities": [
+        "shell",
+        "resize",
+        "recording"
+      ]
     }
   ],
   "authMethods": [

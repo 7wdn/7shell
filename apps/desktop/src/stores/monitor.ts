@@ -182,7 +182,10 @@ export const useMonitorStore = defineStore("monitor", () => {
   const target = computed<MonitorTarget | null>(() => {
     const active = terminals.activeTab;
     const activeSession = active ? sessionOf(active) : null;
-    if (!activeSession) {
+    // The monitor reads a host by running commands over an SSH channel. A local shell, a serial
+    // console and Telnet have no such channel, and the honest answer is the panel's empty state,
+    // not an error card saying a feature is missing.
+    if (!activeSession || activeSession.protocol !== "ssh") {
       return null;
     }
 

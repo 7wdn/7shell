@@ -44,6 +44,11 @@ chacha20poly1305 = "0.11"
 getrandom = "0.3"
 russh = { version = "0.63", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "3.0"
+# The two transports that are not a network protocol with a protocol library: a serial port
+# (RS-232 consoles) and a pseudo terminal on this machine (local shells). Both crates are the
+# maintained cross-platform answer, and both bring their own platform plumbing.
+serialport = "4.10"
+portable-pty = "0.9"
 # Packing and unpacking on *this* side of a packed transfer. The far side's own `tar` makes the
 # archive that crosses the wire; these make or open the one this machine has to deal with, which is
 # what lets a packed upload start from ordinary files rather than from an archive somebody made by
@@ -107,6 +112,7 @@ sevenshell-policy = { version = "0.1.3", path = "crates/sevenshell-policy" }
 sevenshell-vault = { version = "0.1.3", path = "crates/sevenshell-vault" }
 sevenshell-core = { version = "0.1.3", path = "crates/sevenshell-core" }
 sevenshell-ssh = { version = "0.1.3", path = "crates/sevenshell-ssh" }
+sevenshell-term = { version = "0.1.3", path = "crates/sevenshell-term" }
 sevenshell-sync = { version = "0.1.3", path = "crates/sevenshell-sync" }
 sevenshell-session = { version = "0.1.3", path = "crates/sevenshell-session" }
 sevenshell-sftp = { version = "0.1.3", path = "crates/sevenshell-sftp" }

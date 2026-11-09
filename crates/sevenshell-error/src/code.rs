@@ -131,6 +131,16 @@ error_catalog! {
     #[doc = "The sync server answered with a status that is not success."]
     SyncHttpFailed => "SYNC-HTTP-FAILED", "errors.sync.httpFailed";
 
+    // -- Terminal transports (Telnet, serial, local shells) ----------------
+    #[doc = "A Telnet console could not be reached."]
+    TerminalUnreachable => "TERMINAL-UNREACHABLE", "errors.terminal.unreachable";
+    #[doc = "A serial port could not be opened or stopped answering."]
+    TerminalSerialFailed => "TERMINAL-SERIAL-FAILED", "errors.terminal.serialFailed";
+    #[doc = "A shell on this machine could not be started."]
+    TerminalShellFailed => "TERMINAL-SHELL-FAILED", "errors.terminal.shellFailed";
+    #[doc = "A terminal was asked for with settings no transport can attempt."]
+    TerminalInvalid => "TERMINAL-INVALID", "errors.terminal.invalid";
+
     // -- Policy ------------------------------------------------------------
     #[doc = "The active policy forbids this action."]
     PolicyDenied => "POLICY-DENIED", "errors.policy.denied";

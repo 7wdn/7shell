@@ -569,6 +569,55 @@ test("a saved session offers its own menu on a right-click", async () => {
 });
 
 /**
+ * A local shell is a saved session like any other.
+ *
+ * The one transport this run can drive without a server: the editor asks for no host, no user and
+ * no password, the picker is filled from this machine, and the row opens a real terminal. What is
+ * asserted is the whole way in — the hidden fields, the saved row, the tab and the echo — because
+ * the parts that regress are the seams between them.
+ */
+test("a local shell is saved and opens a terminal on this machine", async () => {
+  const { page, close } = await openApp();
+  try {
+    const name = `local-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.locator("#session-protocol").click();
+    await page.getByRole("listbox").getByRole("option", { name: "Local terminal" }).click();
+
+    // A shell on this machine has no address to type, which is the shape that would break first if
+    // the editor still asked every protocol for a host.
+    await expect(editor.locator("#session-host")).toHaveCount(0);
+    await expect(editor.locator("#session-port")).toHaveCount(0);
+    await expect(editor.locator("#session-local-shell")).toBeVisible();
+
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+    const screen = page.locator(".xterm-rows").first();
+    await expect(screen).toBeAttached({ timeout: 30_000 });
+
+    // This transport has no SFTP channel, so the split that opens files beside an SSH terminal
+    // must not ask for one here: the failure used to be drawn as an unsupported-feature card under
+    // a terminal that was working perfectly well.
+    const strip = page.locator("[data-terminal-strip]").first();
+    await expect(strip.getByRole("button", { name: "Files" })).toHaveCount(0);
+    await expect(page.getByText("APP-UNSUPPORTED")).toHaveCount(0);
+
+    // The marker is computed by the shell, not typed literally: seeing `seven-shell-42` proves the
+    // line was executed, where the typed text alone would only prove keystrokes reached the screen.
+    await page.getByRole("textbox", { name: "Terminal input" }).click();
+    await page.keyboard.type("echo seven-shell-$((6*7))");
+    await page.keyboard.press("Enter");
+    await expect(screen).toContainText("seven-shell-42", { timeout: 20_000 });
+  } finally {
+    await close();
+  }
+});
+
+/**
  * Deleting a session, and the question that stands in front of it.
  *
  * The question is a dialog over the window rather than a strip that opens inside the row — which is

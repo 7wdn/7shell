@@ -24,6 +24,8 @@ pub enum Subsystem {
     Ssh,
     Sftp,
     Rdp,
+    /// Telnet, serial ports and shells on this machine: transports that are not SSH.
+    Terminal,
     Fs,
     Store,
     Policy,
@@ -39,6 +41,7 @@ impl Subsystem {
             Self::Ssh => "ssh",
             Self::Sftp => "sftp",
             Self::Rdp => "rdp",
+            Self::Terminal => "terminal",
             Self::Fs => "fs",
             Self::Store => "store",
             Self::Policy => "policy",
@@ -311,6 +314,45 @@ impl ShellError {
             .with_param("host", host)
             .with_param("port", port.to_string())
             .with_detail(detail)
+    }
+
+    // -- Terminal transports (Telnet, serial, local shells) ----------------
+
+    /// A Telnet console could not be reached. The peer is the address the person typed; the
+    /// detail carries whatever the socket said.
+    pub fn terminal_unreachable(host: &str, port: u16, detail: impl AsRef<str>) -> Self {
+        Self::new(
+            ErrorCode::TerminalUnreachable,
+            Origin::new(Subsystem::Terminal).with_peer(format!("{host}:{port}")),
+        )
+        .with_param("host", host)
+        .with_param("port", port.to_string())
+        .with_detail(detail)
+        .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A serial port could not be opened. `port` is the device name (`COM3`, `/dev/ttyUSB0`).
+    pub fn terminal_serial_failed(port: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::TerminalSerialFailed, Origin::new(Subsystem::Terminal))
+            .with_param("port", port)
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// A shell this machine was asked to start could not be started.
+    pub fn terminal_shell_failed(shell: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::TerminalShellFailed, Origin::new(Subsystem::Terminal))
+            .with_param("shell", shell)
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// The settings describe something no transport can attempt, for example a baud rate outside
+    /// the driver's range or a distribution name that is not a name.
+    pub fn terminal_invalid(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::TerminalInvalid, Origin::new(Subsystem::Terminal))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
     }
 
     pub fn ssh_key_invalid(detail: impl AsRef<str>) -> Self {

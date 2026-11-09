@@ -43,7 +43,17 @@ import {
   type SessionFieldProblem,
 } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
-import type { Session, ForwardMode } from "@/types/session";
+import type {
+  BackspaceMode,
+  EnterMode,
+  LocalShell,
+  SerialFlowControl,
+  SerialParity,
+  SerialPortInfo,
+  SerialStopBits,
+  Session,
+  ForwardMode,
+} from "@/types/session";
 import { AUTH_METHODS, PROTOCOLS, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
 
 const props = defineProps<{ open: boolean; session: Session | null }>();
@@ -79,13 +89,16 @@ const hopToAdd = ref("");
  * and no other platform is offered a substitute.
  */
 const protocolOptions = computed<SelectOption[]>(() =>
-  PROTOCOLS.filter((protocol) => protocol.id !== "rdp" || app.info?.os === "windows").map((protocol) => ({
-    value: protocol.id,
-    label: t(protocol.labelKey),
-  })),
+  PROTOCOLS.filter((protocol) => (protocol.id !== "rdp" && protocol.id !== "wsl") || app.info?.os === "windows").map(
+    (protocol) => ({
+      value: protocol.id,
+      label: t(protocol.labelKey),
+    }),
+  ),
 );
 
-const isDesktop = computed(() => editor.protocol !== "ssh");
+/** The two protocols with a display, a mapping and no terminal on this side. */
+const isDesktop = computed(() => editor.protocol === "rdp");
 
 /** The sizes the reference dialog offers before somebody types their own. */
 const RESOLUTIONS = [
@@ -132,6 +145,93 @@ const methodOptions = computed<SelectOption[]>(() =>
   })),
 );
 
+/**
+ * What this machine offers for the transports that need an inventory of their own.
+ *
+ * Loaded when the editor opens on the protocol that needs it; an empty list is not an error, it is
+ * a machine with nothing plugged in, and the picker keeps its default entry.
+ */
+const localShells = ref<LocalShell[]>([]);
+const wslDistros = ref<string[]>([]);
+const serialPorts = ref<SerialPortInfo[]>([]);
+
+const shellOptions = computed<SelectOption[]>(() => [
+  { value: "", label: t("sessions.editor.local.defaultShell") },
+  ...localShells.value.map((shell) => ({ value: shell.id, label: shell.label })),
+]);
+
+const distroOptions = computed<SelectOption[]>(() => [
+  { value: "", label: t("sessions.editor.wsl.defaultDistro") },
+  ...wslDistros.value.map((name) => ({ value: name, label: name })),
+]);
+
+const serialPortOptions = computed<SelectOption[]>(() => {
+  const listed: SelectOption[] = serialPorts.value.map((port) => ({
+    value: port.path,
+    label: port.description ? `${port.path} — ${port.description}` : port.path,
+  }));
+  const stored = editor.serialPort.trim();
+  if (stored !== "" && !serialPorts.value.some((port) => port.path === stored)) {
+    // A saved session may name a device that is unplugged right now. It stays selectable, because
+    // the port is not what is wrong — the cable is.
+    listed.unshift({ value: stored, label: stored });
+  }
+  return listed.length === 0 ? [{ value: "", label: t("sessions.editor.serial.noPorts") }] : listed;
+});
+
+const enterOptions = computed<SelectOption[]>(() => [
+  { value: "crlf", label: t("sessions.editor.telnet.enterCrlf") },
+  { value: "cr", label: t("sessions.editor.telnet.enterCr") },
+  { value: "lf", label: t("sessions.editor.telnet.enterLf") },
+]);
+
+const backspaceOptions = computed<SelectOption[]>(() => [
+  { value: "del", label: t("sessions.editor.telnet.backspaceDel") },
+  { value: "ctrlH", label: t("sessions.editor.telnet.backspaceCtrlH") },
+]);
+
+const dataBitsOptions = computed<SelectOption[]>(() =>
+  [5, 6, 7, 8].map((bits) => ({ value: String(bits), label: String(bits) })),
+);
+
+const parityOptions = computed<SelectOption[]>(() => [
+  { value: "none", label: t("sessions.editor.serial.parityNone") },
+  { value: "even", label: t("sessions.editor.serial.parityEven") },
+  { value: "odd", label: t("sessions.editor.serial.parityOdd") },
+]);
+
+const stopBitsOptions = computed<SelectOption[]>(() => [
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+]);
+
+const flowOptions = computed<SelectOption[]>(() => [
+  { value: "none", label: t("sessions.editor.serial.flowNone") },
+  { value: "rtsCts", label: t("sessions.editor.serial.flowRtsCts") },
+  { value: "xonXoff", label: t("sessions.editor.serial.flowXonXoff") },
+]);
+
+watch(
+  () => [props.open, editor.protocol] as const,
+  async ([open, protocol]) => {
+    if (!open) {
+      return;
+    }
+    try {
+      if (protocol === "local") {
+        localShells.value = await backend.terminal.localShells();
+      } else if (protocol === "wsl") {
+        wslDistros.value = await backend.terminal.wslDistros();
+      } else if (protocol === "serial") {
+        serialPorts.value = await backend.terminal.serialPorts();
+      }
+    } catch {
+      // The picker inventory is a convenience. Losing it must not keep the editor from opening.
+    }
+  },
+  { immediate: true },
+);
+
 /** The sessions a hop can be: each one by name, with the address it would be reached at under it. */
 const hopOptions = computed<SelectOption[]>(() =>
   editor.hopChoices.map((session) => ({
@@ -167,6 +267,12 @@ const errors = computed<Partial<Record<SessionFieldProblem, string>>>(() => {
   }
   if (editor.sessionProblems.key) {
     found.key = t("sessions.editor.validation.key");
+  }
+  if (editor.sessionProblems.serialPort) {
+    found.serialPort = t("sessions.editor.validation.serialPort");
+  }
+  if (editor.sessionProblems.serialBaud) {
+    found.serialBaud = t("sessions.editor.validation.serialBaud");
   }
   return found;
 });
@@ -318,6 +424,9 @@ async function forgetKey(): Promise<void> {
             <p v-if="isDesktop" class="mt-1 text-[11px] text-muted-foreground">
               {{ t("sessions.editor.desktop.note") }}
             </p>
+            <p v-else-if="editor.protocol === 'telnet'" class="mt-1 text-[11px] text-muted-foreground">
+              {{ t("sessions.editor.telnet.note") }}
+            </p>
           </div>
 
           <div class="grid gap-4 sm:grid-cols-2">
@@ -339,7 +448,7 @@ async function forgetKey(): Promise<void> {
               <Select id="session-group" v-model="editor.groupId" class="mt-1" :options="groupOptions" />
             </div>
 
-            <div class="sm:col-span-2">
+            <div v-if="editor.needsEndpoint" class="sm:col-span-2">
               <label class="block text-xs font-medium" for="session-host">{{ t("sessions.editor.host") }}</label>
               <input
                 id="session-host"
@@ -352,7 +461,7 @@ async function forgetKey(): Promise<void> {
               <p v-if="submitted && errors.host" class="mt-1 text-[11px] text-destructive">{{ errors.host }}</p>
             </div>
 
-            <div>
+            <div v-if="editor.needsEndpoint">
               <label class="block text-xs font-medium" for="session-port">{{ t("sessions.editor.port") }}</label>
               <input
                 id="session-port"
@@ -365,7 +474,7 @@ async function forgetKey(): Promise<void> {
               <p v-if="submitted && errors.port" class="mt-1 text-[11px] text-destructive">{{ errors.port }}</p>
             </div>
 
-            <div>
+            <div v-if="editor.needsUser">
               <label class="block text-xs font-medium" for="session-user">{{ t("sessions.editor.user") }}</label>
               <input
                 id="session-user"
@@ -379,7 +488,7 @@ async function forgetKey(): Promise<void> {
             </div>
           </div>
 
-          <section>
+          <section v-if="editor.isSsh || isDesktop">
             <template v-if="!isDesktop">
               <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
               <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
@@ -520,7 +629,7 @@ async function forgetKey(): Promise<void> {
           <section v-if="!isDesktop">
             <h3 class="text-xs font-medium">{{ t("sessions.editor.terminal.title") }}</h3>
 
-            <label class="mt-2 flex items-start gap-2 text-xs">
+            <label v-if="editor.isSsh" class="mt-2 flex items-start gap-2 text-xs">
               <input v-model="editor.terminal.forwardAgent" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
               <span>
                 <span>{{ t("sessions.editor.terminal.forwardAgent") }}</span>
@@ -546,7 +655,7 @@ async function forgetKey(): Promise<void> {
             </label>
           </section>
 
-          <section v-if="!isDesktop">
+          <section v-if="editor.isSsh">
             <h3 class="text-xs font-medium">{{ t("sessions.editor.jumps.title") }}</h3>
             <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.jumps.note") }}</p>
 
@@ -636,7 +745,7 @@ async function forgetKey(): Promise<void> {
             </div>
           </section>
 
-          <section v-if="!isDesktop">
+          <section v-if="editor.isSsh">
             <div class="flex items-center justify-between">
               <h3 class="text-xs font-medium">{{ t("sessions.editor.forwards.title") }}</h3>
               <button
@@ -726,6 +835,181 @@ async function forgetKey(): Promise<void> {
                 </template>
               </li>
             </ul>
+          </section>
+
+          <section v-if="editor.protocol === 'telnet'">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.telnet.title") }}</h3>
+            <div class="mt-2 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="block text-xs font-medium" for="session-telnet-enter">{{
+                  t("sessions.editor.telnet.enter")
+                }}</label>
+                <Select
+                  id="session-telnet-enter"
+                  :model-value="editor.telnetEnter"
+                  class="mt-1"
+                  :options="enterOptions"
+                  @update:model-value="editor.telnetEnter = $event as EnterMode"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-telnet-backspace">{{
+                  t("sessions.editor.telnet.backspace")
+                }}</label>
+                <Select
+                  id="session-telnet-backspace"
+                  :model-value="editor.telnetBackspace"
+                  class="mt-1"
+                  :options="backspaceOptions"
+                  @update:model-value="editor.telnetBackspace = $event as BackspaceMode"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section v-if="editor.protocol === 'serial'">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.serial.title") }}</h3>
+            <div class="mt-2 grid gap-3 sm:grid-cols-2">
+              <div class="sm:col-span-2">
+                <label class="block text-xs font-medium" for="session-serial-port">{{
+                  t("sessions.editor.serial.port")
+                }}</label>
+                <Select
+                  id="session-serial-port"
+                  v-model="editor.serialPort"
+                  class="mt-1"
+                  :options="serialPortOptions"
+                />
+                <p v-if="submitted && errors.serialPort" class="mt-1 text-[11px] text-destructive">
+                  {{ errors.serialPort }}
+                </p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-serial-baud">{{
+                  t("sessions.editor.serial.baud")
+                }}</label>
+                <input
+                  id="session-serial-baud"
+                  v-model="editor.serialBaud"
+                  type="text"
+                  inputmode="numeric"
+                  class="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                  :class="submitted && errors.serialBaud ? 'border-destructive' : 'border-border'"
+                  :placeholder="t('sessions.editor.serial.baudPlaceholder')"
+                />
+                <p v-if="submitted && errors.serialBaud" class="mt-1 text-[11px] text-destructive">
+                  {{ errors.serialBaud }}
+                </p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-serial-databits">{{
+                  t("sessions.editor.serial.dataBits")
+                }}</label>
+                <Select
+                  id="session-serial-databits"
+                  :model-value="String(editor.serialDataBits)"
+                  class="mt-1"
+                  :options="dataBitsOptions"
+                  @update:model-value="editor.serialDataBits = Number($event)"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-serial-parity">{{
+                  t("sessions.editor.serial.parity")
+                }}</label>
+                <Select
+                  id="session-serial-parity"
+                  :model-value="editor.serialParity"
+                  class="mt-1"
+                  :options="parityOptions"
+                  @update:model-value="editor.serialParity = $event as SerialParity"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-serial-stopbits">{{
+                  t("sessions.editor.serial.stopBits")
+                }}</label>
+                <Select
+                  id="session-serial-stopbits"
+                  :model-value="editor.serialStopBits"
+                  class="mt-1"
+                  :options="stopBitsOptions"
+                  @update:model-value="editor.serialStopBits = $event as SerialStopBits"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-serial-flow">{{
+                  t("sessions.editor.serial.flowControl")
+                }}</label>
+                <Select
+                  id="session-serial-flow"
+                  :model-value="editor.serialFlowControl"
+                  class="mt-1"
+                  :options="flowOptions"
+                  @update:model-value="editor.serialFlowControl = $event as SerialFlowControl"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-serial-backspace">{{
+                  t("sessions.editor.telnet.backspace")
+                }}</label>
+                <Select
+                  id="session-serial-backspace"
+                  :model-value="editor.serialBackspace"
+                  class="mt-1"
+                  :options="backspaceOptions"
+                  @update:model-value="editor.serialBackspace = $event as BackspaceMode"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section v-if="editor.protocol === 'local'">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.local.title") }}</h3>
+            <div class="mt-2 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="block text-xs font-medium" for="session-local-shell">{{
+                  t("sessions.editor.local.shell")
+                }}</label>
+                <Select id="session-local-shell" v-model="editor.localShell" class="mt-1" :options="shellOptions" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-local-args">{{
+                  t("sessions.editor.local.args")
+                }}</label>
+                <input
+                  id="session-local-args"
+                  v-model="editor.localArgs"
+                  type="text"
+                  class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                  :placeholder="t('sessions.editor.local.argsPlaceholder')"
+                />
+              </div>
+            </div>
+          </section>
+
+          <section v-if="editor.protocol === 'wsl'">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.wsl.title") }}</h3>
+            <div class="mt-2 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label class="block text-xs font-medium" for="session-wsl-distro">{{
+                  t("sessions.editor.wsl.distro")
+                }}</label>
+                <Select id="session-wsl-distro" v-model="editor.wslDistro" class="mt-1" :options="distroOptions" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium" for="session-wsl-args">{{
+                  t("sessions.editor.wsl.args")
+                }}</label>
+                <input
+                  id="session-wsl-args"
+                  v-model="editor.wslArgs"
+                  type="text"
+                  class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                  :placeholder="t('sessions.editor.local.argsPlaceholder')"
+                />
+              </div>
+            </div>
           </section>
 
           <p v-if="problemText" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">

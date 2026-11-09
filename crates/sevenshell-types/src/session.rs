@@ -26,6 +26,18 @@ pub struct Session {
     /// What a remote desktop asks of the system client. Ignored by SSH sessions.
     #[serde(default)]
     pub desktop: DesktopSettings,
+    /// What a Telnet console expects on the wire. Ignored by every other protocol.
+    #[serde(default)]
+    pub telnet: TelnetSettings,
+    /// The serial port and its line parameters. Ignored by every other protocol.
+    #[serde(default)]
+    pub serial: SerialSettings,
+    /// Which shell on this machine to start. Ignored by every other protocol.
+    #[serde(default)]
+    pub local: LocalSettings,
+    /// Which WSL distribution to start. Ignored by every other protocol.
+    #[serde(default)]
+    pub wsl: WslSettings,
     /// Saved sessions to reach this one through, in order: the first is connected to directly.
     ///
     /// References rather than copies, because a hop is a session like any other: editing it once
@@ -241,6 +253,162 @@ impl Default for TerminalSettings {
             record: false,
         }
     }
+}
+
+/// What the Enter key puts on a Telnet wire.
+///
+/// A console server may expect the old teletype pair, a bare carriage return, or a bare line feed;
+/// the interface stores which one this session wants rather than guessing per device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EnterMode {
+    #[default]
+    Crlf,
+    Cr,
+    Lf,
+}
+
+/// What the Backspace key puts on the wire.
+///
+/// `DEL` is what an xterm sends; a line discipline that predates it wants `Ctrl+H`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BackspaceMode {
+    #[default]
+    Del,
+    CtrlH,
+}
+
+/// How a serial frame checks itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SerialParity {
+    #[default]
+    None,
+    Even,
+    Odd,
+}
+
+/// How many stop bits follow a serial frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SerialStopBits {
+    #[default]
+    #[serde(rename = "1")]
+    One,
+    #[serde(rename = "2")]
+    Two,
+}
+
+/// How a serial link asks the far side to pause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SerialFlowControl {
+    #[default]
+    None,
+    RtsCts,
+    XonXoff,
+}
+
+/// What a Telnet console asks of the keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelnetSettings {
+    #[serde(default)]
+    pub enter: EnterMode,
+    #[serde(default)]
+    pub backspace: BackspaceMode,
+}
+
+/// A serial port and the line parameters it was chosen with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialSettings {
+    /// The device path or name, for example `COM3` or `/dev/ttyUSB0`.
+    #[serde(default)]
+    pub port: String,
+    /// 50 through 4,000,000. The driver accepts custom rates inside that range.
+    #[serde(default = "default_baud_rate")]
+    pub baud_rate: u32,
+    /// Five through eight.
+    #[serde(default = "default_data_bits")]
+    pub data_bits: u8,
+    #[serde(default)]
+    pub parity: SerialParity,
+    #[serde(default)]
+    pub stop_bits: SerialStopBits,
+    #[serde(default)]
+    pub flow_control: SerialFlowControl,
+    #[serde(default)]
+    pub backspace: BackspaceMode,
+}
+
+fn default_baud_rate() -> u32 {
+    115_200
+}
+
+fn default_data_bits() -> u8 {
+    8
+}
+
+impl Default for SerialSettings {
+    fn default() -> Self {
+        Self {
+            port: String::new(),
+            baud_rate: default_baud_rate(),
+            data_bits: default_data_bits(),
+            parity: SerialParity::None,
+            stop_bits: SerialStopBits::One,
+            flow_control: SerialFlowControl::None,
+            backspace: BackspaceMode::Del,
+        }
+    }
+}
+
+/// Which shell on this machine a local session starts.
+///
+/// The name is an identifier the backend resolves — `pwsh`, `cmd`, `git-bash`, `zsh` — never a path:
+/// the interface does not name files on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalSettings {
+    /// Empty asks the backend for the platform default.
+    #[serde(default)]
+    pub shell: String,
+    /// Extra arguments appended to the shell's own launch arguments.
+    #[serde(default)]
+    pub args: String,
+}
+
+/// Which WSL distribution a WSL session starts.
+///
+/// An empty name asks Windows for its default distribution.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WslSettings {
+    #[serde(default)]
+    pub distro: String,
+    /// Extra arguments appended to `wsl.exe`.
+    #[serde(default)]
+    pub args: String,
+}
+
+/// One shell this machine can start, as the picker sees it.
+///
+/// The identifier is what a session stores; the label is what a person reads. Neither is a path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalShell {
+    pub id: String,
+    pub label: String,
+}
+
+/// One serial port this machine has, as the picker sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialPortInfo {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// What a remote desktop asks of the system client.

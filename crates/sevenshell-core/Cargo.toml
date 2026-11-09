@@ -15,6 +15,7 @@ sevenshell-policy = { workspace = true }
 sevenshell-vault = { workspace = true }
 sevenshell-ssh = { workspace = true }
 sevenshell-session = { workspace = true }
+sevenshell-term = { workspace = true }
 sevenshell-sftp = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }

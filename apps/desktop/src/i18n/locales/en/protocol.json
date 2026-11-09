@@ -5,6 +5,18 @@
     },
     "rdp": {
       "label": "Remote desktop (RDP)"
+    },
+    "telnet": {
+      "label": "Telnet"
+    },
+    "serial": {
+      "label": "Serial"
+    },
+    "local": {
+      "label": "Local terminal"
+    },
+    "wsl": {
+      "label": "WSL"
     }
   }
 }

@@ -33,9 +33,11 @@ import type {
   KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
+  LocalShell,
   OpenOutcome,
   OpenTerminal,
   PresentedHostKey,
+  SerialPortInfo,
   SecretInput,
   OpenTunnel,
   Session,
@@ -605,6 +607,21 @@ export function terminalClose(handle: string): Promise<void> {
 
 export function terminalsOpen(): Promise<OpenTerminal[]> {
   return invoke<OpenTerminal[]>("terminals_open");
+}
+
+/** The shells this machine can start: identifiers and labels, never paths. */
+export function terminalLocalShells(): Promise<LocalShell[]> {
+  return invoke<LocalShell[]>("terminal_local_shells");
+}
+
+/** The WSL distributions this machine has. Empty where WSL is not installed. */
+export function terminalWslDistros(): Promise<string[]> {
+  return invoke<string[]>("terminal_wsl_distros");
+}
+
+/** The serial ports this machine has. */
+export function terminalSerialPorts(): Promise<SerialPortInfo[]> {
+  return invoke<SerialPortInfo[]>("terminal_serial_ports");
 }
 
 // -- Remote desktops ---------------------------------------------------------

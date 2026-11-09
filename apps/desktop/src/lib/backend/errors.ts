@@ -13,7 +13,18 @@ const ENVELOPE_VERSION = 1;
 
 export type OperationOutcome = "unknown" | "notSent" | "sent" | "rejected";
 
-export type Subsystem = "vault" | "ssh" | "sftp" | "rdp" | "fs" | "store" | "policy" | "net" | "app" | "plugin";
+export type Subsystem =
+  | "vault"
+  | "ssh"
+  | "sftp"
+  | "rdp"
+  | "terminal"
+  | "fs"
+  | "store"
+  | "policy"
+  | "net"
+  | "app"
+  | "plugin";
 
 export interface ErrorOrigin {
   readonly subsystem: Subsystem;

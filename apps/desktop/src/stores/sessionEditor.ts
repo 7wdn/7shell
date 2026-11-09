@@ -16,13 +16,22 @@ import { computed, ref } from "vue";
 import { useSessionsStore } from "@/stores/sessions";
 import { PROTOCOLS, protocolById, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
 import type {
+  BackspaceMode,
   DesktopSettings,
+  EnterMode,
   ForwardMode,
   KeyInfo,
   LocalForward,
+  LocalSettings,
   SecretInput,
+  SerialFlowControl,
+  SerialParity,
+  SerialSettings,
+  SerialStopBits,
   Session,
+  TelnetSettings,
   TerminalSettings,
+  WslSettings,
 } from "@/types/session";
 
 /** What `TerminalSettings::default()` uses in Rust: the wire type has no "not set" for these. */
@@ -40,6 +49,24 @@ const DEFAULT_DESKTOP: DesktopSettings = {
   fullscreen: false,
   redirectDrives: true,
 };
+
+/** What the Rust defaults use for the transports that are not SSH. */
+const DEFAULT_TELNET: TelnetSettings = { enter: "crlf", backspace: "del" };
+const DEFAULT_SERIAL: SerialSettings = {
+  port: "",
+  baudRate: 115200,
+  dataBits: 8,
+  parity: "none",
+  stopBits: "1",
+  flowControl: "none",
+  backspace: "del",
+};
+const DEFAULT_LOCAL: LocalSettings = { shell: "", args: "" };
+const DEFAULT_WSL: WslSettings = { distro: "", args: "" };
+
+/** The range the serial driver accepts, and the ceiling the backend checks. */
+const BAUD_MIN = 50;
+const BAUD_MAX = 4_000_000;
 
 /** Bounds of a TCP port, and the one case where zero is a real answer: asking for a free one. */
 const PORT_MAX = 65535;
@@ -59,7 +86,7 @@ export interface ForwardDraft {
 export type ForwardProblem = "bindHost" | "bindPort" | "targetHost" | "targetPort";
 
 /** What is wrong with the session itself, named by the field it belongs to. */
-export type SessionFieldProblem = "name" | "host" | "user" | "port" | "key";
+export type SessionFieldProblem = "name" | "host" | "user" | "port" | "key" | "serialPort" | "serialBaud";
 
 /** One hop as the list draws it. No session means the saved one it named has been deleted. */
 export interface HopEntry {
@@ -87,6 +114,15 @@ function validPort(text: string, minimum: number): boolean {
   }
   const value = portNumber(text);
   return Number.isInteger(value) && value >= minimum && value <= PORT_MAX;
+}
+
+/** Whether the text is a rate the serial driver accepts; custom rates are real. */
+function validBaud(text: string): boolean {
+  if (text.trim() === "") {
+    return false;
+  }
+  const value = Number(text.trim());
+  return Number.isInteger(value) && value >= BAUD_MIN && value <= BAUD_MAX;
 }
 
 /** A row that is only waiting for a target: the bind side starts at what almost every forward uses. */
@@ -182,20 +218,60 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const desktopFullscreen = ref(DEFAULT_DESKTOP.fullscreen);
   const desktopDrives = ref(DEFAULT_DESKTOP.redirectDrives);
 
+  /** The Telnet keyboard translation, which is the whole of what a console can be configured with. */
+  const telnetEnter = ref<EnterMode>(DEFAULT_TELNET.enter);
+  const telnetBackspace = ref<BackspaceMode>(DEFAULT_TELNET.backspace);
+
+  /**
+   * The serial line. The baud rate is text while it is typed, like a port: an empty field is not
+   * 115200, and the backend must refuse it rather than receive a number the person never chose.
+   */
+  const serialPort = ref(DEFAULT_SERIAL.port);
+  const serialBaud = ref(String(DEFAULT_SERIAL.baudRate));
+  const serialDataBits = ref(DEFAULT_SERIAL.dataBits);
+  const serialParity = ref<SerialParity>(DEFAULT_SERIAL.parity);
+  const serialStopBits = ref<SerialStopBits>(DEFAULT_SERIAL.stopBits);
+  const serialFlowControl = ref<SerialFlowControl>(DEFAULT_SERIAL.flowControl);
+  const serialBackspace = ref<BackspaceMode>(DEFAULT_SERIAL.backspace);
+
+  /** Which shell on this machine, and which WSL distribution, when those are the transport. */
+  const localShell = ref(DEFAULT_LOCAL.shell);
+  const localArgs = ref(DEFAULT_LOCAL.args);
+  const wslDistro = ref(DEFAULT_WSL.distro);
+  const wslArgs = ref(DEFAULT_WSL.args);
+
+  /** Whether this connection has a host and a port to type. A serial port and a shell do not. */
+  const needsEndpoint = computed(
+    () => protocol.value === "ssh" || protocol.value === "telnet" || protocol.value === "rdp",
+  );
+
+  /** Whether this connection has a person to name. Only SSH and RDP do. */
+  const needsUser = computed(() => protocol.value === "ssh" || protocol.value === "rdp");
+
+  /** Whether SSH's authentication, route and forwarding sections apply. */
+  const isSsh = computed(() => protocol.value === "ssh");
+
+  /** Whether the remote-desktop display section applies. */
+  const isRdp = computed(() => protocol.value === "rdp");
+
   /** The route as the list draws it, in the order it is connected. A missing session stays a row. */
   const hops = computed<HopEntry[]>(() =>
     jumps.value.map((id) => ({ id, session: library.sessions.find((session) => session.id === id) })),
   );
 
   /** What may be added: never the session being edited, which the backend refuses as a loop. */
-  const hopChoices = computed(() => library.sessions.filter((session) => session.id !== editing.value?.id));
+  const hopChoices = computed(() =>
+    library.sessions.filter((session) => session.id !== editing.value?.id && session.protocol === "ssh"),
+  );
 
   const sessionProblems = computed<Record<SessionFieldProblem, boolean>>(() => ({
     name: name.value.trim() === "",
-    host: host.value.trim() === "",
-    user: user.value.trim() === "",
-    port: !validPort(port.value, 1),
-    key: method.value === "publicKey" && !attachedKey.value?.keyRef,
+    host: needsEndpoint.value && host.value.trim() === "",
+    user: needsUser.value && user.value.trim() === "",
+    port: needsEndpoint.value && !validPort(port.value, 1),
+    key: isSsh.value && method.value === "publicKey" && !attachedKey.value?.keyRef,
+    serialPort: protocol.value === "serial" && serialPort.value.trim() === "",
+    serialBaud: protocol.value === "serial" && !validBaud(serialBaud.value),
   }));
 
   const forwardProblems = computed<Record<string, readonly ForwardProblem[]>>(() => {
@@ -269,6 +345,23 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     desktopHeight.value = String(desktop.height);
     desktopFullscreen.value = desktop.fullscreen;
     desktopDrives.value = desktop.redirectDrives;
+    const telnet = session?.telnet ?? DEFAULT_TELNET;
+    telnetEnter.value = telnet.enter;
+    telnetBackspace.value = telnet.backspace;
+    const serial = session?.serial ?? DEFAULT_SERIAL;
+    serialPort.value = serial.port;
+    serialBaud.value = String(serial.baudRate);
+    serialDataBits.value = serial.dataBits;
+    serialParity.value = serial.parity;
+    serialStopBits.value = serial.stopBits;
+    serialFlowControl.value = serial.flowControl;
+    serialBackspace.value = serial.backspace;
+    const local = session?.local ?? DEFAULT_LOCAL;
+    localShell.value = local.shell;
+    localArgs.value = local.args;
+    const wsl = session?.wsl ?? DEFAULT_WSL;
+    wslDistro.value = wsl.distro;
+    wslArgs.value = wsl.args;
   }
 
   /**
@@ -282,14 +375,15 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   /** What would be saved. Routes and forwards are part of the session, like every other field. */
   function draft(): Session {
     const existing = editing.value;
+    const endpoint = needsEndpoint.value;
     return {
       id: existing?.id ?? crypto.randomUUID(),
       name: name.value.trim(),
       groupId: groupId.value === "" ? undefined : groupId.value,
       protocol: protocol.value,
-      host: host.value.trim(),
-      port: portNumber(port.value),
-      user: user.value.trim(),
+      host: endpoint ? host.value.trim() : "",
+      port: endpoint ? portNumber(port.value) : 0,
+      user: needsUser.value ? user.value.trim() : "",
       auth: {
         method: method.value,
         key: attachedKey.value ?? undefined,
@@ -302,6 +396,18 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
         fullscreen: desktopFullscreen.value,
         redirectDrives: desktopDrives.value,
       },
+      telnet: { enter: telnetEnter.value, backspace: telnetBackspace.value },
+      serial: {
+        port: serialPort.value.trim(),
+        baudRate: Number.isInteger(Number(serialBaud.value)) ? Number(serialBaud.value) : DEFAULT_SERIAL.baudRate,
+        dataBits: serialDataBits.value,
+        parity: serialParity.value,
+        stopBits: serialStopBits.value,
+        flowControl: serialFlowControl.value,
+        backspace: serialBackspace.value,
+      },
+      local: { shell: localShell.value, args: localArgs.value.trim() },
+      wsl: { distro: wslDistro.value, args: wslArgs.value.trim() },
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
@@ -385,6 +491,23 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     desktopHeight,
     desktopFullscreen,
     desktopDrives,
+    telnetEnter,
+    telnetBackspace,
+    serialPort,
+    serialBaud,
+    serialDataBits,
+    serialParity,
+    serialStopBits,
+    serialFlowControl,
+    serialBackspace,
+    localShell,
+    localArgs,
+    wslDistro,
+    wslArgs,
+    needsEndpoint,
+    needsUser,
+    isSsh,
+    isRdp,
     hops,
     hopChoices,
     sessionProblems,

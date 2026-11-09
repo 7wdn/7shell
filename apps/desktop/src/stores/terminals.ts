@@ -76,6 +76,7 @@ import type {
 } from "@/types/session";
 import type { HostSystem } from "@/types/system";
 import type { SettingsCategoryId } from "@/types/app";
+import { protocolSupports } from "@/types/generated/protocols";
 
 /** What the backend answers when an attempt was called off, which is not a failure. */
 export const CANCELLED_OPEN = "SESSION-OPEN-CANCELLED";
@@ -336,7 +337,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   async function open(session: Session): Promise<void> {
     // One entry point for every way a session is opened. A remote desktop is handed to the system
     // client; it has no tab and no handle to keep.
-    if (session.protocol !== "ssh") {
+    if (session.protocol === "rdp") {
       await openDesktop(session);
       return;
     }
@@ -368,7 +369,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
         (entry): entry is TerminalTab =>
           entry.kind === "terminal" && entry.session.id === session.id && entry.status === "open",
       );
-    if (tab) {
+    if (tab && protocolSupports(tab.session.protocol, "sftp")) {
       await openPanel(tab);
     }
   }

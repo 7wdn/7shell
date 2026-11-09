@@ -20,6 +20,12 @@
     "rdp": {
       "launchFailed": "The Windows Remote Desktop client could not be started."
     },
+    "terminal": {
+      "unreachable": "Could not reach {host}:{port}. Nothing answered there, or it is not a Telnet service.",
+      "serialFailed": "Could not open serial port {port}. Check that the device is connected and no other program holds it.",
+      "shellFailed": "Could not start the local shell ({shell}).",
+      "invalid": "Those terminal settings cannot be used."
+    },
     "sftp": {
       "notFound": "{path} does not exist on the server.",
       "permissionDenied": "The server refused access to {path}.",

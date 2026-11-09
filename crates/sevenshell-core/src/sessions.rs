@@ -9,9 +9,10 @@ use sevenshell_session::{OpenTerminal, RecordingSpec, SessionRegistry};
 use sevenshell_ssh::{
     Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
 };
+use sevenshell_term::{LocalSpec, SerialSpec, TelnetSpec, WslSpec};
 use sevenshell_types::{
-    AuthMethod, ForwardMode, KnownHostEntry, LocalForward, OpenOutcome, OpenTunnel, PresentedHostKey, Protocol,
-    Session, TransferInfo, TunnelFailure,
+    AuthMethod, ForwardMode, KnownHostEntry, LocalForward, LocalShell, OpenOutcome, OpenTunnel, PresentedHostKey,
+    Protocol, SerialPortInfo, Session, TransferInfo, TunnelFailure,
 };
 use sevenshell_vault::Vault;
 use tokio::sync::{Mutex, Notify, mpsc};
@@ -184,10 +185,16 @@ impl Core {
         cancel: &Arc<Notify>,
     ) -> Result<OpenOutcome, ShellError> {
         let session = self.session(session_id)?;
-        if session.protocol != Protocol::Ssh {
-            return Err(ShellError::app_unsupported(
-                "this session is a remote desktop, not a terminal",
-            ));
+        match session.protocol {
+            Protocol::Ssh => {}
+            Protocol::Rdp => {
+                return Err(ShellError::app_unsupported(
+                    "this session is a remote desktop, not a terminal",
+                ));
+            }
+            Protocol::Telnet | Protocol::Serial | Protocol::Local | Protocol::Wsl => {
+                return self.open_stream_terminal_until_cancelled(&session, cancel).await;
+            }
         }
         let credential = self.credential(&session)?;
         let target = Target {
@@ -287,6 +294,82 @@ impl Core {
                 let _ = self.close_terminal(&open.handle).await;
             }
         }
+    }
+
+    /// Opens a terminal whose transport is not SSH.
+    ///
+    /// Nothing about a host key applies here: Telnet and serial ports have no identity to verify,
+    /// and a local shell is a process on this machine. There is also no route and no forwarding —
+    /// the capabilities those need belong to SSH, and the descriptors do not claim them for these
+    /// protocols.
+    async fn open_stream_terminal_until_cancelled(
+        &self,
+        session: &Session,
+        cancel: &Arc<Notify>,
+    ) -> Result<OpenOutcome, ShellError> {
+        let size = sevenshell_term::Size {
+            columns: INITIAL_SIZE.columns,
+            rows: INITIAL_SIZE.rows,
+        };
+        let (stream, events) = match session.protocol {
+            Protocol::Telnet => {
+                let spec = TelnetSpec {
+                    host: session.host.clone(),
+                    port: session.port,
+                    enter: session.telnet.enter,
+                    backspace: session.telnet.backspace,
+                    timeout: self.timeout,
+                };
+                until_cancelled(sevenshell_term::open_telnet(spec, size), cancel).await?
+            }
+            Protocol::Serial => {
+                let spec = SerialSpec::from(&session.serial);
+                until_cancelled(sevenshell_term::open_serial(spec), cancel).await?
+            }
+            Protocol::Local => {
+                let spec = LocalSpec {
+                    shell: session.local.shell.clone(),
+                    args: session.local.args.clone(),
+                    cwd: None,
+                };
+                until_cancelled(sevenshell_term::open_local(spec, size), cancel).await?
+            }
+            Protocol::Wsl => {
+                let spec = WslSpec {
+                    distro: session.wsl.distro.clone(),
+                    args: session.wsl.args.clone(),
+                };
+                until_cancelled(sevenshell_term::open_wsl(spec, size), cancel).await?
+            }
+            Protocol::Ssh | Protocol::Rdp => {
+                unreachable!("only the stream protocols reach this function")
+            }
+        };
+        let handle = self
+            .registry
+            .open_stream(&session.id, stream, events, self.recording_for(session)?)
+            .await?;
+        Ok(OpenOutcome::Opened {
+            handle,
+            session_id: session.id.clone(),
+            tunnels: Vec::new(),
+            tunnel_failures: Vec::new(),
+        })
+    }
+
+    /// The shells this machine can start, for the editor's picker.
+    pub fn local_shells(&self) -> Vec<LocalShell> {
+        sevenshell_term::local_shells()
+    }
+
+    /// The WSL distributions this machine has. Empty where WSL does not exist.
+    pub fn wsl_distros(&self) -> Vec<String> {
+        sevenshell_term::wsl_distros()
+    }
+
+    /// The serial ports this machine has, for the editor's picker.
+    pub fn serial_ports(&self) -> Vec<SerialPortInfo> {
+        sevenshell_term::serial_ports()
     }
 
     /// Sends keystrokes or pasted text.
@@ -769,10 +852,35 @@ mod tests {
             auth: SessionAuth::with_password(AuthMethod::Password),
             terminal: TerminalSettings::default(),
             desktop: sevenshell_types::DesktopSettings::default(),
+            telnet: sevenshell_types::TelnetSettings::default(),
+            serial: sevenshell_types::SerialSettings::default(),
+            local: sevenshell_types::LocalSettings::default(),
+            wsl: sevenshell_types::WslSettings::default(),
             jump: Vec::new(),
             forwards: Vec::new(),
             updated_at: 0,
         }
+    }
+
+    #[tokio::test]
+    async fn a_local_shell_opens_and_closes_through_the_registry_without_a_host_key() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
+        vault.create("correct horse battery staple").expect("create");
+        let mut session = sample("local-1", "a shell here");
+        session.protocol = sevenshell_types::Protocol::Local;
+        session.host = String::new();
+        session.port = 0;
+        session.user = String::new();
+        session.local.shell = if cfg!(windows) { "cmd".to_owned() } else { String::new() };
+        vault.save_session(session, None).expect("save");
+
+        let (core, _events) = Core::new(vault);
+        let outcome = core.open_terminal("local-1").await.expect("a local shell opens");
+        let OpenOutcome::Opened { handle, .. } = outcome else {
+            panic!("a local shell needs no host key decision, got {outcome:?}");
+        };
+        core.close_terminal(&handle).await.expect("the shell closes");
     }
 
     #[tokio::test]

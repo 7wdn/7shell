@@ -470,6 +470,10 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
         },
         terminal: TerminalSettings::default(),
         desktop: sevenshell_types::DesktopSettings::default(),
+        telnet: sevenshell_types::TelnetSettings::default(),
+        serial: sevenshell_types::SerialSettings::default(),
+        local: sevenshell_types::LocalSettings::default(),
+        wsl: sevenshell_types::WslSettings::default(),
         jump: vec!["hop-1".to_owned()],
         forwards: vec![LocalForward {
             id: "f1".to_owned(),
@@ -1231,6 +1235,82 @@ fn completion_results_serialize_with_camel_case_fields() {
         silent["exitCode"].is_null(),
         "a generator that ran out of time has no exit status"
     );
+}
+
+#[test]
+fn a_serial_session_names_every_line_parameter_on_the_wire() {
+    let json = check(
+        &sevenshell_types::SerialSettings {
+            port: "COM3".to_owned(),
+            baud_rate: 9_600,
+            data_bits: 7,
+            parity: sevenshell_types::SerialParity::Even,
+            stop_bits: sevenshell_types::SerialStopBits::Two,
+            flow_control: sevenshell_types::SerialFlowControl::RtsCts,
+            backspace: sevenshell_types::BackspaceMode::CtrlH,
+        },
+        "SerialSettings",
+    );
+    assert_eq!(json["port"], serde_json::json!("COM3"));
+    assert_eq!(json["baudRate"], serde_json::json!(9600));
+    assert_eq!(json["dataBits"], serde_json::json!(7));
+    assert_eq!(json["parity"], serde_json::json!("even"));
+    assert_eq!(json["stopBits"], serde_json::json!("2"));
+    assert_eq!(json["flowControl"], serde_json::json!("rtsCts"));
+    assert_eq!(json["backspace"], serde_json::json!("ctrlH"));
+}
+
+#[test]
+fn telnet_and_local_settings_serialize_as_short_stable_words() {
+    let telnet = check(
+        &sevenshell_types::TelnetSettings {
+            enter: sevenshell_types::EnterMode::Lf,
+            backspace: sevenshell_types::BackspaceMode::CtrlH,
+        },
+        "TelnetSettings",
+    );
+    assert_eq!(telnet["enter"], serde_json::json!("lf"));
+    assert_eq!(telnet["backspace"], serde_json::json!("ctrlH"));
+
+    let local = check(
+        &sevenshell_types::LocalSettings {
+            shell: "git-bash".to_owned(),
+            args: "--noprofile".to_owned(),
+        },
+        "LocalSettings",
+    );
+    assert_eq!(local["shell"], serde_json::json!("git-bash"));
+    assert_eq!(local["args"], serde_json::json!("--noprofile"));
+
+    let wsl = check(
+        &sevenshell_types::WslSettings {
+            distro: "Ubuntu".to_owned(),
+            args: String::new(),
+        },
+        "WslSettings",
+    );
+    assert_eq!(wsl["distro"], serde_json::json!("Ubuntu"));
+}
+
+#[test]
+fn a_session_saved_before_local_terminals_existed_still_reads() {
+    let old = serde_json::json!({
+        "id": "legacy",
+        "name": "legacy",
+        "protocol": "ssh",
+        "host": "host.example",
+        "port": 22,
+        "user": "root",
+        "auth": { "method": "password", "hasSecret": false },
+        "terminal": { "terminalType": "xterm-256color", "keepaliveSeconds": 30 },
+        "updatedAt": 1
+    });
+    let session: Session = serde_json::from_value(old).expect("an older document still reads");
+    assert_eq!(session.serial.baud_rate, 115_200);
+    assert_eq!(session.serial.data_bits, 8);
+    assert_eq!(session.telnet.enter, sevenshell_types::EnterMode::Crlf);
+    assert!(session.local.shell.is_empty());
+    assert!(session.wsl.distro.is_empty());
 }
 
 #[test]

@@ -20,6 +20,12 @@
     "rdp": {
       "launchFailed": "无法启动 Windows 远程桌面客户端。"
     },
+    "terminal": {
+      "unreachable": "无法连接 {host}:{port}。该地址没有响应，或不是 Telnet 服务。",
+      "serialFailed": "无法打开串口 {port}。请确认设备已连接、端口未被其他程序占用。",
+      "shellFailed": "无法启动本地 Shell（{shell}）。",
+      "invalid": "这组终端参数无法使用。"
+    },
     "sftp": {
       "notFound": "服务器上不存在 {path}。",
       "permissionDenied": "服务器拒绝访问 {path}。",

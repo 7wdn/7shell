@@ -1,0 +1,15 @@
+schemaVersion: 1
+order: 50
+id: local
+rustVariant: Local
+labelKey: protocol.local.label
+runtime: native
+transport: pty
+supportLevel: operate
+# A shell on this machine: PowerShell, Command Prompt, Git Bash and whatever else the platform
+# offers. There is no host to authenticate to, and the terminal is a real pseudo terminal, so a
+# window size is meaningful.
+capabilities:
+  - shell
+  - resize
+  - recording

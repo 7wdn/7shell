@@ -1,0 +1,18 @@
+[package]
+name = "sevenshell-term"
+description = "Terminal transports that are not SSH: Telnet, serial ports and shells on this machine."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+serialport = { workspace = true }
+portable-pty = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

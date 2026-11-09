@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::Serialize;
 use sevenshell_error::ShellError;
 use sevenshell_session::OpenTerminal;
-use sevenshell_types::{HostSystem, OpenOutcome, OpenTunnel};
+use sevenshell_types::{HostSystem, LocalShell, OpenOutcome, OpenTunnel, SerialPortInfo};
 use tauri::{AppHandle, Emitter as _, State};
 
 use crate::state::ShellState;
@@ -91,6 +91,26 @@ pub async fn terminal_close(state: State<'_, ShellState>, handle: String) -> Res
 #[tauri::command]
 pub async fn terminals_open(state: State<'_, ShellState>) -> Result<Vec<OpenTerminal>, ShellError> {
     Ok(state.core().open_terminals().await)
+}
+
+/// The shells this machine can start, for the local-terminal picker.
+///
+/// Identifiers and labels only: a shell is named `pwsh`, never by the path it happens to live at.
+#[tauri::command]
+pub async fn terminal_local_shells(state: State<'_, ShellState>) -> Result<Vec<LocalShell>, ShellError> {
+    Ok(state.core().local_shells())
+}
+
+/// The WSL distributions this machine has. Empty where WSL is not installed.
+#[tauri::command]
+pub async fn terminal_wsl_distros(state: State<'_, ShellState>) -> Result<Vec<String>, ShellError> {
+    Ok(state.core().wsl_distros())
+}
+
+/// The serial ports this machine has, for the serial picker.
+#[tauri::command]
+pub async fn terminal_serial_ports(state: State<'_, ShellState>) -> Result<Vec<SerialPortInfo>, ShellError> {
+    Ok(state.core().serial_ports())
 }
 
 /// The forwards that are up, with how much each has carried.

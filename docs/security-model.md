@@ -78,6 +78,18 @@ saved configuration and defaults to `127.0.0.1`; nothing in the interface offers
 `0.0.0.0`. A forward carries bytes and nothing else: it cannot be used to run a command, and it
 stops with the terminal it belongs to.
 
+**A terminal with no host key is a different trust decision, and the interface says so.** Telnet
+and serial consoles have no cryptographic identity to verify; a local shell and WSL are processes on
+this machine with no network identity at all. Invariants 2 and 3 do not apply to them, and nothing
+in this build pretends they do. Telnet is cleartext by definition — what is typed into it, passwords
+included, crosses the network unencrypted — and the editor says that next to the protocol choice.
+Serial ports and serial line parameters are local device settings; a wrong baud rate is reported,
+never silently replaced. A local shell is started from an identifier (`pwsh`, `cmd`, `git-bash`)
+that this process resolves to a path, so the renderer still never names a local path; the extra
+arguments a person types are passed to that shell as arguments, not through a command interpreter.
+None of these transports can open further channels: SFTP, the process monitor and port forwarding
+ask the registry for an SSH connection and are refused with a sentence that says why.
+
 **Commands nobody typed are a constant, not a string.** The host monitor runs commands on the far
 side without anyone typing them, which is the one place in this build where that is true, so it is
 held to a narrower rule than the terminal is: there are exactly four of them — the sample, the

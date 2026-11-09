@@ -70,8 +70,19 @@ export interface SessionMenuActions {
 }
 
 /** The address as the sidebar writes it, which is what somebody would type somewhere else. */
-export function sessionEndpoint(session: Session): string {
-  return `${session.user}@${session.host}:${session.port}`;
+export function sessionEndpoint(session: Session, t?: (key: string) => string): string {
+  switch (session.protocol) {
+    case "telnet":
+      return `${session.host}:${session.port}`;
+    case "serial":
+      return `${session.serial?.port ?? ""} · ${session.serial?.baudRate ?? ""}`;
+    case "local":
+      return session.local?.shell || (t ? t("sessions.editor.local.defaultShell") : "local");
+    case "wsl":
+      return session.wsl?.distro || (t ? t("sessions.editor.wsl.defaultDistro") : "WSL");
+    default:
+      return `${session.user}@${session.host}:${session.port}`;
+  }
 }
 
 export function sessionMenu(
@@ -122,7 +133,7 @@ export function sessionMenu(
     {
       kind: "action",
       id: "open",
-      labelKey: session.protocol === "ssh" ? "sessions.list.open" : "sessions.list.openDesktop",
+      labelKey: session.protocol === "rdp" ? "sessions.list.openDesktop" : "sessions.list.open",
       icon: Terminal,
       run: () => actions.open(session),
     },

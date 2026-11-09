@@ -100,6 +100,14 @@ export interface Session {
   readonly terminal: TerminalSettings;
   /** What a remote desktop asks of the system client. Absent on SSH sessions and older exports. */
   readonly desktop?: DesktopSettings;
+  /** What a Telnet console expects on the wire. Absent on every other protocol. */
+  readonly telnet?: TelnetSettings;
+  /** The serial port and its line parameters. Absent on every other protocol. */
+  readonly serial?: SerialSettings;
+  /** Which shell on this machine a local session starts. Absent on every other protocol. */
+  readonly local?: LocalSettings;
+  /** Which WSL distribution to start. Absent on every other protocol. */
+  readonly wsl?: WslSettings;
   /** Saved sessions to reach this one through, in order: the first is connected to directly. */
   readonly jump?: readonly string[];
   /** Ports to forward while this session is open. */
@@ -115,6 +123,68 @@ export interface DesktopSettings {
   fullscreen: boolean;
   /** Whether the local drives are mapped into the session. */
   redirectDrives: boolean;
+}
+
+/** What the Enter key puts on a Telnet wire: the teletype pair, a bare CR, or a bare LF. */
+export type EnterMode = "crlf" | "cr" | "lf";
+
+/** What the Backspace key puts on the wire: what an xterm sends, or the older Ctrl+H. */
+export type BackspaceMode = "del" | "ctrlH";
+
+/** How a serial frame checks itself. */
+export type SerialParity = "none" | "even" | "odd";
+
+/** How many stop bits follow a serial frame. */
+export type SerialStopBits = "1" | "2";
+
+/** How a serial link asks the far side to pause. */
+export type SerialFlowControl = "none" | "rtsCts" | "xonXoff";
+
+/** What a Telnet console asks of the keyboard. */
+export interface TelnetSettings {
+  readonly enter: EnterMode;
+  readonly backspace: BackspaceMode;
+}
+
+/** A serial port and the line parameters it was chosen with. */
+export interface SerialSettings {
+  /** The device name, for example `COM3` or `/dev/ttyUSB0`. */
+  readonly port: string;
+  /** 50 through 4,000,000. The driver accepts custom rates inside that range. */
+  readonly baudRate: number;
+  /** Five through eight. */
+  readonly dataBits: number;
+  readonly parity: SerialParity;
+  readonly stopBits: SerialStopBits;
+  readonly flowControl: SerialFlowControl;
+  readonly backspace: BackspaceMode;
+}
+
+/** Which shell on this machine a local session starts. */
+export interface LocalSettings {
+  /** An identifier the backend resolves — `pwsh`, `cmd`, `git-bash` — never a path. */
+  readonly shell: string;
+  /** Extra arguments appended to the shell's own launch arguments. */
+  readonly args: string;
+}
+
+/** Which WSL distribution a WSL session starts. */
+export interface WslSettings {
+  /** Empty asks Windows for its default distribution. */
+  readonly distro: string;
+  readonly args: string;
+}
+
+/** One shell this machine can start, as the picker sees it. */
+export interface LocalShell {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** One serial port this machine has, as the picker sees it. */
+export interface SerialPortInfo {
+  readonly path: string;
+  readonly description?: string;
 }
 
 /** A forward that is up right now. */

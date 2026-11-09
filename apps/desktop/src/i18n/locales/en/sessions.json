@@ -117,6 +117,47 @@
       "desktop": {
         "note": "A remote desktop opens in the Windows Remote Desktop client: clipboard and local drives are handled there. A domain account is written DOMAIN\\user (for example CORP\\alice). A stored password is sealed for this Windows user; leave it empty and the client asks."
       },
+      "telnet": {
+        "note": "Telnet is cleartext: what is typed here, passwords included, crosses the network unencrypted. It is for old devices on networks you trust.",
+        "title": "Keyboard",
+        "enter": "Enter key",
+        "enterCrlf": "CRLF (carriage return + line feed)",
+        "enterCr": "CR (carriage return only)",
+        "enterLf": "LF (line feed only)",
+        "backspace": "Backspace key",
+        "backspaceDel": "DEL (0x7F)",
+        "backspaceCtrlH": "Ctrl+H (0x08)"
+      },
+      "serial": {
+        "title": "Serial port",
+        "port": "Port",
+        "noPorts": "No serial ports found",
+        "baud": "Baud rate",
+        "baudPlaceholder": "Common: 9600, 115200",
+        "dataBits": "Data bits",
+        "parity": "Parity",
+        "parityNone": "None",
+        "parityEven": "Even",
+        "parityOdd": "Odd",
+        "stopBits": "Stop bits",
+        "flowControl": "Flow control",
+        "flowNone": "None",
+        "flowRtsCts": "RTS/CTS (hardware)",
+        "flowXonXoff": "XON/XOFF (software)"
+      },
+      "local": {
+        "title": "Local shell",
+        "shell": "Shell",
+        "defaultShell": "System default",
+        "args": "Launch arguments",
+        "argsPlaceholder": "Optional"
+      },
+      "wsl": {
+        "title": "WSL",
+        "distro": "Distribution",
+        "defaultDistro": "Default distribution",
+        "args": "Launch arguments"
+      },
       "display": {
         "title": "Display",
         "resolution": "Resolution",
@@ -205,7 +246,9 @@
         "host": "Enter the host name or address.",
         "user": "Enter the user to log in as.",
         "port": "The port must be a number between 1 and 65535.",
-        "key": "Attach a key file for public-key authentication."
+        "key": "Attach a key file for public-key authentication.",
+        "serialPort": "Choose a serial port.",
+        "serialBaud": "The baud rate must be a whole number between 50 and 4000000."
       },
       "save": "Save",
       "cancel": "Cancel",

@@ -1,0 +1,14 @@
+schemaVersion: 1
+order: 60
+id: wsl
+rustVariant: Wsl
+labelKey: protocol.wsl.label
+runtime: native
+transport: pty
+supportLevel: operate
+# The same pseudo terminal as a local shell, with `wsl.exe` as the program. Offered on Windows
+# only: the interface filters it the way it filters RDP, and the core refuses elsewhere.
+capabilities:
+  - shell
+  - resize
+  - recording

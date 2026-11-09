@@ -31,6 +31,10 @@ it, never in advance.
 | Host key verification: trust a new key, stop on a changed one, review and revoke what is trusted | Working, tested against a real sshd |
 | Authentication: password, private key (with passphrase), keyboard-interactive, and the system key agent | Working, tested against a real sshd |
 | Terminals: several tabs, resize, keep-alive, reconnect, search, links, and a palette per session | Working |
+| Telnet consoles: RFC 854 subset, window reporting, and the Enter/Backspace the device expects | Working, with an in-process test |
+| Serial consoles: device, baud rate, data bits, parity, stop bits and flow control | Working; line settings are tested, a physical device is not |
+| Local shells: PowerShell, Command Prompt, Git Bash and the Unix login shell, in a real pseudo terminal | Working, tested on Windows and Unix |
+| WSL: an installed distribution started through `wsl.exe` | Windows only; tested on a machine with WSL |
 | Remote desktops (RDP): a Windows desktop handed to the system Remote Desktop client, with its clipboard, local drives, resolution and full-screen choice | Windows only; the client carries the session |
 | Jump hosts: a route through other saved sessions, every hop verified as if it were the destination | Working, tested against a real sshd |
 | Port forwarding: a local port reaching the far side (`-L`), and a local SOCKS5 port (`-D`) | Working, tested against a real sshd |

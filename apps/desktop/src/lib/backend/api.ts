@@ -28,10 +28,12 @@ import type {
   KeyAlgorithm,
   KeyInfo,
   KnownHostEntry,
+  LocalShell,
   OpenOutcome,
   OpenTerminal,
   OpenTunnel,
   PresentedHostKey,
+  SerialPortInfo,
   SftpListing,
   SftpOutcome,
   SftpPasteOutcome,
@@ -433,6 +435,13 @@ export const backend = {
       forward("terminal_resize", () => desktop.terminalResize(handle, columns, rows)),
     close: (handle: string): Promise<void> => forward("terminal_close", () => desktop.terminalClose(handle)),
     openTerminals: (): Promise<OpenTerminal[]> => forward("terminals_open", () => desktop.terminalsOpen()),
+
+    /** The shells this machine can start, for the local-terminal picker. */
+    localShells: (): Promise<LocalShell[]> => forward("terminal_local_shells", () => desktop.terminalLocalShells()),
+    /** The WSL distributions this machine has. Empty where WSL is not installed. */
+    wslDistros: (): Promise<string[]> => forward("terminal_wsl_distros", () => desktop.terminalWslDistros()),
+    /** The serial ports this machine has, for the serial picker. */
+    serialPorts: (): Promise<SerialPortInfo[]> => forward("terminal_serial_ports", () => desktop.terminalSerialPorts()),
 
     /** The forwards that are up, and how much they have carried. */
     tunnels: (): Promise<OpenTunnel[]> => forward("tunnels_open", () => desktop.tunnelsOpen()),

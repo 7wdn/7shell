@@ -1,0 +1,14 @@
+schemaVersion: 1
+order: 40
+id: serial
+rustVariant: Serial
+labelKey: protocol.serial.label
+runtime: native
+transport: serial
+supportLevel: operate
+# A serial console has no window to resize and no remote file system; it has a shell (the device's
+# console) and it can be recorded. `defaultPort` is absent because the "port" here is a device name
+# (`COM3`, `/dev/ttyUSB0`), not a TCP port.
+capabilities:
+  - shell
+  - recording

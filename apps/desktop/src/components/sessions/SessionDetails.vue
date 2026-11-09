@@ -61,22 +61,33 @@ const groupLabel = computed(() => {
  * anything.
  */
 const rows = computed(() => {
-  const list = [
+  const protocol = props.session.protocol;
+  // A local shell and a serial port have no address to reach and no account to log in as; showing
+  // empty rows for them would read as missing configuration rather than as a different transport.
+  const addressed = protocol === "ssh" || protocol === "telnet" || protocol === "rdp";
+  const authenticated = protocol === "ssh" || protocol === "rdp";
+  const list: { key: string; label: string; value: string }[] = [
     { key: "name", label: t("sessions.details.name"), value: props.session.name },
-    { key: "address", label: t("sessions.details.address"), value: sessionEndpoint(props.session) },
-    { key: "host", label: t("sessions.details.host"), value: props.session.host },
-    { key: "port", label: t("sessions.details.port"), value: String(props.session.port) },
-    { key: "user", label: t("sessions.details.user"), value: props.session.user },
-    { key: "protocol", label: t("sessions.details.protocol"), value: protocolLabel.value },
-    {
+    { key: "address", label: t("sessions.details.address"), value: sessionEndpoint(props.session, t) },
+  ];
+  if (addressed) {
+    list.push({ key: "host", label: t("sessions.details.host"), value: props.session.host });
+    list.push({ key: "port", label: t("sessions.details.port"), value: String(props.session.port) });
+  }
+  if (authenticated) {
+    list.push({ key: "user", label: t("sessions.details.user"), value: props.session.user });
+  }
+  list.push({ key: "protocol", label: t("sessions.details.protocol"), value: protocolLabel.value });
+  if (authenticated) {
+    list.push({
       key: "auth",
       label: t("sessions.details.auth"),
       value: props.session.auth.hasSecret
         ? t("sessions.details.authStored", { method: authLabel.value })
         : t("sessions.details.authMissing", { method: authLabel.value }),
-    },
-    { key: "group", label: t("sessions.details.group"), value: groupLabel.value },
-  ];
+    });
+  }
+  list.push({ key: "group", label: t("sessions.details.group"), value: groupLabel.value });
 
   const jump = props.session.jump?.length ?? 0;
   if (jump > 0) {

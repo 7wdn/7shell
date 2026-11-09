@@ -3,7 +3,11 @@
 
 export type ProtocolId =
   | "ssh"
-  | "rdp";
+  | "rdp"
+  | "telnet"
+  | "serial"
+  | "local"
+  | "wsl";
 
 export type Protocol = ProtocolId;
 
@@ -86,6 +90,42 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     transport: "tcp",
     supportLevel: "connect",
     capabilities: ["systemClient"],
+  },
+  {
+    id: "telnet",
+    labelKey: "protocol.telnet.label",
+    defaultPort: 23,
+    runtime: "native",
+    transport: "tcp",
+    supportLevel: "operate",
+    capabilities: ["shell", "resize", "recording"],
+  },
+  {
+    id: "serial",
+    labelKey: "protocol.serial.label",
+    defaultPort: null,
+    runtime: "native",
+    transport: "serial",
+    supportLevel: "operate",
+    capabilities: ["shell", "recording"],
+  },
+  {
+    id: "local",
+    labelKey: "protocol.local.label",
+    defaultPort: null,
+    runtime: "native",
+    transport: "pty",
+    supportLevel: "operate",
+    capabilities: ["shell", "resize", "recording"],
+  },
+  {
+    id: "wsl",
+    labelKey: "protocol.wsl.label",
+    defaultPort: null,
+    runtime: "native",
+    transport: "pty",
+    supportLevel: "operate",
+    capabilities: ["shell", "resize", "recording"],
   },
 ];
 

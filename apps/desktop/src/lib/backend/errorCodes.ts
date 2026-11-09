@@ -23,6 +23,11 @@ export const ERROR_CATALOG = {
   "SSH-KEY-UNSUPPORTED": "errors.ssh.keyUnsupported",
   // RDP
   "RDP-LAUNCH-FAILED": "errors.rdp.launchFailed",
+  // Terminal transports that are not SSH
+  "TERMINAL-UNREACHABLE": "errors.terminal.unreachable",
+  "TERMINAL-SERIAL-FAILED": "errors.terminal.serialFailed",
+  "TERMINAL-SHELL-FAILED": "errors.terminal.shellFailed",
+  "TERMINAL-INVALID": "errors.terminal.invalid",
   // SFTP
   "SFTP-NOT-FOUND": "errors.sftp.notFound",
   "SFTP-PERMISSION-DENIED": "errors.sftp.permissionDenied",

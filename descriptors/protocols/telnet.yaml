@@ -1,0 +1,16 @@
+schemaVersion: 1
+order: 30
+id: telnet
+rustVariant: Telnet
+labelKey: protocol.telnet.label
+defaultPort: 23
+runtime: native
+transport: tcp
+supportLevel: operate
+# A console, not a file host: there is no SFTP subsystem and no host metrics command channel on a
+# Telnet connection. What it does have is a window that the server may be told about (`resize`),
+# and a recording like any other terminal.
+capabilities:
+  - shell
+  - resize
+  - recording

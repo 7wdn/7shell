@@ -45,10 +45,12 @@ import {
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import { sessionEndpoint } from "@/lib/menu/sessions";
 import BatchPanel from "@/components/batch/BatchPanel.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
+import { protocolSupports } from "@/types/generated/protocols";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
 import ProcessTable from "@/components/inspect/ProcessTable.vue";
@@ -119,6 +121,11 @@ function showCommands(tab: TerminalTab): void {
  * what the end-to-end run said before this was fixed.
  */
 function showFiles(tab: TerminalTab): void {
+  // A file panel is an SFTP channel. A local shell, a serial console and Telnet do not have one,
+  // and asking anyway is what drew an unsupported-feature error under a perfectly good terminal.
+  if (!protocolSupports(tab.session.protocol, "sftp")) {
+    return;
+  }
   if (panelShowing(tab) && panelTab.value[tab.id] !== "commands") {
     // Closing is the store's: it owns the browser and the channel it has to let go of.
     void terminals.togglePanel(tab);
@@ -592,9 +599,10 @@ function tabStyle(): Record<string, string> | undefined {
           class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1 cursor-default select-none"
         >
           <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
-            {{ tab.session.user }}@{{ tab.session.host }}:{{ tab.session.port }}
+            {{ sessionEndpoint(tab.session, t) }}
           </span>
           <button
+            v-if="protocolSupports(tab.session.protocol, 'sftp')"
             type="button"
             :class="
               cn(
