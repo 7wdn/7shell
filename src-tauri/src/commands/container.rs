@@ -1,236 +1,315 @@
 //! The container command surface.
 //!
-//! Each command is a thin adapter over `sevenshell-container` and the core's container
-//! orchestration. The implementations land one operation at a time; until then a call answers with
-//! a real envelope instead of an undefined-function error, which is what lets the interface be
-//! built against this surface in parallel.
+//! Each command is a thin adapter over the core's container orchestration. The two commands that
+//! outlive their call — a followed log and a pull/push — answer a stream id and deliver lines as
+//! `container:stream` / `container:stream-end` events, which is the same shape the interface already
+//! uses for transfers.
 
 use sevenshell_error::ShellError;
 use sevenshell_types::{
     ContainerCommitRequest, ContainerCreateRequest, ContainerDetail, ContainerImage, ContainerImageTransfer,
-    ContainerRegistryLogin, ContainerRuntimeInfo, ContainerStats, ContainerSummary, ImageLayer,
+    ContainerRegistryLogin, ContainerRuntimeInfo, ContainerStats, ContainerStreamEnd, ContainerStreamLine,
+    ContainerSummary, ImageLayer,
 };
-use tauri::State;
+use tauri::{AppHandle, Emitter as _, State};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::state::ShellState;
 
-fn pending(what: &str) -> ShellError {
-    ShellError::app_unsupported(what)
+#[tauri::command]
+pub async fn container_connect(state: State<'_, ShellState>, session_id: String) -> Result<String, ShellError> {
+    state.core().container_connect(&session_id).await
 }
 
 #[tauri::command]
-pub async fn container_connect(_state: State<'_, ShellState>, _session_id: String) -> Result<String, ShellError> {
-    Err(pending("container connections"))
-}
-
-#[tauri::command]
-pub async fn container_disconnect(_state: State<'_, ShellState>, _connection_id: String) -> Result<(), ShellError> {
-    Err(pending("container connections"))
+pub async fn container_disconnect(state: State<'_, ShellState>, connection_id: String) -> Result<(), ShellError> {
+    state.core().container_disconnect(&connection_id).await;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn container_list(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
 ) -> Result<Vec<ContainerSummary>, ShellError> {
-    Err(pending("container listing"))
+    state.core().container_list(&connection_id).await
 }
 
 #[tauri::command]
 pub async fn container_inspect(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _container_id: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    container_id: String,
 ) -> Result<ContainerDetail, ShellError> {
-    Err(pending("container inspection"))
+    state.core().container_inspect(&connection_id, &container_id).await
 }
 
 #[tauri::command]
 pub async fn container_action(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _container_id: String,
-    _action: String,
-    _acknowledged: bool,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    container_id: String,
+    action: String,
+    acknowledged: bool,
 ) -> Result<(), ShellError> {
-    Err(pending("container actions"))
+    state
+        .core()
+        .container_action(&connection_id, &container_id, &action, acknowledged)
+        .await
 }
 
 #[tauri::command]
 pub async fn container_rename(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _container_id: String,
-    _name: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    container_id: String,
+    name: String,
 ) -> Result<(), ShellError> {
-    Err(pending("container rename"))
+    state
+        .core()
+        .container_rename(&connection_id, &container_id, &name)
+        .await
 }
 
 #[tauri::command]
 pub async fn container_create(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _request: ContainerCreateRequest,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    request: ContainerCreateRequest,
 ) -> Result<(), ShellError> {
-    Err(pending("container creation"))
+    state.core().container_create(&connection_id, &request).await
 }
 
 #[tauri::command]
 pub async fn container_stats(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
 ) -> Result<Vec<ContainerStats>, ShellError> {
-    Err(pending("container statistics"))
+    state.core().container_stats(&connection_id).await
 }
 
 #[tauri::command]
 pub async fn container_namespaces(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
 ) -> Result<Vec<String>, ShellError> {
-    Err(pending("container namespaces"))
+    state.core().container_namespaces(&connection_id).await
 }
 
 #[tauri::command]
 pub async fn container_set_namespace(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _namespace: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    namespace: String,
 ) -> Result<(), ShellError> {
-    Err(pending("container namespaces"))
+    state.core().container_set_namespace(&connection_id, &namespace)
 }
 
 #[tauri::command]
 pub async fn container_runtime_info(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
 ) -> Result<ContainerRuntimeInfo, ShellError> {
-    Err(pending("container runtime information"))
+    state.core().container_runtime_info(&connection_id).await
 }
 
 #[tauri::command]
 pub async fn container_logs_start(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _container_id: String,
-    _tail: u32,
-    _timestamps: bool,
+    app: AppHandle,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    container_id: String,
+    tail: u32,
+    timestamps: bool,
 ) -> Result<String, ShellError> {
-    Err(pending("container logs"))
+    let (events, lines) = tokio::sync::mpsc::unbounded_channel();
+    let (end, ends) = tokio::sync::mpsc::unbounded_channel();
+    let stream_id = state
+        .core()
+        .container_logs_start(&connection_id, &container_id, tail, timestamps, events, end)
+        .await?;
+    forward_stream(app, lines, ends);
+    Ok(stream_id)
 }
 
 #[tauri::command]
-pub async fn container_stream_stop(_state: State<'_, ShellState>, _stream_id: String) -> Result<(), ShellError> {
-    Err(pending("container streams"))
+pub async fn container_stream_stop(state: State<'_, ShellState>, stream_id: String) -> Result<(), ShellError> {
+    state.core().container_stream_stop(&stream_id).await;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn container_exec_open(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _container_id: String,
-    _shell: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    container_id: String,
+    shell: String,
 ) -> Result<String, ShellError> {
-    Err(pending("container terminals"))
+    state
+        .core()
+        .container_exec_open(&connection_id, &container_id, &shell, 80, 24)
+        .await
 }
 
 #[tauri::command]
 pub async fn container_images(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
 ) -> Result<Vec<ContainerImage>, ShellError> {
-    Err(pending("container images"))
+    state.core().container_images(&connection_id).await
 }
 
 #[tauri::command]
 pub async fn container_image_inspect(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _image: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    image: String,
 ) -> Result<String, ShellError> {
-    Err(pending("container image inspection"))
+    state.core().container_image_inspect(&connection_id, &image).await
 }
 
 #[tauri::command]
 pub async fn container_image_history(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _image: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    image: String,
 ) -> Result<Vec<ImageLayer>, ShellError> {
-    Err(pending("container image history"))
+    state.core().container_image_history(&connection_id, &image).await
 }
 
 #[tauri::command]
 pub async fn container_image_pull(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _request: ContainerImageTransfer,
+    app: AppHandle,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    request: ContainerImageTransfer,
 ) -> Result<String, ShellError> {
-    Err(pending("container image transfers"))
+    transfer(&app, &state, &connection_id, &request, false).await
 }
 
 #[tauri::command]
 pub async fn container_image_push(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _request: ContainerImageTransfer,
+    app: AppHandle,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    request: ContainerImageTransfer,
 ) -> Result<String, ShellError> {
-    Err(pending("container image transfers"))
+    transfer(&app, &state, &connection_id, &request, true).await
 }
 
 #[tauri::command]
 pub async fn container_image_remove(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _image: String,
-    _acknowledged: bool,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    image: String,
+    acknowledged: bool,
 ) -> Result<(), ShellError> {
-    Err(pending("container image removal"))
+    state
+        .core()
+        .container_image_remove(&connection_id, &image, acknowledged)
+        .await
 }
 
 #[tauri::command]
 pub async fn container_image_prune(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _acknowledged: bool,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    acknowledged: bool,
 ) -> Result<(), ShellError> {
-    Err(pending("container image pruning"))
+    state.core().container_image_prune(&connection_id, acknowledged).await
 }
 
 #[tauri::command]
 pub async fn container_image_tag(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _image: String,
-    _tag: String,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    image: String,
+    tag: String,
 ) -> Result<(), ShellError> {
-    Err(pending("container image tagging"))
+    state.core().container_image_tag(&connection_id, &image, &tag).await
 }
 
+/// Loading an archive needs a file chosen in a native dialog, which is not wired yet. The command
+/// stays so the interface has a name to call, and says exactly what is missing.
 #[tauri::command]
 pub async fn container_image_load(
     _state: State<'_, ShellState>,
     _connection_id: String,
     _grant: String,
 ) -> Result<String, ShellError> {
-    Err(pending("container image archives"))
+    Err(ShellError::app_unsupported(
+        "choosing an image archive from this machine",
+    ))
 }
 
 #[tauri::command]
 pub async fn container_image_commit(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _request: ContainerCommitRequest,
-    _acknowledged: bool,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    request: ContainerCommitRequest,
+    acknowledged: bool,
 ) -> Result<String, ShellError> {
-    Err(pending("container image commits"))
+    state
+        .core()
+        .container_image_commit(&connection_id, &request, acknowledged)
+        .await
 }
 
 #[tauri::command]
 pub async fn container_registry_login(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _request: ContainerRegistryLogin,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    request: ContainerRegistryLogin,
 ) -> Result<(), ShellError> {
-    Err(pending("container registry login"))
+    state.core().container_registry_login(&connection_id, &request).await
+}
+
+async fn transfer(
+    app: &AppHandle,
+    state: &State<'_, ShellState>,
+    connection_id: &str,
+    request: &ContainerImageTransfer,
+    push: bool,
+) -> Result<String, ShellError> {
+    let (events, lines) = tokio::sync::mpsc::unbounded_channel();
+    let (end, ends) = tokio::sync::mpsc::unbounded_channel();
+    let stream_id = state
+        .core()
+        .container_image_transfer_start(connection_id, request, push, events, end)
+        .await?;
+    forward_stream(app.clone(), lines, ends);
+    Ok(stream_id)
+}
+
+/// Delivers a stream's lines to the window, and its end after them.
+fn forward_stream(
+    app: AppHandle,
+    mut lines: UnboundedReceiver<ContainerStreamLine>,
+    mut end: UnboundedReceiver<ContainerStreamEnd>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::select! {
+                Some(line) = lines.recv() => {
+                    if let Err(error) = app.emit("container:stream", line) {
+                        log::warn!("a container stream line could not be delivered: {error}");
+                    }
+                }
+                Some(finished) = end.recv() => {
+                    // Lines already queued are delivered before the end: telling the interface the
+                    // stream is over while the last line is still on its way would cut the tail off
+                    // every operation.
+                    while let Ok(line) = lines.try_recv() {
+                        if let Err(error) = app.emit("container:stream", line) {
+                            log::warn!("a container stream line could not be delivered: {error}");
+                        }
+                    }
+                    if let Err(error) = app.emit("container:stream-end", finished) {
+                        log::warn!("a container stream end could not be delivered: {error}");
+                    }
+                    break;
+                }
+            }
+        }
+    });
 }

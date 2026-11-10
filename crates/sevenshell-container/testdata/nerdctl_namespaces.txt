@@ -1,0 +1,4 @@
+NAME        CONTAINERS    IMAGES    VOLUMES
+default     2             5         0
+k8s.io      30            60        0
+build       1             2         0

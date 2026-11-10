@@ -46,6 +46,57 @@ pub struct SessionEvent {
 enum LiveSession {
     Ssh(Arc<SshSession>),
     Stream(Arc<StreamSession>),
+    /// A terminal some other crate opened — a container's exec PTY, a pod's exec WebSocket — and
+    /// handed over as bytes plus three controls. The registry does not learn where it came from.
+    Forwarded(Arc<ForwardedSession>),
+}
+
+/// A terminal that another crate owns, expressed in the registry's own vocabulary.
+///
+/// The owner keeps the transport; the registry keeps the handle. A control that arrives after the
+/// owner's task has gone is dropped, which is the same thing as a terminal that has closed.
+pub struct ForwardedSession {
+    output: Option<mpsc::Receiver<Vec<u8>>>,
+    control: mpsc::Sender<ForwardedControl>,
+}
+
+pub enum ForwardedControl {
+    Write(Vec<u8>),
+    Resize { columns: u32, rows: u32 },
+    Close,
+}
+
+impl ForwardedSession {
+    pub fn new(output: mpsc::Receiver<Vec<u8>>, control: mpsc::Sender<ForwardedControl>) -> Self {
+        Self {
+            output: Some(output),
+            control,
+        }
+    }
+
+    /// The one reader this terminal has.
+    fn take_output(&mut self) -> Option<mpsc::Receiver<Vec<u8>>> {
+        self.output.take()
+    }
+
+    async fn write(&self, data: &[u8]) -> Result<(), ShellError> {
+        self.control
+            .send(ForwardedControl::Write(data.to_vec()))
+            .await
+            .map_err(|_| ShellError::app_unsupported("the forwarded terminal has already closed"))
+    }
+
+    async fn resize(&self, columns: u32, rows: u32) -> Result<(), ShellError> {
+        self.control
+            .send(ForwardedControl::Resize { columns, rows })
+            .await
+            .map_err(|_| ShellError::app_unsupported("the forwarded terminal has already closed"))
+    }
+
+    async fn close(&self) -> Result<(), ShellError> {
+        let _ = self.control.send(ForwardedControl::Close).await;
+        Ok(())
+    }
 }
 
 /// A terminal that is open, and the task reading it.
@@ -146,11 +197,47 @@ impl SessionRegistry {
         Ok(handle)
     }
 
+    /// Registers a terminal whose transport another crate owns, recording it when asked.
+    ///
+    /// The output half is consumed by the registry's forwarder; the control half is how the rest of
+    /// the application writes, resizes and closes it. A handle is not reused, exactly as for every
+    /// other transport.
+    pub async fn open_forwarded(
+        self: &Arc<Self>,
+        session_id: &str,
+        session: ForwardedSession,
+        recording: Option<RecordingSpec>,
+    ) -> Result<String, ShellError> {
+        let handle = format!("t{}", self.next_handle.fetch_add(1, Ordering::Relaxed));
+
+        let recording = match &recording {
+            Some(spec) => Some(Recording::create(spec).await?),
+            None => None,
+        };
+
+        let mut session = session;
+        let output = session
+            .take_output()
+            .ok_or_else(|| ShellError::app_internal("a forwarded terminal was registered twice"))?;
+        let forwarder = self.forward_forwarded(&handle, output, recording);
+        self.sessions.lock().await.insert(
+            handle.clone(),
+            OpenSession {
+                session_id: session_id.to_owned(),
+                session: Arc::new(LiveSession::Forwarded(Arc::new(session))),
+                forwarder,
+            },
+        );
+
+        Ok(handle)
+    }
+
     /// Sends keystrokes or pasted text to a terminal.
     pub async fn write(&self, handle: &str, data: &[u8]) -> Result<(), ShellError> {
         match self.session(handle).await?.as_ref() {
             LiveSession::Ssh(session) => session.write(data).await,
             LiveSession::Stream(session) => session.write(data).await,
+            LiveSession::Forwarded(session) => session.write(data).await,
         }
     }
 
@@ -159,6 +246,7 @@ impl SessionRegistry {
         match self.session(handle).await?.as_ref() {
             LiveSession::Ssh(session) => session.resize(columns, rows).await,
             LiveSession::Stream(session) => session.resize(columns, rows).await,
+            LiveSession::Forwarded(session) => session.resize(columns, rows).await,
         }
     }
 
@@ -172,6 +260,7 @@ impl SessionRegistry {
         let result = match open.session.as_ref() {
             LiveSession::Ssh(session) => session.close().await,
             LiveSession::Stream(session) => session.close().await,
+            LiveSession::Forwarded(session) => session.close().await,
         };
         open.forwarder.abort();
         result
@@ -211,7 +300,7 @@ impl SessionRegistry {
     pub async fn session_of(&self, handle: &str) -> Result<Arc<SshSession>, ShellError> {
         match self.session(handle).await?.as_ref() {
             LiveSession::Ssh(session) => Ok(Arc::clone(session)),
-            LiveSession::Stream(_) => Err(ShellError::app_unsupported(
+            LiveSession::Stream(_) | LiveSession::Forwarded(_) => Err(ShellError::app_unsupported(
                 "this terminal is not an SSH session, so it has no channels to open",
             )),
         }
@@ -281,6 +370,40 @@ impl SessionRegistry {
                 }
             }
 
+            finish(&registry, &forwarded, recording).await;
+        })
+    }
+
+    /// Forwards a terminal whose owner speaks bytes and closure, not the term crate's events.
+    ///
+    /// A forwarded terminal that stops producing bytes has ended; the closure carries no reason
+    /// because the owner's own error, if any, is what the command that opened it reports.
+    fn forward_forwarded(
+        self: &Arc<Self>,
+        handle: &str,
+        mut output: mpsc::Receiver<Vec<u8>>,
+        recording: Option<Recording>,
+    ) -> JoinHandle<()> {
+        let registry = Arc::clone(self);
+        let events = self.events.clone();
+        let forwarded = handle.to_owned();
+        let mut recording = recording;
+
+        tokio::spawn(async move {
+            while let Some(bytes) = output.recv().await {
+                let keep_going = publish(&forwarded, TerminalEvent::Data(bytes), &mut recording, &events).await;
+                if !keep_going {
+                    break;
+                }
+            }
+
+            let _ = publish(
+                &forwarded,
+                TerminalEvent::Closed { reason: None },
+                &mut recording,
+                &events,
+            )
+            .await;
             finish(&registry, &forwarded, recording).await;
         })
     }

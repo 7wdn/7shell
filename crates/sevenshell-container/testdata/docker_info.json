@@ -1,0 +1,21 @@
+{
+  "ID": "4C2A:7X9P:ZK3M:QQ7B:2W8N:J5RT:9LHV:6C1D:3F4G:8H2J:K9LP:0M5N:1Q7R:2S4T:6U8V:3W9X",
+  "Name": "docker-desktop",
+  "ServerVersion": "28.4.1",
+  "OperatingSystem": "Docker Desktop",
+  "OSType": "linux",
+  "Architecture": "x86_64",
+  "KernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+  "Driver": "overlayfs",
+  "CgroupDriver": "cgroupfs",
+  "CgroupVersion": "2",
+  "NCPU": 16,
+  "MemTotal": 17179869184,
+  "Containers": 3,
+  "ContainersRunning": 1,
+  "ContainersPaused": 1,
+  "ContainersStopped": 1,
+  "Images": 7,
+  "ImagesTagged": 5,
+  "ImagesDangling": 2
+}

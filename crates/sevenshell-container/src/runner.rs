@@ -11,16 +11,35 @@ use sevenshell_error::ShellError;
 use sevenshell_ssh::SshSession;
 use tokio::sync::mpsc;
 
+use crate::{local, remote};
+
 /// A command that keeps producing lines after it was started: logs, stats, a pull or a push.
 pub struct LineStream {
     pub(crate) lines: mpsc::Receiver<String>,
-    stop: Box<dyn Fn() + Send + Sync>,
+    stop: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl LineStream {
+    /// A stream whose producer is already running. Crate-internal: the two runners are the only
+    /// things that know how to attach a process to it.
+    pub(crate) fn new(lines: mpsc::Receiver<String>, stop: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            lines,
+            stop: Arc::new(stop),
+        }
+    }
+
     /// The next line, or nothing when the command has finished.
     pub async fn next(&mut self) -> Option<String> {
         self.lines.recv().await
+    }
+
+    /// A handle that stops the command without ending the stream that is being read here.
+    ///
+    /// Two things need it: a stop button that arrives on another task, and a registry that has to
+    /// let go of a stream it cannot borrow any more.
+    pub fn stopper(&self) -> Arc<dyn Fn() + Send + Sync> {
+        Arc::clone(&self.stop)
     }
 
     /// Stops the command and everything reading it. Calling it twice is allowed.
@@ -38,7 +57,7 @@ pub struct PtySession {
     pub(crate) control: mpsc::Sender<PtyControl>,
 }
 
-// The variants are written by the local and SSH runners as they land; nothing constructs one yet.
+// The local runner drives one directly; the remote runner is being written against the same shape.
 #[allow(dead_code)]
 pub(crate) enum PtyControl {
     Write(Vec<u8>),
@@ -47,6 +66,17 @@ pub(crate) enum PtyControl {
 }
 
 impl PtySession {
+    /// Takes the output half, once, leaving a closed channel behind.
+    ///
+    /// The terminal registry owns the one reader there is; a second reader would be a second
+    /// interpretation of the same bytes. The placeholder is closed, so an accidental second call
+    /// ends rather than waits forever.
+    pub fn take_output(&mut self) -> mpsc::Receiver<Vec<u8>> {
+        let (placeholder, closed) = mpsc::channel(1);
+        drop(placeholder);
+        std::mem::replace(&mut self.output, closed)
+    }
+
     /// The next chunk of output, or nothing when the terminal has closed.
     pub async fn next_output(&mut self) -> Option<Vec<u8>> {
         self.output.recv().await
@@ -82,30 +112,34 @@ pub enum Runner {
 
 impl Runner {
     /// Runs a command and returns everything it wrote to stdout.
-    pub async fn run(&self, _argv: &[String]) -> Result<String, ShellError> {
-        Err(ShellError::app_unsupported(
-            "the container runner is not implemented yet",
-        ))
+    pub async fn run(&self, argv: &[String]) -> Result<String, ShellError> {
+        match self {
+            Self::Local => local::run(argv).await,
+            Self::Ssh(session) => remote::run(session, argv).await,
+        }
     }
 
     /// Runs a command with bytes on stdin, for `load`, `login` and packed uploads.
-    pub async fn run_stdin(&self, _argv: &[String], _input: Vec<u8>) -> Result<String, ShellError> {
-        Err(ShellError::app_unsupported(
-            "the container runner is not implemented yet",
-        ))
+    pub async fn run_stdin(&self, argv: &[String], input: Vec<u8>) -> Result<String, ShellError> {
+        match self {
+            Self::Local => local::run_stdin(argv, input).await,
+            Self::Ssh(session) => remote::run_stdin(session, argv, input).await,
+        }
     }
 
     /// Runs a command whose output keeps arriving after it starts.
-    pub async fn stream(&self, _argv: &[String]) -> Result<LineStream, ShellError> {
-        Err(ShellError::app_unsupported(
-            "the container runner is not implemented yet",
-        ))
+    pub async fn stream(&self, argv: &[String]) -> Result<LineStream, ShellError> {
+        match self {
+            Self::Local => local::stream(argv).await,
+            Self::Ssh(session) => remote::stream(session, argv).await,
+        }
     }
 
     /// Runs a command attached to a pseudo terminal.
-    pub async fn open_pty(&self, _argv: &[String], _columns: u32, _rows: u32) -> Result<PtySession, ShellError> {
-        Err(ShellError::app_unsupported(
-            "the container terminal is not implemented yet",
-        ))
+    pub async fn open_pty(&self, argv: &[String], columns: u32, rows: u32) -> Result<PtySession, ShellError> {
+        match self {
+            Self::Local => local::open_pty(argv, columns, rows).await,
+            Self::Ssh(session) => remote::open_pty(session, argv, columns, rows).await,
+        }
     }
 }

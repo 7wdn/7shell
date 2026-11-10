@@ -1,0 +1,50 @@
+[
+  {
+    "Id": "7c1a2b3c4d5e",
+    "Name": "/web",
+    "Config": {
+      "Image": "nginx:1.27",
+      "Cmd": ["nginx", "-g", "daemon off;"],
+      "Entrypoint": ["/docker-entrypoint.sh"],
+      "Env": ["MODE=fast", "TZ=UTC"],
+      "WorkingDir": "/usr/share/nginx/html",
+      "User": "nginx"
+    },
+    "State": {
+      "Status": "running",
+      "OOMKilled": false,
+      "ExitCode": 0,
+      "StartedAt": "2026-08-24T01:15:03.123456789Z",
+      "FinishedAt": "0001-01-01T00:00:00Z",
+      "Pid": 4211
+    },
+    "HostConfig": {
+      "NetworkMode": "bridge",
+      "RestartPolicy": {
+        "Name": "unless-stopped",
+        "MaximumRetryCount": 0
+      }
+    },
+    "NetworkSettings": {
+      "IPAddress": "172.18.0.4",
+      "Gateway": "172.18.0.1",
+      "Ports": {
+        "80/tcp": [
+          {
+            "HostIp": "0.0.0.0",
+            "HostPort": "8080"
+          }
+        ],
+        "443/tcp": null
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "bind",
+        "Source": "/srv/html",
+        "Destination": "/usr/share/nginx/html",
+        "RW": false
+      }
+    ]
+  }
+]

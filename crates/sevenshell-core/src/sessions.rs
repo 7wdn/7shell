@@ -83,6 +83,9 @@ struct TunnelRecord {
     tunnel: TunnelHandle,
 }
 
+/// The stops for streams a container tab is following, keyed by the stream id the host emitted.
+pub(crate) type ContainerStreamStops = HashMap<String, Arc<dyn Fn() + Send + Sync>>;
+
 /// The operations that need the vault, the transport and the registry in a particular order.
 pub struct Core {
     pub(crate) vault: Arc<Vault>,
@@ -98,6 +101,9 @@ pub struct Core {
     /// Kubernetes connections, one per open cluster tab.
     #[allow(dead_code)]
     pub(crate) clusters: Arc<sevenshell_k8s::K8sManager>,
+    /// Stops for the line streams a container tab is following. Keyed by the id the host emitted,
+    /// so a stop button and a closing window use the same path.
+    pub(crate) container_streams: Arc<Mutex<ContainerStreamStops>>,
     pub(crate) next_file: std::sync::atomic::AtomicU64,
     pub(crate) next_transfer: std::sync::atomic::AtomicU64,
     tunnels: Mutex<HashMap<String, TunnelRecord>>,
@@ -122,6 +128,7 @@ impl Core {
                 transfers: Arc::new(Mutex::new(HashMap::new())),
                 containers: Arc::new(sevenshell_container::ContainerManager::new()),
                 clusters: Arc::new(sevenshell_k8s::K8sManager::new()),
+                container_streams: Arc::new(Mutex::new(HashMap::new())),
                 next_file: std::sync::atomic::AtomicU64::new(1),
                 next_transfer: std::sync::atomic::AtomicU64::new(1),
                 tunnels: Mutex::new(HashMap::new()),

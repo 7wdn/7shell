@@ -1,0 +1,23 @@
+{
+  "Client": {
+    "Version": "28.4.2",
+    "ApiVersion": "1.51",
+    "Os": "windows",
+    "Arch": "amd64",
+    "Components": [
+      {
+        "Name": "Engine",
+        "Version": "28.4.2"
+      }
+    ]
+  },
+  "Server": {
+    "Version": "28.4.1",
+    "Components": [
+      {
+        "Name": "Engine",
+        "Version": "28.4.1"
+      }
+    ]
+  }
+}

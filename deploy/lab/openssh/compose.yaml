@@ -16,6 +16,10 @@ services:
       USER_PASSWORD: labpassword
       PASSWORD_ACCESS: "true"
       SUDO_ACCESS: "false"
+      # The container runtime the SSH live tests drive. A sibling daemon rather than this host's
+      # engine: a Linux container cannot reach a Windows named pipe, and a test that needs the host
+      # engine is a test that cannot run on CI.
+      DOCKER_HOST: tcp://docker:2375
     ports:
       - "127.0.0.1:2222:2222"
     volumes:
@@ -26,6 +30,19 @@ services:
       # test that has to build its own fifty thousand files is testing the building.
       - ./init.d:/custom-cont-init.d:ro
     # Keep it around between test runs; `make lab-down` removes it when it is not wanted.
+    restart: unless-stopped
+
+  # The container runtime the SSH live tests drive. `docker:dind` is the engine; the sshd container
+  # gets the CLI from init.d and reaches this daemon over the compose network. No host port: only
+  # the lab needs it, and publishing another port on Windows is another reserved-range accident.
+  docker:
+    image: docker:dind
+    container_name: sevenshell-lab-docker
+    privileged: true
+    environment:
+      # No TLS between the two lab containers: the network is compose-internal and the alternative
+      # is shipping certificates into a fixture.
+      DOCKER_TLS_CERTDIR: ""
     restart: unless-stopped
 
   # A Telnet console, so the transport is proven against a server that negotiates options rather

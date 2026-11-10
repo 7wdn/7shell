@@ -1,0 +1,30 @@
+{
+  "host": {
+    "os": "linux",
+    "arch": "amd64",
+    "kernel": "6.8.0-45-generic",
+    "cpus": 8,
+    "memory": 8589934592,
+    "Distribution": {
+      "distribution": "ubuntu",
+      "version": "24.04"
+    },
+    "CgroupsVersion": "v2",
+    "CgroupsDriver": "systemd"
+  },
+  "store": {
+    "containerStore": {
+      "number": 2,
+      "running": 1,
+      "paused": 0,
+      "stopped": 1
+    },
+    "imageStore": {
+      "number": 4
+    },
+    "graphDriverName": "overlay"
+  },
+  "version": {
+    "Version": "5.2.3"
+  }
+}

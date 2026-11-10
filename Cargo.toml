@@ -77,6 +77,13 @@ serde_yaml_ng = "0.10"
 # client certificate is one object rather than a second platform trust story.
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "native-tls"] }
 native-tls = "0.2"
+# Kubeconfigs carry client keys in whichever PEM shape the tool that wrote them chose. native-tls
+# only reads PKCS#8, so the two older shapes are converted: EC SEC1 (k3s, kubeadm) and RSA PKCS#1.
+p256 = { version = "0.14", features = ["pem"] }
+rsa = "0.10.0-rc.18"
+# Schannel's native-tls reads client identities from PKCS#8 only when the key is RSA; an EC client
+# certificate (what k3s writes) has to take the PKCS#12 path instead.
+p12 = "0.6"
 
 # DPAPI, for the password handed to the Windows Remote Desktop client. The client reads it out of
 # a temporary .rdp file, so it never appears on a command line; the blob is readable only by the

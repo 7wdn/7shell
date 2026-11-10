@@ -16,5 +16,5 @@ mod parse;
 mod remote;
 mod runner;
 
-pub use manager::ContainerManager;
-pub use runner::Runner;
+pub use manager::{ContainerManager, Provider};
+pub use runner::{LineStream, PtySession, Runner};

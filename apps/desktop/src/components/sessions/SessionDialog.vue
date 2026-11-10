@@ -30,6 +30,8 @@ import {
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import ContainerSettingsFields from "@/components/sessions/ContainerSettingsFields.vue";
+import KubernetesSettingsFields from "@/components/sessions/KubernetesSettingsFields.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
@@ -1034,6 +1036,13 @@ async function forgetKey(): Promise<void> {
               </div>
             </div>
           </section>
+
+          <!--
+            Both are drawn by components of their own: each binds the store, and each turns the one
+            store problem it owns into a sentence beside the field it belongs to.
+          -->
+          <ContainerSettingsFields v-if="editor.isContainer" :submitted="submitted" />
+          <KubernetesSettingsFields v-if="editor.isKubernetes" :submitted="submitted" />
 
           <p v-if="problemText" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
             <span>{{ problemText.message }}</span>

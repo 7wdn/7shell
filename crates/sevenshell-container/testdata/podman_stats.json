@@ -1,0 +1,14 @@
+[
+  {
+    "Name": "edge-proxy",
+    "ContainerID": "4ad471401180",
+    "CPU": 0.15,
+    "MemUsage": 734003200,
+    "MemPerc": 8.5,
+    "NetInput": 1024,
+    "NetOutput": 2048,
+    "BlockInput": 4096,
+    "BlockOutput": 8192,
+    "PIDS": "12"
+  }
+]

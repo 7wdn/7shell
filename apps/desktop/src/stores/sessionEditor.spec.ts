@@ -7,9 +7,10 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionSave: vi.fn(),
   sessionDelete: vi.fn(),
   groupsList: vi.fn(),
+  k8sContexts: vi.fn(),
 }));
 
-import { groupsList, sessionSave, sessionsList } from "@/lib/backend/tauri";
+import { groupsList, k8sContexts, sessionSave, sessionsList } from "@/lib/backend/tauri";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
 import type { Session } from "@/types/session";
@@ -17,6 +18,7 @@ import type { Session } from "@/types/session";
 const sessionsListMock = vi.mocked(sessionsList);
 const sessionSaveMock = vi.mocked(sessionSave);
 const groupsListMock = vi.mocked(groupsList);
+const k8sContextsMock = vi.mocked(k8sContexts);
 
 function sample(id: string, name: string): Session {
   return {
@@ -38,6 +40,7 @@ describe("session editor store", () => {
     sessionsListMock.mockReset().mockResolvedValue([sample("bastion", "bastion"), sample("db", "db")]);
     groupsListMock.mockReset().mockResolvedValue([]);
     sessionSaveMock.mockReset().mockImplementation(async (session: Session) => session);
+    k8sContextsMock.mockReset().mockResolvedValue([]);
   });
 
   it("keeps hops in the order they were added, moved and removed", async () => {
@@ -264,5 +267,198 @@ describe("session editor store", () => {
 
     editor.ftpSecure = true;
     expect(editor.draft().ftp).toEqual({ secure: true });
+  });
+
+  it("starts a session that carries no container or cluster block at that kind's defaults", () => {
+    const editor = useSessionEditorStore();
+    editor.fill(sample("old", "old"));
+
+    expect(editor.isContainer).toBe(false);
+    expect(editor.containerRuntime).toBe("docker");
+    expect(editor.containerTransport).toBe("local");
+    expect(editor.containerSshSession).toBe("");
+    expect(editor.isKubernetes).toBe(false);
+    expect(editor.kubeSource).toBe("defaultPath");
+    expect(editor.kubeContext).toBe("");
+    // Neither block is written onto a session of another kind.
+    expect(editor.draft().container).toBeUndefined();
+    expect(editor.draft().kubernetes).toBeUndefined();
+  });
+
+  it("saves a container block only on container sessions and keeps typed values across a switch", () => {
+    const editor = useSessionEditorStore();
+    editor.fill({
+      ...sample("dock", "dock"),
+      protocol: "container",
+      host: "",
+      port: 0,
+      user: "",
+      container: { runtime: "podman", transport: "ssh", sshSession: "bastion" },
+    });
+
+    expect(editor.isContainer).toBe(true);
+    expect(editor.draft().container).toEqual({ runtime: "podman", transport: "ssh", sshSession: "bastion" });
+    // A container session has no endpoint of its own: the engine is found through the runtime.
+    expect(editor.draft().host).toBe("");
+    expect(editor.draft().user).toBe("");
+
+    editor.setProtocol("ssh");
+    expect(editor.draft().container).toBeUndefined();
+
+    editor.setProtocol("container");
+    expect(editor.containerRuntime).toBe("podman");
+    expect(editor.containerTransport).toBe("ssh");
+    expect(editor.containerSshSession).toBe("bastion");
+    expect(editor.draft().container).toEqual({ runtime: "podman", transport: "ssh", sshSession: "bastion" });
+
+    // The same rule the other protocols' fields follow: a switch is a change of question, never a
+    // reason to throw away an answer — a pasted kubeconfig above all, which cannot be read back.
+    editor.setProtocol("kubernetes");
+    editor.kubeSource = "imported";
+    editor.importedKubeconfig = "apiVersion: v1";
+    editor.kubeContext = "prod";
+    editor.setProtocol("ssh");
+    expect(editor.draft().kubernetes).toBeUndefined();
+    editor.setProtocol("kubernetes");
+    expect(editor.kubeSource).toBe("imported");
+    expect(editor.importedKubeconfig).toBe("apiVersion: v1");
+    expect(editor.kubeContext).toBe("prod");
+  });
+
+  it("requires a saved SSH session only when the container engine is reached over SSH", () => {
+    const editor = useSessionEditorStore();
+    editor.fill({
+      ...sample("dock", "dock"),
+      protocol: "container",
+      container: { runtime: "docker", transport: "ssh" },
+    });
+
+    expect(editor.sessionProblems.containerSshSession).toBe(true);
+    expect(editor.hasProblems).toBe(true);
+
+    editor.containerSshSession = "bastion";
+    expect(editor.sessionProblems.containerSshSession).toBe(false);
+    expect(editor.hasProblems).toBe(false);
+
+    // A local engine has no route to name, so an empty session id is not a problem.
+    editor.containerSshSession = "";
+    editor.containerTransport = "local";
+    expect(editor.sessionProblems.containerSshSession).toBe(false);
+    expect(editor.draft().container).toEqual({
+      runtime: "docker",
+      transport: "local",
+      sshSession: undefined,
+      namespace: undefined,
+    });
+  });
+
+  it("keeps a nerdctl namespace out of a session that runs another runtime", () => {
+    const editor = useSessionEditorStore();
+    editor.fill({
+      ...sample("dock", "dock"),
+      protocol: "container",
+      container: { runtime: "nerdctl", transport: "local", namespace: "lab" },
+    });
+
+    expect(editor.draft().container).toMatchObject({ runtime: "nerdctl", namespace: "lab" });
+    // A namespace is nerdctl's own axis; the other runtimes have nowhere to put one.
+    editor.containerRuntime = "docker";
+    expect(editor.draft().container?.namespace).toBeUndefined();
+    expect(editor.containerNamespace).toBe("lab");
+  });
+
+  it("saves Kubernetes settings and sends a pasted kubeconfig as the session secret", async () => {
+    const library = useSessionsStore();
+    const editor = useSessionEditorStore();
+    editor.fill({ ...sample("cluster", "cluster"), protocol: "kubernetes", host: "", port: 0, user: "" });
+
+    expect(editor.isKubernetes).toBe(true);
+    expect(editor.draft().kubernetes).toEqual({
+      source: "defaultPath",
+      context: undefined,
+      namespace: undefined,
+      viaSsh: undefined,
+    });
+    // Nothing pasted means "keep the stored kubeconfig", exactly like a password.
+    expect(editor.secretInput()).toBeUndefined();
+
+    editor.kubeSource = "imported";
+    editor.importedKubeconfig = "apiVersion: v1\nkind: Config\n";
+    editor.kubeContext = "prod";
+    editor.kubeNamespace = "apps";
+    editor.kubeViaSsh = "bastion";
+
+    const kubernetes = { source: "imported", context: "prod", namespace: "apps", viaSsh: "bastion" };
+    expect(editor.draft().kubernetes).toEqual(kubernetes);
+    expect(editor.secretInput()).toEqual({ value: "apiVersion: v1\nkind: Config\n" });
+
+    await library.save(editor.draft(), editor.secretInput());
+    expect(sessionSaveMock).toHaveBeenCalledWith(expect.objectContaining({ protocol: "kubernetes", kubernetes }), {
+      value: "apiVersion: v1\nkind: Config\n",
+    });
+  });
+
+  it("requires a pasted kubeconfig on a new import and not when one is already stored", () => {
+    const editor = useSessionEditorStore();
+    editor.fill({ ...sample("new", "new"), protocol: "kubernetes" });
+    editor.kubeSource = "imported";
+
+    expect(editor.sessionProblems.kubeconfig).toBe(true);
+    expect(editor.hasProblems).toBe(true);
+
+    editor.importedKubeconfig = "apiVersion: v1";
+    expect(editor.sessionProblems.kubeconfig).toBe(false);
+
+    // An edited session that already holds a kubeconfig: the empty field keeps it rather than
+    // replacing it, so it is not a problem.
+    editor.fill({
+      ...sample("stored", "stored"),
+      protocol: "kubernetes",
+      auth: { method: "password", hasSecret: true },
+    });
+    editor.kubeSource = "imported";
+    expect(editor.kubeconfigStored).toBe(true);
+    expect(editor.sessionProblems.kubeconfig).toBe(false);
+    expect(editor.secretInput()).toBeUndefined();
+
+    // An SSH session's stored password lives in the same secret slot but is not a kubeconfig, so
+    // turning that session into a cluster session still has to ask for one.
+    editor.fill({ ...sample("was-ssh", "was-ssh"), auth: { method: "password", hasSecret: true } });
+    editor.setProtocol("kubernetes");
+    editor.kubeSource = "imported";
+    expect(editor.kubeconfigStored).toBe(false);
+    expect(editor.sessionProblems.kubeconfig).toBe(true);
+  });
+
+  it("reads contexts from the pasted kubeconfig, and from the default path only when nothing is pasted", async () => {
+    const editor = useSessionEditorStore();
+    editor.fill({ ...sample("cluster", "cluster"), protocol: "kubernetes" });
+    k8sContextsMock.mockResolvedValue([
+      { name: "prod", cluster: "prod-cluster", user: "alice", namespace: "default", current: true },
+    ]);
+
+    await editor.readKubeContexts();
+    expect(k8sContextsMock).toHaveBeenCalledWith(undefined);
+    expect(editor.kubeContexts.map((context) => context.name)).toEqual(["prod"]);
+
+    editor.kubeSource = "imported";
+    // The stored document never comes back, so an empty textarea must not fall through to
+    // whatever this machine's default kubeconfig says: that is a different cluster.
+    await editor.readKubeContexts();
+    expect(k8sContextsMock).toHaveBeenCalledTimes(1);
+
+    editor.importedKubeconfig = "apiVersion: v1";
+    await editor.readKubeContexts();
+    expect(k8sContextsMock).toHaveBeenLastCalledWith({ value: "apiVersion: v1" });
+  });
+
+  it("keeps an unsupported read-contexts answer as an envelope instead of rejecting", async () => {
+    const editor = useSessionEditorStore();
+    editor.fill({ ...sample("cluster", "cluster"), protocol: "kubernetes" });
+    k8sContextsMock.mockRejectedValueOnce(new Error("app_unsupported: the command is still a stub"));
+
+    await expect(editor.readKubeContexts()).resolves.toBeUndefined();
+    expect(editor.kubeContextsFailure?.code).toBeTruthy();
+    expect(editor.kubeContextsBusy).toBe(false);
   });
 });

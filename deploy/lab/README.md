@@ -21,6 +21,18 @@ fixture, not something to expose.
 The Telnet console listens on **127.0.0.1:23230** (busybox `telnetd` from `alpine`), also loopback
 only. The host port is not 23 because this machine's Windows reserves 1779-2978 for Hyper-V.
 
+## The container and cluster labs
+
+`openssh/compose.yaml` also starts a `docker:dind` service (`sevenshell-lab-docker`). The sshd
+container installs the Docker CLI at start-up (`init.d/20-docker-cli.sh`) and reaches that daemon
+over the compose network, which is what lets the container-over-SSH live tests run against a real
+engine without giving a Linux container access to a Windows named pipe. The daemon publishes no
+host port.
+
+`kubernetes/compose.yaml` is a one-node k3s for the cluster live tests. Copy its kubeconfig out
+with `docker exec sevenshell-lab-k3s cat /etc/rancher/k3s/k3s.yaml > kubeconfig.yaml`; k3s writes
+an SEC1 EC client key and the client normalizes it before building the TLS identity.
+
 ## What the recipes will cover
 
 | Recipe | What it is for |

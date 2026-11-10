@@ -20,8 +20,10 @@ use crate::Purpose;
 use crate::route::{BoxedStream, Route};
 use sevenshell_types::PRODUCT_NAME;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 use crate::credential::load_private_key;
 use crate::hostkey::{ExpectedKey, plain_key};
@@ -925,6 +927,39 @@ mod tests {
     }
 
     #[test]
+    fn a_command_terminal_can_be_moved_into_the_task_that_owns_it() {
+        // A container terminal is carried by a task of its own, so the handle has to cross a
+        // spawn boundary. The output queue is deliberately not shared, which is why this asks
+        // for `Send` and not `Sync`.
+        fn assert_send<T: Send>() {}
+        assert_send::<PtyExecChannel>();
+    }
+
+    #[test]
+    fn output_that_arrived_before_the_answer_keeps_its_own_stream() {
+        let early = Early {
+            chunks: vec![
+                (false, b"out-first\n".to_vec()),
+                (true, b"err\n".to_vec()),
+                (false, b"out-last\n".to_vec()),
+            ],
+        };
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        early.split_into(&mut stdout, &mut stderr);
+        assert_eq!(stdout, b"out-first\nout-last\n");
+        assert_eq!(stderr, b"err\n");
+    }
+
+    #[test]
+    fn an_output_stream_nobody_will_read_ends_at_once() {
+        let mut output = ended_output();
+        assert!(matches!(
+            output.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ));
+    }
+
+    #[test]
     fn a_named_host_key_is_a_host_key_failure_and_nothing_was_sent() {
         let failure = Failure::Envelope(ShellError::ssh_host_key_mismatch("host.example", 22, "ssh-ed25519"));
         let error = failure_envelope("host.example", 22, Duration::from_secs(10), failure);
@@ -1038,6 +1073,374 @@ mod tests {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// A command on a channel of its own.
+//
+// A terminal is drawn and a command is read, but both are one session channel, with a pty or
+// without one. What this adds to the shell path is what a container terminal needs and a terminal
+// tab never did: a reply checked for each request, an exit status that outlives the last byte, and a
+// close that can be called twice — by the person, and by the window going away.
+// ---------------------------------------------------------------------------------------------
+
+/// How many chunks of output wait for their reader before the far side waits for it.
+///
+/// Bounded on purpose: output nobody is reading must not become memory, and a full queue is how
+/// the reader learns that its consumer stopped.
+const OUTPUT_BACKLOG: usize = 64;
+
+/// A command running on a pseudo terminal.
+///
+/// The pty is what makes an interactive command behave: the program on the far side sees a
+/// terminal, so it prompts, colours and redraws, and its standard error arrives on the same stream
+/// as its standard output — which is why nothing here separates them.
+///
+/// The control methods take `&self`, so the handle can be kept anywhere the keystrokes come from.
+/// Output is taken out of the channel once, before that: a terminal has exactly one reader, and
+/// [`take_output`](Self::take_output) is how the caller moves the bytes into its own loop.
+pub struct PtyExecChannel {
+    /// Everything the terminal is sent. Writing does not need the read half or a lock.
+    writing: ChannelWriteHalf<Msg>,
+    /// The reader's half, taken by whoever draws the terminal.
+    output: Option<mpsc::Receiver<Vec<u8>>>,
+    /// Where the reader records the status the server reported.
+    exit_code: Arc<Mutex<Option<u32>>>,
+    /// The task forwarding the output. `close` ends it, because nothing else would.
+    reader: AsyncMutex<Option<JoinHandle<()>>>,
+    /// Set by `close`, so a second close is a no-op rather than a second teardown.
+    closed: AtomicBool,
+    host: String,
+    port: u16,
+}
+
+impl PtyExecChannel {
+    /// Bytes for the command's terminal.
+    pub async fn write(&self, data: &[u8]) -> Result<(), ShellError> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(ShellError::ssh_channel_failed(
+                &self.host,
+                self.port,
+                "the terminal was closed before this write",
+            ));
+        }
+        self.writing
+            .data_bytes(data.to_vec())
+            .await
+            .map_err(|error| self.failure("the terminal could not be written to", &error))
+    }
+
+    /// Tells the far side the terminal changed size, so the program inside redraws.
+    pub async fn resize(&self, columns: u32, rows: u32) -> Result<(), ShellError> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(ShellError::ssh_channel_failed(
+                &self.host,
+                self.port,
+                "the terminal was closed before this resize",
+            ));
+        }
+        // The pixel fields stay zero: this is a character terminal, and there are no pixels to
+        // report.
+        self.writing
+            .window_change(columns, rows, 0, 0)
+            .await
+            .map_err(|error| self.failure("the terminal could not be resized", &error))
+    }
+
+    /// The next chunk of output, or nothing when the command has ended.
+    pub async fn next_output(&mut self) -> Option<Vec<u8>> {
+        match self.output.as_mut() {
+            Some(output) => output.recv().await,
+            // The stream was handed to another reader; there is nothing left to read here.
+            None => None,
+        }
+    }
+
+    /// Takes the output stream out of the channel, leaving the control side behind.
+    ///
+    /// Called after the output has been taken, `next_output` ends at once rather than waiting for
+    /// bytes nobody kept.
+    pub fn take_output(&mut self) -> mpsc::Receiver<Vec<u8>> {
+        self.output.take().unwrap_or_else(ended_output)
+    }
+
+    /// The status the command reported, once its channel has ended.
+    pub fn exit_code(&self) -> Option<u32> {
+        self.exit_code.lock().ok().and_then(|status| *status)
+    }
+
+    /// Ends the command and its channel; calling it twice is allowed.
+    ///
+    /// Only the channel is closed. The connection is shared with everything else on it, so a
+    /// container terminal closing must not end the session it lives on.
+    ///
+    /// The reader is ended here rather than left to notice the close by itself. The library stops
+    /// delivering messages for a channel this side closed — the server's confirmation is dropped on
+    /// the way in — so a reader waiting for the end would wait until the connection died. Closing is
+    /// a decision, and the output stream ends with it.
+    pub async fn close(&self) -> Result<(), ShellError> {
+        if self.closed.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let mut outcome = Ok(());
+        keep_first(
+            &mut outcome,
+            self.writing
+                .eof()
+                .await
+                .map_err(|error| self.failure("the command's terminal could not be ended", &error)),
+        );
+        keep_first(
+            &mut outcome,
+            self.writing
+                .close()
+                .await
+                .map_err(|error| self.failure("the command's channel could not be closed", &error)),
+        );
+        if let Some(reader) = self.reader.lock().await.take() {
+            // Aborting drops the sender of the output queue, which is what the caller sees as the
+            // end of the terminal.
+            reader.abort();
+        }
+        outcome
+    }
+
+    /// The failure shape for this channel.
+    fn failure(&self, what: &str, error: &russh::Error) -> ShellError {
+        ShellError::ssh_channel_failed(&self.host, self.port, format!("{what}: {error}"))
+    }
+}
+
+impl SshSession {
+    /// Starts a command on a pseudo terminal of the given size.
+    ///
+    /// A pty is what makes an interactive command behave: without one the program on the far side
+    /// is writing into a pipe, so it neither prompts nor colours. Both requests ask for a reply, so
+    /// a server that refuses the pty or the command says so here instead of leaving behind a
+    /// channel that produces nothing and never explains itself.
+    ///
+    /// The session must already be verified and authenticated; nothing here touches either.
+    pub async fn open_pty_exec(
+        &self,
+        command: &str,
+        terminal_type: &str,
+        columns: u32,
+        rows: u32,
+    ) -> Result<PtyExecChannel, ShellError> {
+        let mut channel = self.open_session_channel_for("a command").await?;
+
+        channel
+            .request_pty(true, terminal_type, columns, rows, 0, 0, &[])
+            .await
+            .map_err(|error| self.channel_failure("the pseudo-terminal could not be requested", &error))?;
+        let mut early = Early::default();
+        await_command_reply(&mut channel, self, "the pseudo-terminal", &mut early).await?;
+
+        channel
+            .exec(true, command.to_owned())
+            .await
+            .map_err(|error| self.channel_failure(&format!("`{command}` could not be started"), &error))?;
+        await_command_reply(&mut channel, self, "the command", &mut early).await?;
+
+        let (reading, writing) = channel.split();
+        let exit_code = Arc::new(Mutex::new(None));
+        let (sender, output) = mpsc::channel(OUTPUT_BACKLOG);
+        let reader = spawn_output_reader(reading, sender, Arc::clone(&exit_code), early);
+
+        Ok(PtyExecChannel {
+            writing,
+            output: Some(output),
+            exit_code,
+            reader: AsyncMutex::new(Some(reader)),
+            closed: AtomicBool::new(false),
+            host: self.host.clone(),
+            port: self.port,
+        })
+    }
+
+    /// Runs one command with bytes fed to its standard input, and waits for it to finish.
+    ///
+    /// A container image archive and a registry password both reach the far side this way: they are
+    /// data on a stream, not words in a command line, and the password must never be the latter.
+    ///
+    /// The input is written while the output is read. One after the other would deadlock the first
+    /// time a command copies its input to its output and fills the channel's window — `tar`, `cat`
+    /// and `docker load` all do it.
+    pub async fn exec_with_input(
+        &self,
+        command: &str,
+        input: &[u8],
+        timeout: Duration,
+        max_output_bytes: usize,
+    ) -> Result<crate::ExecCapture, ShellError> {
+        let started = Instant::now();
+        let mut channel = self.open_session_channel_for("a command").await?;
+        channel
+            .exec(true, command.to_owned())
+            .await
+            .map_err(|error| self.channel_failure(&format!("`{command}` could not be started"), &error))?;
+
+        let mut early = Early::default();
+        await_command_reply(&mut channel, self, "the command", &mut early).await?;
+
+        let (mut reading, writing) = channel.split();
+        let bytes = input.to_vec();
+        let writer = tokio::spawn(async move {
+            writing.data_bytes(bytes).await?;
+            writing.eof().await
+        });
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        early.split_into(&mut stdout, &mut stderr);
+
+        let mut exit_code = None;
+        let mut truncated = false;
+
+        let collect = async {
+            // Read until the channel closes, not until it ends: the exit status is sent after the
+            // last byte, and the status is half of what the caller asked for.
+            while let Some(message) = reading.wait().await {
+                match message {
+                    ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
+                    // Stream 1 is standard error; there is no other stream this talks to.
+                    ChannelMsg::ExtendedData { data, ext: 1 } => stderr.extend_from_slice(&data),
+                    ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
+                    ChannelMsg::Close => break,
+                    _ => {}
+                }
+                if stdout.len() + stderr.len() > max_output_bytes {
+                    truncated = true;
+                    break;
+                }
+            }
+        };
+
+        let timed_out = tokio::time::timeout(timeout, collect).await.is_err();
+        // Either way the writer is finished with, and its outcome is deliberately ignored: a
+        // command that exited without reading all of its input answers with its exit status, and a
+        // write error would only restate that.
+        writer.abort();
+
+        if timed_out {
+            return Err(ShellError::ssh_timeout(&self.host, self.port, whole_seconds(timeout)));
+        }
+
+        Ok(crate::ExecCapture {
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+            exit_code,
+            duration: started.elapsed(),
+            truncated,
+        })
+    }
+}
+
+/// Output that arrived while a request was still waiting for its answer.
+///
+/// A server may speak before it acknowledges: a command that starts writing while the
+/// acknowledgement is still in flight produces real output, and discarding it because the reply
+/// had not arrived would lose the beginning of every fast command.
+#[derive(Default)]
+struct Early {
+    /// Chunks in the order the server sent them, with whether each came on the error stream.
+    chunks: Vec<(bool, Vec<u8>)>,
+}
+
+impl Early {
+    /// Adds the chunks to the stream each one belongs to.
+    fn split_into(self, stdout: &mut Vec<u8>, stderr: &mut Vec<u8>) {
+        for (error, data) in self.chunks {
+            if error {
+                stderr.extend_from_slice(&data);
+            } else {
+                stdout.extend_from_slice(&data);
+            }
+        }
+    }
+}
+
+/// Waits for the server's answer to a request that asked for one.
+async fn await_command_reply(
+    channel: &mut Channel<Msg>,
+    session: &SshSession,
+    what: &str,
+    early: &mut Early,
+) -> Result<(), ShellError> {
+    loop {
+        match channel.wait().await {
+            Some(ChannelMsg::Success) => return Ok(()),
+            Some(ChannelMsg::Failure) => {
+                return Err(ShellError::ssh_channel_failed(
+                    &session.host,
+                    session.port,
+                    format!("the server refused {what}"),
+                ));
+            }
+            Some(ChannelMsg::Eof | ChannelMsg::Close) | None => {
+                return Err(ShellError::ssh_channel_failed(
+                    &session.host,
+                    session.port,
+                    format!("the channel ended before the server answered for {what}"),
+                ));
+            }
+            Some(ChannelMsg::Data { data }) => early.chunks.push((false, data.to_vec())),
+            Some(ChannelMsg::ExtendedData { data, ext }) => early.chunks.push((ext == 1, data.to_vec())),
+            // A window adjustment, an exit status, another request's answer: not this answer.
+            Some(_) => {}
+        }
+    }
+}
+
+/// Forwards everything a command's channel produces until the channel ends.
+///
+/// Standard error is forwarded on the same stream as standard output, because a pty merges them
+/// anyway: a reader showing a container's terminal has one place to put its words, and dropping
+/// the error stream would leave a command that failed with nothing to show for it.
+///
+/// Dropping the sender is what ends the caller's stream, and it happens when the channel ends.
+/// `Eof` alone does not end it: the exit status is sent after the last byte and before the close.
+fn spawn_output_reader(
+    mut reading: ChannelReadHalf,
+    sender: mpsc::Sender<Vec<u8>>,
+    exit_code: Arc<Mutex<Option<u32>>>,
+    early: Early,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        for (_, data) in early.chunks {
+            if sender.send(data).await.is_err() {
+                return;
+            }
+        }
+        loop {
+            match reading.wait().await {
+                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    if sender.send(data.to_vec()).await.is_err() {
+                        // Nobody is reading any more. Stop reading rather than buffer a terminal
+                        // nobody asked to see.
+                        return;
+                    }
+                }
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    if let Ok(mut slot) = exit_code.lock() {
+                        *slot = Some(exit_status);
+                    }
+                }
+                Some(ChannelMsg::Close) | None => return,
+                Some(_) => {}
+            }
+        }
+    })
+}
+
+/// A receiver whose sender is already gone: reading it ends at once.
+fn ended_output() -> mpsc::Receiver<Vec<u8>> {
+    let (sender, receiver) = mpsc::channel(1);
+    drop(sender);
+    receiver
 }
 
 /// The tests that need a real server. They are ignored by default, so a normal `cargo test`

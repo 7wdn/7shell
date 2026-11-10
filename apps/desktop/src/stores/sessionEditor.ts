@@ -13,8 +13,12 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 
+import { backend } from "@/lib/backend/api";
+import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { useSessionsStore } from "@/stores/sessions";
+import type { ContainerRuntime, ContainerSettings, ContainerTransport } from "@/types/container";
 import { PROTOCOLS, protocolById, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
+import type { KubeconfigSource, KubeContextInfo, KubernetesSettings } from "@/types/k8s";
 import type {
   BackspaceMode,
   DesktopSettings,
@@ -65,6 +69,10 @@ const DEFAULT_SERIAL: SerialSettings = {
 const DEFAULT_LOCAL: LocalSettings = { shell: "", args: "" };
 const DEFAULT_WSL: WslSettings = { distro: "", args: "" };
 const DEFAULT_FTP: FtpSettings = { secure: false };
+/** A new container session asks the local Docker engine, which is the one most machines have. */
+const DEFAULT_CONTAINER: ContainerSettings = { runtime: "docker", transport: "local" };
+/** A new cluster session reads the kubeconfig this machine already has and lets it pick a context. */
+const DEFAULT_KUBERNETES: KubernetesSettings = { source: "defaultPath" };
 
 /** The range the serial driver accepts, and the ceiling the backend checks. */
 const BAUD_MIN = 50;
@@ -88,7 +96,16 @@ export interface ForwardDraft {
 export type ForwardProblem = "bindHost" | "bindPort" | "targetHost" | "targetPort";
 
 /** What is wrong with the session itself, named by the field it belongs to. */
-export type SessionFieldProblem = "name" | "host" | "user" | "port" | "key" | "serialPort" | "serialBaud";
+export type SessionFieldProblem =
+  | "name"
+  | "host"
+  | "user"
+  | "port"
+  | "key"
+  | "serialPort"
+  | "serialBaud"
+  | "containerSshSession"
+  | "kubeconfig";
 
 /** One hop as the list draws it. No session means the saved one it named has been deleted. */
 export interface HopEntry {
@@ -257,6 +274,35 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   /** Whether an FTP session requires TLS before the login. */
   const ftpSecure = ref(DEFAULT_FTP.secure);
 
+  /**
+   * Which engine a container session drives, and where that engine is.
+   *
+   * `ssh` names a saved SSH session rather than repeating an address: the credentials, the route
+   * and the host key are that session's, so the engine is reached without a second copy of any of
+   * them. A namespace is a nerdctl concept only, so it is kept beside the runtime and not inside it.
+   */
+  const containerRuntime = ref<ContainerRuntime>(DEFAULT_CONTAINER.runtime);
+  const containerTransport = ref<ContainerTransport>(DEFAULT_CONTAINER.transport);
+  const containerSshSession = ref("");
+  const containerNamespace = ref("");
+
+  /**
+   * Where a cluster session's kubeconfig comes from, and what it should be read as.
+   *
+   * The imported document is held as text and never read back: it travels inwards as the session's
+   * secret, the same way a password does, and the wire type carries only where to look.
+   */
+  const kubeSource = ref<KubeconfigSource>(DEFAULT_KUBERNETES.source);
+  const kubeContext = ref("");
+  const kubeNamespace = ref("");
+  const kubeViaSsh = ref("");
+  const importedKubeconfig = ref("");
+
+  /** What the last "read contexts" answer held, and how that question is going. */
+  const kubeContexts = ref<readonly KubeContextInfo[]>([]);
+  const kubeContextsBusy = ref(false);
+  const kubeContextsFailure = ref<ShellError | null>(null);
+
   /** Whether this connection has a host and a port to type. A serial port and a shell do not. */
   const needsEndpoint = computed(
     () =>
@@ -286,6 +332,32 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   /** Whether this is an FTP or FTPS session. */
   const isFtp = computed(() => protocol.value === "ftp");
 
+  /** Whether this session drives a container engine on this machine or over SSH. */
+  const isContainer = computed(() => protocol.value === "container");
+
+  /** Whether this session talks to a Kubernetes API server. */
+  const isKubernetes = computed(() => protocol.value === "kubernetes");
+
+  /**
+   * The saved sessions either new protocol may reach its target through.
+   *
+   * A reference and not a copy: both protocols run on the far side of an SSH session exactly as a
+   * jump host does, and the connection it names brings its credentials and route with it.
+   */
+  const sshSessions = computed(() => library.sessions.filter((session) => session.protocol === "ssh"));
+
+  /**
+   * Whether the session being edited already holds a kubeconfig.
+   *
+   * The editor never receives the document back, so a stored one is a fact reported by the session
+   * and the only way to know that an empty textarea is "keep what is there" rather than "none".
+   * It has to be a session that *was* a cluster session: an SSH session's stored password is the
+   * same secret slot but not a kubeconfig, and switching that session's kind must ask for one.
+   */
+  const kubeconfigStored = computed(
+    () => editing.value?.protocol === "kubernetes" && (editing.value?.auth.hasSecret ?? false),
+  );
+
   /** The route as the list draws it, in the order it is connected. A missing session stays a row. */
   const hops = computed<HopEntry[]>(() =>
     jumps.value.map((id) => ({ id, session: library.sessions.find((session) => session.id === id) })),
@@ -306,6 +378,15 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     key: isSsh.value && method.value === "publicKey" && !attachedKey.value?.keyRef,
     serialPort: protocol.value === "serial" && serialPort.value.trim() === "",
     serialBaud: protocol.value === "serial" && !validBaud(serialBaud.value),
+    // An engine on another machine is reached through a saved session; an empty id has no route.
+    containerSshSession: isContainer.value && containerTransport.value === "ssh" && containerSshSession.value === "",
+    // A new imported session needs its document pasted in; an edited one may already hold it, and
+    // an empty textarea there means "keep the stored kubeconfig" rather than "there is none".
+    kubeconfig:
+      isKubernetes.value &&
+      kubeSource.value === "imported" &&
+      importedKubeconfig.value.trim() === "" &&
+      !kubeconfigStored.value,
   }));
 
   const forwardProblems = computed<Record<string, readonly ForwardProblem[]>>(() => {
@@ -397,6 +478,23 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     wslDistro.value = wsl.distro;
     wslArgs.value = wsl.args;
     ftpSecure.value = session?.ftp?.secure ?? DEFAULT_FTP.secure;
+    // A session saved before these protocols existed carries no block: it starts at the defaults
+    // its own kind would use, which is also what a new session starts from.
+    const container = session?.container ?? DEFAULT_CONTAINER;
+    containerRuntime.value = container.runtime;
+    containerTransport.value = container.transport;
+    containerSshSession.value = container.sshSession ?? "";
+    containerNamespace.value = container.namespace ?? "";
+    const kubernetes = session?.kubernetes ?? DEFAULT_KUBERNETES;
+    kubeSource.value = kubernetes.source;
+    kubeContext.value = kubernetes.context ?? "";
+    kubeNamespace.value = kubernetes.namespace ?? "";
+    kubeViaSsh.value = kubernetes.viaSsh ?? "";
+    importedKubeconfig.value = "";
+    // What was listed for the previous kubeconfig is not an answer about this one.
+    kubeContexts.value = [];
+    kubeContextsBusy.value = false;
+    kubeContextsFailure.value = null;
   }
 
   /**
@@ -404,7 +502,41 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
    * not the same as blank, and there is deliberately no way to say "remove it".
    */
   function secretInput(): SecretInput | undefined {
+    // A cluster session's secret is the kubeconfig document itself: the wire type says where to
+    // look and never carries the file, so pasted text travels the way a password does and is
+    // stored under the same "empty means keep it" rule.
+    if (isKubernetes.value) {
+      return importedKubeconfig.value.trim() === "" ? undefined : { value: importedKubeconfig.value };
+    }
     return secret.value === "" ? undefined : { value: secret.value };
+  }
+
+  /**
+   * Asks the shell which contexts a kubeconfig holds.
+   *
+   * For the default path there is nothing to send; for an imported one the pasted document is sent
+   * as a secret so the contexts are read from it rather than from whatever this machine's default
+   * happens to be. A stored kubeconfig cannot be read back through the editor, so an import with an
+   * empty textarea asks nothing instead of reading the wrong file.
+   */
+  async function readKubeContexts(): Promise<void> {
+    if (!isKubernetes.value || kubeContextsBusy.value) {
+      return;
+    }
+    if (kubeSource.value === "imported" && importedKubeconfig.value.trim() === "") {
+      return;
+    }
+
+    kubeContextsBusy.value = true;
+    kubeContextsFailure.value = null;
+    try {
+      const input = kubeSource.value === "imported" ? { value: importedKubeconfig.value } : undefined;
+      kubeContexts.value = await backend.k8s.contexts(input);
+    } catch (error) {
+      kubeContextsFailure.value = asShellError(error, "k8s_contexts");
+    } finally {
+      kubeContextsBusy.value = false;
+    }
   }
 
   /** What would be saved. Routes and forwards are part of the session, like every other field. */
@@ -445,24 +577,32 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       wsl: { distro: wslDistro.value, args: wslArgs.value.trim() },
       webdav: { url: isWebDav.value ? host.value.trim() : "" },
       ftp: { secure: isFtp.value && ftpSecure.value },
-      container:
-        protocol.value === "container"
-          ? {
-              runtime: "docker",
-              transport: "local",
-              sshSession: "",
-              namespace: "",
-            }
-          : undefined,
-      kubernetes:
-        protocol.value === "kubernetes"
-          ? {
-              source: "defaultPath",
-              context: undefined,
-              namespace: "",
-              viaSsh: undefined,
-            }
-          : undefined,
+      container: isContainer.value
+        ? {
+            runtime: containerRuntime.value,
+            transport: containerTransport.value,
+            // A local engine has no remote session, and a namespace is nerdctl's alone: either
+            // saved under a transport that ignores it would be a field the next reader has to
+            // know to ignore.
+            sshSession:
+              containerTransport.value === "ssh" && containerSshSession.value !== ""
+                ? containerSshSession.value
+                : undefined,
+            namespace:
+              containerRuntime.value === "nerdctl" && containerNamespace.value.trim() !== ""
+                ? containerNamespace.value.trim()
+                : undefined,
+          }
+        : undefined,
+      kubernetes: isKubernetes.value
+        ? {
+            source: kubeSource.value,
+            // Empty means "whatever the kubeconfig says": both fields are answered on the far side.
+            context: kubeContext.value.trim() === "" ? undefined : kubeContext.value.trim(),
+            namespace: kubeNamespace.value.trim() === "" ? undefined : kubeNamespace.value.trim(),
+            viaSsh: kubeViaSsh.value === "" ? undefined : kubeViaSsh.value,
+          }
+        : undefined,
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
@@ -565,7 +705,24 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     isRdp,
     isWebDav,
     isFtp,
+    isContainer,
+    isKubernetes,
     ftpSecure,
+    containerRuntime,
+    containerTransport,
+    containerSshSession,
+    containerNamespace,
+    kubeSource,
+    kubeContext,
+    kubeNamespace,
+    kubeViaSsh,
+    importedKubeconfig,
+    kubeContexts,
+    kubeContextsBusy,
+    kubeContextsFailure,
+    kubeconfigStored,
+    sshSessions,
+    readKubeContexts,
     hops,
     hopChoices,
     sessionProblems,

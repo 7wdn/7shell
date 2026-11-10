@@ -15,6 +15,9 @@ base64 = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
 native-tls = { workspace = true }
+p12 = { workspace = true }
+p256 = { workspace = true }
+rsa = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

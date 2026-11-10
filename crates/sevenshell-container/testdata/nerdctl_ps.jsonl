@@ -1,0 +1,2 @@
+{"Command":"\"nginx -g daemon off;\"","CreatedAt":"2026-08-24 08:00:12 +0800 CST","ID":"c0ffee123456","Image":"nginx:1.27","Names":"front","Ports":"0.0.0.0:80->80/tcp","State":"running","Status":"Up 8 minutes"}
+{"Command":"\"/pause\"","CreatedAt":"2026-08-24 07:11:45 +0800 CST","ID":"a3f9c2d1e8b7","Image":"registry.k8s.io/pause:3.9","Names":"sandbox","Ports":"","State":"paused","Status":"Up 5 minutes (Paused)"}

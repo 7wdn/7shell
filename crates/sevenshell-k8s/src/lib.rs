@@ -17,3 +17,5 @@ mod rest;
 mod watch;
 
 pub use client::{K8sClient, K8sManager, KubeContext, Kubeconfig};
+pub use exec::{ExecSession, open_exec};
+pub use logs::{LogHandle, LogOptions, LogStream, open_logs, open_logs_with_options};

@@ -1,0 +1,14 @@
+{
+  "Client": {
+    "Version": "5.2.3"
+  },
+  "Server": {
+    "Version": "5.2.3",
+    "Components": [
+      {
+        "Name": "Podman",
+        "Version": "5.2.3"
+      }
+    ]
+  }
+}

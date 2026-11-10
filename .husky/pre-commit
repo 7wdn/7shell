@@ -1,3 +1,4 @@
+#!/usr/bin/env sh
 # Staged files only: format them, then check the whole repository for forbidden traces
 # (the rules live in an ignored local file; with none present the check reports "skipped").
 pnpm exec lint-staged

@@ -1,0 +1,26 @@
+# A real Kubernetes API server for the live cluster tests.
+#
+# One node, no ingress controller and no service load balancer: the tests exercise the API and the
+# exec/log WebSockets, not a cluster's routing. Bound to loopback only.
+#
+# The kubeconfig is generated inside the container and must be copied out:
+#
+#   docker exec sevenshell-lab-k3s cat /etc/rancher/k3s/k3s.yaml > kubeconfig.yaml
+#
+# k3s writes an SEC1 EC client key. The client accepts it (it normalizes PEM keys before building
+# the TLS identity); if that ever regresses, `openssl pkcs8 -topk8 -nocrypt` produces a PKCS#8 copy
+# for a manual repro.
+
+services:
+  k3s:
+    image: rancher/k3s:v1.31.4-k3s1
+    container_name: sevenshell-lab-k3s
+    privileged: true
+    command:
+      - server
+      - --disable=traefik
+      - --disable=servicelb
+      - --tls-san=127.0.0.1
+    ports:
+      - "127.0.0.1:6443:6443"
+    restart: unless-stopped
