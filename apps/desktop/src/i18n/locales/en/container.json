@@ -1,0 +1,9 @@
+{
+  "container": {
+    "title": "Containers",
+    "pending": "The container workspace is being built.",
+    "tab": {
+      "close": "Close this container workspace"
+    }
+  }
+}

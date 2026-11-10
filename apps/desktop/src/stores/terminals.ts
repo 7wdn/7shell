@@ -187,7 +187,29 @@ export interface BatchTab {
   id: string;
 }
 
-export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab | BatchTab;
+/**
+ * A container engine, as a tab.
+ *
+ * The tab owns one connection: the pane opens it when the tab is first drawn and the store closes
+ * it when the tab goes away, because a backend connection with nothing on screen is a process
+ * nobody can see or stop.
+ */
+export interface ContainerTab {
+  readonly kind: "container";
+  id: string;
+  readonly session: Session;
+  connectionId: string | null;
+}
+
+/** A Kubernetes cluster, as a tab. Same lifecycle as the container tab. */
+export interface KubernetesTab {
+  readonly kind: "kubernetes";
+  id: string;
+  readonly session: Session;
+  connectionId: string | null;
+}
+
+export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab | BatchTab | ContainerTab | KubernetesTab;
 
 /**
  * The session a tab is about, or nothing when it is about no host.
@@ -351,6 +373,17 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // An FTP session is a file browser and nothing else too.
     if (session.protocol === "ftp") {
       await openFiles(session);
+      return;
+    }
+    // A container engine or a cluster has a workspace of its own; neither is a terminal.
+    if (session.protocol === "container") {
+      recents.record(session.id);
+      openContainer(session);
+      return;
+    }
+    if (session.protocol === "kubernetes") {
+      recents.record(session.id);
+      openKubernetes(session);
       return;
     }
     if (connectingSessionIds.value.includes(session.id)) {
@@ -762,6 +795,32 @@ export const useTerminalsStore = defineStore("terminals", () => {
     addTab({ kind: "batch", id: crypto.randomUUID() });
   }
 
+  /** Opens a container engine for a session, or goes to the tab already showing it. */
+  function openContainer(session: Session): void {
+    const showing = tabs.value.find(
+      (entry): entry is ContainerTab => entry.kind === "container" && entry.session.id === session.id,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({ kind: "container", id: crypto.randomUUID(), session, connectionId: null });
+  }
+
+  /** Opens a cluster for a session, or goes to the tab already showing it. */
+  function openKubernetes(session: Session): void {
+    const showing = tabs.value.find(
+      (entry): entry is KubernetesTab => entry.kind === "kubernetes" && entry.session.id === session.id,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({ kind: "kubernetes", id: crypto.randomUUID(), session, connectionId: null });
+  }
+
   /**
    * Raises the shared host key prompt for a batch.
    *
@@ -961,6 +1020,26 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
 
+    // A container or cluster tab is one backend connection; closing the tab lets it go before the
+    // row disappears, so a connection cannot outlive the only thing that could show it.
+    if (tab.kind === "container" || tab.kind === "kubernetes") {
+      const connectionId = tab.connectionId;
+      forget(id);
+      if (connectionId !== null) {
+        try {
+          if (tab.kind === "container") {
+            await backend.containers.disconnect(connectionId);
+          } else {
+            await backend.k8s.disconnect(connectionId);
+          }
+        } catch {
+          // The connection is gone from the interface either way; a backend that already forgot it
+          // has nothing left to report.
+        }
+      }
+      return;
+    }
+
     // A tab whose terminal already ended, or whose close already failed, has nothing left to
     // close: removing it locally is the whole operation.
     if (!tab.handle || tab.status !== "open") {
@@ -1089,7 +1168,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
     // A page about a host draws no browser, and neither does the settings page, the batch panel or
     // a remote desktop, so there is nowhere for a dropped file to land in any of them.
-    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
+    if (
+      tab.kind === "inspect" ||
+      tab.kind === "settings" ||
+      tab.kind === "batch" ||
+      tab.kind === "container" ||
+      tab.kind === "kubernetes"
+    ) {
       return null;
     }
     return tab.panel?.handle ?? null;
@@ -1216,7 +1301,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // and starts reading again by itself the moment one is there; the settings page is not about a
     // host at all, and the batch panel is about several. None of them offers a button, so none has
     // anything to do here.
-    if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
+    if (
+      tab.kind === "inspect" ||
+      tab.kind === "settings" ||
+      tab.kind === "batch" ||
+      tab.kind === "container" ||
+      tab.kind === "kubernetes"
+    ) {
       return;
     }
     const { session } = tab;
@@ -1368,6 +1459,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
     takeSettingsCategory,
     closeSettings,
     openBatch,
+    openContainer,
+    openKubernetes,
     writableHandles,
     activeTerminalHandle,
     raiseBatchDecision,

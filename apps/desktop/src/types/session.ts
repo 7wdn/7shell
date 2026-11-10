@@ -6,7 +6,9 @@
  * what is *not* here: no password, no passphrase, no key material. The interface is never sent one.
  */
 
+import type { ContainerSettings } from "@/types/container";
 import type { AuthMethod, Protocol } from "@/types/generated/protocols";
+import type { KubernetesSettings } from "@/types/k8s";
 
 /** What the interface may know about an imported key. */
 export interface KeyInfo {
@@ -108,6 +110,10 @@ export interface Session {
   readonly local?: LocalSettings;
   /** Which WSL distribution to start. Absent on every other protocol. */
   readonly wsl?: WslSettings;
+  /** Which container runtime and transport this session uses. Absent on every other protocol. */
+  readonly container?: ContainerSettings;
+  /** Where the kubeconfig comes from and which context to use. Absent on every other protocol. */
+  readonly kubernetes?: KubernetesSettings;
   /** The HTTP folder a WebDAV browser opens. Absent on every other protocol. */
   readonly webdav?: WebDavSettings;
   /** Whether an FTP session asks for TLS before login. Absent on every other protocol. */

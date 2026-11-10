@@ -526,9 +526,10 @@ impl Document {
                     .sessions
                     .iter()
                     .find(|session| session.id == stored.session_id)
-                    .map(|session| session.auth.method)
+                    .map(|session| (session.protocol, session.auth.method))
                 {
-                    Some(AuthMethod::PublicKey) => SecretKind::KeyPassphrase,
+                    Some((sevenshell_types::Protocol::Kubernetes, _)) => SecretKind::Kubeconfig,
+                    Some((_, AuthMethod::PublicKey)) => SecretKind::KeyPassphrase,
                     _ => SecretKind::Password,
                 },
                 value: stored.secret.expose().to_owned(),
@@ -695,13 +696,17 @@ impl fmt::Debug for KeyMaterial {
 pub enum SessionSecret {
     Password(String),
     KeyPassphrase(String),
+    /// A kubeconfig document imported for a Kubernetes session. It is a secret because it carries
+    /// bearer tokens and client keys, and it is stored beside the session rather than in a file
+    /// whose path the interface would have to know.
+    Kubeconfig(String),
 }
 
 impl SessionSecret {
     /// The value, for the one caller that has to hand it to a connection.
     pub(crate) fn expose(&self) -> &str {
         match self {
-            Self::Password(value) | Self::KeyPassphrase(value) => value,
+            Self::Password(value) | Self::KeyPassphrase(value) | Self::Kubeconfig(value) => value,
         }
     }
 
@@ -711,7 +716,7 @@ impl SessionSecret {
     /// `sevenshell_ssh::Credential` does.
     pub fn into_value(mut self) -> String {
         match &mut self {
-            Self::Password(value) | Self::KeyPassphrase(value) => std::mem::take(value),
+            Self::Password(value) | Self::KeyPassphrase(value) | Self::Kubeconfig(value) => std::mem::take(value),
         }
     }
 }
@@ -719,7 +724,7 @@ impl SessionSecret {
 impl Drop for SessionSecret {
     fn drop(&mut self) {
         match self {
-            Self::Password(value) | Self::KeyPassphrase(value) => value.zeroize(),
+            Self::Password(value) | Self::KeyPassphrase(value) | Self::Kubeconfig(value) => value.zeroize(),
         }
     }
 }
@@ -730,6 +735,7 @@ impl fmt::Debug for SessionSecret {
         let kind = match self {
             Self::Password(_) => "Password",
             Self::KeyPassphrase(_) => "KeyPassphrase",
+            Self::Kubeconfig(_) => "Kubeconfig",
         };
         write!(f, "SessionSecret::{kind}(<redacted>)")
     }
@@ -839,6 +845,8 @@ mod tests {
             serial: sevenshell_types::SerialSettings::default(),
             local: sevenshell_types::LocalSettings::default(),
             wsl: sevenshell_types::WslSettings::default(),
+            container: sevenshell_types::ContainerSettings::default(),
+            kubernetes: sevenshell_types::KubernetesSettings::default(),
             webdav: sevenshell_types::WebDavSettings::default(),
             ftp: sevenshell_types::FtpSettings::default(),
             jump: Vec::new(),

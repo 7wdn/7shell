@@ -7,7 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::container::ContainerSettings;
 use crate::generated::{AuthMethod, Protocol};
+use crate::k8s::KubernetesSettings;
 
 /// A saved way to reach a machine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +40,12 @@ pub struct Session {
     /// Which WSL distribution to start. Ignored by every other protocol.
     #[serde(default)]
     pub wsl: WslSettings,
+    /// Which container runtime and transport to use. Ignored by every other protocol.
+    #[serde(default, skip_serializing_if = "ContainerSettings::is_empty")]
+    pub container: ContainerSettings,
+    /// Where the kubeconfig comes from and which context to use. Ignored by every other protocol.
+    #[serde(default, skip_serializing_if = "KubernetesSettings::is_empty")]
+    pub kubernetes: KubernetesSettings,
     /// The HTTP folder a WebDAV browser opens. Ignored by every other protocol.
     #[serde(default, skip_serializing_if = "WebDavSettings::is_empty")]
     pub webdav: WebDavSettings,

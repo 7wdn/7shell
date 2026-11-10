@@ -68,6 +68,36 @@
     },
     "desktopClipboard": {
       "label": "剪贴板重定向"
+    },
+    "container": {
+      "label": "容器"
+    },
+    "containerImages": {
+      "label": "容器镜像"
+    },
+    "containerLogs": {
+      "label": "容器日志"
+    },
+    "containerExec": {
+      "label": "容器终端"
+    },
+    "containerFiles": {
+      "label": "容器文件"
+    },
+    "kubernetes": {
+      "label": "集群资源"
+    },
+    "kubernetesLogs": {
+      "label": "Pod 日志"
+    },
+    "kubernetesExec": {
+      "label": "Pod 终端"
+    },
+    "kubernetesMetrics": {
+      "label": "Pod 与节点指标"
+    },
+    "kubernetesTunnel": {
+      "label": "经 SSH 会话访问集群"
     }
   }
 }

@@ -68,6 +68,36 @@
     },
     "desktopClipboard": {
       "label": "Clipboard redirection"
+    },
+    "container": {
+      "label": "Containers"
+    },
+    "containerImages": {
+      "label": "Container images"
+    },
+    "containerLogs": {
+      "label": "Container logs"
+    },
+    "containerExec": {
+      "label": "Container terminal"
+    },
+    "containerFiles": {
+      "label": "Container files"
+    },
+    "kubernetes": {
+      "label": "Cluster resources"
+    },
+    "kubernetesLogs": {
+      "label": "Pod logs"
+    },
+    "kubernetesExec": {
+      "label": "Pod terminal"
+    },
+    "kubernetesMetrics": {
+      "label": "Pod and node metrics"
+    },
+    "kubernetesTunnel": {
+      "label": "Cluster through an SSH session"
     }
   }
 }

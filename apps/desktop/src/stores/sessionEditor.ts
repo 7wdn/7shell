@@ -445,6 +445,24 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       wsl: { distro: wslDistro.value, args: wslArgs.value.trim() },
       webdav: { url: isWebDav.value ? host.value.trim() : "" },
       ftp: { secure: isFtp.value && ftpSecure.value },
+      container:
+        protocol.value === "container"
+          ? {
+              runtime: "docker",
+              transport: "local",
+              sshSession: "",
+              namespace: "",
+            }
+          : undefined,
+      kubernetes:
+        protocol.value === "kubernetes"
+          ? {
+              source: "defaultPath",
+              context: undefined,
+              namespace: "",
+              viaSsh: undefined,
+            }
+          : undefined,
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),

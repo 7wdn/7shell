@@ -27,6 +27,19 @@
     "historyRewrite": "清除 shell 历史记录",
     "scheduledWorkRemoval": "删除计划任务",
     "versionControlDestructive": "丢弃版本历史或强制推送覆盖",
-    "overwriteFile": "通过重定向覆盖文件"
+    "overwriteFile": "通过重定向覆盖文件",
+    "container": {
+      "change": "修改容器",
+      "stop": "停止正在运行的容器",
+      "remove": "删除容器或镜像",
+      "unknown": "当前版本不认识的容器操作"
+    },
+    "k8s": {
+      "write": "修改集群对象",
+      "delete": "删除集群对象",
+      "namespaceDelete": "删除命名空间及其中的全部内容",
+      "evict": "把 Pod 从节点上驱逐",
+      "unknown": "当前版本不认识的集群请求"
+    }
   }
 }

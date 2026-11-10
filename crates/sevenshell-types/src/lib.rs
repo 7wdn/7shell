@@ -7,7 +7,9 @@
 mod app_info;
 mod batch;
 mod completion;
+mod container;
 mod descriptors;
+mod k8s;
 mod monitor;
 mod risk;
 mod session;
@@ -28,9 +30,19 @@ pub use completion::{
     COMPLETION_DEFAULT_TIMEOUT_MS, COMPLETION_MAX_ARGS, COMPLETION_MAX_OUTPUT_BYTES, COMPLETION_MAX_TEXT_BYTES,
     COMPLETION_TIMEOUT_MAX_MS, COMPLETION_TIMEOUT_MIN_MS, CompletionExecuteRequest, CompletionExecuteResult,
 };
+pub use container::{
+    ContainerCommitRequest, ContainerCreateRequest, ContainerDetail, ContainerImage, ContainerImageTransfer,
+    ContainerMount, ContainerPort, ContainerPortMapping, ContainerRegistryLogin, ContainerRuntime,
+    ContainerRuntimeInfo, ContainerSettings, ContainerStateCount, ContainerStats, ContainerStreamEnd,
+    ContainerStreamLine, ContainerSummary, ContainerTransport, ContainerVolume, ImageLayer,
+};
 pub use generated::{
     AUTH_METHODS, AuthMethod, AuthMethodSpec, CAPABILITIES, Capability, CapabilityGroup, CapabilitySpec,
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,
+};
+pub use k8s::{
+    K8sExecRequest, K8sLogRequest, K8sMethod, K8sRequest, K8sResponse, K8sStreamEnd, K8sStreamLine, K8sWatchEvent,
+    KubeContextInfo, KubeconfigSource, KubernetesSettings,
 };
 pub use monitor::{
     CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, HostMetrics, LoadAverage, MAX_COMMAND_CHARS,

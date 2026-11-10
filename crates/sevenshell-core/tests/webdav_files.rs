@@ -181,6 +181,8 @@ fn webdav_session(url: String) -> Session {
         serial: sevenshell_types::SerialSettings::default(),
         local: sevenshell_types::LocalSettings::default(),
         wsl: WslSettings::default(),
+        container: sevenshell_types::ContainerSettings::default(),
+        kubernetes: sevenshell_types::KubernetesSettings::default(),
         webdav: WebDavSettings { url },
         ftp: sevenshell_types::FtpSettings::default(),
         jump: Vec::new(),

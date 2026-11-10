@@ -1,0 +1,10 @@
+{
+  "k8s": {
+    "title": "Kubernetes",
+    "endpointDefault": "default kubeconfig",
+    "pending": "The cluster workspace is being built.",
+    "tab": {
+      "close": "Close this cluster workspace"
+    }
+  }
+}

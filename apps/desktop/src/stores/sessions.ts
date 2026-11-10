@@ -100,7 +100,13 @@ export const useSessionsStore = defineStore("sessions", () => {
         // A page about a host exists only once a connection is up; the two kinds that carry a
         // status are open only when that status says so.
         .filter(
-          (tab) => tab.kind === "inspect" || (tab.kind !== "settings" && tab.kind !== "batch" && tab.status === "open"),
+          (tab) =>
+            tab.kind === "inspect" ||
+            (tab.kind !== "settings" &&
+              tab.kind !== "batch" &&
+              tab.kind !== "container" &&
+              tab.kind !== "kubernetes" &&
+              tab.status === "open"),
         )
         .map((tab) => sessionOf(tab))
         .filter((session) => session !== null)

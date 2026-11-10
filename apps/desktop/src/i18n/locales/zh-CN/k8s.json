@@ -1,0 +1,10 @@
+{
+  "k8s": {
+    "title": "Kubernetes",
+    "endpointDefault": "默认 kubeconfig",
+    "pending": "集群工作区正在实现中。",
+    "tab": {
+      "close": "关闭这个集群工作区"
+    }
+  }
+}

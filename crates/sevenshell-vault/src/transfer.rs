@@ -360,6 +360,7 @@ fn assemble(document: &Document, with_secrets: bool, now: u64) -> SessionBundle 
                 let (kind, value) = match &secret {
                     SessionSecret::Password(value) => (SecretKind::Password, value.clone()),
                     SessionSecret::KeyPassphrase(value) => (SecretKind::KeyPassphrase, value.clone()),
+                    SessionSecret::Kubeconfig(value) => (SecretKind::Kubeconfig, value.clone()),
                 };
                 Some(SecretEntry {
                     session_id: session.id.clone(),
@@ -496,6 +497,7 @@ pub(crate) fn plan_import(bundle: SessionBundle, existing: &Document) -> ImportP
                 secret: secrets.get(session.id.as_str()).map(|secret| match secret.kind {
                     SecretKind::Password => SessionSecret::Password(secret.value.clone()),
                     SecretKind::KeyPassphrase => SessionSecret::KeyPassphrase(secret.value.clone()),
+                    SecretKind::Kubeconfig => SessionSecret::Kubeconfig(secret.value.clone()),
                 }),
             }
         })
@@ -555,6 +557,8 @@ mod tests {
             serial: sevenshell_types::SerialSettings::default(),
             local: sevenshell_types::LocalSettings::default(),
             wsl: sevenshell_types::WslSettings::default(),
+            container: sevenshell_types::ContainerSettings::default(),
+            kubernetes: sevenshell_types::KubernetesSettings::default(),
             webdav: sevenshell_types::WebDavSettings::default(),
             ftp: sevenshell_types::FtpSettings::default(),
             jump: Vec::new(),

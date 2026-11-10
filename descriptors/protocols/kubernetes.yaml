@@ -1,0 +1,12 @@
+schemaVersion: 1
+order: 66
+id: kubernetes
+rustVariant: Kubernetes
+labelKey: protocol.kubernetes.label
+# The API server is reached over HTTPS and the exec channel over WebSocket; both are the same
+# cluster connection. No default port: kubeconfig says where the server is, and guessing 443 is
+# wrong for every server that is not on it.
+runtime: native
+transport: http
+supportLevel: operate
+capabilities: []

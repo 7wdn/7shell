@@ -12,10 +12,12 @@ import enBatch from "./locales/en/batch.json";
 import enCapability from "./locales/en/capability.json";
 import enCommands from "./locales/en/commands.json";
 import enCommon from "./locales/en/common.json";
+import enContainer from "./locales/en/container.json";
 import enErrors from "./locales/en/errors.json";
 import enFiles from "./locales/en/files.json";
 import enHome from "./locales/en/home.json";
 import enInspect from "./locales/en/inspect.json";
+import enK8s from "./locales/en/k8s.json";
 import enMenu from "./locales/en/menu.json";
 import enMonitor from "./locales/en/monitor.json";
 import enProtocol from "./locales/en/protocol.json";
@@ -32,10 +34,12 @@ import zhCnBatch from "./locales/zh-CN/batch.json";
 import zhCnCapability from "./locales/zh-CN/capability.json";
 import zhCnCommands from "./locales/zh-CN/commands.json";
 import zhCnCommon from "./locales/zh-CN/common.json";
+import zhCnContainer from "./locales/zh-CN/container.json";
 import zhCnErrors from "./locales/zh-CN/errors.json";
 import zhCnFiles from "./locales/zh-CN/files.json";
 import zhCnHome from "./locales/zh-CN/home.json";
 import zhCnInspect from "./locales/zh-CN/inspect.json";
+import zhCnK8s from "./locales/zh-CN/k8s.json";
 import zhCnMenu from "./locales/zh-CN/menu.json";
 import zhCnMonitor from "./locales/zh-CN/monitor.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
@@ -101,6 +105,8 @@ const messages = {
     ...enInspect,
     ...enMenu,
     ...enSync,
+    ...enContainer,
+    ...enK8s,
   },
   "zh-CN": {
     ...zhCnCommands,
@@ -123,6 +129,8 @@ const messages = {
     ...zhCnInspect,
     ...zhCnMenu,
     ...zhCnSync,
+    ...zhCnContainer,
+    ...zhCnK8s,
   },
 };
 

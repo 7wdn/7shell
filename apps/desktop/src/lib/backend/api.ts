@@ -12,6 +12,30 @@ import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
 import type {
+  ContainerCommitRequest,
+  ContainerCreateRequest,
+  ContainerDetail,
+  ContainerImage,
+  ContainerImageTransfer,
+  ContainerRegistryLogin,
+  ContainerRuntimeInfo,
+  ContainerStats,
+  ContainerStreamEnd,
+  ContainerStreamLine,
+  ContainerSummary,
+  ImageLayer,
+} from "@/types/container";
+import type {
+  K8sExecRequest,
+  K8sLogRequest,
+  K8sRequest,
+  K8sResponse,
+  K8sStreamEnd,
+  K8sStreamLine,
+  K8sWatchEvent,
+  KubeContextInfo,
+} from "@/types/k8s";
+import type {
   CommandHistoryEntry,
   CompletionWord,
   SendOutcome,
@@ -413,6 +437,86 @@ export const backend = {
     /** The public half of a stored key, which is the half that goes into `authorized_keys`. */
     publicKey: (keyRef: string): Promise<string> => forward("key_public", () => desktop.keyPublic(keyRef)),
     forget: (keyRef: string): Promise<void> => forward("key_forget", () => desktop.keyForget(keyRef)),
+  },
+
+  /** Container engines and the images they hold. One section per open container tab. */
+  containers: {
+    connect: (sessionId: string): Promise<string> =>
+      forward("container_connect", () => desktop.containerConnect(sessionId)),
+    disconnect: (connectionId: string): Promise<void> =>
+      forward("container_disconnect", () => desktop.containerDisconnect(connectionId)),
+    list: (connectionId: string): Promise<ContainerSummary[]> =>
+      forward("container_list", () => desktop.containerList(connectionId)),
+    inspect: (connectionId: string, containerId: string): Promise<ContainerDetail> =>
+      forward("container_inspect", () => desktop.containerInspect(connectionId, containerId)),
+    action: (connectionId: string, containerId: string, action: string): Promise<void> =>
+      forward("container_action", () => desktop.containerAction(connectionId, containerId, action)),
+    rename: (connectionId: string, containerId: string, name: string): Promise<void> =>
+      forward("container_rename", () => desktop.containerRename(connectionId, containerId, name)),
+    create: (connectionId: string, request: ContainerCreateRequest): Promise<void> =>
+      forward("container_create", () => desktop.containerCreate(connectionId, request)),
+    stats: (connectionId: string): Promise<ContainerStats[]> =>
+      forward("container_stats", () => desktop.containerStats(connectionId)),
+    namespaces: (connectionId: string): Promise<string[]> =>
+      forward("container_namespaces", () => desktop.containerNamespaces(connectionId)),
+    setNamespace: (connectionId: string, namespace: string): Promise<void> =>
+      forward("container_set_namespace", () => desktop.containerSetNamespace(connectionId, namespace)),
+    runtimeInfo: (connectionId: string): Promise<ContainerRuntimeInfo> =>
+      forward("container_runtime_info", () => desktop.containerRuntimeInfo(connectionId)),
+    logsStart: (connectionId: string, containerId: string, tail: number, timestamps: boolean): Promise<string> =>
+      forward("container_logs_start", () => desktop.containerLogsStart(connectionId, containerId, tail, timestamps)),
+    streamStop: (streamId: string): Promise<void> =>
+      forward("container_stream_stop", () => desktop.containerStreamStop(streamId)),
+    execOpen: (connectionId: string, containerId: string, shell: string): Promise<string> =>
+      forward("container_exec_open", () => desktop.containerExecOpen(connectionId, containerId, shell)),
+    images: (connectionId: string): Promise<ContainerImage[]> =>
+      forward("container_images", () => desktop.containerImages(connectionId)),
+    imageInspect: (connectionId: string, image: string): Promise<string> =>
+      forward("container_image_inspect", () => desktop.containerImageInspect(connectionId, image)),
+    imageHistory: (connectionId: string, image: string): Promise<ImageLayer[]> =>
+      forward("container_image_history", () => desktop.containerImageHistory(connectionId, image)),
+    imagePull: (connectionId: string, request: ContainerImageTransfer): Promise<string> =>
+      forward("container_image_pull", () => desktop.containerImagePull(connectionId, request)),
+    imagePush: (connectionId: string, request: ContainerImageTransfer): Promise<string> =>
+      forward("container_image_push", () => desktop.containerImagePush(connectionId, request)),
+    imageRemove: (connectionId: string, image: string): Promise<void> =>
+      forward("container_image_remove", () => desktop.containerImageRemove(connectionId, image)),
+    imagePrune: (connectionId: string): Promise<void> =>
+      forward("container_image_prune", () => desktop.containerImagePrune(connectionId)),
+    imageTag: (connectionId: string, image: string, tag: string): Promise<void> =>
+      forward("container_image_tag", () => desktop.containerImageTag(connectionId, image, tag)),
+    imageLoad: (connectionId: string, grant: string): Promise<string> =>
+      forward("container_image_load", () => desktop.containerImageLoad(connectionId, grant)),
+    imageCommit: (connectionId: string, request: ContainerCommitRequest): Promise<string> =>
+      forward("container_image_commit", () => desktop.containerImageCommit(connectionId, request)),
+    registryLogin: (connectionId: string, request: ContainerRegistryLogin): Promise<void> =>
+      forward("container_registry_login", () => desktop.containerRegistryLogin(connectionId, request)),
+    onStreamLine: (listener: (payload: ContainerStreamLine) => void): Promise<() => void> =>
+      desktop.onContainerStreamLine(listener),
+    onStreamEnd: (listener: (payload: ContainerStreamEnd) => void): Promise<() => void> =>
+      desktop.onContainerStreamEnd(listener),
+  },
+
+  /** Cluster connections and the generic resource API they answer. */
+  k8s: {
+    contexts: (kubeconfig?: SecretInput): Promise<KubeContextInfo[]> =>
+      forward("k8s_contexts", () => desktop.k8sContexts(kubeconfig)),
+    connect: (sessionId: string): Promise<string> => forward("k8s_connect", () => desktop.k8sConnect(sessionId)),
+    disconnect: (connectionId: string): Promise<void> =>
+      forward("k8s_disconnect", () => desktop.k8sDisconnect(connectionId)),
+    request: (connectionId: string, request: K8sRequest): Promise<K8sResponse> =>
+      forward("k8s_request", () => desktop.k8sRequest(connectionId, request)),
+    watchStart: (connectionId: string, path: string): Promise<string> =>
+      forward("k8s_watch_start", () => desktop.k8sWatchStart(connectionId, path)),
+    logsStart: (connectionId: string, request: K8sLogRequest): Promise<string> =>
+      forward("k8s_logs_start", () => desktop.k8sLogsStart(connectionId, request)),
+    streamStop: (streamId: string): Promise<void> => forward("k8s_stream_stop", () => desktop.k8sStreamStop(streamId)),
+    execOpen: (connectionId: string, request: K8sExecRequest): Promise<string> =>
+      forward("k8s_exec_open", () => desktop.k8sExecOpen(connectionId, request)),
+    onStreamLine: (listener: (payload: K8sStreamLine) => void): Promise<() => void> =>
+      desktop.onK8sStreamLine(listener),
+    onStreamEnd: (listener: (payload: K8sStreamEnd) => void): Promise<() => void> => desktop.onK8sStreamEnd(listener),
+    onWatch: (listener: (payload: K8sWatchEvent) => void): Promise<() => void> => desktop.onK8sWatch(listener),
   },
 
   knownHosts: {

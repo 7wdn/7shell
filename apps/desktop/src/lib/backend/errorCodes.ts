@@ -77,6 +77,15 @@ export const ERROR_CATALOG = {
   "FTP-PERMISSION-DENIED": "errors.ftp.permissionDenied",
   "FTP-EXISTS": "errors.ftp.exists",
   "FTP-OPERATION-FAILED": "errors.ftp.operationFailed",
+  // Containers
+  "CONTAINER-UNAVAILABLE": "errors.container.unavailable",
+  "CONTAINER-COMMAND-FAILED": "errors.container.commandFailed",
+  "CONTAINER-NOT-CONNECTED": "errors.container.notConnected",
+  // Kubernetes
+  "K8S-UNAVAILABLE": "errors.k8s.unavailable",
+  "K8S-KUBECONFIG-INVALID": "errors.k8s.kubeconfigInvalid",
+  "K8S-REQUEST-FAILED": "errors.k8s.requestFailed",
+  "K8S-NOT-CONNECTED": "errors.k8s.notConnected",
   // SCP fallback
   "SCP-UNAVAILABLE": "errors.scp.unavailable",
   "SCP-TRANSFER-FAILED": "errors.scp.transferFailed",

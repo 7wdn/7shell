@@ -10,7 +10,9 @@ export type ProtocolId =
   | "serial"
   | "rawTcp"
   | "local"
-  | "wsl";
+  | "wsl"
+  | "container"
+  | "kubernetes";
 
 export type Protocol = ProtocolId;
 
@@ -46,9 +48,19 @@ export type CapabilityKey =
   | "desktopView"
   | "desktopInput"
   | "desktopResize"
-  | "desktopClipboard";
+  | "desktopClipboard"
+  | "container"
+  | "containerImages"
+  | "containerLogs"
+  | "containerExec"
+  | "containerFiles"
+  | "kubernetes"
+  | "kubernetesLogs"
+  | "kubernetesExec"
+  | "kubernetesMetrics"
+  | "kubernetesTunnel";
 
-export type CapabilityGroup = "terminal" | "session" | "transfer" | "network" | "auth" | "desktop";
+export type CapabilityGroup = "terminal" | "session" | "transfer" | "network" | "auth" | "desktop" | "container";
 
 export type ProtocolRuntime = "native" | "external";
 
@@ -160,6 +172,24 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     supportLevel: "operate",
     capabilities: ["shell", "resize", "recording"],
   },
+  {
+    id: "container",
+    labelKey: "protocol.container.label",
+    defaultPort: null,
+    runtime: "native",
+    transport: "cli",
+    supportLevel: "operate",
+    capabilities: [],
+  },
+  {
+    id: "kubernetes",
+    labelKey: "protocol.kubernetes.label",
+    defaultPort: null,
+    runtime: "native",
+    transport: "http",
+    supportLevel: "operate",
+    capabilities: [],
+  },
 ];
 
 export const AUTH_METHODS: readonly AuthMethodDescriptor[] = [
@@ -219,10 +249,20 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "desktopInput", group: "desktop", labelKey: "capability.desktopInput.label" },
   { key: "desktopResize", group: "desktop", labelKey: "capability.desktopResize.label" },
   { key: "desktopClipboard", group: "desktop", labelKey: "capability.desktopClipboard.label" },
+  { key: "container", group: "container", labelKey: "capability.container.label" },
+  { key: "containerImages", group: "container", labelKey: "capability.containerImages.label" },
+  { key: "containerLogs", group: "container", labelKey: "capability.containerLogs.label" },
+  { key: "containerExec", group: "container", labelKey: "capability.containerExec.label" },
+  { key: "containerFiles", group: "container", labelKey: "capability.containerFiles.label" },
+  { key: "kubernetes", group: "container", labelKey: "capability.kubernetes.label" },
+  { key: "kubernetesLogs", group: "container", labelKey: "capability.kubernetesLogs.label" },
+  { key: "kubernetesExec", group: "container", labelKey: "capability.kubernetesExec.label" },
+  { key: "kubernetesMetrics", group: "container", labelKey: "capability.kubernetesMetrics.label" },
+  { key: "kubernetesTunnel", group: "container", labelKey: "capability.kubernetesTunnel.label" },
 ];
 
 export const CAPABILITY_GROUP_ORDER: readonly CapabilityGroup[] = [
-  "terminal", "session", "transfer", "network", "auth", "desktop",
+  "terminal", "session", "transfer", "network", "auth", "desktop", "container",
 ];
 
 export function protocolById(id: string): ProtocolDescriptor | undefined {

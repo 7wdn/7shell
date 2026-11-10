@@ -1,0 +1,12 @@
+schemaVersion: 1
+order: 65
+id: container
+rustVariant: Container
+labelKey: protocol.container.label
+# Not a wire protocol: the runtime's own command line is the interface, and the same four commands
+# (docker, podman, nerdctl, wslc) speak it. `transport` names the shape rather than a network
+# service; the capability list stays empty until the operations are implemented and tested.
+runtime: native
+transport: cli
+supportLevel: operate
+capabilities: []

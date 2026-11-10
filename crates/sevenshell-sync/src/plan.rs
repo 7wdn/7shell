@@ -277,6 +277,7 @@ pub fn plan_restore(snapshot: SyncSnapshot, destination: &Destination, replace: 
             let secret = logins.remove(&session.id).map(|entry| match entry.kind {
                 sevenshell_vault::SecretKind::Password => SessionSecret::Password(entry.into_value()),
                 sevenshell_vault::SecretKind::KeyPassphrase => SessionSecret::KeyPassphrase(entry.into_value()),
+                sevenshell_vault::SecretKind::Kubeconfig => SessionSecret::Kubeconfig(entry.into_value()),
             });
             if secret.is_some() {
                 written_secrets += 1;

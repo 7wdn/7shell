@@ -207,6 +207,24 @@ error_catalog! {
     #[doc = "The page a release is published on could not be opened."]
     UpdateReleasePageFailed => "UPDATE-RELEASE-PAGE-FAILED", "errors.update.releasePageFailed";
 
+    // -- Containers --------------------------------------------------------
+    #[doc = "The container runtime could not be reached, or its command line is not installed."]
+    ContainerUnavailable => "CONTAINER-UNAVAILABLE", "errors.container.unavailable";
+    #[doc = "A container runtime command ran but did not succeed."]
+    ContainerCommandFailed => "CONTAINER-COMMAND-FAILED", "errors.container.commandFailed";
+    #[doc = "The container connection this call names is no longer open."]
+    ContainerNotConnected => "CONTAINER-NOT-CONNECTED", "errors.container.notConnected";
+
+    // -- Kubernetes --------------------------------------------------------
+    #[doc = "The Kubernetes API server could not be reached."]
+    K8sUnavailable => "K8S-UNAVAILABLE", "errors.k8s.unavailable";
+    #[doc = "The kubeconfig document could not be read or understood."]
+    K8sKubeconfigInvalid => "K8S-KUBECONFIG-INVALID", "errors.k8s.kubeconfigInvalid";
+    #[doc = "The API server answered a request with an error status."]
+    K8sRequestFailed => "K8S-REQUEST-FAILED", "errors.k8s.requestFailed";
+    #[doc = "The cluster connection this call names is no longer open."]
+    K8sNotConnected => "K8S-NOT-CONNECTED", "errors.k8s.notConnected";
+
     // -- Application -------------------------------------------------------
     #[doc = "A required service is not ready yet, for example the vault during startup."]
     AppNotReady => "APP-NOT-READY", "errors.app.notReady";

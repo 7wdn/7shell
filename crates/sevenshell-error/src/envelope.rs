@@ -26,6 +26,10 @@ pub enum Subsystem {
     Rdp,
     /// Telnet, serial ports and shells on this machine: transports that are not SSH.
     Terminal,
+    /// Docker, Podman, nerdctl and WSLC, reached through their command lines.
+    Container,
+    /// A Kubernetes API server and the kubeconfig used to reach it.
+    K8s,
     Fs,
     Store,
     Policy,
@@ -42,6 +46,8 @@ impl Subsystem {
             Self::Sftp => "sftp",
             Self::Rdp => "rdp",
             Self::Terminal => "terminal",
+            Self::Container => "container",
+            Self::K8s => "k8s",
             Self::Fs => "fs",
             Self::Store => "store",
             Self::Policy => "policy",
@@ -798,6 +804,52 @@ impl ShellError {
 
     pub fn app_internal(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::AppInternal, Origin::new(Subsystem::App)).with_detail(detail)
+    }
+
+    pub fn container_unavailable(runtime: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::ContainerUnavailable, Origin::new(Subsystem::Container))
+            .with_param("runtime", runtime)
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn container_command_failed(operation: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::ContainerCommandFailed, Origin::new(Subsystem::Container))
+            .with_param("operation", operation)
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::Sent)
+    }
+
+    pub fn container_not_connected(id: &str) -> Self {
+        Self::new(ErrorCode::ContainerNotConnected, Origin::new(Subsystem::Container))
+            .with_param("connection", id)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn k8s_unavailable(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::K8sUnavailable, Origin::new(Subsystem::K8s))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn k8s_kubeconfig_invalid(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::K8sKubeconfigInvalid, Origin::new(Subsystem::K8s))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn k8s_request_failed(status: u16, path: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::K8sRequestFailed, Origin::new(Subsystem::K8s))
+            .with_param("status", status.to_string())
+            .with_param("path", path)
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::Sent)
+    }
+
+    pub fn k8s_not_connected(id: &str) -> Self {
+        Self::new(ErrorCode::K8sNotConnected, Origin::new(Subsystem::K8s))
+            .with_param("connection", id)
+            .with_outcome(OperationOutcome::NotSent)
     }
 }
 

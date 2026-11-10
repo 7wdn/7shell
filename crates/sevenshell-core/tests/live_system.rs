@@ -91,6 +91,8 @@ fn lab() -> Option<Lab> {
                 serial: sevenshell_types::SerialSettings::default(),
                 local: sevenshell_types::LocalSettings::default(),
                 wsl: sevenshell_types::WslSettings::default(),
+                container: sevenshell_types::ContainerSettings::default(),
+                kubernetes: sevenshell_types::KubernetesSettings::default(),
                 webdav: sevenshell_types::WebDavSettings::default(),
                 ftp: sevenshell_types::FtpSettings::default(),
                 jump: Vec::new(),

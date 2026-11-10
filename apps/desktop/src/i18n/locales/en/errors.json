@@ -102,6 +102,17 @@
       "installFailed": "The update could not be installed.",
       "releasePageFailed": "The page this release is published on could not be opened."
     },
+    "container": {
+      "unavailable": "The {runtime} command line is not available, or the engine is not running.",
+      "commandFailed": "The container runtime rejected {operation}.",
+      "notConnected": "That container connection is no longer open."
+    },
+    "k8s": {
+      "unavailable": "The Kubernetes API server could not be reached.",
+      "kubeconfigInvalid": "The kubeconfig could not be read.",
+      "requestFailed": "The API server answered {status}.",
+      "notConnected": "That cluster connection is no longer open."
+    },
     "app": {
       "notReady": "The application is still starting up.",
       "noTransport": "{operation} needs the desktop application.",

@@ -26,6 +26,12 @@
     },
     "wsl": {
       "label": "WSL"
+    },
+    "container": {
+      "label": "Container engine"
+    },
+    "kubernetes": {
+      "label": "Kubernetes"
     }
   }
 }

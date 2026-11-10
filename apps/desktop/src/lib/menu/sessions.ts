@@ -85,6 +85,13 @@ export function sessionEndpoint(session: Session, t?: (key: string) => string): 
       // The address is the folder, not an account at a host: the URL is what somebody would paste
       // into another client, so that is what the row shows.
       return session.webdav?.url || session.host;
+    case "container": {
+      const runtime = session.container?.runtime ?? "docker";
+      const via = session.container?.transport === "ssh" ? session.container.sshSession : "";
+      return via ? `${runtime} · ${via}` : runtime;
+    }
+    case "kubernetes":
+      return session.kubernetes?.context || (t ? t("k8s.endpointDefault") : "kubeconfig");
     default:
       return `${session.user}@${session.host}:${session.port}`;
   }

@@ -13,7 +13,16 @@ use std::path::PathBuf;
 /// The vocabulary that is fixed by the generator rather than by the descriptors.
 const SUPPORT_LEVELS: &[&str] = &["connect", "browse", "operate"];
 const RUNTIMES: &[&str] = &["native", "sidecar", "external"];
-const GROUPS: &[&str] = &["terminal", "transfer", "network", "session", "auth", "trust", "desktop"];
+const GROUPS: &[&str] = &[
+    "terminal",
+    "transfer",
+    "network",
+    "session",
+    "auth",
+    "trust",
+    "desktop",
+    "container",
+];
 
 fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by cargo"));

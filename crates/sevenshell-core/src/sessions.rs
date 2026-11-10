@@ -91,6 +91,13 @@ pub struct Core {
     /// Behind an `Arc` as well as a mutex: the task driving a transfer updates its own state
     /// long after the call that started it has returned.
     pub(crate) transfers: Arc<Mutex<HashMap<String, crate::TransferRecord>>>,
+    /// Container connections, one per open container tab. The manager owns the runtime side; the
+    /// core owns the order in which a tab is connected, used and let go.
+    #[allow(dead_code)]
+    pub(crate) containers: Arc<sevenshell_container::ContainerManager>,
+    /// Kubernetes connections, one per open cluster tab.
+    #[allow(dead_code)]
+    pub(crate) clusters: Arc<sevenshell_k8s::K8sManager>,
     pub(crate) next_file: std::sync::atomic::AtomicU64,
     pub(crate) next_transfer: std::sync::atomic::AtomicU64,
     tunnels: Mutex<HashMap<String, TunnelRecord>>,
@@ -113,6 +120,8 @@ impl Core {
                 registry,
                 files: Mutex::new(HashMap::new()),
                 transfers: Arc::new(Mutex::new(HashMap::new())),
+                containers: Arc::new(sevenshell_container::ContainerManager::new()),
+                clusters: Arc::new(sevenshell_k8s::K8sManager::new()),
                 next_file: std::sync::atomic::AtomicU64::new(1),
                 next_transfer: std::sync::atomic::AtomicU64::new(1),
                 tunnels: Mutex::new(HashMap::new()),
@@ -200,6 +209,16 @@ impl Core {
             Protocol::Ftp => {
                 return Err(ShellError::app_unsupported(
                     "this session is an FTP folder, not a terminal",
+                ));
+            }
+            Protocol::Container => {
+                return Err(ShellError::app_unsupported(
+                    "this session is a container engine; open it from the container workspace",
+                ));
+            }
+            Protocol::Kubernetes => {
+                return Err(ShellError::app_unsupported(
+                    "this session is a Kubernetes cluster; open it from the cluster workspace",
                 ));
             }
             Protocol::Telnet | Protocol::RawTcp | Protocol::Serial | Protocol::Local | Protocol::Wsl => {
@@ -359,7 +378,12 @@ impl Core {
                 };
                 until_cancelled(sevenshell_term::open_wsl(spec, size), cancel).await?
             }
-            Protocol::Ssh | Protocol::Rdp | Protocol::WebDav | Protocol::Ftp => {
+            Protocol::Ssh
+            | Protocol::Rdp
+            | Protocol::WebDav
+            | Protocol::Ftp
+            | Protocol::Container
+            | Protocol::Kubernetes => {
                 unreachable!("only the stream protocols reach this function")
             }
         };
@@ -874,6 +898,8 @@ mod tests {
             serial: sevenshell_types::SerialSettings::default(),
             local: sevenshell_types::LocalSettings::default(),
             wsl: sevenshell_types::WslSettings::default(),
+            container: sevenshell_types::ContainerSettings::default(),
+            kubernetes: sevenshell_types::KubernetesSettings::default(),
             webdav: sevenshell_types::WebDavSettings::default(),
             ftp: sevenshell_types::FtpSettings::default(),
             jump: Vec::new(),

@@ -67,6 +67,16 @@ tokio = { version = "1.53", features = [
 uuid = { version = "1.26", features = ["v4", "serde"] }
 zeroize = { version = "1.9", features = ["derive"] }
 tempfile = "3"
+async-trait = "0.1"
+# Kubeconfigs are YAML documents, not JSON: a client that only reads the fields it knows loses
+# contexts and credentials it has not been taught about yet. The maintained fork rather than the
+# archived original, because a parser that no longer receives fixes is a parser nobody can audit.
+serde_yaml_ng = "0.10"
+# The Kubernetes exec channel is a WebSocket carrying a binary channel protocol; `reqwest` speaks
+# HTTP but not that. The TLS backend is the same `native-tls` the rest of the workspace uses, so a
+# client certificate is one object rather than a second platform trust story.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "native-tls"] }
+native-tls = "0.2"
 
 # DPAPI, for the password handed to the Windows Remote Desktop client. The client reads it out of
 # a temporary .rdp file, so it never appears on a command line; the blob is readable only by the
@@ -139,6 +149,8 @@ sevenshell-sync = { version = "0.1.3", path = "crates/sevenshell-sync" }
 sevenshell-ftp = { version = "0.1.3", path = "crates/sevenshell-ftp" }
 sevenshell-session = { version = "0.1.3", path = "crates/sevenshell-session" }
 sevenshell-sftp = { version = "0.1.3", path = "crates/sevenshell-sftp" }
+sevenshell-container = { version = "0.1.3", path = "crates/sevenshell-container" }
+sevenshell-k8s = { version = "0.1.3", path = "crates/sevenshell-k8s" }
 sevenshell-types = { version = "0.1.3", path = "crates/sevenshell-types" }
 
 [profile.dev]

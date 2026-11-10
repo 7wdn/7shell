@@ -18,6 +18,8 @@ sevenshell-session = { workspace = true }
 sevenshell-term = { workspace = true }
 sevenshell-sftp = { workspace = true }
 sevenshell-ftp = { workspace = true }
+sevenshell-container = { workspace = true }
+sevenshell-k8s = { workspace = true }
 sevenshell-sync = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }

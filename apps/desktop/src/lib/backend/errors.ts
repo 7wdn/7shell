@@ -19,6 +19,8 @@ export type Subsystem =
   | "sftp"
   | "rdp"
   | "terminal"
+  | "container"
+  | "k8s"
   | "fs"
   | "store"
   | "policy"

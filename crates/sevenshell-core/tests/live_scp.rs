@@ -42,6 +42,8 @@ fn lab_session() -> Option<Session> {
         serial: sevenshell_types::SerialSettings::default(),
         local: sevenshell_types::LocalSettings::default(),
         wsl: WslSettings::default(),
+        container: sevenshell_types::ContainerSettings::default(),
+        kubernetes: sevenshell_types::KubernetesSettings::default(),
         webdav: WebDavSettings::default(),
         ftp: FtpSettings::default(),
         jump: Vec::new(),

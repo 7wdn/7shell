@@ -15,9 +15,11 @@ use serde::Serialize;
 use sevenshell_types::{
     AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
     BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord,
-    CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView,
-    EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, KeyAlgorithm,
-    KeyInfo, KnownHostEntry, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
+    ContainerDetail, ContainerMount, ContainerPort, ContainerRuntime, ContainerSettings, ContainerSummary,
+    ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage,
+    DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem,
+    K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo, KubeconfigSource,
+    KubernetesSettings, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
     PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
     SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
     SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet,
@@ -474,6 +476,8 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
         serial: sevenshell_types::SerialSettings::default(),
         local: sevenshell_types::LocalSettings::default(),
         wsl: sevenshell_types::WslSettings::default(),
+        container: sevenshell_types::ContainerSettings::default(),
+        kubernetes: sevenshell_types::KubernetesSettings::default(),
         webdav: sevenshell_types::WebDavSettings {
             url: "https://dav.example/folder/".to_owned(),
         },
@@ -1348,4 +1352,120 @@ fn a_paste_outcome_serializes_with_camel_case_fields() {
     );
     assert_eq!(done["results"][0]["error"], serde_json::json!("cp: permission denied"));
     assert_eq!(done["results"][0]["ok"], serde_json::json!(false));
+}
+
+#[test]
+fn container_and_cluster_wire_types_keep_their_camel_case_fields() {
+    let summary = check(
+        &ContainerSummary {
+            id: "abc".to_owned(),
+            name: "web".to_owned(),
+            image: "nginx:latest".to_owned(),
+            state: "running".to_owned(),
+            status: "Up 2 hours".to_owned(),
+            ports: "0.0.0.0:8080->80/tcp".to_owned(),
+            created_at: "2026-11-10 10:00:00".to_owned(),
+        },
+        "ContainerSummary",
+    );
+    assert_eq!(summary["createdAt"], serde_json::json!("2026-11-10 10:00:00"));
+
+    let detail = check(
+        &ContainerDetail {
+            id: "abc".to_owned(),
+            name: "web".to_owned(),
+            image: "nginx:latest".to_owned(),
+            state: "running".to_owned(),
+            status: "Up".to_owned(),
+            started_at: "2026-11-10".to_owned(),
+            finished_at: String::new(),
+            exit_code: None,
+            oom_killed: false,
+            pid: 12,
+            restart_policy: "no".to_owned(),
+            entrypoint: String::new(),
+            command: "nginx".to_owned(),
+            work_dir: "/".to_owned(),
+            user: String::new(),
+            network_mode: "bridge".to_owned(),
+            ip: "172.17.0.2".to_owned(),
+            gateway: "172.17.0.1".to_owned(),
+            ports: vec![ContainerPort {
+                host_ip: "0.0.0.0".to_owned(),
+                host_port: "8080".to_owned(),
+                container_port: "80".to_owned(),
+                protocol: "tcp".to_owned(),
+            }],
+            mounts: vec![ContainerMount {
+                source: "/data".to_owned(),
+                destination: "/usr/share/nginx/html".to_owned(),
+                read_only: true,
+            }],
+            env: vec!["A=B".to_owned()],
+            raw: "{}".to_owned(),
+        },
+        "ContainerDetail",
+    );
+    assert_eq!(detail["oomKilled"], serde_json::json!(false));
+    assert_eq!(detail["mounts"][0]["readOnly"], serde_json::json!(true));
+
+    let settings = check(
+        &ContainerSettings {
+            runtime: ContainerRuntime::Podman,
+            transport: ContainerTransport::Ssh,
+            ssh_session: "lab".to_owned(),
+            namespace: "default".to_owned(),
+        },
+        "ContainerSettings",
+    );
+    assert_eq!(settings["sshSession"], serde_json::json!("lab"));
+    assert_eq!(settings["runtime"], serde_json::json!("podman"));
+
+    let cluster = check(
+        &KubernetesSettings {
+            source: KubeconfigSource::Imported,
+            context: Some("lab".to_owned()),
+            namespace: "default".to_owned(),
+            via_ssh: Some("gateway".to_owned()),
+        },
+        "KubernetesSettings",
+    );
+    assert_eq!(cluster["viaSsh"], serde_json::json!("gateway"));
+
+    let context = check(
+        &KubeContextInfo {
+            name: "lab".to_owned(),
+            cluster: "lab-cluster".to_owned(),
+            user: "admin".to_owned(),
+            namespace: "default".to_owned(),
+            current: true,
+        },
+        "KubeContextInfo",
+    );
+    assert_eq!(context["current"], serde_json::json!(true));
+
+    let request = check(
+        &K8sRequest {
+            method: K8sMethod::Patch,
+            path: "/api/v1/nodes/lab".to_owned(),
+            body: Some("{}".to_owned()),
+            content_type: Some("application/merge-patch+json".to_owned()),
+            acknowledged: true,
+        },
+        "K8sRequest",
+    );
+    assert_eq!(
+        request["contentType"],
+        serde_json::json!("application/merge-patch+json")
+    );
+    assert_eq!(request["method"], serde_json::json!("patch"));
+
+    let response = check(
+        &K8sResponse {
+            status: 200,
+            body: "{}".to_owned(),
+        },
+        "K8sResponse",
+    );
+    assert_eq!(response["status"], serde_json::json!(200));
 }

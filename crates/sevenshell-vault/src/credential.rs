@@ -32,6 +32,8 @@ use zeroize::Zeroize;
 pub enum SecretKind {
     Password,
     KeyPassphrase,
+    /// A kubeconfig document imported for a Kubernetes session.
+    Kubeconfig,
 }
 
 /// A password for a service this application talks to — a sync server today.

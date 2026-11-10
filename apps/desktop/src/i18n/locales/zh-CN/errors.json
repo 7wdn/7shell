@@ -102,6 +102,17 @@
       "installFailed": "无法安装这次更新。",
       "releasePageFailed": "无法打开这次版本的发布页面。"
     },
+    "container": {
+      "unavailable": "找不到 {runtime} 命令，或容器引擎没有运行。",
+      "commandFailed": "容器运行时拒绝了{operation}。",
+      "notConnected": "这个容器连接已经关闭。"
+    },
+    "k8s": {
+      "unavailable": "连不上 Kubernetes API 服务器。",
+      "kubeconfigInvalid": "无法读取 kubeconfig。",
+      "requestFailed": "API 服务器返回了 {status}。",
+      "notConnected": "这个集群连接已经关闭。"
+    },
     "app": {
       "notReady": "应用仍在启动中。",
       "noTransport": "{operation} 需要在桌面应用中使用。",

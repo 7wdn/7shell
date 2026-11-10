@@ -27,6 +27,19 @@
     "historyRewrite": "Erases the shell history",
     "scheduledWorkRemoval": "Removes scheduled tasks",
     "versionControlDestructive": "Discards version history or force-pushes over it",
-    "overwriteFile": "Overwrites a file through redirection"
+    "overwriteFile": "Overwrites a file through redirection",
+    "container": {
+      "change": "Changes a container",
+      "stop": "Stops a running container",
+      "remove": "Removes a container or an image",
+      "unknown": "A container action this build does not recognise"
+    },
+    "k8s": {
+      "write": "Changes a cluster object",
+      "delete": "Deletes a cluster object",
+      "namespaceDelete": "Deletes a namespace and everything in it",
+      "evict": "Evicts a pod from its node",
+      "unknown": "A cluster request this build does not recognise"
+    }
   }
 }

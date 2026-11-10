@@ -41,11 +41,15 @@ pub fn session_save(
     session: Session,
     secret: Option<SecretInput>,
 ) -> Result<Session, ShellError> {
-    let secret = secret.map(|input| match session.auth.method {
-        // A passphrase belongs to the key, and is stored with it during import; a secret sent with
-        // a key session is therefore the key's passphrase and is treated as such.
-        sevenshell_types::AuthMethod::PublicKey => sevenshell_vault::SessionSecret::KeyPassphrase(input.value),
-        _ => sevenshell_vault::SessionSecret::Password(input.value),
+    let secret = secret.map(|input| match session.protocol {
+        // A Kubernetes session's one secret is the kubeconfig document itself.
+        sevenshell_types::Protocol::Kubernetes => sevenshell_vault::SessionSecret::Kubeconfig(input.value),
+        _ => match session.auth.method {
+            // A passphrase belongs to the key, and is stored with it during import; a secret sent with
+            // a key session is therefore the key's passphrase and is treated as such.
+            sevenshell_types::AuthMethod::PublicKey => sevenshell_vault::SessionSecret::KeyPassphrase(input.value),
+            _ => sevenshell_vault::SessionSecret::Password(input.value),
+        },
     });
 
     state.vault().save_session(session, secret)

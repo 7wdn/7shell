@@ -29,6 +29,7 @@
  * someone typed is still there when they come back to it.
  */
 import {
+  Boxes,
   CircleAlert,
   Cpu,
   Folder,
@@ -39,6 +40,7 @@ import {
   PanelBottom,
   RotateCw,
   Settings,
+  ShipWheel,
   Terminal,
   X,
 } from "@lucide/vue";
@@ -47,6 +49,8 @@ import { useI18n } from "vue-i18n";
 
 import { sessionEndpoint } from "@/lib/menu/sessions";
 import BatchPanel from "@/components/batch/BatchPanel.vue";
+import ContainerPane from "@/components/container/ContainerPane.vue";
+import KubernetesPane from "@/components/k8s/KubernetesPane.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
@@ -156,7 +160,13 @@ function showFiles(tab: TerminalTab): void {
 
 /** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
 function hasHandle(tab: WorkspaceTab): boolean {
-  if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
+  if (
+    tab.kind === "inspect" ||
+    tab.kind === "settings" ||
+    tab.kind === "batch" ||
+    tab.kind === "container" ||
+    tab.kind === "kubernetes"
+  ) {
     return false;
   }
   return tab.handle !== null;
@@ -178,7 +188,14 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
         kind: tab.kind,
         // The settings page has no stream of its own either: it writes a file rather than holding
         // a connection, so there is nothing for the menu to offer a retry for.
-        status: tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch" ? null : tab.status,
+        status:
+          tab.kind === "inspect" ||
+          tab.kind === "settings" ||
+          tab.kind === "batch" ||
+          tab.kind === "container" ||
+          tab.kind === "kubernetes"
+            ? null
+            : tab.status,
         hasHandle: hasHandle(tab),
         index,
         total: drawnIds.value.length,
@@ -247,6 +264,10 @@ function closeLabel(tab: WorkspaceTab): string {
       return t("settings.tab.close");
     case "batch":
       return t("batch.tab.close");
+    case "container":
+      return t("container.tab.close");
+    case "kubernetes":
+      return t("k8s.tab.close");
     default:
       return t("terminal.tab.close");
   }
@@ -259,7 +280,13 @@ function dotClass(tab: WorkspaceTab): string | null {
   }
   // Neither page has a status of its own: an inspect page's connection belongs to a terminal
   // somewhere else, and the settings page has none to report.
-  if (tab.kind === "inspect" || tab.kind === "settings" || tab.kind === "batch") {
+  if (
+    tab.kind === "inspect" ||
+    tab.kind === "settings" ||
+    tab.kind === "batch" ||
+    tab.kind === "container" ||
+    tab.kind === "kubernetes"
+  ) {
     return null;
   }
   switch (tab.status) {
@@ -549,6 +576,8 @@ function tabStyle(): Record<string, string> | undefined {
             <Folder v-else-if="entry.tab.kind === 'files'" :size="12" class="shrink-0" />
             <Settings v-else-if="entry.tab.kind === 'settings'" :size="12" class="shrink-0" />
             <ListChecks v-else-if="entry.tab.kind === 'batch'" :size="12" class="shrink-0" />
+            <Boxes v-else-if="entry.tab.kind === 'container'" :size="12" class="shrink-0" />
+            <ShipWheel v-else-if="entry.tab.kind === 'kubernetes'" :size="12" class="shrink-0" />
             <Cpu v-else-if="entry.tab.view === 'system'" :size="12" class="shrink-0" />
             <List v-else-if="entry.tab.view === 'processes'" :size="12" class="shrink-0" />
             <Network v-else :size="12" class="shrink-0" />
@@ -819,6 +848,10 @@ function tabStyle(): Record<string, string> | undefined {
         rows that stopped being updated halfway through.
       -->
       <BatchPanel v-else-if="tab.kind === 'batch'" />
+
+      <ContainerPane v-else-if="tab.kind === 'container'" :tab="tab" :active="tab.id === terminals.activeTabId" />
+
+      <KubernetesPane v-else-if="tab.kind === 'kubernetes'" :tab="tab" :active="tab.id === terminals.activeTabId" />
     </div>
   </section>
 </template>

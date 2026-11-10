@@ -12,6 +12,8 @@
 //! struct the classifier produces — so this crate is the rules and nothing else.
 
 pub mod command_risk;
+pub mod container_risk;
 
 pub use command_risk::classify;
+pub use container_risk::{container_action, kubernetes_request};
 pub use sevenshell_types::{RiskAssessment, RiskLevel, RiskReason};

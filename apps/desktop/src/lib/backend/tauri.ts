@@ -15,6 +15,30 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppInfo, AppSettings } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
+import type {
+  ContainerCommitRequest,
+  ContainerCreateRequest,
+  ContainerDetail,
+  ContainerImage,
+  ContainerImageTransfer,
+  ContainerRegistryLogin,
+  ContainerRuntimeInfo,
+  ContainerStats,
+  ContainerStreamEnd,
+  ContainerStreamLine,
+  ContainerSummary,
+  ImageLayer,
+} from "@/types/container";
+import type {
+  K8sExecRequest,
+  K8sLogRequest,
+  K8sRequest,
+  K8sResponse,
+  K8sStreamEnd,
+  K8sStreamLine,
+  K8sWatchEvent,
+  KubeContextInfo,
+} from "@/types/k8s";
 import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
@@ -962,4 +986,165 @@ export async function onFilesDrag(listener: (payload: DragPayload) => void): Pro
 
 export async function onFilesDropped(listener: (payload: DropPayload) => void): Promise<Unlisten> {
   return listen<DropPayload>("files:dropped", (event) => listener(event.payload));
+}
+
+// -- Containers --------------------------------------------------------------
+
+export function containerConnect(sessionId: string): Promise<string> {
+  return invoke<string>("container_connect", { sessionId });
+}
+
+export function containerDisconnect(connectionId: string): Promise<void> {
+  return invoke<void>("container_disconnect", { connectionId });
+}
+
+export function containerList(connectionId: string): Promise<ContainerSummary[]> {
+  return invoke<ContainerSummary[]>("container_list", { connectionId });
+}
+
+export function containerInspect(connectionId: string, containerId: string): Promise<ContainerDetail> {
+  return invoke<ContainerDetail>("container_inspect", { connectionId, containerId });
+}
+
+export function containerAction(connectionId: string, containerId: string, action: string): Promise<void> {
+  return invoke<void>("container_action", { connectionId, containerId, action });
+}
+
+export function containerRename(connectionId: string, containerId: string, name: string): Promise<void> {
+  return invoke<void>("container_rename", { connectionId, containerId, name });
+}
+
+export function containerCreate(connectionId: string, request: ContainerCreateRequest): Promise<void> {
+  return invoke<void>("container_create", { connectionId, request });
+}
+
+export function containerStats(connectionId: string): Promise<ContainerStats[]> {
+  return invoke<ContainerStats[]>("container_stats", { connectionId });
+}
+
+export function containerNamespaces(connectionId: string): Promise<string[]> {
+  return invoke<string[]>("container_namespaces", { connectionId });
+}
+
+export function containerSetNamespace(connectionId: string, namespace: string): Promise<void> {
+  return invoke<void>("container_set_namespace", { connectionId, namespace });
+}
+
+export function containerRuntimeInfo(connectionId: string): Promise<ContainerRuntimeInfo> {
+  return invoke<ContainerRuntimeInfo>("container_runtime_info", { connectionId });
+}
+
+export function containerLogsStart(
+  connectionId: string,
+  containerId: string,
+  tail: number,
+  timestamps: boolean,
+): Promise<string> {
+  return invoke<string>("container_logs_start", { connectionId, containerId, tail, timestamps });
+}
+
+export function containerStreamStop(streamId: string): Promise<void> {
+  return invoke<void>("container_stream_stop", { streamId });
+}
+
+export function containerExecOpen(connectionId: string, containerId: string, shell: string): Promise<string> {
+  return invoke<string>("container_exec_open", { connectionId, containerId, shell });
+}
+
+export function containerImages(connectionId: string): Promise<ContainerImage[]> {
+  return invoke<ContainerImage[]>("container_images", { connectionId });
+}
+
+export function containerImageInspect(connectionId: string, image: string): Promise<string> {
+  return invoke<string>("container_image_inspect", { connectionId, image });
+}
+
+export function containerImageHistory(connectionId: string, image: string): Promise<ImageLayer[]> {
+  return invoke<ImageLayer[]>("container_image_history", { connectionId, image });
+}
+
+export function containerImagePull(connectionId: string, request: ContainerImageTransfer): Promise<string> {
+  return invoke<string>("container_image_pull", { connectionId, request });
+}
+
+export function containerImagePush(connectionId: string, request: ContainerImageTransfer): Promise<string> {
+  return invoke<string>("container_image_push", { connectionId, request });
+}
+
+export function containerImageRemove(connectionId: string, image: string): Promise<void> {
+  return invoke<void>("container_image_remove", { connectionId, image });
+}
+
+export function containerImagePrune(connectionId: string): Promise<void> {
+  return invoke<void>("container_image_prune", { connectionId });
+}
+
+export function containerImageTag(connectionId: string, image: string, tag: string): Promise<void> {
+  return invoke<void>("container_image_tag", { connectionId, image, tag });
+}
+
+export function containerImageLoad(connectionId: string, grant: string): Promise<string> {
+  return invoke<string>("container_image_load", { connectionId, grant });
+}
+
+export function containerImageCommit(connectionId: string, request: ContainerCommitRequest): Promise<string> {
+  return invoke<string>("container_image_commit", { connectionId, request });
+}
+
+export function containerRegistryLogin(connectionId: string, request: ContainerRegistryLogin): Promise<void> {
+  return invoke<void>("container_registry_login", { connectionId, request });
+}
+
+export async function onContainerStreamLine(listener: (payload: ContainerStreamLine) => void): Promise<Unlisten> {
+  return listen<ContainerStreamLine>("container:stream", (event) => listener(event.payload));
+}
+
+export async function onContainerStreamEnd(listener: (payload: ContainerStreamEnd) => void): Promise<Unlisten> {
+  return listen<ContainerStreamEnd>("container:stream-end", (event) => listener(event.payload));
+}
+
+// -- Kubernetes --------------------------------------------------------------
+
+export function k8sContexts(kubeconfig?: SecretInput): Promise<KubeContextInfo[]> {
+  return invoke<KubeContextInfo[]>("k8s_contexts", { kubeconfig });
+}
+
+export function k8sConnect(sessionId: string): Promise<string> {
+  return invoke<string>("k8s_connect", { sessionId });
+}
+
+export function k8sDisconnect(connectionId: string): Promise<void> {
+  return invoke<void>("k8s_disconnect", { connectionId });
+}
+
+export function k8sRequest(connectionId: string, request: K8sRequest): Promise<K8sResponse> {
+  return invoke<K8sResponse>("k8s_request", { connectionId, request });
+}
+
+export function k8sWatchStart(connectionId: string, path: string): Promise<string> {
+  return invoke<string>("k8s_watch_start", { connectionId, path });
+}
+
+export function k8sLogsStart(connectionId: string, request: K8sLogRequest): Promise<string> {
+  return invoke<string>("k8s_logs_start", { connectionId, request });
+}
+
+export function k8sStreamStop(streamId: string): Promise<void> {
+  return invoke<void>("k8s_stream_stop", { streamId });
+}
+
+export function k8sExecOpen(connectionId: string, request: K8sExecRequest): Promise<string> {
+  return invoke<string>("k8s_exec_open", { connectionId, request });
+}
+
+export async function onK8sStreamLine(listener: (payload: K8sStreamLine) => void): Promise<Unlisten> {
+  return listen<K8sStreamLine>("k8s:stream", (event) => listener(event.payload));
+}
+
+export async function onK8sStreamEnd(listener: (payload: K8sStreamEnd) => void): Promise<Unlisten> {
+  return listen<K8sStreamEnd>("k8s:stream-end", (event) => listener(event.payload));
+}
+
+export async function onK8sWatch(listener: (payload: K8sWatchEvent) => void): Promise<Unlisten> {
+  return listen<K8sWatchEvent>("k8s:watch", (event) => listener(event.payload));
 }
