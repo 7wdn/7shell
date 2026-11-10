@@ -25,6 +25,7 @@ sevenshell-core = { workspace = true }
 sevenshell-error = { workspace = true }
 sevenshell-platform = { workspace = true }
 sevenshell-session = { workspace = true }
+sevenshell-term = { workspace = true }
 sevenshell-ssh = { workspace = true }
 sevenshell-sync = { workspace = true }
 sevenshell-types = { workspace = true }

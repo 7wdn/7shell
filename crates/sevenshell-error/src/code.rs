@@ -131,6 +131,52 @@ error_catalog! {
     #[doc = "The sync server answered with a status that is not success."]
     SyncHttpFailed => "SYNC-HTTP-FAILED", "errors.sync.httpFailed";
 
+    // -- WebDAV file browsing ----------------------------------------------
+    #[doc = "The WebDAV address is not one this build can use."]
+    WebDavInvalidAddress => "WEBDAV-INVALID-ADDRESS", "errors.webdav.invalidAddress";
+    #[doc = "The WebDAV server could not be reached at all."]
+    WebDavUnreachable => "WEBDAV-UNREACHABLE", "errors.webdav.unreachable";
+    #[doc = "The WebDAV server refused the credentials."]
+    WebDavAuthFailed => "WEBDAV-AUTH-FAILED", "errors.webdav.authFailed";
+    #[doc = "The WebDAV server refused the operation for permission reasons."]
+    WebDavPermissionDenied => "WEBDAV-PERMISSION-DENIED", "errors.webdav.permissionDenied";
+    #[doc = "The remote path does not exist."]
+    WebDavNotFound => "WEBDAV-NOT-FOUND", "errors.webdav.notFound";
+    #[doc = "Something with that name is already there."]
+    WebDavExists => "WEBDAV-EXISTS", "errors.webdav.exists";
+    #[doc = "The WebDAV server answered with a status that is not success."]
+    WebDavHttpFailed => "WEBDAV-HTTP-FAILED", "errors.webdav.httpFailed";
+    #[doc = "A file transfer over WebDAV failed part-way through."]
+    WebDavTransferFailed => "WEBDAV-TRANSFER-FAILED", "errors.webdav.transferFailed";
+    #[doc = "A listing answer from the WebDAV server could not be read."]
+    WebDavMalformed => "WEBDAV-MALFORMED", "errors.webdav.malformed";
+
+    // -- FTP file browsing -------------------------------------------------
+    #[doc = "A path the FTP client refused before it became a command."]
+    FtpInvalidPath => "FTP-INVALID-PATH", "errors.ftp.invalidPath";
+    #[doc = "The FTP server could not be reached."]
+    FtpUnreachable => "FTP-UNREACHABLE", "errors.ftp.unreachable";
+    #[doc = "The FTP server refused the credentials."]
+    FtpAuthFailed => "FTP-AUTH-FAILED", "errors.ftp.authFailed";
+    #[doc = "The FTPS connection could not be secured."]
+    FtpTlsFailed => "FTP-TLS-FAILED", "errors.ftp.tlsFailed";
+    #[doc = "The FTP server refused the operation for permission reasons."]
+    FtpPermissionDenied => "FTP-PERMISSION-DENIED", "errors.ftp.permissionDenied";
+    #[doc = "Something with that name is already there."]
+    FtpExists => "FTP-EXISTS", "errors.ftp.exists";
+    #[doc = "An FTP command or transfer failed."]
+    FtpOperationFailed => "FTP-OPERATION-FAILED", "errors.ftp.operationFailed";
+
+    // -- SCP fallback ------------------------------------------------------
+    #[doc = "The server cannot be browsed this way: no SCP or no shell listing exists."]
+    ScpUnavailable => "SCP-UNAVAILABLE", "errors.scp.unavailable";
+    #[doc = "A file transfer over SCP failed part-way through."]
+    ScpTransferFailed => "SCP-TRANSFER-FAILED", "errors.scp.transferFailed";
+    #[doc = "A shell-side file operation failed."]
+    ScpOperationFailed => "SCP-OPERATION-FAILED", "errors.scp.operationFailed";
+    #[doc = "Something with that name is already there."]
+    ScpExists => "SCP-EXISTS", "errors.scp.exists";
+
     // -- Terminal transports (Telnet, serial, local shells) ----------------
     #[doc = "A Telnet console could not be reached."]
     TerminalUnreachable => "TERMINAL-UNREACHABLE", "errors.terminal.unreachable";

@@ -63,6 +63,32 @@
       "authFailed": "The sync server refused that username or password.",
       "httpFailed": "The sync server answered {status}."
     },
+    "webdav": {
+      "invalidAddress": "That WebDAV address cannot be used.",
+      "unreachable": "The WebDAV server could not be reached.",
+      "authFailed": "The WebDAV server refused that username or password.",
+      "permissionDenied": "The WebDAV server refused access to {path}.",
+      "notFound": "{path} does not exist on the WebDAV server.",
+      "exists": "Something with that name is already there: {path}.",
+      "httpFailed": "The WebDAV server answered {status}.",
+      "transferFailed": "The transfer of {path} failed.",
+      "malformed": "The WebDAV server's answer could not be read."
+    },
+    "ftp": {
+      "invalidPath": "That path cannot be used on this FTP server.",
+      "unreachable": "The FTP server could not be reached.",
+      "authFailed": "The FTP server refused that username or password.",
+      "tlsFailed": "The FTPS connection could not be secured; the certificate or TLS negotiation failed.",
+      "permissionDenied": "The FTP server refused access.",
+      "exists": "Something with that name is already there: {path}.",
+      "operationFailed": "The FTP operation failed."
+    },
+    "scp": {
+      "unavailable": "This server cannot be browsed over SCP: it has no SCP command or no shell listing this build can read.",
+      "transferFailed": "The transfer of {path} over SCP failed.",
+      "operationFailed": "The SCP operation on {path} failed.",
+      "exists": "Something with that name is already there: {path}."
+    },
     "policy": {
       "denied": "The active policy does not allow {action}.",
       "approvalRequired": "{action} needs your approval first."

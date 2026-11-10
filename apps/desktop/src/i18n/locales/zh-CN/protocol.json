@@ -6,6 +6,12 @@
     "rdp": {
       "label": "远程桌面（RDP）"
     },
+    "webdav": {
+      "label": "WebDAV"
+    },
+    "ftp": {
+      "label": "FTP / FTPS"
+    },
     "telnet": {
       "label": "Telnet"
     },

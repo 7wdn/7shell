@@ -211,6 +211,21 @@ impl SshSession {
         Ok(Box::new(channel.into_stream()))
     }
 
+    /// Opens a command as a stream that can be written to as well as read from.
+    ///
+    /// [`exec`](Self::exec) is the same channel with both ends collected into a value; a protocol
+    /// that answers a record with a record needs the conversation instead. Nothing about the
+    /// channel differs — it is a session channel with one command on it — so it is opened here,
+    /// beside the other channel shapes, and handed over as bytes.
+    pub async fn open_exec_stream(&self, command: &str) -> Result<BoxedStream, ShellError> {
+        let channel = self.open_session_channel_for("a command").await?;
+        channel
+            .exec(true, command.to_owned())
+            .await
+            .map_err(|error| self.channel_failure(&format!("`{command}` could not be started"), &error))?;
+        Ok(Box::new(channel.into_stream()))
+    }
+
     /// Opens a channel to a host as it is seen from the far side of this connection.
     ///
     /// This is the primitive a jump host and a forward are both built from, so it lives here

@@ -131,6 +131,7 @@ function filesOpened() {
     handle: "f1",
     sessionId: session.id,
     listing: { path: "/home/user", entries: [] },
+    packed: true,
   } as const;
 }
 

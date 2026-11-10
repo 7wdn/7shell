@@ -40,7 +40,11 @@ it, never in advance.
 | Jump hosts: a route through other saved sessions, every hop verified as if it were the destination | Working, tested against a real sshd |
 | Port forwarding: a local port reaching the far side (`-L`), and a local SOCKS5 port (`-D`) | Working, tested against a real sshd |
 | The file workbench: two directories side by side, create, rename, delete, edit text, upload, download | Working, tested against a real sshd |
-| Transfers: queued and listed, pausable and resumable, packed as one archive for a whole tree, outliving the tab they started in | Working, tested against a real sshd and a 50,000-file directory |
+| WebDAV folders: a saved HTTP folder in the same workbench, with its own transfers and text editor | Working, with an in-process WebDAV server |
+| FTP / FTPS folders: a saved FTP account, or explicit TLS before the login, in the same workbench | Working, with an in-process FTP server |
+| SCP fallback: a server with no SFTP subsystem, browsed through its shell and SCP | Working, live-tested against a server with SFTP switched off |
+| ZMODEM: `rz` and `sz` inside a terminal, with the system file picker and save dialog | Working, with protocol tests; a real `rz`/`sz` was not run because the lab has no lrzsz |
+| Transfers: queued and listed, pausable and resumable, packed as one archive for a whole tree, outliving the tab they started in | Working, tested against a real sshd and a 50,000-file directory; packed archives are SSH-only |
 | Host monitor: load, memory, disks, processes and sockets, sampled over the connection you already have | Working |
 | Batch execution: one command, several hosts, a per-host result, and a risk verdict before it runs | Working, tested against a real sshd |
 | Command library: saved commands with `#1`–`#5` slots, history, completion, sent to one terminal or all of them | Working |
@@ -52,8 +56,15 @@ it, never in advance.
 forwarding (implemented, deliberately unclaimed until a real far side has been proved to use it),
 Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. Remote desktops are a Windows-only
 feature of this build: the session is handed to the system Remote Desktop client, so macOS and Linux
-do not offer one. The command line and agent interfaces and the plugin platform are 1.x work: the
+do not offer one. A WebDAV or FTP folder cannot be downloaded as one packed archive; its files are
+fetched one at a time. An FTP server also has no server-side copy, so the file menu offers move but
+not copy. The command line and agent interfaces and the plugin platform are 1.x work: the
 architecture keeps room for them, and no code for them exists yet.
+
+**Verification notes:** FTP/FTPS and ZMODEM are covered by in-process/protocol tests, but a real
+FTPS certificate chain and a real `rz`/`sz` session were not run on this machine: the Docker registry
+refuses FTP images, and the SSH lab has no `lrzsz`. Those are the two rows to exercise first on a
+machine that has those servers.
 
 ## Installing
 

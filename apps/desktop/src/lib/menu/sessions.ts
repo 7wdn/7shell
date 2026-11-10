@@ -81,6 +81,10 @@ export function sessionEndpoint(session: Session, t?: (key: string) => string): 
       return session.local?.shell || (t ? t("sessions.editor.local.defaultShell") : "local");
     case "wsl":
       return session.wsl?.distro || (t ? t("sessions.editor.wsl.defaultDistro") : "WSL");
+    case "webdav":
+      // The address is the folder, not an account at a host: the URL is what somebody would paste
+      // into another client, so that is what the row shows.
+      return session.webdav?.url || session.host;
     default:
       return `${session.user}@${session.host}:${session.port}`;
   }
@@ -134,7 +138,12 @@ export function sessionMenu(
     {
       kind: "action",
       id: "open",
-      labelKey: session.protocol === "rdp" ? "sessions.list.openDesktop" : "sessions.list.open",
+      labelKey:
+        session.protocol === "rdp"
+          ? "sessions.list.openDesktop"
+          : session.protocol === "webdav" || session.protocol === "ftp"
+            ? "files.open"
+            : "sessions.list.open",
       icon: Terminal,
       run: () => actions.open(session),
     },

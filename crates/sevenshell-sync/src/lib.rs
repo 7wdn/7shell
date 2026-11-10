@@ -1,6 +1,6 @@
 //! A copy of the library that travels: what a snapshot carries, and where it goes.
 //!
-//! Three things live here, and they are the three a backup is made of.
+//! Three things live here for a backup, and a fourth the file browser borrows.
 //!
 //! * **The snapshot** ([`snapshot`]) — everything worth carrying, in one file, in two forms: plain,
 //!   which never contains a credential, and sealed, which contains them and nothing readable.
@@ -8,6 +8,8 @@
 //!   the answer can be asserted and the write afterwards is mechanical.
 //! * **The file** ([`backup`]) — the backup on disk, written so an interrupted one cannot lose the
 //!   copy that was already there.
+//! * **The WebDAV folder** ([`WebDavFiles`]) — the same authenticated transport used as a file
+//!   browser's backend: one endpoint, and the verbs over the paths inside it.
 //!
 //! What this crate does *not* do is write: a restore hands back the two things it decided — what the
 //! vault holds and what the settings should become — and the host writes them, because it is the
@@ -49,4 +51,4 @@ pub use snippets::{
     SnippetRequest, SnippetSync, Snippets, api_base, create_body, file_in, is_ours, open_snippet, read_request,
     response_id, seal, snippet_account, snippet_url, test_request, write_request,
 };
-pub use webdav::{DEFAULT_REMOTE_PATH, SyncService, WebDav};
+pub use webdav::{DEFAULT_REMOTE_PATH, DavEntry, SyncService, WebDav, WebDavFiles, normalize_dav_path};

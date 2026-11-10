@@ -1,0 +1,14 @@
+schemaVersion: 1
+order: 25
+id: webdav
+rustVariant: WebDav
+labelKey: protocol.webdav.label
+defaultPort: 443
+# A folder on an HTTP server is the whole session: there is no shell and no terminal, so the tab
+# this protocol opens is the file browser itself. `native` because the client is in this process,
+# unlike RDP's system client.
+runtime: native
+transport: tcp
+supportLevel: operate
+capabilities:
+  - webdav

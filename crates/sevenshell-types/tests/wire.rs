@@ -474,6 +474,10 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
         serial: sevenshell_types::SerialSettings::default(),
         local: sevenshell_types::LocalSettings::default(),
         wsl: sevenshell_types::WslSettings::default(),
+        webdav: sevenshell_types::WebDavSettings {
+            url: "https://dav.example/folder/".to_owned(),
+        },
+        ftp: sevenshell_types::FtpSettings { secure: true },
         jump: vec!["hop-1".to_owned()],
         forwards: vec![LocalForward {
             id: "f1".to_owned(),
@@ -492,6 +496,8 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
     assert_eq!(json["auth"]["key"]["hasPassphrase"], serde_json::json!(true));
     assert_eq!(json["desktop"]["width"], serde_json::json!(1280));
     assert_eq!(json["desktop"]["redirectDrives"], serde_json::json!(true));
+    assert_eq!(json["webdav"]["url"], serde_json::json!("https://dav.example/folder/"));
+    assert_eq!(json["ftp"]["secure"], serde_json::json!(true));
 }
 
 #[test]

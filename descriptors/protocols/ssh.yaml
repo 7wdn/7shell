@@ -18,6 +18,7 @@ capabilities:
   - keepalive
   - hostMetrics
   - sftp
+  - scp
   - forwarding
   - dynamicForwarding
   - recording

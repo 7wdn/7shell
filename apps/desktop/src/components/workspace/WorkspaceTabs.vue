@@ -704,7 +704,12 @@ function tabStyle(): Record<string, string> | undefined {
           >
             <CommandsPanel v-if="panelTab[tab.id] === 'commands'" class="min-h-0 flex-1" />
 
-            <FileBrowser v-else-if="tab.panel?.handle" :handle="tab.panel?.handle" class="min-h-0 flex-1" />
+            <FileBrowser
+              v-else-if="tab.panel?.handle"
+              :handle="tab.panel?.handle"
+              :protocol="tab.session.protocol"
+              class="min-h-0 flex-1"
+            />
 
             <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
               <CircleAlert v-if="tab.panel?.status === 'failed'" :size="18" class="text-destructive" />
@@ -745,7 +750,13 @@ function tabStyle(): Record<string, string> | undefined {
       </template>
 
       <template v-else-if="tab.kind === 'files'">
-        <FileBrowser v-if="tab.handle" :handle="tab.handle" class="min-h-0 flex-1" />
+        <FileBrowser
+          v-if="tab.handle"
+          :handle="tab.handle"
+          :protocol="tab.session.protocol"
+          :packed-transfers="tab.packed"
+          class="min-h-0 flex-1"
+        />
 
         <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <CircleAlert :size="18" class="text-destructive" />

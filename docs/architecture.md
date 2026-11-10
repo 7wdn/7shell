@@ -34,10 +34,12 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 **Current state:** the crates that exist are `sevenshell-error`, `sevenshell-types`,
 `sevenshell-platform` (where data lives, including the settings file), `sevenshell-vault` (the
 encrypted store), `sevenshell-policy` (what may be run, and how dangerous it is), `sevenshell-ssh`
-(host key verification, authentication, a terminal channel), `sevenshell-session` (the registry of
-open terminals), `sevenshell-sftp` (the far side of the file workbench), `sevenshell-sync` (a copy
-of the library that travels: what a snapshot holds, and where it goes) and `sevenshell-core` (the
-order of operations), with `sevenshell-desktop` as the window and the command surface. The host
+(host key verification, authentication, a terminal channel), `sevenshell-term` (the terminals that
+are not SSH), `sevenshell-ftp` (the far side of FTP and FTPS file browsers), `sevenshell-session`
+(the registry of open terminals), `sevenshell-sftp` (the far side of the file workbench),
+`sevenshell-sync` (a copy of the library that travels: what a snapshot holds, where it goes, and the
+WebDAV transport the file browser borrows) and `sevenshell-core` (the order of operations), with
+`sevenshell-desktop` as the window and the command surface. The host
 crates for a command line and an agent interface arrive with the features that need them, so that
 nothing exists without a test.
 
@@ -155,6 +157,27 @@ the server to log for no reason. Its traffic goes through a channel opened as th
 on a session that was opened as a *carrier*: a jump host or a destination that nobody logs into does
 not get a shell for the privilege of listing a directory.
 
+A **WebDAV folder** is the second backend behind the same panel, and it is a different shape: there
+is no connection object, no shell and no permission bits. It lists with `PROPFIND`, changes with
+`MKCOL`/`DELETE`/`MOVE`/`COPY`, and moves bytes with `PUT`/`GET`. Two things it deliberately does not
+offer: a packed archive (there is no remote `tar` to run) and a resumed download after a failure —
+a listing carries no stable identity for a file, so a part file cannot be proved to be a prefix of
+the version now on the server. Pausing a running transfer still works, and an upload lands under a
+hidden part name and is moved into place by the server's own `MOVE`.
+
+An **FTP/FTPS account** is the third backend. It has one stateful control connection, so the core
+holds it behind a mutex and every command and transfer takes its turn; data connections are passive
+only. Transfers are copied through progress-aware reader/writer adapters, which is what keeps pause,
+stop and the byte counter working without teaching the protocol crate about the transfer registry.
+The protocol has no server-side copy and no recursive delete reply, so the core hides copy and walks
+the tree to delete a directory; packed transfers are not offered.
+
+A **server with no SFTP subsystem** gets the shell-backed fallback. Opening the browser tries SFTP
+first; when the subsystem is missing, a capability probe asks whether the shell has `scp` and a
+listing command, and the browser becomes a shell listing (`find -printf`, or `ls -lAH`) plus SCP
+file bodies. The browser's `packed` flag is how the interface knows not to offer archives; a
+transfer row from this backend says it cannot be paused, so the row offers stop instead of hold.
+
 Two rules the interface depends on:
 
 - **Local paths are chosen in Rust.** A download opens a save dialog and an upload opens a file
@@ -190,7 +213,9 @@ checked against what it came from; only a retry within the same transfer continu
 continues only while the source is unchanged — same size, same modification time — which the core
 watches because it is the layer that knows what the source was. Cancelling removes the part file
 (somebody said stop); failing keeps it, because the next thing they will try is the retry button.
-A failure nobody retries leaves one file, clearly named, that is theirs to delete.
+A failure nobody retries leaves one file, clearly named, that is theirs to delete. The WebDAV
+download is the exception that proves the rule: with no source stamp to compare, it starts clean
+on every attempt rather than risk joining two versions.
 
 Five things can be done to a transfer, and they are deliberately not each other. **Hold** a running
 one; **let a paused one go**; **try a stopped one again**, from wherever it stopped. Then the two
@@ -240,6 +265,14 @@ shell's own contract, and the interface's mirror of them lives in `types/session
 One subscription serves every pane: `lib/terminal/bus.ts` receives both events for the whole
 application and fans them out by handle. A terminal that ends is kept in the interface with its
 scrollback and a reconnect action, rather than disappearing.
+
+A terminal's output is also watched for **ZMODEM**. The detector (in `sevenshell-term`) sits in the
+host's event pump, not in the transport: a received file needs a native save dialog and a file to
+send needs a native picker, and the host is the layer that owns both. Ordinary bytes go on to
+`terminal:data` unchanged; protocol bytes are written back into the terminal's input; a `sz` offer
+opens a save dialog and the data is written to a part file whose name the person chose, and an `rz`
+request opens a file picker and feeds the chosen file into the sender. The interface is told what is
+happening through `zmodem:event` notices; it never sees a local path.
 
 ## The system mark beside a session
 

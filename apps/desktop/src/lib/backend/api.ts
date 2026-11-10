@@ -50,6 +50,7 @@ import type {
   UploadOutcome,
   VaultArchive,
   VaultState,
+  ZmodemEvent,
 } from "@/types/session";
 import type {
   SnippetStatus,
@@ -602,6 +603,8 @@ export const backend = {
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalClosed, listener),
+    onZmodemEvent: (listener: (payload: ZmodemEvent) => void): Promise<Unlisten> =>
+      subscribe(desktop.onZmodemEvent, listener),
     /** Whether a drag is over the window, for the drop hint. */
     onFilesDrag: (listener: (payload: DragPayload) => void): Promise<Unlisten> =>
       subscribe(desktop.onFilesDrag, listener),

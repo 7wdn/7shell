@@ -55,6 +55,7 @@ import type {
   UploadOutcome,
   VaultArchive,
   VaultState,
+  ZmodemEvent,
 } from "@/types/session";
 import type {
   SnippetStatus,
@@ -949,6 +950,10 @@ export async function onTerminalData(listener: (payload: TerminalData) => void):
 
 export async function onTerminalClosed(listener: (payload: TerminalClosed) => void): Promise<Unlisten> {
   return listen<TerminalClosed>("terminal:closed", (event) => listener(event.payload));
+}
+
+export async function onZmodemEvent(listener: (payload: ZmodemEvent) => void): Promise<Unlisten> {
+  return listen<ZmodemEvent>("zmodem:event", (event) => listener(event.payload));
 }
 
 export async function onFilesDrag(listener: (payload: DragPayload) => void): Promise<Unlisten> {

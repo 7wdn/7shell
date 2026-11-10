@@ -5,26 +5,33 @@
 //! asks — the desktop shell opens a native dialog and passes the answer down.
 
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::task::{Context, Poll};
 use std::time::Duration;
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::sync::Mutex;
+use tokio::time::Instant;
 
 use crate::archive;
 use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
 use sevenshell_error::ShellError;
+use sevenshell_ftp::{FtpConnectionOptions, FtpEntry, FtpSession};
 use sevenshell_sftp::{SftpSession, TransferProgress};
-use sevenshell_ssh::{ExecOutcome, SshSession};
+use sevenshell_ssh::{ExecOutcome, ShellListing, SshSession, TransferOptions};
+use sevenshell_sync::{DavEntry, WebDavFiles, normalize_dav_path};
 use sevenshell_types::{
-    EntryKind, SftpListing, SftpOutcome, SftpPasteItem, SftpPasteOutcome, TransferDirection, TransferInfo,
-    TransferState,
+    EntryKind, Protocol, Session, SftpEntry, SftpListing, SftpOutcome, SftpPasteItem, SftpPasteOutcome,
+    TransferDirection, TransferInfo, TransferState,
 };
+use sevenshell_vault::ServicePassword;
 
-/// One open file browser: the connection it rides on, and its SFTP channel.
+/// One open file browser: the connection it rides on, and the backend it speaks.
 pub struct FileSession {
-    /// Kept alive for as long as the browser is: the channel dies with the connection.
-    connection: Arc<SshSession>,
-    sftp: Arc<SftpSession>,
+    backend: FileBackend,
     /// The session it was opened for, which is what every transfer started here belongs to.
     ///
     /// Held rather than looked up per transfer because the browser can be gone by the time somebody
@@ -32,15 +39,219 @@ pub struct FileSession {
     session_id: String,
 }
 
+enum FileBackend {
+    /// An SFTP channel over an SSH connection.
+    Sftp {
+        /// Kept alive for as long as the browser is: the channel dies with the connection.
+        connection: Arc<SshSession>,
+        sftp: Arc<SftpSession>,
+    },
+    /// One folder on an HTTP server, with no connection object beyond the client it carries.
+    WebDav(Arc<WebDavFiles>),
+    /// One FTP control connection, serialized: the protocol has one session and one data
+    /// connection at a time, so every command and transfer takes the lock.
+    Ftp(Arc<Mutex<FtpSession>>),
+    /// The shell of an SSH server with no SFTP subsystem: listing and file operations go through
+    /// commands, and file bodies through SCP.
+    Scp { connection: Arc<SshSession> },
+}
+
 impl FileSession {
+    fn sftp(&self) -> Result<&Arc<SftpSession>, ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => Ok(sftp),
+            FileBackend::WebDav(_) | FileBackend::Ftp(_) | FileBackend::Scp { .. } => {
+                Err(ShellError::app_unsupported("this file browser is not an SFTP channel"))
+            }
+        }
+    }
+
     /// The connection underneath, which is what a packed transfer needs: `tar` is a command rather
     /// than a file operation, and SFTP has nowhere to run one.
-    fn connection(&self) -> Arc<SshSession> {
-        Arc::clone(&self.connection)
+    fn connection(&self) -> Result<Arc<SshSession>, ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { connection, .. } => Ok(Arc::clone(connection)),
+            FileBackend::Scp { connection } => Ok(Arc::clone(connection)),
+            FileBackend::WebDav(_) | FileBackend::Ftp(_) => Err(ShellError::app_unsupported(
+                "this file browser has no shell to run a command in",
+            )),
+        }
     }
 
     fn session_id(&self) -> String {
         self.session_id.clone()
+    }
+
+    /// Removes one entry without caring which kind it is, for the overwrite half of a paste.
+    async fn remove_any(&self, path: &str) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.remove_path(path).await,
+            FileBackend::WebDav(dav) => dav.remove(path).await,
+            FileBackend::Ftp(ftp) => {
+                let mut ftp = ftp.lock().await;
+                match ftp.remove_file(path).await {
+                    Ok(()) => Ok(()),
+                    Err(_) => ftp_remove_tree(&mut ftp, path).await,
+                }
+            }
+            FileBackend::Scp { connection } => scp_remove(connection, path).await,
+        }
+    }
+
+    async fn list(&self, path: &str) -> Result<SftpListing, ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.list(path).await,
+            FileBackend::WebDav(dav) => Ok(dav_listing(path, dav.list(path).await?)),
+            FileBackend::Ftp(ftp) => {
+                let entries = ftp.lock().await.list(path).await?;
+                Ok(ftp_listing(path, entries))
+            }
+            FileBackend::Scp { connection } => {
+                let listing = connection.list_via_shell(path, SHELL_TIMEOUT).await?;
+                Ok(scp_listing(listing))
+            }
+        }
+    }
+
+    async fn create_dir(&self, path: &str) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.create_dir(path).await,
+            FileBackend::WebDav(dav) => dav.create_dir(path).await,
+            FileBackend::Ftp(ftp) => {
+                let mut ftp = ftp.lock().await;
+                if ftp.exists(path).await? {
+                    return Err(ShellError::ftp_exists(path));
+                }
+                ftp.mkdir(path).await
+            }
+            FileBackend::Scp { connection } => {
+                if scp_exists(connection, path).await? {
+                    return Err(ShellError::scp_exists(path));
+                }
+                scp_exec_ok(connection, &format!("mkdir -- {}", archive::shell_quote(path)), path).await
+            }
+        }
+    }
+
+    async fn create_file(&self, path: &str) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.create_file(path).await,
+            FileBackend::WebDav(dav) => dav.create_file(path).await,
+            FileBackend::Ftp(ftp) => {
+                let mut ftp = ftp.lock().await;
+                if ftp.exists(path).await? {
+                    return Err(ShellError::ftp_exists(path));
+                }
+                let mut empty = tokio::io::empty();
+                ftp.upload(path, &mut empty).await.map(|_| ())
+            }
+            FileBackend::Scp { connection } => {
+                if scp_exists(connection, path).await? {
+                    return Err(ShellError::scp_exists(path));
+                }
+                scp_exec_ok(connection, &format!("set -C; : > {}", archive::shell_quote(path)), path).await
+            }
+        }
+    }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.rename(from, to).await,
+            FileBackend::WebDav(dav) => dav.rename(from, to).await,
+            FileBackend::Ftp(ftp) => ftp.lock().await.rename(from, to).await,
+            FileBackend::Scp { connection } => {
+                scp_exec_ok(
+                    connection,
+                    &format!("mv -f -- {} {}", archive::shell_quote(from), archive::shell_quote(to)),
+                    to,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn set_permissions(&self, path: &str, mode: u32) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.set_permissions(path, mode).await,
+            FileBackend::WebDav(_) => Err(ShellError::app_unsupported("a WebDAV folder has no permission bits")),
+            FileBackend::Ftp(_) => Err(ShellError::app_unsupported("an FTP server has no chmod reply")),
+            FileBackend::Scp { connection } => {
+                scp_exec_ok(
+                    connection,
+                    &format!("chmod {:04o} -- {}", mode, archive::shell_quote(path)),
+                    path,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn remove(&self, path: &str, kind: EntryKind) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => match kind {
+                EntryKind::Directory => sftp.remove_dir_recursive(path).await,
+                _ => sftp.remove_file(path).await,
+            },
+            FileBackend::WebDav(dav) => dav.remove(path).await,
+            FileBackend::Ftp(ftp) => {
+                let mut ftp = ftp.lock().await;
+                match kind {
+                    EntryKind::Directory => ftp_remove_tree(&mut ftp, path).await,
+                    _ => ftp.remove_file(path).await,
+                }
+            }
+            FileBackend::Scp { connection } => match kind {
+                EntryKind::Directory => {
+                    scp_exec_ok(connection, &format!("rm -rf -- {}", archive::shell_quote(path)), path).await
+                }
+                _ => scp_exec_ok(connection, &format!("rm -f -- {}", archive::shell_quote(path)), path).await,
+            },
+        }
+    }
+
+    async fn read_text(&self, path: &str) -> Result<String, ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.read_text(path).await,
+            FileBackend::WebDav(dav) => String::from_utf8(dav.read(path).await?)
+                .map_err(|_| ShellError::webdav_transfer_failed(path, "the file is not UTF-8 text")),
+            FileBackend::Ftp(ftp) => {
+                let mut writer = VecWriter::default();
+                ftp.lock().await.download(path, &mut writer).await?;
+                String::from_utf8(writer.bytes)
+                    .map_err(|_| ShellError::ftp_operation_failed("the file is not UTF-8 text"))
+            }
+            FileBackend::Scp { connection } => scp_read_text(connection, path).await,
+        }
+    }
+
+    async fn write_text(&self, path: &str, text: &str) -> Result<(), ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.write_text(path, text).await,
+            FileBackend::WebDav(dav) => dav.write(path, text.as_bytes().to_vec()).await,
+            FileBackend::Ftp(ftp) => {
+                let mut input = text.as_bytes();
+                ftp.lock().await.upload(path, &mut input).await.map(|_| ())
+            }
+            FileBackend::Scp { connection } => scp_write_text(connection, path, text).await,
+        }
+    }
+
+    async fn exists(&self, path: &str) -> Result<bool, ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.exists(path).await,
+            FileBackend::WebDav(dav) => dav.exists(path).await,
+            FileBackend::Ftp(ftp) => ftp.lock().await.exists(path).await,
+            FileBackend::Scp { connection } => scp_exists(connection, path).await,
+        }
+    }
+
+    async fn size_of(&self, path: &str) -> Result<u64, ShellError> {
+        match &self.backend {
+            FileBackend::Sftp { sftp, .. } => sftp.size_of(path).await,
+            FileBackend::WebDav(dav) => Ok(dav.stat(path).await?.map(|entry| entry.size).unwrap_or(0)),
+            FileBackend::Ftp(ftp) => Ok(ftp.lock().await.stat(path).await?.map(|entry| entry.size).unwrap_or(0)),
+            FileBackend::Scp { connection } => scp_size(connection, path).await,
+        }
     }
 }
 
@@ -49,6 +260,15 @@ impl FileSession {
 /// Copying a directory is a long command rather than a stuck one; this is the budget for the far
 /// side's `cp`/`mv`, not a hurry for a copy that is working.
 const PASTE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// How long one shell command from a file browser may take.
+const SHELL_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long one SCP transfer may take.
+const SCP_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// How much text the editor will read out of one file over a shell.
+const SHELL_TEXT_LIMIT: usize = 16 * 1024 * 1024;
 
 /// The local end of one transfer, for the two things only this side can do with it.
 ///
@@ -72,6 +292,8 @@ struct TransferFacts {
     session_id: String,
     size: u64,
     packed: bool,
+    /// Whether the backend behind this transfer can pause it.
+    pausable: bool,
     /// Where the transfer's local end is, when it has one. Never serialized: see [`LocalEnd`].
     local: Option<PathBuf>,
 }
@@ -84,14 +306,50 @@ impl Core {
     /// a second is a second authentication the server did not need to see.
     pub async fn open_files(&self, session_id: &str) -> Result<SftpOutcome, ShellError> {
         let session = self.session(session_id)?;
+        if session.protocol == Protocol::WebDav {
+            return self.open_webdav_files(&session).await;
+        }
+        if session.protocol == Protocol::Ftp {
+            return self.open_ftp_files(&session).await;
+        }
 
         let connection = match self.open_carrier(&session).await? {
             ConnectionOutcome::Ready(connection) => connection,
             ConnectionOutcome::Decision(decision) => return Ok(into_files_outcome(*decision)),
         };
 
-        let stream = connection.open_subsystem_stream("sftp").await?;
-        let sftp = Arc::new(SftpSession::new(stream).await?);
+        let stream = match connection.open_subsystem_stream("sftp").await {
+            Ok(stream) => stream,
+            Err(sftp_error) => {
+                // A server old enough to have no SFTP subsystem is the case this fallback exists
+                // for. The probe is what tells a missing subsystem apart from a connection that is
+                // already gone: only a working shell with `scp` can browse this way.
+                let ready = matches!(
+                    connection.probe_shell_capabilities(self.timeout).await,
+                    Ok(capabilities) if capabilities.scp && capabilities.can_list()
+                );
+                if ready {
+                    return self.open_scp_files(&session, connection).await;
+                }
+                return Err(sftp_error);
+            }
+        };
+        let sftp = match SftpSession::new(stream).await {
+            Ok(sftp) => Arc::new(sftp),
+            Err(sftp_error) => {
+                // A server can accept the subsystem request and then say nothing: the channel is
+                // open and the protocol never starts. That is the same missing subsystem from this
+                // side, so the same fallback applies.
+                let ready = matches!(
+                    connection.probe_shell_capabilities(self.timeout).await,
+                    Ok(capabilities) if capabilities.scp && capabilities.can_list()
+                );
+                if ready {
+                    return self.open_scp_files(&session, connection).await;
+                }
+                return Err(sftp_error);
+            }
+        };
 
         // The first listing is part of the answer: a browser that opened and then had to ask where
         // it was would have two ways to fail instead of one.
@@ -101,8 +359,7 @@ impl Core {
         self.files.lock().await.insert(
             handle.clone(),
             Arc::new(FileSession {
-                connection,
-                sftp,
+                backend: FileBackend::Sftp { connection, sftp },
                 session_id: session_id.to_owned(),
             }),
         );
@@ -111,25 +368,127 @@ impl Core {
             handle,
             session_id: session_id.to_owned(),
             listing,
+            packed: true,
+        })
+    }
+
+    /// Opens a WebDAV folder as a file browser.
+    ///
+    /// There is no host key and no SSH connection: the session's address is the folder, and the
+    /// first listing is as much a proof that the server is a WebDAV one as the opening is.
+    async fn open_webdav_files(&self, session: &Session) -> Result<SftpOutcome, ShellError> {
+        let password = self
+            .vault
+            .secret_for_session(&session.id)?
+            .map(|secret| ServicePassword::new(secret.into_value()));
+        let username = Some(session.user.trim().to_owned()).filter(|user| !user.is_empty());
+        let dav = Arc::new(WebDavFiles::new(&session.webdav.url, username, password)?);
+
+        let entries = dav.list("/").await?;
+        let handle = format!("f{}", self.next_file.fetch_add(1, Ordering::Relaxed));
+        self.files.lock().await.insert(
+            handle.clone(),
+            Arc::new(FileSession {
+                backend: FileBackend::WebDav(dav),
+                session_id: session.id.clone(),
+            }),
+        );
+
+        Ok(SftpOutcome::Opened {
+            handle,
+            session_id: session.id.clone(),
+            listing: dav_listing("/", entries),
+            packed: false,
+        })
+    }
+
+    /// Opens an FTP/FTPS session as a file browser.
+    ///
+    /// There is no host key: the protocol has no server identity to pin, and FTPS certificates are
+    /// verified against the platform trust store by the client crate. The login directory is the
+    /// root the browser shows.
+    async fn open_ftp_files(&self, session: &Session) -> Result<SftpOutcome, ShellError> {
+        let password = self
+            .vault
+            .secret_for_session(&session.id)?
+            .map(|secret| ServicePassword::new(secret.into_value()))
+            .unwrap_or_else(|| ServicePassword::new(String::new()));
+        let username = if session.user.trim().is_empty() {
+            "anonymous".to_owned()
+        } else {
+            session.user.trim().to_owned()
+        };
+        let options = FtpConnectionOptions::new(session.host.clone(), username, password)
+            .with_port(session.port)
+            .with_secure(session.ftp.secure);
+        let ftp = Arc::new(Mutex::new(FtpSession::connect(options).await?));
+
+        let entries = ftp.lock().await.list("/").await?;
+        let handle = format!("f{}", self.next_file.fetch_add(1, Ordering::Relaxed));
+        self.files.lock().await.insert(
+            handle.clone(),
+            Arc::new(FileSession {
+                backend: FileBackend::Ftp(ftp),
+                session_id: session.id.clone(),
+            }),
+        );
+
+        Ok(SftpOutcome::Opened {
+            handle,
+            session_id: session.id.clone(),
+            listing: ftp_listing("/", entries),
+            packed: false,
+        })
+    }
+
+    /// Opens a shell-backed browser for an SSH server with no SFTP subsystem.
+    ///
+    /// The listing command is the probe's proof that this path works; the backend keeps the
+    /// connection alive for SCP transfers and shell-side commands.
+    async fn open_scp_files(&self, session: &Session, connection: Arc<SshSession>) -> Result<SftpOutcome, ShellError> {
+        // Where a login shell starts is where the SFTP browser would have started. A shell cannot
+        // say that from a listing, so it is asked once.
+        let home = connection
+            .exec_capture("pwd", self.timeout, 4096)
+            .await
+            .ok()
+            .map(|captured| captured.stdout.trim().to_owned())
+            .filter(|home| !home.is_empty())
+            .unwrap_or_else(|| "/".to_owned());
+        let listing = connection.list_via_shell(&home, self.timeout).await?;
+        let handle = format!("f{}", self.next_file.fetch_add(1, Ordering::Relaxed));
+        self.files.lock().await.insert(
+            handle.clone(),
+            Arc::new(FileSession {
+                backend: FileBackend::Scp { connection },
+                session_id: session.id.clone(),
+            }),
+        );
+
+        Ok(SftpOutcome::Opened {
+            handle,
+            session_id: session.id.clone(),
+            listing: scp_listing(listing),
+            packed: false,
         })
     }
 
     /// Reads a directory.
     pub async fn list_files(&self, handle: &str, path: &str) -> Result<SftpListing, ShellError> {
-        self.file_session(handle).await?.sftp.list(path).await
+        self.file_session(handle).await?.list(path).await
     }
 
     pub async fn create_folder(&self, handle: &str, path: &str) -> Result<(), ShellError> {
-        self.file_session(handle).await?.sftp.create_dir(path).await
+        self.file_session(handle).await?.create_dir(path).await
     }
 
     /// Creates an empty file, unless something with that name is already there.
     pub async fn create_file(&self, handle: &str, path: &str) -> Result<(), ShellError> {
-        self.file_session(handle).await?.sftp.create_file(path).await
+        self.file_session(handle).await?.create_file(path).await
     }
 
     pub async fn rename_entry(&self, handle: &str, from: &str, to: &str) -> Result<(), ShellError> {
-        self.file_session(handle).await?.sftp.rename(from, to).await
+        self.file_session(handle).await?.rename(from, to).await
     }
 
     /// Changes the permission bits of one entry.
@@ -140,7 +499,7 @@ impl Core {
                 "permission bits must be between 0000 and 7777",
             ));
         }
-        self.file_session(handle).await?.sftp.set_permissions(path, mode).await
+        self.file_session(handle).await?.set_permissions(path, mode).await
     }
 
     /// Copies or moves a clipboard's paths into one directory.
@@ -192,7 +551,7 @@ impl Core {
                 });
                 continue;
             }
-            if !overwrite && files.sftp.exists(&target).await? {
+            if !overwrite && files.exists(&target).await? {
                 conflicts.push(target);
                 continue;
             }
@@ -211,8 +570,8 @@ impl Core {
         let mut results = settled;
         for (source, target) in runnable {
             if overwrite
-                && files.sftp.exists(&target).await?
-                && let Err(error) = files.sftp.remove_path(&target).await
+                && files.exists(&target).await?
+                && let Err(error) = files.remove_any(&target).await
             {
                 results.push(SftpPasteItem {
                     source,
@@ -223,38 +582,65 @@ impl Core {
                 continue;
             }
 
-            let command = if moving {
-                format!(
-                    "mv -f -- {} {}",
-                    archive::shell_quote(&source),
-                    archive::shell_quote(&target)
-                )
-            } else {
-                format!(
-                    "cp -a -- {} {}",
-                    archive::shell_quote(&source),
-                    archive::shell_quote(&target)
-                )
+            let outcome = match &files.backend {
+                FileBackend::WebDav(dav) => {
+                    let outcome = if moving {
+                        dav.rename(&source, &target).await
+                    } else {
+                        dav.copy(&source, &target).await
+                    };
+                    outcome.map_err(|error| error.to_string())
+                }
+                FileBackend::Sftp { .. } | FileBackend::Scp { .. } => {
+                    // The far side does the work: a recursive copy through SFTP would read every
+                    // byte back and send it out again, while the server's own `cp -a` keeps it
+                    // local and preserves the metadata an archive-mode copy is expected to
+                    // preserve. Paths are quoted one at a time — a file may be called
+                    // `x; rm -rf /`.
+                    let command = if moving {
+                        format!(
+                            "mv -f -- {} {}",
+                            archive::shell_quote(&source),
+                            archive::shell_quote(&target)
+                        )
+                    } else {
+                        format!(
+                            "cp -a -- {} {}",
+                            archive::shell_quote(&source),
+                            archive::shell_quote(&target)
+                        )
+                    };
+                    match files.connection()?.exec(&command, PASTE_TIMEOUT).await {
+                        Ok(done) if done.exit_code == Some(0) => Ok(()),
+                        Ok(done) => Err(brief_report(&done)),
+                        Err(error) => Err(error.to_string()),
+                    }
+                }
+                FileBackend::Ftp(ftp) => {
+                    if moving {
+                        ftp.lock()
+                            .await
+                            .rename(&source, &target)
+                            .await
+                            .map_err(|error| error.to_string())
+                    } else {
+                        Err("an FTP server cannot copy a file without transferring its bytes".to_owned())
+                    }
+                }
             };
-            let outcome = files.connection().exec(&command, PASTE_TIMEOUT).await;
+
             match outcome {
-                Ok(done) if done.exit_code == Some(0) => results.push(SftpPasteItem {
+                Ok(()) => results.push(SftpPasteItem {
                     source,
                     target,
                     ok: true,
                     error: None,
                 }),
-                Ok(done) => results.push(SftpPasteItem {
-                    source,
-                    target,
-                    ok: false,
-                    error: Some(brief_report(&done)),
-                }),
                 Err(error) => results.push(SftpPasteItem {
                     source,
                     target,
                     ok: false,
-                    error: Some(error.to_string()),
+                    error: Some(error),
                 }),
             }
         }
@@ -270,63 +656,101 @@ impl Core {
     /// The kind comes from what the browser listed rather than from a second look: the entry a
     /// person right-clicked is the entry they meant, even if something replaced it since.
     pub async fn delete_entry(&self, handle: &str, path: &str, kind: EntryKind) -> Result<(), ShellError> {
-        let files = self.file_session(handle).await?;
-
-        match kind {
-            EntryKind::Directory => files.sftp.remove_dir_recursive(path).await,
-            _ => files.sftp.remove_file(path).await,
-        }
+        self.file_session(handle).await?.remove(path, kind).await
     }
 
     pub async fn read_text_file(&self, handle: &str, path: &str) -> Result<String, ShellError> {
-        self.file_session(handle).await?.sftp.read_text(path).await
+        self.file_session(handle).await?.read_text(path).await
     }
 
     pub async fn write_text_file(&self, handle: &str, path: &str, text: &str) -> Result<(), ShellError> {
-        self.file_session(handle).await?.sftp.write_text(path, text).await
+        self.file_session(handle).await?.write_text(path, text).await
     }
 
     /// Starts copying a remote file to a local path, and returns the transfer's id.
     pub async fn start_download(&self, handle: &str, remote: &str, local: PathBuf) -> Result<String, ShellError> {
         let browser = self.file_session(handle).await?;
-        let files = Arc::clone(&browser.sftp);
-        let size = files.size_of(remote).await?;
+        let size = browser.size_of(remote).await?;
         let name = file_name_of(remote);
         // Owned before the task takes it: the task outlives the borrow this call was given.
         let source = remote.to_owned();
-        let witness = Arc::new(SourceWitness::default());
+        let id = self.reserve_transfer_id();
+        let session_id = browser.session_id();
+        let pausable = !matches!(&browser.backend, FileBackend::Scp { .. });
+        let facts = TransferFacts {
+            direction: TransferDirection::Download,
+            name,
+            remote_path: source.clone(),
+            session_id,
+            size,
+            packed: false,
+            pausable,
+            // Where it is landing, which is what the row can be pointed at afterwards.
+            local: Some(local.clone()),
+        };
 
-        self.spawn_transfer(
-            self.reserve_transfer_id(),
-            TransferFacts {
-                direction: TransferDirection::Download,
-                name,
-                remote_path: source.clone(),
-                session_id: browser.session_id(),
-                size,
-                packed: false,
-                // Where it is landing, which is what the row can be pointed at afterwards.
-                local: Some(local.clone()),
-            },
-            move |progress| {
-                let files = Arc::clone(&files);
-                let source = source.clone();
-                let local = local.clone();
-                let witness = Arc::clone(&witness);
+        match &browser.backend {
+            FileBackend::Sftp { sftp, .. } => {
+                let files = Arc::clone(sftp);
+                let witness = Arc::new(SourceWitness::default());
 
-                Box::pin(async move {
-                    // What is here is a part file from an attempt that did not finish. It is worth
-                    // continuing only if the file being copied is the one it came from.
-                    if !witness.resume_allowed(files.stamp_of(&source).await.ok()) {
-                        let _ = tokio::fs::remove_file(sevenshell_sftp::local_part_of(&local)).await;
-                    }
+                self.spawn_transfer(id, facts, move |progress| {
+                    let files = Arc::clone(&files);
+                    let source = source.clone();
+                    let local = local.clone();
+                    let witness = Arc::clone(&witness);
 
-                    // A download into a path that cannot be written is a failure the transfer reports.
-                    files.download(&source, &local, &progress).await
-                }) as TransferAttempt
-            },
-        )
-        .await
+                    Box::pin(async move {
+                        // What is here is a part file from an attempt that did not finish. It is worth
+                        // continuing only if the file being copied is the one it came from.
+                        if !witness.resume_allowed(files.stamp_of(&source).await.ok()) {
+                            let _ = tokio::fs::remove_file(sevenshell_sftp::local_part_of(&local)).await;
+                        }
+
+                        // A download into a path that cannot be written is a failure the transfer reports.
+                        files.download(&source, &local, &progress).await
+                    }) as TransferAttempt
+                })
+                .await
+            }
+            FileBackend::WebDav(dav) => {
+                let dav = Arc::clone(dav);
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let dav = Arc::clone(&dav);
+                    let source = source.clone();
+                    let local = local.clone();
+
+                    Box::pin(async move { webdav_download(&dav, &source, &local, &progress).await }) as TransferAttempt
+                })
+                .await
+            }
+            FileBackend::Ftp(ftp) => {
+                let ftp = Arc::clone(ftp);
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let ftp = Arc::clone(&ftp);
+                    let source = source.clone();
+                    let local = local.clone();
+
+                    Box::pin(async move { ftp_download(&ftp, &source, &local, progress).await }) as TransferAttempt
+                })
+                .await
+            }
+            FileBackend::Scp { connection } => {
+                let connection = Arc::clone(connection);
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let connection = Arc::clone(&connection);
+                    let source = source.clone();
+                    let local = local.clone();
+
+                    Box::pin(async move { scp_download_to(&connection, &source, &local, progress).await })
+                        as TransferAttempt
+                })
+                .await
+            }
+        }
     }
 
     /**
@@ -342,7 +766,7 @@ impl Core {
         directory: &str,
         sources: &[PathBuf],
     ) -> Result<Vec<String>, ShellError> {
-        let files = Arc::clone(&self.file_session(handle).await?.sftp);
+        let files = self.file_session(handle).await?;
         let mut taken = Vec::new();
 
         for source in sources {
@@ -360,7 +784,6 @@ impl Core {
     /// Starts copying a local file into a remote directory, and returns the transfer's id.
     pub async fn start_upload(&self, handle: &str, local: PathBuf, remote_dir: &str) -> Result<String, ShellError> {
         let browser = self.file_session(handle).await?;
-        let files = Arc::clone(&browser.sftp);
         let name = local
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -374,38 +797,103 @@ impl Core {
             .len();
 
         let destination = remote.clone();
-        let witness = Arc::new(SourceWitness::default());
+        let id = self.reserve_transfer_id();
+        let session_id = browser.session_id();
+        let pausable = !matches!(&browser.backend, FileBackend::Scp { .. });
+        let facts = TransferFacts {
+            direction: TransferDirection::Upload,
+            name,
+            remote_path: remote,
+            session_id,
+            size,
+            packed: false,
+            pausable,
+            // Where it was read from, which is the end a person can still be shown.
+            local: Some(local.clone()),
+        };
 
-        self.spawn_transfer(
-            self.reserve_transfer_id(),
-            TransferFacts {
-                direction: TransferDirection::Upload,
-                name,
-                remote_path: remote,
-                session_id: browser.session_id(),
-                size,
-                packed: false,
-                // Where it was read from, which is the end a person can still be shown.
-                local: Some(local.clone()),
-            },
-            move |progress| {
-                let files = Arc::clone(&files);
-                let local = local.clone();
-                let destination = destination.clone();
-                let witness = Arc::clone(&witness);
+        match &browser.backend {
+            FileBackend::Sftp { sftp, .. } => {
+                let files = Arc::clone(sftp);
+                let witness = Arc::new(SourceWitness::default());
 
-                Box::pin(async move {
-                    // The part file here is on the far side, and it is worth continuing into only if
-                    // the file being sent is the one it came from.
-                    if !witness.resume_allowed(local_stamp(&local).await) {
-                        let _ = files.remove_file(&sevenshell_sftp::part_of(&destination)).await;
-                    }
+                self.spawn_transfer(id, facts, move |progress| {
+                    let files = Arc::clone(&files);
+                    let local = local.clone();
+                    let destination = destination.clone();
+                    let witness = Arc::clone(&witness);
 
-                    files.upload(&local, &destination, &progress).await
-                }) as TransferAttempt
-            },
-        )
-        .await
+                    Box::pin(async move {
+                        // The part file here is on the far side, and it is worth continuing into only if
+                        // the file being sent is the one it came from.
+                        if !witness.resume_allowed(local_stamp(&local).await) {
+                            let _ = files.remove_file(&sevenshell_sftp::part_of(&destination)).await;
+                        }
+
+                        files.upload(&local, &destination, &progress).await
+                    }) as TransferAttempt
+                })
+                .await
+            }
+            FileBackend::WebDav(dav) => {
+                let dav = Arc::clone(dav);
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let dav = Arc::clone(&dav);
+                    let local = local.clone();
+                    let destination = destination.clone();
+
+                    Box::pin(async move { webdav_upload(&dav, &local, &destination, &progress).await })
+                        as TransferAttempt
+                })
+                .await
+            }
+            FileBackend::Ftp(ftp) => {
+                let ftp = Arc::clone(ftp);
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let ftp = Arc::clone(&ftp);
+                    let local = local.clone();
+                    let destination = destination.clone();
+
+                    Box::pin(async move { ftp_upload(&ftp, &local, &destination, progress).await }) as TransferAttempt
+                })
+                .await
+            }
+            FileBackend::Scp { connection } => {
+                let connection = Arc::clone(connection);
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let connection = Arc::clone(&connection);
+                    let local = local.clone();
+                    let destination = destination.clone();
+
+                    Box::pin(async move {
+                        let (parent, _) = destination.rsplit_once('/').unwrap_or(("", destination.as_str()));
+                        let parent = if parent.is_empty() { "/" } else { parent };
+                        let callback_progress = Arc::clone(&progress);
+                        let mut callback = move |bytes: u64| callback_progress.set_transferred(bytes);
+                        let options = TransferOptions::default();
+                        let transfer =
+                            connection.scp_upload(&local, parent, &options, SCP_TIMEOUT, Some(&mut callback));
+                        tokio::select! {
+                            result = transfer => match result {
+                                Ok(_) => Ok(()),
+                                Err(error) => {
+                                    let _ = scp_remove(&connection, &destination).await;
+                                    Err(error)
+                                }
+                            },
+                            _ = wait_cancelled(Arc::clone(&progress)) => {
+                                let _ = scp_remove(&connection, &destination).await;
+                                Ok(())
+                            }
+                        }
+                    }) as TransferAttempt
+                })
+                .await
+            }
+        }
     }
 
     /**
@@ -427,8 +915,8 @@ impl Core {
         into: PathBuf,
     ) -> Result<String, ShellError> {
         let session = self.file_session(handle).await?;
-        let files = Arc::clone(&session.sftp);
-        let connection = session.connection();
+        let files = Arc::clone(session.sftp()?);
+        let connection = session.connection()?;
         let id = self.reserve_transfer_id();
 
         let (parent, names) = common_parent(entries)?;
@@ -459,6 +947,7 @@ impl Core {
                 session_id: session.session_id(),
                 size: 0,
                 packed: true,
+                pausable: true,
                 // What lands is the entries themselves inside the folder that was chosen, so that
                 // folder — not the archive, which is already gone by then — is the local end.
                 local: Some(into.clone()),
@@ -534,8 +1023,8 @@ impl Core {
         remote_dir: &str,
     ) -> Result<String, ShellError> {
         let session = self.file_session(handle).await?;
-        let files = Arc::clone(&session.sftp);
-        let connection = session.connection();
+        let files = Arc::clone(session.sftp()?);
+        let connection = session.connection()?;
         let id = self.reserve_transfer_id();
 
         let name = archive::uploaded_name(sources.len());
@@ -554,6 +1043,7 @@ impl Core {
                 session_id: session.session_id(),
                 size: 0,
                 packed: true,
+                pausable: true,
                 // No local end to point at: what was sent is a pile of files, and the archive that
                 // carried them across is deleted here the moment it has been read.
                 local: None,
@@ -744,10 +1234,9 @@ impl Core {
         let Some(record) = transfers.get_mut(id) else {
             return Ok(());
         };
-        if record.info.state != TransferState::Running {
+        if record.info.state != TransferState::Running || !record.info.pausable {
             return Ok(());
         }
-
         record.progress.pause();
         record.info.state = TransferState::Paused;
         Ok(())
@@ -847,6 +1336,7 @@ impl Core {
             state: TransferState::Running,
             has_local_path: facts.local.is_some(),
             packed: facts.packed,
+            pausable: facts.pausable,
         };
 
         // Boxed once, kept twice: the task that starts now and the retry button that may need it
@@ -898,6 +1388,626 @@ impl Core {
             }
         })
     }
+}
+
+/// What a WebDAV listing looks like to the panel: the same shape SFTP produces, with the columns
+/// WebDAV does not have left empty rather than filled with zeroes.
+fn dav_listing(path: &str, entries: Vec<DavEntry>) -> SftpListing {
+    let mut entries: Vec<SftpEntry> = entries
+        .into_iter()
+        .map(|entry| SftpEntry {
+            name: entry.name,
+            path: entry.path,
+            kind: if entry.is_dir {
+                EntryKind::Directory
+            } else {
+                EntryKind::File
+            },
+            size: entry.size,
+            modified_at: entry.modified_at,
+            mode: None,
+            owner: None,
+            group: None,
+            uid: None,
+            gid: None,
+            link_target: None,
+        })
+        .collect();
+
+    sort_entries(&mut entries);
+
+    SftpListing {
+        path: normalize_dav_path(path),
+        entries,
+    }
+}
+
+/// What an FTP listing looks like to the panel.
+fn ftp_listing(path: &str, entries: Vec<FtpEntry>) -> SftpListing {
+    let mut entries: Vec<SftpEntry> = entries
+        .into_iter()
+        .map(|entry| SftpEntry {
+            name: entry.name,
+            path: entry.path,
+            kind: if entry.is_dir {
+                EntryKind::Directory
+            } else {
+                EntryKind::File
+            },
+            size: entry.size,
+            modified_at: entry.modified.and_then(|seconds| u64::try_from(seconds).ok()),
+            mode: None,
+            owner: None,
+            group: None,
+            uid: None,
+            gid: None,
+            link_target: None,
+        })
+        .collect();
+
+    sort_entries(&mut entries);
+
+    SftpListing {
+        path: path.to_owned(),
+        entries,
+    }
+}
+
+fn sort_entries(entries: &mut [SftpEntry]) {
+    entries.sort_by(|left, right| {
+        let left_dir = left.kind == EntryKind::Directory;
+        let right_dir = right.kind == EntryKind::Directory;
+        right_dir
+            .cmp(&left_dir)
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+    });
+}
+
+/// Collects a downloaded file in memory, for the text editor and the small-file paths.
+#[derive(Default)]
+struct VecWriter {
+    bytes: Vec<u8>,
+}
+
+impl AsyncWrite for VecWriter {
+    fn poll_write(mut self: Pin<&mut Self>, _context: &mut Context<'_>, buffer: &[u8]) -> Poll<std::io::Result<usize>> {
+        self.bytes.extend_from_slice(buffer);
+        Poll::Ready(Ok(buffer.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+/// Removes one FTP directory and everything under it.
+///
+/// FTP has no recursive delete, so the tree is walked here: every child is removed before the
+/// directory that held it. The stack is explicit because an async recursive call cannot be boxed
+/// without a second allocation per level, and a deep tree is not worth that.
+async fn ftp_remove_tree(ftp: &mut FtpSession, path: &str) -> Result<(), ShellError> {
+    let mut stack = vec![(path.to_owned(), false)];
+    while let Some((current, expanded)) = stack.pop() {
+        if expanded {
+            ftp.remove_dir(&current).await?;
+            continue;
+        }
+
+        let entries = ftp.list(&current).await?;
+        stack.push((current, true));
+        for entry in entries {
+            if entry.is_dir {
+                stack.push((entry.path, false));
+            } else {
+                ftp.remove_file(&entry.path).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What a shell listing looks like to the panel.
+fn scp_listing(listing: ShellListing) -> SftpListing {
+    let mut entries: Vec<SftpEntry> = listing
+        .entries
+        .into_iter()
+        .map(|entry| SftpEntry {
+            name: entry.name.clone(),
+            path: join_remote(&listing.path, &entry.name),
+            kind: entry.kind,
+            size: entry.size,
+            modified_at: entry.modified_at,
+            mode: entry.mode,
+            owner: entry.owner,
+            group: entry.group,
+            uid: entry.uid,
+            gid: entry.gid,
+            link_target: entry.link_target,
+        })
+        .collect();
+
+    sort_entries(&mut entries);
+
+    SftpListing {
+        path: listing.path,
+        entries,
+    }
+}
+
+async fn scp_exec_ok(connection: &SshSession, command: &str, path: &str) -> Result<(), ShellError> {
+    let outcome = connection.exec(command, SHELL_TIMEOUT).await?;
+    if outcome.exit_code == Some(0) {
+        Ok(())
+    } else {
+        Err(ShellError::scp_operation_failed(path, brief_report(&outcome)))
+    }
+}
+
+async fn scp_exists(connection: &SshSession, path: &str) -> Result<bool, ShellError> {
+    let command = format!("ls -d -- {} >/dev/null 2>&1", archive::shell_quote(path));
+    let outcome = connection.exec(&command, SHELL_TIMEOUT).await?;
+    Ok(outcome.exit_code == Some(0))
+}
+
+async fn scp_size(connection: &SshSession, path: &str) -> Result<u64, ShellError> {
+    let command = format!("wc -c < {}", archive::shell_quote(path));
+    let captured = connection.exec_capture(&command, SHELL_TIMEOUT, 1024).await?;
+    if captured.exit_code != Some(0) {
+        return Ok(0);
+    }
+    Ok(captured.stdout.trim().parse().unwrap_or(0))
+}
+
+async fn scp_read_text(connection: &SshSession, path: &str) -> Result<String, ShellError> {
+    let command = format!("cat -- {}", archive::shell_quote(path));
+    let captured = connection
+        .exec_capture(&command, SHELL_TIMEOUT, SHELL_TEXT_LIMIT)
+        .await?;
+    if captured.truncated {
+        return Err(ShellError::scp_operation_failed(
+            path,
+            "the file is larger than the editor will read over SCP",
+        ));
+    }
+    if captured.exit_code != Some(0) {
+        return Err(ShellError::scp_operation_failed(
+            path,
+            format!("exit {:?}: {}", captured.exit_code, captured.stderr.trim()),
+        ));
+    }
+    Ok(captured.stdout)
+}
+
+async fn scp_write_text(connection: &SshSession, path: &str, text: &str) -> Result<(), ShellError> {
+    let temporary = std::env::temp_dir().join(format!("7shell-write-{}.tmp", uuid::Uuid::new_v4()));
+    tokio::fs::write(&temporary, text.as_bytes())
+        .await
+        .map_err(|error| ShellError::scp_operation_failed(path, format!("the local temporary file: {error}")))?;
+
+    let parent = path
+        .rsplit_once('/')
+        .map(|(parent, _)| if parent.is_empty() { "/" } else { parent })
+        .unwrap_or("/");
+    let Some(name) = temporary.file_name().and_then(|name| name.to_str()) else {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(ShellError::scp_operation_failed(
+            path,
+            "the temporary file has no usable name",
+        ));
+    };
+    let remote_temporary = join_remote(parent, name);
+
+    let outcome = async {
+        connection
+            .scp_upload(&temporary, parent, &TransferOptions::default(), SCP_TIMEOUT, None)
+            .await?;
+        scp_exec_ok(
+            connection,
+            &format!(
+                "mv -f -- {} {}",
+                archive::shell_quote(&remote_temporary),
+                archive::shell_quote(path)
+            ),
+            path,
+        )
+        .await
+    }
+    .await;
+
+    if outcome.is_err() {
+        let _ = scp_exec_ok(
+            connection,
+            &format!("rm -f -- {}", archive::shell_quote(&remote_temporary)),
+            path,
+        )
+        .await;
+    }
+    let _ = tokio::fs::remove_file(&temporary).await;
+    outcome
+}
+
+async fn scp_remove(connection: &SshSession, path: &str) -> Result<(), ShellError> {
+    scp_exec_ok(connection, &format!("rm -rf -- {}", archive::shell_quote(path)), path).await
+}
+
+/// Copies one file over SCP into the exact local name the caller chose.
+///
+/// The SCP engine writes into a directory and names the file after the remote one, so a staging
+/// directory beside the target is what lets the chosen name win while keeping the write on the
+/// same file system for the final rename.
+async fn scp_download_to(
+    connection: &SshSession,
+    remote: &str,
+    local: &Path,
+    progress: Arc<TransferProgress>,
+) -> Result<(), ShellError> {
+    let parent = local.parent().unwrap_or_else(|| Path::new("."));
+    let staging = parent.join(format!(".7shell-download-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&staging)
+        .await
+        .map_err(|error| ShellError::scp_transfer_failed(remote, format!("the staging directory: {error}")))?;
+
+    let callback_progress = Arc::clone(&progress);
+    let mut callback = move |bytes: u64| callback_progress.set_transferred(bytes);
+    let options = TransferOptions::default();
+    let transfer = connection.scp_download(remote, &staging, &options, SCP_TIMEOUT, Some(&mut callback));
+
+    let outcome = tokio::select! {
+        result = transfer => match result {
+            Ok(_) if !progress.is_cancelled() => {
+                let landed = staging.join(file_name_of(remote));
+                tokio::fs::rename(&landed, local)
+                    .await
+                    .map_err(|error| ShellError::scp_transfer_failed(remote, format!("the download could not be moved into place: {error}")))
+            }
+            Ok(_) => Ok(()),
+            Err(error) => Err(error),
+        },
+        _ = wait_cancelled(Arc::clone(&progress)) => Ok(()),
+    };
+
+    let _ = tokio::fs::remove_dir_all(&staging).await;
+    outcome
+}
+
+/// Waits until a transfer has been asked to stop, for futures that cannot be paused directly.
+async fn wait_cancelled(progress: Arc<TransferProgress>) {
+    while !progress.is_cancelled() {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Copies one FTP file into a local path through a progress-aware writer.
+async fn ftp_download(
+    ftp: &Mutex<FtpSession>,
+    remote: &str,
+    local: &Path,
+    progress: Arc<TransferProgress>,
+) -> Result<(), ShellError> {
+    let part = sevenshell_sftp::local_part_of(local);
+    let _ = tokio::fs::remove_file(&part).await;
+
+    let file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&part)
+        .await
+        .map_err(|error| {
+            ShellError::ftp_operation_failed(format!("the local part file could not be written: {error}"))
+        })?;
+    let mut writer = ProgressWriter::new(file, Arc::clone(&progress));
+
+    let mut session = ftp.lock().await;
+    let downloaded = session.download(remote, &mut writer).await;
+    if progress.is_cancelled() {
+        drop(session);
+        drop(writer);
+        let _ = tokio::fs::remove_file(&part).await;
+        return Ok(());
+    }
+    if let Err(error) = downloaded {
+        drop(session);
+        drop(writer);
+        let _ = tokio::fs::remove_file(&part).await;
+        return Err(error);
+    }
+    writer.flush().await.map_err(|error| {
+        ShellError::ftp_operation_failed(format!("the local part file could not be written: {error}"))
+    })?;
+    drop(writer);
+    drop(session);
+
+    tokio::fs::rename(&part, local).await.map_err(|error| {
+        ShellError::ftp_operation_failed(format!("the downloaded file could not be moved into place: {error}"))
+    })?;
+    Ok(())
+}
+
+/// Sends one local file to an FTP folder through a temporary name beside the target.
+async fn ftp_upload(
+    ftp: &Mutex<FtpSession>,
+    local: &Path,
+    remote: &str,
+    progress: Arc<TransferProgress>,
+) -> Result<(), ShellError> {
+    let part = transfer_part_of(remote);
+    let file = tokio::fs::File::open(local)
+        .await
+        .map_err(|error| ShellError::ftp_operation_failed(format!("the local file could not be read: {error}")))?;
+    let mut reader = ProgressReader::new(file, Arc::clone(&progress));
+
+    let mut session = ftp.lock().await;
+    let uploaded = session.upload(&part, &mut reader).await;
+    if progress.is_cancelled() {
+        drop(session);
+        let _ = ftp.lock().await.remove_file(&part).await;
+        return Ok(());
+    }
+    if let Err(error) = uploaded {
+        drop(session);
+        let _ = ftp.lock().await.remove_file(&part).await;
+        return Err(error);
+    }
+
+    if session.exists(remote).await?
+        && let Err(error) = session.remove_file(remote).await
+    {
+        let _ = session.remove_file(&part).await;
+        return Err(error);
+    }
+    if let Err(error) = session.rename(&part, remote).await {
+        let _ = session.remove_file(&part).await;
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// An existing file reader that reports how much it has handed over and waits while paused.
+struct ProgressReader<R> {
+    inner: R,
+    progress: Arc<TransferProgress>,
+    read: u64,
+    pause: Pin<Box<tokio::time::Sleep>>,
+}
+
+impl<R> ProgressReader<R> {
+    fn new(inner: R, progress: Arc<TransferProgress>) -> Self {
+        Self {
+            inner,
+            progress,
+            read: 0,
+            pause: Box::pin(tokio::time::sleep(Duration::from_millis(50))),
+        }
+    }
+}
+
+impl<R: AsyncRead + Unpin> AsyncRead for ProgressReader<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if self.progress.is_cancelled() {
+            return Poll::Ready(Err(std::io::Error::other("the transfer was cancelled")));
+        }
+        if self.progress.is_paused() {
+            if self.pause.as_mut().poll(context).is_ready() {
+                self.pause.as_mut().reset(Instant::now() + Duration::from_millis(50));
+                let _ = self.pause.as_mut().poll(context);
+            }
+            return Poll::Pending;
+        }
+
+        let before = buffer.filled().len();
+        let outcome = Pin::new(&mut self.inner).poll_read(context, buffer);
+        if matches!(outcome, Poll::Ready(Ok(()))) {
+            let read = (buffer.filled().len() - before) as u64;
+            self.read += read;
+            self.progress.set_transferred(self.read);
+        }
+        outcome
+    }
+}
+
+/// A local file writer that reports how much it has received and waits while paused.
+struct ProgressWriter<W> {
+    inner: W,
+    progress: Arc<TransferProgress>,
+    written: u64,
+    pause: Pin<Box<tokio::time::Sleep>>,
+}
+
+impl<W> ProgressWriter<W> {
+    fn new(inner: W, progress: Arc<TransferProgress>) -> Self {
+        Self {
+            inner,
+            progress,
+            written: 0,
+            pause: Box::pin(tokio::time::sleep(Duration::from_millis(50))),
+        }
+    }
+}
+
+impl<W: AsyncWrite + Unpin> AsyncWrite for ProgressWriter<W> {
+    fn poll_write(mut self: Pin<&mut Self>, context: &mut Context<'_>, buffer: &[u8]) -> Poll<std::io::Result<usize>> {
+        if self.progress.is_cancelled() {
+            return Poll::Ready(Err(std::io::Error::other("the transfer was cancelled")));
+        }
+        if self.progress.is_paused() {
+            if self.pause.as_mut().poll(context).is_ready() {
+                self.pause.as_mut().reset(Instant::now() + Duration::from_millis(50));
+                let _ = self.pause.as_mut().poll(context);
+            }
+            return Poll::Pending;
+        }
+
+        let outcome = Pin::new(&mut self.inner).poll_write(context, buffer);
+        if let Poll::Ready(Ok(written)) = outcome {
+            self.written += written as u64;
+            self.progress.set_transferred(self.written);
+        }
+        outcome
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_flush(context)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.get_mut().inner).poll_shutdown(context)
+    }
+}
+
+/// Copies one WebDAV file into a local path, resuming a part file when the server honors a range.
+async fn webdav_download(
+    dav: &WebDavFiles,
+    remote: &str,
+    local: &Path,
+    progress: &TransferProgress,
+) -> Result<(), ShellError> {
+    let part = sevenshell_sftp::local_part_of(local);
+    // A WebDAV listing has no cheap, stable identity for a file — no inode, no SFTP-style stamp —
+    // so a part file cannot be proved to be a prefix of this version. Starting clean is the only
+    // answer that cannot join two versions into a file that looks right and is not. Pausing keeps
+    // the open response and the part file; only a retry after a failure starts again.
+    let _ = tokio::fs::remove_file(&part).await;
+
+    let mut download = dav.open_download(remote, 0).await?;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&part)
+        .await
+        .map_err(|error| {
+            ShellError::sftp_transfer_failed(remote, format!("the local part file could not be written: {error}"))
+        })?;
+
+    progress.set_transferred(0);
+    let mut received = 0u64;
+    loop {
+        if progress.is_cancelled() {
+            let _ = tokio::fs::remove_file(&part).await;
+            return Ok(());
+        }
+        while progress.is_paused() {
+            if progress.is_cancelled() {
+                let _ = tokio::fs::remove_file(&part).await;
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let Some(chunk) = download.next().await? else {
+            break;
+        };
+        file.write_all(&chunk).await.map_err(|error| {
+            ShellError::sftp_transfer_failed(remote, format!("the local part file could not be written: {error}"))
+        })?;
+        received += chunk.len() as u64;
+        progress.set_transferred(received);
+    }
+
+    file.flush().await.map_err(|error| {
+        ShellError::sftp_transfer_failed(remote, format!("the local part file could not be written: {error}"))
+    })?;
+    drop(file);
+
+    if progress.is_cancelled() {
+        let _ = tokio::fs::remove_file(&part).await;
+        return Ok(());
+    }
+    tokio::fs::rename(&part, local).await.map_err(|error| {
+        ShellError::sftp_transfer_failed(
+            remote,
+            format!("the downloaded file could not be moved into place: {error}"),
+        )
+    })?;
+    Ok(())
+}
+
+/// Sends one local file to a WebDAV folder through a temporary name beside the target.
+///
+/// A PUT that dies half-way leaves whatever the server kept; writing to a part name first means the
+/// target only changes when the whole file arrived, the same rule the SFTP upload follows.
+async fn webdav_upload(
+    dav: &WebDavFiles,
+    local: &Path,
+    remote: &str,
+    progress: &TransferProgress,
+) -> Result<(), ShellError> {
+    let part = transfer_part_of(remote);
+    let mut file = tokio::fs::File::open(local).await.map_err(|error| {
+        ShellError::sftp_transfer_failed(remote, format!("the local file could not be read: {error}"))
+    })?;
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Vec<u8>>(4);
+
+    let produced = async {
+        let mut buffer = vec![0u8; 64 * 1024];
+        let mut sent = 0u64;
+        loop {
+            if progress.is_cancelled() {
+                break;
+            }
+            while progress.is_paused() {
+                if progress.is_cancelled() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            if progress.is_cancelled() {
+                break;
+            }
+
+            let read = file.read(&mut buffer).await.map_err(|error| {
+                ShellError::sftp_transfer_failed(remote, format!("the local file could not be read: {error}"))
+            })?;
+            if read == 0 {
+                break;
+            }
+            if sender.send(buffer[..read].to_vec()).await.is_err() {
+                break;
+            }
+            sent += read as u64;
+            progress.set_transferred(sent);
+        }
+        Ok::<(), ShellError>(())
+    };
+
+    let (uploaded, produced) = tokio::join!(dav.write_stream(&part, receiver, Some(progress.total())), produced);
+    if progress.is_cancelled() {
+        let _ = dav.remove(&part).await;
+        return Ok(());
+    }
+    produced?;
+    if let Err(error) = uploaded {
+        let _ = dav.remove(&part).await;
+        return Err(error);
+    }
+
+    if dav.exists(remote).await?
+        && let Err(error) = dav.remove(remote).await
+    {
+        let _ = dav.remove(&part).await;
+        return Err(error);
+    }
+    if let Err(error) = dav.rename(&part, remote).await {
+        let _ = dav.remove(&part).await;
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// The temporary name an upload lands under before it is moved into place.
+fn transfer_part_of(remote: &str) -> String {
+    let (parent, name) = remote.rsplit_once('/').unwrap_or(("", remote));
+    let parent = if parent.is_empty() { "/" } else { parent };
+    join_remote(parent, &format!(".{name}.7shell-part"))
 }
 
 /// What the file being copied looked like when this transfer last started.
@@ -1058,7 +2168,9 @@ fn cancelled(path: &str) -> ShellError {
 }
 
 fn join_remote(directory: &str, name: &str) -> String {
-    if directory.ends_with('/') {
+    if directory == "/" {
+        format!("/{name}")
+    } else if directory.ends_with('/') {
         format!("{directory}{name}")
     } else {
         format!("{directory}/{name}")
@@ -1154,5 +2266,40 @@ mod tests {
     #[test]
     fn there_is_nothing_to_pack_in_an_empty_selection() {
         assert!(common_parent(&[]).is_err());
+    }
+
+    #[test]
+    fn a_shell_listing_becomes_the_panel_shape_with_joined_paths() {
+        let listing = ShellListing {
+            path: "/home/alice".to_owned(),
+            entries: vec![sevenshell_ssh::ShellEntry {
+                name: "notes.txt".to_owned(),
+                kind: EntryKind::File,
+                size: 5,
+                mode: Some(0o644),
+                owner: Some("alice".to_owned()),
+                group: Some("users".to_owned()),
+                uid: Some(1000),
+                gid: Some(100),
+                modified_at: Some(1_700_000_000),
+                link_target: None,
+            }],
+            skipped: 0,
+            format: sevenshell_ssh::ListingFormat::Find,
+        };
+
+        let mapped = scp_listing(listing);
+
+        assert_eq!(mapped.path, "/home/alice");
+        assert_eq!(mapped.entries[0].path, "/home/alice/notes.txt");
+        assert_eq!(mapped.entries[0].kind, EntryKind::File);
+        assert_eq!(mapped.entries[0].size, 5);
+        assert_eq!(mapped.entries[0].mode, Some(0o644));
+        assert_eq!(mapped.entries[0].modified_at, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn a_root_listing_joins_a_name_without_a_double_slash() {
+        assert_eq!(join_remote("/", "notes.txt"), "/notes.txt");
     }
 }

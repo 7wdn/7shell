@@ -97,6 +97,7 @@ const transfer: TransferInfo = {
   state: { kind: "running" },
   hasLocalPath: true,
   packed: false,
+  pausable: true,
 };
 
 /** Where downloads land, as the interface is told about it: names, and a tick by position. */

@@ -35,6 +35,16 @@
     },
     "selection": {
       "label": "选中内容操作"
+    },
+    "zmodem": {
+      "receiving": "正在通过 ZMODEM 接收 {name}…",
+      "sending": "正在通过 ZMODEM 发送 {name}…",
+      "sent": "{name} 已通过 ZMODEM 发送。",
+      "done": "已通过 ZMODEM 接收 {name}。",
+      "finished": "ZMODEM 传输已完成。",
+      "skipped": "ZMODEM 跳过了 {name}：{reason}",
+      "failed": "ZMODEM 传输失败：{detail}",
+      "cancelled": "ZMODEM 传输已取消。"
     }
   }
 }

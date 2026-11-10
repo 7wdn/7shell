@@ -76,6 +76,7 @@ function transfer(id: string, state: TransferState, overrides: Partial<TransferI
     state,
     hasLocalPath: true,
     packed: false,
+    pausable: true,
     ...overrides,
   };
 }

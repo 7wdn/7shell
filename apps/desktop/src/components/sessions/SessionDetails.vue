@@ -64,8 +64,10 @@ const rows = computed(() => {
   const protocol = props.session.protocol;
   // A local shell and a serial port have no address to reach and no account to log in as; showing
   // empty rows for them would read as missing configuration rather than as a different transport.
-  const addressed = protocol === "ssh" || protocol === "telnet" || protocol === "rawTcp" || protocol === "rdp";
-  const authenticated = protocol === "ssh" || protocol === "rdp";
+  const addressed =
+    protocol === "ssh" || protocol === "telnet" || protocol === "rawTcp" || protocol === "rdp" || protocol === "ftp";
+  const authenticated = protocol === "ssh" || protocol === "rdp" || protocol === "ftp";
+  const webdav = protocol === "webdav";
   const list: { key: string; label: string; value: string }[] = [
     { key: "name", label: t("sessions.details.name"), value: props.session.name },
     { key: "address", label: t("sessions.details.address"), value: sessionEndpoint(props.session, t) },
@@ -75,6 +77,9 @@ const rows = computed(() => {
     list.push({ key: "port", label: t("sessions.details.port"), value: String(props.session.port) });
   }
   if (authenticated) {
+    list.push({ key: "user", label: t("sessions.details.user"), value: props.session.user });
+  }
+  if (webdav && props.session.user !== "") {
     list.push({ key: "user", label: t("sessions.details.user"), value: props.session.user });
   }
   list.push({ key: "protocol", label: t("sessions.details.protocol"), value: protocolLabel.value });

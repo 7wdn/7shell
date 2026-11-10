@@ -66,6 +66,12 @@ export interface FileEntryActions {
 export interface FileMenuOptions {
   /** Whether transfers travel as archives: the switch in the directory's own menu and the settings. */
   readonly packed: boolean;
+  /** Whether this backend can copy an entry without moving its bytes through this machine. */
+  readonly supportsCopy?: boolean;
+  /** Whether this backend has the shell-side features: permission bits. */
+  readonly supportsSshOnly?: boolean;
+  /** Whether this backend has a remote `tar` and the packed switch means anything. */
+  readonly supportsPacked?: boolean;
 }
 
 /** Whether this entry can be read as a file at all, which is not true of a socket or a device. */
@@ -96,7 +102,7 @@ export function fileEntryMenu(
   }
 
   // The packed way takes anything: files, directories, or a mixture — that is what an archive is.
-  if (options.packed && (many || only?.kind === "directory")) {
+  if (options.supportsPacked !== false && options.packed && (many || only?.kind === "directory")) {
     chosen.push({
       kind: "action",
       id: "download-archive",
@@ -137,7 +143,7 @@ export function fileEntryMenu(
 
   // A directory's download and a selection's download are what the switch decides, so it is shown
   // where that decision is about to be made.
-  if (many || only?.kind === "directory") {
+  if (options.supportsPacked !== false && (many || only?.kind === "directory")) {
     chosen.push({
       kind: "action",
       id: "packed",
@@ -165,13 +171,17 @@ export function fileEntryMenu(
     });
   }
   manage.push(
-    {
-      kind: "action",
-      id: "copy",
-      labelKey: "files.action.copy",
-      icon: Copy,
-      run: () => actions.transferClipboard("copy"),
-    },
+    ...(options.supportsCopy !== false
+      ? ([
+          {
+            kind: "action",
+            id: "copy",
+            labelKey: "files.action.copy",
+            icon: Copy,
+            run: () => actions.transferClipboard("copy"),
+          },
+        ] satisfies MenuEntry[])
+      : []),
     {
       kind: "action",
       id: "cut",
@@ -218,22 +228,22 @@ export function fileEntryMenu(
   // The two permission faces: the focused editor, and the page that also says what this is.
   if (only !== undefined) {
     separate("sep-info");
-    chosen.push(
-      {
+    if (options.supportsSshOnly !== false) {
+      chosen.push({
         kind: "action",
         id: "permissions",
         labelKey: "files.chmod.action",
         icon: Lock,
         run: () => actions.permissions(only),
-      },
-      {
-        kind: "action",
-        id: "properties",
-        labelKey: "files.properties.action",
-        icon: Info,
-        run: () => actions.properties(only),
-      },
-    );
+      });
+    }
+    chosen.push({
+      kind: "action",
+      id: "properties",
+      labelKey: "files.properties.action",
+      icon: Info,
+      run: () => actions.properties(only),
+    });
   }
 
   // Deleting is the last thing on the menu, whatever else it offers: it is the one that cannot be
@@ -257,6 +267,8 @@ export interface FileAreaState {
   readonly path: string;
   /** Whether transfers are packed, which is what the switch in this menu is set to. */
   readonly packed: boolean;
+  /** Whether this backend has a remote `tar` and the switch means anything. */
+  readonly supportsPacked?: boolean;
   /** What copy/cut put on this connection's clipboard, or null when nothing is pasteable here. */
   readonly clipboard: { readonly mode: "copy" | "cut"; readonly count: number } | null;
 }
@@ -306,13 +318,17 @@ export function fileAreaMenu(state: FileAreaState, actions: FileAreaActions): Me
       disabled: state.clipboard === null,
       run: () => actions.paste(),
     },
-    {
-      kind: "action",
-      id: "packed",
-      labelKey: "menu.packedTransfer",
-      checked: state.packed,
-      run: () => actions.togglePacked(),
-    },
+    ...(state.supportsPacked !== false
+      ? ([
+          {
+            kind: "action",
+            id: "packed",
+            labelKey: "menu.packedTransfer",
+            checked: state.packed,
+            run: () => actions.togglePacked(),
+          },
+        ] satisfies MenuEntry[])
+      : []),
     { kind: "separator", id: "sep-new" },
     {
       kind: "submenu",

@@ -28,6 +28,7 @@ function transfer(overrides: Partial<TransferInfo> = {}): TransferInfo {
     state: { kind: "running" },
     hasLocalPath: true,
     packed: false,
+    pausable: true,
     ...overrides,
   };
 }

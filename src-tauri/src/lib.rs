@@ -58,7 +58,7 @@ pub fn run() {
             window_chrome::watch_system_theme(app.handle());
 
             let (shell_state, events) = state::ShellState::new();
-            commands::terminal::pump_events(app.handle().clone(), events);
+            commands::terminal::pump_events(app.handle().clone(), shell_state.core_arc(), events);
             app.manage(shell_state);
 
             // After the state is managed rather than before: what the settings say about closing is

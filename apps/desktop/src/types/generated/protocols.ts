@@ -4,6 +4,8 @@
 export type ProtocolId =
   | "ssh"
   | "rdp"
+  | "webdav"
+  | "ftp"
   | "telnet"
   | "serial"
   | "rawTcp"
@@ -28,6 +30,9 @@ export type CapabilityKey =
   | "keepalive"
   | "hostMetrics"
   | "sftp"
+  | "webdav"
+  | "ftp"
+  | "scp"
   | "forwarding"
   | "dynamicForwarding"
   | "agentForwarding"
@@ -81,7 +86,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "tcp",
     supportLevel: "operate",
-    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "forwarding", "dynamicForwarding", "recording", "jumpHost"],
+    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "scp", "forwarding", "dynamicForwarding", "recording", "jumpHost"],
   },
   {
     id: "rdp",
@@ -91,6 +96,24 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     transport: "tcp",
     supportLevel: "connect",
     capabilities: ["systemClient"],
+  },
+  {
+    id: "webdav",
+    labelKey: "protocol.webdav.label",
+    defaultPort: 443,
+    runtime: "native",
+    transport: "tcp",
+    supportLevel: "operate",
+    capabilities: ["webdav"],
+  },
+  {
+    id: "ftp",
+    labelKey: "protocol.ftp.label",
+    defaultPort: 21,
+    runtime: "native",
+    transport: "tcp",
+    supportLevel: "operate",
+    capabilities: ["ftp"],
   },
   {
     id: "telnet",
@@ -179,6 +202,9 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "keepalive", group: "session", labelKey: "capability.keepalive.label" },
   { key: "hostMetrics", group: "session", labelKey: "capability.hostMetrics.label" },
   { key: "sftp", group: "transfer", labelKey: "capability.sftp.label" },
+  { key: "webdav", group: "transfer", labelKey: "capability.webdav.label" },
+  { key: "ftp", group: "transfer", labelKey: "capability.ftp.label" },
+  { key: "scp", group: "transfer", labelKey: "capability.scp.label" },
   { key: "forwarding", group: "network", labelKey: "capability.forwarding.label" },
   { key: "dynamicForwarding", group: "network", labelKey: "capability.dynamicForwarding.label" },
   { key: "agentForwarding", group: "network", labelKey: "capability.agentForwarding.label" },

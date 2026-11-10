@@ -23,6 +23,7 @@ const RANKS = new Map([
   ["sevenshell-ssh", 3],
   ["sevenshell-term", 3],
   ["sevenshell-sync", 3],
+  ["sevenshell-ftp", 3],
   ["sevenshell-session", 4],
   ["sevenshell-sftp", 4],
   ["sevenshell-core", 5],

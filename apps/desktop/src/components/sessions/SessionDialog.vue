@@ -257,7 +257,7 @@ const errors = computed<Partial<Record<SessionFieldProblem, string>>>(() => {
     found.name = t("sessions.editor.validation.name");
   }
   if (editor.sessionProblems.host) {
-    found.host = t("sessions.editor.validation.host");
+    found.host = editor.isWebDav ? t("sessions.editor.validation.webdavUrl") : t("sessions.editor.validation.host");
   }
   if (editor.sessionProblems.user) {
     found.user = t("sessions.editor.validation.user");
@@ -452,19 +452,23 @@ async function forgetKey(): Promise<void> {
             </div>
 
             <div v-if="editor.needsEndpoint" class="sm:col-span-2">
-              <label class="block text-xs font-medium" for="session-host">{{ t("sessions.editor.host") }}</label>
+              <label class="block text-xs font-medium" for="session-host">{{
+                editor.isWebDav ? t("sessions.editor.webdavUrl") : t("sessions.editor.host")
+              }}</label>
               <input
                 id="session-host"
                 v-model="editor.host"
                 type="text"
                 class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
                 :class="submitted && errors.host ? 'border-destructive' : 'border-border'"
-                :placeholder="t('sessions.editor.hostPlaceholder')"
+                :placeholder="
+                  editor.isWebDav ? t('sessions.editor.webdavUrlPlaceholder') : t('sessions.editor.hostPlaceholder')
+                "
               />
               <p v-if="submitted && errors.host" class="mt-1 text-[11px] text-destructive">{{ errors.host }}</p>
             </div>
 
-            <div v-if="editor.needsEndpoint">
+            <div v-if="editor.needsEndpoint && !editor.isWebDav">
               <label class="block text-xs font-medium" for="session-port">{{ t("sessions.editor.port") }}</label>
               <input
                 id="session-port"
@@ -488,11 +492,25 @@ async function forgetKey(): Promise<void> {
                 :placeholder="t('sessions.editor.userPlaceholder')"
               />
               <p v-if="submitted && errors.user" class="mt-1 text-[11px] text-destructive">{{ errors.user }}</p>
+              <p v-if="editor.isWebDav" class="mt-1 text-[11px] text-muted-foreground">
+                {{ t("sessions.editor.webdavAnonymous") }}
+              </p>
             </div>
           </div>
 
-          <section v-if="editor.isSsh || isDesktop">
-            <template v-if="!isDesktop">
+          <section v-if="editor.isFtp">
+            <h3 class="text-xs font-medium">{{ t("sessions.editor.ftp.title") }}</h3>
+            <label class="mt-2 flex items-center gap-2 text-xs">
+              <input v-model="editor.ftpSecure" type="checkbox" class="size-3.5 rounded-sm border-border" />
+              {{ t("sessions.editor.ftp.secure") }}
+            </label>
+            <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {{ t("sessions.editor.ftp.secureHint") }}
+            </p>
+          </section>
+
+          <section v-if="editor.isSsh || isDesktop || editor.isWebDav || editor.isFtp">
+            <template v-if="!isDesktop && !editor.isWebDav && !editor.isFtp">
               <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
               <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
               <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
@@ -518,7 +536,9 @@ async function forgetKey(): Promise<void> {
                     ? t("sessions.editor.secret.stored")
                     : isDesktop
                       ? t("sessions.editor.secret.blankAllowed")
-                      : t("sessions.editor.secret.notStored")
+                      : editor.isWebDav
+                        ? t("sessions.editor.secret.webdavBlank")
+                        : t("sessions.editor.secret.notStored")
                 }}
               </p>
             </div>

@@ -63,6 +63,32 @@
       "authFailed": "同步服务器不认这个用户名或密码。",
       "httpFailed": "同步服务器返回了 {status}。"
     },
+    "webdav": {
+      "invalidAddress": "无法使用这个 WebDAV 地址。",
+      "unreachable": "连不上 WebDAV 服务器。",
+      "authFailed": "WebDAV 服务器不认这个用户名或密码。",
+      "permissionDenied": "WebDAV 服务器拒绝访问 {path}。",
+      "notFound": "WebDAV 服务器上不存在 {path}。",
+      "exists": "该名称已存在：{path}。",
+      "httpFailed": "WebDAV 服务器返回了 {status}。",
+      "transferFailed": "传输 {path} 失败。",
+      "malformed": "无法读取 WebDAV 服务器的响应。"
+    },
+    "ftp": {
+      "invalidPath": "这个 FTP 服务器不能使用该路径。",
+      "unreachable": "连不上 FTP 服务器。",
+      "authFailed": "FTP 服务器不认这个用户名或密码。",
+      "tlsFailed": "FTPS 连接无法建立安全通道；证书或 TLS 协商失败。",
+      "permissionDenied": "FTP 服务器拒绝访问。",
+      "exists": "该名称已存在：{path}。",
+      "operationFailed": "FTP 操作失败。"
+    },
+    "scp": {
+      "unavailable": "无法用 SCP 浏览这台服务器：它没有 SCP 命令，也没有本版本能读取的 shell 目录列表。",
+      "transferFailed": "{path} 的 SCP 传输失败。",
+      "operationFailed": "{path} 的 SCP 操作失败。",
+      "exists": "该名称已存在：{path}。"
+    },
     "policy": {
       "denied": "当前策略不允许 {action}。",
       "approvalRequired": "{action} 需要你先确认。"

@@ -199,6 +199,13 @@ interface RowAction {
 function rowAction(info: TransferInfo): RowAction {
   switch (info.state.kind) {
     case "running":
+      if (!info.pausable) {
+        return {
+          label: t("files.transfer.cancel"),
+          icon: CircleStop,
+          run: () => void files.stopTransfer(info.id),
+        };
+      }
       return {
         label: t("files.transfer.pause"),
         icon: Pause,

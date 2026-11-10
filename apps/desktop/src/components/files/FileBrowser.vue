@@ -86,9 +86,24 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
+import type { Protocol } from "@/types/generated/protocols";
 import type { SftpEntry } from "@/types/session";
 
-const props = defineProps<{ handle: string }>();
+const props = withDefaults(defineProps<{ handle: string; protocol?: Protocol; packedTransfers?: boolean }>(), {
+  protocol: "ssh",
+  packedTransfers: true,
+});
+
+/**
+ * The features that belong to one backend rather than to every browser.
+ *
+ * Permission bits are the SSH family's; a packed archive needs a remote shell, so SFTP and the
+ * SCP fallback differ even though both are SSH sessions. Copy needs the server to do it — FTP
+ * cannot, every other backend here can.
+ */
+const supportsPermissions = computed(() => props.protocol === "ssh");
+const supportsPacked = computed(() => props.protocol === "ssh" && props.packedTransfers);
+const supportsCopy = computed(() => props.protocol !== "ftp");
 
 /**
  * The listing's columns, and what each of them may be.
@@ -148,7 +163,11 @@ async function pasteFiles(): Promise<void> {
   if (!open) {
     return;
   }
-  const outcome = await files.uploadFromClipboard(props.handle, open.path, preferences.packedTransfer);
+  const outcome = await files.uploadFromClipboard(
+    props.handle,
+    open.path,
+    supportsPacked.value && preferences.packedTransfer,
+  );
   if (outcome.kind === "empty") {
     toast(t("files.paste.noFiles"), "receipt");
   } else if (outcome.kind === "failed") {
@@ -1109,7 +1128,7 @@ function upload(): void {
   if (current) {
     // The same button, two jobs: with packing on it is several files that are chosen, and they are
     // packed here before anything crosses the wire.
-    const packed = preferences.packedTransfer;
+    const packed = supportsPacked.value && preferences.packedTransfer;
     void files.upload(
       props.handle,
       current.path,
@@ -1164,7 +1183,12 @@ function openEntryMenu(event: MouseEvent, entry: SftpEntry): void {
         togglePacked: () => void preferences.setPackedTransfer(!preferences.packedTransfer),
         remove: startRemove,
       },
-      { packed: preferences.packedTransfer },
+      {
+        packed: supportsPacked.value && preferences.packedTransfer,
+        supportsSshOnly: supportsPermissions.value,
+        supportsPacked: supportsPacked.value,
+        supportsCopy: supportsCopy.value,
+      },
     ),
   );
 }
@@ -1185,7 +1209,12 @@ function openAreaMenu(event: MouseEvent): void {
     event,
     { key: MENU_TITLES.directory },
     fileAreaMenu(
-      { path: current.path, packed: preferences.packedTransfer, clipboard: pasteable.value },
+      {
+        path: current.path,
+        packed: supportsPacked.value && preferences.packedTransfer,
+        supportsPacked: supportsPacked.value,
+        clipboard: pasteable.value,
+      },
       {
         newFolder: () => startNew("folder"),
         newFile: () => startNew("file"),

@@ -38,6 +38,12 @@ pub struct Session {
     /// Which WSL distribution to start. Ignored by every other protocol.
     #[serde(default)]
     pub wsl: WslSettings,
+    /// The HTTP folder a WebDAV browser opens. Ignored by every other protocol.
+    #[serde(default, skip_serializing_if = "WebDavSettings::is_empty")]
+    pub webdav: WebDavSettings,
+    /// Whether an FTP session asks for TLS before the login. Ignored by every other protocol.
+    #[serde(default, skip_serializing_if = "FtpSettings::is_empty")]
+    pub ftp: FtpSettings,
     /// Saved sessions to reach this one through, in order: the first is connected to directly.
     ///
     /// References rather than copies, because a hop is a session like any other: editing it once
@@ -392,6 +398,42 @@ pub struct WslSettings {
     pub args: String,
 }
 
+/// The HTTP folder a WebDAV browser opens.
+///
+/// The address is the whole session: a WebDAV server has no shell and no account to resolve beyond
+/// the credentials, and the folder it names is the root every path in the browser is relative to.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebDavSettings {
+    /// The endpoint folder, including its scheme and, when it is not the default, its port.
+    #[serde(default)]
+    pub url: String,
+}
+
+impl WebDavSettings {
+    /// Whether this session is not a WebDAV one, which is what keeps the field out of every other
+    /// session's document.
+    pub fn is_empty(&self) -> bool {
+        self.url.is_empty()
+    }
+}
+
+/// What an FTP session asks of the protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FtpSettings {
+    /// Explicit FTPS: negotiate TLS on the control connection before the login is sent.
+    #[serde(default)]
+    pub secure: bool,
+}
+
+impl FtpSettings {
+    /// Plain FTP is the default, and a session that uses it carries no FTP block at all.
+    pub fn is_empty(&self) -> bool {
+        !self.secure
+    }
+}
+
 /// One shell this machine can start, as the picker sees it.
 ///
 /// The identifier is what a session stores; the label is what a person reads. Neither is a path.
@@ -625,7 +667,14 @@ pub enum SftpOutcome {
         handle: String,
         session_id: String,
         listing: SftpListing,
+        /// Whether this backend offers packed transfers. SFTP does; SCP, WebDAV and FTP do not.
+        #[serde(default = "packed_transfers_default")]
+        packed: bool,
     },
+}
+
+fn packed_transfers_default() -> bool {
+    true
 }
 
 /// Which way a transfer is going, from this machine's point of view.
@@ -719,6 +768,16 @@ pub struct TransferInfo {
     /// thing it cannot otherwise work out: which directory to read again afterwards. A packed upload
     /// lands its files in the directory it was aimed at; an ordinary one lands a file inside it.
     pub packed: bool,
+    /// Whether this backend can hold the transfer where it is.
+    ///
+    /// SFTP and HTTP can pause their copy loops; SCP cannot, and a pause button that keeps a
+    /// transfer moving is worse than one that is not offered.
+    #[serde(default = "transfer_is_pausable")]
+    pub pausable: bool,
+}
+
+fn transfer_is_pausable() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

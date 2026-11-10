@@ -108,6 +108,10 @@ export interface Session {
   readonly local?: LocalSettings;
   /** Which WSL distribution to start. Absent on every other protocol. */
   readonly wsl?: WslSettings;
+  /** The HTTP folder a WebDAV browser opens. Absent on every other protocol. */
+  readonly webdav?: WebDavSettings;
+  /** Whether an FTP session asks for TLS before login. Absent on every other protocol. */
+  readonly ftp?: FtpSettings;
   /** Saved sessions to reach this one through, in order: the first is connected to directly. */
   readonly jump?: readonly string[];
   /** Ports to forward while this session is open. */
@@ -173,6 +177,17 @@ export interface WslSettings {
   /** Empty asks Windows for its default distribution. */
   readonly distro: string;
   readonly args: string;
+}
+
+/** The HTTP folder a WebDAV browser opens: the whole address, scheme and folder included. */
+export interface WebDavSettings {
+  readonly url: string;
+}
+
+/** What an FTP session asks of the protocol. */
+export interface FtpSettings {
+  /** Explicit FTPS: negotiate TLS before the login is sent. */
+  readonly secure: boolean;
 }
 
 /** One shell this machine can start, as the picker sees it. */
@@ -293,6 +308,23 @@ export interface TerminalClosed {
   readonly reason?: string;
 }
 
+/** A ZMODEM session on a terminal, as the shell reports it. */
+export interface ZmodemEvent {
+  readonly handle: string;
+  readonly kind:
+    | "started"
+    | "receiving"
+    | "sending"
+    | "sent"
+    | "done"
+    | "finished"
+    | "skipped"
+    | "failed"
+    | "cancelled";
+  readonly name?: string;
+  readonly detail?: string;
+}
+
 /** What an entry in a remote directory is. */
 export type EntryKind = "directory" | "file" | "symlink" | "other";
 
@@ -337,7 +369,14 @@ export interface SftpPasteOutcome {
 export type SftpOutcome =
   | { readonly kind: "hostKeyUnknown"; readonly key: PresentedHostKey }
   | { readonly kind: "hostKeyMismatch"; readonly key: PresentedHostKey; readonly trusted: KnownHostEntry }
-  | { readonly kind: "opened"; readonly handle: string; readonly sessionId: string; readonly listing: SftpListing };
+  | {
+      readonly kind: "opened";
+      readonly handle: string;
+      readonly sessionId: string;
+      readonly listing: SftpListing;
+      /** Whether this backend offers packed transfers. SFTP does; the others do not. */
+      readonly packed: boolean;
+    };
 
 export type TransferDirection = "download" | "upload";
 
@@ -387,6 +426,8 @@ export interface TransferInfo {
    * upload: a packed one lands its files *in* the directory it was aimed at.
    */
   readonly packed: boolean;
+  /** Whether this backend can hold the transfer where it is. SCP cannot. */
+  readonly pausable: boolean;
 }
 
 /**

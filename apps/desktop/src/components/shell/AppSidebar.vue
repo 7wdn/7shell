@@ -1390,9 +1390,16 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                       type="button"
                       class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1 text-left"
                       :title="
-                        t(row.session.protocol === 'rdp' ? 'sessions.list.openDesktopHint' : 'sessions.list.openHint', {
-                          name: row.session.name,
-                        })
+                        t(
+                          row.session.protocol === 'rdp'
+                            ? 'sessions.list.openDesktopHint'
+                            : row.session.protocol === 'webdav'
+                              ? 'sessions.list.openWebdavHint'
+                              : row.session.protocol === 'ftp'
+                                ? 'sessions.list.openFtpHint'
+                                : 'sessions.list.openHint',
+                          { name: row.session.name },
+                        )
                       "
                       @click="terminals.goTo(row.session)"
                     >

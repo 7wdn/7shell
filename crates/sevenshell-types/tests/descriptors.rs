@@ -43,6 +43,7 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert!(ssh.supports(Capability::Keepalive));
     assert!(ssh.supports(Capability::HostMetrics));
     assert!(ssh.supports(Capability::Sftp));
+    assert!(ssh.supports(Capability::Scp), "the SCP fallback is an SSH capability");
     assert!(ssh.supports(Capability::Forwarding));
     assert!(ssh.supports(Capability::DynamicForwarding));
     assert!(ssh.supports(Capability::Recording));
@@ -57,6 +58,33 @@ fn ssh_carries_the_capabilities_we_committed_to() {
         !ssh.supports(Capability::AgentForwarding),
         "agent forwarding is implemented but not verified end to end, so it stays unclaimed"
     );
+}
+
+#[test]
+fn webdav_is_a_file_browser_and_claims_nothing_it_does_not_have() {
+    let webdav = Protocol::WebDav;
+
+    assert_eq!(webdav.default_port(), Some(443));
+    assert_eq!(webdav.support_level(), SupportLevel::Operate);
+    assert_eq!(webdav.runtime(), Runtime::Native);
+    assert!(webdav.supports(Capability::Webdav), "the browser is the session");
+    assert!(!webdav.supports(Capability::Shell), "there is no shell behind it");
+    assert!(
+        !webdav.supports(Capability::Sftp),
+        "SFTP is the other file backend, not this one"
+    );
+}
+
+#[test]
+fn ftp_is_a_file_browser_and_claims_nothing_it_does_not_have() {
+    let ftp = Protocol::Ftp;
+
+    assert_eq!(ftp.default_port(), Some(21));
+    assert_eq!(ftp.support_level(), SupportLevel::Operate);
+    assert_eq!(ftp.runtime(), Runtime::Native);
+    assert!(ftp.supports(Capability::Ftp), "the browser is the session");
+    assert!(!ftp.supports(Capability::Shell), "there is no shell behind it");
+    assert!(!ftp.supports(Capability::Sftp), "SFTP is another backend");
 }
 
 #[test]

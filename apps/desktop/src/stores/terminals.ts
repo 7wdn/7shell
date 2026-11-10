@@ -140,6 +140,8 @@ export interface FilesTab {
   handle: string | null;
   status: FilesTabStatus;
   failure: ShellError | null;
+  /** Whether this browser's backend offers packed transfers. */
+  readonly packed: boolean;
 }
 
 /** The host pages the monitor opens: a closer look at one machine, in a tab of its own. */
@@ -341,6 +343,16 @@ export const useTerminalsStore = defineStore("terminals", () => {
       await openDesktop(session);
       return;
     }
+    // A WebDAV folder has no shell and no terminal; what opens is the browser.
+    if (session.protocol === "webdav") {
+      await openFiles(session);
+      return;
+    }
+    // An FTP session is a file browser and nothing else too.
+    if (session.protocol === "ftp") {
+      await openFiles(session);
+      return;
+    }
     if (connectingSessionIds.value.includes(session.id)) {
       return;
     }
@@ -386,8 +398,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
    */
   async function openFiles(session: Session): Promise<void> {
     // A remote desktop has no SFTP side; the menu does not offer this, and a caller that reaches it
-    // some other way gets nothing rather than an SSH attempt against an RDP port.
-    if (session.protocol !== "ssh") {
+    // some other way gets nothing rather than an SSH attempt against an RDP port. A WebDAV folder
+    // is the opposite: the file browser is the whole session.
+    if (session.protocol !== "ssh" && session.protocol !== "webdav" && session.protocol !== "ftp") {
       return;
     }
     // A browser that is already up is still this session being used, which is why the record is
@@ -630,6 +643,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
         handle: outcome.handle,
         status: "open",
         failure: null,
+        packed: outcome.packed,
       });
       return;
     }
@@ -831,9 +845,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   function addFiles(
     session: Session,
-    fields: { handle: string | null; status: FilesTabStatus; failure: ShellError | null },
+    fields: { handle: string | null; status: FilesTabStatus; failure: ShellError | null; packed?: boolean },
   ): void {
-    addTab({ kind: "files", id: crypto.randomUUID(), session, ...fields });
+    addTab({ kind: "files", id: crypto.randomUUID(), session, packed: true, ...fields });
   }
 
   /** Records the key, then asks to open again — the decision itself opens nothing. */

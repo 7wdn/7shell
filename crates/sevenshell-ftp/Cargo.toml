@@ -1,0 +1,14 @@
+[package]
+name = "sevenshell-ftp"
+description = "The far side of an FTP or FTPS file browser: one session, and the verbs over its tree."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-error = { workspace = true }
+sevenshell-vault = { workspace = true }
+suppaftp = { workspace = true }
+tokio = { workspace = true }

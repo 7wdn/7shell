@@ -7,6 +7,8 @@
       "openDesktop": "Open remote desktop",
       "openHint": "Open a terminal for {name}",
       "openDesktopHint": "Open the remote desktop for {name}",
+      "openWebdavHint": "Open the WebDAV folder for {name}",
+      "openFtpHint": "Open the FTP folder for {name}",
       "desktopLaunched": "Opened in Windows Remote Desktop.",
       "connecting": "Connecting to {name}…",
       "system": "Remote system: {name}",
@@ -180,6 +182,14 @@
       "port": "Port",
       "user": "User",
       "userPlaceholder": "root",
+      "webdavUrl": "WebDAV URL",
+      "webdavUrlPlaceholder": "https://host/dav/",
+      "webdavAnonymous": "Leave the user empty for a server that allows anonymous access.",
+      "ftp": {
+        "title": "FTP",
+        "secure": "Require TLS (FTPS)",
+        "secureHint": "The login is sent only after the TLS handshake. A server or certificate this machine cannot verify is refused rather than tried in the clear."
+      },
       "group": "Group",
       "groupNone": "No group",
       "method": "Authentication",
@@ -190,7 +200,8 @@
         "storedPlaceholder": "Saved password — leave empty to keep it",
         "stored": "A password is already stored. It is kept unless a new one is typed here.",
         "notStored": "No password is stored for this session yet, so it cannot connect until one is saved.",
-        "blankAllowed": "Leave this empty and the Windows client asks for the password — an account may not have one."
+        "blankAllowed": "Leave this empty and the Windows client asks for the password — an account may not have one.",
+        "webdavBlank": "Leave this empty for a WebDAV server that allows anonymous access."
       },
       "key": {
         "dialogTitle": "Choose a private key",
@@ -247,6 +258,7 @@
       "validation": {
         "name": "Give this session a name.",
         "host": "Enter the host name or address.",
+        "webdavUrl": "Enter a WebDAV address beginning with http:// or https://.",
         "user": "Enter the user to log in as.",
         "port": "The port must be a number between 1 and 65535.",
         "key": "Attach a key file for public-key authentication.",

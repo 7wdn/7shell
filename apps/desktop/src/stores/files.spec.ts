@@ -105,7 +105,7 @@ function listing(path: string, names: string[] = []): SftpListing {
 }
 
 function opened(at: SftpListing): SftpOutcome {
-  return { kind: "opened", handle, sessionId, listing: at };
+  return { kind: "opened", handle, sessionId, listing: at, packed: true };
 }
 
 const download: TransferInfo = {
@@ -119,6 +119,7 @@ const download: TransferInfo = {
   state: { kind: "running" },
   hasLocalPath: true,
   packed: false,
+  pausable: true,
 };
 
 /** The same transfer, held: what the backend reports after a pause. */
@@ -135,6 +136,7 @@ const upload: TransferInfo = {
   state: { kind: "running" },
   hasLocalPath: true,
   packed: false,
+  pausable: true,
 };
 
 /** An SFTP refusal, in the envelope shape the backend rejects with. */
@@ -727,7 +729,7 @@ describe("the revision the tree watches", () => {
 
   it("moves when a change happened", async () => {
     const listing = { path: "/home", entries: [] };
-    filesOpenMock.mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing });
+    filesOpenMock.mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing, packed: true });
     filesListMock.mockResolvedValue(listing);
     filesCreateFolderMock.mockResolvedValue(undefined);
 
@@ -742,7 +744,7 @@ describe("the revision the tree watches", () => {
 
   it("stays where it is when the change was refused", async () => {
     const listing = { path: "/home", entries: [] };
-    filesOpenMock.mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing });
+    filesOpenMock.mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing, packed: true });
     filesListMock.mockResolvedValue(listing);
     filesCreateFolderMock.mockRejectedValue({
       version: 1,
@@ -768,7 +770,9 @@ describe("files the operating system handed us", () => {
 
   beforeEach(() => {
     setActivePinia(createPinia());
-    filesOpenMock.mockReset().mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing });
+    filesOpenMock
+      .mockReset()
+      .mockResolvedValue({ kind: "opened", handle: "f1", sessionId: "s1", listing, packed: true });
     filesListMock.mockReset().mockResolvedValue(listing);
     filesUploadDroppedMock.mockReset();
     clipboardFilesMock.mockReset();

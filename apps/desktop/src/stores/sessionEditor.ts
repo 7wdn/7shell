@@ -20,6 +20,7 @@ import type {
   DesktopSettings,
   EnterMode,
   ForwardMode,
+  FtpSettings,
   KeyInfo,
   LocalForward,
   LocalSettings,
@@ -63,6 +64,7 @@ const DEFAULT_SERIAL: SerialSettings = {
 };
 const DEFAULT_LOCAL: LocalSettings = { shell: "", args: "" };
 const DEFAULT_WSL: WslSettings = { distro: "", args: "" };
+const DEFAULT_FTP: FtpSettings = { secure: false };
 
 /** The range the serial driver accepts, and the ceiling the backend checks. */
 const BAUD_MIN = 50;
@@ -114,6 +116,18 @@ function validPort(text: string, minimum: number): boolean {
   }
   const value = portNumber(text);
   return Number.isInteger(value) && value >= minimum && value <= PORT_MAX;
+}
+
+/** A WebDAV address is a folder on an HTTP server, not a bare host name. */
+function validWebDavUrl(text: string): boolean {
+  try {
+    const url = new URL(text.trim());
+    // Credentials in the address would be a password in a text field and in the saved session;
+    // the form has two fields for them, and the backend refuses the URL as well.
+    return (url.protocol === "http:" || url.protocol === "https:") && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
 }
 
 /** Whether the text is a rate the serial driver accepts; custom rates are real. */
@@ -240,23 +254,37 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const wslDistro = ref(DEFAULT_WSL.distro);
   const wslArgs = ref(DEFAULT_WSL.args);
 
+  /** Whether an FTP session requires TLS before the login. */
+  const ftpSecure = ref(DEFAULT_FTP.secure);
+
   /** Whether this connection has a host and a port to type. A serial port and a shell do not. */
   const needsEndpoint = computed(
     () =>
       protocol.value === "ssh" ||
       protocol.value === "telnet" ||
       protocol.value === "rawTcp" ||
-      protocol.value === "rdp",
+      protocol.value === "rdp" ||
+      protocol.value === "webdav" ||
+      protocol.value === "ftp",
   );
 
-  /** Whether this connection has a person to name. Only SSH and RDP do. */
-  const needsUser = computed(() => protocol.value === "ssh" || protocol.value === "rdp");
+  /** Whether this connection has a person to name. Only SSH, RDP, WebDAV and FTP do. */
+  const needsUser = computed(
+    () =>
+      protocol.value === "ssh" || protocol.value === "rdp" || protocol.value === "webdav" || protocol.value === "ftp",
+  );
 
   /** Whether SSH's authentication, route and forwarding sections apply. */
   const isSsh = computed(() => protocol.value === "ssh");
 
   /** Whether the remote-desktop display section applies. */
   const isRdp = computed(() => protocol.value === "rdp");
+
+  /** Whether the address is a WebDAV folder rather than a host and a port. */
+  const isWebDav = computed(() => protocol.value === "webdav");
+
+  /** Whether this is an FTP or FTPS session. */
+  const isFtp = computed(() => protocol.value === "ftp");
 
   /** The route as the list draws it, in the order it is connected. A missing session stays a row. */
   const hops = computed<HopEntry[]>(() =>
@@ -270,9 +298,11 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
 
   const sessionProblems = computed<Record<SessionFieldProblem, boolean>>(() => ({
     name: name.value.trim() === "",
-    host: needsEndpoint.value && host.value.trim() === "",
-    user: needsUser.value && user.value.trim() === "",
-    port: needsEndpoint.value && !validPort(port.value, 1),
+    host: needsEndpoint.value && (host.value.trim() === "" || (isWebDav.value && !validWebDavUrl(host.value))),
+    // A WebDAV folder may be readable without an account; the password field is the only one that
+    // has to be answered, and even that can be left for an anonymous server.
+    user: needsUser.value && !isWebDav.value && user.value.trim() === "",
+    port: needsEndpoint.value && !isWebDav.value && !validPort(port.value, 1),
     key: isSsh.value && method.value === "publicKey" && !attachedKey.value?.keyRef,
     serialPort: protocol.value === "serial" && serialPort.value.trim() === "",
     serialBaud: protocol.value === "serial" && !validBaud(serialBaud.value),
@@ -331,7 +361,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   function fill(session: Session | null): void {
     editing.value = session;
     name.value = session?.name ?? "";
-    host.value = session?.host ?? "";
+    host.value = session?.webdav?.url || session?.host || "";
     protocol.value = session?.protocol ?? PROTOCOLS[0]?.id ?? "ssh";
     port.value = String(session?.port ?? protocolById(protocol.value)?.defaultPort ?? "");
     user.value = session?.user ?? "";
@@ -366,6 +396,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     const wsl = session?.wsl ?? DEFAULT_WSL;
     wslDistro.value = wsl.distro;
     wslArgs.value = wsl.args;
+    ftpSecure.value = session?.ftp?.secure ?? DEFAULT_FTP.secure;
   }
 
   /**
@@ -412,6 +443,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       },
       local: { shell: localShell.value, args: localArgs.value.trim() },
       wsl: { distro: wslDistro.value, args: wslArgs.value.trim() },
+      webdav: { url: isWebDav.value ? host.value.trim() : "" },
+      ftp: { secure: isFtp.value && ftpSecure.value },
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
@@ -512,6 +545,9 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     needsUser,
     isSsh,
     isRdp,
+    isWebDav,
+    isFtp,
+    ftpSecure,
     hops,
     hopChoices,
     sessionProblems,

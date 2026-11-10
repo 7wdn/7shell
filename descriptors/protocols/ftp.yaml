@@ -1,0 +1,13 @@
+schemaVersion: 1
+order: 27
+id: ftp
+rustVariant: Ftp
+labelKey: protocol.ftp.label
+defaultPort: 21
+# An FTP session is a file browser and nothing else: there is no shell to hand a terminal, and the
+# control connection is the whole session. `native` because the client runs in this process.
+runtime: native
+transport: tcp
+supportLevel: operate
+capabilities:
+  - ftp

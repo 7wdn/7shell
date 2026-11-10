@@ -38,6 +38,28 @@ capabilities:
     group: transfer
     labelKey: capability.sftp.label
 
+  # A file browser over an HTTP folder rather than an SSH channel. Its own capability because the
+  # two protocols share the panel but not the operations: WebDAV has no permission bits, no
+  # remote `tar`, and moves are the server's COPY/MOVE rather than an SFTP channel.
+  - key: webdav
+    order: 55
+    group: transfer
+    labelKey: capability.webdav.label
+
+  # The other HTTP-adjacent file protocol, and a different shape again: a stateful control
+  # connection, a data connection per transfer, and no permission bits to read back.
+  - key: ftp
+    order: 57
+    group: transfer
+    labelKey: capability.ftp.label
+
+  # Not a protocol of its own: the fallback an SSH session takes when the server has no SFTP
+  # subsystem. It is a capability because it changes what the file browser can do, not the session.
+  - key: scp
+    order: 58
+    group: transfer
+    labelKey: capability.scp.label
+
   - key: forwarding
     order: 60
     group: network

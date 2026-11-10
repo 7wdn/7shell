@@ -91,6 +91,28 @@ reqwest = { version = "0.13", default-features = false, features = [
   "charset",
   "http2",
   "system-proxy",
+  "stream",
+] }
+# A WebDAV listing is an XML document, not JSON: PROPFIND answers a multistatus body whose
+# namespace prefixes vary by server. Parsing it with string searches is how a server that writes
+# `<D:href>` instead of `<d:href>` becomes a bug report; this reads elements by local name.
+quick-xml = "0.42"
+# Decoding the percent-encoded names a WebDAV listing uses in `href`: `%E4%B8%AD` is a name to the
+# protocol and `中` is a name to the person reading the panel. Already in the tree through `url`.
+percent-encoding = "2"
+# Uploading a file without holding it in memory: the request body is a stream fed from the local
+# file, and the pieces are the byte buffers `reqwest` already uses.
+bytes = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# A WebDAV listing carries date strings, not timestamps; the browser column wants a time.
+httpdate = "1"
+# FTP and FTPS. The async client is the same `tokio` runtime the rest of the workspace uses, and
+# `native-tls` is the same trust store `reqwest` was built with — one TLS story on each platform
+# rather than two. `no-log` is deliberate: FTP sends the password as a command, and a client that
+# logs its commands is a client that writes the password somewhere.
+suppaftp = { version = "12.2", default-features = false, features = [
+  "tokio-async-native-tls",
+  "no-log",
 ] }
 
 tauri = { version = "2", features = ["tray-icon"] }
@@ -114,6 +136,7 @@ sevenshell-core = { version = "0.1.3", path = "crates/sevenshell-core" }
 sevenshell-ssh = { version = "0.1.3", path = "crates/sevenshell-ssh" }
 sevenshell-term = { version = "0.1.3", path = "crates/sevenshell-term" }
 sevenshell-sync = { version = "0.1.3", path = "crates/sevenshell-sync" }
+sevenshell-ftp = { version = "0.1.3", path = "crates/sevenshell-ftp" }
 sevenshell-session = { version = "0.1.3", path = "crates/sevenshell-session" }
 sevenshell-sftp = { version = "0.1.3", path = "crates/sevenshell-sftp" }
 sevenshell-types = { version = "0.1.3", path = "crates/sevenshell-types" }

@@ -199,6 +199,7 @@ async function withPanelUnderTerminal(): Promise<void> {
     handle: "f1",
     sessionId: session.id,
     listing: { path: "/home/user", entries: [] },
+    packed: true,
   });
   filesListMock.mockImplementation(async (_handle: string, path: string) => ({ path, entries: [] }));
 

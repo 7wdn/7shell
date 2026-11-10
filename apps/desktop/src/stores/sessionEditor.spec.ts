@@ -207,4 +207,62 @@ describe("session editor store", () => {
     expect(editor.open).toBe(true);
     expect(editor.editing).toBeNull();
   });
+
+  it("keeps a WebDAV address in the host field and saves it under webdav", async () => {
+    await useSessionsStore().load();
+    const editor = useSessionEditorStore();
+    editor.fill({
+      ...sample("dav", "dav"),
+      protocol: "webdav",
+      host: "https://dav.example/files/",
+      port: 443,
+      user: "alice",
+      webdav: { url: "https://dav.example/files/" },
+    });
+
+    expect(editor.isWebDav).toBe(true);
+    expect(editor.host).toBe("https://dav.example/files/");
+    expect(editor.sessionProblems.host).toBe(false);
+    expect(editor.sessionProblems.port).toBe(false);
+
+    const draft = editor.draft();
+    expect(draft.protocol).toBe("webdav");
+    expect(draft.host).toBe("https://dav.example/files/");
+    expect(draft.webdav?.url).toBe("https://dav.example/files/");
+  });
+
+  it("refuses a WebDAV address that is not http, and allows an anonymous user", async () => {
+    await useSessionsStore().load();
+    const editor = useSessionEditorStore();
+    editor.fill({
+      ...sample("dav", "dav"),
+      protocol: "webdav",
+      host: "dav.example/files",
+      port: 443,
+      user: "",
+      webdav: { url: "dav.example/files" },
+    });
+
+    expect(editor.sessionProblems.host).toBe(true);
+    // A WebDAV folder may be readable without an account.
+    expect(editor.sessionProblems.user).toBe(false);
+  });
+
+  it("saves the FTPS switch under ftp and leaves plain FTP without a block", async () => {
+    await useSessionsStore().load();
+    const editor = useSessionEditorStore();
+    editor.fill({
+      ...sample("ftp", "ftp"),
+      protocol: "ftp",
+      host: "ftp.example",
+      port: 21,
+      user: "alice",
+    });
+
+    expect(editor.isFtp).toBe(true);
+    expect(editor.draft().ftp).toEqual({ secure: false });
+
+    editor.ftpSecure = true;
+    expect(editor.draft().ftp).toEqual({ secure: true });
+  });
 });

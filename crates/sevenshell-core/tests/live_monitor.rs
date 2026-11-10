@@ -103,6 +103,8 @@ fn lab() -> Option<Lab> {
                 serial: sevenshell_types::SerialSettings::default(),
                 local: sevenshell_types::LocalSettings::default(),
                 wsl: sevenshell_types::WslSettings::default(),
+                webdav: sevenshell_types::WebDavSettings::default(),
+                ftp: sevenshell_types::FtpSettings::default(),
                 jump: Vec::new(),
                 forwards: Vec::new(),
                 updated_at: 0,

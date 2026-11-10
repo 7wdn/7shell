@@ -41,6 +41,7 @@ import HomeView from "@/components/views/HomeView.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { describeShellError } from "@/i18n/errors";
 import { useSyncAutoUpload } from "@/composables/useSyncAutoUpload";
+import { useToast } from "@/composables/useToast";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { resolveBindings } from "@/lib/shortcuts/registry";
 import { useTransferNotices } from "@/composables/useTransferNotices";
@@ -55,8 +56,10 @@ import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore } from "@/stores/terminals";
 import { useUpdatesStore } from "@/stores/updates";
 import { useVaultStore } from "@/stores/vault";
+import type { ZmodemEvent } from "@/types/session";
 
 const { t } = useI18n();
+const { toast } = useToast();
 const files = useFilesStore();
 const app = useAppStore();
 const preferences = usePreferencesStore();
@@ -89,6 +92,45 @@ let stopContextMenu: (() => void) | undefined;
 let stopStraySelection: (() => void) | undefined;
 let stopQuitRequested: (() => void) | undefined;
 let stopVaultLocked: (() => void) | undefined;
+let stopZmodem: (() => void) | undefined;
+
+/**
+ * Says what a ZMODEM session is doing, because its file traffic never reaches the transfer list.
+ *
+ * The shell owns the dialog that chose the file, so it also owns the only trace of the session a
+ * person can see; the terminal itself only shows the shell prompt coming back.
+ */
+function reportZmodem(event: ZmodemEvent): void {
+  const name = event.name ?? "";
+  switch (event.kind) {
+    case "receiving":
+      toast(t("terminal.zmodem.receiving", { name }), "confirmation");
+      break;
+    case "sending":
+      toast(t("terminal.zmodem.sending", { name }), "confirmation");
+      break;
+    case "sent":
+      toast(t("terminal.zmodem.sent", { name }), "confirmation");
+      break;
+    case "done":
+      toast(t("terminal.zmodem.done", { name }), "confirmation");
+      break;
+    case "finished":
+      toast(t("terminal.zmodem.finished"), "confirmation");
+      break;
+    case "skipped":
+      toast(t("terminal.zmodem.skipped", { name, reason: event.detail ?? "" }), "result");
+      break;
+    case "failed":
+      toast(t("terminal.zmodem.failed", { detail: event.detail ?? "" }), "failure");
+      break;
+    case "cancelled":
+      toast(t("terminal.zmodem.cancelled"), "receipt");
+      break;
+    default:
+      break;
+  }
+}
 
 const backendFailure = computed(() => (app.failure ? describeShellError(translate, app.failure) : null));
 
@@ -393,6 +435,7 @@ onMounted(async () => {
   // it arrives from a menu the operating system draws, at a moment when no page was involved, and
   // the window has to put the gate back up whether or not anybody is looking at the vault.
   stopVaultLocked = await backend.events.onVaultLocked(() => vault.markLocked());
+  stopZmodem = await backend.events.onZmodemEvent(reportZmodem);
   await preferences.load();
   await app.load();
   await reportFirstFrame();
@@ -413,6 +456,7 @@ onBeforeUnmount(() => {
   stopStraySelection?.();
   stopQuitRequested?.();
   stopVaultLocked?.();
+  stopZmodem?.();
 });
 </script>
 

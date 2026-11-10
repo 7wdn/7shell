@@ -592,6 +592,136 @@ impl ShellError {
             .with_outcome(OperationOutcome::Sent)
     }
 
+    // -- WebDAV file browsing ----------------------------------------------
+
+    /// The address is not one an HTTP client can be pointed at.
+    ///
+    /// The address itself is kept out of the envelope: a WebDAV URL can be a share link, and a
+    /// failure is a thing people paste into a bug report. The detail carries what the parser said.
+    pub fn webdav_invalid_address(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::WebDavInvalidAddress, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::NotSent)
+            .with_detail(detail)
+    }
+
+    pub fn webdav_unreachable() -> Self {
+        Self::new(ErrorCode::WebDavUnreachable, Origin::new(Subsystem::Net)).with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn webdav_auth_failed() -> Self {
+        Self::new(ErrorCode::WebDavAuthFailed, Origin::new(Subsystem::Net)).with_outcome(OperationOutcome::Sent)
+    }
+
+    pub fn webdav_permission_denied(remote_path: &str) -> Self {
+        Self::new(ErrorCode::WebDavPermissionDenied, Origin::new(Subsystem::Net))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::Sent)
+    }
+
+    pub fn webdav_not_found(remote_path: &str) -> Self {
+        Self::new(ErrorCode::WebDavNotFound, Origin::new(Subsystem::Net))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::Sent)
+    }
+
+    /// A name that the server says is already taken, or a move that would replace one.
+    pub fn webdav_exists(remote_path: &str) -> Self {
+        Self::new(ErrorCode::WebDavExists, Origin::new(Subsystem::Net))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::Sent)
+    }
+
+    pub fn webdav_http_failed(status: u16) -> Self {
+        Self::new(ErrorCode::WebDavHttpFailed, Origin::new(Subsystem::Net))
+            .with_param("status", status.to_string())
+            .with_outcome(OperationOutcome::Sent)
+    }
+
+    /// The status was a success, and the bytes still did not arrive.
+    pub fn webdav_transfer_failed(remote_path: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::WebDavTransferFailed, Origin::new(Subsystem::Net))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::Sent)
+            .with_detail(detail)
+    }
+
+    /// A multistatus answer that was not the document the protocol promised.
+    pub fn webdav_malformed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::WebDavMalformed, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::Sent)
+            .with_detail(detail)
+    }
+
+    // -- FTP file browsing -------------------------------------------------
+
+    pub fn ftp_invalid_path(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FtpInvalidPath, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::NotSent)
+            .with_detail(detail)
+    }
+
+    pub fn ftp_unreachable(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FtpUnreachable, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::NotSent)
+            .with_detail(detail)
+    }
+
+    pub fn ftp_auth_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FtpAuthFailed, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::Sent)
+            .with_detail(detail)
+    }
+
+    pub fn ftp_tls_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FtpTlsFailed, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::NotSent)
+            .with_detail(detail)
+    }
+
+    pub fn ftp_permission_denied(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FtpPermissionDenied, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::Sent)
+            .with_detail(detail)
+    }
+
+    pub fn ftp_exists(remote_path: &str) -> Self {
+        Self::new(ErrorCode::FtpExists, Origin::new(Subsystem::Net))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn ftp_operation_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::FtpOperationFailed, Origin::new(Subsystem::Net))
+            .with_outcome(OperationOutcome::Unknown)
+            .with_detail(detail)
+    }
+
+    // -- SCP fallback ------------------------------------------------------
+
+    pub fn scp_unavailable(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::ScpUnavailable, Origin::new(Subsystem::Ssh))
+            .with_outcome(OperationOutcome::NotSent)
+            .with_detail(detail)
+    }
+
+    pub fn scp_transfer_failed(remote_path: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::ScpTransferFailed, Origin::new(Subsystem::Ssh))
+            .with_param("path", remote_path)
+            .with_detail(detail)
+    }
+
+    pub fn scp_operation_failed(remote_path: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::ScpOperationFailed, Origin::new(Subsystem::Ssh))
+            .with_param("path", remote_path)
+            .with_detail(detail)
+    }
+
+    pub fn scp_exists(remote_path: &str) -> Self {
+        Self::new(ErrorCode::ScpExists, Origin::new(Subsystem::Ssh))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     // -- Policy ------------------------------------------------------------
 
     pub fn policy_denied(action: &str) -> Self {

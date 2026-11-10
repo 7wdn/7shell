@@ -17,6 +17,9 @@ mod serial;
 mod tcp;
 mod telnet;
 
+/// ZMODEM (`rz`/`sz`) framing and session state machines, for file transfer inside a terminal.
+pub mod zmodem;
+
 use sevenshell_error::ShellError;
 use tokio::sync::mpsc;
 

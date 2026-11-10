@@ -35,6 +35,16 @@
     },
     "selection": {
       "label": "Selection actions"
+    },
+    "zmodem": {
+      "receiving": "Receiving {name} over ZMODEM…",
+      "sending": "Sending {name} over ZMODEM…",
+      "sent": "Sent {name} over ZMODEM.",
+      "done": "Received {name} over ZMODEM.",
+      "finished": "The ZMODEM transfer finished.",
+      "skipped": "ZMODEM skipped {name}: {reason}",
+      "failed": "The ZMODEM transfer failed: {detail}",
+      "cancelled": "The ZMODEM transfer was cancelled."
     }
   }
 }

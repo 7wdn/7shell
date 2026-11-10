@@ -18,6 +18,15 @@
     "sftp": {
       "label": "文件传输（SFTP）"
     },
+    "webdav": {
+      "label": "文件管理（WebDAV）"
+    },
+    "ftp": {
+      "label": "文件管理（FTP / FTPS）"
+    },
+    "scp": {
+      "label": "无 SFTP 服务器的 SCP 降级"
+    },
     "forwarding": {
       "label": "端口转发"
     },

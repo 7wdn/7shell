@@ -45,6 +45,27 @@
       "planned": false
     },
     {
+      "key": "webdav",
+      "order": 55,
+      "group": "transfer",
+      "labelKey": "capability.webdav.label",
+      "planned": false
+    },
+    {
+      "key": "ftp",
+      "order": 57,
+      "group": "transfer",
+      "labelKey": "capability.ftp.label",
+      "planned": false
+    },
+    {
+      "key": "scp",
+      "order": 58,
+      "group": "transfer",
+      "labelKey": "capability.scp.label",
+      "planned": false
+    },
+    {
       "key": "forwarding",
       "order": 60,
       "group": "network",
@@ -160,6 +181,7 @@
         "keepalive",
         "hostMetrics",
         "sftp",
+        "scp",
         "forwarding",
         "dynamicForwarding",
         "recording",
@@ -177,6 +199,32 @@
       "supportLevel": "connect",
       "capabilities": [
         "systemClient"
+      ]
+    },
+    {
+      "id": "webdav",
+      "rustVariant": "WebDav",
+      "order": 25,
+      "labelKey": "protocol.webdav.label",
+      "defaultPort": 443,
+      "runtime": "native",
+      "transport": "tcp",
+      "supportLevel": "operate",
+      "capabilities": [
+        "webdav"
+      ]
+    },
+    {
+      "id": "ftp",
+      "rustVariant": "Ftp",
+      "order": 27,
+      "labelKey": "protocol.ftp.label",
+      "defaultPort": 21,
+      "runtime": "native",
+      "transport": "tcp",
+      "supportLevel": "operate",
+      "capabilities": [
+        "ftp"
       ]
     },
     {

@@ -18,6 +18,15 @@
     "sftp": {
       "label": "File transfer (SFTP)"
     },
+    "webdav": {
+      "label": "File browser (WebDAV)"
+    },
+    "ftp": {
+      "label": "File browser (FTP / FTPS)"
+    },
+    "scp": {
+      "label": "SCP fallback for servers without SFTP"
+    },
     "forwarding": {
       "label": "Port forwarding"
     },
