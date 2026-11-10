@@ -9,7 +9,11 @@
 //! Where the CLI runs is not decided here. A [`Runner`](runner::Runner) is either a process on this
 //! machine or an SSH exec channel, and the manager above it asks the same questions of both.
 
+mod commands;
+mod local;
 mod manager;
+mod parse;
+mod remote;
 mod runner;
 
 pub use manager::ContainerManager;

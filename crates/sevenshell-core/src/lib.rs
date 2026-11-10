@@ -10,8 +10,10 @@
 mod archive;
 mod batch;
 mod completion;
+mod container;
 mod desktop;
 mod files;
+mod k8s;
 mod keys;
 mod monitor;
 mod sessions;

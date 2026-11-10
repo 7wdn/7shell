@@ -9,5 +9,11 @@
 //! this build has never heard of still lists, watches and reads like any other.
 
 mod client;
+mod exec;
+mod kubeconfig;
+mod logs;
+mod metrics;
+mod rest;
+mod watch;
 
 pub use client::{K8sClient, K8sManager, KubeContext, Kubeconfig};
