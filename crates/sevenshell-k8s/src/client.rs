@@ -32,10 +32,50 @@ impl Kubeconfig {
 }
 
 /// A connection to one cluster.
-pub struct K8sClient;
+#[allow(dead_code)]
+pub struct K8sClient {
+    pub(crate) transport: K8sTransport,
+}
+
+/// Everything a request needs that is not the path or the body.
+///
+/// The REST client and the WebSocket upgrade share this: one TLS story, one authorization header
+/// and one base URL, so an exec channel cannot accidentally trust a different server than a list.
+#[allow(dead_code)]
+#[derive(Clone)]
+pub(crate) struct K8sTransport {
+    /// The server URL exactly as the kubeconfig spells it, without a trailing slash.
+    pub(crate) base: String,
+    /// The host name the certificate is checked against and the `Host` header carries.
+    pub(crate) server: String,
+    pub(crate) tls: native_tls::TlsConnector,
+    /// `Bearer …` when the kubeconfig uses a token, otherwise nothing (client certificates).
+    pub(crate) authorization: Option<String>,
+}
 
 impl K8sClient {
     pub async fn connect(_config: &Kubeconfig, _context: Option<&str>) -> Result<Self, ShellError> {
+        Err(ShellError::app_unsupported(
+            "the Kubernetes client is not implemented yet",
+        ))
+    }
+
+    /// The parts a WebSocket upgrade needs, which are the same parts every request uses.
+    #[allow(dead_code)]
+    pub(crate) fn transport(&self) -> &K8sTransport {
+        &self.transport
+    }
+
+    /// One API request. A non-2xx answer is returned as a response, not an error: the caller decides
+    /// what a 404 or a 409 means, and the status is part of the answer.
+    #[allow(dead_code)]
+    pub(crate) async fn request(
+        &self,
+        _method: &str,
+        _path: &str,
+        _body: Option<&[u8]>,
+        _content_type: Option<&str>,
+    ) -> Result<sevenshell_types::K8sResponse, ShellError> {
         Err(ShellError::app_unsupported(
             "the Kubernetes client is not implemented yet",
         ))
