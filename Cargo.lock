@@ -4933,6 +4933,7 @@ version = "0.1.3"
 dependencies = [
  "async-trait",
  "log",
+ "portable-pty",
  "serde",
  "serde_json",
  "sevenshell-error",

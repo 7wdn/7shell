@@ -51,6 +51,7 @@ pub async fn container_action(
     _connection_id: String,
     _container_id: String,
     _action: String,
+    _acknowledged: bool,
 ) -> Result<(), ShellError> {
     Err(pending("container actions"))
 }
@@ -182,12 +183,17 @@ pub async fn container_image_remove(
     _state: State<'_, ShellState>,
     _connection_id: String,
     _image: String,
+    _acknowledged: bool,
 ) -> Result<(), ShellError> {
     Err(pending("container image removal"))
 }
 
 #[tauri::command]
-pub async fn container_image_prune(_state: State<'_, ShellState>, _connection_id: String) -> Result<(), ShellError> {
+pub async fn container_image_prune(
+    _state: State<'_, ShellState>,
+    _connection_id: String,
+    _acknowledged: bool,
+) -> Result<(), ShellError> {
     Err(pending("container image pruning"))
 }
 
@@ -215,6 +221,7 @@ pub async fn container_image_commit(
     _state: State<'_, ShellState>,
     _connection_id: String,
     _request: ContainerCommitRequest,
+    _acknowledged: bool,
 ) -> Result<String, ShellError> {
     Err(pending("container image commits"))
 }

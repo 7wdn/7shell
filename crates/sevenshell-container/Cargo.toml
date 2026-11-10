@@ -13,6 +13,7 @@ sevenshell-types = { workspace = true }
 sevenshell-ssh = { workspace = true }
 sevenshell-term = { workspace = true }
 async-trait = { workspace = true }
+portable-pty = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

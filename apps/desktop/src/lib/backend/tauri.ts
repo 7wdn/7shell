@@ -1006,8 +1006,13 @@ export function containerInspect(connectionId: string, containerId: string): Pro
   return invoke<ContainerDetail>("container_inspect", { connectionId, containerId });
 }
 
-export function containerAction(connectionId: string, containerId: string, action: string): Promise<void> {
-  return invoke<void>("container_action", { connectionId, containerId, action });
+export function containerAction(
+  connectionId: string,
+  containerId: string,
+  action: string,
+  acknowledged: boolean,
+): Promise<void> {
+  return invoke<void>("container_action", { connectionId, containerId, action, acknowledged });
 }
 
 export function containerRename(connectionId: string, containerId: string, name: string): Promise<void> {
@@ -1071,12 +1076,12 @@ export function containerImagePush(connectionId: string, request: ContainerImage
   return invoke<string>("container_image_push", { connectionId, request });
 }
 
-export function containerImageRemove(connectionId: string, image: string): Promise<void> {
-  return invoke<void>("container_image_remove", { connectionId, image });
+export function containerImageRemove(connectionId: string, image: string, acknowledged: boolean): Promise<void> {
+  return invoke<void>("container_image_remove", { connectionId, image, acknowledged });
 }
 
-export function containerImagePrune(connectionId: string): Promise<void> {
-  return invoke<void>("container_image_prune", { connectionId });
+export function containerImagePrune(connectionId: string, acknowledged: boolean): Promise<void> {
+  return invoke<void>("container_image_prune", { connectionId, acknowledged });
 }
 
 export function containerImageTag(connectionId: string, image: string, tag: string): Promise<void> {
@@ -1087,8 +1092,12 @@ export function containerImageLoad(connectionId: string, grant: string): Promise
   return invoke<string>("container_image_load", { connectionId, grant });
 }
 
-export function containerImageCommit(connectionId: string, request: ContainerCommitRequest): Promise<string> {
-  return invoke<string>("container_image_commit", { connectionId, request });
+export function containerImageCommit(
+  connectionId: string,
+  request: ContainerCommitRequest,
+  acknowledged: boolean,
+): Promise<string> {
+  return invoke<string>("container_image_commit", { connectionId, request, acknowledged });
 }
 
 export function containerRegistryLogin(connectionId: string, request: ContainerRegistryLogin): Promise<void> {

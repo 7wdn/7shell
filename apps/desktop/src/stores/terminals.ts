@@ -822,6 +822,33 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
+   * Draws a terminal the backend has already opened.
+   *
+   * A container or cluster exec channel is opened by its own command and arrives as a handle; the
+   * tab for it is an ordinary terminal tab from that moment on, which is what lets resize, write,
+   * search and close work without a second code path.
+   */
+  function openHandle(session: Session, handle: string): void {
+    const showing = tabs.value.find(
+      (entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({
+      kind: "terminal",
+      id: crypto.randomUUID(),
+      session,
+      handle,
+      status: "open",
+      failure: null,
+      panel: null,
+    });
+  }
+
+  /**
    * Raises the shared host key prompt for a batch.
    *
    * One prompt for the whole application, whichever feature hit the key it is about: a second one
@@ -1461,6 +1488,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openBatch,
     openContainer,
     openKubernetes,
+    openHandle,
     writableHandles,
     activeTerminalHandle,
     raiseBatchDecision,

@@ -13,7 +13,9 @@ use sevenshell_ssh::SshSession;
 use crate::runner::{LineStream, PtySession};
 
 pub(crate) async fn run(_session: &Arc<SshSession>, _argv: &[String]) -> Result<String, ShellError> {
-    Err(ShellError::app_unsupported("the remote container runner is not implemented yet"))
+    Err(ShellError::app_unsupported(
+        "the remote container runner is not implemented yet",
+    ))
 }
 
 pub(crate) async fn run_stdin(
@@ -21,11 +23,15 @@ pub(crate) async fn run_stdin(
     _argv: &[String],
     _input: Vec<u8>,
 ) -> Result<String, ShellError> {
-    Err(ShellError::app_unsupported("the remote container runner is not implemented yet"))
+    Err(ShellError::app_unsupported(
+        "the remote container runner is not implemented yet",
+    ))
 }
 
 pub(crate) async fn stream(_session: &Arc<SshSession>, _argv: &[String]) -> Result<LineStream, ShellError> {
-    Err(ShellError::app_unsupported("the remote container runner is not implemented yet"))
+    Err(ShellError::app_unsupported(
+        "the remote container runner is not implemented yet",
+    ))
 }
 
 pub(crate) async fn open_pty(
@@ -34,5 +40,7 @@ pub(crate) async fn open_pty(
     _columns: u32,
     _rows: u32,
 ) -> Result<PtySession, ShellError> {
-    Err(ShellError::app_unsupported("the remote container terminal is not implemented yet"))
+    Err(ShellError::app_unsupported(
+        "the remote container terminal is not implemented yet",
+    ))
 }
