@@ -35,13 +35,20 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 `sevenshell-platform` (where data lives, including the settings file), `sevenshell-vault` (the
 encrypted store), `sevenshell-policy` (what may be run, and how dangerous it is), `sevenshell-ssh`
 (host key verification, authentication, a terminal channel), `sevenshell-term` (the terminals that
-are not SSH), `sevenshell-ftp` (the far side of FTP and FTPS file browsers), `sevenshell-session`
-(the registry of open terminals), `sevenshell-sftp` (the far side of the file workbench),
+are not SSH), `sevenshell-ftp` (the far side of FTP and FTPS file browsers), `sevenshell-k8s` (a
+Kubernetes API client: kubeconfig, REST, watches, pod logs and the exec WebSocket),
+`sevenshell-session` (the registry of open terminals), `sevenshell-sftp` (the far side of the file
+workbench), `sevenshell-container` (Docker, Podman, nerdctl and WSLC through their command lines),
 `sevenshell-sync` (a copy of the library that travels: what a snapshot holds, where it goes, and the
 WebDAV transport the file browser borrows) and `sevenshell-core` (the order of operations), with
 `sevenshell-desktop` as the window and the command surface. The host
 crates for a command line and an agent interface arrive with the features that need them, so that
 nothing exists without a test.
+
+`sevenshell-k8s` sits at rank 3 because it is a transport like SSH: it talks to something outside
+this machine and takes what it needs from the vault. `sevenshell-container` is rank 4 because it
+builds on both the SSH channel (a runtime reached through a saved session) and the terminal shape,
+while remaining below the core that decides which connection a tab owns.
 
 `sevenshell-sync` sits at rank 3, beside `sevenshell-ssh`, because it is the same kind of thing: a
 crate that deals with something outside this machine and takes what it carries from the vault. It is

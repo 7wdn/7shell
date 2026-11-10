@@ -5190,3 +5190,123 @@ test("a copy pastes into another folder, and properties change its mode", async 
     await close();
   }
 });
+
+// -- Containers and clusters -------------------------------------------------
+
+/** Choose an option from the interface's own dropdown, which is a combobox and a listbox. */
+async function chooseOption(page: Page, trigger: Locator, option: string): Promise<void> {
+  await trigger.click();
+  // Not exact: a context option carries its cluster and user after an em dash, and the container
+  // rail carries counts — the visible name is the start of the accessible name, not all of it.
+  await page.getByRole("option", { name: option }).first().click();
+}
+
+/**
+ * The sidebar keeps its search across cases, and a session hidden by it is a row no click can
+ * reach. These cases run after the ones that search, so they start by clearing it.
+ */
+async function clearSessionSearch(page: Page): Promise<void> {
+  const search = page.getByRole("textbox", { name: "Search sessions" });
+  if ((await search.count()) > 0) {
+    await search.fill("");
+    await search.press("Enter");
+  }
+}
+
+/** Narrows the sidebar to one session, which also opens the group it was filed into. */
+async function searchForSession(page: Page, name: string): Promise<void> {
+  const search = page.getByRole("textbox", { name: "Search sessions" });
+  await search.fill(name);
+  await search.press("Enter");
+  await expect(sessionRow(page, name)).toBeVisible();
+}
+
+/** A container session that drives the engine on this machine. */
+async function saveContainerSession(page: Page, name: string): Promise<void> {
+  await sidebar(page).getByRole("button", { name: "New session" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByPlaceholder("Production web server").fill(name);
+  await chooseOption(page, editor.locator("#session-protocol"), "Container engine");
+  await editor.getByRole("button", { name: "Save" }).click();
+  await expect(editor).toHaveCount(0);
+}
+
+test("a container session opens the local engine and draws its images", async () => {
+  let docker = true;
+  try {
+    execFileSync("docker", ["ps"], { stdio: "ignore" });
+  } catch {
+    docker = false;
+  }
+  test.skip(!docker, "Docker Desktop is not running on this machine");
+
+  const { page, close } = await openApp();
+  try {
+    await clearSessionSearch(page);
+    await saveContainerSession(page, "e2e-docker");
+    await searchForSession(page, "e2e-docker");
+    await sessionRow(page, "e2e-docker").click();
+
+    const rail = page.getByRole("navigation", { name: "Container workspace" });
+    await expect(rail).toBeVisible();
+    await expect(page.getByRole("heading", { name: "e2e-docker" })).toBeVisible();
+
+    await rail.getByRole("button", { name: /^Images/ }).click();
+    await expect(page.getByPlaceholder("Filter by repository, tag or ID")).toBeVisible();
+
+    await rail.getByRole("button", { name: /^Overview/ }).click();
+    await expect(page.getByRole("heading", { name: "Runtime" })).toBeVisible();
+  } finally {
+    await close();
+  }
+});
+
+/** A Kubernetes session whose kubeconfig is the lab's, pasted into the editor as a secret. */
+async function saveClusterSession(page: Page, name: string, kubeconfig: string): Promise<void> {
+  await sidebar(page).getByRole("button", { name: "New session" }).click();
+  const editor = page.getByRole("dialog");
+  await editor.getByPlaceholder("Production web server").fill(name);
+  await chooseOption(page, editor.locator("#session-protocol"), "Kubernetes");
+  await editor.getByRole("radio", { name: "Import a kubeconfig" }).click();
+  await editor.locator("#session-kubeconfig").fill(kubeconfig);
+  await editor.getByRole("button", { name: "Read contexts" }).click();
+  await chooseOption(page, editor.locator("#session-kube-context"), "default");
+  await editor.getByRole("button", { name: "Save" }).click();
+  await expect(editor).toHaveCount(0);
+}
+
+test("a cluster session lists pods, follows a log, and opens a terminal", async () => {
+  const kubeconfigPath = path.join(HERE, "..", ".scratch", "k3s", "kubeconfig-original.yaml");
+  test.skip(!existsSync(kubeconfigPath), "the k3s lab kubeconfig is not present");
+  const kubeconfig = await readFile(kubeconfigPath, "utf8");
+
+  const { page, close } = await openApp();
+  try {
+    await clearSessionSearch(page);
+    await saveClusterSession(page, "e2e-cluster", kubeconfig);
+    await searchForSession(page, "e2e-cluster");
+    await sessionRow(page, "e2e-cluster").click();
+    // The row's hover card is a teleported layer; a mouse still resting on the row leaves it over
+    // the workspace, exactly where the tree is. A person's pointer would have moved on.
+    await page.mouse.move(1000, 700);
+
+    const tree = page.getByRole("navigation", { name: "Cluster resources" });
+    await expect(tree).toBeVisible();
+    await tree.getByRole("button", { name: "Pods", exact: true }).click();
+
+    const logRow = page.getByRole("row", { name: /lab-logs/ }).first();
+    const shellRow = page.getByRole("row", { name: /lab-shell/ }).first();
+    await expect(logRow).toBeVisible({ timeout: 20_000 });
+    await expect(shellRow).toBeVisible({ timeout: 20_000 });
+
+    await logRow.getByRole("button", { name: "Logs", exact: true }).click();
+    await expect(page.getByText("Logs: lab-logs")).toBeVisible();
+    await expect(page.getByText("tick", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Close the logs" }).click();
+
+    await shellRow.getByRole("button", { name: "Terminal", exact: true }).click();
+    await expect(page.getByText("lab-shell/lab-shell", { exact: false })).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await close();
+  }
+});

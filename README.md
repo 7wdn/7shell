@@ -44,6 +44,8 @@ it, never in advance.
 | FTP / FTPS folders: a saved FTP account, or explicit TLS before the login, in the same workbench | Working, with an in-process FTP server |
 | SCP fallback: a server with no SFTP subsystem, browsed through its shell and SCP | Working, live-tested against a server with SFTP switched off |
 | ZMODEM: `rz` and `sz` inside a terminal, with the system file picker and save dialog | Working, with protocol tests; a real `rz`/`sz` was not run because the lab has no lrzsz |
+| Containers: Docker, Podman, nerdctl and WSLC — containers, images, logs, stats and an exec terminal, on this machine or through a saved SSH session | Working; Docker live-tested locally and over SSH; the other three runtimes have argument/parser tests only |
+| Kubernetes: kubeconfig contexts, resource lists and watches, pod logs, an exec terminal and metrics-server usage | Working; live-tested against a real k3s cluster (API, logs and exec) |
 | Transfers: queued and listed, pausable and resumable, packed as one archive for a whole tree, outliving the tab they started in | Working, tested against a real sshd and a 50,000-file directory; packed archives are SSH-only |
 | Host monitor: load, memory, disks, processes and sockets, sampled over the connection you already have | Working |
 | Batch execution: one command, several hosts, a per-host result, and a risk verdict before it runs | Working, tested against a real sshd |
@@ -54,17 +56,21 @@ it, never in advance.
 
 **Not implemented:** remote forwarding (the third kind — refused rather than half-done), agent
 forwarding (implemented, deliberately unclaimed until a real far side has been proved to use it),
-Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. Remote desktops are a Windows-only
-feature of this build: the session is handed to the system Remote Desktop client, so macOS and Linux
-do not offer one. A WebDAV or FTP folder cannot be downloaded as one packed archive; its files are
+Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. Container file browsing and loading
+an image from a local archive are not wired yet; the registry and image commands themselves have
+tests, but an archive has to be chosen in a native dialog that does not exist. Remote desktops are a
+Windows-only feature of this build: the session is handed to the system Remote Desktop client, so
+macOS and Linux do not offer one. A WebDAV or FTP folder cannot be downloaded as one packed archive; its files are
 fetched one at a time. An FTP server also has no server-side copy, so the file menu offers move but
 not copy. The command line and agent interfaces and the plugin platform are 1.x work: the
 architecture keeps room for them, and no code for them exists yet.
 
 **Verification notes:** FTP/FTPS and ZMODEM are covered by in-process/protocol tests, but a real
 FTPS certificate chain and a real `rz`/`sz` session were not run on this machine: the Docker registry
-refuses FTP images, and the SSH lab has no `lrzsz`. Those are the two rows to exercise first on a
-machine that has those servers.
+refuses FTP images, and the SSH lab has no `lrzsz`. Container support was live-tested against Docker
+Desktop locally and through the SSH lab's `docker:dind`; Podman, nerdctl and WSLC have no live
+runtime on this machine, so they are covered by argument and parser fixtures. Kubernetes was
+live-tested against a one-node k3s (`deploy/lab/kubernetes`).
 
 ## Installing
 

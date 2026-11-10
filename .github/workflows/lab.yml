@@ -63,7 +63,7 @@ jobs:
           exit 1
 
       - name: Live tests
-        run: cargo test -p sevenshell-ssh -p sevenshell-core -- --ignored --test-threads=1
+        run: cargo test -p sevenshell-ssh -p sevenshell-core -p sevenshell-container -- --ignored --test-threads=1
 
       - name: Live Telnet test
         run: cargo test -p sevenshell-term --test live_telnet -- --ignored --test-threads=1
