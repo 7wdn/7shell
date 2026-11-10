@@ -38,7 +38,7 @@ pub fn kubernetes_request(method: &str, path: &str) -> RiskAssessment {
     let path = path.trim();
     let verdict = match method.as_str() {
         "GET" | "HEAD" => return RiskAssessment::safe(),
-        "DELETE" if path.contains("/namespaces/") && !path.contains("/pods/") => (
+        "DELETE" if deletes_a_namespace(path) => (
             "k8s.namespace-delete",
             "risk.k8s.namespaceDelete",
             RiskLevel::Catastrophic,
@@ -49,6 +49,16 @@ pub fn kubernetes_request(method: &str, path: &str) -> RiskAssessment {
         _ => ("k8s.unknown", "risk.k8s.unknown", RiskLevel::Caution),
     };
     RiskAssessment::from_reasons(vec![RiskReason::new(verdict.0, verdict.1, verdict.2)])
+}
+
+/// Whether a path names the namespace object itself, rather than something inside it.
+///
+/// `/api/v1/namespaces/prod` is the namespace; `/api/v1/namespaces/prod/pods/web` is a pod. The
+/// difference is the whole verdict: one takes every object in it, the other takes one.
+fn deletes_a_namespace(path: &str) -> bool {
+    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    matches!(segments.as_slice(), ["api", "v1", "namespaces", _])
+        || matches!(segments.as_slice(), ["apis", _, _, "namespaces", _])
 }
 
 #[cfg(test)]
@@ -91,6 +101,10 @@ mod tests {
         );
         assert_eq!(
             kubernetes_request("DELETE", "/api/v1/namespaces/prod/pods/web").level,
+            RiskLevel::Destructive
+        );
+        assert_eq!(
+            kubernetes_request("DELETE", "/apis/apps/v1/namespaces/prod/deployments/web").level,
             RiskLevel::Destructive
         );
         assert_eq!(
