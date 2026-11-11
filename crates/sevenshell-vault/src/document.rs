@@ -40,7 +40,7 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// forgotten". Version 8 added the access tokens for code-hosting accounts, which an older build
 /// would drop in exactly the same way: the token that was kept would simply be gone. Version 9
 /// added a remote desktop's size, screen mode and drive mapping, for the same reason.
-pub const VAULT_SCHEMA_VERSION: u32 = 9;
+pub const VAULT_SCHEMA_VERSION: u32 = 10;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -798,7 +798,9 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // 2 → 3: forwards gained a mode. 3 → 4: a session gained agent forwarding. 4 → 5: a session
     // gained recording. 5 → 6: a document gained the list of words somebody added, which an older one
     // simply has none of. None of them has anything to rewrite — the defaults are what every document
-    // meant — so the steps are the version number alone.
+    // meant — so the steps are the version number alone. 9 → 10: a session secret may now be a
+    // kubeconfig document. The number moves so an older build refuses the whole file as too new
+    // instead of failing to read one unknown secret variant and calling the vault corrupt.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)
