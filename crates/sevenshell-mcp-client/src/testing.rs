@@ -25,7 +25,7 @@ use tempfile::TempDir;
 
 use crate::McpClientError;
 use crate::config::McpServerSecrets;
-use crate::transport::{McpTransport, TransportFactory};
+use crate::transport::{McpTransport, NotificationHandler, TransportFactory};
 
 // ---------------------------------------------------------------------------------------------
 // A scripted transport
@@ -52,6 +52,7 @@ pub struct FakeTransport {
     seen: Mutex<Vec<(String, Option<Value>)>>,
     closed: Mutex<bool>,
     versions: Mutex<Vec<String>>,
+    notification: Mutex<Option<NotificationHandler>>,
 }
 
 impl FakeTransport {
@@ -73,6 +74,14 @@ impl FakeTransport {
 
     pub fn on_hang(self, method: &str) -> Self {
         self.push(method, Step::Hang)
+    }
+
+    /// Delivers a server notification the way a real transport's reader would.
+    pub fn emit_notification(&self, method: &str) {
+        let handler = self.notification.lock().expect("not poisoned").clone();
+        if let Some(handler) = handler {
+            handler(method);
+        }
     }
 
     fn push(self, method: &str, step: Step) -> Self {
@@ -154,6 +163,10 @@ impl McpTransport for Arc<FakeTransport> {
 
     fn set_protocol_version(&self, version: &str) {
         self.versions.lock().expect("not poisoned").push(version.to_owned());
+    }
+
+    fn set_notification_handler(&self, handler: NotificationHandler) {
+        *self.notification.lock().expect("not poisoned") = Some(handler);
     }
 }
 

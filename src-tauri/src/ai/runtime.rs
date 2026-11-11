@@ -747,7 +747,12 @@ impl AiRuntime {
         outcomes: BTreeMap<String, AiToolOutcome>,
         events: &dyn AiEventPresenter,
     ) {
-        let Some(run) = self.lock_runs().remove(run_id) else {
+        // The run entry outlives the write. That is what makes `active_run` a truthful "the turn is
+        // over" signal: a caller that sees it gone (the window, a test) is also looking at a
+        // conversation whose save has been attempted. Removing it first left a window in which the
+        // run was gone and the file still old.
+        let mut runs = self.lock_runs();
+        let Some(session_id) = runs.get(run_id).map(|run| run.session_id.clone()) else {
             // Superseded, reset or deleted: the entry was taken while the run was still going, and
             // its answer belongs to a conversation the person has moved past.
             return;
@@ -755,9 +760,11 @@ impl AiRuntime {
 
         let mut current = self.lock_session();
         let Some(session) = current.as_mut() else {
+            runs.remove(run_id);
             return;
         };
-        if session.id != run.session_id {
+        if session.id != session_id {
+            runs.remove(run_id);
             return;
         }
 
@@ -772,6 +779,7 @@ impl AiRuntime {
         }
 
         self.persist(session, Some(events));
+        runs.remove(run_id);
     }
 
     /// Forgets a run that ended without a conversation.

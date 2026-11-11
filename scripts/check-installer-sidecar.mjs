@@ -3,19 +3,22 @@
 //
 // `tauri.conf.json` declares it as an `externalBin`; the bundler is what copies it. A green
 // `cargo check` says nothing about that step, so this script starts from the files a release left
-// behind: the release bridge, the generated NSIS script, and the generated WiX source the MSI is
-// built from.
+// behind: the release bridge, the generated NSIS script, the generated WiX source the MSI is built
+// from, and — on Windows — an administrative install of the MSI into a temporary directory.
 //
-// The MSI's WiX puts the bridge in an optional feature (the same feature that carries PATH), so an
-// administrative install (`msiexec /a`) does not extract it unless every feature is selected. The
-// generated WiX is the authoritative statement that the component is part of the MSI; the NSIS
-// script names the installed file `sshell-mcp.exe` explicitly.
+// The MSI's WiX puts the bridge in the optional `Environment` feature (the same feature that
+// carries PATH). An administrative install (`msiexec /a`) extracts only the features it is asked
+// for, so this script asks for `ADDLOCAL=Environment` and then compares the file that lands on disk
+// with the staged binary. The generated WiX is checked as well: it is what a build without a
+// Windows host can still inspect.
 //
 // Run it after `pnpm tauri build --bundles nsis,msi`. Node built-ins only, so it also works in the
 // release job's bare environment.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,7 +69,7 @@ function checkNsis() {
   return "ok (File /oname=sshell-mcp.exe)";
 }
 
-function checkMsi() {
+function checkMsi(stagedHash) {
   const wix = path.join(ROOT, "target", "release", "wix", "x64", "main.wxs");
   if (!existsSync(wix)) {
     return "skipped (no WiX source)";
@@ -78,7 +81,60 @@ function checkMsi() {
   if (!/ComponentRef Id="sshell_mcp\.exe"/.test(text)) {
     fail("the generated WiX does not reference the sidecar component");
   }
-  return "ok (WiX component + ComponentRef)";
+  if (process.platform !== "win32") {
+    return "ok (WiX component + ComponentRef; extraction is Windows-only)";
+  }
+
+  const bundle = path.join(ROOT, "target", "release", "bundle", "msi");
+  // Old builds keep their installers in the same directory; naming the version is what keeps this
+  // check about the package this tree would ship rather than whichever file the directory lists
+  // first.
+  const version = JSON.parse(readFileSync(path.join(ROOT, "src-tauri", "tauri.conf.json"), "utf8")).version;
+  const installer = existsSync(bundle)
+    ? readdirSync(bundle).find((name) => name.toLowerCase().endsWith(".msi") && name.includes(`_${version}_`))
+    : undefined;
+  if (!installer) {
+    fail(`no MSI for version ${version}; run \`pnpm tauri build --bundles msi\``);
+  }
+
+  const directory = mkdtempSync(path.join(os.tmpdir(), "7shell-msi-"));
+  try {
+    const result = spawnSync(
+      "msiexec.exe",
+      ["/a", path.join(bundle, installer), "/qn", `TARGETDIR=${directory}`, "ADDLOCAL=Environment"],
+      { encoding: "utf8", windowsHide: true },
+    );
+    if (result.status !== 0) {
+      fail(`msiexec could not lay the MSI down for inspection (exit ${result.status})`);
+    }
+
+    const extracted = findFile(directory, BINARY);
+    if (!extracted) {
+      fail(`the administrative install left no ${BINARY} behind`);
+    }
+    const hash = sha256(extracted);
+    if (hash !== stagedHash) {
+      fail("the sidecar inside the MSI differs from the staged bridge");
+    }
+    return `ok (WiX component + ComponentRef; administrative install carries it, sha256 ${hash.slice(0, 12)}…)`;
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function findFile(directory, name) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      const found = findFile(full, name);
+      if (found) {
+        return found;
+      }
+    } else if (entry.name.toLowerCase() === name.toLowerCase()) {
+      return full;
+    }
+  }
+  return undefined;
 }
 
 const staged = stagedSidecar();
@@ -86,4 +142,4 @@ const hash = checkReleaseBinary(staged);
 console.log(`installer-sidecar: release bridge sha256 ${hash}`);
 console.log(`installer-sidecar: staged bridge ${path.relative(ROOT, staged)}`);
 console.log(`installer-sidecar: NSIS ${checkNsis()}`);
-console.log(`installer-sidecar: MSI ${checkMsi()}`);
+console.log(`installer-sidecar: MSI ${checkMsi(hash)}`);

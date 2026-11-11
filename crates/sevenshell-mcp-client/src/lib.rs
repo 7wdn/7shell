@@ -69,6 +69,9 @@ pub enum McpClientError {
     ConnectFailed { server: String, detail: String },
     /// The server answered the request with an error.
     Failed { server: String, message: String },
+    /// The server answered with a JSON-RPC error, whose code is kept because some of them mean
+    /// "this optional method is not implemented" rather than "the session is broken".
+    Rpc { server: String, code: i64, message: String },
     /// The call ran past the server's configured budget.
     Timeout { server: String, seconds: u64 },
     /// Two tools of one server produce the same name, so a call could reach either.
@@ -94,7 +97,7 @@ impl McpClientError {
             Self::DuplicateServer { .. } => ErrorCode::McpServerDuplicate.as_str(),
             Self::UnknownServer { .. } => ErrorCode::McpServerNotFound.as_str(),
             Self::ConnectFailed { .. } => ErrorCode::McpServerConnectFailed.as_str(),
-            Self::Failed { .. } => ErrorCode::McpExternalFailed.as_str(),
+            Self::Failed { .. } | Self::Rpc { .. } => ErrorCode::McpExternalFailed.as_str(),
             Self::Timeout { .. } => ErrorCode::McpExternalTimeout.as_str(),
             Self::DuplicateTool { .. } => ErrorCode::McpDuplicateTool.as_str(),
             Self::InvalidTool { .. } => ErrorCode::McpInvalidTool.as_str(),
@@ -119,7 +122,7 @@ impl McpClientError {
             Self::InvalidConfig { detail, .. }
             | Self::ConnectFailed { detail, .. }
             | Self::InvalidTool { detail, .. } => Some(detail),
-            Self::Failed { message, .. } => Some(message),
+            Self::Failed { message, .. } | Self::Rpc { message, .. } => Some(message),
             _ => None,
         }
     }
@@ -138,6 +141,9 @@ impl fmt::Display for McpClientError {
             }
             Self::ConnectFailed { server, .. } => write!(formatter, ": the server `{server}` could not be reached"),
             Self::Failed { server, .. } => write!(formatter, ": the server `{server}` answered with an error"),
+            Self::Rpc { server, code, .. } => {
+                write!(formatter, ": the server `{server}` answered with error {code}")
+            }
             Self::Timeout { server, seconds } => {
                 write!(
                     formatter,

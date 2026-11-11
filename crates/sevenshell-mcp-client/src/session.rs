@@ -1,10 +1,11 @@
 //! One server's session: the handshake, the cached tool list, and the calls that go through it.
 //!
 //! A session is what the manager holds per server. It is created once per successful handshake and
-//! its tool list is refreshed on the server's own timer — never per call, because a list that
-//! changed between the moment an agent was shown a tool and the moment it called one is a race no
-//! caller can see. A server whose session failed is rebuilt from scratch; unfinished calls are
-//! never replayed, because a tool may have had a side effect the first time.
+//! its tool list is replaced when the server says it changed (or when a person refreshes), never
+//! per call, because a list that changed between the moment an agent was shown a tool and the
+//! moment it called one is a race no caller can see. A server whose session failed is rebuilt from
+//! scratch; unfinished calls are never replayed, because a tool may have had a side effect the
+//! first time.
 //!
 //! Two version numbers are spoken. The handshake asks for [`LATEST_PROTOCOL_VERSION`], and a server
 //! that only knows the revision before it is accepted rather than refused: the tools surface this
@@ -58,7 +59,7 @@ pub struct McpSession {
     server: McpServerConfig,
     transport: Arc<dyn McpTransport>,
     protocol_version: String,
-    tools: RwLock<Vec<ToolDescriptor>>,
+    tools: Arc<RwLock<Vec<ToolDescriptor>>>,
     call_budget: Duration,
 }
 
@@ -91,12 +92,15 @@ impl McpSession {
             Vec::new()
         };
 
+        let tools = Arc::new(RwLock::new(tools));
+        start_tool_notification_refresh(&server, Arc::clone(&transport), Arc::clone(&tools));
+
         Ok(Self {
             call_budget: tool_timeout(&server),
             server,
             transport,
             protocol_version: handshake.version,
-            tools: RwLock::new(tools),
+            tools,
         })
     }
 
@@ -135,14 +139,21 @@ impl McpSession {
 
     /// Asks the server whether it is still there. Optional in the protocol; the host's supervisor
     /// uses it between refreshes rather than opening a new session.
+    ///
+    /// A server that answers `-32601` has told us it is alive and does not implement the optional
+    /// method. Treating that as a dead session would reconnect a healthy server every minute.
     pub async fn ping(&self) -> Result<(), McpClientError> {
-        timeout(LIST_TIMEOUT, self.transport.request("ping", None))
+        let outcome = timeout(LIST_TIMEOUT, self.transport.request("ping", None))
             .await
             .map_err(|_| McpClientError::Timeout {
                 server: self.server.id.clone(),
                 seconds: LIST_TIMEOUT.as_secs(),
-            })??;
-        Ok(())
+            })?;
+        match outcome {
+            Ok(_) => Ok(()),
+            Err(McpClientError::Rpc { code: -32601, .. }) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// Calls one of this server's tools.
@@ -329,6 +340,42 @@ async fn fetch_tools(
         server: server.id.clone(),
         message: format!("the server's tool list did not end within {MAX_TOOL_PAGES} pages"),
     })
+}
+
+/// Keeps the cached list in step with a server that says its tools changed.
+///
+/// The transport only forwards the notification's name; the fetch happens on this task because a
+/// reader must never wait on a request. A failed fetch leaves the previous list in place: the
+/// server's tools did not become unknown because one refresh failed. The weak handle to the
+/// transport is what lets the task end when the session is gone, rather than keeping it alive from
+/// inside its own notification slot.
+fn start_tool_notification_refresh(
+    server: &McpServerConfig,
+    transport: Arc<dyn McpTransport>,
+    tools: Arc<RwLock<Vec<ToolDescriptor>>>,
+) {
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<String>();
+    transport.set_notification_handler(Arc::new(move |method: &str| {
+        let _ = sender.send(method.to_owned());
+    }));
+
+    let server = server.clone();
+    let transport = Arc::downgrade(&transport);
+    tokio::spawn(async move {
+        while let Some(method) = receiver.recv().await {
+            if method != "notifications/tools/list_changed" {
+                continue;
+            }
+            let Some(transport) = transport.upgrade() else {
+                break;
+            };
+            if let Ok(refreshed) = fetch_tools(&server, transport.as_ref()).await
+                && let Ok(mut guard) = tools.write()
+            {
+                *guard = refreshed;
+            }
+        }
+    });
 }
 
 /// Turns one `tools/call` result into what the adapter hands the agent.
@@ -608,6 +655,88 @@ mod tests {
             2,
             "a failed refresh leaves the list a caller was shown"
         );
+    }
+
+    #[tokio::test]
+    async fn a_server_without_ping_is_alive_and_a_real_refusal_is_not() {
+        let without_ping = Arc::new(
+            FakeTransport::new()
+                .on("initialize", initialize_reply(LATEST_PROTOCOL_VERSION))
+                .on("tools/list", tools_reply(&[]))
+                .on_error(
+                    "ping",
+                    McpClientError::Rpc {
+                        server: "files".to_owned(),
+                        code: -32601,
+                        message: "no method is named `ping`".to_owned(),
+                    },
+                ),
+        );
+        let session = McpSession::open(server(), Box::new(Arc::clone(&without_ping)))
+            .await
+            .expect("a session");
+        session
+            .ping()
+            .await
+            .expect("a method the server does not implement is still an answer");
+
+        let broken = Arc::new(
+            FakeTransport::new()
+                .on("initialize", initialize_reply(LATEST_PROTOCOL_VERSION))
+                .on("tools/list", tools_reply(&[]))
+                .on_error(
+                    "ping",
+                    McpClientError::Rpc {
+                        server: "files".to_owned(),
+                        code: -32000,
+                        message: "the server is shutting down".to_owned(),
+                    },
+                ),
+        );
+        let session = McpSession::open(server(), Box::new(Arc::clone(&broken)))
+            .await
+            .expect("a session");
+        let error = session.ping().await.expect_err("a real refusal");
+        assert_eq!(error.code(), "MCP-EXTERNAL-FAILED");
+        assert_eq!(error.detail(), Some("the server is shutting down"));
+    }
+
+    #[tokio::test]
+    async fn a_changed_tool_list_is_fetched_when_the_server_says_so() {
+        let fake = Arc::new(
+            FakeTransport::new()
+                .on("initialize", initialize_reply(LATEST_PROTOCOL_VERSION))
+                .on("tools/list", tools_reply(&[tool_listing("read", "")]))
+                .on(
+                    "tools/list",
+                    tools_reply(&[tool_listing("read", ""), tool_listing("write", "")]),
+                ),
+        );
+        let session = McpSession::open(server(), Box::new(Arc::clone(&fake)))
+            .await
+            .expect("a session");
+        assert_eq!(session.tools().len(), 1);
+
+        fake.emit_notification("notifications/message");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(
+            fake.calls("tools/list").len(),
+            1,
+            "an unrelated notification refreshes nothing"
+        );
+
+        fake.emit_notification("notifications/tools/list_changed");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while session.tools().len() != 2 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the changed list was fetched");
+
+        let names: Vec<String> = session.tools().into_iter().map(|descriptor| descriptor.name).collect();
+        assert_eq!(names, vec!["mcp__files__read", "mcp__files__write"]);
+        assert_eq!(fake.calls("tools/list").len(), 2);
     }
 
     #[tokio::test]

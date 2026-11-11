@@ -79,6 +79,13 @@ const DETAIL_CHARS: usize = 512;
 /// for a killed child to be reaped may take.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The listener a session registers for server-initiated notifications.
+///
+/// The transport only says which method arrived; what to do about it belongs to the session. A
+/// notification has no answer, so a handler is synchronous and must not block the reader — the one
+/// caller here forwards it to a channel.
+pub type NotificationHandler = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// One live session's message channel.
 #[async_trait]
 pub trait McpTransport: Send + Sync {
@@ -94,6 +101,12 @@ pub trait McpTransport: Send + Sync {
 
     /// Ends the session: closes the child's stdin or the event stream. Idempotent.
     async fn close(&self) -> Result<(), McpClientError>;
+
+    /// Registers the session's listener for server-initiated notifications.
+    ///
+    /// A transport that has no channel for them leaves the default in place: the session then
+    /// simply does not hear about a changed tool list and the person can refresh by hand.
+    fn set_notification_handler(&self, _handler: NotificationHandler) {}
 
     /// Tells the transport which revision the handshake agreed on.
     ///
@@ -258,31 +271,31 @@ fn settle_reply(server: &str, pending: &Pending, message: &Value) -> bool {
         return false;
     };
     let outcome = match message.get("error") {
-        Some(error) => Err(McpClientError::Failed {
-            server: server.to_owned(),
-            message: rpc_error_detail(error),
-        }),
+        Some(error) => Err(rpc_error(server, error)),
         None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
     };
     pending.settle(id, outcome)
 }
 
-/// The server's own error, as a bounded and scrubbed sentence.
+/// The server's own error, with its JSON-RPC code kept.
 ///
-/// A JSON-RPC error is data (`code`, `message`, sometimes `data`); only the first two become a
-/// sentence. `data` is left out because a server may put a request's arguments in it, and those can
-/// carry anything the tool was given.
-fn rpc_error_detail(error: &Value) -> String {
-    let code = error.get("code").and_then(Value::as_i64);
+/// A JSON-RPC error is data (`code`, `message`, sometimes `data`); only the first two are kept.
+/// `data` is left out because a server may put a request's arguments in it, and those can carry
+/// anything the tool was given. The code is kept because `-32601` means "this optional method is
+/// not implemented", which is not the same as a session that went away.
+fn rpc_error(server: &str, error: &Value) -> McpClientError {
     let message = error
         .get("message")
         .and_then(Value::as_str)
         .unwrap_or("it sent no message");
-    let raw = match code {
-        Some(code) => format!("the server answered with error {code}: {message}"),
-        None => format!("the server answered with an error: {message}"),
-    };
-    bounded_detail(&raw)
+    match error.get("code").and_then(Value::as_i64) {
+        Some(code) => McpClientError::Rpc {
+            server: server.to_owned(),
+            code,
+            message: bounded_detail(message),
+        },
+        None => failed(server, &format!("the server answered with an error: {message}")),
+    }
 }
 
 fn bounded_detail(detail: &str) -> String {
@@ -446,6 +459,7 @@ struct StdioTransport {
     next_id: AtomicI64,
     closed: Arc<AtomicBool>,
     stderr: Arc<StderrLog>,
+    notification: Arc<Mutex<Option<NotificationHandler>>>,
 }
 
 impl StdioTransport {
@@ -495,6 +509,7 @@ impl StdioTransport {
         let pending = Arc::new(Pending::default());
         let closed = Arc::new(AtomicBool::new(false));
         let stderr_log = Arc::new(StderrLog::default());
+        let notification = Arc::new(Mutex::new(None));
 
         spawn_stdout_reader(
             server.id.clone(),
@@ -502,6 +517,7 @@ impl StdioTransport {
             Arc::clone(&stdin),
             Arc::clone(&pending),
             Arc::clone(&closed),
+            Arc::clone(&notification),
         );
         spawn_stderr_reader(stderr, Arc::clone(&stderr_log));
 
@@ -513,6 +529,7 @@ impl StdioTransport {
             next_id: AtomicI64::new(1),
             closed,
             stderr: stderr_log,
+            notification,
         })
     }
 
@@ -592,6 +609,12 @@ impl McpTransport for StdioTransport {
         Ok(())
     }
 
+    fn set_notification_handler(&self, handler: NotificationHandler) {
+        if let Ok(mut guard) = self.notification.lock() {
+            *guard = Some(handler);
+        }
+    }
+
     fn diagnostics(&self) -> Option<String> {
         Some(self.stderr.tail())
     }
@@ -619,6 +642,7 @@ fn spawn_stdout_reader(
     stdin: Arc<AsyncMutex<Option<ChildStdin>>>,
     pending: Arc<Pending>,
     closed: Arc<AtomicBool>,
+    notification: Arc<Mutex<Option<NotificationHandler>>>,
 ) {
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
@@ -658,6 +682,13 @@ fn spawn_stdout_reader(
                         if !write_message(&stdin, &refusal).await {
                             break;
                         }
+                    } else if let Some(method) = message.get("method").and_then(Value::as_str) {
+                        // A notification: no id, no answer. The reader must not wait on one, so the
+                        // handler only forwards the name to the session's own task.
+                        let handler = notification.lock().ok().and_then(|guard| guard.clone());
+                        if let Some(handler) = handler {
+                            handler(method);
+                        }
                     }
                 }
                 Ok(None) => break,
@@ -694,6 +725,8 @@ struct HttpTransport {
     protocol_version: Mutex<Option<String>>,
     next_id: AtomicI64,
     closed: AtomicBool,
+    notification: Arc<Mutex<Option<NotificationHandler>>>,
+    listener: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl HttpTransport {
@@ -707,6 +740,8 @@ impl HttpTransport {
             protocol_version: Mutex::new(None),
             next_id: AtomicI64::new(1),
             closed: AtomicBool::new(false),
+            notification: Arc::new(Mutex::new(None)),
+            listener: Mutex::new(None),
         })
     }
 
@@ -742,6 +777,58 @@ impl HttpTransport {
 
     fn transport_error(&self, error: &reqwest::Error) -> McpClientError {
         failed(&self.server, &error.to_string())
+    }
+
+    /// Opens the one GET stream that carries server-initiated messages, when it makes sense to.
+    ///
+    /// Streamable HTTP has no long-lived channel unless the client asks for one; `notifications`
+    /// such as a changed tool list are delivered on it. The stream is started after the handshake
+    /// has given us a session id, and a server that refuses the GET (405 is legal) simply has no
+    /// push channel — its tools remain usable and the person can refresh by hand.
+    fn ensure_listener(&self) {
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        let Some(handler) = self.notification.lock().ok().and_then(|guard| guard.clone()) else {
+            return;
+        };
+        let Some(session) = self.session_id() else {
+            return;
+        };
+        let Ok(mut listener) = self.listener.lock() else {
+            return;
+        };
+        if listener.is_some() {
+            return;
+        }
+
+        let mut request = self
+            .client
+            .get(self.url.clone())
+            .header(ACCEPT, "text/event-stream")
+            .headers(self.headers.clone())
+            .header("Mcp-Session-Id", session);
+        if let Some(version) = self.protocol_version() {
+            request = request.header("MCP-Protocol-Version", version);
+        }
+
+        *listener = Some(tokio::spawn(async move {
+            let Ok(response) = request.send().await else {
+                return;
+            };
+            if !response.status().is_success() {
+                return;
+            }
+            read_notification_stream(response, handler).await;
+        }));
+    }
+
+    fn stop_listener(&self) {
+        if let Ok(mut listener) = self.listener.lock()
+            && let Some(task) = listener.take()
+        {
+            task.abort();
+        }
     }
 
     async fn send(&self, message: &Value) -> Result<reqwest::Response, McpClientError> {
@@ -852,10 +939,7 @@ impl HttpTransport {
             ));
         }
         match message.get("error") {
-            Some(error) => Err(McpClientError::Failed {
-                server: server.to_owned(),
-                message: rpc_error_detail(error),
-            }),
+            Some(error) => Err(rpc_error(server, error)),
             None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
         }
     }
@@ -885,7 +969,12 @@ impl McpTransport for HttpTransport {
         }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let response = self.send(&request_message(id, method, params)).await?;
-        self.read_answer(id, response).await
+        let answer = self.read_answer(id, response).await;
+        if method == "initialize" {
+            // The handshake has given us a session id; now the push channel can be opened.
+            self.ensure_listener();
+        }
+        answer
     }
 
     async fn notify(&self, method: &str, params: Option<Value>) -> Result<(), McpClientError> {
@@ -896,6 +985,7 @@ impl McpTransport for HttpTransport {
         let status = response.status();
         self.capture_session(&response);
         if status.is_success() {
+            self.ensure_listener();
             Ok(())
         } else {
             Err(failed(
@@ -909,6 +999,7 @@ impl McpTransport for HttpTransport {
         if self.closed.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
+        self.stop_listener();
 
         // The protocol asks a client to end a Streamable HTTP session with a DELETE, so that a
         // server holding state for us can drop it. A server that does not implement it answers
@@ -927,6 +1018,51 @@ impl McpTransport for HttpTransport {
     fn set_protocol_version(&self, version: &str) {
         if let Ok(mut guard) = self.protocol_version.lock() {
             *guard = Some(version.to_owned());
+        }
+    }
+
+    fn set_notification_handler(&self, handler: NotificationHandler) {
+        if let Ok(mut guard) = self.notification.lock() {
+            *guard = Some(handler);
+        }
+        self.ensure_listener();
+    }
+}
+
+impl Drop for HttpTransport {
+    fn drop(&mut self) {
+        self.stop_listener();
+    }
+}
+
+/// Reads the standalone GET stream: server messages that are not answers to a POST.
+///
+/// Only notifications are passed on. A request from the server (sampling, roots) is a capability
+/// this build does not offer, and answering it here would need a second POST channel; ignoring it
+/// leaves the server waiting, which is the same thing the older transport already does.
+async fn read_notification_stream(response: reqwest::Response, handler: NotificationHandler) {
+    let mut stream = response.bytes_stream();
+    let mut buffer = SseBuffer::new();
+
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else {
+            break;
+        };
+        for event in buffer.push(&chunk) {
+            if event.event.as_deref().is_some_and(|name| name != "message") {
+                continue;
+            }
+            let Ok(message) = serde_json::from_str::<Value>(&event.data) else {
+                continue;
+            };
+            if message.get("id").is_none()
+                && let Some(method) = message.get("method").and_then(Value::as_str)
+            {
+                handler(method);
+            }
+        }
+        if buffer.buffered() > MAX_RESPONSE_BYTES {
+            break;
         }
     }
 }
@@ -966,6 +1102,7 @@ struct SseTransport {
     next_id: AtomicI64,
     closed: Arc<AtomicBool>,
     stream: Mutex<Option<JoinHandle<()>>>,
+    notification: Arc<Mutex<Option<NotificationHandler>>>,
 }
 
 impl SseTransport {
@@ -1009,6 +1146,7 @@ impl SseTransport {
         let pending = Arc::new(Pending::default());
         let closed = Arc::new(AtomicBool::new(false));
         let post_url = Arc::new(RwLock::new(None));
+        let notification = Arc::new(Mutex::new(None));
         let (endpoint_sender, endpoint_receiver) = oneshot::channel();
 
         let task = tokio::spawn(read_event_stream(
@@ -1018,6 +1156,7 @@ impl SseTransport {
             Arc::clone(&pending),
             Arc::clone(&closed),
             Arc::clone(&post_url),
+            Arc::clone(&notification),
             endpoint_sender,
         ));
 
@@ -1046,6 +1185,7 @@ impl SseTransport {
             next_id: AtomicI64::new(1),
             closed,
             stream: Mutex::new(Some(task)),
+            notification,
         })
     }
 
@@ -1093,6 +1233,7 @@ async fn read_event_stream(
     pending: Arc<Pending>,
     closed: Arc<AtomicBool>,
     post_url: Arc<RwLock<Option<reqwest::Url>>>,
+    notification: Arc<Mutex<Option<NotificationHandler>>>,
     endpoint: oneshot::Sender<Result<reqwest::Url, McpClientError>>,
 ) {
     let mut endpoint = Some(endpoint);
@@ -1128,7 +1269,17 @@ async fn read_event_stream(
             }
 
             if let Ok(message) = serde_json::from_str::<Value>(&event.data) {
-                settle_reply(&server, &pending, &message);
+                if settle_reply(&server, &pending, &message) {
+                    continue;
+                }
+                if message.get("id").is_none()
+                    && let Some(method) = message.get("method").and_then(Value::as_str)
+                {
+                    let handler = notification.lock().ok().and_then(|guard| guard.clone());
+                    if let Some(handler) = handler {
+                        handler(method);
+                    }
+                }
             }
         }
         if buffer.buffered() > MAX_RESPONSE_BYTES {
@@ -1209,6 +1360,12 @@ impl McpTransport for SseTransport {
         }
         self.pending.fail_all(&failed(&self.server, "the session was closed"));
         Ok(())
+    }
+
+    fn set_notification_handler(&self, handler: NotificationHandler) {
+        if let Ok(mut guard) = self.notification.lock() {
+            *guard = Some(handler);
+        }
     }
 }
 
@@ -1715,6 +1872,179 @@ mod tests {
 
         let error = transport.request("ping", None).await.expect_err("closed");
         assert_eq!(error.code(), "MCP-EXTERNAL-FAILED");
+    }
+
+    #[tokio::test]
+    async fn a_json_rpc_error_keeps_its_code_and_never_quotes_its_data() {
+        let error = rpc_error(
+            "files",
+            &json!({
+                "code": -32601,
+                "message": "no method is named `ping`",
+                "data": { "secret": "hunter2" },
+            }),
+        );
+        match &error {
+            McpClientError::Rpc { code, message, .. } => {
+                assert_eq!(*code, -32601);
+                assert_eq!(message, "no method is named `ping`");
+            }
+            other => panic!("a coded refusal is not a plain failure: {other:?}"),
+        }
+        assert!(!format!("{error:?}").contains("hunter2"), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn the_older_sse_transport_delivers_notifications_to_its_handler() {
+        let streams = Arc::new(std::sync::Mutex::new(
+            None::<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
+        ));
+        let base = Arc::new(std::sync::Mutex::new(String::new()));
+
+        let server = FakeServer::start({
+            let streams = Arc::clone(&streams);
+            let base = Arc::clone(&base);
+            move |request: FakeRequest| match (request.method.as_str(), request.path.as_str()) {
+                ("GET", "/sse") => {
+                    let (frames, receiver) = tokio::sync::mpsc::unbounded_channel();
+                    let endpoint = format!("{}messages", base.lock().expect("not poisoned"));
+                    let _ = frames.send(format!("event: endpoint\ndata: {endpoint}\n\n").into_bytes());
+                    *streams.lock().expect("not poisoned") = Some(frames);
+                    FakeReply::event_stream_live(receiver)
+                }
+                ("POST", "/messages") => FakeReply::status(202),
+                _ => FakeReply::status(404),
+            }
+        })
+        .await;
+        *base.lock().expect("not poisoned") = server.url.clone();
+
+        let mut config = config_for(&server, McpServerTransport::Sse, "files");
+        config.url = Some(format!("{}sse", server.url));
+        let transport = connect(&config, None).await.expect("a transport");
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let recorded = Arc::clone(&seen);
+        transport.set_notification_handler(Arc::new(move |method: &str| {
+            recorded.lock().expect("not poisoned").push(method.to_owned());
+        }));
+
+        let frames = streams
+            .lock()
+            .expect("not poisoned")
+            .clone()
+            .expect("the GET stream was opened");
+        frames
+            .send(
+                b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n"
+                    .to_vec(),
+            )
+            .expect("the fake stream is open");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while seen.lock().expect("not poisoned").is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the notification reached the handler");
+        assert_eq!(
+            seen.lock().expect("not poisoned").clone(),
+            vec!["notifications/tools/list_changed".to_owned()]
+        );
+
+        transport.close().await.expect("a close");
+    }
+
+    #[tokio::test]
+    async fn the_http_transport_opens_one_get_stream_for_notifications() {
+        let frames = Arc::new(std::sync::Mutex::new(
+            None::<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
+        ));
+        let got_get = Arc::new(AtomicBool::new(false));
+
+        let server = FakeServer::start({
+            let frames = Arc::clone(&frames);
+            let got_get = Arc::clone(&got_get);
+            move |request: FakeRequest| match request.method.as_str() {
+                "GET" => {
+                    got_get.store(true, Ordering::SeqCst);
+                    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+                    *frames.lock().expect("not poisoned") = Some(sender);
+                    FakeReply::event_stream_live(receiver)
+                }
+                "POST" => {
+                    let body: Value = serde_json::from_slice(&request.body).unwrap_or_default();
+                    let id = body.get("id").cloned().unwrap_or(Value::Null);
+                    match body.get("method").and_then(Value::as_str) {
+                        Some("initialize") => FakeReply::json(json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": {
+                                "protocolVersion": "2025-06-18",
+                                "capabilities": {},
+                                "serverInfo": { "name": "fake-http", "version": "0" },
+                            },
+                        }))
+                        .with_header("Mcp-Session-Id", "session-1"),
+                        Some("tools/list") => {
+                            FakeReply::json(json!({ "jsonrpc": "2.0", "id": id, "result": { "tools": [] } }))
+                        }
+                        _ => FakeReply::status(202),
+                    }
+                }
+                _ => FakeReply::status(404),
+            }
+        })
+        .await;
+
+        let mut config = config_for(&server, McpServerTransport::Http, "files");
+        config.url = Some(server.url.clone());
+        let transport = connect(&config, None).await.expect("a transport");
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let recorded = Arc::clone(&seen);
+        transport.set_notification_handler(Arc::new(move |method: &str| {
+            recorded.lock().expect("not poisoned").push(method.to_owned());
+        }));
+        transport
+            .request("initialize", None)
+            .await
+            .expect("the handshake gives us a session id");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !got_get.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the GET stream was opened");
+
+        let sender = frames
+            .lock()
+            .expect("not poisoned")
+            .clone()
+            .expect("the fake GET stream is open");
+        sender
+            .send(
+                b"event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n"
+                    .to_vec(),
+            )
+            .expect("the fake stream is open");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while seen.lock().expect("not poisoned").is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the notification reached the handler");
+        assert_eq!(
+            seen.lock().expect("not poisoned").clone(),
+            vec!["notifications/tools/list_changed".to_owned()]
+        );
+
+        transport.close().await.expect("a close");
     }
 
     fn config_for(fake: &FakeServer, transport: McpServerTransport, id: &str) -> McpServerConfig {

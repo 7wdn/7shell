@@ -60,7 +60,6 @@ struct ServerEntry {
     config: McpServerConfig,
     state: McpServerState,
     session: Option<Arc<McpSession>>,
-    tools: Vec<ToolDescriptor>,
     code: Option<String>,
     message: Option<String>,
 }
@@ -76,14 +75,16 @@ impl ServerEntry {
             config,
             state,
             session: None,
-            tools: Vec::new(),
             code: None,
             message: None,
         }
     }
 
     fn status(&self) -> McpServerStatus {
-        let mut status = McpServerStatus::new(&self.config.id, self.state).with_tools(self.tools.len());
+        // The count is read from the session, not from a copy taken at open: a server that
+        // announced a changed list has a new count before its next handshake.
+        let tool_count = self.session.as_ref().map(|session| session.tools().len()).unwrap_or(0);
+        let mut status = McpServerStatus::new(&self.config.id, self.state).with_tools(tool_count);
         if self.state == McpServerState::Failed
             && let (Some(code), Some(message)) = (&self.code, &self.message)
         {
@@ -210,8 +211,8 @@ impl McpClientManager {
         state
             .servers
             .iter()
-            .filter(|entry| entry.session.is_some())
-            .flat_map(|entry| entry.tools.iter().cloned())
+            .filter_map(|entry| entry.session.as_ref())
+            .flat_map(|session| session.tools())
             .collect()
     }
 
@@ -250,10 +251,8 @@ impl McpClientManager {
             {
                 match opened.take() {
                     Some(Ok(session)) => {
-                        let tools = session.tools();
                         let session = Arc::new(session);
                         old_session = entry.session.replace(session);
-                        entry.tools = tools;
                         entry.state = McpServerState::Ready;
                         entry.code = None;
                         entry.message = None;
@@ -261,7 +260,6 @@ impl McpClientManager {
                     }
                     Some(Err(error)) => {
                         old_session = entry.session.take();
-                        entry.tools.clear();
                         entry.state = McpServerState::Failed;
                         entry.code = Some(error.code().to_owned());
                         entry.message = Some(failure_message(&error));
@@ -348,7 +346,6 @@ impl McpClientManager {
                         .is_some_and(|current| Arc::ptr_eq(current, &session))
                 {
                     let stale = entry.session.take();
-                    entry.tools.clear();
                     entry.state = McpServerState::Failed;
                     entry.code = Some(error.code().to_owned());
                     entry.message = Some(failure_message(error));
@@ -379,7 +376,6 @@ impl McpClientManager {
                 .servers
                 .iter_mut()
                 .filter_map(|entry| {
-                    entry.tools.clear();
                     entry.code = None;
                     entry.message = None;
                     entry.state = if entry.config.enabled {
@@ -485,8 +481,9 @@ impl ToolSource for McpClientManager {
                 .servers
                 .iter()
                 .find(|entry| entry.config.id == server && entry.session.is_some())?;
-            let descriptor = entry.tools.iter().find(|descriptor| descriptor.name == name)?.clone();
-            (Arc::clone(entry.session.as_ref()?), descriptor)
+            let session = Arc::clone(entry.session.as_ref()?);
+            let descriptor = session.tools().into_iter().find(|descriptor| descriptor.name == name)?;
+            (session, descriptor)
         };
 
         let external = ExternalTool::new(session, server, tool, descriptor)
@@ -502,7 +499,13 @@ impl fmt::Debug for McpClientManager {
         let rows: Vec<(&str, McpServerState, usize)> = state
             .servers
             .iter()
-            .map(|entry| (entry.config.id.as_str(), entry.state, entry.tools.len()))
+            .map(|entry| {
+                (
+                    entry.config.id.as_str(),
+                    entry.state,
+                    entry.session.as_ref().map(|session| session.tools().len()).unwrap_or(0),
+                )
+            })
             .collect();
         formatter
             .debug_struct("McpClientManager")
@@ -890,6 +893,42 @@ mod tests {
             1,
             "the manager is not retrying behind the caller"
         );
+    }
+
+    #[tokio::test]
+    async fn a_changed_tool_list_is_visible_to_the_registry_without_a_refresh() {
+        let transport = Arc::new(
+            FakeTransport::new()
+                .on("initialize", initialize_reply(crate::session::LATEST_PROTOCOL_VERSION))
+                .on("tools/list", tools_reply(&[read_tool_listing("read", "")]))
+                .on(
+                    "tools/list",
+                    tools_reply(&[read_tool_listing("read", ""), read_tool_listing("second", "")]),
+                ),
+        );
+        let factory = FakeFactory::new().answering("files", Arc::clone(&transport));
+        let manager = manager(factory);
+        manager.replace(vec![server("files", true)]).expect("a valid list");
+        manager.refresh("files").await.expect("a session");
+        assert_eq!(manager.tools().len(), 1);
+
+        transport.emit_notification("notifications/tools/list_changed");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while manager.tools().len() != 2 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the changed list reached the manager");
+
+        let source = Arc::clone(&manager).source();
+        let (_directory, context) = context_denying(McpScope::ReadOnly);
+        let answered = source
+            .call("mcp__files__second", &context, json!({}))
+            .await
+            .expect("the source knows the new name")
+            .expect("the new read tool runs without approval");
+        assert_eq!(answered.value, json!({}), "the fake's default call result");
     }
 
     #[tokio::test]

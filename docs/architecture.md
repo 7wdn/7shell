@@ -449,9 +449,12 @@ opened over stdio, Streamable HTTP or SSE, its `tools/list` is read through pagi
 joins the same registry as `mcp__{server}__{tool}`. A server's `readOnlyHint` is the only thing that
 makes its tool a read; every other tool is a write and asks a person on every call, because this
 build did not write it and cannot judge what it does. Environment and header values live in the
-vault, one entry per server, and never in the settings file. The host supervisor retries a failed
-server on a 1s-to-30s backoff and pings a ready one every 60 seconds; one server failing leaves the
-others, and the built-in tools, untouched.
+vault, one entry per server, and never in the settings file. A server that announces a changed tool
+list has its cached list replaced without reconnecting (stdio and SSE read the notification from
+their stream; Streamable HTTP opens the standalone GET stream for it), and a server that answers
+`-32601` to `ping` is alive rather than broken. The host supervisor retries a failed server on a
+1s-to-30s backoff and pings a ready one every 60 seconds; one server failing leaves the others, and
+the built-in tools, untouched.
 
 | Piece | Where |
 |---|---|

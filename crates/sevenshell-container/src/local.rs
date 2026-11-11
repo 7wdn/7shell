@@ -4,9 +4,11 @@
 //! nothing here quotes anything. The one exception is a script the *container* runs (`sh -c` inside
 //! `docker exec`), which is an argument to the runtime's CLI like any other.
 //!
-//! The work is done on blocking threads rather than through a Tokio process handle. The runtime's
-//! output is read, line-split, and bounded here; a thread per pipe is the simplest way to read two
-//! pipes and wait for a child without adding a Tokio feature this workspace does not build with.
+//! The command paths (`run`, `run_stdin`, `run_stream_stdin`) use Tokio's process handle and
+//! `kill_on_drop`: a tool call that is cancelled drops the future, which kills the runtime CLI
+//! rather than leaving a pull or a remove running after the person said stop. The line and chunk
+//! streaming paths still use blocking threads because they hand output to a reader as it arrives;
+//! their own stop closures own that child, and a reader that goes away kills it.
 //!
 //! Two platform details are deliberate. The runtime binary is looked up here rather than by the
 //! operating system, because a window opened from a desktop launcher inherits a PATH that omits
@@ -22,6 +24,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{Child as PtyChild, ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use sevenshell_error::ShellError;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt as _};
 use tokio::sync::mpsc;
 
 use crate::runner::{ByteStream, InputStream, LineStream, PtyControl, PtySession, StreamEnding};
@@ -60,25 +63,105 @@ const CANDIDATE_DIRECTORIES: &[&str] = &[
 ];
 
 pub(crate) async fn run(argv: &[String]) -> Result<String, ShellError> {
-    let argv = argv.to_vec();
-    tokio::task::spawn_blocking(move || collect_once(&argv, None))
-        .await
-        .unwrap_or_else(|error| Err(ShellError::app_internal(error.to_string())))
+    let mut command = async_command(argv)?;
+    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ShellError::container_command_failed("the command", "no standard output"))?;
+    let stderr = child.stderr.take();
+    let out = tokio::spawn(read_capped_async(Some(stdout)));
+    let err = tokio::spawn(read_capped_async(stderr));
+    let status = child.wait().await.map_err(|error| io_error(argv, &error))?;
+    let stdout = join_async(out).await?;
+    let stderr = join_async(err).await?;
+    finish(status, stdout, stderr)
 }
 
 pub(crate) async fn run_stdin(argv: &[String], input: Vec<u8>) -> Result<String, ShellError> {
-    let argv = argv.to_vec();
-    tokio::task::spawn_blocking(move || collect_once(&argv, Some(input)))
+    let mut command = async_command(argv)?;
+    command.stdin(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ShellError::container_command_failed("the command", "no standard output"))?;
+    let stderr = child.stderr.take();
+    if let Some(mut stdin) = child.stdin.take() {
+        // The write is its own task: an archive can be larger than a pipe buffer, and writing it
+        // before reading anything would deadlock on a child that fills stdout first.
+        tokio::spawn(async move {
+            let _ = stdin.write_all(&input).await;
+            // Dropping the handle closes the pipe, which is the EOF the reader waits for.
+        });
+    }
+    let out = tokio::spawn(read_capped_async(Some(stdout)));
+    let err = tokio::spawn(read_capped_async(stderr));
+    let status = child.wait().await.map_err(|error| io_error(argv, &error))?;
+    let stdout = join_async(out).await?;
+    let stderr = join_async(err).await?;
+    finish(status, stdout, stderr)
+}
+
+async fn read_capped_async<R>(reader: Option<R>) -> Result<Vec<u8>, ShellError>
+where
+    R: AsyncRead + Unpin,
+{
+    let Some(reader) = reader else {
+        return Ok(Vec::new());
+    };
+    let mut buffer = Vec::new();
+    reader
+        .take(MAX_OUTPUT_BYTES as u64 + 1)
+        .read_to_end(&mut buffer)
+        .await
+        .map_err(|error| ShellError::container_command_failed("the command", error.to_string()))?;
+    if buffer.len() > MAX_OUTPUT_BYTES {
+        return Err(ShellError::container_command_failed(
+            "the command",
+            format!("its answer is larger than {MAX_OUTPUT_BYTES} bytes"),
+        ));
+    }
+    Ok(buffer)
+}
+
+async fn join_async(reader: tokio::task::JoinHandle<Result<Vec<u8>, ShellError>>) -> Result<Vec<u8>, ShellError> {
+    reader
         .await
         .unwrap_or_else(|error| Err(ShellError::app_internal(error.to_string())))
 }
 
 pub(crate) async fn run_stream_stdin(argv: &[String], input: &mut InputStream) -> Result<String, ShellError> {
-    let argv = argv.to_vec();
-    let chunks = input.take_chunks();
-    tokio::task::spawn_blocking(move || collect_streaming(&argv, chunks))
-        .await
-        .unwrap_or_else(|error| Err(ShellError::app_internal(error.to_string())))
+    let mut command = async_command(argv)?;
+    command.stdin(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ShellError::container_command_failed("the command", "no standard output"))?;
+    let stderr = child.stderr.take();
+    let mut chunks = input.take_chunks();
+    if let Some(mut stdin) = child.stdin.take() {
+        // The writer is its own task because the two pipes have to be drained at the same time: a
+        // command that prints while it reads would otherwise fill the output pipe and stop reading,
+        // and every chunk after that would wait for a command that is waiting for us.
+        tokio::spawn(async move {
+            while let Some(chunk) = chunks.recv().await {
+                if stdin.write_all(&chunk).await.is_err() {
+                    // The command stopped reading — it has already decided what to answer, and its
+                    // exit status is a better explanation than a broken pipe on this side.
+                    break;
+                }
+            }
+            // Dropping the handle closes the pipe, which is the end of input the far side waits for.
+        });
+    }
+    let out = tokio::spawn(read_capped_async(Some(stdout)));
+    let err = tokio::spawn(read_capped_async(stderr));
+    let status = child.wait().await.map_err(|error| io_error(argv, &error))?;
+    let stdout = join_async(out).await?;
+    let stderr = join_async(err).await?;
+    finish(status, stdout, stderr)
 }
 
 pub(crate) async fn stream(argv: &[String]) -> Result<LineStream, ShellError> {
@@ -243,56 +326,6 @@ fn split(argv: &[String]) -> Result<(&str, &[String]), ShellError> {
     }
 }
 
-/// Runs one command to completion with optional bytes on standard input.
-fn collect_once(argv: &[String], input: Option<Vec<u8>>) -> Result<String, ShellError> {
-    let mut command = command(argv)?;
-    if input.is_some() {
-        command.stdin(Stdio::piped());
-    }
-    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
-    if let (Some(mut stdin), Some(input)) = (child.stdin.take(), input) {
-        // The write is its own thread: a `load` archive can be larger than a pipe buffer, and
-        // writing it before reading anything would deadlock on a child that fills stdout first.
-        std::thread::spawn(move || {
-            let _ = stdin.write_all(&input);
-            // Dropping the handle closes the pipe, which is the EOF the reader on the far side
-            // waits for.
-            drop(stdin);
-        });
-    }
-    let (stdout, stderr, status) = collect(&mut child)?;
-    finish(status, stdout, stderr)
-}
-
-/// Runs one command to completion while its standard input arrives in chunks.
-///
-/// The writer is a thread of its own because the two pipes have to be drained at the same time: a
-/// `load` that prints while it reads would otherwise fill the output pipe and stop reading, and
-/// every chunk after that would wait for a command that is waiting for us.
-fn collect_streaming(argv: &[String], mut chunks: mpsc::Receiver<Vec<u8>>) -> Result<String, ShellError> {
-    let mut command = command(argv)?;
-    command.stdin(Stdio::piped());
-    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
-    let stdin = child.stdin.take();
-    let writer = std::thread::spawn(move || {
-        let Some(mut stdin) = stdin else {
-            return;
-        };
-        while let Some(chunk) = chunks.blocking_recv() {
-            if stdin.write_all(&chunk).is_err() {
-                // The command stopped reading — it has already decided what to answer, and its
-                // exit status is a better explanation than a broken pipe on this side.
-                break;
-            }
-        }
-        // Dropping the handle closes the pipe, which is the end of input the far side waits for.
-        drop(stdin);
-    });
-    let (stdout, stderr, status) = collect(&mut child)?;
-    let _ = writer.join();
-    finish(status, stdout, stderr)
-}
-
 /// Runs one command and hands its raw standard output over in chunks.
 pub(crate) async fn stream_bytes(argv: &[String]) -> Result<ByteStream, ShellError> {
     let mut command = command(argv)?;
@@ -356,25 +389,6 @@ pub(crate) async fn stream_bytes(argv: &[String]) -> Result<ByteStream, ShellErr
     Ok(ByteStream::local(chunks, ending))
 }
 
-fn collect(child: &mut Child) -> Result<(Vec<u8>, Vec<u8>, ExitStatus), ShellError> {
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let out = std::thread::spawn(move || read_capped(stdout));
-    let err = std::thread::spawn(move || read_capped(stderr));
-    let status = child
-        .wait()
-        .map_err(|error| ShellError::container_command_failed("the command", error.to_string()))?;
-    let stdout = join(out)?;
-    let stderr = join(err)?;
-    Ok((stdout, stderr, status))
-}
-
-fn join<T>(reader: std::thread::JoinHandle<Result<T, ShellError>>) -> Result<T, ShellError> {
-    reader
-        .join()
-        .unwrap_or_else(|_| Err(ShellError::app_internal("an output reader stopped")))
-}
-
 /// Waits for a streamed process to exit, killing it if it outlives the grace period.
 fn wait_bounded(child: &Arc<Mutex<Child>>, grace: Duration) -> Result<ExitStatus, ShellError> {
     let deadline = Instant::now() + grace;
@@ -416,6 +430,35 @@ fn command(argv: &[String]) -> Result<Command, ShellError> {
     command.stderr(Stdio::piped());
     hide_console(&mut command);
     Ok(command)
+}
+
+/// The same lookup and platform flags, on a handle that can kill its child when dropped.
+///
+/// The drop is the cancellation: the tool layer drops the future when a person stops a call, and a
+/// `spawn_blocking` task had no handle to drop because it was waiting inside `Command::output`.
+fn async_command(argv: &[String]) -> Result<tokio::process::Command, ShellError> {
+    let (program, arguments) = split(argv)?;
+    let program = program_path(program)?;
+    let mut command = tokio::process::Command::new(&program);
+    command.args(arguments);
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+    command.kill_on_drop(true);
+    hide_console_async(&mut command);
+    Ok(command)
+}
+
+fn hide_console_async(command: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
 }
 
 fn hide_console(command: &mut Command) {
@@ -547,5 +590,81 @@ fn io_error(argv: &[String], error: &std::io::Error) -> ShellError {
         ShellError::container_unavailable(program, error.to_string())
     } else {
         ShellError::container_command_failed("the command", error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Dropping the future is what a cancelled tool call does. The child must not outlive it: a
+    /// container action that keeps running after the person stopped is the side effect this test
+    /// exists to forbid. The marker is written two seconds in, so a leaked process is visible.
+    #[tokio::test]
+    async fn dropping_a_run_kills_the_runtime_process_before_it_finishes() {
+        let marker = std::env::temp_dir().join(format!("seven-shell-container-{}.txt", uuid::Uuid::new_v4()));
+        let argv = delayed_marker(&marker);
+
+        let mut running = Box::pin(run(&argv));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), &mut running)
+                .await
+                .is_err(),
+            "the command was supposed to still be running"
+        );
+        drop(running);
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert!(
+            !marker.exists(),
+            "a dropped container command kept running: {}",
+            marker.display()
+        );
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[tokio::test]
+    async fn dropping_a_streamed_run_kills_the_runtime_process_before_it_finishes() {
+        let marker = std::env::temp_dir().join(format!("seven-shell-container-{}.txt", uuid::Uuid::new_v4()));
+        let argv = delayed_marker(&marker);
+        let mut input = InputStream::from_reader(tokio::io::empty());
+
+        let mut running = Box::pin(run_stream_stdin(&argv, &mut input));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), &mut running)
+                .await
+                .is_err(),
+            "the command was supposed to still be running"
+        );
+        drop(running);
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        assert!(
+            !marker.exists(),
+            "a dropped streamed container command kept running: {}",
+            marker.display()
+        );
+        let _ = std::fs::remove_file(marker);
+    }
+
+    #[cfg(windows)]
+    fn delayed_marker(marker: &std::path::Path) -> Vec<String> {
+        let marker = marker.display().to_string().replace('\'', "''");
+        vec![
+            "powershell".to_owned(),
+            "-NoProfile".to_owned(),
+            "-Command".to_owned(),
+            format!("Start-Sleep -Seconds 2; Set-Content -Path '{marker}' -Value late"),
+        ]
+    }
+
+    #[cfg(not(windows))]
+    fn delayed_marker(marker: &std::path::Path) -> Vec<String> {
+        let marker = marker.display().to_string().replace('\'', "'\''");
+        vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            format!("sleep 2; printf late > '{marker}'"),
+        ]
     }
 }

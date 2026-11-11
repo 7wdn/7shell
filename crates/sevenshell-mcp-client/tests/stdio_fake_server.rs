@@ -48,6 +48,7 @@ fn serve() -> std::io::Result<()> {
 
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
+    let mut tool_lists = 0;
 
     for line in stdin.lock().lines() {
         let line = line?;
@@ -72,21 +73,46 @@ fn serve() -> std::io::Result<()> {
             // client must not wait for one.
             "notifications/initialized" => None,
             "ping" => Some(json!({})),
-            "tools/list" => Some(json!({
-                "tools": [
-                    {
-                        "name": "read",
-                        "description": "reads something",
-                        "inputSchema": { "type": "object", "properties": {} },
-                        "annotations": { "readOnlyHint": true },
-                    },
-                    {
-                        "name": "write",
-                        "description": "writes something",
-                        "inputSchema": { "type": "object", "properties": {} },
-                    },
-                ],
-            })),
+            "tools/list" => {
+                tool_lists += 1;
+                // The second list is what the notification points at: the same session, one more
+                // tool. It is only produced after the client has had a chance to register its
+                // listener, which the call below provides.
+                if mode == "notify_tools" && tool_lists > 1 {
+                    Some(json!({
+                        "tools": [
+                            {
+                                "name": "read",
+                                "description": "reads something",
+                                "inputSchema": { "type": "object", "properties": {} },
+                                "annotations": { "readOnlyHint": true },
+                            },
+                            {
+                                "name": "extra",
+                                "description": "appeared later",
+                                "inputSchema": { "type": "object", "properties": {} },
+                                "annotations": { "readOnlyHint": true },
+                            },
+                        ],
+                    }))
+                } else {
+                    Some(json!({
+                        "tools": [
+                            {
+                                "name": "read",
+                                "description": "reads something",
+                                "inputSchema": { "type": "object", "properties": {} },
+                                "annotations": { "readOnlyHint": true },
+                            },
+                            {
+                                "name": "write",
+                                "description": "writes something",
+                                "inputSchema": { "type": "object", "properties": {} },
+                            },
+                        ],
+                    }))
+                }
+            }
             "tools/call" => {
                 let name = message["params"]["name"].as_str().unwrap_or_default();
                 Some(json!({
@@ -122,6 +148,15 @@ fn serve() -> std::io::Result<()> {
             stdout.flush()?;
         }
 
+        if mode == "notify_tools" && method == "tools/call" {
+            writeln!(
+                stdout,
+                "{}",
+                json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" })
+            )?;
+            stdout.flush()?;
+        }
+
         if mode == "exit_after_initialize" && method == "initialize" {
             std::process::exit(0);
         }
@@ -132,6 +167,7 @@ fn serve() -> std::io::Result<()> {
 
 async fn run() -> Result<(), String> {
     normal_exchange().await?;
+    a_child_can_announce_a_changed_tool_list().await?;
     a_child_that_exits_is_an_error().await?;
     stderr_does_not_block_the_protocol().await?;
     a_dropped_request_does_not_wedge_the_transport().await?;
@@ -184,6 +220,47 @@ async fn normal_exchange() -> Result<(), String> {
     Ok(())
 }
 
+async fn a_child_can_announce_a_changed_tool_list() -> Result<(), String> {
+    let session = tokio::time::timeout(
+        Duration::from_secs(20),
+        McpSession::connect(config(), Some(secrets("notify_tools"))),
+    )
+    .await
+    .map_err(|_| "the handshake with a real child process did not finish in 20 seconds".to_owned())?
+    .map_err(|error| format!("the session could not be opened: {error}"))?;
+
+    let before: Vec<String> = session.tools().into_iter().map(|tool| tool.name).collect();
+    assert_eq!(before, vec!["mcp__fake__read", "mcp__fake__write"]);
+
+    // The child sends the notification after answering this call, which is the moment a real
+    // server would know its list changed.
+    session
+        .call_tool("read", json!({}), 64 * 1024)
+        .await
+        .map_err(|error| format!("the call failed: {error}"))?;
+
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while session.tools().len() != 2 || !session.tools().iter().any(|tool| tool.name == "mcp__fake__extra") {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .map_err(|_| "a notification from the child did not refresh the tool list".to_owned())?;
+
+    let after: Vec<String> = session.tools().into_iter().map(|tool| tool.name).collect();
+    assert_eq!(
+        after,
+        vec!["mcp__fake__read", "mcp__fake__extra"],
+        "the list the server announced replaced the one it replaced"
+    );
+
+    session
+        .close()
+        .await
+        .map_err(|error| format!("close failed: {error}"))?;
+    Ok(())
+}
+
 async fn a_child_that_exits_is_an_error() -> Result<(), String> {
     let outcome = tokio::time::timeout(
         Duration::from_secs(20),
@@ -199,7 +276,7 @@ async fn a_child_that_exits_is_an_error() -> Result<(), String> {
     assert!(
         matches!(
             error,
-            McpClientError::ConnectFailed { .. } | McpClientError::Failed { .. }
+            McpClientError::ConnectFailed { .. } | McpClientError::Failed { .. } | McpClientError::Rpc { .. }
         ),
         "a child going away is a failure with a code, not a panic: {error:?}"
     );
