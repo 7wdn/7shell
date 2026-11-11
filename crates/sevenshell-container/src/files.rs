@@ -22,7 +22,7 @@
 //! question for the layer that offers it.
 
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -325,12 +325,24 @@ impl ContainerFiles {
     /// destination ends the transfer there rather than being known in advance — what has already
     /// been written stays, which is the same thing an interrupted download leaves.
     pub async fn download(&self, path: &str, destination: &Path) -> Result<(), ShellError> {
+        self.download_with(path, destination, &|_| true).await
+    }
+
+    /// The same download, saying how many file bytes have arrived and given a chance to stop.
+    ///
+    /// The observer is called once per chunk of file content — not for tar headers or padding — and
+    /// returns whether the transfer may go on. `false` ends it with an error; the transfer row has
+    /// its own cancellation flag, and the caller is what knows the row should say "cancelled".
+    pub async fn download_with<F>(&self, path: &str, destination: &Path, observe: &F) -> Result<(), ShellError>
+    where
+        F: Fn(u64) -> bool + Send + Sync,
+    {
         let path = container_path("the download", path)?;
         require_not_root("the download", &path)?;
         let (directory, name) = split_parent(&path);
         let script = format!("tar cf - -C {} {}", quote(directory), quote(name));
         let stream = self.transport.stream_bytes(&self.exec_argv(&script, false)).await?;
-        extract_stream(stream, name, destination).await
+        extract_stream(stream, name, destination, observe).await
     }
 
     /// Packs a local file or tree and extracts it inside `destination` in the container.
@@ -340,6 +352,18 @@ impl ContainerFiles {
     /// archive names the chosen file after its own name, so uploading `site` into `/srv` adds
     /// `/srv/site/…`, which is what the person selected. The folder is created when missing.
     pub async fn upload(&self, local: &Path, destination: &str) -> Result<(), ShellError> {
+        self.upload_with(local, destination, |_| true).await
+    }
+
+    /// The same upload, counting the file content it packs and stopping when told to.
+    ///
+    /// The observer runs on the packing thread, once per chunk read from the local file. Its count
+    /// is the same number [`payload_size`] reports for this path, so a row can show a real
+    /// percentage rather than a number that includes tar headers.
+    pub async fn upload_with<F>(&self, local: &Path, destination: &str, observe: F) -> Result<(), ShellError>
+    where
+        F: Fn(u64) -> bool + Send + Sync + 'static,
+    {
         let destination = container_path("the upload", destination)?;
         // The chosen path is looked at before a command exists: a missing file, or a socket, is a
         // refusal this side can make without running anything in the container.
@@ -352,7 +376,7 @@ impl ContainerFiles {
             ));
         }
         let local = local.to_path_buf();
-        let input = InputStream::from_producer(move |sink| pack_upload(&local, sink));
+        let input = InputStream::from_producer(move |sink| pack_upload(&local, sink, &observe));
         let script = format!(
             "mkdir -p {} && tar xf - -C {}",
             quote(&destination),
@@ -810,7 +834,7 @@ fn archive_error(detail: impl AsRef<str>) -> ShellError {
 /// for paths a ustar header cannot hold, and a container's paths are not this module's choice. A
 /// header whose checksum does not check out ends the transfer: that is a stream this build misread,
 /// not a valid archive with an odd entry.
-struct TarReader {
+struct TarReader<'a> {
     stream: ByteStream,
     /// Bytes that have arrived and not been consumed yet. Never more than one chunk plus a header.
     pending: Vec<u8>,
@@ -819,9 +843,11 @@ struct TarReader {
     finished: bool,
     pending_name: Option<String>,
     pending_link: Option<String>,
+    /// File-content bytes are reported here as they are consumed; `false` ends the transfer.
+    observer: Option<&'a (dyn Fn(u64) -> bool + Send + Sync)>,
 }
 
-impl TarReader {
+impl<'a> TarReader<'a> {
     fn new(stream: ByteStream) -> Self {
         Self {
             stream,
@@ -830,6 +856,22 @@ impl TarReader {
             finished: false,
             pending_name: None,
             pending_link: None,
+            observer: None,
+        }
+    }
+
+    fn observing(stream: ByteStream, observer: &'a (dyn Fn(u64) -> bool + Send + Sync)) -> Self {
+        Self {
+            observer: Some(observer),
+            ..Self::new(stream)
+        }
+    }
+
+    /// Reports content bytes, and says whether the transfer may go on.
+    fn report(&self, bytes: u64) -> Result<(), ShellError> {
+        match self.observer {
+            Some(observer) if !observer(bytes) => Err(archive_error("the transfer was cancelled")),
+            _ => Ok(()),
         }
     }
 
@@ -949,6 +991,7 @@ impl TarReader {
             }
             let take = usize::try_from(remaining).unwrap_or(usize::MAX).min(self.pending.len());
             let chunk: Vec<u8> = self.pending.drain(..take).collect();
+            self.report(take as u64)?;
             sink.write_all(&chunk)
                 .map_err(|error| local_failure("the download", "an entry", &error))?;
             remaining -= take as u64;
@@ -1185,12 +1228,19 @@ impl<W: Write> TarWriter<W> {
     ///
     /// The size in the header is the file's size when it was read; a file that changes while it is
     /// being packed is refused rather than written as an archive that disagrees with its own header.
-    fn file_from(&mut self, name: &str, mode: u32, modified_at: u64, local: &Path) -> Result<(), ShellError> {
+    fn file_from(
+        &mut self,
+        name: &str,
+        mode: u32,
+        modified_at: u64,
+        local: &Path,
+        observe: &(dyn Fn(u64) -> bool + Send + Sync),
+    ) -> Result<(), ShellError> {
         let metadata = std::fs::symlink_metadata(local).map_err(|error| local_failure("the upload", name, &error))?;
         self.header(name, b'0', mode, modified_at, metadata.len(), "")?;
         let mut file = std::fs::File::open(local).map_err(|error| local_failure("the upload", name, &error))?;
-        let copied =
-            std::io::copy(&mut file, &mut self.sink).map_err(|error| local_failure("the upload", name, &error))?;
+        let copied = copy_with_progress(&mut file, &mut self.sink, observe)
+            .map_err(|error| local_failure("the upload", name, &error))?;
         if copied != metadata.len() {
             return Err(ShellError::container_command_failed(
                 "the upload",
@@ -1298,7 +1348,11 @@ fn split_tar_name(name: &str) -> Result<(&str, &str), ShellError> {
 ///
 /// The tree is walked and each file copied as it is reached; the archive is never a value here, and
 /// the queue behind the sink is what stops the walk when the container stops reading.
-fn pack_upload(root: &Path, sink: &mut ChunkSender) -> Result<(), ShellError> {
+fn pack_upload(
+    root: &Path,
+    sink: &mut ChunkSender,
+    observe: &(dyn Fn(u64) -> bool + Send + Sync),
+) -> Result<(), ShellError> {
     let metadata =
         std::fs::symlink_metadata(root).map_err(|error| local_failure("the upload", "the chosen path", &error))?;
     let base = root
@@ -1309,9 +1363,9 @@ fn pack_upload(root: &Path, sink: &mut ChunkSender) -> Result<(), ShellError> {
         .to_owned();
     let mut writer = TarWriter::new(sink);
     if metadata.is_dir() {
-        pack_directory(&mut writer, root, &base)?;
+        pack_directory(&mut writer, root, &base, observe)?;
     } else if metadata.is_file() {
-        writer.file_from(&base, permission_mode(&metadata), modified_at(&metadata), root)?;
+        writer.file_from(&base, permission_mode(&metadata), modified_at(&metadata), root, observe)?;
     } else {
         return Err(ShellError::container_command_failed(
             "the upload",
@@ -1322,7 +1376,12 @@ fn pack_upload(root: &Path, sink: &mut ChunkSender) -> Result<(), ShellError> {
     Ok(())
 }
 
-fn pack_directory<W: Write>(writer: &mut TarWriter<W>, local: &Path, name: &str) -> Result<(), ShellError> {
+fn pack_directory<W: Write>(
+    writer: &mut TarWriter<W>,
+    local: &Path,
+    name: &str,
+    observe: &(dyn Fn(u64) -> bool + Send + Sync),
+) -> Result<(), ShellError> {
     let metadata = std::fs::symlink_metadata(local).map_err(|error| local_failure("the upload", name, &error))?;
     writer.directory(name, permission_mode(&metadata), modified_at(&metadata))?;
     let read = std::fs::read_dir(local).map_err(|error| local_failure("the upload", name, &error))?;
@@ -1348,7 +1407,7 @@ fn pack_directory<W: Write>(writer: &mut TarWriter<W>, local: &Path, name: &str)
             // to a folder is skipped: following one is how an upload walks in circles.
             match std::fs::metadata(&child) {
                 Ok(target) if target.is_file() => {
-                    writer.file_from(&path, permission_mode(&target), modified_at(&target), &child)?;
+                    writer.file_from(&path, permission_mode(&target), modified_at(&target), &child, observe)?;
                 }
                 Ok(target) if target.is_dir() => {
                     log::warn!("skipping the folder link {path} while packing an upload");
@@ -1356,18 +1415,85 @@ fn pack_directory<W: Write>(writer: &mut TarWriter<W>, local: &Path, name: &str)
                 _ => log::warn!("skipping the link {path} while packing an upload"),
             }
         } else if child_metadata.is_dir() {
-            pack_directory(writer, &child, &path)?;
+            pack_directory(writer, &child, &path, observe)?;
         } else if child_metadata.is_file() {
             writer.file_from(
                 &path,
                 permission_mode(&child_metadata),
                 modified_at(&child_metadata),
                 &child,
+                observe,
             )?;
         }
         // A socket, a fifo or a device has no bytes to carry and is skipped.
     }
     Ok(())
+}
+
+/// Copies one file into the archive, reporting content bytes and stopping when told to.
+///
+/// `std::io::copy` cannot be interrupted between its internal reads, which is why this loop exists:
+/// a cancelled transfer has to stop at the next chunk, not at the end of a large file.
+fn copy_with_progress(
+    reader: &mut impl Read,
+    writer: &mut impl Write,
+    observe: &(dyn Fn(u64) -> bool + Send + Sync),
+) -> std::io::Result<u64> {
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(total);
+        }
+        writer.write_all(&buffer[..read])?;
+        total += read as u64;
+        if !observe(read as u64) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "the transfer was cancelled",
+            ));
+        }
+    }
+}
+
+/// How many file-content bytes [`pack_upload`] would write for `root`.
+///
+/// The number the progress row divides by. Tar headers and padding are not counted, because the
+/// observer above does not count them either.
+pub fn payload_size(root: &Path) -> Result<u64, ShellError> {
+    let metadata =
+        std::fs::symlink_metadata(root).map_err(|error| local_failure("the upload", "the chosen path", &error))?;
+    if metadata.is_file() {
+        return Ok(metadata.len());
+    }
+    if !metadata.is_dir() {
+        return Err(ShellError::container_command_failed(
+            "the upload",
+            "only a file or a folder can be uploaded",
+        ));
+    }
+
+    let mut total = 0u64;
+    for entry in std::fs::read_dir(root).map_err(|error| local_failure("the upload", "the chosen path", &error))? {
+        let entry = entry.map_err(|error| local_failure("the upload", "the chosen path", &error))?;
+        let path = entry.path();
+        let metadata =
+            std::fs::symlink_metadata(&path).map_err(|error| local_failure("the upload", "an entry", &error))?;
+        if metadata.file_type().is_symlink() {
+            match std::fs::metadata(&path) {
+                Ok(target) if target.is_file() => total = total.saturating_add(target.len()),
+                // A folder link is skipped by the packer, so it is skipped here as well.
+                Ok(target) if target.is_dir() => {}
+                _ => {}
+            }
+        } else if metadata.is_dir() {
+            total = total.saturating_add(payload_size(&path)?);
+        } else if metadata.is_file() {
+            total = total.saturating_add(metadata.len());
+        }
+    }
+    Ok(total)
 }
 
 #[cfg(unix)]
@@ -1397,8 +1523,13 @@ fn modified_at(metadata: &std::fs::Metadata) -> u64 {
 /// answer to this request rather than whatever else the container's `tar` printed. Every later name
 /// is checked against it, so a stream that walks out of the folder is refused at the entry that
 /// does it.
-async fn extract_stream(stream: ByteStream, root: &str, destination: &Path) -> Result<(), ShellError> {
-    let mut archive = TarReader::new(stream);
+async fn extract_stream(
+    stream: ByteStream,
+    root: &str,
+    destination: &Path,
+    observer: &(dyn Fn(u64) -> bool + Send + Sync),
+) -> Result<(), ShellError> {
+    let mut archive = TarReader::observing(stream, observer);
     let Some(first) = archive.next_header().await? else {
         return Err(archive.empty_error("the download"));
     };
@@ -1436,7 +1567,7 @@ async fn extract_stream(stream: ByteStream, root: &str, destination: &Path) -> R
 
 /// Writes one entry, consuming its content whether or not it is written.
 async fn place_entry(
-    archive: &mut TarReader,
+    archive: &mut TarReader<'_>,
     header: &TarHeader,
     root: &str,
     destination: &Path,
@@ -1609,7 +1740,7 @@ fn local_failure(operation: &str, name: &str, error: &std::io::Error) -> ShellEr
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
     use sevenshell_error::ErrorCode;
 
@@ -2097,6 +2228,90 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
     }
 
     // --- Transfers ------------------------------------------------------------
+
+    #[tokio::test]
+    async fn a_download_reports_file_bytes_and_not_archive_overhead() {
+        let archive = archive_of(|builder| {
+            builder.directory("app", 0o755, 0).unwrap();
+            builder.file("app/a.txt", 0o644, 0, b"one\n").unwrap();
+            builder.file("app/b.txt", 0o644, 0, b"two\n").unwrap();
+        });
+        let transport = FakeTransport::streaming(archive);
+        let temp = TempTree::new();
+        let seen = AtomicU64::new(0);
+
+        files(&transport)
+            .download_with("/srv/app", &temp.path().join("app"), &|bytes| {
+                seen.fetch_add(bytes, Ordering::SeqCst);
+                true
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(seen.load(Ordering::SeqCst), 8, "only the two files' bytes are counted");
+    }
+
+    #[tokio::test]
+    async fn a_download_stops_at_the_chunk_where_the_observer_says_so() {
+        let archive = archive_of(|builder| {
+            builder.file("big.bin", 0o644, 0, &vec![b'x'; 64 * 1024]).unwrap();
+        });
+        let transport = FakeTransport::streaming(archive);
+        let temp = TempTree::new();
+        let error = files(&transport)
+            .download_with("/srv/big.bin", &temp.path().join("big.bin"), &|_| false)
+            .await
+            .expect_err("the observer stopped it");
+
+        assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
+        assert!(
+            error.detail().unwrap_or_default().contains("cancelled"),
+            "the refusal says why it stopped: {error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_upload_reports_content_bytes_that_match_the_payload_size() {
+        let temp = TempTree::new();
+        let root = temp.path().join("site");
+        std::fs::create_dir_all(root.join("assets")).unwrap();
+        std::fs::write(root.join("index.html"), b"<h1>hi</h1>\n").unwrap();
+        std::fs::write(root.join("assets/app.css"), b"body {}\n").unwrap();
+
+        let expected = payload_size(&root).expect("a readable tree");
+        assert_eq!(expected, 20, "the two files, without tar headers");
+
+        let transport = FakeTransport::with("");
+        let seen = Arc::new(AtomicU64::new(0));
+        let counted = Arc::clone(&seen);
+        files(&transport)
+            .upload_with(&root, "/srv", move |bytes| {
+                counted.fetch_add(bytes, Ordering::SeqCst);
+                true
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(seen.load(Ordering::SeqCst), expected);
+    }
+
+    #[tokio::test]
+    async fn an_upload_stops_when_the_observer_says_so_and_names_the_failure() {
+        let temp = TempTree::new();
+        let root = temp.path().join("big.bin");
+        std::fs::write(&root, vec![b'x'; 64 * 1024]).unwrap();
+
+        let transport = FakeTransport::with("");
+        let error = files(&transport)
+            .upload_with(&root, "/srv", |_| false)
+            .await
+            .expect_err("the observer stopped it");
+        assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
+        assert!(
+            error.detail().unwrap_or_default().contains("cancelled"),
+            "the refusal says why it stopped: {error:?}"
+        );
+    }
 
     #[tokio::test]
     async fn download_writes_the_tree_the_archive_carried() {

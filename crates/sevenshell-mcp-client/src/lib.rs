@@ -43,7 +43,10 @@ pub use config::{
 };
 pub use manager::McpClientManager;
 pub use session::{ExternalCall, McpSession, SUPPORTED_PROTOCOL_VERSIONS};
-pub use transport::{CONNECT_TIMEOUT, DefaultTransportFactory, LIST_TIMEOUT, McpTransport, TransportFactory, connect};
+pub use transport::{
+    CONNECT_TIMEOUT, DefaultTransportFactory, LIST_TIMEOUT, McpTransport, NotificationHandler, TransportFactory,
+    connect,
+};
 
 /// What went wrong before, during, or instead of a call to an external server.
 ///

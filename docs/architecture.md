@@ -186,6 +186,15 @@ listing command, and the browser becomes a shell listing (`find -printf`, or `ls
 file bodies. The browser's `packed` flag is how the interface knows not to offer archives; a
 transfer row from this backend says it cannot be paused, so the row offers stop instead of hold.
 
+**Files inside a container** are a fourth shape: there is no SFTP subsystem, so every operation is
+one `sh -c` script in the container and every transfer is a tar stream in one direction. A download
+reads the container's `tar cf -` as it arrives and writes each entry to disk; an upload builds the
+tar while handing it to the command's standard input. Both report the file-content bytes they move
+(not tar headers), check for a stop at each chunk, and a packed upload knows its payload total
+before packing, so its row has a real percentage. The file browser itself rides the engine or
+cluster connection rather than owning one: closing that tab closes its browsers first, because a
+browser whose connection is gone can only answer with an error.
+
 Two rules the interface depends on:
 
 - **Local paths are chosen in Rust.** A download opens a save dialog and an upload opens a file

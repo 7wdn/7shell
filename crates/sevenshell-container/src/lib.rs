@@ -17,6 +17,8 @@ mod parse;
 mod remote;
 mod runner;
 
-pub use files::{CommandFuture, CommandTransport, ContainerFiles, MAX_TEXT_BYTES, ScriptCommand, script_of};
+pub use files::{
+    CommandFuture, CommandTransport, ContainerFiles, MAX_TEXT_BYTES, ScriptCommand, payload_size, script_of,
+};
 pub use manager::{ContainerManager, Provider};
 pub use runner::{ByteStream, ChunkSender, InputStream, LineStream, PtySession, Runner, StreamState};

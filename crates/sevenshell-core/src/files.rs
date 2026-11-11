@@ -19,7 +19,7 @@ use crate::archive;
 use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
 use sevenshell_container::{
-    ByteStream, CommandFuture, CommandTransport, ContainerFiles, InputStream, StreamState, script_of,
+    ByteStream, CommandFuture, CommandTransport, ContainerFiles, InputStream, StreamState, payload_size, script_of,
 };
 use sevenshell_error::ShellError;
 use sevenshell_ftp::{FtpConnectionOptions, FtpEntry, FtpSession};
@@ -913,8 +913,13 @@ impl Core {
                         // Nothing of the tree is written here until the archive inside the container
                         // is complete: the bytes arrive as one answer, so a stop during the wait
                         // leaves no half-written file behind.
+                        let advancing = Arc::clone(&progress);
+                        let observe = move |bytes: u64| {
+                            advancing.advance(bytes);
+                            !advancing.is_cancelled()
+                        };
                         tokio::select! {
-                            outcome = container.download(&source, &local) => outcome?,
+                            outcome = container.download_with(&source, &local, &observe) => outcome?,
                             _ = wait_cancelled(Arc::clone(&progress)) => return Err(cancelled(&source)),
                         }
                         progress.set_transferred(total);
@@ -1083,8 +1088,13 @@ impl Core {
                     let directory = directory.clone();
 
                     Box::pin(async move {
+                        let advancing = Arc::clone(&progress);
+                        let observe = move |bytes: u64| {
+                            advancing.advance(bytes);
+                            !advancing.is_cancelled()
+                        };
                         tokio::select! {
-                            outcome = container.upload(&local, &directory) => outcome?,
+                            outcome = container.upload_with(&local, &directory, observe) => outcome?,
                             _ = wait_cancelled(Arc::clone(&progress)) => return Err(cancelled(&destination)),
                         }
                         progress.set_transferred(total);
@@ -1343,7 +1353,15 @@ impl Core {
                         if progress.is_cancelled() {
                             return Err(cancelled(&label));
                         }
-                        container.download(entry, destination).await?;
+                        let advancing = Arc::clone(&progress);
+                        let observe = move |bytes: u64| {
+                            advancing.advance(bytes);
+                            !advancing.is_cancelled()
+                        };
+                        tokio::select! {
+                            outcome = container.download_with(entry, destination, &observe) => outcome?,
+                            _ = wait_cancelled(Arc::clone(&progress)) => return Err(cancelled(&label)),
+                        }
                     }
                     Ok(())
                 }) as TransferAttempt
@@ -1370,6 +1388,12 @@ impl Core {
         // The folder the files land in, which is what the panel reads again when this finishes: a
         // packed upload puts them *in* it rather than one file inside it.
         let directory = directory.to_owned();
+        // The payload total is known before anything is packed; the observer counts the same bytes,
+        // so a packed container upload shows a real percentage instead of an indeterminate bar.
+        let mut size = 0u64;
+        for source in &sources {
+            size = size.saturating_add(payload_size(source)?);
+        }
 
         self.spawn_transfer(
             id,
@@ -1378,7 +1402,7 @@ impl Core {
                 name,
                 remote_path: directory.clone(),
                 session_id: session_id.to_owned(),
-                size: 0,
+                size,
                 packed: true,
                 pausable: false,
                 local: None,
@@ -1393,7 +1417,15 @@ impl Core {
                         if progress.is_cancelled() {
                             return Err(cancelled(&directory));
                         }
-                        container.upload(source, &directory).await?;
+                        let advancing = Arc::clone(&progress);
+                        let observe = move |bytes: u64| {
+                            advancing.advance(bytes);
+                            !advancing.is_cancelled()
+                        };
+                        tokio::select! {
+                            outcome = container.upload_with(source, &directory, observe) => outcome?,
+                            _ = wait_cancelled(Arc::clone(&progress)) => return Err(cancelled(&directory)),
+                        }
                     }
                     Ok(())
                 }) as TransferAttempt
@@ -2913,6 +2945,89 @@ mod tests {
             core.list_files("f7", "/").await.expect_err("closed").code(),
             sevenshell_error::ErrorCode::AppInternal,
             "a closed handle is as unknown as one that was never opened"
+        );
+    }
+
+    /// A container transport that reads an upload slowly, so a test can catch it in flight.
+    struct SlowUpload;
+
+    impl CommandTransport for SlowUpload {
+        fn run<'a>(&'a self, _argv: &'a [String]) -> CommandFuture<'a, String> {
+            Box::pin(async { Err(unused_transport()) })
+        }
+
+        fn run_stdin<'a>(&'a self, _argv: &'a [String], _input: Vec<u8>) -> CommandFuture<'a, String> {
+            Box::pin(async { Err(unused_transport()) })
+        }
+
+        fn stream_stdin<'a>(&'a self, _argv: &'a [String], mut input: InputStream) -> CommandFuture<'a, String> {
+            Box::pin(async move {
+                let mut chunks = input.take_chunks();
+                while let Some(_chunk) = chunks.recv().await {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Ok(String::new())
+            })
+        }
+
+        fn stream_bytes<'a>(&'a self, _argv: &'a [String]) -> CommandFuture<'a, ByteStream> {
+            Box::pin(async { Err(unused_transport()) })
+        }
+    }
+
+    fn unused_transport() -> ShellError {
+        ShellError::container_command_failed("the container command", "this test transport only reads uploads")
+    }
+
+    #[tokio::test]
+    async fn a_container_upload_reports_progress_and_stops_mid_archive() {
+        let (core, directory) = container_core();
+        let root = directory.path().join("site");
+        std::fs::create_dir_all(&root).expect("a tree to upload");
+        for index in 0..8 {
+            std::fs::write(root.join(format!("file-{index}.bin")), vec![b'x'; 256 * 1024]).expect("a file");
+        }
+
+        let files = Arc::new(
+            ContainerFiles::from_transport(ContainerRuntime::Docker, "", "cid", Arc::new(SlowUpload))
+                .expect("a container id with no namespace is valid"),
+        );
+        core.files.lock().await.insert(
+            "f1".to_owned(),
+            Arc::new(FileSession {
+                backend: FileBackend::Container(files),
+                session_id: "c1".to_owned(),
+            }),
+        );
+
+        let total = 8 * 256 * 1024;
+        let id = core
+            .start_packed_upload("f1", vec![root], "/srv")
+            .await
+            .expect("a transfer");
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let rows = core.transfers().await;
+                let row = rows.iter().find(|row| row.id == id).expect("the row");
+                if row.transferred > 0 && row.transferred < total {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("progress moved before the transfer ended");
+
+        core.stop_transfer(&id).await.expect("a stop");
+        let rows = core.transfers().await;
+        let row = rows.iter().find(|row| row.id == id).expect("the row");
+        assert_eq!(row.size, total, "the packed payload total was known up front");
+        assert_eq!(row.state, TransferState::Cancelled);
+        assert!(
+            row.transferred < total,
+            "the stop landed before the archive was finished: {} of {total}",
+            row.transferred
         );
     }
 

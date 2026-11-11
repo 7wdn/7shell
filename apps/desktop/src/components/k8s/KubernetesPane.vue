@@ -500,7 +500,7 @@ async function openFilesBrowser(pod: K8sObject, container: string): Promise<void
   try {
     // The store reports a failure and leaves no tab behind. The question is answered either way,
     // so the picker closes: there is no reason line in it that a retry from inside could act on.
-    await terminals.openPodFiles(props.tab.session, id, namespaceOf(pod), nameOf(pod), container);
+    await terminals.openPodFiles(props.tab.session, id, namespaceOf(pod), nameOf(pod), container, props.tab.id);
   } finally {
     filesBusy.value = false;
     filesTarget.value = null;

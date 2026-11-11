@@ -101,6 +101,9 @@ pub struct McpClientSupervisor {
     vault: Arc<Vault>,
     events: Arc<dyn ServerStatusEvents>,
     health: Mutex<HealthBook>,
+    /// The last row the window was told about, so a changed tool count on an otherwise ready server
+    /// is still one event — and a row that did not change is not sent again.
+    reported: Mutex<BTreeMap<String, McpServerStatus>>,
     running: AtomicBool,
 }
 
@@ -117,6 +120,7 @@ impl McpClientSupervisor {
             vault,
             events,
             health: Mutex::new(HealthBook::default()),
+            reported: Mutex::new(BTreeMap::new()),
             running: AtomicBool::new(false),
         })
     }
@@ -183,7 +187,6 @@ impl McpClientSupervisor {
     /// every configured server; a vault that is locked yields no secrets rather than a failure,
     /// because a locked vault is the normal state of a window that was just opened.
     pub fn apply(&self, settings: &AppSettings) -> Result<(), McpClientError> {
-        let before = self.manager.statuses();
         // The bound is a property of every call, not of a session: a settings save moves it for the
         // next call on the sessions that are already open, without reconnecting anything.
         self.manager
@@ -191,7 +194,7 @@ impl McpClientSupervisor {
         self.manager
             .set_secrets(self.secrets_from_vault(&settings.mcp_client_servers));
         self.manager.replace(settings.mcp_client_servers.clone())?;
-        self.emit_changes(&before, &self.manager.statuses());
+        self.announce(&self.manager.statuses());
         Ok(())
     }
 
@@ -267,14 +270,8 @@ impl McpClientSupervisor {
     /// page that shows the error and a page that only listens to the event agree about what
     /// happened.
     pub async fn refresh(&self, server_id: &str) -> Result<McpServerStatus, McpClientError> {
-        let before = self.manager.status_of(server_id);
         let result = self.manager.refresh(server_id).await;
-        let after = self.manager.status_of(server_id);
-        if before != after
-            && let Some(status) = after
-        {
-            self.events.server_status(&status);
-        }
+        self.announce(&self.manager.statuses());
         result
     }
 
@@ -388,24 +385,24 @@ impl McpClientSupervisor {
         for server_id in pings {
             self.check_alive(&server_id, now).await;
         }
+
+        // A notification may have replaced a ready session's tool list during the ticks above; the
+        // row is the same state with a different count, and the settings page is where it is drawn.
+        self.announce(&self.manager.statuses());
     }
 
     /// Pings one ready server and turns a silent session into a failed row.
     async fn check_alive(&self, server_id: &str, now: Instant) {
-        let before = self.manager.status_of(server_id);
         match self.manager.ping(server_id).await {
             Ok(()) => self.record_alive(server_id, now),
             Err(error) => {
-                let after = self.manager.status_of(server_id);
-                if before != after
-                    && let Some(status) = after
-                {
-                    self.events.server_status(&status);
-                }
                 log::info!("the external server `{server_id}` did not answer a ping and will be retried: {error}");
                 self.record_failure(server_id, now);
             }
         }
+        // A ping is also the moment the row is published if a `list_changed` refresh moved the tool
+        // count while the state stayed `ready`.
+        self.announce(&self.manager.statuses());
     }
 
     fn record_alive(&self, server_id: &str, now: Instant) {
@@ -438,9 +435,8 @@ impl McpClientSupervisor {
     /// lock and the task running.
     pub async fn disconnect(&self) {
         self.manager.set_secrets(BTreeMap::new());
-        let before = self.manager.statuses();
         self.manager.disconnect_all().await;
-        self.emit_changes(&before, &self.manager.statuses());
+        self.announce(&self.manager.statuses());
     }
 
     /// The vault is locking: nothing here may keep a value that came from it.
@@ -503,13 +499,28 @@ impl McpClientSupervisor {
         secrets
     }
 
-    /// Sends one event per row that differs from what the window was last told.
-    fn emit_changes(&self, before: &[McpServerStatus], after: &[McpServerStatus]) {
-        for status in after {
-            let unchanged = before.iter().find(|previous| previous.server_id == status.server_id) == Some(status);
-            if !unchanged {
-                self.events.server_status(status);
+    /// Publishes every row that differs from what the window was last told.
+    ///
+    /// The map is the memory that makes a tool count alone count as a change: the health tick
+    /// compares against it, so a `list_changed` refresh that leaves the state `ready` still reaches
+    /// the settings page. Rows of servers that are no longer configured are dropped without an
+    /// event: there is nothing left to draw.
+    fn announce(&self, statuses: &[McpServerStatus]) {
+        let changed = {
+            let mut reported = self.reported.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let configured: BTreeSet<&str> = statuses.iter().map(|status| status.server_id.as_str()).collect();
+            reported.retain(|id, _| configured.contains(id.as_str()));
+            let mut changed = Vec::new();
+            for status in statuses {
+                if reported.get(&status.server_id) != Some(status) {
+                    reported.insert(status.server_id.clone(), status.clone());
+                    changed.push(status.clone());
+                }
             }
+            changed
+        };
+        for status in &changed {
+            self.events.server_status(status);
         }
     }
 }
@@ -518,7 +529,7 @@ impl McpClientSupervisor {
 mod tests {
     use super::*;
     use std::sync::Mutex;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use async_trait::async_trait;
     use serde_json::{Value, json};
@@ -535,10 +546,13 @@ mod tests {
     #[derive(Default)]
     struct Script {
         tools: Vec<Value>,
+        changed_tools: Mutex<Option<Vec<Value>>>,
+        tool_lists: AtomicUsize,
         methods: Mutex<Vec<String>>,
         secrets: Mutex<Vec<Option<McpServerSecrets>>>,
         closed: AtomicBool,
         ping_fails: AtomicBool,
+        notification: Mutex<Option<sevenshell_mcp_client::NotificationHandler>>,
     }
 
     impl Script {
@@ -547,6 +561,19 @@ mod tests {
                 tools,
                 ..Self::default()
             })
+        }
+
+        /// What `tools/list` answers after the first call, when a test needs a list to change.
+        fn with_changed_tools(&self, tools: Vec<Value>) {
+            *self.changed_tools.lock().expect("not poisoned") = Some(tools);
+        }
+
+        /// Delivers a server notification the way the transport reader would.
+        fn emit_notification(&self, method: &str) {
+            let handler = self.notification.lock().expect("not poisoned").clone();
+            if let Some(handler) = handler {
+                handler(method);
+            }
         }
 
         fn methods(&self) -> Vec<String> {
@@ -582,7 +609,15 @@ mod tests {
                     "capabilities": { "tools": {} },
                     "serverInfo": { "name": "scripted", "version": "0" },
                 })),
-                "tools/list" => Ok(json!({ "tools": &self.script.tools })),
+                "tools/list" => {
+                    let call = self.script.tool_lists.fetch_add(1, Ordering::SeqCst);
+                    let changed = self.script.changed_tools.lock().expect("not poisoned").clone();
+                    let tools = match (call, changed) {
+                        (0, _) | (_, None) => self.script.tools.clone(),
+                        (_, Some(changed)) => changed,
+                    };
+                    Ok(json!({ "tools": tools }))
+                }
                 "tools/call" => Ok(json!({
                     "content": [{ "type": "text", "text": "ok" }],
                     "isError": false,
@@ -606,6 +641,10 @@ mod tests {
         async fn close(&self) -> Result<(), McpClientError> {
             self.script.closed.store(true, Ordering::SeqCst);
             Ok(())
+        }
+
+        fn set_notification_handler(&self, handler: sevenshell_mcp_client::NotificationHandler) {
+            *self.script.notification.lock().expect("not poisoned") = Some(handler);
         }
     }
 
@@ -1027,6 +1066,35 @@ mod tests {
         host.supervisor.refresh("files").await.expect("the server answers");
 
         assert_eq!(host.events.statuses().len(), after_first);
+    }
+
+    #[tokio::test]
+    async fn a_changed_tool_count_is_announced_without_a_state_change() {
+        let script = Script::with_tools(vec![read_listing("read")]);
+        script.with_changed_tools(vec![read_listing("read"), read_listing("second")]);
+        let host = host(Arc::clone(&script), None);
+        host.supervisor
+            .apply(&settings_of(vec![server("files", true)]))
+            .expect("a valid list");
+        host.supervisor.refresh_pending().await;
+
+        let before = host.events.statuses().len();
+        script.emit_notification("notifications/tools/list_changed");
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while host.manager.tools().len() != 2 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the changed list reached the manager");
+
+        host.supervisor.tick(Instant::now()).await;
+
+        let statuses = host.events.statuses();
+        assert_eq!(statuses.len(), before + 1, "one row changed, so one event");
+        let last = statuses.last().expect("the changed row");
+        assert_eq!(last.state, McpServerState::Ready, "the connection did not move");
+        assert_eq!(last.tools, 2, "the count is what changed");
     }
 
     #[tokio::test]

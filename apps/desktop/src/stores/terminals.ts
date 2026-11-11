@@ -165,6 +165,14 @@ export interface FilesTab {
   failure: ShellError | null;
   /** Whether this browser's backend offers packed transfers. */
   readonly packed: boolean;
+  /**
+   * The container or cluster tab whose connection this browser rides on.
+   *
+   * A container's or pod's files have no connection of their own, so the tab that owns the engine
+   * is what decides how long they can live. Ordinary SFTP browsers have none: they belong to the
+   * session, and a session outlives any one tab.
+   */
+  readonly ownerId?: string;
 }
 
 /** The host pages the monitor opens: a closer look at one machine, in a tab of its own. */
@@ -503,6 +511,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     connectionId: string,
     containerId: string,
     containerName: string,
+    ownerId?: string,
   ): Promise<void> {
     const id = containerFilesSessionId(session.id, containerId);
     const showing = tabs.value.find(
@@ -536,7 +545,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
           port: 0,
           user: "",
         },
-        { handle: outcome.handle, status: "open", failure: null, packed: outcome.packed },
+        { handle: outcome.handle, status: "open", failure: null, packed: outcome.packed, ownerId },
       );
     } catch (error) {
       const failure = asShellError(error, "files_open");
@@ -570,6 +579,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     namespace: string,
     pod: string,
     container: string,
+    ownerId?: string,
   ): Promise<void> {
     const id = podFilesSessionId(session.id, namespace, pod, container);
     const showing = tabs.value.find(
@@ -603,7 +613,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
           port: 0,
           user: "",
         },
-        { handle: outcome.handle, status: "open", failure: null, packed: outcome.packed },
+        { handle: outcome.handle, status: "open", failure: null, packed: outcome.packed, ownerId },
       );
     } catch (error) {
       const failure = asShellError(error, "files_open");
@@ -1089,7 +1099,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   function addFiles(
     session: Session,
-    fields: { handle: string | null; status: FilesTabStatus; failure: ShellError | null; packed?: boolean },
+    fields: {
+      handle: string | null;
+      status: FilesTabStatus;
+      failure: ShellError | null;
+      packed?: boolean;
+      ownerId?: string;
+    },
   ): void {
     addTab({ kind: "files", id: crypto.randomUUID(), session, packed: true, ...fields });
   }
@@ -1206,8 +1222,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
 
     // A container or cluster tab is one backend connection; closing the tab lets it go before the
-    // row disappears, so a connection cannot outlive the only thing that could show it.
+    // row disappears, so a connection cannot outlive the only thing that could show it. The file
+    // browsers opened from that tab ride the same connection, so they go first: leaving them behind
+    // would leave a tab whose every read fails against a connection nobody is holding.
     if (tab.kind === "container" || tab.kind === "kubernetes") {
+      await closeFilesOwnedBy(id);
       const connectionId = tab.connectionId;
       forget(id);
       if (connectionId !== null) {
@@ -1397,6 +1416,24 @@ export const useTerminalsStore = defineStore("terminals", () => {
   /** Where a terminal's shell last said it was, or `null` before it has said anything. */
   function shellDirectory(handle: string): string | null {
     return shellPaths.value[handle] ?? null;
+  }
+
+  /**
+   * Closes the browsers a container or cluster tab opened.
+   *
+   * The backend close is attempted because it releases the handle and cancels that browser's
+   * transfers; a refusal is not reported here, because the connection the handle belongs to is
+   * about to be disconnected anyway. The tabs go either way: a file browser whose engine is gone is
+   * a tab that can only answer with an error.
+   */
+  async function closeFilesOwnedBy(ownerId: string): Promise<void> {
+    const owned = tabs.value.filter((entry): entry is FilesTab => entry.kind === "files" && entry.ownerId === ownerId);
+    for (const tab of owned) {
+      if (tab.handle && tab.status === "open") {
+        await files.close(tab.handle);
+      }
+      forget(tab.id);
+    }
   }
 
   /**

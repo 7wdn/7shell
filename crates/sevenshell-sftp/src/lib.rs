@@ -165,7 +165,11 @@ impl TransferProgress {
         }
     }
 
-    fn advance(&self, bytes: u64) {
+    /// Counts bytes that arrived, for a backend that reports them chunk by chunk.
+    ///
+    /// Public because a transfer is not always SFTP: a container archive counts the bytes it packs
+    /// or unpacks into the same row, and the panel must not need to know which backend moved them.
+    pub fn advance(&self, bytes: u64) {
         self.transferred.fetch_add(bytes, Ordering::Relaxed);
     }
 }

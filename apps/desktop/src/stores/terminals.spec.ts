@@ -1115,6 +1115,25 @@ describe("terminals store", () => {
       expect(filesCloseMock).toHaveBeenCalledWith("c1");
       expect(store.tabs).toHaveLength(0);
     });
+
+    it("closes a container's file browser when the container tab that owns it goes away", async () => {
+      filesOpenContainerMock.mockResolvedValue(containerFilesOpened());
+      filesCloseMock.mockResolvedValue(undefined);
+
+      const store = useTerminalsStore();
+      store.openContainer(engine);
+      const parent = store.tabs.find((tab) => tab.kind === "container");
+      expect(parent).toBeDefined();
+      await store.openContainerFiles(engine, "conn-1", containerId, "web", parent?.id);
+
+      const browser = filesTab(store);
+      expect(browser?.ownerId).toBe(parent?.id);
+
+      await store.closeTab(parent?.id ?? "");
+
+      expect(filesCloseMock).toHaveBeenCalledWith("c1");
+      expect(store.tabs).toHaveLength(0);
+    });
   });
 
   /**

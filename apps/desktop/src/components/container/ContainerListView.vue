@@ -181,7 +181,7 @@ async function openFiles(container: ContainerSummary): Promise<void> {
   if (connectionId === null) {
     return;
   }
-  await terminals.openContainerFiles(props.tab.session, connectionId, container.id, container.name);
+  await terminals.openContainerFiles(props.tab.session, connectionId, container.id, container.name, props.tab.id);
 }
 
 // -- actions ------------------------------------------------------------------
