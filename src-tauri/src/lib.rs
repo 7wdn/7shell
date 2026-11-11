@@ -306,6 +306,10 @@ pub fn run() {
             commands::ai::ai_chat_send,
             commands::ai::ai_chat_cancel,
             commands::ai::ai_chat_reset,
+            commands::ai::ai_sessions_list,
+            commands::ai::ai_session_get,
+            commands::ai::ai_session_rename,
+            commands::ai::ai_session_delete,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");

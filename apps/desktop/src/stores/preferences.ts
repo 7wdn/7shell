@@ -46,6 +46,9 @@ import {
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
   DEFAULT_MCP_SCOPE,
+  AI_SESSION_RETENTION_DAYS_DEFAULT,
+  AI_SESSION_RETENTION_DAYS_MAX,
+  AI_SESSION_RETENTION_DAYS_MIN,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_UI_FONT,
@@ -160,6 +163,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   aiDefaultProviderId: undefined,
   aiContextEnabled: true,
   aiContextLines: AI_CONTEXT_LINES_DEFAULT,
+  aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
 };
 
 /**
@@ -479,6 +483,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const aiDefaultProviderId = ref<string | null>(null);
   const aiContextEnabled = ref(true);
   const aiContextLines = ref(AI_CONTEXT_LINES_DEFAULT);
+  /**
+   * How many days a stored conversation is kept, before the host prunes it.
+   *
+   * It is a page field rather than a button: the pruning happens in the host, and this is the one
+   * number it obeys. A value written by a file that names none is the host's own default, so an
+   * installation that never opened the page keeps behaving as it did.
+   */
+  const aiSessionRetentionDays = ref(AI_SESSION_RETENTION_DAYS_DEFAULT);
   const problem = ref<ShellError | null>(null);
 
   const resolvedTheme = computed<ResolvedTheme>(() => {
@@ -759,6 +771,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
       aiDefaultProviderId.value = settings.aiDefaultProviderId ?? null;
       aiContextEnabled.value = settings.aiContextEnabled ?? true;
       aiContextLines.value = clampAiContextLines(settings.aiContextLines ?? AI_CONTEXT_LINES_DEFAULT);
+      aiSessionRetentionDays.value = clampAiRetentionDays(
+        settings.aiSessionRetentionDays ?? AI_SESSION_RETENTION_DAYS_DEFAULT,
+      );
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -873,6 +888,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         aiDefaultProviderId: aiDefaultProviderId.value ?? undefined,
         aiContextEnabled: aiContextEnabled.value,
         aiContextLines: clampAiContextLines(aiContextLines.value),
+        // Written like the rest: omitting it here would make every save from another page put the
+        // retention back to the host's default, which is the one bug this field cannot afford.
+        aiSessionRetentionDays: clampAiRetentionDays(aiSessionRetentionDays.value),
       });
     } catch (error) {
       problem.value = asShellError(error, "settings_set");
@@ -1367,6 +1385,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return Math.min(Math.max(rounded, AI_CONTEXT_LINES_MIN), AI_CONTEXT_LINES_MAX);
   }
 
+  function clampAiRetentionDays(days: number): number {
+    const rounded = Number.isFinite(days) ? Math.round(days) : AI_SESSION_RETENTION_DAYS_DEFAULT;
+    return Math.min(Math.max(rounded, AI_SESSION_RETENTION_DAYS_MIN), AI_SESSION_RETENTION_DAYS_MAX);
+  }
+
   /**
    * The provider list, as one answer.
    *
@@ -1398,6 +1421,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
   /** How many lines travel, kept inside the range the panel offers. */
   function setAiContextLines(lines: number): void {
     aiContextLines.value = clampAiContextLines(lines);
+    dirty.value = true;
+  }
+
+  /** How many days a conversation is kept, kept inside the range the page offers. */
+  function setAiSessionRetentionDays(days: number): void {
+    aiSessionRetentionDays.value = clampAiRetentionDays(days);
     dirty.value = true;
   }
 
@@ -1658,6 +1687,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "aiContextLines":
           aiContextLines.value = AI_CONTEXT_LINES_DEFAULT;
           break;
+        case "aiSessionRetentionDays":
+          aiSessionRetentionDays.value = AI_SESSION_RETENTION_DAYS_DEFAULT;
+          break;
       }
     }
     apply();
@@ -1736,6 +1768,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     aiDefaultProviderId,
     aiContextEnabled,
     aiContextLines,
+    aiSessionRetentionDays,
     problem,
     dirty,
     initialize,
@@ -1794,6 +1827,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setAiDefaultProviderId,
     setAiContextEnabled,
     setAiContextLines,
+    setAiSessionRetentionDays,
     adoptMcpEnabled,
     setKeybinding,
     setPanelHeight,

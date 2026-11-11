@@ -5,7 +5,7 @@
 //! It does not know what a session is, does not open the vault, and does not know that a webview
 //! exists — the desktop hands it a key and a base address, and gets events back.
 //!
-//! Three shapes are frozen here because two adapters and a future one have to agree about them:
+//! Three shapes are frozen here because every adapter has to agree about them:
 //!
 //! * [`types::ContentBlock`] and [`types::ChatMessage`] — the conversation, in the vocabulary both
 //!   APIs can express. A provider adapter translates to its own wire shape and back; nothing above
@@ -19,8 +19,8 @@
 //!
 //! * [`provider`] — the trait the loop holds, and [`provider::build_provider`], the one place a
 //!   configuration entry becomes an adapter.
-//! * [`anthropic`] and [`openai`] — the two wire formats, each in its own module with its own
-//!   quirks documented there.
+//! * [`anthropic`], [`openai`] and [`responses`] — the three wire formats, each in its own module
+//!   with its own quirks documented there.
 //! * [`sse`] — the framing both streaming APIs share.
 //! * [`stream`], [`http`] — what the adapters do not each get to invent: the two stream deadlines,
 //!   the retry rule, and the mapping from a refusal to a failure.
@@ -33,6 +33,7 @@ pub mod anthropic;
 mod http;
 pub mod openai;
 pub mod provider;
+pub mod responses;
 pub mod sse;
 mod stream;
 pub mod types;
@@ -40,6 +41,7 @@ pub mod types;
 pub use anthropic::AnthropicProvider;
 pub use openai::OpenAiProvider;
 pub use provider::{Provider, ProviderStream, build_provider};
+pub use responses::OpenAiResponsesProvider;
 pub use types::{
     AiProviderConfig, AiProviderKind, AiProviderView, ChatMessage, ContentBlock, ProviderError, ProviderRequest, Role,
     StopReason, StreamEvent, ToolSpec, Usage,

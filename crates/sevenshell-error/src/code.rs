@@ -240,6 +240,11 @@ error_catalog! {
     AiCancelled => "AI-CANCELLED", "errors.ai.cancelled";
     #[doc = "A tool call was skipped because only one may run per turn."]
     AiToolSkipped => "AI-TOOL-SKIPPED", "errors.ai.toolSkipped";
+    #[doc = "A stored conversation is larger than this build will keep."]
+    AiSessionTooLarge => "AI-SESSION-TOO-LARGE", "errors.ai.sessionTooLarge";
+    // Deliberately no catalog entry for a failed summary: when the model cannot summarise, the host
+    // falls back to a deterministic truncation and carries on, so there is nothing a person could
+    // do with a sentence about it. `AI-SUMMARY-FAILED` is a log and event token only.
 
     // -- Application -------------------------------------------------------
     #[doc = "A required service is not ready yet, for example the vault during startup."]

@@ -48,11 +48,15 @@ import type { McpApprovalDecision, McpApprovalRequest, McpAuditEntry, McpStatus 
 import type {
   AiChatRequest,
   AiChatStarted,
+  AiCompactedEvent,
   AiDeltaEvent,
   AiDoneEvent,
   AiErrorEvent,
   AiProviderTestResult,
   AiProviderView,
+  AiSessionDetail,
+  AiSessionSavedEvent,
+  AiSessionSummary,
   AiToolCallEvent,
   AiToolResultEvent,
 } from "@/types/ai";
@@ -210,8 +214,27 @@ export const backend = {
     send: (request: AiChatRequest): Promise<AiChatStarted> =>
       forward("ai_chat_send", () => desktop.aiChatSend(request)),
     cancel: (runId: string): Promise<void> => forward("ai_chat_cancel", () => desktop.aiChatCancel(runId)),
-    /** Forgets the conversation the host kept, so the next question starts from nothing. */
-    reset: (): Promise<void> => forward("ai_chat_reset", () => desktop.aiChatReset()),
+    /**
+     * Empties one conversation, or starts a new one when no id is named.
+     *
+     * With an id the conversation is kept and its messages are gone; without one the host saves what
+     * it has and the next question begins a new conversation.
+     */
+    reset: (sessionId?: string): Promise<void> =>
+      forward("ai_chat_reset", () => desktop.aiChatReset(sessionId ?? null)),
+    /**
+     * The conversations the host has stored, and the calls that read or change one.
+     *
+     * The list is what the panel draws; `session` is the whole conversation, whose messages this
+     * side turns back into the rows one run would have drawn.
+     */
+    sessions: (): Promise<AiSessionSummary[]> => forward("ai_sessions_list", () => desktop.aiSessionsList()),
+    session: (sessionId: string): Promise<AiSessionDetail> =>
+      forward("ai_session_get", () => desktop.aiSessionGet(sessionId)),
+    renameSession: (sessionId: string, name: string): Promise<AiSessionSummary> =>
+      forward("ai_session_rename", () => desktop.aiSessionRename(sessionId, name)),
+    deleteSession: (sessionId: string): Promise<void> =>
+      forward("ai_session_delete", () => desktop.aiSessionDelete(sessionId)),
   },
 
   /** The window the interface is drawn in. Meaningless without the desktop shell. */
@@ -827,6 +850,17 @@ export const backend = {
       subscribe(desktop.onAiToolResult, listener),
     onAiDone: (listener: (payload: AiDoneEvent) => void): Promise<Unlisten> => subscribe(desktop.onAiDone, listener),
     onAiError: (listener: (payload: AiErrorEvent) => void): Promise<Unlisten> => subscribe(desktop.onAiError, listener),
+    /**
+     * A conversation was written down, and the older half of one was summarized.
+     *
+     * They are separate from the six run channels because they are about the conversation rather
+     * than about the run: a save can happen after the run ended, and a compaction happens between
+     * two turns of one.
+     */
+    onAiSessionSaved: (listener: (payload: AiSessionSavedEvent) => void): Promise<Unlisten> =>
+      subscribe(desktop.onAiSessionSaved, listener),
+    onAiCompacted: (listener: (payload: AiCompactedEvent) => void): Promise<Unlisten> =>
+      subscribe(desktop.onAiCompacted, listener),
     onTerminalData: (listener: (payload: TerminalData) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>

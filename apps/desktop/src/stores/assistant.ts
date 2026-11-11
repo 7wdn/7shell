@@ -1,10 +1,11 @@
 /**
  * The assistant, as the window keeps it.
  *
- * The conversation itself lives in the host: this store is a mirror of what one run has said so far,
- * and it is rebuilt from events rather than from a history read back — which is why there is no
- * `load` and no persistence here. Clearing the chat asks the host to forget, and the next run starts
- * from nothing.
+ * A conversation lives in the host and in the vault: this store mirrors the one the panel is
+ * drawing, and it is rebuilt from events while a run is producing rather than polled. Opening a
+ * stored conversation is the other direction — the host hands back its messages and this side turns
+ * them into the same rows a run would have drawn, so a conversation somebody returns to looks like
+ * the one they left.
  *
  * Four rules shape what is kept and what is dropped:
  *
@@ -18,6 +19,10 @@
  *    a description of it.
  * 4. **A run ends in three ways and they are kept apart.** Done with a reason, done with an error,
  *    and cancelled. A failed send is not a failed run, and a cancelled run is not a failure.
+ *
+ * Stored conversations add one rule of their own: **the list is the host's, the rows are ours.** A
+ * session that cannot be read — a locked vault, a host without the command yet — leaves the panel
+ * with an empty list and a sentence, never with an exception.
  */
 
 import { defineStore } from "pinia";
@@ -34,10 +39,15 @@ import { useTerminalsStore } from "@/stores/terminals";
 import {
   AI_CONTEXT_MAX_CHARS,
   AI_TOOL_PREVIEW_MAX_CHARS,
+  type AiCompactedEvent,
+  type AiContextSummary,
   type AiDeltaEvent,
   type AiDoneEvent,
   type AiErrorEvent,
   type AiProviderView,
+  type AiSessionDetail,
+  type AiSessionSavedEvent,
+  type AiSessionSummary,
   type AiStopReason,
   type AiToolCallEvent,
   type AiToolResultEvent,
@@ -116,6 +126,158 @@ const EMPTY_CONTEXT: AssistantContextSnapshot = { sessionId: null, lines: 0, tex
 const CANCELLED: ErrorCode = "AI-CANCELLED";
 const PROVIDER_FAILED: ErrorCode = "AI-PROVIDER-UNAVAILABLE";
 
+/** What the panel says after the host folded the older half of a conversation into a summary. */
+export interface AiCompactionNotice {
+  /** How many stored messages were replaced by the summary. */
+  readonly summarized: number;
+  /** How many the conversation still holds in full. */
+  readonly kept: number;
+  /** The model could not write the summary and the host grouped-and-cut instead. */
+  readonly degraded: boolean;
+  readonly at: number;
+}
+
+/**
+ * One stored block, as this side reads it.
+ *
+ * A block a newer host writes is skipped rather than guessed at: the transcript is the host's
+ * document, and drawing half of an unknown shape as text would be inventing something nobody said.
+ * The names are the ones `ContentBlock` serialises with — `toolUse`/`toolResult`, camelCase.
+ */
+interface StoredBlock {
+  readonly type: string;
+  readonly text?: string;
+  readonly id?: string;
+  readonly name?: string;
+  readonly input?: unknown;
+  readonly toolUseId?: string;
+  readonly content?: string;
+  readonly isError?: boolean;
+}
+
+function asStoredBlock(value: unknown): StoredBlock | null {
+  if (value === null || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.type !== "string") {
+    return null;
+  }
+  return {
+    type: record.type,
+    text: typeof record.text === "string" ? record.text : undefined,
+    id: typeof record.id === "string" ? record.id : undefined,
+    name: typeof record.name === "string" ? record.name : undefined,
+    input: record.input,
+    toolUseId: typeof record.toolUseId === "string" ? record.toolUseId : undefined,
+    content: typeof record.content === "string" ? record.content : undefined,
+    isError: record.isError === true,
+  };
+}
+
+/**
+ * Turns a stored conversation back into the rows a run would have drawn.
+ *
+ * Three choices are deliberate:
+ *
+ * * **A tool card is paired with its result.** The outcome carries what only the host knows — the
+ *   catalog code, the duration, whether it was cut — and the result block carries the text the card
+ *   showed. Using one without the other would restore either a card with no body or a body with no
+ *   status.
+ * * **A call with neither is dropped.** That is the half-turn a cancelled run leaves behind, and it
+ *   was never a thing the person saw finish.
+ * * **A turn made only of tool results is not a question.** It is the plumbing under a card above
+ *   it; drawing it would put the user's name on text they never typed.
+ */
+function historyEntries(detail: AiSessionDetail): AssistantEntry[] {
+  const results = new Map<string, { content: string; isError: boolean }>();
+  for (const message of detail.messages) {
+    for (const raw of message.blocks) {
+      const block = asStoredBlock(raw);
+      if (block?.type === "toolResult" && block.toolUseId !== undefined) {
+        results.set(block.toolUseId, { content: block.content ?? "", isError: block.isError === true });
+      }
+    }
+  }
+
+  const entries: AssistantEntry[] = [];
+  detail.messages.forEach((message, messageIndex) => {
+    const blocks = message.blocks.map(asStoredBlock).filter((block): block is StoredBlock => block !== null);
+
+    if (message.role === "user") {
+      const text = blocks
+        .filter((block) => block.type === "text" && (block.text ?? "").trim() !== "")
+        .map((block) => block.text ?? "")
+        .join("\n");
+      if (text !== "") {
+        entries.push({
+          kind: "user",
+          id: `history:${messageIndex}`,
+          text,
+          // The stored document keeps no per-message clock; nothing draws this number.
+          at: 0,
+          // The attached lines are not part of the transcript, so a restored question shows none.
+          context: "",
+          sessionId: null,
+        });
+      }
+      return;
+    }
+
+    blocks.forEach((block, blockIndex) => {
+      if (block.type === "text" && (block.text ?? "") !== "") {
+        const id = `history:${messageIndex}:${blockIndex}`;
+        entries.push({
+          kind: "text",
+          id,
+          runId: "history",
+          messageId: id,
+          blockIndex,
+          text: block.text ?? "",
+          streaming: false,
+        });
+        return;
+      }
+      if (block.type === "thinking" && (block.text ?? "") !== "") {
+        const id = `history:${messageIndex}:${blockIndex}`;
+        entries.push({
+          kind: "thinking",
+          id,
+          runId: "history",
+          messageId: id,
+          blockIndex,
+          text: block.text ?? "",
+          streaming: false,
+        });
+        return;
+      }
+      if (block.type !== "toolUse" || block.id === undefined || block.name === undefined) {
+        return;
+      }
+      const outcome = detail.outcomes[block.id];
+      const result = results.get(block.id);
+      if (outcome === undefined && result === undefined) {
+        return;
+      }
+      const preview = (result?.content ?? "").slice(0, AI_TOOL_PREVIEW_MAX_CHARS);
+      entries.push({
+        kind: "tool",
+        id: `history:tool:${block.id}`,
+        runId: "history",
+        callId: block.id,
+        tool: block.name,
+        input: block.input ?? null,
+        status: outcome !== undefined ? (outcome.ok ? "ok" : "failed") : result?.isError === true ? "failed" : "ok",
+        code: outcome?.code,
+        preview,
+        truncated: outcome?.truncated === true || (result?.content.length ?? 0) > AI_TOOL_PREVIEW_MAX_CHARS,
+        durationMs: outcome?.durationMs,
+      });
+    });
+  });
+  return entries;
+}
+
 /**
  * A fresh identifier for a row this side invented.
  *
@@ -168,6 +330,26 @@ export const useAssistantStore = defineStore("assistant", () => {
   /** What the panel is about to attach. */
   const context = ref<AssistantContextSnapshot>(EMPTY_CONTEXT);
 
+  /**
+   * The conversations the host has stored, newest first, and the one on screen.
+   *
+   * The list is read rather than kept in step by hand: a save, a rename and a delete all answer
+   * with the row the host now has, and `ai:session_saved` is the same answer pushed. `current` is a
+   * filter over the list rather than a second copy, so a rename cannot leave two names on screen.
+   */
+  const sessions = ref<AiSessionSummary[]>([]);
+  const sessionsLoaded = ref(false);
+  const loadingSessions = ref(false);
+  /** The list could not be read: a locked vault, or a host that does not store conversations. */
+  const sessionFailure = ref<ShellError | null>(null);
+  const currentSessionId = ref<string | null>(null);
+  /** The conversation being opened, if one is: the row says so rather than opening twice. */
+  const openingSessionId = ref<string | null>(null);
+  /** What the host last said about folding the older half away, until the panel is asked again. */
+  const compaction = ref<AiCompactionNotice | null>(null);
+  /** The summary a stored conversation already had when it was opened. */
+  const contextSummary = ref<AiContextSummary | null>(null);
+
   /** The provider a new question goes to: the chosen one, or the first configured. */
   const activeProvider = computed<AiProviderView | null>(() => {
     const chosen = preferences.aiDefaultProviderId;
@@ -202,6 +384,12 @@ export const useAssistantStore = defineStore("assistant", () => {
 
   const hasMessages = computed(() => entries.value.length > 0);
   const contextLines = computed(() => (context.value.text === "" ? 0 : context.value.text.split("\n").length));
+
+  /** The row for the conversation on screen, when the list has one. */
+  const currentSession = computed<AiSessionSummary | null>(() => {
+    const id = currentSessionId.value;
+    return id === null ? null : (sessions.value.find((entry) => entry.id === id) ?? null);
+  });
 
   /**
    * Reads the terminal on screen into the snapshot the panel draws.
@@ -244,11 +432,198 @@ export const useAssistantStore = defineStore("assistant", () => {
     }
   }
 
+  /** Puts one row into the list, in place when it is already there. */
+  function upsertSummary(summary: AiSessionSummary): void {
+    const index = sessions.value.findIndex((entry) => entry.id === summary.id);
+    sessions.value =
+      index === -1
+        ? [summary, ...sessions.value]
+        : sessions.value.map((entry, position) => (position === index ? summary : entry));
+  }
+
+  /**
+   * Reads the stored conversations.
+   *
+   * A failure is the list's own rather than the chat's: a locked vault means nobody can tell which
+   * conversations exist, and that must not look like a run that failed. The rows already on screen
+   * are kept — a transient failure is not evidence they were deleted.
+   */
+  async function loadSessions(): Promise<void> {
+    if (loadingSessions.value) {
+      return;
+    }
+    loadingSessions.value = true;
+    sessionFailure.value = null;
+    try {
+      sessions.value = await backend.ai.sessions();
+      sessionsLoaded.value = true;
+    } catch (error) {
+      sessionFailure.value = asShellError(error, "ai_sessions_list");
+    } finally {
+      loadingSessions.value = false;
+    }
+  }
+
+  /** Everything one conversation owns, put back to "nothing has been said yet". */
+  function clearChat(): void {
+    entries.value = [];
+    activeRunId.value = null;
+    completedRunId.value = null;
+    running.value = false;
+    sending.value = false;
+    cancelling.value = false;
+    usage.value = null;
+    stopReason.value = null;
+    turns.value = null;
+    runError.value = null;
+    compaction.value = null;
+    contextSummary.value = null;
+  }
+
+  /**
+   * Opens one stored conversation and draws its rows.
+   *
+   * `report` says whether a refusal belongs to the chat (somebody asked for this conversation) or
+   * to the list (the window adopted the newest one at startup and it was not readable). The rows on
+   * screen are only replaced once the host has answered, so a conversation that cannot be read
+   * leaves the one that can still visible.
+   */
+  async function hydrateSession(sessionId: string, report: boolean): Promise<boolean> {
+    if (running.value || sending.value || openingSessionId.value !== null) {
+      return false;
+    }
+    openingSessionId.value = sessionId;
+    if (report) {
+      failure.value = null;
+    }
+    try {
+      const detail = await backend.ai.session(sessionId);
+      entries.value = historyEntries(detail);
+      currentSessionId.value = detail.summary.id;
+      upsertSummary(detail.summary);
+      contextSummary.value = detail.contextSummary ?? null;
+      compaction.value = null;
+      activeRunId.value = null;
+      completedRunId.value = null;
+      running.value = false;
+      usage.value = null;
+      stopReason.value = null;
+      turns.value = null;
+      runError.value = null;
+      sessionFailure.value = null;
+      return true;
+    } catch (error) {
+      const shellError = asShellError(error, "ai_session_get");
+      if (report) {
+        failure.value = shellError;
+      } else {
+        sessionFailure.value = shellError;
+      }
+      return false;
+    } finally {
+      openingSessionId.value = null;
+    }
+  }
+
+  /** Opens one stored conversation somebody picked from the list. */
+  async function openSession(sessionId: string): Promise<boolean> {
+    return hydrateSession(sessionId, true);
+  }
+
+  /**
+   * Starts a conversation with nothing in it.
+   *
+   * The host is asked first and with no id, which is its way of saying "write the one you have down
+   * and begin again". A refusal leaves the rows where they are, because they are still what the
+   * host remembers.
+   */
+  async function newSession(): Promise<boolean> {
+    if (running.value || sending.value || clearing.value) {
+      return false;
+    }
+    clearing.value = true;
+    failure.value = null;
+    try {
+      await backend.ai.reset();
+    } catch (error) {
+      failure.value = asShellError(error, "ai_chat_reset");
+      return false;
+    } finally {
+      clearing.value = false;
+    }
+    clearChat();
+    currentSessionId.value = null;
+    refreshContext();
+    void loadSessions();
+    return true;
+  }
+
+  /** Renames a conversation. The answer replaces the row, so the list and the title cannot disagree. */
+  async function renameSession(sessionId: string, name: string): Promise<boolean> {
+    const trimmed = name.trim();
+    if (trimmed === "") {
+      return false;
+    }
+    failure.value = null;
+    try {
+      upsertSummary(await backend.ai.renameSession(sessionId, trimmed));
+      return true;
+    } catch (error) {
+      failure.value = asShellError(error, "ai_session_rename");
+      return false;
+    }
+  }
+
+  /** Deletes a conversation, and with it the rows on screen when it is the one being drawn. */
+  async function deleteSession(sessionId: string): Promise<boolean> {
+    if (running.value || sending.value) {
+      return false;
+    }
+    failure.value = null;
+    try {
+      await backend.ai.deleteSession(sessionId);
+    } catch (error) {
+      failure.value = asShellError(error, "ai_session_delete");
+      return false;
+    }
+    sessions.value = sessions.value.filter((entry) => entry.id !== sessionId);
+    if (currentSessionId.value === sessionId) {
+      clearChat();
+      currentSessionId.value = null;
+      refreshContext();
+    }
+    return true;
+  }
+
+  /** Puts the compaction notice away. The conversation itself is unchanged. */
+  function dismissCompaction(): void {
+    compaction.value = null;
+  }
+
+  /**
+   * Adopts the newest stored conversation at startup.
+   *
+   * A window that restarted should show the conversation it was in rather than an empty panel next
+   * to a list of everything that was said. It happens once: a conversation somebody emptied or
+   * started over is not reopened behind them.
+   */
+  async function adoptNewestSession(): Promise<void> {
+    await loadSessions();
+    if (entries.value.length > 0 || currentSessionId.value !== null) {
+      return;
+    }
+    const newest = [...sessions.value].sort((left, right) => right.updatedAt - left.updatedAt)[0];
+    if (newest !== undefined) {
+      await hydrateSession(newest.id, false);
+    }
+  }
+
   function setOpen(next: boolean): void {
     open.value = next;
     if (next) {
       refreshContext();
       void refreshProviders();
+      void loadSessions();
     }
   }
 
@@ -405,6 +780,49 @@ export const useAssistantStore = defineStore("assistant", () => {
   }
 
   /**
+   * A conversation was written down.
+   *
+   * The list only gains a timestamp, so a conversation that is new to this window means the list is
+   * out of date and is read again. The id is adopted when the send has not answered yet — the save
+   * can arrive before it, the same way a run's first delta can.
+   */
+  function receiveSessionSaved(event: AiSessionSavedEvent): void {
+    if (sessions.value.some((entry) => entry.id === event.sessionId)) {
+      sessions.value = sessions.value.map((entry) =>
+        entry.id === event.sessionId ? { ...entry, updatedAt: event.updatedAt } : entry,
+      );
+    } else {
+      void loadSessions();
+    }
+    if (currentSessionId.value === null && (sending.value || running.value)) {
+      currentSessionId.value = event.sessionId;
+    }
+  }
+
+  /**
+   * The older half of a conversation became a summary.
+   *
+   * A compaction for a conversation this panel is not drawing is somebody else's — a run from before
+   * a switch, or another window in a build that ever has one — and is dropped rather than shown over
+   * a chat it does not describe.
+   */
+  function receiveCompacted(event: AiCompactedEvent): void {
+    const ours =
+      event.sessionId === currentSessionId.value ||
+      (currentSessionId.value === null && (sending.value || running.value));
+    if (!ours) {
+      return;
+    }
+    currentSessionId.value = event.sessionId;
+    compaction.value = {
+      summarized: event.summarizedMessages,
+      kept: event.keptMessages,
+      degraded: event.degraded,
+      at: Date.now(),
+    };
+  }
+
+  /**
    * Asks a question.
    *
    * Nothing leaves the machine when there is no provider or no key: that answer is the panel's
@@ -434,6 +852,9 @@ export const useAssistantStore = defineStore("assistant", () => {
     stopReason.value = null;
     turns.value = null;
     completedRunId.value = null;
+    // The last notice was about the conversation as it stood; a new question starts a new account
+    // of it, and a notice left above the answer would describe a compaction this turn did not do.
+    compaction.value = null;
     sending.value = true;
     entries.value.push({
       kind: "user",
@@ -448,6 +869,9 @@ export const useAssistantStore = defineStore("assistant", () => {
       const started = await backend.ai.send({
         text: trimmed,
         providerId: activeProvider.value?.id,
+        // The conversation this store is drawing, when there is one. Absent asks the host for a new
+        // one, which is what the first question of a conversation does.
+        sessionId: currentSessionId.value ?? undefined,
         // Nothing is attached without text: a session id on its own would say which terminal
         // somebody is looking at without carrying anything they chose to send.
         context:
@@ -455,6 +879,11 @@ export const useAssistantStore = defineStore("assistant", () => {
             ? undefined
             : { sessionId: snapshot.sessionId ?? undefined, terminalText: snapshot.text },
       });
+      // The answer names the conversation the run belongs to, which is how a new one becomes the
+      // one this panel is drawing — resets and the list both need that id.
+      if (started.sessionId !== undefined) {
+        currentSessionId.value = started.sessionId;
+      }
       // A run that finished before this answer arrived was already drawn to its end; lighting the
       // panel up again would leave it saying "replying" over nothing.
       if (completedRunId.value !== started.runId) {
@@ -490,11 +919,15 @@ export const useAssistantStore = defineStore("assistant", () => {
   }
 
   /**
-   * Clears the chat.
+   * Clears the conversation on screen.
    *
    * The host is asked first: a conversation that stayed in the host while the window forgot it
    * would be a chat whose next question continued something nobody can see. A refusal leaves the
    * rows where they are, because they are still what the host remembers.
+   *
+   * The conversation being drawn is named, so clearing empties that one — it stays in the list, and
+   * the next question continues it. Naming nothing (a panel that has not sent yet) lets the host
+   * clear whatever it holds.
    */
   async function reset(): Promise<boolean> {
     if (clearing.value) {
@@ -503,29 +936,21 @@ export const useAssistantStore = defineStore("assistant", () => {
     clearing.value = true;
     failure.value = null;
     try {
-      await backend.ai.reset();
+      await backend.ai.reset(currentSessionId.value ?? undefined);
     } catch (error) {
       failure.value = asShellError(error, "ai_chat_reset");
       return false;
     } finally {
       clearing.value = false;
     }
-    entries.value = [];
-    activeRunId.value = null;
-    completedRunId.value = null;
-    running.value = false;
-    sending.value = false;
-    cancelling.value = false;
-    usage.value = null;
-    stopReason.value = null;
-    turns.value = null;
-    runError.value = null;
+    clearChat();
     refreshContext();
+    void loadSessions();
     return true;
   }
 
   /**
-   * Subscribes to the six channels one run speaks on, and reads the provider list.
+   * Subscribes to the channels a run and its conversation speak on, and reads the lists.
    *
    * Registered by the frame rather than by the panel: a run outlives a look at another page, and
    * its rows have to keep arriving while the panel is put away. The returned function drops every
@@ -544,6 +969,8 @@ export const useAssistantStore = defineStore("assistant", () => {
           backend.events.onAiToolResult(receiveToolResult),
           backend.events.onAiDone(receiveDone),
           backend.events.onAiError(receiveError),
+          backend.events.onAiSessionSaved(receiveSessionSaved),
+          backend.events.onAiCompacted(receiveCompacted),
         ]);
         if (stopped) {
           for (const stop of subscriptions) {
@@ -558,6 +985,10 @@ export const useAssistantStore = defineStore("assistant", () => {
     })();
 
     void refreshProviders();
+    // A window that restarted shows the conversation it was in rather than an empty panel beside a
+    // list of everything that was ever said. Failures here stay with the list: nothing about the
+    // chat was asked for.
+    void adoptNewestSession();
 
     return () => {
       stopped = true;
@@ -590,10 +1021,25 @@ export const useAssistantStore = defineStore("assistant", () => {
     activeProvider,
     setupProblem,
     hasMessages,
+    sessions,
+    sessionsLoaded,
+    loadingSessions,
+    sessionFailure,
+    currentSessionId,
+    currentSession,
+    openingSessionId,
+    compaction,
+    contextSummary,
     setOpen,
     toggle,
     refreshContext,
     refreshProviders,
+    loadSessions,
+    openSession,
+    newSession,
+    renameSession,
+    deleteSession,
+    dismissCompaction,
     send,
     cancel,
     reset,

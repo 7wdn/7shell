@@ -29,12 +29,6 @@ use sevenshell_types::AiProviderConfig;
 /// room for a conversation beside it.
 pub const CONTEXT_MAX_CHARS: usize = 32_000;
 
-/// The most conversation history one request carries, in characters.
-///
-/// History is dropped from the oldest end when it does not fit — one exchange at a time, because a
-/// tool result whose call was dropped is a request no provider will accept.
-pub const HISTORY_MAX_CHARS: usize = 32_768;
-
 /// The terminal as it travels with a question.
 ///
 /// `sessionId` is the opaque handle the interface uses for an open terminal, not a path: naming a
@@ -184,51 +178,7 @@ fn one_line(value: &str) -> String {
     strip_control(value, false).trim().to_owned()
 }
 
-/// Drops the oldest exchanges until the history fits the budget.
-///
-/// An *exchange* rather than a message: the loop's conversation is user, assistant, tool results,
-/// assistant, and cutting between a tool call and its result would send a provider a result that
-/// answers nothing. The newest message is always kept, even alone and even over budget — a request
-/// with no question in it is not a request.
-pub fn fit_history(messages: &mut Vec<ChatMessage>, budget: usize) {
-    if messages.is_empty() {
-        return;
-    }
-
-    let mut kept = 0usize;
-    let mut start = 0usize;
-    for (index, message) in messages.iter().enumerate().rev() {
-        let cost = message_cost(message);
-        if kept + cost > budget && index + 1 < messages.len() {
-            start = index + 1;
-            break;
-        }
-        kept += cost;
-    }
-
-    // Walk forward to the first message that begins an exchange rather than continuing one: a tool
-    // result without its call, or an assistant turn without its question, is not a shape either
-    // provider accepts.
-    let mut aligned = false;
-    while start < messages.len() {
-        if starts_exchange(&messages[start]) {
-            aligned = true;
-            break;
-        }
-        start += 1;
-    }
-    if !aligned {
-        // Nothing here begins an exchange. The newest message is the question the caller just
-        // appended, and a request with no question in it is not a request.
-        start = messages.len() - 1;
-    }
-
-    if start > 0 {
-        messages.drain(..start);
-    }
-}
-
-/// Roughly what one message costs against [`HISTORY_MAX_CHARS`].
+/// Roughly what one message costs against [`crate::ai::compact::COMPACT_TRIGGER_CHARS`].
 ///
 /// Characters rather than tokens: this is a bound the host can hold without knowing which model is
 /// behind the request, and the provider's own context limit is the tighter one in practice.
@@ -245,7 +195,11 @@ pub fn message_cost(message: &ChatMessage) -> usize {
 }
 
 /// Whether this message begins a turn of the conversation rather than continuing one.
-fn starts_exchange(message: &ChatMessage) -> bool {
+///
+/// Shared with [`crate::ai::compact`], which cuts a conversation at the same boundary this function
+/// defines: a summary that ended between a tool call and its result would be as unacceptable to a
+/// provider as a trimmed history that did.
+pub(crate) fn starts_exchange(message: &ChatMessage) -> bool {
     matches!(message.role, sevenshell_ai::Role::User)
         && message
             .blocks
@@ -360,67 +314,5 @@ mod tests {
         assert!(prompt.contains("7Shell"));
         assert!(!prompt.contains("<terminal_output>"));
         assert!(!prompt.contains("session `"));
-    }
-
-    #[test]
-    fn history_is_dropped_from_the_oldest_exchange() {
-        let mut messages = vec![
-            ChatMessage::user("a".repeat(40)),
-            ChatMessage::assistant(vec![ContentBlock::Text { text: "b".repeat(40) }]),
-            ChatMessage::user("c".repeat(40)),
-            ChatMessage::assistant(vec![ContentBlock::ToolUse {
-                id: "call-1".to_owned(),
-                name: "sshell_sessions_list".to_owned(),
-                input: serde_json::json!({}),
-            }]),
-            ChatMessage::tool_result("call-1", "d".repeat(40), false),
-            ChatMessage::user("e".repeat(40)),
-        ];
-
-        fit_history(&mut messages, 200);
-
-        assert_eq!(messages.len(), 4, "the first exchange and its answer were dropped");
-        assert_eq!(
-            messages[0],
-            ChatMessage::user("c".repeat(40)),
-            "what is left begins with a question, not with half an exchange"
-        );
-        assert_eq!(messages[3], ChatMessage::user("e".repeat(40)));
-    }
-
-    #[test]
-    fn the_newest_question_is_never_dropped_even_alone_and_over_budget() {
-        let mut messages = vec![
-            ChatMessage::user("old"),
-            ChatMessage::assistant(vec![ContentBlock::Text {
-                text: "answer".to_owned(),
-            }]),
-            ChatMessage::user("x".repeat(500)),
-        ];
-
-        fit_history(&mut messages, 10);
-
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0], ChatMessage::user("x".repeat(500)));
-    }
-
-    #[test]
-    fn a_trimmed_history_never_starts_with_a_tool_result() {
-        // The shape a provider refuses: a result that answers a call nobody can see.
-        let mut messages = vec![
-            ChatMessage::user("first question"),
-            ChatMessage::assistant(vec![ContentBlock::ToolUse {
-                id: "call-1".to_owned(),
-                name: "sshell_sessions_list".to_owned(),
-                input: serde_json::json!({}),
-            }]),
-            ChatMessage::tool_result("call-1", "x".repeat(200), false),
-            ChatMessage::user("what did that show?"),
-        ];
-
-        fit_history(&mut messages, 150);
-
-        assert_eq!(messages.len(), 1, "the call and its result go together or not at all");
-        assert_eq!(messages[0], ChatMessage::user("what did that show?"));
     }
 }

@@ -5,8 +5,11 @@
 //! lock and reaches the interface only as [`AiProviderView::has_key`], which is `None` while the
 //! vault is locked because "cannot tell right now" is not "there is none".
 //!
-//! The three kinds are the three protocols this build speaks: Anthropic's Messages API, OpenAI's
-//! Chat Completions, and anything that serves the same shape locally (Ollama, vLLM, LM Studio).
+//! The kinds are the protocols this build speaks: Anthropic's Messages API, OpenAI's Chat
+//! Completions, anything that serves the same shape locally (Ollama, vLLM, LM Studio), and OpenAI's
+//! Responses API. The last one is named after its own address rather than as "another OpenAI",
+//! because the two are different endpoints with different streaming events — a settings file that
+//! said only `openai` would send a Responses model to the wrong one.
 
 use serde::{Deserialize, Serialize};
 
@@ -64,17 +67,31 @@ pub enum AiProviderKind {
     OpenAi,
     /// A server on this machine or the network that speaks the OpenAI shape.
     Local,
+    /// OpenAI's Responses API (`/v1/responses`).
+    ///
+    /// Its own word rather than a fourth spelling of `openai`, and the one variant whose wire name
+    /// is not lower case: the address it lives at is `/responses`, and a value the settings page
+    /// compares against has to say which of the two OpenAI-shaped APIs is meant. An older build
+    /// reads it as a name it does not know, which is a provider it does not offer — never a request
+    /// sent to the other endpoint.
+    #[serde(rename = "openaiResponses")]
+    OpenAiResponses,
 }
 
 impl AiProviderKind {
-    pub const ALL: &'static [AiProviderKind] =
-        &[AiProviderKind::Anthropic, AiProviderKind::OpenAi, AiProviderKind::Local];
+    pub const ALL: &'static [AiProviderKind] = &[
+        AiProviderKind::Anthropic,
+        AiProviderKind::OpenAi,
+        AiProviderKind::Local,
+        AiProviderKind::OpenAiResponses,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
             Self::OpenAi => "openai",
             Self::Local => "local",
+            Self::OpenAiResponses => "openaiResponses",
         }
     }
 
@@ -162,6 +179,26 @@ mod tests {
                 "a kind whose name does not read back is one the settings file cannot hold"
             );
         }
+    }
+
+    #[test]
+    fn the_responses_kind_serializes_as_the_address_it_lives_at() {
+        // The one kind whose wire name is not lower case, and the one a lower-case rule would get
+        // wrong: `openairesponses` is a value the settings page cannot match against anything, and
+        // the provider would read as one this build does not offer.
+        assert_eq!(
+            serde_json::to_value(AiProviderKind::OpenAiResponses).expect("a kind is JSON"),
+            serde_json::json!("openaiResponses")
+        );
+        assert_eq!(
+            serde_json::from_value::<AiProviderKind>(serde_json::json!("openaiResponses")).expect("it reads back"),
+            AiProviderKind::OpenAiResponses
+        );
+        assert_eq!(
+            AiProviderKind::OpenAiResponses.as_str(),
+            "openaiResponses",
+            "the stored name and the wire name are one name"
+        );
     }
 
     #[test]

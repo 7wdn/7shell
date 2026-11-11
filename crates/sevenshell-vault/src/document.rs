@@ -42,7 +42,11 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// added a remote desktop's size, screen mode and drive mapping, for the same reason. Version 10
 /// added a kubeconfig document as a session secret. Version 11 added the API keys for assistant
 /// providers, which an older build would drop on its next write exactly like the tokens above.
-pub const VAULT_SCHEMA_VERSION: u32 = 11;
+/// Version 12 added the assistant's stored conversations and the table the secrets of an external
+/// MCP server will live in: an older build reading one would parse the document, drop both tables
+/// and write it back — every conversation and every server credential gone in the course of
+/// somebody opening the window.
+pub const VAULT_SCHEMA_VERSION: u32 = 12;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -104,6 +108,28 @@ pub struct Document {
     /// provider; only this side ever holds the key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     ai_tokens: BTreeMap<String, SecretString>,
+    /// The assistant's conversations, by session id, exactly as the host wrote them.
+    ///
+    /// A string rather than a parsed document, and the one place that calls for it: the vault has no
+    /// business learning what a content block is, because a build that predates a block shape would
+    /// have to drop it on its next write. Here the host owns the document, the vault carries it, and
+    /// a build that does not know what is inside still leaves it alone.
+    ///
+    /// Not a secret in the way a password is — it is what somebody asked about their servers — which
+    /// is why it sits behind the vault's lock rather than why it needs wiping on drop. It also does
+    /// not travel with a sync snapshot: a backup of a library is not a backup of somebody's
+    /// conversations, and the snapshot format has no field for one.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ai_sessions: BTreeMap<String, String>,
+    /// The credentials of each external MCP server, by the server's id.
+    ///
+    /// A placeholder for the MCP client this build does not have yet, and it exists now so that the
+    /// shape of the document is settled before anything writes to it: a server's configuration —
+    /// address, command line, arguments — belongs in the settings file, while whatever header or
+    /// environment value opens it is a secret, and the settings file is read by anything that can
+    /// read the configuration directory. One opaque value per server, like a conversation above.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    mcp_server_secrets: BTreeMap<String, SecretString>,
 }
 
 impl Document {
@@ -123,6 +149,8 @@ impl Document {
             sync_passphrase: None,
             snippet_tokens: BTreeMap::new(),
             ai_tokens: BTreeMap::new(),
+            ai_sessions: BTreeMap::new(),
+            mcp_server_secrets: BTreeMap::new(),
         }
     }
 
@@ -647,6 +675,101 @@ impl Document {
             }
         }
     }
+
+    /// Every stored conversation, by id, as the host wrote them.
+    ///
+    /// The whole table rather than a list, because its reader is a host that has to answer "which of
+    /// these is older than the retention" and "what did this one say" from the same copy: one lock,
+    /// one read, and no chance of a prune running against a table that changed between two calls.
+    pub(crate) fn ai_sessions(&self) -> BTreeMap<String, String> {
+        self.ai_sessions.clone()
+    }
+
+    /// One conversation, as it was stored.
+    pub(crate) fn ai_session(&self, id: &str) -> Option<String> {
+        self.ai_sessions.get(id).cloned()
+    }
+
+    /// Keeps a conversation, or forgets the one that was kept.
+    ///
+    /// `None` and a document of nothing are the same answer, like the tokens above: a conversation
+    /// with no document is not a conversation, and one path for forgetting cannot disagree with
+    /// itself. What a document contains is the host's business — the only thing checked here is
+    /// that there is one.
+    pub(crate) fn save_ai_session(&mut self, id: &str, session: Option<String>) {
+        match session.filter(|document| !document.trim().is_empty()) {
+            Some(document) => {
+                self.ai_sessions.insert(id.to_owned(), document);
+            }
+            None => {
+                self.ai_sessions.remove(id);
+            }
+        }
+    }
+
+    pub(crate) fn delete_ai_session(&mut self, id: &str) {
+        self.ai_sessions.remove(id);
+    }
+
+    /// Renames a stored conversation, and answers whether there was one to rename.
+    ///
+    /// The name lives inside the host's document, so this is the one operation that has to look
+    /// into it — and it does so as an opaque JSON object rather than as a session: a document that
+    /// is not an object is left exactly as it is and reported as "nothing to rename", because a
+    /// rewrite of something this build could not read is how a conversation gets lost.
+    ///
+    /// Nothing else in the document is touched. The timestamps belong to the host — it is the side
+    /// that knows when a run ended — and a rename that stamped its own would make the list reorder
+    /// itself for a change no message caused.
+    pub(crate) fn rename_ai_session(&mut self, id: &str, name: &str) -> bool {
+        let Some(stored) = self.ai_sessions.get(id) else {
+            return false;
+        };
+        let Ok(mut document) = serde_json::from_str::<serde_json::Value>(stored) else {
+            return false;
+        };
+        let Some(object) = document.as_object_mut() else {
+            return false;
+        };
+        object.insert("name".to_owned(), serde_json::Value::from(name.trim()));
+
+        match serde_json::to_string(&document) {
+            Ok(serialized) => {
+                self.ai_sessions.insert(id.to_owned(), serialized);
+                true
+            }
+            // Cannot happen for a value that was just parsed, and if it ever did the stored string
+            // is still the one that was there rather than a half-rewritten one.
+            Err(_) => false,
+        }
+    }
+
+    /// The credentials kept for one external MCP server, if any were.
+    ///
+    /// Keyed by the server id the settings file uses — the one name the two halves share, exactly
+    /// like a provider's key above. The vault does not know what is in it; a header value and an
+    /// environment value are both strings, and which one a server needs is the client's business.
+    pub(crate) fn mcp_server_secrets(&self, server_id: &str) -> Option<ServicePassword> {
+        self.mcp_server_secrets
+            .get(server_id)
+            .map(|secrets| ServicePassword::new(secrets.expose().to_owned()))
+    }
+
+    /// Keeps the credentials of one server, or forgets the ones that were kept.
+    ///
+    /// The same rule as every other secret table here: nothing is a deletion, and there is one path
+    /// for forgetting so that "cleared" and "never kept" cannot become two different states.
+    pub(crate) fn set_mcp_server_secrets(&mut self, server_id: &str, secrets: Option<String>) {
+        match secrets.filter(|value| !value.trim().is_empty()) {
+            Some(secrets) => {
+                self.mcp_server_secrets
+                    .insert(server_id.to_owned(), SecretString::new(secrets));
+            }
+            None => {
+                self.mcp_server_secrets.remove(server_id);
+            }
+        }
+    }
 }
 
 impl fmt::Debug for Document {
@@ -655,6 +778,10 @@ impl fmt::Debug for Document {
         // them one `{:?}` away from a log line. The accounts with tokens are named rather than
         // counted, because which services have one is the whole of what a reader could want from
         // this line and none of it is a secret — an account name is a provider and an address.
+        //
+        // Stored conversations are named the same way and for the same reason: an id says which
+        // session a problem is about, while the document behind it is what somebody asked their
+        // servers and is not something a log line may carry.
         f.debug_struct("Document")
             .field("schema_version", &self.schema_version)
             .field("sessions", &self.sessions.len())
@@ -666,6 +793,11 @@ impl fmt::Debug for Document {
             .field("sync_passphrase", &self.sync_passphrase.is_some())
             .field("snippet_tokens", &self.snippet_tokens.keys().collect::<Vec<_>>())
             .field("ai_tokens", &self.ai_tokens.keys().collect::<Vec<_>>())
+            .field("ai_sessions", &self.ai_sessions.keys().collect::<Vec<_>>())
+            .field(
+                "mcp_server_secrets",
+                &self.mcp_server_secrets.keys().collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
@@ -837,10 +969,11 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // gained recording. 5 → 6: a document gained the list of words somebody added, which an older one
     // simply has none of. None of them has anything to rewrite — the defaults are what every document
     // meant — so the steps are the version number alone. 9 → 10: a session secret may now be a
-    // kubeconfig document. 10 → 11: the document may now carry an assistant provider's key. The number
-    // moves so an older build refuses the whole file as too new instead of failing to read one unknown
-    // secret variant and calling the vault corrupt, and so a build that predates the keys cannot drop
-    // them by writing the document back.
+    // kubeconfig document. 10 → 11: the document may now carry an assistant provider's key. 11 → 12:
+    // it may now carry the assistant's conversations and an MCP server's credentials, and an older
+    // document simply has neither table. The number moves so an older build refuses the whole file as
+    // too new instead of failing to read one unknown secret variant and calling the vault corrupt, and
+    // so a build that predates the keys cannot drop them by writing the document back.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)
@@ -1194,6 +1327,126 @@ mod tests {
             rendered.contains("openai"),
             "which provider has a key is not a secret and is what a reader needs"
         );
+    }
+
+    #[test]
+    fn a_document_written_before_the_conversations_reads_as_having_none() {
+        // Version 11 is the shape from before the assistant remembered a conversation and before an
+        // MCP server had anywhere to keep a credential. Both absent tables have to read as "nothing
+        // stored" rather than as a document that will not open.
+        let raw = br#"{"schemaVersion":11,"sessions":[],"groups":[],"keys":[],"secrets":[],"knownHosts":[]}"#;
+
+        let mut document = from_slice(raw).expect("a version 11 document is readable");
+
+        assert_eq!(document.schema_version, VAULT_SCHEMA_VERSION);
+        assert!(document.ai_sessions().is_empty());
+        assert!(document.ai_session("session-1").is_none());
+        assert!(document.mcp_server_secrets("files").is_none());
+
+        document.save_ai_session("session-1", Some(r#"{"version":1,"name":"why 502"}"#.to_owned()));
+        assert!(
+            document.ai_session("session-1").is_some(),
+            "and one is kept once somebody keeps it"
+        );
+
+        document.set_mcp_server_secrets("files", Some("Bearer token".to_owned()));
+        assert!(document.mcp_server_secrets("files").is_some());
+    }
+
+    #[test]
+    fn a_conversation_is_stored_byte_for_byte_and_a_rename_changes_only_its_name() {
+        let stored = r#"{"version":1,"id":"session-1","name":"why 502","messages":[{"role":"user","blocks":[{"type":"text","text":"status?"}]}],"outcomes":{}}"#;
+        let mut document = Document::empty();
+        document.save_ai_session("session-1", Some(stored.to_owned()));
+
+        // Through the serialized form, because the stored string is what survives an upgrade: a
+        // vault that parsed and re-serialized a conversation would reformat somebody's transcript.
+        let bytes = serde_json::to_vec(&document).expect("a document is JSON");
+        let mut readable = from_slice(&bytes).expect("read back");
+        assert_eq!(
+            readable.ai_session("session-1").as_deref(),
+            Some(stored),
+            "a conversation is opaque: it is stored as written"
+        );
+
+        assert!(readable.rename_ai_session("session-1", "  renamed  "));
+        let renamed: serde_json::Value =
+            serde_json::from_str(&readable.ai_session("session-1").expect("kept")).expect("json");
+        assert_eq!(renamed["name"], "renamed", "the name is stored trimmed");
+        assert_eq!(
+            renamed["messages"][0]["blocks"][0]["text"], "status?",
+            "a rename changes the name and nothing else"
+        );
+        assert_eq!(renamed["version"], 1, "nor the document's own version");
+
+        assert!(
+            !readable.rename_ai_session("session-2", "x"),
+            "there is nothing to rename"
+        );
+        assert!(
+            readable.ai_session("session-2").is_none(),
+            "and asking for one that is not there does not create it"
+        );
+    }
+
+    #[test]
+    fn a_document_that_is_not_an_object_is_left_alone_by_a_rename() {
+        let mut document = Document::empty();
+        document.save_ai_session("broken", Some("[1,2,3]".to_owned()));
+
+        assert!(
+            !document.rename_ai_session("broken", "renamed"),
+            "a value this side cannot read is not something it may rewrite"
+        );
+        assert_eq!(document.ai_session("broken").as_deref(), Some("[1,2,3]"));
+    }
+
+    #[test]
+    fn a_conversation_and_a_server_credential_are_never_printed() {
+        let mut document = Document::empty();
+        document.save_ai_session(
+            "session-1",
+            Some(r#"{"name":"the database password is hunter2"}"#.to_owned()),
+        );
+        document.set_mcp_server_secrets("files", Some("Bearer server-token".to_owned()));
+
+        let rendered = format!("{document:?} {:?}", document.mcp_server_secrets("files"));
+
+        assert!(
+            !rendered.contains("hunter2"),
+            "a conversation reached Debug output: {rendered}"
+        );
+        assert!(
+            !rendered.contains("server-token"),
+            "a server credential reached Debug output: {rendered}"
+        );
+        assert!(
+            rendered.contains("session-1"),
+            "which session it is is not the secret and is what a reader needs"
+        );
+        assert!(rendered.contains("files"), "nor which server has credentials");
+    }
+
+    #[test]
+    fn an_empty_conversation_is_nobody_keeping_one_and_so_is_a_server_credential() {
+        let mut document = Document::empty();
+        document.save_ai_session("session-1", Some("   ".to_owned()));
+        assert!(
+            document.ai_session("session-1").is_none(),
+            "a conversation of nothing is nobody keeping one"
+        );
+
+        document.save_ai_session("session-1", Some(r#"{"name":"kept"}"#.to_owned()));
+        document.delete_ai_session("session-1");
+        assert!(document.ai_session("session-1").is_none());
+        document.delete_ai_session("session-1");
+
+        document.set_mcp_server_secrets("files", Some(String::new()));
+        assert!(document.mcp_server_secrets("files").is_none());
+
+        document.set_mcp_server_secrets("files", Some(r#"{"token":"one"}"#.to_owned()));
+        document.set_mcp_server_secrets("files", None);
+        assert!(document.mcp_server_secrets("files").is_none());
     }
 
     #[test]

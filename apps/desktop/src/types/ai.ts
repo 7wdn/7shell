@@ -57,16 +57,29 @@ export interface AiChatContext {
   readonly terminalText?: string;
 }
 
-/** One question, as the window asks it. `providerId` absent means "the one that is active". */
+/**
+ * One question, as the window asks it.
+ *
+ * `providerId` absent means "the one that is active"; `sessionId` absent means "the conversation
+ * the host is on", which is a new one before anything was sent.
+ */
 export interface AiChatRequest {
   readonly text: string;
   readonly providerId?: string;
   readonly context?: AiChatContext;
+  readonly sessionId?: string;
 }
 
-/** What a send answered once the run exists: every event carries this id from then on. */
+/**
+ * What a send answered once the run exists: every event carries this id from then on.
+ *
+ * `sessionId` is the stored conversation the run belongs to — a new one the host made for the first
+ * question of a conversation. Optional here because a host that predates session storage answers
+ * with a run id alone, and the window must not read that as "this run belongs nowhere".
+ */
 export interface AiChatStarted {
   readonly runId: string;
+  readonly sessionId?: string;
 }
 
 /** The usage one run reports when it ends, summed over the turns it took. */
@@ -178,4 +191,83 @@ export const AI_TOOL_PREVIEW_MAX_CHARS = 4_000;
  */
 export function isAiStopReason(value: unknown): value is AiStopReason {
   return value === "endTurn" || value === "maxTurns" || value === "cancelled" || value === "error";
+}
+
+/**
+ * One conversation as the list of them names it, from `sevenshell_types::AiSessionSummary`.
+ *
+ * The name is a name, not a question: the host derives it from the first one and a person may
+ * rename it, which is why the window reads it rather than making one up from the messages.
+ */
+export interface AiSessionSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly messageCount: number;
+  readonly hasSummary: boolean;
+}
+
+/** One tool call's outcome, from `sevenshell_types::AiToolOutcome`. */
+export interface AiToolOutcome {
+  /** The call id the assistant message's tool-use block names — the card is matched by it. */
+  readonly callId: string;
+  readonly ok: boolean;
+  /** The catalog code of the failure, when there was one. */
+  readonly code?: string;
+  readonly truncated: boolean;
+  readonly durationMs: number;
+}
+
+/** The older half of a conversation, from `sevenshell_types::AiContextSummary`. */
+export interface AiContextSummary {
+  readonly version: number;
+  readonly content: string;
+  /** The message this summary covers up to, and including; the rest is still in `messages`. */
+  readonly throughMessageId: string;
+  readonly createdAt: number;
+}
+
+/**
+ * One stored message, as it travels back.
+ *
+ * Typed loosely on purpose: the blocks are the provider vocabulary, and a block a newer host writes
+ * is drawn generically rather than dropped. The transcript is the host's document; this side only
+ * has to render what it recognises.
+ */
+export interface AiStoredMessage {
+  readonly role: string;
+  readonly blocks: readonly unknown[];
+}
+
+/** One conversation in full, from `sevenshell_types::AiSessionDetail`. */
+export interface AiSessionDetail {
+  readonly summary: AiSessionSummary;
+  readonly messages: readonly AiStoredMessage[];
+  readonly outcomes: Readonly<Record<string, AiToolOutcome>>;
+  readonly contextSummary?: AiContextSummary;
+}
+
+/**
+ * A conversation was written down, from `ai:session_saved`.
+ *
+ * It names the conversation and when it was written, not what it holds: the list only needs the new
+ * timestamp, and a payload carrying the transcript would make every save a second copy of it.
+ */
+export interface AiSessionSavedEvent {
+  readonly sessionId: string;
+  readonly updatedAt: number;
+}
+
+/**
+ * The older part of a conversation was folded into a summary, from `ai:compacted`.
+ *
+ * `degraded` says the model did not write the summary and the host grouped-and-cut instead. That is
+ * still a correct conversation to continue, just a coarser one, and the panel says which happened.
+ */
+export interface AiCompactedEvent {
+  readonly sessionId: string;
+  readonly summarizedMessages: number;
+  readonly keptMessages: number;
+  readonly degraded: boolean;
 }

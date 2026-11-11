@@ -89,6 +89,21 @@ test("the assistant answers a real gateway", async () => {
 
     await expect(page.getByText("sshell_sessions_list", { exact: true })).toBeVisible({ timeout: 90_000 });
     await expect(page.getByText("Done", { exact: true })).toBeVisible({ timeout: 90_000 });
+    // The tool card is done before the model's final answer is; the session is written at the end of
+    // the run, so wait for the composer to come back before reloading.
+    await expect(composer).toBeEnabled({ timeout: 90_000 });
+
+    // The vault is the store. Reload the webview and the conversation has to come back from it:
+    // the session list, the answer and the tool card, not a fresh blank chat.
+    await page.reload();
+    await expect(page.getByLabel("Search sessions")).toBeVisible({ timeout: 30_000 });
+    await page.locator("[data-assistant-toggle]").click();
+    await page.locator("[data-assistant-sessions-toggle]").click();
+    const saved = page.locator("[data-assistant-session-item]").first();
+    await expect(saved).toBeVisible({ timeout: 30_000 });
+    await saved.click();
+    await expect(page.getByText("pong", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("sshell_sessions_list", { exact: true })).toBeVisible({ timeout: 30_000 });
   } finally {
     await browser.close();
   }

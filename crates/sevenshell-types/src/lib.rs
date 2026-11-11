@@ -6,6 +6,7 @@
 
 mod agent;
 mod ai;
+mod ai_conversation;
 mod app_info;
 mod batch;
 mod completion;
@@ -31,6 +32,10 @@ pub use ai::{
     AI_CONTEXT_LINES_DEFAULT, AI_CONTEXT_LINES_MAX, AI_CONTEXT_LINES_MIN, AI_MAX_OUTPUT_TOKENS_DEFAULT,
     AiProviderConfig, AiProviderKind, AiProviderView, ai_context_enabled_default, ai_context_lines_default,
     ai_max_output_tokens_default, normalize_ai_context_lines,
+};
+pub use ai_conversation::{
+    AI_CONTEXT_SUMMARY_VERSION, AiContextSummary, AiSessionDetail, AiSessionSummary, AiToolOutcome,
+    ai_context_summary_version_default,
 };
 pub use app_info::{AppInfo, PRODUCT_NAME};
 pub use batch::{BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, HostFailure};
@@ -68,18 +73,20 @@ pub use session::{
     WslSettings,
 };
 pub use settings::{
-    AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
-    CornerStyle, CustomColors, FilesLayout, HomeLayout, MCP_APPROVAL_TIMEOUT_SECONDS_DEFAULT,
-    MCP_APPROVAL_TIMEOUT_SECONDS_MAX, MCP_APPROVAL_TIMEOUT_SECONDS_MIN, MCP_AUDIT_RETENTION_DAYS_DEFAULT,
-    MCP_AUDIT_RETENTION_DAYS_MAX, MCP_AUDIT_RETENTION_DAYS_MIN, MCP_MAX_RESULT_BYTES_DEFAULT, MCP_MAX_RESULT_BYTES_MAX,
-    MCP_MAX_RESULT_BYTES_MIN, McpScope, SYNC_AUTO_UPLOAD_MINUTES_DEFAULT, SYNC_AUTO_UPLOAD_MINUTES_MAX,
-    SYNC_AUTO_UPLOAD_MINUTES_MIN, SessionLayout, SessionReopen, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN,
-    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS,
+    AI_SESSION_RETENTION_DAYS_DEFAULT, AI_SESSION_RETENTION_DAYS_MAX, AI_SESSION_RETENTION_DAYS_MIN, AppLayout,
+    AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage, CornerStyle,
+    CustomColors, FilesLayout, HomeLayout, MCP_APPROVAL_TIMEOUT_SECONDS_DEFAULT, MCP_APPROVAL_TIMEOUT_SECONDS_MAX,
+    MCP_APPROVAL_TIMEOUT_SECONDS_MIN, MCP_AUDIT_RETENTION_DAYS_DEFAULT, MCP_AUDIT_RETENTION_DAYS_MAX,
+    MCP_AUDIT_RETENTION_DAYS_MIN, MCP_MAX_RESULT_BYTES_DEFAULT, MCP_MAX_RESULT_BYTES_MAX, MCP_MAX_RESULT_BYTES_MIN,
+    McpScope, SYNC_AUTO_UPLOAD_MINUTES_DEFAULT, SYNC_AUTO_UPLOAD_MINUTES_MAX, SYNC_AUTO_UPLOAD_MINUTES_MIN,
+    SessionLayout, SessionReopen, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN, TabGroupMode, TabLayout, TabMaxWidth,
+    TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS, ai_session_retention_days_default,
     background_blur_default, background_transparency_default, command_completion_on,
     mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default, monitor_on,
-    normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes,
-    normalize_sync_auto_upload_minutes, normalize_terminal_font_size, normalize_ui_scale, sidebar_on,
-    sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
+    normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
+    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
+    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
+    ui_scale_default, update_check_on,
 };
 pub use snippet::{
     CommandHistoryEntry, DEFAULT_GROUP_ID, SLOT_HISTORY, SNIPPET_SLOTS, SendFailure, SendOutcome, SendReport,

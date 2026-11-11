@@ -109,6 +109,7 @@ export const ERROR_CATALOG = {
   "AI-MAX-TURNS": "errors.ai.maxTurns",
   "AI-CANCELLED": "errors.ai.cancelled",
   "AI-TOOL-SKIPPED": "errors.ai.toolSkipped",
+  "AI-SESSION-TOO-LARGE": "errors.ai.sessionTooLarge",
   // Application
   "APP-NOT-READY": "errors.app.notReady",
   "APP-NO-TRANSPORT": "errors.app.noTransport",

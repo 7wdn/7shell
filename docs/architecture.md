@@ -472,7 +472,13 @@ audit record. A destructive action still waits for a person; a changed host key 
 
 The terminal excerpt a question carries is prepared in the window (tail, ANSI and control stripping,
 redaction) and shown as the exact text that will be sent; the host strips, redacts and bounds it
-again. Conversations are not persisted in this wave: closing the window forgets them.
+again. Conversations are stored in the vault (schema 12) as opaque JSON owned by the host: they are
+encrypted at rest with the rest of the vault, are never part of a sync snapshot, and are listed,
+reopened, renamed and deleted from the assistant panel. When a conversation outgrows its budget the
+host asks the same provider for a short summary, keeps the latest exchanges and replaces the older
+ones with that summary; a failed summary falls back to a deterministic, tool-pair-preserving trim.
+The provider adapters cover Anthropic Messages, OpenAI Chat Completions and OpenAI Responses; the
+same key and context rules apply to all three.
 
 | Piece | Where |
 |---|---|

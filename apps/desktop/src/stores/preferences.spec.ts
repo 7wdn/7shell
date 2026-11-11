@@ -30,6 +30,7 @@ import {
 import { DEFAULT_SYNC_AUTO_UPLOAD_MINUTES } from "@/types/app";
 import {
   AI_CONTEXT_LINES_DEFAULT,
+  AI_SESSION_RETENTION_DAYS_DEFAULT,
   DEFAULT_APP_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE,
   DEFAULT_CORNER_STYLE,
@@ -122,6 +123,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     aiDefaultProviderId: undefined,
     aiContextEnabled: true,
     aiContextLines: AI_CONTEXT_LINES_DEFAULT,
+    aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
     ...overrides,
   };
 }
@@ -337,6 +339,7 @@ describe("preferences store", () => {
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
       aiContextLines: AI_CONTEXT_LINES_DEFAULT,
+      aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
     });
   });
 
@@ -404,6 +407,7 @@ describe("preferences store", () => {
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
       aiContextLines: AI_CONTEXT_LINES_DEFAULT,
+      aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
     });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
@@ -582,6 +586,7 @@ describe("the terminal palette", () => {
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
       aiContextLines: AI_CONTEXT_LINES_DEFAULT,
+      aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
     });
   });
 
@@ -1445,6 +1450,7 @@ describe("restoring the defaults", () => {
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
       aiContextLines: AI_CONTEXT_LINES_DEFAULT,
+      aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
     });
   });
 
@@ -1487,5 +1493,66 @@ describe("restoring the defaults", () => {
 
     expect(store.themeMode).toBe("system");
     expect(store.problem?.code).toBe("APP-INTERNAL");
+  });
+});
+
+describe("how long a conversation is kept", () => {
+  it("defaults to thirty days when the file names none", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ aiSessionRetentionDays: undefined }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.aiSessionRetentionDays).toBe(AI_SESSION_RETENTION_DAYS_DEFAULT);
+  });
+
+  it("keeps the number inside the range the page offers", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setAiSessionRetentionDays(0);
+    expect(store.aiSessionRetentionDays).toBe(1);
+
+    store.setAiSessionRetentionDays(10_000);
+    expect(store.aiSessionRetentionDays).toBe(365);
+
+    // A box somebody emptied is not a choice; the default is what the host prunes with.
+    store.setAiSessionRetentionDays(Number.NaN);
+    expect(store.aiSessionRetentionDays).toBe(AI_SESSION_RETENTION_DAYS_DEFAULT);
+  });
+
+  it("reads a number outside the range at the nearest end", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ aiSessionRetentionDays: 400 }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.aiSessionRetentionDays).toBe(365);
+  });
+
+  it("writes the number with everything else, so saving another page cannot put it back", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ aiSessionRetentionDays: 7 }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await store.commit();
+
+    expect(settingsSetMock).toHaveBeenCalledWith(expect.objectContaining({ aiSessionRetentionDays: 7 }));
+  });
+
+  it("goes back to thirty days when the defaults are restored", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ aiSessionRetentionDays: 7 }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    await store.reset(["aiSessionRetentionDays"]);
+
+    expect(store.aiSessionRetentionDays).toBe(AI_SESSION_RETENTION_DAYS_DEFAULT);
   });
 });

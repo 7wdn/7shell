@@ -61,6 +61,30 @@
       "error": "因错误停止",
       "unknown": "已结束"
     },
+    "sessions": {
+      "toggle": "会话",
+      "new": "新建会话",
+      "untitled": "新会话",
+      "loading": "正在读取已保存的会话…",
+      "empty": "还没有保存过会话。一轮问答完成之后才会写下来。",
+      "emptyTitle": "这个会话还没有消息。",
+      "emptyBody": "在下面提问，或者从顶部新建一个会话。",
+      "messages": "{count} 条消息",
+      "summarized": "已摘要",
+      "unreadable": "无法读取已保存的会话。",
+      "rename": "重命名",
+      "renameSave": "保存名称",
+      "renameCancel": "取消",
+      "delete": "删除",
+      "deleteTitle": "删除这个会话？",
+      "deleteMessage": "这个会话及其中的所有消息都会被删除。服务商配置和密钥不受影响。此操作无法撤销。"
+    },
+    "compaction": {
+      "done": "已摘要更早的 {summarized} 条消息，最近 {kept} 条仍完整保留。",
+      "degraded": "未经模型、以降级方式摘要了更早的 {summarized} 条消息，最近 {kept} 条仍完整保留。",
+      "restored": "这个会话的更早部分在保存前已被摘要。",
+      "dismiss": "隐藏这条提示"
+    },
     "context": {
       "title": "终端上下文",
       "enabled": "附带当前终端",
@@ -122,9 +146,11 @@
         "anthropic": "Anthropic",
         "openai": "OpenAI",
         "local": "本地（OpenAI 兼容）",
+        "openaiResponses": "OpenAI Responses",
         "anthropicHint": "Anthropic 的 Messages API。",
         "openaiHint": "OpenAI 的 Chat Completions API。",
-        "localHint": "本机或网络中提供 OpenAI 形状接口的服务：Ollama、vLLM、LM Studio。"
+        "localHint": "本机或网络中提供 OpenAI 形状接口的服务：Ollama、vLLM、LM Studio。",
+        "openaiResponsesHint": "OpenAI 的 Responses API，地址为 /v1/responses。"
       },
       "context": {
         "title": "终端上下文",
@@ -132,6 +158,13 @@
         "lines": "附带行数",
         "save": "保存",
         "saved": "已保存。"
+      },
+      "sessions": {
+        "title": "会话历史",
+        "description": "会话保存在本机的保险库里。它们不参与设置同步；除非随提问一起发送，否则不会离开这台机器。",
+        "retentionDays": "会话保留",
+        "retentionDaysHint": "一个会话保留多少天后淘汰最旧的会话。取值 1–365，默认 30。",
+        "unitDays": "天"
       },
       "privacy": {
         "title": "什么内容会离开这台机器",

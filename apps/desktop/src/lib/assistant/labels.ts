@@ -20,11 +20,12 @@ export const STOP_REASON_LABEL_KEYS: Record<AiStopReason, string> = {
 /** What the provider dropdown says when the run ended in a way this build has no key for. */
 export const STOP_REASON_UNKNOWN_KEY = "ai.stopReason.unknown";
 
-/** The three protocols, as the settings page names them. */
+/** The protocols, as the settings page names them. */
 export const PROVIDER_KIND_LABEL_KEYS: Record<AiProviderKind, string> = {
   anthropic: "ai.settings.kind.anthropic",
   openai: "ai.settings.kind.openai",
   local: "ai.settings.kind.local",
+  openaiResponses: "ai.settings.kind.openaiResponses",
 };
 
 /** One line under the chosen protocol: what it is, and what it expects. */
@@ -32,6 +33,23 @@ export const PROVIDER_KIND_HINT_KEYS: Record<AiProviderKind, string> = {
   anthropic: "ai.settings.kind.anthropicHint",
   openai: "ai.settings.kind.openaiHint",
   local: "ai.settings.kind.localHint",
+  openaiResponses: "ai.settings.kind.openaiResponsesHint",
+};
+
+/**
+ * Where each protocol's requests go until somebody changes it, so a fresh form is not a blank box.
+ *
+ * Here rather than in the settings page for the reason the two tables above are here: it is keyed by
+ * the same union, so a protocol added to one table and forgotten in another is a compile error rather
+ * than a form that offers an address belonging to a different API.
+ */
+export const PROVIDER_DEFAULT_BASE_URL: Record<AiProviderKind, string> = {
+  anthropic: "https://api.anthropic.com",
+  openai: "https://api.openai.com/v1",
+  local: "http://127.0.0.1:11434/v1",
+  // The Responses adapter appends `/responses` to this, so the base is the same address the
+  // Chat Completions provider uses — an entry with `/responses` on it would send `/responses/responses`.
+  openaiResponses: "https://api.openai.com/v1",
 };
 
 /** The three answers a provider row can give about its key. `null` is not one of them. */

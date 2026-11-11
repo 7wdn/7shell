@@ -120,7 +120,8 @@
       "contextTooLong": "The conversation is longer than the model's context window. Clear the chat and try again.",
       "maxTurns": "The assistant stopped after reaching its tool-call limit.",
       "cancelled": "The request was cancelled, so the assistant stopped.",
-      "toolSkipped": "Only one tool may run per turn, so this call was skipped."
+      "toolSkipped": "Only one tool may run per turn, so this call was skipped.",
+      "sessionTooLarge": "This conversation is larger than the assistant can keep. Start a new one, or delete this one from the list."
     },
     "app": {
       "notReady": "The application is still starting up.",

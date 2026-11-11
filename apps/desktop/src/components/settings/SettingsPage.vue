@@ -356,10 +356,10 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
     fields.push("commandCompletion", "commandsLibraryWidth");
   }
   if (id === "ai") {
-    // None of the assistant's four fields is a row: the providers are a list somebody edits and the
-    // two context fields are drawn beside it, on the panel and on the page. Restoring the category
-    // still has to put them back, so the category names them here.
-    fields.push("aiProviders", "aiDefaultProviderId", "aiContextEnabled", "aiContextLines");
+    // None of the assistant's five fields is a row: the providers are a list somebody edits, the two
+    // context fields and the retention are drawn beside it, on the panel and on the page. Restoring
+    // the category still has to put them back, so the category names them here.
+    fields.push("aiProviders", "aiDefaultProviderId", "aiContextEnabled", "aiContextLines", "aiSessionRetentionDays");
   }
   return fields;
 }
@@ -464,7 +464,9 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
     case "aiDefaultProviderId":
     case "aiContextEnabled":
     case "aiContextLines":
-      // The assistant's four, drawn by `AiSettings.vue` — a provider list and two context fields.
+    case "aiSessionRetentionDays":
+      // The assistant's fields, drawn by `AiSettings.vue` — a provider list, two context fields and
+      // how long a conversation is kept.
       return "";
   }
   // Unreachable for the fields the table writes, and written out rather than left implicit: a row
@@ -573,6 +575,7 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
     case "aiDefaultProviderId":
     case "aiContextEnabled":
     case "aiContextLines":
+    case "aiSessionRetentionDays":
       // Written by `AiSettings.vue` and by the panel's own context controls.
       return;
   }

@@ -1,0 +1,12 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_4","object":"response","status":"in_progress","model":"gpt-4.1"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_4","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_4","output_index":0,"content_index":0,"delta":"The disk is 43"}
+
+event: response.incomplete
+data: {"type":"response.incomplete","response":{"id":"resp_4","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":27,"output_tokens":16}}}
+

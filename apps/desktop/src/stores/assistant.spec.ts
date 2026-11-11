@@ -38,12 +38,18 @@ vi.mock("@/lib/backend/tauri", () => ({
   aiChatSend: vi.fn(),
   aiChatCancel: vi.fn(),
   aiChatReset: vi.fn(),
+  aiSessionsList: vi.fn(),
+  aiSessionGet: vi.fn(),
+  aiSessionRename: vi.fn(),
+  aiSessionDelete: vi.fn(),
   onAiDelta: vi.fn(),
   onAiThinking: vi.fn(),
   onAiToolCall: vi.fn(),
   onAiToolResult: vi.fn(),
   onAiDone: vi.fn(),
   onAiError: vi.fn(),
+  onAiSessionSaved: vi.fn(),
+  onAiCompacted: vi.fn(),
 }));
 
 import { type Mock } from "vitest";
@@ -61,9 +67,15 @@ import {
   aiChatReset,
   aiChatSend,
   aiProviders,
+  aiSessionDelete,
+  aiSessionGet,
+  aiSessionRename,
+  aiSessionsList,
+  onAiCompacted,
   onAiDelta,
   onAiDone,
   onAiError,
+  onAiSessionSaved,
   onAiThinking,
   onAiToolCall,
   onAiToolResult,
@@ -71,10 +83,14 @@ import {
 import { useAssistantStore } from "@/stores/assistant";
 import { usePreferencesStore } from "@/stores/preferences";
 import type {
+  AiCompactedEvent,
   AiDeltaEvent,
   AiDoneEvent,
   AiErrorEvent,
   AiProviderView,
+  AiSessionDetail,
+  AiSessionSavedEvent,
+  AiSessionSummary,
   AiToolCallEvent,
   AiToolResultEvent,
 } from "@/types/ai";
@@ -83,6 +99,10 @@ const providersMock = vi.mocked(aiProviders);
 const sendMock = vi.mocked(aiChatSend);
 const cancelMock = vi.mocked(aiChatCancel);
 const resetMock = vi.mocked(aiChatReset);
+const sessionsListMock = vi.mocked(aiSessionsList);
+const sessionGetMock = vi.mocked(aiSessionGet);
+const sessionRenameMock = vi.mocked(aiSessionRename);
+const sessionDeleteMock = vi.mocked(aiSessionDelete);
 
 const LOCALES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../i18n/locales");
 
@@ -107,7 +127,18 @@ const handlers: {
   toolResult: ((payload: AiToolResultEvent) => void) | null;
   done: ((payload: AiDoneEvent) => void) | null;
   error: ((payload: AiErrorEvent) => void) | null;
-} = { delta: null, thinking: null, toolCall: null, toolResult: null, done: null, error: null };
+  sessionSaved: ((payload: AiSessionSavedEvent) => void) | null;
+  compacted: ((payload: AiCompactedEvent) => void) | null;
+} = {
+  delta: null,
+  thinking: null,
+  toolCall: null,
+  toolResult: null,
+  done: null,
+  error: null,
+  sessionSaved: null,
+  compacted: null,
+};
 
 /** Subscription stand-ins that hand their listener to the test instead of to the backend. */
 function capture<K extends keyof typeof handlers>(mock: Mock, channel: K): void {
@@ -127,6 +158,8 @@ beforeEach(() => {
   handlers.toolResult = null;
   handlers.done = null;
   handlers.error = null;
+  handlers.sessionSaved = null;
+  handlers.compacted = null;
 
   capture(vi.mocked(onAiDelta), "delta");
   capture(vi.mocked(onAiThinking), "thinking");
@@ -134,11 +167,16 @@ beforeEach(() => {
   capture(vi.mocked(onAiToolResult), "toolResult");
   capture(vi.mocked(onAiDone), "done");
   capture(vi.mocked(onAiError), "error");
+  capture(vi.mocked(onAiSessionSaved), "sessionSaved");
+  capture(vi.mocked(onAiCompacted), "compacted");
 
   providersMock.mockResolvedValue([provider()]);
-  sendMock.mockResolvedValue({ runId: "run-1" });
+  sendMock.mockResolvedValue({ runId: "run-1", sessionId: "session-1" });
   cancelMock.mockResolvedValue(undefined);
   resetMock.mockResolvedValue(undefined);
+  // A fresh install has nothing stored, which is what every case that is not about sessions expects.
+  sessionsListMock.mockResolvedValue([]);
+  sessionDeleteMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -402,6 +440,7 @@ describe("the terminal a question carries", () => {
     expect(sendMock).toHaveBeenCalledWith({
       text: "why is it slow?",
       providerId: "anthropic-1",
+      sessionId: undefined,
       context: { sessionId: "session-1", terminalText: TERMINAL_TEXT },
     });
     const question = store.entries[0];
@@ -416,7 +455,12 @@ describe("the terminal a question carries", () => {
     await store.send("hello");
 
     expect(store.context.text).toBe("");
-    expect(sendMock).toHaveBeenCalledWith({ text: "hello", providerId: "anthropic-1", context: undefined });
+    expect(sendMock).toHaveBeenCalledWith({
+      text: "hello",
+      providerId: "anthropic-1",
+      sessionId: undefined,
+      context: undefined,
+    });
   });
 
   it("attaches nothing when no terminal is on screen", async () => {
@@ -427,13 +471,18 @@ describe("the terminal a question carries", () => {
     await store.send("hello");
 
     expect(store.context.text).toBe("");
-    expect(sendMock).toHaveBeenCalledWith({ text: "hello", providerId: "anthropic-1", context: undefined });
+    expect(sendMock).toHaveBeenCalledWith({
+      text: "hello",
+      providerId: "anthropic-1",
+      sessionId: undefined,
+      context: undefined,
+    });
   });
 });
 
 describe("the subscriptions", () => {
-  it("opens all six channels and closes them when the window goes away", async () => {
-    const stops = [vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()];
+  it("opens every run and conversation channel and closes them when the window goes away", async () => {
+    const stops = [vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()];
     const mocks = [
       vi.mocked(onAiDelta),
       vi.mocked(onAiThinking),
@@ -441,18 +490,240 @@ describe("the subscriptions", () => {
       vi.mocked(onAiToolResult),
       vi.mocked(onAiDone),
       vi.mocked(onAiError),
+      vi.mocked(onAiSessionSaved),
+      vi.mocked(onAiCompacted),
     ];
     mocks.forEach((mock, index) => mock.mockResolvedValueOnce(stops[index] as never));
 
     const store = useAssistantStore();
     const stop = store.initialize();
-    await vi.waitFor(() => expect(onAiError).toHaveBeenCalled());
+    await vi.waitFor(() => expect(onAiCompacted).toHaveBeenCalled());
     await Promise.resolve();
     stop();
 
     for (const [index, unsubscribe] of stops.entries()) {
       expect(unsubscribe, `channel ${index} was not closed`).toHaveBeenCalled();
     }
+  });
+});
+
+/** One row of the conversation list. */
+function summary(overrides: Partial<AiSessionSummary> = {}): AiSessionSummary {
+  return {
+    id: "session-1",
+    name: "Why is it slow?",
+    createdAt: 1,
+    updatedAt: 1,
+    messageCount: 2,
+    hasSummary: false,
+    ...overrides,
+  };
+}
+
+/**
+ * A stored conversation with one of everything: a question, a thinking block, an answer, a tool
+ * call and the result that answers it.
+ */
+function storedDetail(overrides: Partial<AiSessionDetail> = {}): AiSessionDetail {
+  return {
+    summary: summary(),
+    messages: [
+      { role: "user", blocks: [{ type: "text", text: "why is it slow?" }] },
+      {
+        role: "assistant",
+        blocks: [
+          { type: "thinking", text: "checking the load" },
+          { type: "text", text: "The load average is high." },
+          { type: "toolUse", id: "call-1", name: "sshell_exec_run", input: { command: "uptime" } },
+        ],
+      },
+      {
+        role: "user",
+        blocks: [{ type: "toolResult", toolUseId: "call-1", content: "load average: 3.1", isError: false }],
+      },
+    ],
+    outcomes: {
+      "call-1": { callId: "call-1", ok: false, code: "EXEC-FAILED", truncated: true, durationMs: 42 },
+    },
+    ...overrides,
+  };
+}
+
+describe("stored conversations", () => {
+  it("lists what the host stored and opens one into the rows a run would have drawn", async () => {
+    sessionsListMock.mockResolvedValue([summary()]);
+    sessionGetMock.mockResolvedValue(storedDetail());
+    const store = started();
+    await store.loadSessions();
+    // The window adopted the newest conversation at startup; this case opens it again on purpose.
+    await vi.waitFor(() => expect(store.openingSessionId).toBeNull());
+    expect(store.sessions.map((entry) => entry.id)).toEqual(["session-1"]);
+    expect(await store.openSession("session-1")).toBe(true);
+
+    expect(store.currentSessionId).toBe("session-1");
+    expect(store.currentSession?.name).toBe("Why is it slow?");
+    const kinds = store.entries.map((entry) => entry.kind);
+    expect(kinds).toEqual(["user", "thinking", "text", "tool"]);
+
+    const card = store.entries.find((entry) => entry.kind === "tool");
+    expect(card?.kind === "tool" ? card.status : null).toBe("failed");
+    expect(card?.kind === "tool" ? card.code : null).toBe("EXEC-FAILED");
+    expect(card?.kind === "tool" ? card.truncated : null).toBe(true);
+    expect(card?.kind === "tool" ? card.durationMs : null).toBe(42);
+    // The result block is what the card's body was; the outcome alone has no text.
+    expect(card?.kind === "tool" ? card.preview : "").toBe("load average: 3.1");
+  });
+
+  it("drops the half-turn a cancelled run left behind rather than drawing a card that never ran", async () => {
+    sessionGetMock.mockResolvedValue(
+      storedDetail({
+        messages: [
+          { role: "user", blocks: [{ type: "text", text: "restart it" }] },
+          {
+            role: "assistant",
+            blocks: [
+              { type: "text", text: "Trying." },
+              { type: "toolUse", id: "call-9", name: "sshell_exec_run", input: {} },
+            ],
+          },
+        ],
+        outcomes: {},
+      }),
+    );
+    const store = started();
+
+    await store.openSession("session-1");
+
+    expect(store.entries.map((entry) => entry.kind)).toEqual(["user", "text"]);
+  });
+
+  it("says the list could not be read instead of throwing when the vault is locked", async () => {
+    sessionsListMock.mockRejectedValue({
+      version: 1,
+      code: "VAULT-LOCKED",
+      messageKey: "errors.vault.locked",
+      origin: { subsystem: "vault" },
+    });
+    const store = started();
+
+    await store.loadSessions();
+
+    expect(store.sessions).toEqual([]);
+    expect(store.sessionFailure?.code).toBe("VAULT-LOCKED");
+    // The chat itself did nothing wrong: a locked vault is not a failed question.
+    expect(store.failure).toBeNull();
+  });
+
+  it("adopts the newest stored conversation once at startup", async () => {
+    sessionsListMock.mockResolvedValue([
+      summary({ id: "older", name: "Older", updatedAt: 1 }),
+      summary({ id: "newer", name: "Newer", updatedAt: 5 }),
+    ]);
+    sessionGetMock.mockImplementation(async (id) => storedDetail({ summary: summary({ id }) }));
+
+    const store = started();
+
+    await vi.waitFor(() => expect(store.currentSessionId).toBe("newer"));
+    expect(store.entries.length).toBeGreaterThan(0);
+  });
+
+  it("starts over: the host is asked for a new conversation without naming one, and the rows go", async () => {
+    sessionGetMock.mockResolvedValue(storedDetail());
+    const store = started();
+    await store.openSession("session-1");
+    expect(store.entries.length).toBeGreaterThan(0);
+
+    expect(await store.newSession()).toBe(true);
+
+    expect(resetMock).toHaveBeenCalledWith(null);
+    expect(store.entries).toEqual([]);
+    expect(store.currentSessionId).toBeNull();
+  });
+
+  it("clears the conversation it is drawing by naming it, so it can be continued", async () => {
+    sessionGetMock.mockResolvedValue(storedDetail());
+    const store = started();
+    await store.openSession("session-1");
+
+    expect(await store.reset()).toBe(true);
+
+    expect(resetMock).toHaveBeenCalledWith("session-1");
+    expect(store.currentSessionId).toBe("session-1");
+    expect(store.entries).toEqual([]);
+  });
+
+  it("keeps the conversation the host named on the first send and continues it afterwards", async () => {
+    sendMock.mockResolvedValueOnce({ runId: "run-1", sessionId: "session-9" });
+    const store = started();
+    await store.refreshProviders();
+    // The context is the previous case's subject; this one is only about which conversation.
+    usePreferencesStore().setAiContextEnabled(false);
+
+    await store.send("hello");
+    expect(store.currentSessionId).toBe("session-9");
+    // One run at a time: the first has to end before the next question is accepted.
+    handlers.done?.({ runId: "run-1", stopReason: "endTurn", turns: 1 });
+
+    sendMock.mockResolvedValueOnce({ runId: "run-2", sessionId: "session-9" });
+    await store.send("and again");
+    expect(sendMock).toHaveBeenLastCalledWith({
+      text: "and again",
+      providerId: "anthropic-1",
+      sessionId: "session-9",
+      context: undefined,
+    });
+  });
+
+  it("renames a row in place and deletes the conversation on screen", async () => {
+    sessionsListMock.mockResolvedValue([summary()]);
+    sessionGetMock.mockResolvedValue(storedDetail());
+    sessionRenameMock.mockResolvedValue(summary({ name: "Load check" }));
+    const store = started();
+    await store.loadSessions();
+    await store.openSession("session-1");
+
+    expect(await store.renameSession("session-1", "  Load check  ")).toBe(true);
+    expect(sessionRenameMock).toHaveBeenCalledWith("session-1", "Load check");
+    expect(store.currentSession?.name).toBe("Load check");
+
+    expect(await store.deleteSession("session-1")).toBe(true);
+    expect(sessionDeleteMock).toHaveBeenCalledWith("session-1");
+    expect(store.sessions).toEqual([]);
+    expect(store.currentSessionId).toBeNull();
+    expect(store.entries).toEqual([]);
+  });
+
+  it("shows what the last compaction did, and accepts a new conversation id from it", async () => {
+    const store = started();
+    await store.refreshProviders();
+    sendMock.mockResolvedValueOnce({ runId: "run-1", sessionId: "session-1" });
+    expect(await store.send("hello")).toBe("sent");
+    expect(store.currentSessionId).toBe("session-1");
+
+    handlers.compacted?.({ sessionId: "session-1", summarizedMessages: 12, keptMessages: 4, degraded: true });
+
+    expect(store.compaction).toMatchObject({ summarized: 12, kept: 4, degraded: true });
+  });
+
+  it("ignores a compaction for a conversation this panel is not drawing", async () => {
+    const store = started();
+    await store.refreshProviders();
+    await store.send("hello");
+
+    handlers.compacted?.({ sessionId: "somebody-else", summarizedMessages: 3, keptMessages: 1, degraded: false });
+
+    expect(store.compaction).toBeNull();
+    expect(store.currentSessionId).toBe("session-1");
+  });
+
+  it("updates the list when the host says a conversation was saved", async () => {
+    sessionsListMock.mockResolvedValue([summary({ updatedAt: 1 })]);
+    const store = started();
+    await store.loadSessions();
+
+    handlers.sessionSaved?.({ sessionId: "session-1", updatedAt: 99 });
+
+    expect(store.sessions[0]?.updatedAt).toBe(99);
   });
 });
 

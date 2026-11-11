@@ -119,6 +119,18 @@ impl ApiKey {
             ProviderError::Protocol("the stored API key is not a value an HTTP header can carry".to_owned())
         })
     }
+
+    /// The key as `Authorization: Bearer …`, marked so a dump of the request cannot print it.
+    ///
+    /// The value lives only as long as the request that carries it; the zeroizing buffer in `self`
+    /// is still what holds the key between requests.
+    pub(crate) fn bearer_header(&self) -> Result<HeaderValue, ProviderError> {
+        let mut value = HeaderValue::from_str(&format!("Bearer {}", self.expose())).map_err(|_| {
+            ProviderError::Protocol("the stored API key is not a value an HTTP header can carry".to_owned())
+        })?;
+        value.set_sensitive(true);
+        Ok(value)
+    }
 }
 
 impl Clone for ApiKey {

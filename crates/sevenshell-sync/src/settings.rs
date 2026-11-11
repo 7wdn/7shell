@@ -9,6 +9,12 @@
 //! icon and whether closing quits. Each describes this installation's display or one machine's
 //! habits; carrying them would change how somebody else's window looks, which is not what "the same
 //! setup" means.
+//!
+//! The assistant's settings do not travel either — its providers, its terminal context, and how long
+//! it keeps a conversation. A provider is a model somebody has an account with and a key filed for,
+//! and the conversations themselves are in the vault, which a snapshot never carries: restoring a
+//! library on a second machine must not quietly send that machine's questions to an account it has
+//! no key for.
 
 use std::collections::BTreeMap;
 

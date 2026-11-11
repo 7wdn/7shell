@@ -23,7 +23,12 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select from "@/components/ui/Select.vue";
 import Switch from "@/components/ui/Switch.vue";
 import { describeShellError } from "@/i18n/errors";
-import { PROVIDER_KEY_STATE_KEYS, PROVIDER_KIND_HINT_KEYS, PROVIDER_KIND_LABEL_KEYS } from "@/lib/assistant/labels";
+import {
+  PROVIDER_DEFAULT_BASE_URL,
+  PROVIDER_KEY_STATE_KEYS,
+  PROVIDER_KIND_HINT_KEYS,
+  PROVIDER_KIND_LABEL_KEYS,
+} from "@/lib/assistant/labels";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { useAssistantStore } from "@/stores/assistant";
@@ -32,6 +37,9 @@ import {
   AI_CONTEXT_LINES_MAX,
   AI_CONTEXT_LINES_MIN,
   AI_MAX_OUTPUT_TOKENS_DEFAULT,
+  AI_SESSION_RETENTION_DAYS_DEFAULT,
+  AI_SESSION_RETENTION_DAYS_MAX,
+  AI_SESSION_RETENTION_DAYS_MIN,
   type AiProviderConfig,
   type AiProviderKind,
 } from "@/types/app";
@@ -41,14 +49,17 @@ const { t } = useI18n();
 const preferences = usePreferencesStore();
 const assistant = useAssistantStore();
 
-/** Where each protocol's requests go until somebody changes it, so a fresh form is not blank. */
-const DEFAULT_BASE_URL: Record<AiProviderKind, string> = {
-  anthropic: "https://api.anthropic.com",
-  openai: "https://api.openai.com/v1",
-  local: "http://127.0.0.1:11434/v1",
-};
-
-const KINDS: readonly AiProviderKind[] = ["anthropic", "openai", "local"];
+/**
+ * The protocols the form offers, in the order the dropdown lists them.
+ *
+ * Their labels, hints and default addresses are the shared tables in `lib/assistant/labels.ts`, so a
+ * protocol is described once and every surface draws the same words for it.
+ *
+ * The Responses API is offered beside Chat Completions: it is OpenAI's other endpoint, not a second
+ * spelling of the same one, so it is a choice of its own. A gateway that does not serve
+ * `/v1/responses` answers with the provider's refusal, which is what the test button reports.
+ */
+const KINDS: readonly AiProviderKind[] = ["anthropic", "openai", "openaiResponses", "local"];
 
 /** What the form is editing, including the key — which is the one field that is never read back. */
 interface Draft {
@@ -133,7 +144,7 @@ function startNew(): void {
     isNew: true,
     name: "",
     kind: "anthropic",
-    baseUrl: DEFAULT_BASE_URL.anthropic,
+    baseUrl: PROVIDER_DEFAULT_BASE_URL.anthropic,
     model: "",
     maxOutputTokens: AI_MAX_OUTPUT_TOKENS_DEFAULT,
     key: "",
@@ -166,10 +177,10 @@ function chooseKind(kind: AiProviderKind): void {
   if (!current) {
     return;
   }
-  const previousDefault = DEFAULT_BASE_URL[current.kind];
+  const previousDefault = PROVIDER_DEFAULT_BASE_URL[current.kind];
   current.kind = kind;
   if (current.baseUrl.trim() === "" || current.baseUrl.trim() === previousDefault) {
-    current.baseUrl = DEFAULT_BASE_URL[kind];
+    current.baseUrl = PROVIDER_DEFAULT_BASE_URL[kind];
   }
 }
 
@@ -459,7 +470,7 @@ onMounted(() => {
               v-model="draft.baseUrl"
               type="url"
               class="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:outline-none select-text"
-              :placeholder="DEFAULT_BASE_URL[draft.kind]"
+              :placeholder="PROVIDER_DEFAULT_BASE_URL[draft.kind]"
             />
             <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
               {{ t("ai.settings.providers.baseUrlHint") }}
@@ -581,6 +592,28 @@ onMounted(() => {
           {{ t("ai.context.linesHint") }}
         </span>
       </div>
+    </div>
+
+    <!-- How long a stored conversation is kept. A setting, not a cleanup button: the host prunes. -->
+    <div class="space-y-2 rounded-md border border-border px-3 py-3">
+      <h4 class="text-sm font-medium">{{ t("ai.settings.sessions.title") }}</h4>
+      <p class="text-xs leading-relaxed text-muted-foreground">{{ t("ai.settings.sessions.description") }}</p>
+      <div class="flex items-center gap-2">
+        <label class="text-xs" for="ai-retention-days">{{ t("ai.settings.sessions.retentionDays") }}</label>
+        <input
+          id="ai-retention-days"
+          data-ai-retention-days
+          type="number"
+          :min="AI_SESSION_RETENTION_DAYS_MIN"
+          :max="AI_SESSION_RETENTION_DAYS_MAX"
+          step="1"
+          class="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none select-text"
+          :value="preferences.aiSessionRetentionDays"
+          @input="preferences.setAiSessionRetentionDays(typedNumber($event, AI_SESSION_RETENTION_DAYS_DEFAULT))"
+        />
+        <span class="text-[11px] text-muted-foreground">{{ t("ai.settings.sessions.unitDays") }}</span>
+      </div>
+      <p class="text-[11px] leading-relaxed text-muted-foreground">{{ t("ai.settings.sessions.retentionDaysHint") }}</p>
     </div>
 
     <!-- What leaves the machine, said once where the configuration is. -->

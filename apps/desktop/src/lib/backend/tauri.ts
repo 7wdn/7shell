@@ -17,11 +17,15 @@ import type { AppInfo, AppSettings } from "@/types/app";
 import type {
   AiChatRequest,
   AiChatStarted,
+  AiCompactedEvent,
   AiDeltaEvent,
   AiDoneEvent,
   AiErrorEvent,
   AiProviderTestResult,
   AiProviderView,
+  AiSessionDetail,
+  AiSessionSavedEvent,
+  AiSessionSummary,
   AiToolCallEvent,
   AiToolResultEvent,
 } from "@/types/ai";
@@ -310,12 +314,14 @@ export function aiProviderTest(providerId: string): Promise<AiProviderTestResult
 
 /** Starts a run and answers its id; everything after that arrives on the `ai:*` events. */
 export function aiChatSend(request: AiChatRequest): Promise<AiChatStarted> {
-  // The command takes the three fields it acts on, not the request object: the host builds the
-  // message from `text`, the provider choice from `providerId` and the preview from `context`.
+  // The command takes the four fields it acts on, not the request object: the host builds the
+  // message from `text`, the provider choice from `providerId`, the preview from `context`, and
+  // continues the conversation `sessionId` names.
   return invoke<AiChatStarted>("ai_chat_send", {
     text: request.text,
     providerId: request.providerId ?? null,
     context: request.context ?? null,
+    sessionId: request.sessionId ?? null,
   });
 }
 
@@ -324,9 +330,34 @@ export function aiChatCancel(runId: string): Promise<void> {
   return invoke<void>("ai_chat_cancel", { runId });
 }
 
-/** Forgets the conversation the host kept. The next run starts with no history. */
-export function aiChatReset(): Promise<void> {
-  return invoke<void>("ai_chat_reset");
+/**
+ * Forgets a conversation the host kept.
+ *
+ * With an id, that conversation is emptied and stays in the list. Without one, the host saves what
+ * it has and starts a new conversation, which is what "new conversation" means.
+ */
+export function aiChatReset(sessionId: string | null): Promise<void> {
+  return invoke<void>("ai_chat_reset", { sessionId });
+}
+
+/** The saved conversations, newest first as the host orders them. */
+export function aiSessionsList(): Promise<AiSessionSummary[]> {
+  return invoke<AiSessionSummary[]>("ai_sessions_list");
+}
+
+/** One conversation in full: its messages, the tool outcomes, and any summary of the older half. */
+export function aiSessionGet(sessionId: string): Promise<AiSessionDetail> {
+  return invoke<AiSessionDetail>("ai_session_get", { sessionId });
+}
+
+/** Renames a conversation. The answer is the row as the list now draws it. */
+export function aiSessionRename(sessionId: string, name: string): Promise<AiSessionSummary> {
+  return invoke<AiSessionSummary>("ai_session_rename", { sessionId, name });
+}
+
+/** Deletes a conversation and everything in it. Nothing is returned: the row is gone. */
+export function aiSessionDelete(sessionId: string): Promise<void> {
+  return invoke<void>("ai_session_delete", { sessionId });
 }
 
 export async function onAiDelta(listener: (payload: AiDeltaEvent) => void): Promise<Unlisten> {
@@ -351,6 +382,16 @@ export async function onAiDone(listener: (payload: AiDoneEvent) => void): Promis
 
 export async function onAiError(listener: (payload: AiErrorEvent) => void): Promise<Unlisten> {
   return listen<AiErrorEvent>("ai:error", (event) => listener(event.payload));
+}
+
+/** Calls `listener` when a conversation was written down, with when it was written. */
+export async function onAiSessionSaved(listener: (payload: AiSessionSavedEvent) => void): Promise<Unlisten> {
+  return listen<AiSessionSavedEvent>("ai:session_saved", (event) => listener(event.payload));
+}
+
+/** Calls `listener` when the older half of a conversation was folded into a summary. */
+export async function onAiCompacted(listener: (payload: AiCompactedEvent) => void): Promise<Unlisten> {
+  return listen<AiCompactedEvent>("ai:compacted", (event) => listener(event.payload));
 }
 
 // -- Window ------------------------------------------------------------------

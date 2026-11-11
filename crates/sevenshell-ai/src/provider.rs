@@ -50,6 +50,10 @@ pub fn build_provider(config: &AiProviderConfig, key: Option<&str>) -> Result<Ar
         AiProviderKind::OpenAi | AiProviderKind::Local => {
             Ok(Arc::new(crate::openai::OpenAiProvider::new(config, key)?))
         }
+        // Its own adapter rather than the Chat Completions one: the Responses endpoint takes a
+        // different request and answers a different stream, and a Chat Completions body sent there
+        // would fail as an unreadable answer instead of as the configuration it is.
+        AiProviderKind::OpenAiResponses => Ok(Arc::new(crate::responses::OpenAiResponsesProvider::new(config, key)?)),
     }
 }
 
@@ -123,6 +127,7 @@ mod tests {
         let cases = [
             (AiProviderKind::Anthropic, "https://api.anthropic.com"),
             (AiProviderKind::OpenAi, "https://api.openai.com/v1"),
+            (AiProviderKind::OpenAiResponses, "https://api.openai.com/v1"),
             (AiProviderKind::Local, "http://127.0.0.1:11434/v1"),
         ];
 
@@ -130,6 +135,29 @@ mod tests {
             let provider = build_provider(&config(kind, base_url), Some("sk-1")).expect("a provider");
             assert_eq!(provider.kind(), kind, "`{kind:?}` was built as the wrong adapter");
         }
+    }
+
+    #[test]
+    fn a_responses_configuration_never_falls_through_to_the_chat_completions_adapter() {
+        // The two OpenAI protocols answer different endpoints from different request bodies. Sending
+        // a Responses configuration to the Chat Completions adapter would ask the wrong endpoint and
+        // fail as an unreadable answer instead of as the protocol mismatch it is.
+        let provider = build_provider(
+            &config(AiProviderKind::OpenAiResponses, "https://api.openai.com/v1"),
+            Some("sk-1"),
+        )
+        .expect("this build speaks the Responses protocol");
+
+        assert_eq!(provider.kind(), AiProviderKind::OpenAiResponses);
+        assert_eq!(
+            build_provider(
+                &config(AiProviderKind::OpenAiResponses, "https://api.openai.com/v1"),
+                None
+            )
+            .err()
+            .expect("this protocol has no anonymous mode"),
+            ProviderError::NoKey
+        );
     }
 
     #[test]

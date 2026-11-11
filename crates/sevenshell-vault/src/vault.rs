@@ -25,6 +25,7 @@
 //! 5. **A newer document is refused, not downgraded.** `STORE-SCHEMA-NEWER` names both versions
 //!    and `document::migrate` is where the next one gets its step.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
@@ -926,6 +927,84 @@ impl Vault {
         let state = guard.open()?;
 
         state.document.set_ai_token(provider_id, token);
+        state.write_to(&self.path)
+    }
+
+    /// Every stored conversation, by id, as the host wrote them.
+    ///
+    /// One read for the whole table, because its reader prunes with it: working out what is older
+    /// than the retention from one copy and then reading a session from another would be two looks
+    /// at a table that may have changed in between.
+    pub fn ai_sessions(&self) -> Result<BTreeMap<String, String>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.ai_sessions())
+    }
+
+    /// One conversation, exactly as it was stored.
+    ///
+    /// A string, not a parsed document: what is inside belongs to the host, and a vault that read it
+    /// would have to learn every block shape a provider produces — and a build that predates one
+    /// would then have to drop it.
+    pub fn ai_session(&self, id: &str) -> Result<Option<String>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.ai_session(id))
+    }
+
+    /// Keeps a conversation, or forgets the one that was kept.
+    ///
+    /// An empty value is a deletion, the same rule as the keys above: one path for forgetting, so
+    /// "cleared" and "never stored" cannot become two different states.
+    pub fn save_ai_session(&self, id: &str, session: Option<String>) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.save_ai_session(id, session);
+        state.write_to(&self.path)
+    }
+
+    pub fn delete_ai_session(&self, id: &str) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.delete_ai_session(id);
+        state.write_to(&self.path)
+    }
+
+    /// Renames a stored conversation, and answers whether there was one to rename.
+    ///
+    /// `false` is the whole answer for "there is no such conversation" — the same shape deleting
+    /// something already gone has, where the state the caller asked for already holds and nothing
+    /// is wrong. A document this build cannot read is also `false`, and is left untouched rather
+    /// than rewritten from a guess.
+    pub fn rename_ai_session(&self, id: &str, name: &str) -> Result<bool, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        let renamed = state.document.rename_ai_session(id, name);
+        if renamed {
+            state.write_to(&self.path)?;
+        }
+        Ok(renamed)
+    }
+
+    /// The credentials kept for one external MCP server, if any were.
+    ///
+    /// The same discipline as a provider's key: it comes back wiped when it is dropped, it exists
+    /// for the one caller that has to put it in a header or an environment, and the settings file
+    /// next to it never holds it.
+    pub fn mcp_server_secrets(&self, server_id: &str) -> Result<Option<ServicePassword>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.mcp_server_secrets(server_id))
+    }
+
+    /// Keeps the credentials of one server, or forgets the ones that were kept.
+    ///
+    /// An empty value is a deletion, like every other table here.
+    pub fn set_mcp_server_secrets(&self, server_id: &str, secrets: Option<String>) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.set_mcp_server_secrets(server_id, secrets);
         state.write_to(&self.path)
     }
 
@@ -1996,6 +2075,108 @@ mod tests {
     }
 
     #[test]
+    fn an_assistant_conversation_round_trips_survives_a_reopen_and_can_be_renamed_or_forgotten() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+
+        // A document in the shape the host owns, including a part this crate has no business
+        // understanding: it has to come back byte for byte rather than reformatted.
+        let stored = r#"{"version":1,"id":"session-1","name":"why is nginx 502","messages":[{"role":"user","blocks":[{"type":"text","text":"why?"}]}],"outcomes":{"call-1":{"ok":false,"code":"POLICY-DENIED","truncated":false,"durationMs":3}},"contextSummary":null}"#;
+        assert!(vault.ai_session("session-1").expect("read").is_none());
+
+        vault
+            .save_ai_session("session-1", Some(stored.to_owned()))
+            .expect("keep");
+        assert_eq!(
+            vault.ai_session("session-1").expect("read").as_deref(),
+            Some(stored),
+            "the conversation did not round-trip through the vault"
+        );
+        assert_eq!(vault.ai_sessions().expect("read").len(), 1);
+
+        // Through the file, because what is stored is the answer that lasts.
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        assert_eq!(
+            vault.ai_session("session-1").expect("read").as_deref(),
+            Some(stored),
+            "the conversation did not survive a reopen"
+        );
+
+        assert!(
+            vault
+                .rename_ai_session("session-1", "502 on the web host")
+                .expect("rename"),
+            "there was a conversation to rename"
+        );
+        let renamed: serde_json::Value =
+            serde_json::from_str(&vault.ai_session("session-1").expect("read").expect("stored")).expect("json");
+        assert_eq!(renamed["name"], "502 on the web host");
+        assert_eq!(
+            renamed["messages"][0]["blocks"][0]["text"], "why?",
+            "a rename leaves the transcript alone"
+        );
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        let kept: serde_json::Value =
+            serde_json::from_str(&vault.ai_session("session-1").expect("read").expect("stored")).expect("json");
+        assert_eq!(kept["name"], "502 on the web host", "and the rename survived a reopen");
+
+        assert!(
+            !vault.rename_ai_session("session-2", "nobody").expect("rename"),
+            "renaming a conversation that is not there is not an error, but it is also not a rename"
+        );
+
+        vault.delete_ai_session("session-1").expect("delete");
+        assert!(vault.ai_session("session-1").expect("read").is_none());
+        vault.delete_ai_session("session-1").expect("delete again");
+
+        vault
+            .save_ai_session("session-1", Some(String::new()))
+            .expect("forget with nothing");
+        assert!(
+            vault.ai_session("session-1").expect("read").is_none(),
+            "an empty document is nobody keeping a conversation"
+        );
+        vault.save_ai_session("session-1", None).expect("forget");
+        assert!(vault.ai_sessions().expect("read").is_empty());
+    }
+
+    #[test]
+    fn a_server_credential_round_trips_survives_a_reopen_and_can_be_forgotten() {
+        // The table is a placeholder for the MCP client this build does not have yet, and it is
+        // tested now because the shape is what a later lane will store through: one opaque value
+        // per server, never printed and never beside the settings that name the server.
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+
+        assert!(vault.mcp_server_secrets("files").expect("read").is_none());
+
+        vault
+            .set_mcp_server_secrets("files", Some(r#"{"token":"Bearer one"}"#.to_owned()))
+            .expect("keep");
+        assert_eq!(
+            vault.mcp_server_secrets("files").expect("read").expect("kept").expose(),
+            r#"{"token":"Bearer one"}"#
+        );
+        assert!(
+            vault.mcp_server_secrets("shell").expect("read").is_none(),
+            "one server's credential is not another's"
+        );
+
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        assert!(vault.mcp_server_secrets("files").expect("read").is_some());
+
+        vault.set_mcp_server_secrets("files", None).expect("forget");
+        assert!(vault.mcp_server_secrets("files").expect("read").is_none());
+    }
+
+    #[test]
     fn every_document_operation_reports_locked_while_locked() {
         let directory = tempdir().expect("temp dir");
         let path = directory.path().join("vault.json");
@@ -2029,6 +2210,29 @@ mod tests {
         locked(vault.secret_for_session("s1").expect_err("secret"));
         locked(vault.ai_token("ollama").expect_err("assistant key"));
         locked(vault.set_ai_token("ollama", None).expect_err("keep assistant key"));
+        locked(vault.ai_sessions().expect_err("stored conversations"));
+        locked(vault.ai_session("session-1").expect_err("stored conversation"));
+        locked(
+            vault
+                .save_ai_session("session-1", None)
+                .expect_err("keep a stored conversation"),
+        );
+        locked(
+            vault
+                .delete_ai_session("session-1")
+                .expect_err("delete a stored conversation"),
+        );
+        locked(
+            vault
+                .rename_ai_session("session-1", "renamed")
+                .expect_err("rename a stored conversation"),
+        );
+        locked(vault.mcp_server_secrets("files").expect_err("server credentials"));
+        locked(
+            vault
+                .set_mcp_server_secrets("files", None)
+                .expect_err("keep server credentials"),
+        );
         locked(vault.change_password("master", "next").expect_err("change password"));
     }
 

@@ -7,7 +7,7 @@
  * right because that is the edge the other instrument lives on, and it is put away rather than
  * unmounted for the same reason a sidebar is — the state belongs to the window, not to the drawing.
  *
- * Four things are deliberate:
+ * Five things are deliberate:
  *
  * 1. **Nothing is asked without a provider and a key.** The panel says what is missing and offers the
  *    way to the settings page; it does not send a request that would only come back refused.
@@ -17,8 +17,11 @@
  *    the panel away does not lose the answer that is still arriving.
  * 4. **An approval is asked by the frame.** A tool call that needs a person's answer stops on the
  *    global dialog, which is already drawn over everything; this panel draws a card and nothing else.
+ * 5. **The conversation list is folded into the header.** Switching conversations is a thing done
+ *    between questions, not while one is arriving, so the list opens under the title rather than
+ *    replacing the chat — and the rows are disabled while a reply is on its way.
  */
-import { Bot, CircleAlert, X } from "@lucide/vue";
+import { Bot, Check, ChevronDown, CircleAlert, History, Pencil, Plus, Trash2, X } from "@lucide/vue";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -26,12 +29,14 @@ import Composer from "@/components/assistant/Composer.vue";
 import ContextPreview from "@/components/assistant/ContextPreview.vue";
 import Message from "@/components/assistant/Message.vue";
 import ToolCard from "@/components/assistant/ToolCard.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
 import { SETUP_GUIDE_KEYS, STOP_REASON_LABEL_KEYS, STOP_REASON_UNKNOWN_KEY } from "@/lib/assistant/labels";
 import { useAssistantStore } from "@/stores/assistant";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
+import type { AiSessionSummary } from "@/types/ai";
 
 const { t } = useI18n();
 const assistant = useAssistantStore();
@@ -41,6 +46,13 @@ const terminals = useTerminalsStore();
 const scrolling = ref<HTMLDivElement | null>(null);
 /** Whether the plain "the chat could not be cleared" line is on screen. */
 const clearFailed = ref(false);
+/** Whether the conversation list is folded out of the header. */
+const sessionsOpen = ref(false);
+/** The conversation whose name is being typed, and what has been typed. */
+const renamingId = ref<string | null>(null);
+const renameDraft = ref("");
+/** The conversation whose deletion is being asked about. */
+const removingSession = ref<AiSessionSummary | null>(null);
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -104,6 +116,72 @@ const stopLabel = computed(() => {
   }
   return t(STOP_REASON_LABEL_KEYS[reason] ?? STOP_REASON_UNKNOWN_KEY);
 });
+
+/** The title of the conversation on screen: its stored name, or the one an empty chat has. */
+const currentTitle = computed(() => assistant.currentSession?.name ?? t("ai.sessions.untitled"));
+
+/** Why the list could not be read — a locked vault, or a host that does not store conversations. */
+const sessionProblem = computed(() =>
+  assistant.sessionFailure ? describeShellError(translate, assistant.sessionFailure) : null,
+);
+
+/** What the last compaction did, said with both counts so neither half is guessed at. */
+const compactionText = computed(() => {
+  const notice = assistant.compaction;
+  if (!notice) {
+    return "";
+  }
+  return t(notice.degraded ? "ai.compaction.degraded" : "ai.compaction.done", {
+    summarized: String(notice.summarized),
+    kept: String(notice.kept),
+  });
+});
+
+/** A reply is on its way, which is the one moment the conversation may not be swapped underneath it. */
+const switchingBlocked = computed(() => assistant.running || assistant.sending);
+
+function toggleSessions(): void {
+  sessionsOpen.value = !sessionsOpen.value;
+  if (sessionsOpen.value) {
+    void assistant.loadSessions();
+  }
+}
+
+async function openSession(sessionId: string): Promise<void> {
+  if (await assistant.openSession(sessionId)) {
+    sessionsOpen.value = false;
+    cancelRename();
+  }
+}
+
+function startNewConversation(): void {
+  void assistant.newSession();
+  sessionsOpen.value = false;
+}
+
+function startRename(session: AiSessionSummary): void {
+  renamingId.value = session.id;
+  renameDraft.value = session.name;
+}
+
+function cancelRename(): void {
+  renamingId.value = null;
+  renameDraft.value = "";
+}
+
+async function commitRename(sessionId: string): Promise<void> {
+  if (await assistant.renameSession(sessionId, renameDraft.value)) {
+    cancelRename();
+  }
+}
+
+async function confirmRemoveSession(): Promise<void> {
+  const session = removingSession.value;
+  removingSession.value = null;
+  if (session !== null) {
+    await assistant.deleteSession(session.id);
+  }
+}
 
 const usageText = computed(() => {
   const usage = assistant.usage;
@@ -213,6 +291,145 @@ function openSettings(): void {
           />
         </div>
       </div>
+
+      <!--
+        The conversation on screen, and the way to another one. The title is the row a person reads
+        between questions; the list folds out under it, so switching does not hide the chat.
+      -->
+      <div class="mt-1.5 flex items-center gap-1.5">
+        <button
+          type="button"
+          data-assistant-sessions-toggle
+          class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+          :aria-expanded="sessionsOpen"
+          :title="t('ai.sessions.toggle')"
+          @click="toggleSessions()"
+        >
+          <History :size="11" class="shrink-0 text-muted-foreground" />
+          <span data-assistant-session-title class="min-w-0 flex-1 truncate text-left">{{ currentTitle }}</span>
+          <ChevronDown
+            :size="11"
+            class="shrink-0 text-muted-foreground transition-transform"
+            :class="sessionsOpen ? 'rotate-180' : ''"
+          />
+        </button>
+        <button
+          type="button"
+          data-assistant-session-new
+          class="grid size-6 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          :disabled="switchingBlocked"
+          :title="t('ai.sessions.new')"
+          :aria-label="t('ai.sessions.new')"
+          @click="startNewConversation()"
+        >
+          <Plus :size="12" />
+        </button>
+      </div>
+
+      <div
+        v-if="sessionsOpen"
+        data-assistant-session-list
+        class="mt-1.5 max-h-52 space-y-0.5 overflow-y-auto rounded-md border border-border bg-card/60 p-1"
+      >
+        <p
+          v-if="sessionProblem"
+          data-assistant-session-problem
+          class="px-1.5 py-1 text-[11px] text-destructive select-text"
+        >
+          <span>{{ sessionProblem.message }}</span>
+          <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ sessionProblem.code }}</span>
+        </p>
+        <p
+          v-else-if="assistant.loadingSessions && assistant.sessions.length === 0"
+          class="px-1.5 py-1 text-[11px] text-muted-foreground"
+        >
+          {{ t("ai.sessions.loading") }}
+        </p>
+        <p
+          v-else-if="assistant.sessions.length === 0"
+          data-assistant-session-empty
+          class="px-1.5 py-1 text-[11px] leading-relaxed text-muted-foreground"
+        >
+          {{ t("ai.sessions.empty") }}
+        </p>
+
+        <div
+          v-for="session in assistant.sessions"
+          :key="session.id"
+          data-assistant-session-item
+          :data-assistant-session-id="session.id"
+          class="rounded-md px-1 py-0.5"
+          :class="session.id === assistant.currentSessionId ? 'bg-accent/70' : ''"
+        >
+          <div v-if="renamingId === session.id" class="flex items-center gap-1">
+            <input
+              v-model="renameDraft"
+              data-assistant-session-rename-input
+              type="text"
+              autofocus
+              class="min-w-0 flex-1 rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px] focus:outline-none select-text"
+              :aria-label="t('ai.sessions.rename')"
+              @keydown.enter.prevent="commitRename(session.id)"
+              @keydown.esc.prevent="cancelRename()"
+            />
+            <button
+              type="button"
+              data-assistant-session-rename-save
+              class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              :title="t('ai.sessions.renameSave')"
+              :aria-label="t('ai.sessions.renameSave')"
+              @click="commitRename(session.id)"
+            >
+              <Check :size="11" />
+            </button>
+            <button
+              type="button"
+              class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              :title="t('ai.sessions.renameCancel')"
+              :aria-label="t('ai.sessions.renameCancel')"
+              @click="cancelRename()"
+            >
+              <X :size="11" />
+            </button>
+          </div>
+          <div v-else class="flex items-center gap-1">
+            <button
+              type="button"
+              data-assistant-session-open
+              class="min-w-0 flex-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              :disabled="switchingBlocked"
+              @click="openSession(session.id)"
+            >
+              <span class="block truncate text-[11px]">{{ session.name }}</span>
+              <span class="block text-[10px] text-muted-foreground">
+                {{ t("ai.sessions.messages", { count: session.messageCount }) }}
+                <template v-if="session.hasSummary"> · {{ t("ai.sessions.summarized") }}</template>
+              </span>
+            </button>
+            <button
+              type="button"
+              data-assistant-session-rename
+              class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              :title="t('ai.sessions.rename')"
+              :aria-label="t('ai.sessions.rename')"
+              @click="startRename(session)"
+            >
+              <Pencil :size="10" />
+            </button>
+            <button
+              type="button"
+              data-assistant-session-delete
+              class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-50"
+              :disabled="switchingBlocked"
+              :title="t('ai.sessions.delete')"
+              :aria-label="t('ai.sessions.delete')"
+              @click="removingSession = session"
+            >
+              <Trash2 :size="10" />
+            </button>
+          </div>
+        </div>
+      </div>
     </header>
 
     <div ref="scrolling" class="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2">
@@ -244,9 +461,45 @@ function openSettings(): void {
         <span class="mt-0.5 block font-mono text-[10px] text-muted-foreground">{{ providerProblem.code }}</span>
       </p>
 
+      <!--
+        What the host did to the older half of this conversation. A compaction is not a failure — the
+        conversation continues — but a person who scrolled up and found less than they left should be
+        told which half went and whether the model wrote the summary or the host cut it.
+      -->
+      <div
+        v-if="assistant.compaction"
+        data-ai-compaction
+        :data-ai-compaction-degraded="assistant.compaction.degraded ? 'true' : 'false'"
+        class="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2"
+      >
+        <p class="min-w-0 flex-1 text-[11px] leading-relaxed">{{ compactionText }}</p>
+        <button
+          type="button"
+          class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          :title="t('ai.compaction.dismiss')"
+          :aria-label="t('ai.compaction.dismiss')"
+          @click="assistant.dismissCompaction()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
+      <!-- A conversation opened from the list already carries a summary of its older half. -->
+      <div
+        v-else-if="assistant.contextSummary"
+        data-ai-compaction
+        data-ai-compaction-restored="true"
+        class="rounded-md border border-border bg-muted/30 px-2.5 py-2 text-[11px] leading-relaxed"
+      >
+        {{ t("ai.compaction.restored") }}
+      </div>
+
       <div v-if="!assistant.hasMessages" class="space-y-1 rounded-md border border-dashed border-border px-3 py-4">
-        <p class="text-xs font-medium">{{ t("ai.empty.title") }}</p>
-        <p class="text-[11px] leading-relaxed text-muted-foreground">{{ t("ai.empty.body") }}</p>
+        <p class="text-xs font-medium">
+          {{ t(assistant.currentSessionId === null ? "ai.empty.title" : "ai.sessions.emptyTitle") }}
+        </p>
+        <p class="text-[11px] leading-relaxed text-muted-foreground">
+          {{ t(assistant.currentSessionId === null ? "ai.empty.body" : "ai.sessions.emptyBody") }}
+        </p>
       </div>
 
       <template v-for="entry in assistant.entries" :key="entry.id">
@@ -325,5 +578,17 @@ function openSettings(): void {
         @clear="clear()"
       />
     </footer>
+
+    <ConfirmDialog
+      v-if="removingSession"
+      :open="true"
+      :title="t('ai.sessions.deleteTitle')"
+      :message="t('ai.sessions.deleteMessage')"
+      :details="[removingSession.name]"
+      :confirm-label="t('ai.sessions.delete')"
+      danger
+      @confirm="confirmRemoveSession()"
+      @update:open="removingSession = null"
+    />
   </aside>
 </template>

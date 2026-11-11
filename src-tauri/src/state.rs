@@ -204,10 +204,11 @@ pub struct ShellState {
     /// that reads its status does, and an absent runtime would make "off" and "not built yet" look
     /// alike.
     mcp: Arc<McpRuntime>,
-    /// The assistant panel's conversation and the run it is answering right now.
+    /// The assistant: the conversation on screen and whichever run is answering.
     ///
-    /// In memory only, deliberately: a conversation is the person's own typing and the terminal
-    /// text they chose to attach, and neither is worth a second encrypted store of its own.
+    /// The conversation is a document in the vault (one opaque string per chat), written at the end
+    /// of each turn; what lives here is the copy the window is looking at, which may be a turn ahead
+    /// of the vault while a write is failing.
     ai: Arc<AiRuntime>,
     /// Files the operating system dropped or the clipboard held, waiting to be uploaded.
     pending_drops: PendingDrops,

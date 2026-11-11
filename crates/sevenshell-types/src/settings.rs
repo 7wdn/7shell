@@ -715,6 +715,32 @@ pub fn normalize_mcp_max_result_bytes(value: u64) -> u64 {
     value.clamp(MCP_MAX_RESULT_BYTES_MIN, MCP_MAX_RESULT_BYTES_MAX)
 }
 
+/// How many days a stored assistant conversation is kept.
+///
+/// The same shape as the audit retention above and for the same reason: a conversation is a file
+/// that grows with every question, and one that is never pruned is one somebody eventually finds in
+/// a vault they did not expect to be carrying a year of transcripts.
+pub const AI_SESSION_RETENTION_DAYS_DEFAULT: u32 = 30;
+
+/// The ends the page offers. A day is the shortest a person can choose because a session older than
+/// that is one they are choosing to lose; a year is the longest, because beyond it "kept" and
+/// "forgotten" are the same answer in practice.
+pub const AI_SESSION_RETENTION_DAYS_MIN: u32 = 1;
+pub const AI_SESSION_RETENTION_DAYS_MAX: u32 = 365;
+
+pub fn ai_session_retention_days_default() -> u32 {
+    AI_SESSION_RETENTION_DAYS_DEFAULT
+}
+
+/// Keeps a retention inside the range the page offers.
+///
+/// Zero is clamped to a day rather than read as "keep nothing": the number is a retention, and a
+/// build that read a hand-edited zero as "delete every conversation the moment it is written" would
+/// throw away the very thing the field exists to keep.
+pub fn normalize_ai_session_retention_days(value: u32) -> u32 {
+    value.clamp(AI_SESSION_RETENTION_DAYS_MIN, AI_SESSION_RETENTION_DAYS_MAX)
+}
+
 /// The most the surfaces are allowed to let through, in percent.
 ///
 /// Not all of it: a window whose own surfaces are entirely transparent is a window whose text floats
@@ -1127,6 +1153,14 @@ pub struct AppSettings {
     /// How many lines of terminal output are attached. Zero attaches nothing; the ends are 0 and 200.
     #[serde(default = "ai_context_lines_default")]
     pub ai_context_lines: u32,
+    /// How many days a stored conversation is kept.
+    ///
+    /// The conversations themselves are not here — they live in the vault, because a transcript is
+    /// what somebody said about their servers — but how long one is kept is an ordinary preference,
+    /// and the host prunes with it. Absent in a file written before the assistant remembered
+    /// anything, which reads as the default the build ships.
+    #[serde(default = "ai_session_retention_days_default")]
+    pub ai_session_retention_days: u32,
 }
 
 /// The interface's own size when nobody has changed it.
@@ -1252,6 +1286,7 @@ impl Default for AppSettings {
             ai_default_provider_id: None,
             ai_context_enabled: ai_context_enabled_default(),
             ai_context_lines: ai_context_lines_default(),
+            ai_session_retention_days: ai_session_retention_days_default(),
         }
     }
 }
@@ -1306,6 +1341,7 @@ impl AppSettings {
             && self.ai_default_provider_id.is_none()
             && self.ai_context_enabled == ai_context_enabled_default()
             && self.ai_context_lines == ai_context_lines_default()
+            && self.ai_session_retention_days == ai_session_retention_days_default()
     }
 }
 
@@ -1513,7 +1549,32 @@ mod tests {
             "the terminal travels until somebody says otherwise"
         );
         assert_eq!(settings.ai_context_lines, ai_context_lines_default());
+        assert_eq!(
+            settings.ai_session_retention_days,
+            ai_session_retention_days_default(),
+            "a fresh install keeps a month of conversations, which is the default the host prunes with"
+        );
         assert!(settings.is_untouched(), "none of that is a choice somebody made");
+    }
+
+    #[test]
+    fn the_retention_is_clamped_at_both_ends_and_zero_is_not_keep_nothing() {
+        assert_eq!(
+            ai_session_retention_days_default(),
+            AI_SESSION_RETENTION_DAYS_DEFAULT,
+            "one default, two readers"
+        );
+        assert_eq!(normalize_ai_session_retention_days(0), AI_SESSION_RETENTION_DAYS_MIN);
+        assert_eq!(
+            normalize_ai_session_retention_days(10_000),
+            AI_SESSION_RETENTION_DAYS_MAX
+        );
+        assert_eq!(normalize_ai_session_retention_days(90), 90);
+        assert!(
+            (AI_SESSION_RETENTION_DAYS_MIN..=AI_SESSION_RETENTION_DAYS_MAX)
+                .contains(&ai_session_retention_days_default()),
+            "a default past the end of its own slider is one nobody could leave"
+        );
     }
 
     #[test]

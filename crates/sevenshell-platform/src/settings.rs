@@ -22,12 +22,12 @@ use sevenshell_types::{
     BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FilesLayout, HomeLayout, McpScope,
     SessionLayout, SessionReopen, SnippetProvider, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
     ThemeMode, ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
-    background_blur_default, background_transparency_default, command_completion_on,
+    ai_session_retention_days_default, background_blur_default, background_transparency_default, command_completion_on,
     mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default, monitor_on,
-    normalize_ai_context_lines, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
-    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
-    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
-    ui_scale_default, update_check_on,
+    normalize_ai_context_lines, normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds,
+    normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes,
+    normalize_terminal_font_size, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
+    terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -336,6 +336,10 @@ struct StoredSettings {
     /// How many lines travel. Absent reads as the default the build ships.
     #[serde(default = "ai_context_lines_default")]
     ai_context_lines: u32,
+    /// How many days a stored conversation is kept. Absent in a file written before the assistant
+    /// remembered anything, which reads as the default the build ships rather than as "keep none".
+    #[serde(default = "ai_session_retention_days_default")]
+    ai_session_retention_days: u32,
 }
 
 impl StoredSettings {
@@ -402,6 +406,7 @@ impl StoredSettings {
             ai_default_provider_id: settings.ai_default_provider_id.clone(),
             ai_context_enabled: settings.ai_context_enabled,
             ai_context_lines: settings.ai_context_lines,
+            ai_session_retention_days: settings.ai_session_retention_days,
         }
     }
 
@@ -489,6 +494,8 @@ impl StoredSettings {
             ai_context_enabled: self.ai_context_enabled,
             // The same ends the page offers, and zero survives as "attach nothing".
             ai_context_lines: normalize_ai_context_lines(self.ai_context_lines),
+            // A retention, so zero is not a choice: read through the same ends the page offers.
+            ai_session_retention_days: normalize_ai_session_retention_days(self.ai_session_retention_days),
         }
     }
 }
@@ -634,6 +641,7 @@ mod tests {
             ai_default_provider_id: None,
             ai_context_enabled: ai_context_enabled_default(),
             ai_context_lines: ai_context_lines_default(),
+            ai_session_retention_days: ai_session_retention_days_default(),
         }
     }
 
@@ -732,6 +740,40 @@ mod tests {
         assert_eq!(loaded.ai_default_provider_id, None);
         assert!(loaded.ai_context_enabled, "the terminal travels by default");
         assert_eq!(loaded.ai_context_lines, ai_context_lines_default());
+        assert_eq!(
+            loaded.ai_session_retention_days,
+            ai_session_retention_days_default(),
+            "a file written before the assistant remembered anything keeps the month this build ships"
+        );
+    }
+
+    #[test]
+    fn the_session_retention_survives_a_round_trip_and_is_clamped_on_the_way_back_in() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        let mut written = settings(ThemeMode::Dark, ThemeMode::System, None);
+        written.ai_session_retention_days = 90;
+        save_to(&path, &written).expect("write");
+        assert_eq!(
+            load_from(&path).expect("read").ai_session_retention_days,
+            90,
+            "a retention somebody chose did not round-trip"
+        );
+
+        // A hand-edited file is still a boundary: zero would delete every conversation the moment it
+        // was written, and a decade is longer than any of them would be read.
+        std::fs::write(&path, r#"{"schemaVersion":1,"aiSessionRetentionDays":0}"#).expect("write");
+        assert_eq!(
+            load_from(&path).expect("read").ai_session_retention_days,
+            sevenshell_types::AI_SESSION_RETENTION_DAYS_MIN
+        );
+
+        std::fs::write(&path, r#"{"schemaVersion":1,"aiSessionRetentionDays":10000}"#).expect("write");
+        assert_eq!(
+            load_from(&path).expect("read").ai_session_retention_days,
+            sevenshell_types::AI_SESSION_RETENTION_DAYS_MAX
+        );
     }
 
     #[test]

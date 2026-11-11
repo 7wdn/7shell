@@ -13,21 +13,22 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sevenshell_types::{
-    AgentOrigin, AiProviderConfig, AiProviderKind, AiProviderView, AppLayout, AppSettings, AuthMethod,
-    BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome,
-    BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord, ContainerDetail, ContainerMount,
-    ContainerPort, ContainerRuntime, ContainerSettings, ContainerSummary, ContainerTransport, CornerStyle, CpuCounters,
-    CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout,
-    ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm,
-    KeyInfo, KnownHostEntry, KubeContextInfo, KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward,
-    McpScope, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage,
-    ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget,
-    Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
-    SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider,
-    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
-    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
-    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    AgentOrigin, AiContextSummary, AiProviderConfig, AiProviderKind, AiProviderView, AiSessionDetail, AiSessionSummary,
+    AiToolOutcome, AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome,
+    BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult,
+    CompletionWord, ContainerDetail, ContainerMount, ContainerPort, ContainerRuntime, ContainerSettings,
+    ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors,
+    DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics,
+    HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo,
+    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpScope, MemoryUsage, NetworkCounters,
+    OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment,
+    RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
+    SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen,
+    SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt,
+    SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt,
+    SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
+    TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer,
+    UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -567,7 +568,7 @@ fn a_created_key_carries_its_fingerprint_and_one_public_line() {
 
 #[test]
 fn the_remaining_wire_types_serialize_with_camel_case_fields() {
-    check(
+    let settings = check(
         &AppSettings {
             theme_mode: ThemeMode::Dark,
             terminal_theme: ThemeMode::System,
@@ -635,8 +636,14 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             ai_default_provider_id: Some("local".to_owned()),
             ai_context_enabled: false,
             ai_context_lines: 40,
+            ai_session_retention_days: 45,
         },
         "AppSettings",
+    );
+    assert_eq!(
+        settings["aiSessionRetentionDays"],
+        serde_json::json!(45),
+        "the retention is a page field like the two above it, and the window reads this name"
     );
     // The scope is a word on the wire, and it is the camelCase one the interface's union spells:
     // `read_only` here would be a value the settings page cannot match against anything.
@@ -648,6 +655,10 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     assert_eq!(origin, serde_json::json!("ai"));
     let kind = check(&AiProviderKind::OpenAi, "AiProviderKind");
     assert_eq!(kind, serde_json::json!("openai"));
+    // The one kind whose wire name is not lower case: the settings page matches this value, so a
+    // variant that serialized as `openairesponses` would draw as a protocol nobody chose.
+    let responses = check(&AiProviderKind::OpenAiResponses, "AiProviderKind");
+    assert_eq!(responses, serde_json::json!("openaiResponses"));
     let provider = AiProviderConfig::new(
         "hosted",
         "Hosted",
@@ -1352,6 +1363,72 @@ fn telnet_and_local_settings_serialize_as_short_stable_words() {
         "WslSettings",
     );
     assert_eq!(wsl["distro"], serde_json::json!("Ubuntu"));
+}
+
+#[test]
+fn a_stored_conversation_serializes_with_camel_case_fields() {
+    let summary = check(
+        &AiSessionSummary {
+            id: "session-1".to_owned(),
+            name: "why is nginx 502".to_owned(),
+            created_at: 1_700_000_000,
+            updated_at: 1_700_000_100,
+            message_count: 4,
+            has_summary: true,
+        },
+        "AiSessionSummary",
+    );
+    assert_eq!(summary["messageCount"], serde_json::json!(4));
+    assert_eq!(summary["hasSummary"], serde_json::json!(true));
+
+    let detail = check(
+        &AiSessionDetail {
+            summary: AiSessionSummary {
+                id: "session-1".to_owned(),
+                name: "why is nginx 502".to_owned(),
+                created_at: 1,
+                updated_at: 2,
+                message_count: 1,
+                has_summary: true,
+            },
+            messages: vec![serde_json::json!({
+                "role": "assistant",
+                "blocks": [{ "type": "toolUse", "id": "call-1", "name": "sshell_exec_run", "input": {} }],
+            })],
+            outcomes: BTreeMap::from([(
+                "call-1".to_owned(),
+                AiToolOutcome {
+                    call_id: "call-1".to_owned(),
+                    ok: true,
+                    code: None,
+                    truncated: false,
+                    duration_ms: 12,
+                },
+            )]),
+            context_summary: Some(AiContextSummary {
+                version: 1,
+                content: "the older half".to_owned(),
+                through_message_id: "message-1".to_owned(),
+                created_at: 3,
+            }),
+        },
+        "AiSessionDetail",
+    );
+
+    // The tool card reads three of these by name: an `undefined` code reads as a failure this build
+    // cannot describe, and a missing duration draws as a call that took no time.
+    assert_eq!(detail["outcomes"]["call-1"]["callId"], serde_json::json!("call-1"));
+    assert_eq!(detail["outcomes"]["call-1"]["durationMs"], serde_json::json!(12));
+    assert_eq!(
+        detail["contextSummary"]["throughMessageId"],
+        serde_json::json!("message-1")
+    );
+    assert_eq!(detail["summary"]["id"], serde_json::json!("session-1"));
+    assert_eq!(
+        detail["messages"][0]["blocks"][0]["type"],
+        serde_json::json!("toolUse"),
+        "a stored message travels as it was written, block types included"
+    );
 }
 
 #[test]

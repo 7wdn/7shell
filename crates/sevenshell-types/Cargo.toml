@@ -9,6 +9,9 @@ publish.workspace = true
 
 [dependencies]
 serde = { workspace = true }
+# The stored conversation keeps its messages as the values they were written as: a block shape a
+# newer build writes has to reach the window unchanged rather than fail to parse here.
+serde_json = { workspace = true }
 
 [build-dependencies]
 serde_json = { workspace = true }

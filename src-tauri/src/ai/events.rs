@@ -1,4 +1,4 @@
-//! The assistant's half of the IPC vocabulary: six events, and the seam that delivers them.
+//! The assistant's half of the IPC vocabulary: eight events, and the seam that delivers them.
 //!
 //! The names and payloads are the contract the window was written against:
 //!
@@ -10,10 +10,14 @@
 //! | `ai:tool_result` | `runId, callId, tool, ok, code?, preview, truncated, durationMs` |
 //! | `ai:done` | `runId, stopReason, turns, usage?` |
 //! | `ai:error` | `runId, code, messageKey, messageParams, retryable` |
+//! | `ai:session_saved` | `sessionId, updatedAt` |
+//! | `ai:compacted` | `sessionId, summarizedMessages, keptMessages, degraded` |
 //!
-//! Every payload carries the run id, and that is the rule the window relies on: a second question
-//! may be asked while the first answer is still arriving, and an event from one run must never be
-//! painted into the other.
+//! The first six are one run's, and every payload carries that run's id: a second question may be
+//! asked while the first answer is still arriving, and an event from one run must never be painted
+//! into the other. The last two are the conversation's rather than a run's — a save outlives the run
+//! that caused it, and a summary is a fact about the document, not about one answer — so they carry
+//! a session id and no run id at all.
 //!
 //! Delivery is a trait rather than a direct `AppHandle` so the run can be exercised without a
 //! webview — the same seam [`crate::mcp::approval::ApprovalPresenter`] gives the approval dialog. The
@@ -34,6 +38,8 @@ pub const TOOL_CALL_EVENT: &str = "ai:tool_call";
 pub const TOOL_RESULT_EVENT: &str = "ai:tool_result";
 pub const DONE_EVENT: &str = "ai:done";
 pub const ERROR_EVENT: &str = "ai:error";
+pub const SESSION_SAVED_EVENT: &str = "ai:session_saved";
+pub const COMPACTED_EVENT: &str = "ai:compacted";
 
 /// One thing the assistant says to the window.
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +85,19 @@ pub enum AiChatEvent {
         message_key: String,
         message_params: BTreeMap<String, String>,
         retryable: bool,
+    },
+    /// A conversation was written to the vault, and when.
+    ///
+    /// The timestamp rather than the transcript: the list only needs the new `updatedAt`, and a
+    /// payload carrying the messages would make every save a second copy of them on the wire.
+    SessionSaved { session_id: String, updated_at: u64 },
+    /// The older half of a conversation was replaced by something shorter.
+    Compacted {
+        session_id: String,
+        summarized_messages: u32,
+        kept_messages: u32,
+        /// The model did not write the summary; the host grouped-and-cut instead.
+        degraded: bool,
     },
 }
 
@@ -177,6 +196,8 @@ impl AiChatEvent {
             Self::ToolResult { .. } => TOOL_RESULT_EVENT,
             Self::Done { .. } => DONE_EVENT,
             Self::Error { .. } => ERROR_EVENT,
+            Self::SessionSaved { .. } => SESSION_SAVED_EVENT,
+            Self::Compacted { .. } => COMPACTED_EVENT,
         }
     }
 
@@ -261,6 +282,21 @@ impl AiChatEvent {
                 message_params,
                 retryable: *retryable,
             }),
+            Self::SessionSaved { session_id, updated_at } => serde_json::to_value(SessionSavedPayload {
+                session_id,
+                updated_at: *updated_at,
+            }),
+            Self::Compacted {
+                session_id,
+                summarized_messages,
+                kept_messages,
+                degraded,
+            } => serde_json::to_value(CompactedPayload {
+                session_id,
+                summarized_messages: *summarized_messages,
+                kept_messages: *kept_messages,
+                degraded: *degraded,
+            }),
         }
         .expect("an assistant event payload is JSON: its fields are strings, numbers and JSON values")
     }
@@ -276,6 +312,24 @@ impl AiChatEvent {
             stop_reason: stop_reason_name(stop_reason),
             turns,
             usage,
+        }
+    }
+
+    /// A conversation reached the vault.
+    pub fn session_saved(session_id: &str, updated_at: u64) -> Self {
+        Self::SessionSaved {
+            session_id: session_id.to_owned(),
+            updated_at,
+        }
+    }
+
+    /// The older half of a conversation was replaced.
+    pub fn compacted(session_id: &str, summarized_messages: u32, kept_messages: u32, degraded: bool) -> Self {
+        Self::Compacted {
+            session_id: session_id.to_owned(),
+            summarized_messages,
+            kept_messages,
+            degraded,
         }
     }
 
@@ -364,6 +418,8 @@ impl AiChatEvent {
                 message_params,
                 retryable,
             },
+            // A conversation's events name a session and no run; there is nothing to re-file.
+            other @ (Self::SessionSaved { .. } | Self::Compacted { .. }) => other,
         }
     }
 }
@@ -431,6 +487,22 @@ struct ErrorPayload<'a> {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     message_params: &'a BTreeMap<String, String>,
     retryable: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionSavedPayload<'a> {
+    session_id: &'a str,
+    updated_at: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompactedPayload<'a> {
+    session_id: &'a str,
+    summarized_messages: u32,
+    kept_messages: u32,
+    degraded: bool,
 }
 
 /// Where a run's events go. `false` means nothing received it.
@@ -602,6 +674,49 @@ mod tests {
             refiled.payload()["messageId"],
             serde_json::json!("message-1"),
             "only the run id is re-filed"
+        );
+    }
+
+    #[test]
+    fn a_conversations_events_name_the_session_and_no_run() {
+        let presenter = RecordingPresenter::default();
+        let events = [
+            AiChatEvent::session_saved("session-1", 1_700_000_000),
+            AiChatEvent::compacted("session-1", 12, 4, true),
+        ];
+
+        for event in &events {
+            assert!(presenter.emit(event));
+        }
+
+        let seen = presenter.seen();
+        assert_eq!(seen[0].0, SESSION_SAVED_EVENT);
+        assert_eq!(
+            seen[0].1,
+            serde_json::json!({ "sessionId": "session-1", "updatedAt": 1_700_000_000_u64 })
+        );
+        assert!(
+            seen[0].1.get("runId").is_none(),
+            "a save is the conversation's, not one run's"
+        );
+
+        assert_eq!(seen[1].0, COMPACTED_EVENT);
+        assert_eq!(
+            seen[1].1,
+            serde_json::json!({
+                "sessionId": "session-1",
+                "summarizedMessages": 12,
+                "keptMessages": 4,
+                "degraded": true
+            })
+        );
+
+        // Re-filing under a run id would put a session's name where a run's belongs; the pump only
+        // ever re-files what the loop said, and the loop says nothing about a conversation.
+        assert_eq!(
+            events[0].clone().under("run-1").payload(),
+            seen[0].1,
+            "a save is the conversation's, whatever run is in flight"
         );
     }
 

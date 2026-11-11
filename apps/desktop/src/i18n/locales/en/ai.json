@@ -61,6 +61,30 @@
       "error": "Stopped with an error",
       "unknown": "Ended"
     },
+    "sessions": {
+      "toggle": "Conversations",
+      "new": "New conversation",
+      "untitled": "New conversation",
+      "loading": "Reading the stored conversations…",
+      "empty": "No conversation has been stored yet. A question is written down once it has been answered.",
+      "emptyTitle": "This conversation has no messages.",
+      "emptyBody": "Ask something below, or start a new conversation from the header.",
+      "messages": "{count} messages",
+      "summarized": "summarized",
+      "unreadable": "The stored conversations could not be read.",
+      "rename": "Rename",
+      "renameSave": "Save the name",
+      "renameCancel": "Cancel",
+      "delete": "Delete",
+      "deleteTitle": "Delete this conversation?",
+      "deleteMessage": "The conversation and every message in it are deleted. The provider settings and keys are not affected. This cannot be undone."
+    },
+    "compaction": {
+      "done": "Summarized {summarized} earlier messages; the latest {kept} remain in full.",
+      "degraded": "Summarized {summarized} earlier messages without the model (degraded); the latest {kept} remain in full.",
+      "restored": "The earlier half of this conversation was summarized before it was stored.",
+      "dismiss": "Hide this notice"
+    },
     "context": {
       "title": "Terminal context",
       "enabled": "Attach the terminal on screen",
@@ -122,9 +146,11 @@
         "anthropic": "Anthropic",
         "openai": "OpenAI",
         "local": "Local (OpenAI-compatible)",
+        "openaiResponses": "OpenAI Responses",
         "anthropicHint": "Anthropic's Messages API.",
         "openaiHint": "OpenAI's Chat Completions API.",
-        "localHint": "A server on this machine or the network that speaks the OpenAI shape: Ollama, vLLM, LM Studio."
+        "localHint": "A server on this machine or the network that speaks the OpenAI shape: Ollama, vLLM, LM Studio.",
+        "openaiResponsesHint": "OpenAI's Responses API, at /v1/responses."
       },
       "context": {
         "title": "Terminal context",
@@ -132,6 +158,13 @@
         "lines": "Lines to attach",
         "save": "Save",
         "saved": "Saved."
+      },
+      "sessions": {
+        "title": "Conversation history",
+        "description": "Conversations are stored in the vault on this machine. They are not part of the settings sync, and nothing about them leaves the machine unless it is sent with a question.",
+        "retentionDays": "Keep conversations for",
+        "retentionDaysHint": "How many days a conversation is kept before the oldest are pruned. Between 1 and 365; 30 by default.",
+        "unitDays": "days"
       },
       "privacy": {
         "title": "What leaves this machine",

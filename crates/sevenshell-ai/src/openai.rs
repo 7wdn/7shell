@@ -24,7 +24,6 @@
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;
-use reqwest::header::HeaderValue;
 use serde_json::{Map, Value, json};
 use sevenshell_types::AiProviderKind;
 
@@ -140,13 +139,7 @@ impl Provider for OpenAiProvider {
         let body = self.request_body(&request)?;
         let mut headers = Vec::new();
         if let Some(key) = &self.key {
-            let mut value = HeaderValue::from_str(&format!("Bearer {}", key.expose())).map_err(|_| {
-                ProviderError::Protocol("the stored API key is not a value an HTTP header can carry".to_owned())
-            })?;
-            // The bearer value is built from the key and lives only as long as this request; the
-            // zeroizing buffer in `key` is still what holds it between requests.
-            value.set_sensitive(true);
-            headers.push(("authorization", value));
+            headers.push(("authorization", key.bearer_header()?));
         }
 
         let response = post_stream(&self.client, &self.base_url, &headers, &body, Limits::default()).await?;

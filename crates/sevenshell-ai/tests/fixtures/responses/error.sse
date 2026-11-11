@@ -1,0 +1,6 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_5","object":"response","status":"in_progress","model":"gpt-4.1"}}
+
+event: response.failed
+data: {"type":"response.failed","response":{"id":"resp_5","status":"failed","error":{"code":"context_length_exceeded","message":"This model's maximum context length is 8192 tokens."}}}
+

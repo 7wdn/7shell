@@ -1,9 +1,13 @@
 //! The in-application assistant, as the desktop owns it.
 //!
-//! Three things live in this tree and nothing else:
+//! Four things live in this tree and nothing else:
 //!
-//! * [`runtime`] — the one conversation the window mirrors, the run answering it right now, and the
+//! * [`runtime`] — the conversation the window mirrors, the run answering it right now, and the
 //!   provider built from the settings file plus the key in the vault.
+//! * [`sessions`] — the conversation as a stored document: what the list draws, what the transcript
+//!   restores, and the bounds that keep one chat from becoming an archive.
+//! * [`compact`] — how the older half of a long conversation becomes a summary (or, when the model
+//!   cannot write one, a deterministic cut).
 //! * [`events`] — the `ai:*` IPC events, and the seam that lets the run be tested without a webview.
 //! * [`context`] — what travels with a question: the sanitized terminal excerpt, the system prompt
 //!   and the history budget.
@@ -16,11 +20,13 @@
 //!
 //! Nothing here holds a provider key beyond the construction of a provider. The key is read from the
 //! vault, handed to the adapter and dropped — it never enters a message, an event, a log line or an
-//! error detail.
+//! error detail. A conversation reaches the vault as one opaque string, and the vault never parses it.
 
+pub mod compact;
 pub mod context;
 pub mod events;
 mod runtime;
+pub mod sessions;
 
 use sevenshell_error::{ErrorCode, ShellError};
 

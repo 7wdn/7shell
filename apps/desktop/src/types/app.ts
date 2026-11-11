@@ -378,8 +378,10 @@ export const DEFAULT_MCP_SCOPE: McpScope = "readOnly";
  *
  * `local` is not a fourth protocol: it is an OpenAI-compatible server on this machine or the
  * network, and it is its own word because the settings page says different things about its key.
+ * `openaiResponses` is OpenAI's Responses API — a different endpoint from `openai` with different
+ * streaming events, which is why it is a word of its own rather than a second spelling of it.
  */
-export type AiProviderKind = "anthropic" | "openai" | "local";
+export type AiProviderKind = "anthropic" | "openai" | "local" | "openaiResponses";
 
 /**
  * One configured assistant provider, from `sevenshell_types::AiProviderConfig`.
@@ -400,6 +402,17 @@ export interface AiProviderConfig {
 export const AI_CONTEXT_LINES_DEFAULT = 80;
 export const AI_CONTEXT_LINES_MIN = 0;
 export const AI_CONTEXT_LINES_MAX = 200;
+
+/**
+ * How long a stored conversation is kept: the default, and the ends the page offers.
+ *
+ * The same three numbers the shell enforces — a file naming anything outside them is read at the
+ * nearest one that is a choice — repeated here because the box somebody types into has to offer
+ * them. The conversations themselves are in the vault; this is only the retention.
+ */
+export const AI_SESSION_RETENTION_DAYS_DEFAULT = 30;
+export const AI_SESSION_RETENTION_DAYS_MIN = 1;
+export const AI_SESSION_RETENTION_DAYS_MAX = 365;
 
 /** The output budget a provider entry gets when the file does not name one. */
 export const AI_MAX_OUTPUT_TOKENS_DEFAULT = 4096;
@@ -556,4 +569,12 @@ export interface AppSettings {
   readonly aiContextEnabled?: boolean;
   /** How many lines travel. Zero attaches nothing; the ends are 0 and 200. Defaults to 80. */
   readonly aiContextLines?: number;
+  /**
+   * How many days a stored conversation is kept. Between 1 and 365, and 30 by default.
+   *
+   * Optional like the three above only because the preferences store has not been taught to carry
+   * it yet: the shell always writes the number, and an absent one reads as the default the host
+   * prunes with. The conversations themselves are not here — they live in the vault.
+   */
+  readonly aiSessionRetentionDays?: number;
 }
