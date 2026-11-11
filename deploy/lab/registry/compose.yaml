@@ -1,0 +1,24 @@
+# A real registry, for the login / push / pull live test.
+#
+# Loopback only and password protected with the same trivial fixture credentials as the SSH lab
+# (`labuser` / `labpassword`); the hash in `htpasswd` is bcrypt of that password, test-only. This
+# exists so a push meets a server that asks for a password, not so anything can be published.
+#
+# The live test starts its own container from these same two files rather than requiring this
+# recipe to be up; `compose up` here is for driving the fixture by hand.
+services:
+  registry:
+    image: registry:2
+    container_name: sevenshell-lab-registry
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: 7shell-live
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+    ports:
+      # 5000 rather than 5000-something else: Docker treats a loopback registry as insecure HTTP,
+      # which is what makes a plain `-p 127.0.0.1:5000:5000` usable without certificates. The port
+      # is outside this machine's Hyper-V reserved ranges (1779-2978, 9211-10010).
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - ./htpasswd:/auth/htpasswd:ro
+    restart: unless-stopped

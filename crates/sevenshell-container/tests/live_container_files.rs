@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use sevenshell_container::{ContainerFiles, ContainerManager, Runner};
 use sevenshell_types::{ContainerCreateRequest, ContainerRuntime, EntryKind};
 
-/// The image the test uses. Small, and it carries a shell, `tar`, `base64` and `chmod`.
+/// The image the test uses. Small, and it carries a shell, `tar` and `chmod`.
 const IMAGE: &str = "busybox:latest";
 const NAME_PREFIX: &str = "7shell-live-files-";
 
@@ -325,6 +325,247 @@ async fn a_real_container_is_listed_written_uploaded_and_downloaded() {
     let _ = provider.action(&name, "remove").await;
     manager.remove(&connection);
 
+    if let Err(message) = outcome {
+        panic!("{message}");
+    }
+}
+
+/// A tree past the 32 MiB ceiling this channel used to refuse, through a real engine.
+///
+/// The upload is packed while the container reads it and the download is written while the
+/// container packs it, so what this proves is that neither direction is bounded by an amount of
+/// memory: the tree is 40 MiB, which used to be a refusal before the first byte moved.
+#[tokio::test]
+#[ignore = "needs Docker Desktop and SEVENSHELL_TEST_DOCKER=1"]
+async fn a_tree_past_the_old_transfer_ceiling_round_trips_through_a_container() {
+    if !engine_is_reachable() || !image_is_available() {
+        return;
+    }
+
+    let manager = ContainerManager::new();
+    let connection = manager.new_id();
+    manager
+        .connect(connection.clone(), ContainerRuntime::Docker, "", Runner::Local)
+        .expect("the connection settings should be accepted");
+    let provider = manager.provider(&connection).expect("the connection should be open");
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let name = format!("{NAME_PREFIX}{}-{stamp}", std::process::id());
+    let request = ContainerCreateRequest {
+        image: IMAGE.to_owned(),
+        name: name.clone(),
+        ports: Vec::new(),
+        volumes: Vec::new(),
+        env: Vec::new(),
+        restart_policy: "no".to_owned(),
+        command: "sleep 600".to_owned(),
+        interactive: false,
+        tty: false,
+    };
+    provider
+        .create(&request)
+        .await
+        .expect("the container should be created");
+    let _guard = ContainerGuard { name: name.clone() };
+
+    const BIG_BYTES: usize = 36 * 1024 * 1024;
+    let payload: Vec<u8> = (0..BIG_BYTES).map(|index| (index % 251) as u8).collect();
+
+    let outcome: Result<(), String> = async {
+        let files = ContainerFiles::new(ContainerRuntime::Docker, "", &name, Runner::Local)
+            .map_err(|error| format!("the file handle was refused: {error:?}"))?;
+
+        // The first exec can race the container's start.
+        for _ in 0..40 {
+            if files.list("/").await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+
+        let local = TempTree::new();
+        let bulk = local.path().join("bulk");
+        std::fs::create_dir_all(bulk.join("nested")).map_err(|error| error.to_string())?;
+        std::fs::write(bulk.join("big.bin"), &payload).map_err(|error| error.to_string())?;
+        std::fs::write(bulk.join("nested/notes.txt"), "a small file beside a large one\n")
+            .map_err(|error| error.to_string())?;
+
+        files
+            .upload(&bulk, "/tmp")
+            .await
+            .map_err(|error| format!("uploading 40 MiB failed: {error:?}"))?;
+
+        let listing = files
+            .list("/tmp/bulk")
+            .await
+            .map_err(|error| format!("listing the uploaded tree failed: {error:?}"))?;
+        let entry = listing
+            .entries
+            .iter()
+            .find(|entry| entry.name == "big.bin")
+            .ok_or_else(|| format!("big.bin is not in the listing: {listing:?}"))?;
+        if entry.size != BIG_BYTES as u64 {
+            return Err(format!("the container holds {} bytes, not {BIG_BYTES}", entry.size));
+        }
+
+        let down = TempTree::new();
+        let destination = down.path().join("bulk");
+        files
+            .download("/tmp/bulk", &destination)
+            .await
+            .map_err(|error| format!("downloading 40 MiB failed: {error:?}"))?;
+        let received = std::fs::read(destination.join("big.bin"))
+            .map_err(|error| format!("the downloaded big.bin is missing: {error}"))?;
+        if received != payload {
+            return Err(format!(
+                "the downloaded file is {} bytes and does not match the {} uploaded",
+                received.len(),
+                payload.len()
+            ));
+        }
+        let notes = std::fs::read_to_string(destination.join("nested/notes.txt"))
+            .map_err(|error| format!("the downloaded notes.txt is missing: {error}"))?;
+        if notes != "a small file beside a large one\n" {
+            return Err(format!("the downloaded notes.txt carries {notes:?}"));
+        }
+
+        files
+            .remove("/tmp/bulk", true)
+            .await
+            .map_err(|error| format!("removing the uploaded tree failed: {error:?}"))?;
+        Ok(())
+    }
+    .await;
+
+    let _ = provider.action(&name, "remove").await;
+    manager.remove(&connection);
+
+    if let Err(message) = outcome {
+        panic!("{message}");
+    }
+}
+
+/// The lab's SSH connection, or a note that this test cannot run.
+///
+/// A session of its own rather than a `Core`: this crate owns the runner, and what is under test is
+/// the channel, not the orchestration above it.
+async fn lab_runner() -> Option<Runner> {
+    use sevenshell_ssh::{Credential, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, probe_host_key};
+    use std::sync::Arc;
+
+    let (Some(host), Some(port), Some(user), Some(password)) = (
+        std::env::var("SEVENSHELL_TEST_HOST").ok(),
+        std::env::var("SEVENSHELL_TEST_PORT").ok(),
+        std::env::var("SEVENSHELL_TEST_USER").ok(),
+        std::env::var("SEVENSHELL_TEST_PASSWORD").ok(),
+    ) else {
+        eprintln!("skipped: the SSH lab is not configured (set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD)");
+        return None;
+    };
+    let port = port.parse::<u16>().ok()?;
+    let target = Target { host, port, user };
+    let presented = probe_host_key(&target.host, target.port, Duration::from_secs(20))
+        .await
+        .expect("probe the lab host key");
+    let request = OpenRequest {
+        target,
+        credential: Credential::Password(password),
+        terminal_type: String::new(),
+        keepalive_seconds: 0,
+        forward_agent: false,
+        timeout: Duration::from_secs(20),
+        expected_host_key: presented,
+        size: TerminalSize::default(),
+        route: Route::Direct,
+        purpose: Purpose::Carrier,
+    };
+    let (events, _unused) = tokio::sync::mpsc::channel(1);
+    let session = SshSession::open(request, events).await.expect("connect to the lab");
+    Some(Runner::Ssh(Arc::new(session)))
+}
+
+/// A file streamed into `docker exec -i` and back out over an SSH channel.
+///
+/// The lab's runtime is a `docker:dind` service the sshd container reaches, so this is the whole
+/// remote path: quoted command line, exec channel, streaming input, streaming output.
+#[tokio::test]
+#[ignore = "needs the SSH lab and its dind runtime"]
+async fn a_streamed_file_crosses_an_ssh_channel_to_a_real_engine() {
+    let Some(runner) = lab_runner().await else {
+        return;
+    };
+    let provider = sevenshell_container::Provider::new(ContainerRuntime::Docker, "", runner.clone())
+        .expect("the connection settings should be accepted");
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let name = format!("{NAME_PREFIX}ssh-{}-{stamp}", std::process::id());
+    let request = ContainerCreateRequest {
+        image: "busybox:1.36".to_owned(),
+        name: name.clone(),
+        ports: Vec::new(),
+        volumes: Vec::new(),
+        env: Vec::new(),
+        restart_policy: "no".to_owned(),
+        command: "sleep 300".to_owned(),
+        interactive: false,
+        tty: false,
+    };
+    provider
+        .create(&request)
+        .await
+        .expect("the container should be created");
+    let _guard = ContainerGuard { name: name.clone() };
+
+    let outcome: Result<(), String> = async {
+        let files = ContainerFiles::new(ContainerRuntime::Docker, "", &name, runner)
+            .map_err(|error| format!("the file handle was refused: {error:?}"))?;
+        for _ in 0..40 {
+            if files.list("/").await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+
+        // Two megabytes: past a channel window, so the write and the read really overlap.
+        let payload: Vec<u8> = (0..2 * 1024 * 1024).map(|index| (index % 241) as u8).collect();
+        let local = TempTree::new();
+        let source = local.path().join("payload.bin");
+        std::fs::write(&source, &payload).map_err(|error| error.to_string())?;
+        files
+            .upload(&source, "/tmp")
+            .await
+            .map_err(|error| format!("upload over SSH failed: {error:?}"))?;
+
+        let down = TempTree::new();
+        let destination = down.path().join("payload.bin");
+        files
+            .download("/tmp/payload.bin", &destination)
+            .await
+            .map_err(|error| format!("download over SSH failed: {error:?}"))?;
+        let received = std::fs::read(&destination).map_err(|error| error.to_string())?;
+        if received != payload {
+            return Err(format!(
+                "the file came back as {} bytes and does not match the {} sent",
+                received.len(),
+                payload.len()
+            ));
+        }
+
+        files
+            .remove("/tmp/payload.bin", false)
+            .await
+            .map_err(|error| format!("removing the file failed: {error:?}"))?;
+        Ok(())
+    }
+    .await;
+
+    let _ = provider.action(&name, "remove").await;
     if let Err(message) = outcome {
         panic!("{message}");
     }

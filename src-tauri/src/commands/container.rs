@@ -236,8 +236,10 @@ const ARCHIVE_EXTENSIONS: &[&str] = &["tar", "gz", "tgz", "bz2", "tbz2", "xz", "
 
 /// Asks for an image archive in a native dialog and loads it into the connected engine.
 ///
-/// The dialog runs here, and the chosen file is read here: what the interface receives is the
-/// runtime's own one-line answer ("Loaded image: busybox:1.36"), never a path and never the archive.
+/// The dialog runs here, and the chosen file is streamed from here: what the interface receives is
+/// the runtime's own one-line answer ("Loaded image: busybox:1.36"), never a path and never the
+/// archive. The file is not read into memory — a large archive reaches the runtime while it is
+/// being read — so the only thing this side decides is whether the path is a regular file at all.
 /// `Ok(None)` means the dialog was dismissed, which is a person changing their mind rather than a
 /// failure.
 #[tauri::command]

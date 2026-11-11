@@ -24,7 +24,7 @@ use portable_pty::{Child as PtyChild, ChildKiller, CommandBuilder, MasterPty, Pt
 use sevenshell_error::ShellError;
 use tokio::sync::mpsc;
 
-use crate::runner::{LineStream, PtyControl, PtySession};
+use crate::runner::{ByteStream, InputStream, LineStream, PtyControl, PtySession, StreamEnding};
 
 /// The most a single answer may carry. A listing of this size is already past what a person reads;
 /// an `inspect` that exceeds it is refused so the interface says why instead of parsing a truncated
@@ -41,6 +41,11 @@ const MAX_ERROR_LINES: usize = 32;
 const STREAM_LINE_CAPACITY: usize = 256;
 const PTY_OUTPUT_CAPACITY: usize = 256;
 const PTY_CONTROL_CAPACITY: usize = 64;
+/// How much of a streamed command's output waits for its reader. The queue is the memory bound:
+/// a download never grows past this many chunks, whatever the size of the tree.
+const STREAM_BACKLOG: usize = 8;
+/// The size of one chunk read from a streamed command's pipe.
+const STREAM_CHUNK_BYTES: usize = 64 * 1024;
 
 /// Directories a desktop launcher's PATH usually omits. Docker Desktop on Windows and macOS does
 /// not always add its CLI to PATH, and a macOS application inherits almost nothing.
@@ -64,6 +69,14 @@ pub(crate) async fn run(argv: &[String]) -> Result<String, ShellError> {
 pub(crate) async fn run_stdin(argv: &[String], input: Vec<u8>) -> Result<String, ShellError> {
     let argv = argv.to_vec();
     tokio::task::spawn_blocking(move || collect_once(&argv, Some(input)))
+        .await
+        .unwrap_or_else(|error| Err(ShellError::app_internal(error.to_string())))
+}
+
+pub(crate) async fn run_stream_stdin(argv: &[String], input: &mut InputStream) -> Result<String, ShellError> {
+    let argv = argv.to_vec();
+    let chunks = input.take_chunks();
+    tokio::task::spawn_blocking(move || collect_streaming(&argv, chunks))
         .await
         .unwrap_or_else(|error| Err(ShellError::app_internal(error.to_string())))
 }
@@ -249,6 +262,98 @@ fn collect_once(argv: &[String], input: Option<Vec<u8>>) -> Result<String, Shell
     }
     let (stdout, stderr, status) = collect(&mut child)?;
     finish(status, stdout, stderr)
+}
+
+/// Runs one command to completion while its standard input arrives in chunks.
+///
+/// The writer is a thread of its own because the two pipes have to be drained at the same time: a
+/// `load` that prints while it reads would otherwise fill the output pipe and stop reading, and
+/// every chunk after that would wait for a command that is waiting for us.
+fn collect_streaming(argv: &[String], mut chunks: mpsc::Receiver<Vec<u8>>) -> Result<String, ShellError> {
+    let mut command = command(argv)?;
+    command.stdin(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
+    let stdin = child.stdin.take();
+    let writer = std::thread::spawn(move || {
+        let Some(mut stdin) = stdin else {
+            return;
+        };
+        while let Some(chunk) = chunks.blocking_recv() {
+            if stdin.write_all(&chunk).is_err() {
+                // The command stopped reading — it has already decided what to answer, and its
+                // exit status is a better explanation than a broken pipe on this side.
+                break;
+            }
+        }
+        // Dropping the handle closes the pipe, which is the end of input the far side waits for.
+        drop(stdin);
+    });
+    let (stdout, stderr, status) = collect(&mut child)?;
+    let _ = writer.join();
+    finish(status, stdout, stderr)
+}
+
+/// Runs one command and hands its raw standard output over in chunks.
+pub(crate) async fn stream_bytes(argv: &[String]) -> Result<ByteStream, ShellError> {
+    let mut command = command(argv)?;
+    let mut child = command.spawn().map_err(|error| io_error(argv, &error))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ShellError::container_command_failed("the command", "no standard output"))?;
+    let stderr = child.stderr.take();
+    // One side kills the child when the reader goes away; the other reaps it.
+    let child = Arc::new(Mutex::new(child));
+    let (sender, chunks) = mpsc::channel::<Vec<u8>>(STREAM_BACKLOG);
+    let ending = Arc::new(Mutex::new(StreamEnding::default()));
+    let recorded = Arc::clone(&ending);
+
+    std::thread::spawn(move || {
+        // Standard error is drained beside standard output: a command that writes a warning while
+        // producing a large answer would otherwise block on a full pipe.
+        let stderr = std::thread::spawn(move || read_capped(stderr));
+        let mut reader = BufReader::new(stdout);
+        let mut buffer = vec![0u8; STREAM_CHUNK_BYTES];
+        let mut abandoned = false;
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    if sender.blocking_send(buffer[..count].to_vec()).is_err() {
+                        // Nobody is reading any more; the command should not keep running.
+                        abandoned = true;
+                        break;
+                    }
+                }
+                Err(error) => {
+                    if let Ok(mut ending) = recorded.lock() {
+                        ending.detail = format!("the output could not be read: {error}");
+                    }
+                    break;
+                }
+            }
+        }
+        if abandoned {
+            kill(&child);
+        }
+        let status = wait_bounded(&child, EXIT_GRACE);
+        let stderr = stderr.join().ok().and_then(Result::ok).unwrap_or_default();
+        if let Ok(mut ending) = recorded.lock() {
+            match status {
+                Ok(status) => {
+                    ending.exit_code = status.code().map(|code| code as u32);
+                    // The command's own words are what a person can act on; the status is only the
+                    // fallback when it said nothing.
+                    if !status.success() && ending.detail.is_empty() {
+                        ending.detail = bounded(String::from_utf8_lossy(&stderr).trim());
+                    }
+                }
+                Err(error) => ending.detail = error.to_string(),
+            }
+        }
+    });
+
+    Ok(ByteStream::local(chunks, ending))
 }
 
 fn collect(child: &mut Child) -> Result<(Vec<u8>, Vec<u8>, ExitStatus), ShellError> {

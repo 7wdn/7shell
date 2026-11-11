@@ -126,7 +126,16 @@ export interface DetailSectionDef {
 }
 
 /** What a row offers, in the order the action buttons are drawn. */
-export type ResourceAction = "logs" | "terminal" | "viewPods" | "restart" | "scale" | "cordon" | "drain" | "delete";
+export type ResourceAction =
+  | "logs"
+  | "terminal"
+  | "files"
+  | "viewPods"
+  | "restart"
+  | "scale"
+  | "cordon"
+  | "drain"
+  | "delete";
 
 export interface ResourceDescriptor {
   readonly key: string;
@@ -154,6 +163,14 @@ export interface ResourceDescriptor {
   readonly icon: ResourceIcon;
   readonly columns: readonly ColumnDef[];
   readonly actions: readonly ResourceAction[];
+  /**
+   * Whether one row offers one of the kind's actions. Absent means every row offers all of them.
+   *
+   * The action list is a fact about the kind; this is the fact about the object. Only a running pod
+   * has a container to reach, and a Files button on a pending row would be a promise the row cannot
+   * keep — the browser would have nothing to exec into.
+   */
+  readonly actionGate?: (action: ResourceAction, obj: K8sObject) => boolean;
   readonly detail: readonly DetailSectionDef[];
   /** Which metrics the row can carry. Absent means the kind has none. */
   readonly metrics?: "pod" | "node";
@@ -161,6 +178,14 @@ export interface ResourceDescriptor {
   readonly tone?: (obj: K8sObject) => Tone;
   /** Whether the YAML view hides the object's values because the object is a secret. */
   readonly redactData?: boolean;
+  /**
+   * Whether this kind offers a New button.
+   *
+   * A flag rather than "the template exists", because the two answer different questions: the button
+   * is a promise that this build can post an object of the kind, the template is only the text the
+   * editor opens with.
+   */
+  readonly canCreate?: boolean;
   readonly createTemplate?: (namespace: string) => string;
 }
 
@@ -290,6 +315,12 @@ function yesNo(value: boolean): string {
   return String(value);
 }
 
+/** The actions one row offers: the kind's list, minus whatever this object cannot do. */
+export function rowActions(desc: ResourceDescriptor, obj: K8sObject): readonly ResourceAction[] {
+  const gate = desc.actionGate;
+  return gate === undefined ? desc.actions : desc.actions.filter((action) => gate(action, obj));
+}
+
 // ── descriptors ─────────────────────────────────────────────────
 
 const POD = {
@@ -314,7 +345,10 @@ const POD = {
     column("node", (obj) => textAt(obj, "spec", "nodeName"), { searchable: true }),
     ageColumn(),
   ],
-  actions: ["logs", "terminal", "delete"] as const,
+  actions: ["logs", "terminal", "files", "delete"] as const,
+  // A pod's files are reached through an exec into one of its containers, so the row offers the
+  // action only while there is a running container to exec into.
+  actionGate: (action, obj) => action !== "files" || podStatus(obj) === "Running",
   metrics: "pod" as const,
   tone: podTone,
   detail: [
@@ -331,6 +365,7 @@ const POD = {
       field("conditions", (obj) => conditions(obj)),
     ]),
   ],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: v1
 kind: Pod
 metadata:
@@ -375,6 +410,7 @@ const DEPLOYMENT = {
       field("conditions", (obj) => conditions(obj)),
     ]),
   ],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -476,6 +512,7 @@ const JOB = {
       field("selector", (obj) => selectorText(obj)),
     ]),
   ],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: batch/v1
 kind: Job
 metadata:
@@ -519,6 +556,7 @@ const CRON_JOB = {
       field("selector", (obj) => selectorText(obj)),
     ]),
   ],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -578,6 +616,7 @@ const SERVICE = {
       field("selector", (obj) => mapText(asObject(obj.spec)?.selector)),
     ]),
   ],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: v1
 kind: Service
 metadata:
@@ -616,6 +655,7 @@ const INGRESS = {
       field("tls", (obj) => tlsText(obj)),
     ]),
   ],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -692,6 +732,7 @@ const CONFIG_MAP = {
   columns: [nameColumn(), namespaceColumn(), column("keys", (obj) => keysOf(obj), { searchable: true }), ageColumn()],
   actions: ["delete"] as const,
   detail: [metadataSection(), section("config", [field("keys", (obj) => keysOf(obj))])],
+  canCreate: true,
   createTemplate: (namespace) => `apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -883,6 +924,7 @@ const NAMESPACE = {
   columns: [nameColumn(), column("status", (obj) => textAt(obj, "status", "phase"), { searchable: true }), ageColumn()],
   actions: ["viewPods", "delete"] as const,
   detail: [metadataSection(), section("namespace", [field("status", (obj) => textAt(obj, "status", "phase") || "—")])],
+  canCreate: true,
   createTemplate: () => `apiVersion: v1
 kind: Namespace
 metadata:
@@ -1194,6 +1236,27 @@ function printerColumn(index: number, printer: CrdPrinterColumn): ColumnDef {
 }
 
 /**
+ * A minimal manifest for a kind a definition introduces.
+ *
+ * Only the four things the API server cannot infer — the group and version, the kind, and a name to
+ * fill in — because the spec of a custom resource is the definition's own schema, which the cluster
+ * may not even publish. There is deliberately no form built from that schema: a document with the
+ * shape already spelled is what the reference behaviour is, and the cluster's validation is what
+ * says whether the rest is right.
+ *
+ * The namespace line is left out when none is chosen rather than written empty: `namespace:` with
+ * nothing after it parses as null, which the server rejects as a field type error instead of saying
+ * that a namespaced kind needs a namespace.
+ */
+function customCreateTemplate(shape: CrdShape, namespace: string): string {
+  const lines = [`apiVersion: ${shape.group}/${shape.version}`, `kind: ${shape.kind}`, "metadata:", "  name: example"];
+  if (shape.namespaced && namespace !== "") {
+    lines.push(`  namespace: ${namespace}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/**
  * The descriptor for a CRD's instances, built from the definition itself.
  *
  * This is the whole drilldown: a custom kind is not a component and not a sixth list view, it is the
@@ -1228,6 +1291,10 @@ export function customResourceDescriptor(crd: K8sObject): ResourceDescriptor | n
     icon: "package",
     columns,
     actions: ["delete"],
+    // A kind a definition introduces is created the same way a built-in one is: a manifest posted to
+    // its collection. The definition is what says the collection exists, so nothing else is needed.
+    canCreate: true,
+    createTemplate: (namespace) => customCreateTemplate(shape, namespace),
     detail: [
       metadataSection(),
       section("custom", [field("apiVersion", (obj) => textAt(obj, "apiVersion") || "—"), ...printerFields]),

@@ -6,14 +6,18 @@
 //! the small image it uses cannot be pulled — a machine without Docker is not a defect in this
 //! crate.
 
-use std::time::Duration;
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use sevenshell_container::{ContainerManager, Runner};
+use sevenshell_container::{ContainerManager, Provider, Runner};
 use sevenshell_types::{ContainerCreateRequest, ContainerImageTransfer, ContainerRuntime};
 
 /// The image the lifecycle uses. Small enough to pull in seconds, and it has a shell.
 const IMAGE: &str = "busybox:latest";
 const NAME_PREFIX: &str = "7shell-live-";
+/// The archive test wants an explicitly tagged image: `busybox:latest` can move under a machine
+/// that pulled it weeks ago.
+const ARCHIVE_IMAGE: &str = "busybox:1.36";
 
 fn engine_is_reachable() -> bool {
     if std::env::var("SEVENSHELL_TEST_DOCKER").as_deref() != Ok("1") {
@@ -240,4 +244,124 @@ async fn a_real_engine_lists_images_runs_a_container_logs_into_it_and_removes_it
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     assert!(!still_listed, "the container was removed but is still listed");
+}
+
+/// Real Docker Desktop: the shell's `docker save | gzip > x.tar.gz` makes an archive, and this
+/// crate hands it to `docker load` as it is.
+///
+/// Nothing in the crate decompresses: the bytes travel to `load`'s standard input untouched and the
+/// runtime unpacks them, which is worth proving against a real archive rather than a recorder.
+///
+/// ```text
+/// SEVENSHELL_TEST_DOCKER=1 cargo test -p sevenshell-container --test live_container -- --ignored a_real_engine_loads_a_gzip_archive
+/// ```
+#[tokio::test]
+#[ignore = "needs Docker Desktop and SEVENSHELL_TEST_DOCKER=1"]
+async fn a_real_engine_loads_a_gzip_archive_and_lists_the_image_again() {
+    if !engine_is_reachable() {
+        return;
+    }
+    let ready = docker(&["image", "inspect", ARCHIVE_IMAGE]).is_some_and(|output| output.status.success())
+        || docker(&["pull", ARCHIVE_IMAGE]).is_some_and(|output| output.status.success());
+    if !ready {
+        eprintln!("skipped: {ARCHIVE_IMAGE} is neither present nor pullable here");
+        return;
+    }
+    // The compression is the shell's `| gzip`. A machine without the tool cannot make this fixture,
+    // and substituting a different tool would be testing something else.
+    if !std::process::Command::new("gzip")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+    {
+        eprintln!("skipped: gzip is not on PATH, so no compressed archive can be made");
+        return;
+    }
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let tag = format!("7shell-live-gzip:{stamp}");
+    let tar = std::env::temp_dir().join(format!("7shell-live-gzip-{}-{stamp}.tar", std::process::id()));
+    let gz = std::env::temp_dir().join(format!("7shell-live-gzip-{}-{stamp}.tar.gz", std::process::id()));
+    // Whatever the assertions do, the machine gets its disk and its image list back.
+    let _scratch = Scratch {
+        tag: tag.clone(),
+        files: vec![tar.clone(), gz.clone()],
+    };
+
+    assert!(
+        docker(&["tag", ARCHIVE_IMAGE, &tag]).is_some_and(|output| output.status.success()),
+        "the image could not be given a tag of its own"
+    );
+    let archive = tar.to_string_lossy().into_owned();
+    assert!(
+        docker(&["save", "-o", &archive, &tag]).is_some_and(|output| output.status.success()),
+        "the uncompressed archive could not be written to {archive}"
+    );
+    // `gzip -c file` is the same bytes as `docker save | gzip`, without a shell in between.
+    let compressed = std::process::Command::new("gzip")
+        .arg("-c")
+        .arg(tar.to_string_lossy().replace('\\', "/"))
+        .output()
+        .expect("gzip should run once its version was readable");
+    assert!(
+        compressed.status.success(),
+        "gzip refused the archive: {}",
+        String::from_utf8_lossy(&compressed.stderr).trim()
+    );
+    std::fs::write(&gz, &compressed.stdout).expect("the compressed archive should be writable");
+    assert!(
+        std::fs::metadata(&gz)
+            .map(|metadata| metadata.len() > 0)
+            .unwrap_or(false),
+        "the compressed archive is empty"
+    );
+    // Without this the assertion below would pass on an image that never left.
+    assert!(
+        docker(&["rmi", &tag]).is_some_and(|output| output.status.success()),
+        "the tag could not be removed after saving"
+    );
+
+    let provider = Provider::new(ContainerRuntime::Docker, "", Runner::Local).expect("a provider");
+    let before = provider.images().await.expect("the image list should answer");
+    assert!(
+        !before.iter().any(|row| row.repository == "7shell-live-gzip"),
+        "the tag survived its own removal, so the load below proves nothing"
+    );
+
+    let loaded = provider
+        .image_load_file(&gz)
+        .await
+        .expect("a gzipped archive should load");
+    assert!(loaded.contains("7shell-live-gzip"), "the runtime said: {loaded}");
+
+    let after = provider.images().await.expect("the image list should answer");
+    assert!(
+        after
+            .iter()
+            .any(|row| row.repository == "7shell-live-gzip" && row.tag == stamp.to_string()),
+        "the loaded image is not in the list: {after:?}"
+    );
+}
+
+/// Removes the tag and the archives the archive test made, even when an assertion failed first.
+struct Scratch {
+    tag: String,
+    files: Vec<PathBuf>,
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new("docker").args(["rmi", &self.tag]).output();
+        for file in &self.files {
+            let _ = std::fs::remove_file(file);
+        }
+    }
+}
+
+fn docker(arguments: &[&str]) -> Option<std::process::Output> {
+    std::process::Command::new("docker").args(arguments).output().ok()
 }

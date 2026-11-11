@@ -1115,20 +1115,28 @@ export const useK8sStore = defineStore("k8s", () => {
     useTerminalsStore().openHandle({ ...session, name: `${podName}/${container}` }, handle);
   }
 
-  /** Creates one object from a manifest the person edited. */
+  /**
+   * Creates one object from a manifest the person edited.
+   *
+   * `application/yaml` because the editor is a document, not a form: the server parses it and its
+   * own schema is what decides. The list is relisted rather than waited on — the watch would bring
+   * the object in eventually, and "eventually" reads as a create that did nothing.
+   */
   async function createObject(
     connId: string,
     desc: ResourceDescriptor,
     namespace: string,
     manifest: string,
   ): Promise<void> {
+    const scoped = scopedNamespace(desc, namespace);
     await request(connId, {
       method: "post",
-      path: collectionPath(desc, scopedNamespace(desc, namespace)),
+      path: collectionPath(desc, scoped),
       body: manifest,
       contentType: "application/yaml",
       acknowledged: true,
     });
+    refresh(connId, desc.key, scoped);
   }
 
   /**

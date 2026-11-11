@@ -713,6 +713,23 @@ export function filesOpenContainer(connectionId: string, containerId: string, pa
   return invoke<SftpOutcome>("files_open_container", { connectionId, containerId, path });
 }
 
+/**
+ * Opens a browser on a pod's own file system, through the cluster connection already up.
+ *
+ * The pod is reached by execing into `container`, which is why the namespace, the pod and the
+ * container all travel: the caller has resolved them, and nothing here names a path on either side.
+ * The answer is an ordinary file handle from then on.
+ */
+export function filesOpenPod(
+  connectionId: string,
+  namespace: string,
+  pod: string,
+  container: string,
+  path: string,
+): Promise<SftpOutcome> {
+  return invoke<SftpOutcome>("files_open_pod", { connectionId, namespace, pod, container, path });
+}
+
 export function filesList(handle: string, path: string): Promise<SftpListing> {
   return invoke<SftpListing>("files_list", { handle, path });
 }

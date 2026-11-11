@@ -40,7 +40,7 @@ pub use keygen::{GeneratedKey, generate, public_line};
 pub use route::{BoxedStream, LocalForward, Route, TunnelHandle, TunnelStream};
 pub use scp::{ByteProgress, TransferOptions, TransferReport, TransferredEntry};
 pub use scp_listing::{ListingFormat, ShellCapabilities, ShellEntry, ShellListing};
-pub use session::{PtyExecChannel, SshSession};
+pub use session::{ExecCommand, ExecInput, ExecOutput, PtyExecChannel, SshSession};
 
 /// Where to connect and who to be.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -22,18 +22,17 @@ use sevenshell_types::{
 
 use crate::commands::{self, ImageTransfer};
 use crate::parse;
-use crate::runner::{LineStream, PtySession, Runner};
+use crate::runner::{InputStream, LineStream, PtySession, Runner};
 
-/// The largest archive this build hands to a runtime in one piece.
+/// The largest archive this build will hand to a runtime.
 ///
-/// `load` reads its archive from standard input, and both runners take that input as one buffer, so
-/// the whole archive is in memory for the length of the call. Streaming it — a reader piped into the
-/// local child and into the SSH exec channel — is what removes this ceiling; until the runners can
-/// accept a reader, a size refused before the read is better than an allocation the machine may not
-/// be able to honour.
-const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// This is no longer a memory bound: the file is streamed into the runtime's standard input, so a
+/// 4 GiB archive costs the same as a 4 KiB one. It stays a guard against a path that was never an
+/// image archive — a disk image, a sparse file — being pumped into a runtime for hours, and 64 GiB
+/// is far past anything `docker save` produces for one image.
+const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 
-/// The four things a runtime's CLI can be asked to do, as one interface.
+/// The five things a runtime's CLI can be asked to do, as one interface.
 ///
 /// A trait rather than calls straight to [`Runner`] so the guard tests can hand a provider a
 /// recorder and prove that a rejected argument never reached the step that starts a process.
@@ -41,6 +40,7 @@ const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 trait CommandRunner: Send + Sync {
     async fn run(&self, argv: &[String]) -> Result<String, ShellError>;
     async fn run_stdin(&self, argv: &[String], input: Vec<u8>) -> Result<String, ShellError>;
+    async fn stream_stdin(&self, argv: &[String], input: InputStream) -> Result<String, ShellError>;
     async fn stream(&self, argv: &[String]) -> Result<LineStream, ShellError>;
     async fn open_pty(&self, argv: &[String], columns: u32, rows: u32) -> Result<PtySession, ShellError>;
 }
@@ -53,6 +53,10 @@ impl CommandRunner for Runner {
 
     async fn run_stdin(&self, argv: &[String], input: Vec<u8>) -> Result<String, ShellError> {
         Runner::run_stdin(self, argv, input).await
+    }
+
+    async fn stream_stdin(&self, argv: &[String], input: InputStream) -> Result<String, ShellError> {
+        Runner::run_stream_stdin(self, argv, input).await
     }
 
     async fn stream(&self, argv: &[String]) -> Result<LineStream, ShellError> {
@@ -220,8 +224,8 @@ impl Provider {
         self.runner.run(&argv).await.map(|_| ())
     }
 
-    /// Loads an archive that the core read from a file the person chose. The bytes travel on
-    /// standard input; they are never part of the argv and never cross to the interface.
+    /// Loads an archive that the caller already holds. The bytes travel on standard input; they are
+    /// never part of the argv and never cross to the interface.
     pub async fn image_load(&self, archive: Vec<u8>) -> Result<String, ShellError> {
         self.require_image_load()?;
         let argv = commands::load(self.runtime, &self.namespace);
@@ -231,18 +235,29 @@ impl Provider {
 
     /// Loads an archive from a file on this machine, which is where the native dialog left it.
     ///
-    /// The path is read here rather than by the caller so the ceiling and the runtime check are one
-    /// decision: an archive this build will not take is refused before a byte is read, and the
-    /// refusal says how large it was and how large this build allows.
+    /// The file is streamed rather than read: its bytes go into the runtime's standard input as they
+    /// leave the disk, so an archive is never a value in this process and its size stops being a
+    /// memory question. What is still checked before the command starts is that the path is a
+    /// regular file of a plausible size — a wrong file should be refused by name, not by having
+    /// fed a runtime for an hour.
     pub async fn image_load_file(&self, path: &Path) -> Result<String, ShellError> {
         self.require_image_load()?;
-        let archive = {
-            let path = path.to_path_buf();
-            tokio::task::spawn_blocking(move || read_archive(&path, MAX_ARCHIVE_BYTES))
-                .await
-                .map_err(|error| ShellError::app_internal(error.to_string()))??
-        };
-        self.image_load(archive).await
+        let metadata = tokio::fs::metadata(path)
+            .await
+            .map_err(|error| archive_read_failure(&error))?;
+        if !metadata.is_file() {
+            return Err(ShellError::container_command_failed(
+                "the image archive",
+                "that is not a regular file",
+            ));
+        }
+        ensure_archive_fits(metadata.len(), MAX_ARCHIVE_BYTES)?;
+        let file = tokio::fs::File::open(path)
+            .await
+            .map_err(|error| archive_read_failure(&error))?;
+        let argv = commands::load(self.runtime, &self.namespace);
+        let output = self.runner.stream_stdin(&argv, InputStream::from_reader(file)).await?;
+        Ok(output.trim().to_owned())
     }
 
     /// Whether an archive can be handed to this runtime at all.
@@ -332,33 +347,27 @@ fn namespace_for(runtime: ContainerRuntime, namespace: &str) -> Result<String, S
     Ok(namespace.to_owned())
 }
 
-/// Reads an image archive, refusing anything this build will not hand to a runtime.
+/// Refuses an image archive this build will not hand to a runtime.
 ///
 /// The ceiling is a parameter rather than the constant so a test can prove the refusal without
-/// writing a two-gigabyte file, and so the size rule is exercised by the same code that enforces it.
-fn read_archive(path: &Path, ceiling: u64) -> Result<Vec<u8>, ShellError> {
-    let metadata = std::fs::metadata(path).map_err(|error| {
-        ShellError::container_command_failed("the image archive", format!("the file could not be read: {error}"))
-    })?;
-    if !metadata.is_file() {
-        return Err(ShellError::container_command_failed(
-            "the image archive",
-            "that is not a regular file",
-        ));
-    }
-    if metadata.len() > ceiling {
+/// writing a sixty-gigabyte file, and so the size rule is exercised by the same code that enforces
+/// it.
+fn ensure_archive_fits(size: u64, ceiling: u64) -> Result<(), ShellError> {
+    if size > ceiling {
         return Err(ShellError::container_command_failed(
             "the image archive",
             format!(
-                "the archive is {} MiB and this build loads at most {} MiB in one piece",
-                mebibytes(metadata.len()),
+                "the archive is {} MiB and this build loads at most {} MiB",
+                mebibytes(size),
                 mebibytes(ceiling)
             ),
         ));
     }
-    std::fs::read(path).map_err(|error| {
-        ShellError::container_command_failed("the image archive", format!("the file could not be read: {error}"))
-    })
+    Ok(())
+}
+
+fn archive_read_failure(error: &std::io::Error) -> ShellError {
+    ShellError::container_command_failed("the image archive", format!("the file could not be read: {error}"))
 }
 
 fn mebibytes(bytes: u64) -> u64 {
@@ -509,6 +518,20 @@ mod tests {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(input);
+            Ok(self.output.clone())
+        }
+
+        async fn stream_stdin(&self, argv: &[String], mut input: InputStream) -> Result<String, ShellError> {
+            self.record(argv);
+            let mut chunks = input.take_chunks();
+            let mut bytes = Vec::new();
+            while let Some(chunk) = chunks.recv().await {
+                bytes.extend_from_slice(&chunk);
+            }
+            self.inputs
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(bytes);
             Ok(self.output.clone())
         }
 
@@ -846,12 +869,8 @@ mod tests {
     }
 
     #[test]
-    fn an_archive_over_the_ceiling_is_refused_with_its_size_before_it_is_read() {
-        let path = std::env::temp_dir().join(format!("7shell-too-large-{}.tar", std::process::id()));
-        std::fs::write(&path, vec![0u8; 1025 * 1024]).expect("a temporary archive");
-        let error = read_archive(&path, 1024 * 1024).expect_err("the file is larger than the ceiling");
-        let _ = std::fs::remove_file(&path);
-
+    fn an_archive_over_the_ceiling_is_refused_with_its_size() {
+        let error = ensure_archive_fits(1025 * 1024, 1024 * 1024).expect_err("the file is larger than the ceiling");
         assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
         let detail = error.detail().unwrap_or_default();
         assert!(
@@ -862,13 +881,18 @@ mod tests {
             detail.contains("at most 1 MiB"),
             "the ceiling this build does allow is in the message: {detail}"
         );
+        ensure_archive_fits(1024 * 1024, 1024 * 1024).expect("a file at the ceiling is allowed");
     }
 
-    #[test]
-    fn a_directory_is_not_an_image_archive() {
+    #[tokio::test]
+    async fn a_directory_is_not_an_image_archive() {
         let directory = std::env::temp_dir().join(format!("7shell-archive-dir-{}", std::process::id()));
         std::fs::create_dir_all(&directory).expect("a temporary directory");
-        let error = read_archive(&directory, MAX_ARCHIVE_BYTES).expect_err("a directory has no archive in it");
+        let provider = build_provider(ContainerRuntime::Docker, "", &Arc::new(RecordingRunner::default()));
+        let error = provider
+            .image_load_file(&directory)
+            .await
+            .expect_err("a directory has no archive in it");
         let _ = std::fs::remove_dir(&directory);
         assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
         assert!(error.detail().unwrap_or_default().contains("regular file"));
@@ -1011,5 +1035,120 @@ mod tests {
 
     fn docker(arguments: &[&str]) -> Option<std::process::Output> {
         std::process::Command::new("docker").args(arguments).output().ok()
+    }
+
+    /// A compressed archive, made without assuming this machine has a compressor of its own: the
+    /// engine it already needs can run one.
+    fn gzip_in_container(source: &Path, target: &Path) -> bool {
+        use std::process::Stdio;
+        let Ok(mut child) = std::process::Command::new("docker")
+            .args(["run", "--rm", "-i", "busybox:1.36", "gzip", "-c"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            return false;
+        };
+        let Ok(mut input) = std::fs::File::open(source) else {
+            return false;
+        };
+        let Some(mut stdin) = child.stdin.take() else {
+            return false;
+        };
+        // The archive is larger than a pipe buffer, so it has to be written while the output is
+        // read; one after the other would deadlock on the first full pipe.
+        let writing = std::thread::spawn(move || {
+            let _ = std::io::copy(&mut input, &mut stdin);
+        });
+        let Ok(mut output) = std::fs::File::create(target) else {
+            return false;
+        };
+        // stderr is discarded above, but a compressor that fails writes its reason there; the exit
+        // status is what this reports.
+        let copied = child
+            .stdout
+            .take()
+            .is_some_and(|mut stdout| std::io::copy(&mut stdout, &mut output).is_ok());
+        let status = child.wait().map(|status| status.success()).unwrap_or(false);
+        let _ = writing.join();
+        copied && status
+    }
+
+    /// Real Docker Desktop: a gzipped `docker save` archive streams into `docker load`.
+    ///
+    /// The archive is compressed by a container because this test may run on a machine without a
+    /// gzip binary, which is the same reason the runtime is reached through its CLI everywhere else.
+    /// Nothing about the archive is read here: the file is streamed into the runtime as it is.
+    ///
+    /// ```text
+    /// SEVENSHELL_TEST_DOCKER=1 cargo test -p sevenshell-container -- --ignored a_real_engine_loads_a_gzipped
+    /// ```
+    #[tokio::test]
+    #[ignore = "needs Docker Desktop and SEVENSHELL_TEST_DOCKER=1"]
+    async fn a_real_engine_loads_a_gzipped_archive_as_standard_input() {
+        if std::env::var("SEVENSHELL_TEST_DOCKER").as_deref() != Ok("1") {
+            eprintln!("skipped: set SEVENSHELL_TEST_DOCKER=1 to run the live archive test");
+            return;
+        }
+        if !docker(&["version"]).is_some_and(|output| output.status.success()) {
+            eprintln!("skipped: the Docker engine is not reachable from this process");
+            return;
+        }
+        if !docker(&["image", "inspect", "busybox:1.36"]).is_some_and(|output| output.status.success())
+            && !docker(&["pull", "busybox:1.36"]).is_some_and(|output| output.status.success())
+        {
+            eprintln!("skipped: busybox:1.36 is neither present nor pullable here");
+            return;
+        }
+
+        let tag = format!("7shell-live-gz:{}", std::process::id());
+        let saved = temporary_file("live-gz-tar", b"");
+        let compressed = temporary_file("live-gz", b"");
+        let archive = saved.to_string_lossy().into_owned();
+        assert!(
+            docker(&["tag", "busybox:1.36", &tag]).is_some_and(|output| output.status.success()),
+            "the image could not be given a tag of its own"
+        );
+        assert!(
+            docker(&["save", "-o", &archive, &tag]).is_some_and(|output| output.status.success()),
+            "the archive could not be written to {archive}"
+        );
+        assert!(
+            docker(&["rmi", &tag]).is_some_and(|output| output.status.success()),
+            "the tag could not be removed after saving"
+        );
+        assert!(
+            gzip_in_container(&saved, &compressed),
+            "the saved archive could not be compressed"
+        );
+        let magic = std::fs::read(&compressed).expect("the compressed archive");
+        assert_eq!(&magic[..2], &[0x1f, 0x8b], "the fixture is not a gzip stream");
+
+        let provider = Provider::new(ContainerRuntime::Docker, "", Runner::Local).expect("a provider");
+        let before = provider.images().await.expect("the image list should answer");
+        assert!(
+            !before.iter().any(|row| row.repository == "7shell-live-gz"),
+            "the tag survived its own removal, so the load below proves nothing"
+        );
+
+        let loaded = provider
+            .image_load_file(&compressed)
+            .await
+            .expect("a gzipped archive should stream into the engine");
+        assert!(loaded.contains("7shell-live-gz"), "the runtime said: {loaded}");
+
+        let after = provider.images().await.expect("the image list should answer");
+        assert!(
+            after.iter().any(|row| row.repository == "7shell-live-gz"),
+            "the loaded image is not in the list: {after:?}"
+        );
+
+        assert!(
+            provider.image_remove(&tag).await.is_ok(),
+            "the tag this test made could not be removed again"
+        );
+        let _ = std::fs::remove_file(&saved);
+        let _ = std::fs::remove_file(&compressed);
     }
 }

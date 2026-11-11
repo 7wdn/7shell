@@ -13,6 +13,7 @@
  * every thirty seconds and only while this tab is the one on screen.
  */
 import { LoaderCircle, RefreshCw, ShipWheel } from "@lucide/vue";
+import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -28,6 +29,7 @@ import {
   arrayAt,
   asObject,
   boolAt,
+  containerNamesOf,
   createdAtOf,
   idOf,
   nameOf,
@@ -36,18 +38,19 @@ import {
   type K8sObject,
   type Usage,
 } from "@/components/k8s/objects";
-import { OVERVIEW_KEY, descriptorOf, type ResourceAction } from "@/components/k8s/resources";
+import { OVERVIEW_KEY, descriptorOf, type ResourceAction, type ResourceDescriptor } from "@/components/k8s/resources";
 import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { useK8sStore } from "@/stores/k8s";
-import type { KubernetesTab } from "@/stores/terminals";
+import { type KubernetesTab, useTerminalsStore } from "@/stores/terminals";
 
 const props = defineProps<{ tab: KubernetesTab; active: boolean }>();
 
 const { t } = useI18n();
 const { toast } = useToast();
 const store = useK8sStore();
+const terminals = useTerminalsStore();
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -286,6 +289,16 @@ const createFailure = ref<ShellError | null>(null);
 
 const promptOpen = computed(() => prompt.value !== null);
 
+/**
+ * What a kind is called in a sentence.
+ *
+ * A kind the cluster defined has no message key — it did not exist when this build was made — so the
+ * cluster's own word is used and everything around it stays translated.
+ */
+function kindName(desc: ResourceDescriptor): string {
+  return desc.kindLabel ?? t(desc.labelKey);
+}
+
 function askFor(kind: PromptKind, obj: K8sObject): void {
   if (connId.value === null || descriptor.value === null) {
     return;
@@ -307,17 +320,17 @@ async function approve(answer: { readonly force: boolean; readonly replicas: num
     switch (target.kind) {
       case "delete":
         await store.deleteObject(id, desc, object, answer.force);
-        toast(t("k8s.result.deleted", { kind: t(desc.labelKey), name: nameOf(object) }), "confirmation");
+        toast(t("k8s.result.deleted", { kind: kindName(desc), name: nameOf(object) }), "confirmation");
         break;
       case "restart":
         await store.restartWorkload(id, desc, object);
-        toast(t("k8s.result.restarted", { kind: t(desc.labelKey), name: nameOf(object) }), "confirmation");
+        toast(t("k8s.result.restarted", { kind: kindName(desc), name: nameOf(object) }), "confirmation");
         break;
       case "scale":
         await store.scaleWorkload(id, desc, object, answer.replicas);
         toast(
           t("k8s.result.scaled", {
-            kind: t(desc.labelKey),
+            kind: kindName(desc),
             name: nameOf(object),
             count: String(answer.replicas),
           }),
@@ -378,6 +391,9 @@ function onRowAction(obj: K8sObject, action: ResourceAction): void {
       selected.value = "pods";
       return;
     }
+    case "files":
+      startFiles(obj);
+      return;
     default:
       return;
   }
@@ -433,6 +449,76 @@ async function openShell(pod: K8sObject, container: string): Promise<void> {
   }
 }
 
+// ── pod files ─────────────────────────────────────────────────
+
+/**
+ * The pod whose files are waiting on a container pick, and the container picked so far.
+ *
+ * A pod with one container is answered without asking — a menu with one entry decides nothing —
+ * which is why the target is only set when there is a choice to make.
+ */
+const filesTarget = ref<K8sObject | null>(null);
+const filesChosen = ref("");
+const filesBusy = ref(false);
+
+const filesContainers = computed(() => (filesTarget.value === null ? [] : containerNamesOf(filesTarget.value)));
+
+/**
+ * Opens the file browser for a pod, or asks which container when it holds several.
+ *
+ * The gate is the same one the row's button obeys, and it is repeated here because a click can
+ * arrive from a row that was drawn before the pod stopped: the answer is a toast rather than a
+ * browser that would exec into a container nobody promised was there.
+ */
+function startFiles(obj: K8sObject): void {
+  if (connId.value === null) {
+    return;
+  }
+  if (!store.isRunning(obj)) {
+    toast(t("k8s.files.notRunning"), "refusal");
+    return;
+  }
+  const containers = containerNamesOf(obj);
+  if (containers.length === 0) {
+    toast(t("k8s.files.noContainer"), "refusal");
+    return;
+  }
+  if (containers.length === 1) {
+    void openFilesBrowser(obj, containers[0] ?? "");
+    return;
+  }
+  filesChosen.value = containers[0] ?? "";
+  filesTarget.value = obj;
+}
+
+async function openFilesBrowser(pod: K8sObject, container: string): Promise<void> {
+  const id = connId.value;
+  if (id === null || container === "") {
+    return;
+  }
+  filesBusy.value = true;
+  try {
+    // The store reports a failure and leaves no tab behind. The question is answered either way,
+    // so the picker closes: there is no reason line in it that a retry from inside could act on.
+    await terminals.openPodFiles(props.tab.session, id, namespaceOf(pod), nameOf(pod), container);
+  } finally {
+    filesBusy.value = false;
+    filesTarget.value = null;
+  }
+}
+
+function closeFiles(): void {
+  filesTarget.value = null;
+  filesChosen.value = "";
+}
+
+/** The dialog closing without a pick: the same thing as pressing Cancel. */
+function onFilesOpenChange(value: boolean): void {
+  if (!value) {
+    closeFiles();
+  }
+}
+
 // ── creating ──────────────────────────────────────────────────
 
 function openCreate(): void {
@@ -455,10 +541,11 @@ async function create(manifest: string): Promise<void> {
   creating.value = true;
   createFailure.value = null;
   try {
+    // The store relists the collection it posted to, so the new object appears without the pane
+    // asking for a second read of the same list.
     await store.createObject(id, desc, namespace.value, manifest);
-    toast(t("k8s.result.created", { kind: t(desc.labelKey), name: manifestName(manifest) }), "confirmation");
+    toast(t("k8s.result.created", { kind: kindName(desc), name: manifestName(manifest) }), "confirmation");
     createOpen.value = false;
-    store.refresh(id, desc.key, namespace.value);
   } catch (error) {
     createFailure.value = asShellError(error, "k8s_create");
   } finally {
@@ -642,6 +729,69 @@ async function retry(): Promise<void> {
           @confirm="(container: string) => execTarget && openShell(execTarget, container)"
           @update:open="closeExec"
         />
+
+        <!--
+          Which container a pod's files are browsed in. A picker of its own rather than the
+          terminal's: the two open different things, and a dialog that said "terminal" while
+          opening a browser would be lying about what the button does.
+        -->
+        <DialogRoot :open="filesTarget !== null" @update:open="onFilesOpenChange">
+          <DialogPortal>
+            <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+            <DialogContent
+              class="fixed top-1/2 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-xl focus:outline-none"
+            >
+              <div class="px-4 pt-4">
+                <DialogTitle class="text-sm font-medium">
+                  {{ t("k8s.files.title", { pod: filesTarget ? nameOf(filesTarget) : "" }) }}
+                </DialogTitle>
+                <DialogDescription class="mt-1 text-xs text-muted-foreground">
+                  {{ t("k8s.files.message") }}
+                </DialogDescription>
+              </div>
+
+              <fieldset class="max-h-64 space-y-0.5 overflow-y-auto px-4 pt-3">
+                <legend class="sr-only">{{ t("k8s.files.container") }}</legend>
+                <label
+                  v-for="name in filesContainers"
+                  :key="name"
+                  class="flex items-center gap-2 rounded-md px-1 py-1 font-mono text-[11px] transition-colors hover:bg-accent/50"
+                >
+                  <input
+                    v-model="filesChosen"
+                    type="radio"
+                    :value="name"
+                    name="k8s-files-container"
+                    class="size-3 accent-current"
+                  />
+                  {{ name }}
+                </label>
+              </fieldset>
+
+              <footer
+                class="mt-3 flex flex-col-reverse gap-2 rounded-b-lg border-t border-border bg-muted/40 px-4 py-3 sm:flex-row sm:justify-end"
+              >
+                <button
+                  type="button"
+                  class="rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="filesBusy"
+                  @click="closeFiles"
+                >
+                  {{ t("common.action.cancel") }}
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="filesBusy || filesChosen === ''"
+                  @click="filesTarget && openFilesBrowser(filesTarget, filesChosen)"
+                >
+                  <LoaderCircle v-if="filesBusy" :size="12" class="mr-1.5 inline animate-spin" />
+                  {{ t("k8s.files.open") }}
+                </button>
+              </footer>
+            </DialogContent>
+          </DialogPortal>
+        </DialogRoot>
 
         <K8sCreateDialog
           :open="createOpen"

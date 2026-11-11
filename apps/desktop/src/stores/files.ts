@@ -210,6 +210,30 @@ export const useFilesStore = defineStore("files", () => {
     return outcome;
   }
 
+  /**
+   * Opens a browser on a pod's file system, through the cluster connection already up.
+   *
+   * The pod is reached over an exec into one of its containers, which is the only door a running
+   * pod offers — there is no SFTP server on the other side. From the answer on it is an ordinary
+   * handle: listing, writing and the rest take it exactly as they take a container's or an SFTP
+   * browser's. `sessionId` is the tab's pseudo-session, which is what the clipboard and the
+   * transfers are scoped to.
+   */
+  async function openPod(
+    sessionId: string,
+    connectionId: string,
+    namespace: string,
+    pod: string,
+    container: string,
+    path = "/",
+  ): Promise<SftpOutcome> {
+    const outcome = await backend.files.openPod(connectionId, namespace, pod, container, path);
+    if (outcome.kind === "opened") {
+      remember(sessionId, outcome);
+    }
+    return outcome;
+  }
+
   /** Keeps the browser an open answer describes, with the first listing as its own starting place. */
   function remember(sessionId: string, opened: Extract<SftpOutcome, { kind: "opened" }>): void {
     browsers.value[opened.handle] = {
@@ -914,6 +938,7 @@ export const useFilesStore = defineStore("files", () => {
     attendFailures,
     open,
     openContainer,
+    openPod,
     browser,
     directories,
     uploadDropped,

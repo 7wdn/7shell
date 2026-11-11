@@ -5306,6 +5306,15 @@ test("a cluster session lists pods, follows a log, and opens a terminal", async 
 
     await shellRow.getByRole("button", { name: "Terminal", exact: true }).click();
     await expect(page.getByText("lab-shell/lab-shell", { exact: false })).toBeVisible({ timeout: 20_000 });
+
+    await page.locator("[data-tab]").filter({ hasText: "e2e-cluster" }).first().click();
+    await shellRow.getByRole("button", { name: "Files", exact: true }).click();
+    await expect(page.getByText("lab-shell/lab-shell files", { exact: false })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "New folder", exact: true }).click({ timeout: 10_000 });
+    const folder = page.getByRole("textbox", { name: "Folder name" });
+    await folder.fill("pod-from-window");
+    await folder.press("Enter");
+    await expect(page.getByText("pod-from-window", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   } finally {
     await close();
   }

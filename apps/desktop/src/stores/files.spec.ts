@@ -7,6 +7,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   clipboardFiles: vi.fn(),
   filesOpen: vi.fn(),
   filesOpenContainer: vi.fn(),
+  filesOpenPod: vi.fn(),
   filesList: vi.fn(),
   filesCreateFolder: vi.fn(),
   filesRename: vi.fn(),
@@ -42,6 +43,7 @@ import {
   filesList,
   filesOpen,
   filesOpenContainer,
+  filesOpenPod,
   filesRename,
   filesPaste,
   filesSetPermissions,
@@ -69,6 +71,7 @@ import type { SftpEntry, SftpListing, SftpOutcome, TransferInfo } from "@/types/
 
 const filesOpenMock = vi.mocked(filesOpen);
 const filesOpenContainerMock = vi.mocked(filesOpenContainer);
+const filesOpenPodMock = vi.mocked(filesOpenPod);
 const filesListMock = vi.mocked(filesList);
 const filesCreateFolderMock = vi.mocked(filesCreateFolder);
 const filesRenameMock = vi.mocked(filesRename);
@@ -225,6 +228,26 @@ describe("files store", () => {
     expect(store.browser("c1")?.entries.map((item) => item.name)).toEqual(["etc", "var"]);
     // The first listing is part of the answer, so nothing is asked for a second time.
     expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("opens a pod's files over an exec into the container that was picked", async () => {
+    filesOpenPodMock.mockResolvedValue({
+      kind: "opened",
+      handle: "p1",
+      sessionId: "cluster-1:team-a/web-1/app",
+      listing: listing("/", ["app", "etc"]),
+      packed: false,
+    });
+
+    const store = useFilesStore();
+    const outcome = await store.openPod("cluster-1:team-a/web-1/app", "cluster-conn", "team-a", "web-1", "app");
+
+    // Every part of the pod's address travels: the backend cannot find a pod from a tab's name.
+    expect(filesOpenPodMock).toHaveBeenCalledWith("cluster-conn", "team-a", "web-1", "app", "/");
+    expect(outcome.kind).toBe("opened");
+    // A pod's browser is an ordinary browser from here on, scoped to the tab that asked for it.
+    expect(store.browser("p1")?.sessionId).toBe("cluster-1:team-a/web-1/app");
+    expect(store.browser("p1")?.entries.map((item) => item.name)).toEqual(["app", "etc"]);
   });
 
   it("records nothing for a container open that answered with a question", async () => {

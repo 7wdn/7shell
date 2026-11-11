@@ -1337,6 +1337,220 @@ impl SshSession {
             truncated,
         })
     }
+
+    /// Starts one command and hands back both of its directions while it runs.
+    ///
+    /// [`exec_with_input`](Self::exec_with_input) is the same channel with the input already known:
+    /// an archive, a password, a document. A transfer has no such moment — the bytes are still being
+    /// read from a disk or a container when the command starts — so the caller needs the channel
+    /// itself. The two halves are independent values, which is what lets one task write while
+    /// another reads: a command that copies its input to its output (`tar`, `cat`, `docker load`)
+    /// deadlocks the moment nobody drains the other direction.
+    ///
+    /// The exit status and the command's own complaints are kept by the reader task, because they
+    /// arrive after the last byte and are the only account of why a stream ended early.
+    pub async fn open_exec_command(&self, command: &str) -> Result<ExecCommand, ShellError> {
+        let mut channel = self.open_session_channel_for("a command").await?;
+        channel
+            .exec(true, command.to_owned())
+            .await
+            .map_err(|error| self.channel_failure(&format!("`{command}` could not be started"), &error))?;
+
+        let mut early = Early::default();
+        await_command_reply(&mut channel, self, "the command", &mut early).await?;
+
+        let (reading, writing) = channel.split();
+        let writing = Arc::new(writing);
+        let (sender, output) = mpsc::channel(OUTPUT_BACKLOG);
+        let tail = Arc::new(Mutex::new(CommandTail::default()));
+        spawn_command_reader(reading, sender, Arc::clone(&tail), early, Arc::clone(&writing));
+
+        Ok(ExecCommand {
+            input: ExecInput {
+                writing,
+                ended: AtomicBool::new(false),
+                host: self.host.clone(),
+                port: self.port,
+            },
+            output: ExecOutput { output, tail },
+        })
+    }
+}
+
+/// How much of a command's standard error is kept for the message that explains a failure.
+///
+/// An error is not a data dump: the reason is in the first line or two, and the rest would only
+/// grow a value that is copied into an envelope.
+const MAX_STDERR_BYTES: usize = 16 * 1024;
+
+/// One command's two directions, while it runs.
+pub struct ExecCommand {
+    input: ExecInput,
+    output: ExecOutput,
+}
+
+impl ExecCommand {
+    /// The two halves as separate values, so each can be moved into the task that owns it.
+    pub fn split(self) -> (ExecInput, ExecOutput) {
+        (self.input, self.output)
+    }
+}
+
+/// The writing half of a running command: its standard input.
+///
+/// Dropping it ends the command's input. That is what makes an abandoned transfer stop: a `tar` or
+/// a `load` waiting for bytes nobody will send sees end-of-file and exits instead of holding a
+/// channel open for the life of the connection.
+pub struct ExecInput {
+    writing: Arc<ChannelWriteHalf<Msg>>,
+    /// Whether `end` already sent the end of input, so dropping does not send it twice.
+    ended: AtomicBool,
+    host: String,
+    port: u16,
+}
+
+impl ExecInput {
+    /// Bytes for the command's standard input.
+    pub async fn write(&self, data: &[u8]) -> Result<(), ShellError> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        self.writing
+            .data_bytes(data.to_vec())
+            .await
+            .map_err(|error| self.failure("the command's input could not be written", &error))
+    }
+
+    /// Ends the command's standard input without closing the channel, the half-close a `tar xf -`
+    /// waits for. Calling it twice is allowed.
+    pub async fn end(&self) -> Result<(), ShellError> {
+        self.ended.store(true, Ordering::SeqCst);
+        self.writing
+            .eof()
+            .await
+            .map_err(|error| self.failure("the command's input could not be ended", &error))
+    }
+
+    fn failure(&self, what: &str, error: &russh::Error) -> ShellError {
+        ShellError::ssh_channel_failed(&self.host, self.port, format!("{what}: {error}"))
+    }
+}
+
+impl Drop for ExecInput {
+    fn drop(&mut self) {
+        if self.ended.load(Ordering::SeqCst) {
+            return;
+        }
+        // A half-close, not a close: the command may still be writing its answer, and this is the
+        // ordinary end of every upload. The close that follows an abandoned transfer comes from the
+        // reader task, which knows whether anybody is still reading.
+        let writing = Arc::clone(&self.writing);
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = writing.eof().await;
+            });
+        }
+    }
+}
+
+/// The reading half of a running command: its standard output, and the ending it reported.
+pub struct ExecOutput {
+    output: mpsc::Receiver<Vec<u8>>,
+    tail: Arc<Mutex<CommandTail>>,
+}
+
+impl ExecOutput {
+    /// The next chunk of standard output, or nothing when the command's channel ended.
+    pub async fn next(&mut self) -> Option<Vec<u8>> {
+        self.output.recv().await
+    }
+
+    /// The status the server reported, once the output has ended. A command still running has none.
+    pub fn exit_code(&self) -> Option<u32> {
+        self.tail.lock().ok().and_then(|tail| tail.exit_code)
+    }
+
+    /// What the command wrote to standard error, up to the amount kept for an error message.
+    pub fn stderr(&self) -> String {
+        self.tail.lock().map(|tail| tail.stderr.clone()).unwrap_or_default()
+    }
+}
+
+/// What the reader keeps from a command besides its output.
+#[derive(Default)]
+struct CommandTail {
+    exit_code: Option<u32>,
+    stderr: String,
+}
+
+/// Forwards a command's output until its channel ends, keeping the status and the error stream.
+///
+/// Standard output goes to the caller and standard error stays here: a tar stream and a runtime's
+/// warning cannot share bytes, and a warning mixed into an archive corrupts it.
+///
+/// The write half is held only so an abandoned read can close the channel. Closing matters: a
+/// command whose output nobody reads blocks on a full window, and a `docker exec` left running
+/// because a download was refused is a process nobody would think to look for.
+fn spawn_command_reader(
+    mut reading: ChannelReadHalf,
+    sender: mpsc::Sender<Vec<u8>>,
+    tail: Arc<Mutex<CommandTail>>,
+    early: Early,
+    writing: Arc<ChannelWriteHalf<Msg>>,
+) {
+    tokio::spawn(async move {
+        for (error, data) in early.chunks {
+            if error {
+                record_stderr(&tail, &data);
+            } else if sender.send(data).await.is_err() {
+                close_channel(&writing).await;
+                return;
+            }
+        }
+        loop {
+            match reading.wait().await {
+                Some(ChannelMsg::Data { data }) => {
+                    if sender.send(data.to_vec()).await.is_err() {
+                        close_channel(&writing).await;
+                        return;
+                    }
+                }
+                Some(ChannelMsg::ExtendedData { data, ext: 1 }) => record_stderr(&tail, &data),
+                Some(ChannelMsg::ExitStatus { exit_status }) => {
+                    if let Ok(mut tail) = tail.lock() {
+                        tail.exit_code = Some(exit_status);
+                    }
+                }
+                Some(ChannelMsg::Close) | None => break,
+                // An end of file is not the end of the channel: the status is sent after the last
+                // byte and before the close. Window adjustments and other requests are not this
+                // reader's business either.
+                _ => {}
+            }
+        }
+    });
+}
+
+fn record_stderr(tail: &Arc<Mutex<CommandTail>>, data: &[u8]) {
+    let Ok(mut tail) = tail.lock() else {
+        return;
+    };
+    let room = MAX_STDERR_BYTES.saturating_sub(tail.stderr.len());
+    if room == 0 {
+        return;
+    }
+    let take = room.min(data.len());
+    match std::str::from_utf8(&data[..take]) {
+        Ok(text) => tail.stderr.push_str(text),
+        // A cut in the middle of a character is the one case worth repairing: the rest of the
+        // buffer is not valid on its own, and lossy conversion is what the old capture did too.
+        Err(_) => tail.stderr.push_str(&String::from_utf8_lossy(&data[..take])),
+    }
+}
+
+async fn close_channel(writing: &ChannelWriteHalf<Msg>) {
+    let _ = writing.eof().await;
+    let _ = writing.close().await;
 }
 
 /// Output that arrived while a request was still waiting for its answer.

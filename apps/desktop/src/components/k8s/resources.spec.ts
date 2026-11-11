@@ -24,6 +24,7 @@ import {
   jsonPathValue,
   listPathOf,
   resourceGroups,
+  rowActions,
   selfPathOf,
   setCustomResourceDescriptors,
   watchPathOf,
@@ -97,15 +98,41 @@ describe("the table", () => {
       if (descriptor.actions.includes("terminal") || descriptor.actions.includes("logs")) {
         expect(descriptor.kind).toBe("Pod");
       }
+      if (descriptor.actions.includes("files")) {
+        expect(descriptor.kind).toBe("Pod");
+      }
       if (descriptor.actions.includes("drain") || descriptor.actions.includes("cordon")) {
         expect(descriptor.kind).toBe("Node");
       }
     }
   });
 
+  it("withholds a pod's files while the pod has no container to exec into", () => {
+    const pods = descriptorOf("pods") ?? fail();
+    const running = { metadata: { name: "web-1" }, status: { phase: "Running" } };
+    const pending = { metadata: { name: "web-2" }, status: { phase: "Pending" } };
+
+    expect(rowActions(pods, running)).toContain("files");
+    expect(rowActions(pods, pending)).not.toContain("files");
+    // The gate removes one action and leaves the kind's list otherwise as it was.
+    expect(rowActions(pods, pending)).toEqual(pods.actions.filter((action) => action !== "files"));
+  });
+
   it("hides a Secret's values in the YAML view and nothing else's", () => {
     expect(descriptorOf("secrets")?.redactData).toBe(true);
     expect(descriptorOf("configmaps")?.redactData).toBeUndefined();
+  });
+
+  it("offers a New button exactly where a kind says it can be created", () => {
+    // The flag draws the button and the template fills the editor; a kind with one and not the other
+    // is a kind whose New button would open an empty dialog or post a manifest nobody can edit.
+    for (const descriptor of RESOURCES) {
+      expect(descriptor.canCreate === true, `${descriptor.key} disagrees with its template`).toBe(
+        descriptor.createTemplate !== undefined,
+      );
+    }
+    expect(descriptorOf("pods")?.canCreate).toBe(true);
+    expect(descriptorOf("nodes")?.canCreate).toBeUndefined();
   });
 });
 
@@ -242,6 +269,30 @@ describe("a custom kind", () => {
 
     clearCustomResourceDescriptors("conn-a");
     expect(customResourceDescriptors()).toHaveLength(1);
+  });
+
+  it("offers a manifest naming the version, kind and namespace it will be created in", () => {
+    const descriptor = customResourceDescriptor(widgetCrd) ?? fail();
+    expect(descriptor.canCreate).toBe(true);
+    expect(descriptor.createTemplate?.("team-a")).toBe(`apiVersion: example.com/v1
+kind: Widget
+metadata:
+  name: example
+  namespace: team-a
+`);
+  });
+
+  it("leaves the namespace out of a cluster-wide kind, and out when none was chosen", () => {
+    const clusterWide = customResourceDescriptor({ spec: { ...widgetCrd.spec, scope: "Cluster" } }) ?? fail();
+    expect(clusterWide.createTemplate?.("team-a")).toBe(`apiVersion: example.com/v1
+kind: Widget
+metadata:
+  name: example
+`);
+    // An empty value would spell `namespace: null`, which the server rejects as a type error rather
+    // than letting the manifest (or the collection URL) say where the object belongs.
+    const namespaced = customResourceDescriptor(widgetCrd) ?? fail();
+    expect(namespaced.createTemplate?.("")).not.toContain("namespace:");
   });
 });
 

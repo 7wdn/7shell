@@ -232,6 +232,21 @@ export const backend = {
      */
     openContainer: (connectionId: string, containerId: string, path: string): Promise<SftpOutcome> =>
       forward("files_open_container", () => desktop.filesOpenContainer(connectionId, containerId, path)),
+    /**
+     * Opens a browser on a pod's file system, over an exec into one of its containers.
+     *
+     * Same shape as a container's open, and the same bargain: the answer is an ordinary handle, and
+     * every other call in this group takes it from there. Only a running pod has a container to
+     * exec into, which is a fact the caller decides before it asks.
+     */
+    openPod: (
+      connectionId: string,
+      namespace: string,
+      pod: string,
+      container: string,
+      path: string,
+    ): Promise<SftpOutcome> =>
+      forward("files_open_pod", () => desktop.filesOpenPod(connectionId, namespace, pod, container, path)),
     list: (handle: string, path: string): Promise<SftpListing> =>
       forward("files_list", () => desktop.filesList(handle, path)),
     createFolder: (handle: string, path: string): Promise<void> =>

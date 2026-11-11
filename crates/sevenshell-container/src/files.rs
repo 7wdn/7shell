@@ -6,32 +6,33 @@
 //! and with no unquoted text interpolated anywhere. The path is the hostile input of this module:
 //! it names something inside a container whose filesystem may have been built by anyone.
 //!
-//! Two consequences follow from the runner contract and are deliberate:
+//! A transfer is a tar stream in one direction and none in the other. A download is the container's
+//! `tar cf -` read as it arrives and written to this machine entry by entry; an upload is a tar this
+//! module writes into the command's standard input while it is being produced. Neither holds the
+//! archive: the runner carries chunks through a bounded queue, so a tree's size is bounded by the
+//! disk at both ends rather than by memory. A text edit is the one transfer that is still all at
+//! once, because a text area is.
 //!
-//! * A download is `tar cf - … | base64`, because the runner answers with text and a tar stream is
-//!   bytes. That costs a base64 round trip inside the container and caps a download at the runner's
-//!   capture ceiling ([`MAX_TRANSFER_BYTES`]). An upload travels the other way as raw tar on
-//!   standard input, which the runner does carry byte for byte.
-//! * Everything except [`ContainerFiles::list`] needs the container running, because `exec` needs
-//!   it. A stopped container can be exported by a runtime's own `cp`, but that command writes to
-//!   this machine's disk (or, over SSH, to a machine this process cannot read), so it is not a
-//!   channel this crate has. A stopped container answers with the runtime's own refusal.
+//! Everything except [`ContainerFiles::list`] needs the container running, because `exec` needs
+//! it. A stopped container can be exported by a runtime's own `cp`, but that command writes to
+//! this machine's disk (or, over SSH, to a machine this process cannot read), so it is not a
+//! channel this crate has. A stopped container answers with the runtime's own refusal.
 //!
 //! Nothing here decides policy: a deletion is a deletion, and whether the person meant it is a
 //! question for the layer that offers it.
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use async_trait::async_trait;
 use sevenshell_error::ShellError;
 use sevenshell_types::{ContainerRuntime, EntryKind, SftpEntry, SftpListing};
 
 use crate::Provider;
 use crate::commands;
-use crate::runner::Runner;
+use crate::runner::{ByteStream, ChunkSender, InputStream, Runner};
 
 /// The longest path this module will send into a container. Linux's own `PATH_MAX` is 4096.
 const MAX_PATH_CHARS: usize = 4096;
@@ -41,32 +42,93 @@ const MAX_CONTAINER_ID_CHARS: usize = 255;
 /// How much text the editor will read or write in one call. A file of this size is already past
 /// what a text area can usefully edit.
 pub const MAX_TEXT_BYTES: usize = 1024 * 1024;
-/// How many bytes of tar this channel will carry in one transfer.
+/// The most an extended header may carry.
 ///
-/// The runner collects a command's output as text and caps it at 32 MiB, and a download spends a
-/// third of that ceiling on base64; a tree larger than this is refused here so the person is told
-/// why instead of receiving a truncated archive.
-pub const MAX_TRANSFER_BYTES: u64 = 32 * 1024 * 1024;
+/// A long name and a PAX record are metadata, not content: anything past this is a header this
+/// build did not expect, and reading it into memory on the strength of a number in the stream is
+/// exactly what a streaming reader must not do.
+const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 const TAR_BLOCK: usize = 512;
 
-/// The two ways a file command runs: an answer as text, or an answer with bytes on standard input.
+/// The future a transport answers with.
+///
+/// A boxed future rather than an `async fn` in the trait, because the handle is held as
+/// `Arc<dyn CommandTransport>`: an object-safe method is what lets a runtime, an SSH channel and a
+/// pod's `exec` be the same value to this module.
+pub type CommandFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, ShellError>> + Send + 'a>>;
+
+/// The three ways a file command runs: an answer as text, an answer from bytes written while it
+/// runs, and an answer as bytes read while it runs.
 ///
 /// A trait rather than calls straight to [`Runner`] so the tests can hand this module a recorder
-/// and prove that a refused path never reached the step that starts a process.
-#[async_trait]
-trait CommandTransport: Send + Sync {
-    async fn run(&self, argv: &[String]) -> Result<String, ShellError>;
-    async fn run_stdin(&self, argv: &[String], input: Vec<u8>) -> Result<String, ShellError>;
+/// and prove that a refused path never reached the step that starts a process — and so a runtime
+/// this crate does not know (a pod's `exec` channel, which has no CLI at all) can be the thing that
+/// runs the script.
+///
+/// Every method is given the argv [`ContainerFiles`] built. An implementation that is not a
+/// container runtime has nothing to do with the first elements and takes the script out with
+/// [`script_of`], which refuses anything that is not the one shape this module produces.
+pub trait CommandTransport: Send + Sync {
+    fn run<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, String>;
+    fn run_stdin<'a>(&'a self, argv: &'a [String], input: Vec<u8>) -> CommandFuture<'a, String>;
+    fn stream_stdin<'a>(&'a self, argv: &'a [String], input: InputStream) -> CommandFuture<'a, String>;
+    fn stream_bytes<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, ByteStream>;
 }
 
-#[async_trait]
+/// The part of a file command's argv that names the work: a `sh -c` script, and whether it reads
+/// standard input.
+///
+/// Everything before it is how a *runtime* is asked to run a command in a container, and a transport
+/// that is not one runtime has no business reading it. Keeping the script alone in view is what lets
+/// a pod backend reuse this module without pretending to be `docker`.
+pub struct ScriptCommand<'a> {
+    pub script: &'a str,
+    /// Whether the script is fed on standard input, which is what an archive upload is.
+    pub stdin: bool,
+}
+
+/// The script out of an argv [`ContainerFiles`] built, or a refusal.
+///
+/// The shape is checked rather than assumed: the last three elements are `sh -c <script>`, because
+/// that is the only command this module ever builds, and a transport that guessed would run the
+/// whole argv or a piece of it inside the container after a future change here.
+pub fn script_of(argv: &[String]) -> Result<ScriptCommand<'_>, ShellError> {
+    let not_a_script = || {
+        ShellError::container_command_failed(
+            "the file command",
+            "the command was not a shell script this backend can run",
+        )
+    };
+    if argv.len() < 6 {
+        return Err(not_a_script());
+    }
+    let script = argv.len() - 1;
+    if argv[script - 2] != "sh" || argv[script - 1] != "-c" {
+        return Err(not_a_script());
+    }
+    Ok(ScriptCommand {
+        script: argv[script].as_str(),
+        // `-i` is the only flag this module ever passes, and it sits before the container name: a
+        // container id cannot be spelled `-i`, so this cannot mistake one for the flag.
+        stdin: argv[..script - 3].iter().any(|argument| argument == "-i"),
+    })
+}
+
 impl CommandTransport for Runner {
-    async fn run(&self, argv: &[String]) -> Result<String, ShellError> {
-        Runner::run(self, argv).await
+    fn run<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, String> {
+        Box::pin(Runner::run(self, argv))
     }
 
-    async fn run_stdin(&self, argv: &[String], input: Vec<u8>) -> Result<String, ShellError> {
-        Runner::run_stdin(self, argv, input).await
+    fn run_stdin<'a>(&'a self, argv: &'a [String], input: Vec<u8>) -> CommandFuture<'a, String> {
+        Box::pin(Runner::run_stdin(self, argv, input))
+    }
+
+    fn stream_stdin<'a>(&'a self, argv: &'a [String], input: InputStream) -> CommandFuture<'a, String> {
+        Box::pin(Runner::run_stream_stdin(self, argv, input))
+    }
+
+    fn stream_bytes<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, ByteStream> {
+        Box::pin(Runner::stream_bytes(self, argv))
     }
 }
 
@@ -99,7 +161,13 @@ impl ContainerFiles {
         Self::new(provider.runtime(), provider.namespace(), container, runner)
     }
 
-    fn from_transport(
+    /// Files of `container` reached through anything that can run this module's scripts.
+    ///
+    /// Public for the same reason the trait is: a pod container has files too, and its `exec`
+    /// channel is a transport and not a CLI. The runtime shapes the argv — and therefore decides
+    /// which program name the transport will see and ignore — while the namespace and the container
+    /// id are validated exactly as they are for a runtime.
+    pub fn from_transport(
         runtime: ContainerRuntime,
         namespace: &str,
         container: &str,
@@ -194,28 +262,34 @@ impl ContainerFiles {
     }
 
     /// A file as text, bounded by [`MAX_TEXT_BYTES`] and refused unless it is UTF-8.
+    ///
+    /// The archive is read only as far as the file's header says it is long: a container file that
+    /// is not the one asked for, or one nobody should open in a text area, is refused without
+    /// streaming its bytes here.
     pub async fn read_text(&self, path: &str) -> Result<String, ShellError> {
         let path = container_path("the file read", path)?;
         require_not_root("the file read", &path)?;
         let (directory, name) = split_parent(&path);
-        let script = format!("tar cf - -C {} {} | base64", quote(directory), quote(name));
-        let encoded = self.transport.run(&self.exec_argv(&script, false)).await?;
-        let archive = decode_base64(&encoded)?;
-        let entries = read_tar(&archive)?;
-        let entry = entries.first().ok_or_else(|| archive_error("the archive was empty"))?;
-        if entry.name.trim_end_matches('/') != name || entry.kind != b'0' {
+        let script = format!("tar cf - -C {} {}", quote(directory), quote(name));
+        let stream = self.transport.stream_bytes(&self.exec_argv(&script, false)).await?;
+        let mut archive = TarReader::new(stream);
+        let Some(header) = archive.next_header().await? else {
+            return Err(archive.empty_error("the file read"));
+        };
+        if header.name.trim_end_matches('/') != name || header.kind != b'0' {
             return Err(ShellError::container_command_failed(
                 "the file read",
                 format!("{path} is not a regular file"),
             ));
         }
-        if entry.data.len() > MAX_TEXT_BYTES {
+        if header.size > MAX_TEXT_BYTES as u64 {
             return Err(ShellError::container_command_failed(
                 "the file read",
                 format!("{path} is larger than the editor's {MAX_TEXT_BYTES}-byte limit"),
             ));
         }
-        String::from_utf8(entry.data.to_vec())
+        let data = archive.read_bytes(header.size).await?;
+        String::from_utf8(data)
             .map_err(|_| ShellError::container_command_failed("the file read", format!("{path} is not UTF-8 text")))
     }
 
@@ -231,12 +305,14 @@ impl ContainerFiles {
             ));
         }
         let (directory, name) = split_parent(&path);
-        let mut builder = TarBuilder::new();
-        builder.file(name, 0o644, 0, content.as_bytes())?;
-        let archive = builder.finish();
+        // The one transfer that is built whole, because a text area is: the limit above is what
+        // keeps that honest.
+        let mut writer = TarWriter::new(Vec::new());
+        writer.file(name, 0o644, 0, content.as_bytes())?;
+        let archive = writer.finish();
         let script = format!("mkdir -p {} && tar xf - -C {}", quote(directory), quote(directory));
         self.transport
-            .run_stdin(&self.exec_argv(&script, true), archive)
+            .run_stdin(&self.exec_argv(&script, true), archive?)
             .await
             .map(|_| ())
     }
@@ -245,33 +321,45 @@ impl ContainerFiles {
     ///
     /// `destination` is the path itself: a file is written there, a directory is created there and
     /// its children land inside. Every entry the archive carries is checked to stay under that
-    /// path; an archive with an entry that would land somewhere else is refused whole rather than
-    /// half applied.
+    /// path. Because the archive arrives while it is being applied, an entry that leaves the
+    /// destination ends the transfer there rather than being known in advance — what has already
+    /// been written stays, which is the same thing an interrupted download leaves.
     pub async fn download(&self, path: &str, destination: &Path) -> Result<(), ShellError> {
         let path = container_path("the download", path)?;
         require_not_root("the download", &path)?;
         let (directory, name) = split_parent(&path);
-        let script = format!("tar cf - -C {} {} | base64", quote(directory), quote(name));
-        let encoded = self.transport.run(&self.exec_argv(&script, false)).await?;
-        let archive = decode_base64(&encoded)?;
-        ensure_transfer_fits(archive.len() as u64)?;
-        extract_archive(&archive, name, destination)
+        let script = format!("tar cf - -C {} {}", quote(directory), quote(name));
+        let stream = self.transport.stream_bytes(&self.exec_argv(&script, false)).await?;
+        extract_stream(stream, name, destination).await
     }
 
     /// Packs a local file or tree and extracts it inside `destination` in the container.
     ///
-    /// The archive names the chosen file after its own name, so uploading `site` into `/srv` adds
+    /// The archive is written into the command's standard input as it is built: a tree is read one
+    /// file at a time and a file one chunk at a time, so nothing here is as large as the tree. The
+    /// archive names the chosen file after its own name, so uploading `site` into `/srv` adds
     /// `/srv/site/…`, which is what the person selected. The folder is created when missing.
     pub async fn upload(&self, local: &Path, destination: &str) -> Result<(), ShellError> {
         let destination = container_path("the upload", destination)?;
-        let archive = tar_local(local)?;
+        // The chosen path is looked at before a command exists: a missing file, or a socket, is a
+        // refusal this side can make without running anything in the container.
+        let metadata =
+            std::fs::symlink_metadata(local).map_err(|error| local_failure("the upload", "the chosen path", &error))?;
+        if !metadata.is_file() && !metadata.is_dir() {
+            return Err(ShellError::container_command_failed(
+                "the upload",
+                "only a file or a folder can be uploaded",
+            ));
+        }
+        let local = local.to_path_buf();
+        let input = InputStream::from_producer(move |sink| pack_upload(&local, sink));
         let script = format!(
             "mkdir -p {} && tar xf - -C {}",
             quote(&destination),
             quote(&destination)
         );
         self.transport
-            .run_stdin(&self.exec_argv(&script, true), archive)
+            .stream_stdin(&self.exec_argv(&script, true), input)
             .await
             .map(|_| ())
     }
@@ -698,34 +786,245 @@ fn timestamp(year: i64, month: u32, day: u32, hour: u32, minute: u32, second: u3
 
 // --- Archives ----------------------------------------------------------------
 
-/// One entry of a tar stream, its bytes borrowed from the stream.
-struct TarEntry<'a> {
+/// One entry of a tar stream, as its header describes it.
+///
+/// The bytes follow the header and belong to the caller until the next header is asked for: a
+/// reader that kept them would be a reader that holds the archive.
+struct TarHeader {
     name: String,
     /// The `typeflag` byte; a regular file is `0`.
     kind: u8,
     mode: u32,
+    size: u64,
     /// The target of a link, empty for anything else.
     link: String,
-    data: &'a [u8],
 }
 
 fn archive_error(detail: impl AsRef<str>) -> ShellError {
     ShellError::container_command_failed("the archive", detail)
 }
 
-/// Reads a tar stream into entries.
+/// Reads a tar stream entry by entry, as it arrives.
 ///
 /// GNU long names (`L`, `K`) and PAX records (`x`) are understood because busybox tar writes them
 /// for paths a ustar header cannot hold, and a container's paths are not this module's choice. A
-/// header whose checksum does not check out ends the parse: that is a stream this build misread,
+/// header whose checksum does not check out ends the transfer: that is a stream this build misread,
 /// not a valid archive with an odd entry.
+struct TarReader {
+    stream: ByteStream,
+    /// Bytes that have arrived and not been consumed yet. Never more than one chunk plus a header.
+    pending: Vec<u8>,
+    ended: bool,
+    /// Set once the two zero blocks that end an archive were read.
+    finished: bool,
+    pending_name: Option<String>,
+    pending_link: Option<String>,
+}
+
+impl TarReader {
+    fn new(stream: ByteStream) -> Self {
+        Self {
+            stream,
+            pending: Vec::new(),
+            ended: false,
+            finished: false,
+            pending_name: None,
+            pending_link: None,
+        }
+    }
+
+    /// The next header, or nothing when the archive ended.
+    ///
+    /// Every byte of the entry it returns is still unread: the caller decides whether those bytes
+    /// become a file on this machine or are skipped, which is what keeps a download's memory
+    /// independent of the tree.
+    async fn next_header(&mut self) -> Result<Option<TarHeader>, ShellError> {
+        loop {
+            if !self.fill(TAR_BLOCK).await? {
+                return Ok(None);
+            }
+            if self.pending[..TAR_BLOCK].iter().all(|byte| *byte == 0) {
+                self.finished = true;
+                return Ok(None);
+            }
+            let block: Vec<u8> = self.take(TAR_BLOCK);
+            if !tar_checksum_ok(&block) {
+                return Err(archive_error(
+                    "an entry header does not check out; the stream was not a tar archive",
+                ));
+            }
+            let size = tar_number(&block[124..136])?;
+            let kind = block[156];
+            let mode = u32::try_from(tar_number(&block[100..108])?).unwrap_or(0);
+            let name = tar_header_name(&block);
+            let link = tar_text(&block[157..257]);
+
+            // Extended headers are consumed here, before the caller sees anything: they describe the
+            // entry that follows and have no content of their own.
+            let metadata = self.read_metadata(kind, size).await?;
+            match kind {
+                b'L' => {
+                    self.pending_name = Some(tar_text(&metadata));
+                    continue;
+                }
+                b'K' => {
+                    self.pending_link = Some(tar_text(&metadata));
+                    continue;
+                }
+                b'x' | b'X' => {
+                    for (key, value) in pax_records(&metadata) {
+                        match key.as_str() {
+                            "path" => self.pending_name = Some(value),
+                            "linkpath" => self.pending_link = Some(value),
+                            _ => {}
+                        }
+                    }
+                    continue;
+                }
+                // A global PAX header changes defaults this reader does not keep.
+                b'g' => continue,
+                _ => {}
+            }
+
+            return Ok(Some(TarHeader {
+                name: self.pending_name.take().unwrap_or(name),
+                kind: if kind == 0 { b'0' } else { kind },
+                mode,
+                size,
+                link: self.pending_link.take().unwrap_or(link),
+            }));
+        }
+    }
+
+    /// Reads until at least `needed` bytes are pending, answering `false` at the end of the stream.
+    async fn fill(&mut self, needed: usize) -> Result<bool, ShellError> {
+        while self.pending.len() < needed {
+            if self.ended {
+                return Ok(false);
+            }
+            match self.stream.next().await {
+                Some(chunk) => self.pending.extend_from_slice(&chunk),
+                None => {
+                    self.ended = true;
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    fn take(&mut self, count: usize) -> Vec<u8> {
+        self.pending.drain(..count).collect()
+    }
+
+    /// The bytes of an extended header, or nothing for any other kind.
+    async fn read_metadata(&mut self, kind: u8, size: u64) -> Result<Vec<u8>, ShellError> {
+        if !matches!(kind, b'L' | b'K' | b'x' | b'X' | b'g') {
+            return Ok(Vec::new());
+        }
+        if size > MAX_METADATA_BYTES {
+            return Err(archive_error("an extended header is larger than this build reads"));
+        }
+        let data = self.read_bytes(size).await?;
+        Ok(data)
+    }
+
+    /// The whole of the next `size` bytes of content, after which the block padding is consumed.
+    async fn read_bytes(&mut self, size: u64) -> Result<Vec<u8>, ShellError> {
+        let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0));
+        self.copy_bytes(size, &mut bytes).await?;
+        Ok(bytes)
+    }
+
+    /// Copies the next `size` bytes into `sink`.
+    ///
+    /// The write is a local file write of one chunk. Making it asynchronous would mean one task per
+    /// entry for a copy that the disk does anyway; the chunk is what keeps it from holding a thread
+    /// for the length of the tree.
+    async fn copy_bytes(&mut self, size: u64, sink: &mut impl Write) -> Result<(), ShellError> {
+        let mut remaining = size;
+        while remaining > 0 {
+            if self.pending.is_empty() && !self.fill(1).await? {
+                return Err(archive_error("the archive ends in the middle of an entry"));
+            }
+            let take = usize::try_from(remaining).unwrap_or(usize::MAX).min(self.pending.len());
+            let chunk: Vec<u8> = self.pending.drain(..take).collect();
+            sink.write_all(&chunk)
+                .map_err(|error| local_failure("the download", "an entry", &error))?;
+            remaining -= take as u64;
+        }
+        self.skip_padding(size).await
+    }
+
+    /// Consumes `size` bytes without keeping them.
+    async fn skip_bytes(&mut self, size: u64) -> Result<(), ShellError> {
+        let mut remaining = size;
+        while remaining > 0 {
+            if self.pending.is_empty() && !self.fill(1).await? {
+                return Err(archive_error("the archive ends in the middle of an entry"));
+            }
+            let take = usize::try_from(remaining).unwrap_or(usize::MAX).min(self.pending.len());
+            self.pending.drain(..take);
+            remaining -= take as u64;
+        }
+        Ok(())
+    }
+
+    /// Consumes an entry's content, which is how a link or a device is passed over.
+    async fn skip_data(&mut self, size: u64) -> Result<(), ShellError> {
+        self.skip_bytes(size).await?;
+        self.skip_padding(size).await
+    }
+
+    async fn skip_padding(&mut self, size: u64) -> Result<(), ShellError> {
+        let remainder = size % TAR_BLOCK as u64;
+        let padding = if remainder == 0 {
+            0
+        } else {
+            TAR_BLOCK as u64 - remainder
+        };
+        self.skip_bytes(padding).await
+    }
+
+    /// Why the stream ended, when the end was not the archive's own terminator.
+    ///
+    /// An archive that ran to its terminator is complete whatever the command's exit status says
+    /// afterwards, and stopping at that point is what keeps a reader from waiting on a command that
+    /// has nothing left to send.
+    fn failure(&self) -> Option<String> {
+        if self.finished {
+            return None;
+        }
+        self.stream.failure()
+    }
+
+    /// The error for a stream that carried no entry at all: the command's own reason when it had one.
+    fn empty_error(&self, operation: &str) -> ShellError {
+        match self.failure() {
+            Some(detail) => ShellError::container_command_failed(operation, detail),
+            None => archive_error("the archive was empty"),
+        }
+    }
+}
+
+/// One entry of a tar stream, its bytes borrowed from the stream. Test-only: a streaming reader
+/// cannot lend bytes it has not read yet.
+#[cfg(test)]
+struct TarEntry<'a> {
+    name: String,
+    /// The `typeflag` byte; a regular file is `0`.
+    kind: u8,
+    mode: u32,
+    data: &'a [u8],
+}
+
+/// Reads a whole tar stream, for the tests that assert what an upload or a fixture carried.
+#[cfg(test)]
 fn read_tar(archive: &[u8]) -> Result<Vec<TarEntry<'_>>, ShellError> {
     let mut entries = Vec::new();
     let mut offset = 0usize;
     let mut pending_name: Option<String> = None;
-    let mut pending_link: Option<String> = None;
     let mut pax_name: Option<String> = None;
-    let mut pax_link: Option<String> = None;
     while offset + TAR_BLOCK <= archive.len() {
         let block = &archive[offset..offset + TAR_BLOCK];
         if block.iter().all(|byte| *byte == 0) {
@@ -751,16 +1050,12 @@ fn read_tar(archive: &[u8]) -> Result<Vec<TarEntry<'_>>, ShellError> {
                 pending_name = Some(tar_text(data));
                 continue;
             }
-            b'K' => {
-                pending_link = Some(tar_text(data));
-                continue;
-            }
+            // A long link target names an entry this test reader does not model.
+            b'K' => continue,
             b'x' | b'X' => {
                 for (key, value) in pax_records(data) {
-                    match key.as_str() {
-                        "path" => pax_name = Some(value),
-                        "linkpath" => pax_link = Some(value),
-                        _ => {}
+                    if key == "path" {
+                        pax_name = Some(value);
                     }
                 }
                 continue;
@@ -773,16 +1068,11 @@ fn read_tar(archive: &[u8]) -> Result<Vec<TarEntry<'_>>, ShellError> {
             .take()
             .or_else(|| pax_name.take())
             .unwrap_or_else(|| tar_header_name(block));
-        let link = pending_link
-            .take()
-            .or_else(|| pax_link.take())
-            .unwrap_or_else(|| tar_text(&block[157..257]));
         let mode = u32::try_from(tar_number(&block[100..108])?).unwrap_or(0);
         entries.push(TarEntry {
             name,
             kind: if kind == 0 { b'0' } else { kind },
             mode,
-            link,
             data,
         });
     }
@@ -863,15 +1153,19 @@ fn pax_records(data: &[u8]) -> Vec<(String, String)> {
     records
 }
 
-/// A ustar archive built entry by entry. ustar rather than the GNU extensions: GNU tar and busybox
-/// tar both read it, and its 255-byte path ceiling is far past anything a file browser addresses.
-struct TarBuilder {
-    bytes: Vec<u8>,
+/// A ustar archive written entry by entry into a sink. ustar rather than the GNU extensions: GNU
+/// tar and busybox tar both read it, and its 255-byte path ceiling is far past anything a file
+/// browser addresses.
+///
+/// The sink is a `Write` rather than a buffer: an upload writes into the command's standard input
+/// as the tree is read, and the only archive this module ever builds whole is a text edit.
+struct TarWriter<W: Write> {
+    sink: W,
 }
 
-impl TarBuilder {
-    fn new() -> Self {
-        Self { bytes: Vec::new() }
+impl<W: Write> TarWriter<W> {
+    fn new(sink: W) -> Self {
+        Self { sink }
     }
 
     fn directory(&mut self, name: &str, mode: u32, modified_at: u64) -> Result<(), ShellError> {
@@ -881,17 +1175,49 @@ impl TarBuilder {
 
     fn file(&mut self, name: &str, mode: u32, modified_at: u64, data: &[u8]) -> Result<(), ShellError> {
         self.header(name, b'0', mode, modified_at, data.len() as u64, "")?;
-        self.bytes.extend_from_slice(data);
-        let remainder = data.len() % TAR_BLOCK;
-        if remainder != 0 {
-            self.bytes.resize(self.bytes.len() + TAR_BLOCK - remainder, 0);
-        }
-        Ok(())
+        self.sink
+            .write_all(data)
+            .map_err(|error| archive_write_failed(name, &error))?;
+        self.pad(data.len() as u64)
     }
 
-    fn finish(mut self) -> Vec<u8> {
-        self.bytes.resize(self.bytes.len() + 2 * TAR_BLOCK, 0);
-        self.bytes
+    /// Copies a local file into the archive one block at a time.
+    ///
+    /// The size in the header is the file's size when it was read; a file that changes while it is
+    /// being packed is refused rather than written as an archive that disagrees with its own header.
+    fn file_from(&mut self, name: &str, mode: u32, modified_at: u64, local: &Path) -> Result<(), ShellError> {
+        let metadata = std::fs::symlink_metadata(local).map_err(|error| local_failure("the upload", name, &error))?;
+        self.header(name, b'0', mode, modified_at, metadata.len(), "")?;
+        let mut file = std::fs::File::open(local).map_err(|error| local_failure("the upload", name, &error))?;
+        let copied =
+            std::io::copy(&mut file, &mut self.sink).map_err(|error| local_failure("the upload", name, &error))?;
+        if copied != metadata.len() {
+            return Err(ShellError::container_command_failed(
+                "the upload",
+                format!("{name} changed while it was being packed"),
+            ));
+        }
+        self.pad(metadata.len())
+    }
+
+    /// The two zero blocks that end an archive, then the sink back.
+    fn finish(mut self) -> Result<W, ShellError> {
+        let terminator = [0u8; 2 * TAR_BLOCK];
+        self.sink
+            .write_all(&terminator)
+            .map_err(|error| archive_write_failed("the archive", &error))?;
+        Ok(self.sink)
+    }
+
+    fn pad(&mut self, size: u64) -> Result<(), ShellError> {
+        let remainder = (size % TAR_BLOCK as u64) as usize;
+        if remainder == 0 {
+            return Ok(());
+        }
+        let padding = [0u8; TAR_BLOCK];
+        self.sink
+            .write_all(&padding[..TAR_BLOCK - remainder])
+            .map_err(|error| archive_write_failed("the archive", &error))
     }
 
     fn header(
@@ -903,8 +1229,9 @@ impl TarBuilder {
         size: u64,
         link: &str,
     ) -> Result<(), ShellError> {
-        // Eleven octal digits hold 8 GiB and dates past the year 2242; the transfer bound is far
-        // below the first and a file's mtime is long before the second.
+        // Eleven octal digits hold 8 GiB and dates past the year 2242. A larger file has no ustar
+        // representation, and refusing it here is better than writing a header the container's tar
+        // reads as a different size.
         if size > 0o77_777_777_777 || modified_at > 0o77_777_777_777 {
             return Err(archive_error("an entry is too large for this build's archive format"));
         }
@@ -929,9 +1256,14 @@ impl TarBuilder {
         let checksum: u64 = block.iter().map(|byte| u64::from(*byte)).sum();
         let text = format!("{checksum:06o}\0 ");
         block[148..156].copy_from_slice(text.as_bytes());
-        self.bytes.extend_from_slice(&block);
-        Ok(())
+        self.sink
+            .write_all(&block)
+            .map_err(|error| archive_write_failed(name, &error))
     }
+}
+
+fn archive_write_failed(name: &str, error: &std::io::Error) -> ShellError {
+    ShellError::container_command_failed("the archive", format!("{name}: {error}"))
 }
 
 fn set_octal(field: &mut [u8], value: u64) {
@@ -960,82 +1292,13 @@ fn split_tar_name(name: &str) -> Result<(&str, &str), ShellError> {
     ))
 }
 
-fn ensure_transfer_fits(bytes: u64) -> Result<(), ShellError> {
-    if bytes > MAX_TRANSFER_BYTES {
-        return Err(ShellError::container_command_failed(
-            "the transfer",
-            format!(
-                "the tree is larger than the {} MiB this channel carries",
-                MAX_TRANSFER_BYTES / (1024 * 1024)
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn charge(budget: &mut u64, bytes: u64) -> Result<(), ShellError> {
-    *budget = budget.checked_sub(bytes).ok_or_else(|| {
-        ShellError::container_command_failed("the transfer", "the upload is too large for this channel")
-    })?;
-    Ok(())
-}
-
-// --- Base64 ------------------------------------------------------------------
-
-/// Decodes what the container's `base64` printed. busybox wraps lines, so whitespace is ignored;
-/// anything else that is not in the alphabet is refused rather than skipped.
-fn decode_base64(text: &str) -> Result<Vec<u8>, ShellError> {
-    let mut bytes = Vec::with_capacity(text.len() / 4 * 3);
-    let mut group = [0u8; 4];
-    let mut count = 0usize;
-    let mut padding = 0usize;
-    for byte in text.bytes() {
-        let value = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            b'=' => 64,
-            b' ' | b'\t' | b'\r' | b'\n' => continue,
-            _ => {
-                return Err(archive_error(format!(
-                    "the container printed {:?}, which is not base64",
-                    char::from(byte)
-                )));
-            }
-        };
-        if padding > 0 && value != 64 {
-            return Err(archive_error("the base64 stream carries data after its padding"));
-        }
-        if value == 64 {
-            padding += 1;
-        }
-        group[count] = value;
-        count += 1;
-        if count == 4 {
-            bytes.push(group[0] << 2 | group[1] >> 4);
-            if group[2] != 64 {
-                bytes.push(group[1] << 4 | group[2] >> 2);
-            }
-            if group[3] != 64 {
-                bytes.push(group[2] << 6 | group[3]);
-            }
-            count = 0;
-        }
-    }
-    if count != 0 {
-        return Err(archive_error("the base64 stream ended in the middle of a group"));
-    }
-    if padding > 2 {
-        return Err(archive_error("the base64 stream has too much padding"));
-    }
-    Ok(bytes)
-}
-
 // --- Uploading a local tree --------------------------------------------------
 
-fn tar_local(root: &Path) -> Result<Vec<u8>, ShellError> {
+/// Packs the chosen path into the archive being written to `sink`.
+///
+/// The tree is walked and each file copied as it is reached; the archive is never a value here, and
+/// the queue behind the sink is what stops the walk when the container stops reading.
+fn pack_upload(root: &Path, sink: &mut ChunkSender) -> Result<(), ShellError> {
     let metadata =
         std::fs::symlink_metadata(root).map_err(|error| local_failure("the upload", "the chosen path", &error))?;
     let base = root
@@ -1044,24 +1307,24 @@ fn tar_local(root: &Path) -> Result<Vec<u8>, ShellError> {
         .filter(|name| !name.is_empty())
         .ok_or_else(|| ShellError::container_command_failed("the upload", "the chosen path has no file name"))?
         .to_owned();
-    let mut builder = TarBuilder::new();
-    let mut budget = MAX_TRANSFER_BYTES;
+    let mut writer = TarWriter::new(sink);
     if metadata.is_dir() {
-        add_directory(&mut builder, root, &base, &mut budget)?;
+        pack_directory(&mut writer, root, &base)?;
     } else if metadata.is_file() {
-        add_file(&mut builder, root, &base, &metadata, &mut budget)?;
+        writer.file_from(&base, permission_mode(&metadata), modified_at(&metadata), root)?;
     } else {
         return Err(ShellError::container_command_failed(
             "the upload",
             "only a file or a folder can be uploaded",
         ));
     }
-    Ok(builder.finish())
+    writer.finish()?;
+    Ok(())
 }
 
-fn add_directory(builder: &mut TarBuilder, local: &Path, name: &str, budget: &mut u64) -> Result<(), ShellError> {
+fn pack_directory<W: Write>(writer: &mut TarWriter<W>, local: &Path, name: &str) -> Result<(), ShellError> {
     let metadata = std::fs::symlink_metadata(local).map_err(|error| local_failure("the upload", name, &error))?;
-    builder.directory(name, permission_mode(&metadata), modified_at(&metadata))?;
+    writer.directory(name, permission_mode(&metadata), modified_at(&metadata))?;
     let read = std::fs::read_dir(local).map_err(|error| local_failure("the upload", name, &error))?;
     let mut children: Vec<PathBuf> = read
         .map(|entry| entry.map(|entry| entry.path()))
@@ -1084,32 +1347,27 @@ fn add_directory(builder: &mut TarBuilder, local: &Path, name: &str, budget: &mu
             // A link to a file travels as its content, which is what choosing a tree means. A link
             // to a folder is skipped: following one is how an upload walks in circles.
             match std::fs::metadata(&child) {
-                Ok(target) if target.is_file() => add_file(builder, &child, &path, &target, budget)?,
+                Ok(target) if target.is_file() => {
+                    writer.file_from(&path, permission_mode(&target), modified_at(&target), &child)?;
+                }
                 Ok(target) if target.is_dir() => {
                     log::warn!("skipping the folder link {path} while packing an upload");
                 }
                 _ => log::warn!("skipping the link {path} while packing an upload"),
             }
         } else if child_metadata.is_dir() {
-            add_directory(builder, &child, &path, budget)?;
+            pack_directory(writer, &child, &path)?;
         } else if child_metadata.is_file() {
-            add_file(builder, &child, &path, &child_metadata, budget)?;
+            writer.file_from(
+                &path,
+                permission_mode(&child_metadata),
+                modified_at(&child_metadata),
+                &child,
+            )?;
         }
         // A socket, a fifo or a device has no bytes to carry and is skipped.
     }
     Ok(())
-}
-
-fn add_file(
-    builder: &mut TarBuilder,
-    local: &Path,
-    name: &str,
-    metadata: &std::fs::Metadata,
-    budget: &mut u64,
-) -> Result<(), ShellError> {
-    charge(budget, metadata.len())?;
-    let data = std::fs::read(local).map_err(|error| local_failure("the upload", name, &error))?;
-    builder.file(name, permission_mode(metadata), modified_at(metadata), &data)
 }
 
 #[cfg(unix)]
@@ -1133,14 +1391,25 @@ fn modified_at(metadata: &std::fs::Metadata) -> u64 {
 
 // --- Downloading into this machine -------------------------------------------
 
-fn extract_archive(archive: &[u8], root: &str, destination: &Path) -> Result<(), ShellError> {
-    let entries = read_tar(archive)?;
-    let first = entries.first().ok_or_else(|| archive_error("the archive was empty"))?;
+/// Writes an incoming tar stream into `destination`, entry by entry.
+///
+/// The first entry has to be the one that was asked for: that is what proves the archive is the
+/// answer to this request rather than whatever else the container's `tar` printed. Every later name
+/// is checked against it, so a stream that walks out of the folder is refused at the entry that
+/// does it.
+async fn extract_stream(stream: ByteStream, root: &str, destination: &Path) -> Result<(), ShellError> {
+    let mut archive = TarReader::new(stream);
+    let Some(first) = archive.next_header().await? else {
+        return Err(archive.empty_error("the download"));
+    };
     if first.name.trim_end_matches('/') != root {
         return Err(archive_error("the archive does not carry the entry it was asked for"));
     }
+    // The root decides what kind of thing lands: a folder is created there, a file's parent is.
     match first.kind {
-        b'5' => std::fs::create_dir_all(destination).map_err(|error| local_failure("the download", root, &error))?,
+        b'5' => {
+            std::fs::create_dir_all(destination).map_err(|error| local_failure("the download", root, &error))?;
+        }
         b'0' => {
             if let Some(parent) = destination.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| local_failure("the download", root, &error))?;
@@ -1152,59 +1421,84 @@ fn extract_archive(archive: &[u8], root: &str, destination: &Path) -> Result<(),
             ));
         }
     }
+
     let mut extracted: HashMap<String, PathBuf> = HashMap::new();
-    for entry in &entries {
-        let relative = entry_path(&entry.name, root)?;
-        let local = if relative.is_empty() {
-            destination.to_path_buf()
-        } else {
-            destination.join(&relative)
-        };
-        match entry.kind {
-            b'5' => {
-                if relative.is_empty() {
-                    std::fs::create_dir_all(&local).map_err(|error| local_failure("the download", root, &error))?;
-                } else {
-                    create_directories(destination, &local, &entry.name)?;
-                }
-            }
-            b'0' => {
-                // The root file's parent was created before the loop; only a child's parent is
-                // below `destination`.
-                if !relative.is_empty()
-                    && let Some(parent) = local.parent()
-                {
-                    create_directories(destination, parent, &entry.name)?;
-                }
-                refuse_existing_symlink(&local, &entry.name)?;
-                std::fs::write(&local, entry.data)
-                    .map_err(|error| local_failure("the download", &entry.name, &error))?;
-                set_local_mode(&local, entry.mode);
-            }
-            b'2' => {
-                // The check runs on every platform, so an archive that points outside the chosen
-                // folder is refused the same way everywhere; whether the link is then created is
-                // the platform's business.
-                if !safe_link_target(&entry.link) {
-                    return Err(archive_error(format!(
-                        "{} points outside the folder it was downloaded into",
-                        entry.name
-                    )));
-                }
-                extract_symlink(destination, &local, &entry.link, &entry.name)?;
-            }
-            b'1' => {
-                // A hard link is a second name for bytes already written; copying them keeps the
-                // tree usable on a filesystem that has no such idea (or is not this machine's).
-                if let Some(source) = extracted.get(entry.link.trim_end_matches('/')) {
-                    std::fs::copy(source, &local)
-                        .map_err(|error| local_failure("the download", &entry.name, &error))?;
-                }
-            }
-            _ => {}
-        }
-        extracted.insert(entry.name.trim_end_matches('/').to_owned(), local);
+    let mut next = Some(first);
+    while let Some(header) = next {
+        place_entry(&mut archive, &header, root, destination, &mut extracted).await?;
+        next = archive.next_header().await?;
     }
+    if let Some(detail) = archive.failure() {
+        return Err(ShellError::container_command_failed("the download", detail));
+    }
+    Ok(())
+}
+
+/// Writes one entry, consuming its content whether or not it is written.
+async fn place_entry(
+    archive: &mut TarReader,
+    header: &TarHeader,
+    root: &str,
+    destination: &Path,
+    extracted: &mut HashMap<String, PathBuf>,
+) -> Result<(), ShellError> {
+    let relative = entry_path(&header.name, root)?;
+    let local = if relative.is_empty() {
+        destination.to_path_buf()
+    } else {
+        destination.join(&relative)
+    };
+    match header.kind {
+        b'5' => {
+            if relative.is_empty() {
+                std::fs::create_dir_all(&local).map_err(|error| local_failure("the download", root, &error))?;
+            } else {
+                create_directories(destination, &local, &header.name)?;
+            }
+            archive.skip_data(header.size).await?;
+        }
+        b'0' => {
+            // The root file's parent was created before the loop; only a child's parent is below
+            // `destination`.
+            if !relative.is_empty()
+                && let Some(parent) = local.parent()
+            {
+                create_directories(destination, parent, &header.name)?;
+            }
+            refuse_existing_symlink(&local, &header.name)?;
+            // The file is written as its bytes arrive: a tree larger than memory is the reason this
+            // reader exists, and a temporary file would double the disk the transfer needs.
+            let mut file =
+                std::fs::File::create(&local).map_err(|error| local_failure("the download", &header.name, &error))?;
+            archive.copy_bytes(header.size, &mut file).await?;
+            drop(file);
+            set_local_mode(&local, header.mode);
+        }
+        b'2' => {
+            archive.skip_data(header.size).await?;
+            // The check runs on every platform, so an archive that points outside the chosen folder
+            // is refused the same way everywhere; whether the link is then created is the
+            // platform's business.
+            if !safe_link_target(&header.link) {
+                return Err(archive_error(format!(
+                    "{} points outside the folder it was downloaded into",
+                    header.name
+                )));
+            }
+            extract_symlink(destination, &local, &header.link, &header.name)?;
+        }
+        b'1' => {
+            archive.skip_data(header.size).await?;
+            // A hard link is a second name for bytes already written; copying them keeps the tree
+            // usable on a filesystem that has no such idea (or is not this machine's).
+            if let Some(source) = extracted.get(header.link.trim_end_matches('/')) {
+                std::fs::copy(source, &local).map_err(|error| local_failure("the download", &header.name, &error))?;
+            }
+        }
+        // A socket, a fifo or a device has no bytes this machine can write.
+        _ => archive.skip_data(header.size).await?,
+    }
+    extracted.insert(header.name.trim_end_matches('/').to_owned(), local);
     Ok(())
 }
 
@@ -1328,6 +1622,12 @@ mod tests {
         calls: Mutex<Vec<Vec<String>>>,
         inputs: Mutex<Vec<Vec<u8>>>,
         reply: String,
+        /// The bytes a `stream_bytes` call delivers.
+        stream: Vec<u8>,
+        /// How the stream is split into chunks, so a test can prove nothing needs it whole.
+        chunk: usize,
+        /// The failure the stream reports after its bytes, as a command's standard error would.
+        stream_failure: Option<String>,
         fail: bool,
     }
 
@@ -1335,6 +1635,15 @@ mod tests {
         fn with(reply: impl Into<String>) -> Arc<Self> {
             Arc::new(Self {
                 reply: reply.into(),
+                ..Self::default()
+            })
+        }
+
+        /// A transport whose `stream_bytes` answers with this archive.
+        fn streaming(archive: Vec<u8>) -> Arc<Self> {
+            Arc::new(Self {
+                stream: archive,
+                chunk: 4096,
                 ..Self::default()
             })
         }
@@ -1359,40 +1668,86 @@ mod tests {
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .clone()
         }
+
+        fn record(&self, argv: &[String]) {
+            self.calls
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(argv.to_vec());
+        }
     }
 
-    #[async_trait]
     impl CommandTransport for FakeTransport {
-        async fn run(&self, argv: &[String]) -> Result<String, ShellError> {
-            self.calls
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push(argv.to_vec());
-            if self.fail {
-                return Err(ShellError::container_command_failed(
-                    "the container command",
-                    "the engine refused",
-                ));
-            }
-            Ok(self.reply.clone())
+        fn run<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, String> {
+            Box::pin(async move {
+                self.record(argv);
+                if self.fail {
+                    return Err(ShellError::container_command_failed(
+                        "the container command",
+                        "the engine refused",
+                    ));
+                }
+                Ok(self.reply.clone())
+            })
         }
 
-        async fn run_stdin(&self, argv: &[String], input: Vec<u8>) -> Result<String, ShellError> {
-            self.calls
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push(argv.to_vec());
-            self.inputs
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .push(input);
-            if self.fail {
-                return Err(ShellError::container_command_failed(
-                    "the container command",
-                    "the engine refused",
-                ));
-            }
-            Ok(self.reply.clone())
+        fn run_stdin<'a>(&'a self, argv: &'a [String], input: Vec<u8>) -> CommandFuture<'a, String> {
+            Box::pin(async move {
+                self.record(argv);
+                self.inputs
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(input);
+                if self.fail {
+                    return Err(ShellError::container_command_failed(
+                        "the container command",
+                        "the engine refused",
+                    ));
+                }
+                Ok(self.reply.clone())
+            })
+        }
+
+        fn stream_stdin<'a>(&'a self, argv: &'a [String], mut input: InputStream) -> CommandFuture<'a, String> {
+            Box::pin(async move {
+                self.record(argv);
+                let mut chunks = input.take_chunks();
+                let mut bytes = Vec::new();
+                while let Some(chunk) = chunks.recv().await {
+                    bytes.extend_from_slice(&chunk);
+                }
+                self.inputs
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .push(bytes);
+                // The runner prefers the source's own failure over the command's, because a command
+                // fed half an archive can only complain about the archive.
+                if let Some(detail) = input.failure() {
+                    return Err(ShellError::container_command_failed("the standard input", detail));
+                }
+                if self.fail {
+                    return Err(ShellError::container_command_failed(
+                        "the container command",
+                        "the engine refused",
+                    ));
+                }
+                Ok(self.reply.clone())
+            })
+        }
+
+        fn stream_bytes<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, ByteStream> {
+            Box::pin(async move {
+                self.record(argv);
+                if self.fail {
+                    return Err(ShellError::container_command_failed(
+                        "the container command",
+                        "the engine refused",
+                    ));
+                }
+                let chunk = self.chunk.max(1);
+                let chunks: Vec<Vec<u8>> = self.stream.chunks(chunk).map(<[u8]>::to_vec).collect();
+                Ok(ByteStream::from_chunks(chunks, self.stream_failure.clone()))
+            })
         }
     }
 
@@ -1434,35 +1789,12 @@ mod tests {
         }
     }
 
-    // --- Base64 fixtures ------------------------------------------------------
+    // --- Archive fixtures -----------------------------------------------------
 
-    fn base64(bytes: &[u8]) -> String {
-        const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut encoded = String::new();
-        for chunk in bytes.chunks(3) {
-            let first = u32::from(chunk[0]);
-            let second = chunk.get(1).copied().map_or(0, u32::from);
-            let third = chunk.get(2).copied().map_or(0, u32::from);
-            encoded.push(char::from(ALPHABET[(first >> 2) as usize]));
-            encoded.push(char::from(ALPHABET[((first & 3) << 4 | second >> 4) as usize]));
-            if chunk.len() > 1 {
-                encoded.push(char::from(ALPHABET[((second & 15) << 2 | third >> 6) as usize]));
-            } else {
-                encoded.push('=');
-            }
-            if chunk.len() > 2 {
-                encoded.push(char::from(ALPHABET[(third & 63) as usize]));
-            } else {
-                encoded.push('=');
-            }
-        }
-        encoded
-    }
-
-    fn archive_of(build: impl FnOnce(&mut TarBuilder)) -> Vec<u8> {
-        let mut builder = TarBuilder::new();
-        build(&mut builder);
-        builder.finish()
+    fn archive_of(build: impl FnOnce(&mut TarWriter<Vec<u8>>)) -> Vec<u8> {
+        let mut writer = TarWriter::new(Vec::new());
+        build(&mut writer);
+        writer.finish().expect("an archive in memory accepts every write")
     }
 
     // --- Listing --------------------------------------------------------------
@@ -1726,10 +2058,10 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         let archive = archive_of(|builder| {
             builder.file("x.txt", 0o644, 0, b"first line\n").unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         let text = files(&transport).read_text("/etc/app/x.txt").await.unwrap();
         assert_eq!(text, "first line\n");
-        assert_eq!(script(&transport.calls()[0]), "tar cf - -C '/etc/app' 'x.txt' | base64");
+        assert_eq!(script(&transport.calls()[0]), "tar cf - -C '/etc/app' 'x.txt'");
     }
 
     #[tokio::test]
@@ -1737,7 +2069,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         let archive = archive_of(|builder| {
             builder.file("x.bin", 0o644, 0, &[0xff, 0xfe, 0x00]).unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         let error = files(&transport).read_text("/etc/x.bin").await.unwrap_err();
         assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
         assert!(error.detail().unwrap_or_default().contains("UTF-8"));
@@ -1750,7 +2082,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
                 .file("big.txt", 0o644, 0, &vec![b'x'; MAX_TEXT_BYTES + 1])
                 .unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         let error = files(&transport).read_text("/etc/big.txt").await.unwrap_err();
         assert!(error.detail().unwrap_or_default().contains("limit"));
     }
@@ -1760,7 +2092,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         let archive = archive_of(|builder| {
             builder.directory("etc", 0o755, 0).unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         assert!(files(&transport).read_text("/etc").await.is_err());
     }
 
@@ -1775,7 +2107,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
             builder.file("app/assets/app.css", 0o644, 0, b"body {}\n").unwrap();
             builder.file("app/binary.bin", 0o600, 0, &[0x00, 0x01, 0xff]).unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         let temp = TempTree::new();
         let destination = temp.path().join("downloaded");
         files(&transport).download("/srv/app", &destination).await.unwrap();
@@ -1792,7 +2124,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
             std::fs::read_to_string(destination.join("assets/app.css")).unwrap(),
             "body {}\n"
         );
-        assert_eq!(script(&transport.calls()[0]), "tar cf - -C '/srv' 'app' | base64");
+        assert_eq!(script(&transport.calls()[0]), "tar cf - -C '/srv' 'app'");
     }
 
     #[tokio::test]
@@ -1800,7 +2132,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         let archive = archive_of(|builder| {
             builder.file("notes.txt", 0o640, 0, b"one\n").unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         let temp = TempTree::new();
         let destination = temp.path().join("folder/notes.txt");
         files(&transport)
@@ -1808,7 +2140,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
             .await
             .unwrap();
         assert_eq!(std::fs::read(&destination).unwrap(), b"one\n");
-        assert_eq!(script(&transport.calls()[0]), "tar cf - -C '/srv' 'notes.txt' | base64");
+        assert_eq!(script(&transport.calls()[0]), "tar cf - -C '/srv' 'notes.txt'");
     }
 
     #[tokio::test]
@@ -1818,7 +2150,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
                 builder.directory("app", 0o755, 0).unwrap();
                 builder.file(escaping, 0o644, 0, b"x").unwrap();
             });
-            let transport = FakeTransport::with(base64(&archive));
+            let transport = FakeTransport::streaming(archive);
             let temp = TempTree::new();
             let destination = temp.path().join("app");
             let error = files(&transport).download("/srv/app", &destination).await.unwrap_err();
@@ -1835,7 +2167,7 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         let archive = archive_of(|builder| {
             builder.directory("other", 0o755, 0).unwrap();
         });
-        let transport = FakeTransport::with(base64(&archive));
+        let transport = FakeTransport::streaming(archive);
         let temp = TempTree::new();
         let error = files(&transport)
             .download("/srv/app", &temp.path().join("app"))
@@ -1956,14 +2288,6 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
     }
 
     #[test]
-    fn base64_whose_lines_wrap_is_decoded() {
-        assert_eq!(decode_base64("aGVs\nbG8=").unwrap(), b"hello");
-        assert_eq!(decode_base64("").unwrap(), Vec::<u8>::new());
-        assert!(decode_base64("aGVsbG8*").is_err());
-        assert!(decode_base64("aGVsbG8").is_err(), "an incomplete group is not text");
-    }
-
-    #[test]
     fn permissions_are_read_out_of_the_mode_column() {
         assert_eq!(permission_bits("-rw-r--r--"), Some(0o644));
         assert_eq!(permission_bits("drwxr-x---"), Some(0o750));
@@ -1983,10 +2307,84 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         assert_eq!(timestamp(2026, 13, 1, 0, 0, 0), None);
     }
 
-    #[test]
-    fn a_transfer_larger_than_the_bound_is_refused() {
-        assert!(ensure_transfer_fits(MAX_TRANSFER_BYTES).is_ok());
-        assert!(ensure_transfer_fits(MAX_TRANSFER_BYTES + 1).is_err());
+    #[tokio::test]
+    async fn an_archive_split_into_tiny_chunks_is_still_read_as_one_tree() {
+        // The point of the streaming reader: nothing may depend on an entry arriving in one piece.
+        let archive = archive_of(|writer| {
+            writer.directory("app", 0o755, 0).unwrap();
+            writer.file("app/one.txt", 0o644, 0, b"first\n").unwrap();
+            writer.file("app/two.bin", 0o600, 0, &[0x00, 0xff, 0x10, 0x20]).unwrap();
+        });
+        let transport = Arc::new(FakeTransport {
+            stream: archive,
+            chunk: 7,
+            ..FakeTransport::default()
+        });
+        let temp = TempTree::new();
+        let destination = temp.path().join("app");
+        files(&transport).download("/srv/app", &destination).await.unwrap();
+        assert_eq!(std::fs::read_to_string(destination.join("one.txt")).unwrap(), "first\n");
+        assert_eq!(
+            std::fs::read(destination.join("two.bin")).unwrap(),
+            vec![0x00, 0xff, 0x10, 0x20]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_download_that_ends_before_its_entry_does_is_an_error() {
+        let archive = archive_of(|writer| {
+            writer.file("notes.txt", 0o644, 0, &[7u8; 3000]).unwrap();
+        });
+        // Cut inside the file's bytes: a stream that stopped because the command died.
+        let transport = Arc::new(FakeTransport {
+            stream: archive[..TAR_BLOCK + 100].to_vec(),
+            chunk: 128,
+            ..FakeTransport::default()
+        });
+        let temp = TempTree::new();
+        let error = files(&transport)
+            .download("/srv/notes.txt", &temp.path().join("notes.txt"))
+            .await
+            .expect_err("half a file is not a download");
+        assert!(error.detail().unwrap_or_default().contains("middle"), "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn a_download_that_produced_nothing_reports_what_the_command_said() {
+        let transport = Arc::new(FakeTransport {
+            stream_failure: Some("Error: No such container: cid".to_owned()),
+            ..FakeTransport::default()
+        });
+        let temp = TempTree::new();
+        let error = files(&transport)
+            .download("/srv/app", &temp.path().join("app"))
+            .await
+            .expect_err("a refused exec is not an empty folder");
+        assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
+        assert!(
+            error.detail().unwrap_or_default().contains("No such container"),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_upload_larger_than_the_old_ceiling_is_packed_and_sent() {
+        // 33 MiB is past the 32 MiB this channel used to refuse, and the assertion is that the
+        // whole tree reaches the command rather than a prefix of it.
+        let temp = TempTree::new();
+        let file = temp.path().join("large.bin");
+        let payload = vec![0x5au8; 33 * 1024 * 1024];
+        std::fs::write(&file, &payload).unwrap();
+
+        let transport = FakeTransport::with("");
+        files(&transport).upload(&file, "/srv/app").await.unwrap();
+
+        let archive = transport.inputs().remove(0);
+        let entries = read_tar(&archive).unwrap();
+        assert_eq!(entries.len(), 1, "{:?}", entries.first().map(|entry| &entry.name));
+        assert_eq!(entries[0].name, "large.bin");
+        assert_eq!(entries[0].data.len(), payload.len());
+        assert_eq!(entries[0].data[payload.len() - 1], 0x5a);
     }
 
     #[test]
@@ -2012,5 +2410,58 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         for name in ["app/../x", "app/./x", "other/x", "app/a\\b", "app/a:b"] {
             assert!(entry_path(name, "app").is_err(), "{name:?} was accepted");
         }
+    }
+
+    // --- A transport that is not a runtime ------------------------------------
+
+    fn argv(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).to_owned()).collect()
+    }
+
+    #[test]
+    fn only_the_script_tail_of_a_file_command_is_offered_to_a_transport() {
+        let docker = argv(&["docker", "exec", "-i", "cid", "sh", "-c", "tar xf - -C '/srv'"]);
+        let command = script_of(&docker).expect("an argv this module built");
+        assert_eq!(command.script, "tar xf - -C '/srv'");
+        assert!(command.stdin, "an exec opened with -i reads its standard input");
+
+        let nerdctl = argv(&["nerdctl", "--namespace", "k8s.io", "exec", "cid", "sh", "-c", "ls"]);
+        let command = script_of(&nerdctl).expect("a nerdctl argv");
+        assert_eq!(command.script, "ls");
+        assert!(!command.stdin, "a namespace is not a flag for standard input");
+    }
+
+    #[test]
+    fn an_argv_that_is_not_a_script_run_is_refused_instead_of_guessed_at() {
+        for words in [
+            vec!["docker", "exec", "cid", "ls"],
+            vec!["docker", "exec", "cid", "sh", "-lc", "ls"],
+            vec!["docker", "exec", "-i", "cid", "bash", "-c", "ls"],
+            vec!["docker"],
+            Vec::new(),
+        ] {
+            let argv = argv(&words);
+            assert!(script_of(&argv).is_err(), "{words:?} was accepted as a script");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_transport_backed_browser_builds_the_script_a_runtime_would() {
+        // The pod path is this module with another transport behind it; the script a backend sees
+        // has to be the one the container path sends, quoting included.
+        let transport = FakeTransport::with("/srv\n");
+        let files = ContainerFiles::from_transport(
+            ContainerRuntime::Docker,
+            "",
+            "cid",
+            Arc::clone(&transport) as Arc<dyn CommandTransport>,
+        )
+        .expect("a container id with no namespace is valid");
+        files.list("/srv/it's").await.unwrap();
+
+        assert_eq!(
+            script_of(&transport.calls()[0]).unwrap().script,
+            "cd '/srv/it'\\''s' && pwd -P && LC_ALL=C ls -la"
+        );
     }
 }

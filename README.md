@@ -45,7 +45,7 @@ it, never in advance.
 | SCP fallback: a server with no SFTP subsystem, browsed through its shell and SCP | Working, live-tested against a server with SFTP switched off |
 | ZMODEM: `rz` and `sz` inside a terminal, with the system file picker and save dialog | Working, with protocol tests; a real `rz`/`sz` was not run because the lab has no lrzsz |
 | Containers: Docker, Podman, nerdctl and WSLC — containers, images, logs, stats, an exec terminal, file browsing and image-archive import, on this machine or through a saved SSH session | Working; Docker live-tested locally and over SSH, including files and archive loading; the other three runtimes have argument/parser tests only |
-| Kubernetes: kubeconfig contexts, resource lists and watches, pod logs, an exec terminal, metrics-server usage, editable YAML, CRDs and reaching the API server through an SSH session | Working; live-tested against a real k3s cluster, directly and through the SSH lab |
+| Kubernetes: kubeconfig contexts, resource lists and watches, pod logs, an exec terminal, pod file browsing, metrics-server usage, editable YAML, CRDs and reaching the API server through an SSH session | Working; live-tested against a real k3s cluster, directly and through the SSH lab |
 | Transfers: queued and listed, pausable and resumable, packed as one archive for a whole tree, outliving the tab they started in | Working, tested against a real sshd and a 50,000-file directory; packed archives are SSH-only |
 | Host monitor: load, memory, disks, processes and sockets, sampled over the connection you already have | Working |
 | Batch execution: one command, several hosts, a per-host result, and a risk verdict before it runs | Working, tested against a real sshd |
@@ -56,10 +56,9 @@ it, never in advance.
 
 **Not implemented:** remote forwarding (the third kind — refused rather than half-done), agent
 forwarding (implemented, deliberately unclaimed until a real far side has been proved to use it),
-Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. A Kubernetes connection reached through
-an SSH tunnel supports REST, watches and metrics; pod logs and exec on such a connection are refused
-rather than sent around the tunnel. Container file transfers and image archives are bounded by the
-runner's capture ceiling (32 MiB for a tree, 2 GiB for an archive) rather than streamed. Secrets in
+Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. Container and pod file transfers are
+streamed, but a single archive transfer has no progress bar or cancel button, and an image archive
+load has no progress either. Secrets in
 Kubernetes are read-only. Remote desktops are a
 Windows-only feature of this build: the session is handed to the system Remote Desktop client, so
 macOS and Linux do not offer one. A WebDAV or FTP folder cannot be downloaded as one packed archive; its files are
@@ -74,8 +73,9 @@ Desktop locally and through the SSH lab's `docker:dind`; Podman, nerdctl and WSL
 runtime on this machine, so they are covered by argument and parser fixtures. Kubernetes was
 live-tested against a one-node k3s (`deploy/lab/kubernetes`), directly and through the SSH lab; the
 YAML editor and CRD drill-down are covered by unit/component tests but not by a live cluster write.
-Container files and image-archive loading were live-tested against Docker Desktop; the archive case
-used an uncompressed tar, and transfers above the capture ceiling are refused rather than streamed.
+Container files and image-archive loading were live-tested against Docker Desktop and the SSH lab;
+the archive case includes a gzip archive, and a 40 MiB tree is streamed both ways. Pod files were
+live-tested against the k3s lab and are covered by the window e2e.
 
 ## Installing
 

@@ -443,17 +443,30 @@ fn server_host(transport: &K8sTransport, url: &reqwest::Url) -> Option<String> {
     Some(transport.server.clone())
 }
 
-/// A reqwest client with the cluster's own TLS story and no proxy in the middle.
+/// A reqwest client with the cluster's own TLS story, and a proxy only when a tunnel is under it.
 ///
 /// The connector is the transport's, so a client certificate authorises a log stream exactly as it
-/// authorises a list. The proxy is off because the kubeconfig names the server directly: a system
-/// proxy that happens to be configured for the browser would send cluster traffic somewhere the
-/// kubeconfig never mentioned.
+/// authorises a list. Without a tunnel the proxy is off, because the kubeconfig names the server
+/// directly: a system proxy that happens to be configured for the browser would send cluster
+/// traffic somewhere the kubeconfig never mentioned. With a tunnel the only proxy is the tunnel's
+/// own loopback end, which carries the request's own host and refuses every other one — the URL
+/// keeps the cluster's name, so the certificate is still checked against the cluster.
 fn log_client(transport: &K8sTransport) -> Result<reqwest::Client, ShellError> {
-    reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .use_preconfigured_tls(transport.tls.clone())
-        .no_proxy()
-        .connect_timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(15));
+
+    builder = match &transport.bridge {
+        Some(bridge) => {
+            let proxy = reqwest::Proxy::all(format!("http://{}", bridge.endpoint)).map_err(|error| {
+                ShellError::k8s_unavailable(format!("the local end of the tunnel is not a usable proxy: {error}"))
+            })?;
+            builder.proxy(proxy)
+        }
+        None => builder.no_proxy(),
+    };
+
+    builder
         .build()
         .map_err(|error| ShellError::k8s_unavailable(format!("the log client could not be built: {error}")))
 }
@@ -635,6 +648,7 @@ mod tests {
                     server: String::new(),
                     tls: native_tls::TlsConnector::new().expect("a TLS connector"),
                     authorization: Some("Bearer test-token".to_owned()),
+                    bridge: None,
                 },
                 http: reqwest::Client::new(),
             }

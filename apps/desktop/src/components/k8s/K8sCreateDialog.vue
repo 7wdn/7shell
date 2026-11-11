@@ -47,13 +47,29 @@ watch(
   { immediate: true },
 );
 
-const kindLabel = computed(() => (props.descriptor ? t(props.descriptor.labelKey) : ""));
+/**
+ * What the kind is called in the title and on the button.
+ *
+ * A kind the cluster defined has no message key of its own, so its own word is used; everything
+ * around it stays translated.
+ */
+const kindLabel = computed(() =>
+  props.descriptor ? (props.descriptor.kindLabel ?? t(props.descriptor.labelKey)) : "",
+);
 
 const title = computed(() => t("k8s.create.title", { kind: kindLabel.value }));
 
 const submitLabel = computed(() => t("k8s.create.submit", { kind: kindLabel.value }));
 
-const canSubmit = computed(() => manifest.value.trim() !== "" && !props.busy);
+/**
+ * Whether the manifest has nowhere to be created.
+ *
+ * A namespaced kind is posted to a namespaced collection, and the all-namespaces list has no such
+ * URL; the dialog says so up front rather than letting the server answer "namespace is required".
+ */
+const needsNamespace = computed(() => props.descriptor?.namespaced === true && props.namespace.trim() === "");
+
+const canSubmit = computed(() => manifest.value.trim() !== "" && !props.busy && !needsNamespace.value);
 
 function submit(): void {
   if (!canSubmit.value) {
@@ -89,6 +105,10 @@ function submit(): void {
             :aria-label="t('k8s.create.yaml')"
           />
         </div>
+
+        <p v-if="needsNamespace" class="shrink-0 px-4 pt-2 text-[11px] text-muted-foreground">
+          {{ t("k8s.create.namespace") }}
+        </p>
 
         <p
           v-if="props.failure"

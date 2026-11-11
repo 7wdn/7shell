@@ -248,6 +248,7 @@
       "title": "操作",
       "logs": "日志",
       "terminal": "终端",
+      "files": "文件",
       "viewPods": "Pod",
       "restart": "重启",
       "scale": "扩缩容",
@@ -303,7 +304,8 @@
       "title": "创建 {kind}",
       "message": "编辑清单并创建。是否被接受由集群自身的校验决定。",
       "yaml": "清单",
-      "submit": "创建 {kind}"
+      "submit": "创建 {kind}",
+      "namespace": "请先选择命名空间：带命名空间的资源必须创建在某个命名空间里，而当前列表显示的是全部命名空间。"
     },
     "exec": {
       "title": "在 {pod} 中打开终端",
@@ -312,6 +314,16 @@
       "open": "打开终端",
       "notRunning": "只有在运行中的 Pod 里才能打开终端。",
       "noContainer": "这个 Pod 没有可以打开终端的容器。"
+    },
+    "files": {
+      "tabName": "{name} 的文件",
+      "failed": "无法打开 {name} 的文件：{reason}",
+      "title": "浏览 {pod} 的文件",
+      "message": "选择要浏览其文件的容器。",
+      "container": "容器",
+      "open": "打开文件",
+      "notRunning": "只有在运行中的 Pod 里才能浏览文件。",
+      "noContainer": "这个 Pod 没有可以浏览文件的容器。"
     },
     "events": {
       "none": "这个对象没有记录事件。"

@@ -47,6 +47,25 @@ pub async fn files_open_container(
         .await
 }
 
+/// Opens a file browser inside one container of a pod, through the API server's `exec` channel.
+///
+/// The connection is the cluster tab's, and the paths are paths inside the container: nothing here
+/// is a path on this machine, and uploads and downloads keep going through the native dialogs above.
+#[tauri::command]
+pub async fn files_open_pod(
+    state: State<'_, ShellState>,
+    connection_id: String,
+    namespace: String,
+    pod: String,
+    container: String,
+    path: String,
+) -> Result<SftpOutcome, ShellError> {
+    state
+        .core()
+        .open_pod_files(&connection_id, &namespace, &pod, &container, &path)
+        .await
+}
+
 /// Reads a directory.
 #[tauri::command]
 pub async fn files_list(state: State<'_, ShellState>, handle: String, path: String) -> Result<SftpListing, ShellError> {

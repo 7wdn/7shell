@@ -19,5 +19,5 @@ mod watch;
 pub use client::{
     ApiDialer, ApiStream, BoxedApiStream, DialFuture, K8sClient, K8sManager, KubeContext, Kubeconfig, TunneledCluster,
 };
-pub use exec::{ExecSession, open_exec};
+pub use exec::{ExecSession, RunOutput, RunSession, open_exec, open_run};
 pub use logs::{LogHandle, LogOptions, LogStream, open_logs, open_logs_with_options};

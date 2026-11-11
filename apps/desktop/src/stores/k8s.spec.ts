@@ -535,6 +535,41 @@ describe("writes", () => {
     expect(evictions[0]?.path).toBe("/api/v1/namespaces/default/pods/web-0/eviction");
     expect(evictions[0]?.acknowledged).toBe(true);
   });
+
+  it("posts a custom resource as YAML into the namespace it was aimed at, then reads the list again", async () => {
+    requestMock.mockImplementation(async (_connId, request) =>
+      request.path.startsWith("/apis/apiextensions.k8s.io/v1/customresourcedefinitions")
+        ? listOf([widgetCrd], "1")
+        : listOf([], "1"),
+    );
+
+    const store = await connected();
+    const descriptor = descriptorOf("crd:widgets.example.com");
+    if (!descriptor) {
+      throw new Error("the Widget descriptor was not discovered");
+    }
+    const listPath = "/apis/example.com/v1/namespaces/team-a/widgets?limit=500";
+    store.subscribe("conn-1", descriptor.key, "team-a");
+    await settle();
+    expect(requestMock.mock.calls.filter(([, request]) => request.path === listPath)).toHaveLength(1);
+
+    requestMock.mockResolvedValue(answer(201, { kind: "Widget", metadata: { name: "example" } }));
+    const manifest = descriptor.createTemplate?.("team-a") ?? "";
+    await store.createObject("conn-1", descriptor, "team-a", manifest);
+    await settle();
+
+    const post = requestMock.mock.calls.find(([, request]) => request.method === "post")?.[1];
+    expect(post).toEqual({
+      method: "post",
+      path: "/apis/example.com/v1/namespaces/team-a/widgets",
+      body: manifest,
+      contentType: "application/yaml",
+      acknowledged: true,
+    });
+    // The object has to be on screen when the dialog closes: the watch may be behind, and a create
+    // that shows nothing until the next event reads as a create that did not happen.
+    expect(requestMock.mock.calls.filter(([, request]) => request.path === listPath)).toHaveLength(2);
+  });
 });
 
 describe("kinds a cluster defines", () => {

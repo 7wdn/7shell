@@ -22,17 +22,25 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sevenshell_core::Core;
+use sevenshell_core::{Core, CoreEvent};
+use sevenshell_session::TerminalEvent;
 use sevenshell_types::{
-    AuthMethod, K8sMethod, K8sRequest, KubeconfigSource, KubernetesSettings, Session, SessionAuth, TerminalSettings,
+    AuthMethod, K8sExecRequest, K8sLogRequest, K8sMethod, K8sRequest, KubeconfigSource, KubernetesSettings, Session,
+    SessionAuth, TerminalSettings,
 };
 use sevenshell_vault::{SessionSecret, Vault};
 use tempfile::{TempDir, tempdir};
+use tokio::sync::mpsc;
+use tokio::time::timeout;
+
+/// The namespace the k3s lab fixtures live in: `lab-logs` prints a line a second, `lab-shell` sleeps.
+const NAMESPACE: &str = "sevenshell-lab";
 
 struct Lab {
     /// Owned so the vault file outlives the test.
     _directory: TempDir,
     core: Arc<Core>,
+    events: mpsc::Receiver<CoreEvent>,
 }
 
 fn environment(name: &str) -> Option<String> {
@@ -81,17 +89,18 @@ fn lab() -> Option<Lab> {
     cluster.kubernetes = KubernetesSettings {
         source: KubeconfigSource::Imported,
         context: None,
-        namespace: "sevenshell-lab".to_owned(),
+        namespace: NAMESPACE.to_owned(),
         via_ssh: Some("gateway".to_owned()),
     };
     vault
         .save_session(cluster, Some(SessionSecret::Kubeconfig(document)))
         .expect("save the cluster session");
 
-    let (core, _events) = Core::new(Arc::clone(&vault));
+    let (core, events) = Core::new(Arc::clone(&vault));
     Some(Lab {
         _directory: directory,
         core,
+        events,
     })
 }
 
@@ -150,16 +159,7 @@ async fn a_real_cluster_is_reached_through_a_real_ssh_session() {
         return;
     };
 
-    // The probe sends nothing, which is why the key it reports is the key the connection will
-    // see; trusting it is what a person who compared the fingerprint does.
-    let host = environment("SEVENSHELL_TEST_HOST").expect("checked by lab()");
-    let port = environment("SEVENSHELL_TEST_PORT")
-        .and_then(|port| port.parse().ok())
-        .expect("checked by lab()");
-    let presented = sevenshell_ssh::probe_host_key(&host, port, Duration::from_secs(15))
-        .await
-        .expect("the lab presents a host key");
-    lab.core.trust_host_key(&presented).expect("trust the lab");
+    trust_lab(&lab.core).await;
 
     let connection = lab
         .core
@@ -223,4 +223,132 @@ async fn a_real_cluster_is_reached_through_a_real_ssh_session() {
         .await
         .expect_err("a disconnected cluster is gone");
     assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sNotConnected);
+}
+
+/// Terminal output until `needle` appears, or twenty seconds of silence.
+async fn read_until(events: &mut mpsc::Receiver<CoreEvent>, handle: &str, needle: &str) -> String {
+    let mut collected = String::new();
+    let _ = timeout(Duration::from_secs(20), async {
+        while let Some(event) = events.recv().await {
+            if event.handle != handle {
+                continue;
+            }
+            if let TerminalEvent::Data(bytes) = event.event {
+                collected.push_str(&String::from_utf8_lossy(&bytes));
+                if collected.contains(needle) {
+                    return;
+                }
+            }
+        }
+    })
+    .await;
+    collected
+}
+
+/// The probe the tunnel's trust decision is made from.
+async fn trust_lab(core: &Core) {
+    let host = environment("SEVENSHELL_TEST_HOST").expect("checked by lab()");
+    let port = environment("SEVENSHELL_TEST_PORT")
+        .and_then(|port| port.parse().ok())
+        .expect("checked by lab()");
+    // The probe sends nothing, which is why the key it reports is the key the connection will see;
+    // trusting it is what a person who compared the fingerprint does.
+    let presented = sevenshell_ssh::probe_host_key(&host, port, Duration::from_secs(15))
+        .await
+        .expect("the lab presents a host key");
+    core.trust_host_key(&presented).expect("trust the lab");
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH and Kubernetes labs; see the module docs"]
+async fn a_real_cluster_follows_logs_and_runs_a_terminal_through_the_ssh_tunnel() {
+    let Some(mut lab) = lab() else {
+        return;
+    };
+
+    trust_lab(&lab.core).await;
+
+    let connection = lab
+        .core
+        .k8s_connect("cluster")
+        .await
+        .expect("connect through the ssh session");
+
+    // A followed log is the second shape of traffic over the same connection: the log client builds
+    // its own HTTP client, and it is the one that would go around the tunnel if the bridge were not
+    // handed to it.
+    let (lines, mut line_events) = mpsc::unbounded_channel();
+    let (end, mut end_events) = mpsc::unbounded_channel();
+    let stream = lab
+        .core
+        .k8s_logs_start(
+            &connection,
+            &K8sLogRequest {
+                namespace: NAMESPACE.to_owned(),
+                pod: "lab-logs".to_owned(),
+                container: "lab-logs".to_owned(),
+                tail_lines: 10,
+                timestamps: false,
+                previous: false,
+            },
+            lines,
+            end,
+        )
+        .await
+        .expect("follow a log through the tunnel");
+
+    let mut seen = String::new();
+    let mut ended = None;
+    let _ = timeout(Duration::from_secs(30), async {
+        loop {
+            tokio::select! {
+                Some(line) = line_events.recv() => {
+                    seen.push_str(&line.line);
+                    seen.push('\n');
+                    if seen.contains("tick") {
+                        return;
+                    }
+                }
+                Some(end) = end_events.recv() => {
+                    ended = end.error;
+                    return;
+                }
+                else => return,
+            }
+        }
+    })
+    .await;
+    assert!(
+        seen.contains("tick"),
+        "the followed log produced a line through the tunnel (end: {ended:?}): {seen}"
+    );
+    lab.core.k8s_stream_stop(&stream);
+
+    // The terminal is the shape that cannot use the HTTP client at all: it is a WebSocket over a
+    // socket this client dials itself, so it is the one the tunnel has to be asked for by name.
+    let handle = lab
+        .core
+        .k8s_exec_open(
+            &connection,
+            &K8sExecRequest {
+                namespace: NAMESPACE.to_owned(),
+                pod: "lab-shell".to_owned(),
+                container: "lab-shell".to_owned(),
+                command: String::new(),
+            },
+            80,
+            24,
+        )
+        .await
+        .expect("open a terminal through the tunnel");
+
+    lab.core
+        .write(&handle, b"echo tunnel-exec-ok\n")
+        .await
+        .expect("write to the terminal");
+    let echoed = read_until(&mut lab.events, &handle, "tunnel-exec-ok").await;
+    assert!(echoed.contains("tunnel-exec-ok"), "the terminal answered: {echoed}");
+    lab.core.close_terminal(&handle).await.expect("close the terminal");
+
+    lab.core.k8s_disconnect(&connection);
 }

@@ -17,7 +17,7 @@ use sevenshell_ssh::{ExecCapture, MAX_OUTPUT_BYTES, SshSession};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 
-use crate::runner::{LineStream, PtyControl, PtySession};
+use crate::runner::{ByteStream, InputStream, LineStream, PtyControl, PtySession};
 
 /// How long a command that is supposed to finish may take.
 ///
@@ -71,6 +71,74 @@ pub(crate) async fn run_stdin(
         .exec_with_input(&command, &input, COMMAND_TIMEOUT, MAX_OUTPUT_BYTES)
         .await?;
     finished(argv, capture)
+}
+
+/// Runs a command whose standard input is still being produced, chunk by chunk.
+///
+/// There is deliberately no time budget here: the input is a file or a tree on this machine, and a
+/// budget that is generous for a runtime call would cut off a large transfer half way. The stream
+/// ends when the producer does, or when the command stops reading — whichever comes first.
+pub(crate) async fn run_stream_stdin(
+    session: &Arc<SshSession>,
+    argv: &[String],
+    input: &mut InputStream,
+) -> Result<String, ShellError> {
+    let command = command_line(argv);
+    let (stdin, mut output) = session.open_exec_command(&command).await?.split();
+
+    // The answer is drained on its own task while the input is written. A command that copies its
+    // input to its output fills the channel's window on the first megabyte, and every write after
+    // that waits for a reader that does not exist yet.
+    let reading = tokio::spawn(async move {
+        let mut stdout = Vec::new();
+        let mut truncated = false;
+        while let Some(chunk) = output.next().await {
+            if stdout.len() + chunk.len() > MAX_OUTPUT_BYTES {
+                truncated = true;
+                break;
+            }
+            stdout.extend_from_slice(&chunk);
+        }
+        (stdout, truncated, output.exit_code(), output.stderr())
+    });
+
+    let mut chunks = input.take_chunks();
+    while let Some(chunk) = chunks.recv().await {
+        if stdin.write(&chunk).await.is_err() {
+            // The command is gone; its exit status is the explanation, not a broken channel.
+            break;
+        }
+    }
+    let _ = stdin.end().await;
+    drop(stdin);
+
+    let (stdout, truncated, exit_code, stderr) = match reading.await {
+        Ok(captured) => captured,
+        Err(error) => (Vec::new(), false, None, error.to_string()),
+    };
+    let stdout = String::from_utf8_lossy(&stdout).into_owned();
+    if truncated {
+        return Err(ShellError::container_command_failed(
+            &operation(argv),
+            format!("the output was larger than {MAX_OUTPUT_BYTES} bytes and was cut off"),
+        ));
+    }
+    if exit_code != Some(0) {
+        return Err(failed(argv, &stderr, &stdout, exit_code));
+    }
+    Ok(stdout)
+}
+
+/// Runs a command whose standard output is bytes rather than text.
+///
+/// The channel is handed over as it is; the command reads nothing, so its input is ended at once and
+/// a `tar cf -` sees the end of input it never looks at.
+pub(crate) async fn stream_bytes(session: &Arc<SshSession>, argv: &[String]) -> Result<ByteStream, ShellError> {
+    let command = command_line(argv);
+    let (stdin, output) = session.open_exec_command(&command).await?.split();
+    let _ = stdin.end().await;
+    drop(stdin);
+    Ok(ByteStream::remote(output))
 }
 
 /// Runs a command whose output keeps arriving after it starts.
@@ -618,6 +686,53 @@ mod live_tests {
         .await
         .expect("a command that succeeds");
         assert_eq!(output, "a secret nobody should log\n");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the SSH lab: set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD"]
+    async fn a_streamed_input_crosses_the_channel_byte_for_byte() {
+        let Some(session) = lab().await else {
+            return;
+        };
+        // Larger than the channel's window: the writes and the reads have to happen at the same
+        // time, which is what the split halves exist for.
+        let payload: Vec<u8> = (0..4 * 1024 * 1024).map(|index| (index % 251) as u8).collect();
+        let expected = payload.len();
+        let mut input = InputStream::from_producer(move |sink| {
+            std::io::Write::write_all(sink, &payload)
+                .map_err(|error| ShellError::container_command_failed("the test input", error.to_string()))
+        });
+        let output = run_stream_stdin(
+            &session,
+            &["sh".to_owned(), "-c".to_owned(), "wc -c".to_owned()],
+            &mut input,
+        )
+        .await
+        .expect("a command that counts its input");
+        assert_eq!(output.trim(), expected.to_string(), "not every byte arrived");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs the SSH lab: set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD"]
+    async fn streamed_output_arrives_as_a_stream_and_ends_with_its_status() {
+        let Some(session) = lab().await else {
+            return;
+        };
+        let mut stream = stream_bytes(&session, &["sh".to_owned(), "-c".to_owned(), "seq 1 20000".to_owned()])
+            .await
+            .expect("a command that prints a lot");
+        let mut received = Vec::new();
+        let mut chunks = 0usize;
+        while let Some(chunk) = stream.next().await {
+            chunks += 1;
+            received.extend_from_slice(&chunk);
+        }
+        assert!(chunks > 1, "the answer arrived in one chunk, so nothing was streamed");
+        assert_eq!(stream.failure(), None, "a command that succeeded must not look failed");
+        let text = String::from_utf8(received).expect("seq prints digits");
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.first(), Some(&"1"));
+        assert_eq!(lines.last(), Some(&"20000"));
     }
 
     #[tokio::test]

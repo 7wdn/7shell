@@ -14,6 +14,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   tunnelClose: vi.fn(),
   filesOpen: vi.fn(),
   filesOpenContainer: vi.fn(),
+  filesOpenPod: vi.fn(),
   filesList: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
@@ -45,6 +46,7 @@ import {
   filesList,
   filesOpen,
   filesOpenContainer,
+  filesOpenPod,
   knownHostForget,
   knownHostTrust,
   sessionOpen,
@@ -63,6 +65,7 @@ import {
   type FilesTab,
   type TerminalTab,
   containerFilesSessionId,
+  podFilesSessionId,
   tunnelFailureKey,
   useTerminalsStore,
 } from "@/stores/terminals";
@@ -78,6 +81,7 @@ const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const tunnelCloseMock = vi.mocked(tunnelClose);
 const filesOpenMock = vi.mocked(filesOpen);
 const filesOpenContainerMock = vi.mocked(filesOpenContainer);
+const filesOpenPodMock = vi.mocked(filesOpenPod);
 const filesListMock = vi.mocked(filesList);
 const filesCloseMock = vi.mocked(filesClose);
 const transfersOpenMock = vi.mocked(transfersOpen);
@@ -1109,6 +1113,107 @@ describe("terminals store", () => {
       await store.closeTab(id);
 
       expect(filesCloseMock).toHaveBeenCalledWith("c1");
+      expect(store.tabs).toHaveLength(0);
+    });
+  });
+
+  /**
+   * A pod's files are the container backend one level out: the browser rides the cluster
+   * connection and reaches the pod over an exec into the container that was picked.
+   *
+   * What can only be seen here is the shape of the tab and the address it was opened with — the
+   * namespace, pod and container all travel, because the tab's own name is not an address the
+   * backend can resolve anything from.
+   */
+  describe("a pod's files", () => {
+    const cluster: Session = {
+      id: "cluster-1",
+      name: "lab cluster",
+      protocol: "kubernetes",
+      host: "",
+      port: 0,
+      user: "",
+      auth: { method: "password", hasSecret: false },
+      terminal: { terminalType: "xterm-256color", keepaliveSeconds: 0, forwardAgent: false, record: false },
+      updatedAt: 0,
+    };
+
+    function podFilesOpened() {
+      return {
+        kind: "opened",
+        handle: "p1",
+        sessionId: podFilesSessionId(cluster.id, "team-a", "web-1", "app"),
+        listing: { path: "/", entries: [] },
+        packed: false,
+      } as const;
+    }
+
+    beforeEach(() => {
+      filesOpenPodMock.mockReset();
+    });
+
+    afterEach(() => {
+      filesCloseMock.mockClear();
+    });
+
+    it("opens a tab naming the pod and the container, and passes all five parts to the backend", async () => {
+      filesOpenPodMock.mockResolvedValue(podFilesOpened());
+
+      const store = useTerminalsStore();
+      await store.openPodFiles(cluster, "conn-1", "team-a", "web-1", "app");
+
+      // The backend cannot find a pod from a tab's name: every part of the address goes with the ask.
+      expect(filesOpenPodMock).toHaveBeenCalledWith("conn-1", "team-a", "web-1", "app", "/");
+      const tab = filesTab(store);
+      expect(tab?.handle).toBe("p1");
+      expect(tab?.status).toBe("open");
+      expect(tab?.session.id).toBe(podFilesSessionId(cluster.id, "team-a", "web-1", "app"));
+      expect(tab?.session.name).toBe("web-1/app files");
+      // The address belongs to the cluster; showing the pod's would invent one it does not have.
+      expect(tab?.session.protocol).toBe("kubernetes");
+      expect(tab?.session.host).toBe("");
+      expect(tab?.session.port).toBe(0);
+      expect(tab?.session.user).toBe("");
+      expect(store.connectingSessionIds).toEqual([]);
+    });
+
+    it("goes to the tab a pod's container already has rather than opening a second one", async () => {
+      filesOpenPodMock.mockResolvedValue(podFilesOpened());
+
+      const store = useTerminalsStore();
+      await store.openPodFiles(cluster, "conn-1", "team-a", "web-1", "app");
+      const opened = filesTab(store);
+      store.activate("somewhere-else");
+      await store.openPodFiles(cluster, "conn-1", "team-a", "web-1", "app");
+
+      expect(filesOpenPodMock).toHaveBeenCalledTimes(1);
+      expect(store.tabs.filter((tab) => tab.kind === "files")).toHaveLength(1);
+      expect(store.activeTabId).toBe(opened?.id);
+    });
+
+    it("says which pod's files could not be opened, and leaves no tab behind", async () => {
+      filesOpenPodMock.mockRejectedValue(refused);
+      const { message } = useToast();
+
+      const store = useTerminalsStore();
+      await store.openPodFiles(cluster, "conn-1", "team-a", "web-1", "app");
+
+      expect(store.tabs).toHaveLength(0);
+      expect(message.value).toContain("web-1/app");
+      expect(message.value).toContain("Something went wrong inside the application.");
+      expect(store.connectingSessionIds).toEqual([]);
+    });
+
+    it("closes the browser through the backend when its tab goes away", async () => {
+      filesOpenPodMock.mockResolvedValue(podFilesOpened());
+      filesCloseMock.mockResolvedValue(undefined);
+
+      const store = useTerminalsStore();
+      await store.openPodFiles(cluster, "conn-1", "team-a", "web-1", "app");
+      const id = filesTab(store)?.id ?? "";
+      await store.closeTab(id);
+
+      expect(filesCloseMock).toHaveBeenCalledWith("p1");
       expect(store.tabs).toHaveLength(0);
     });
   });

@@ -55,6 +55,23 @@ pub(crate) struct K8sTransport {
     pub(crate) tls: native_tls::TlsConnector,
     /// `Bearer …` when the kubeconfig uses a token, otherwise nothing (client certificates).
     pub(crate) authorization: Option<String>,
+    /// The loopback end of a tunnel, when this connection is carried by one.
+    ///
+    /// Part of the transport rather than of the HTTP client because every shape of traffic has to
+    /// take it: a list, a watch, a followed log and a pod terminal all reach the same cluster, and a
+    /// stream that quietly went around the tunnel would be a different promise than the one the
+    /// connection made.
+    pub(crate) bridge: Option<Bridge>,
+}
+
+/// The loopback listener a tunnel answers on, and the one server it will carry.
+///
+/// The pair travels together on purpose: a client that knows only the endpoint would have to guess
+/// what to ask it for, and the bridge refuses everything but this server anyway.
+#[derive(Clone)]
+pub(crate) struct Bridge {
+    pub(crate) endpoint: SocketAddr,
+    pub(crate) target: ServerAddress,
 }
 
 impl K8sClient {
@@ -82,15 +99,14 @@ impl K8sClient {
             ShellError::k8s_unavailable(format!("the local end of the tunnel has no address: {error}"))
         })?;
 
-        let http = http_client(&prepared.transport.tls, Some(address))?;
+        let mut transport = prepared.transport;
+        transport.bridge = Some(Bridge {
+            endpoint: address,
+            target: prepared.target.clone(),
+        });
+        let http = http_client(&transport.tls, Some(address))?;
         let tunnel = TunnelEndpoint::start(listener, prepared.target, dialer);
-        Ok((
-            Self {
-                transport: prepared.transport,
-                http,
-            },
-            tunnel,
-        ))
+        Ok((Self { transport, http }, tunnel))
     }
 
     /// The parts a WebSocket upgrade needs, which are the same parts every request uses.
@@ -191,10 +207,24 @@ pub trait ApiDialer: Send + Sync + 'static {
 
 /// Where the API server listens, as the kubeconfig spells it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ServerAddress {
+pub(crate) struct ServerAddress {
     /// Without brackets: this string is also what a direct-tcpip channel names.
     host: String,
     port: u16,
+}
+
+impl ServerAddress {
+    /// `host:port` as a CONNECT authority spells it.
+    ///
+    /// Brackets appear here, not in the dialer: a CONNECT authority for an IPv6 address has to be
+    /// `[::1]:6443`, while the channel that carries it is named `::1`. The bridge compares the two
+    /// spellings as addresses, so this is the shape that reaches it.
+    pub(crate) fn authority(&self) -> String {
+        match self.host.parse::<std::net::Ipv6Addr>() {
+            Ok(_) => format!("[{}]:{}", self.host, self.port),
+            Err(_) => format!("{}:{}", self.host, self.port),
+        }
+    }
 }
 
 /// Reads the host and port a tunnel has to reach.
@@ -255,6 +285,7 @@ fn transport_of(selected: &Selected) -> Result<K8sTransport, ShellError> {
         server: server.host,
         tls,
         authorization: selected.user.authorization(),
+        bridge: None,
     })
 }
 
@@ -658,14 +689,8 @@ pub struct K8sManager {
 struct Connection {
     client: Arc<K8sClient>,
     /// Held, not read: dropping it stops the listener and the connections it is carrying.
+    #[allow(dead_code)]
     tunnel: Option<TunnelEndpoint>,
-}
-
-/// What one open connection offers a request.
-struct Opened {
-    client: Arc<K8sClient>,
-    /// Whether a tunnel carries it, which the WebSocket paths cannot follow yet.
-    tunneled: bool,
 }
 
 impl K8sManager {
@@ -800,16 +825,8 @@ impl K8sManager {
         events: tokio::sync::mpsc::UnboundedSender<sevenshell_types::K8sStreamLine>,
         end: tokio::sync::mpsc::UnboundedSender<sevenshell_types::K8sStreamEnd>,
     ) -> Result<String, ShellError> {
-        let opened = self.opened(connection_id)?;
-        if opened.tunneled {
-            // A log stream builds a client of its own, and that client deliberately ignores
-            // proxies. Following the tunnel from here would mean giving it the tunnel's endpoint;
-            // until it has one, refusing is the answer that keeps the connection's promise.
-            return Err(ShellError::k8s_unavailable(
-                "following a pod's log through an SSH tunnel is not available yet",
-            ));
-        }
-        let mut stream = crate::logs::open_logs(&opened.client, request)?;
+        let client = self.client(connection_id)?;
+        let mut stream = crate::logs::open_logs(&client, request)?;
         let handle = stream.handle();
 
         let stream_id = uuid::Uuid::new_v4().to_string();
@@ -846,32 +863,30 @@ impl K8sManager {
         columns: u32,
         rows: u32,
     ) -> Result<crate::exec::ExecSession, ShellError> {
-        let opened = self.opened(connection_id)?;
-        if opened.tunneled {
-            // A pod terminal is a WebSocket this crate opens itself, over a connection it dials:
-            // it does not go through the HTTP client and cannot follow the tunnel. Refused rather
-            // than connected directly, because reaching the server the long way round is what the
-            // connection promises.
-            return Err(ShellError::k8s_unavailable(
-                "a pod terminal cannot be opened through an SSH tunnel yet",
-            ));
-        }
-        crate::exec::open_exec(&opened.client, request, columns, rows).await
+        let client = self.client(connection_id)?;
+        crate::exec::open_exec(&client, request, columns, rows).await
+    }
+
+    /// Opens a command that runs to completion: no terminal, two output streams, and a status.
+    ///
+    /// File operations use this and never the terminal path: a pty merges standard error into
+    /// standard output and translates line endings, and a tar archive survives neither.
+    pub async fn exec_run(
+        &self,
+        connection_id: &str,
+        request: &sevenshell_types::K8sExecRequest,
+        stdin: bool,
+    ) -> Result<crate::exec::RunSession, ShellError> {
+        let client = self.client(connection_id)?;
+        crate::exec::open_run(&client, request, stdin).await
     }
 
     fn client(&self, connection_id: &str) -> Result<Arc<K8sClient>, ShellError> {
-        self.opened(connection_id).map(|opened| opened.client)
-    }
-
-    fn opened(&self, connection_id: &str) -> Result<Opened, ShellError> {
         let connections = self.connections();
-        let connection = connections
+        connections
             .get(connection_id)
-            .ok_or_else(|| ShellError::k8s_not_connected(connection_id))?;
-        Ok(Opened {
-            client: Arc::clone(&connection.client),
-            tunneled: connection.tunnel.is_some(),
-        })
+            .map(|connection| Arc::clone(&connection.client))
+            .ok_or_else(|| ShellError::k8s_not_connected(connection_id))
     }
 
     fn connections(&self) -> MutexGuard<'_, HashMap<String, Connection>> {
@@ -1164,6 +1179,21 @@ users:
             "CONNECT [2001:0db8:0000:0000:0000:0000:0000:0001]:6443 HTTP/1.1",
             &target
         ));
+    }
+
+    #[test]
+    fn the_authority_the_client_sends_is_the_one_the_bridge_accepts() {
+        // The two sides of one contract: the WebSocket path writes this line, and the listener
+        // judges it. A bracketed IPv6 address is where the two spellings would part company.
+        for (host, port) in [("api.example.test", 6443), ("2001:db8::1", 6443), ("127.0.0.1", 1)] {
+            let target = target(host, port);
+            let line = format!("CONNECT {} HTTP/1.1", target.authority());
+            assert!(
+                asks_for_target(&line, &target),
+                "the bridge refused its own client: {line}"
+            );
+        }
+        assert_eq!(target("2001:db8::1", 6443).authority(), "[2001:db8::1]:6443");
     }
 
     #[test]

@@ -248,6 +248,7 @@
       "title": "Actions",
       "logs": "Logs",
       "terminal": "Terminal",
+      "files": "Files",
       "viewPods": "Pods",
       "restart": "Restart",
       "scale": "Scale",
@@ -303,7 +304,8 @@
       "title": "Create {kind}",
       "message": "Edit the manifest and create it. The cluster's own validation decides whether it is accepted.",
       "yaml": "Manifest",
-      "submit": "Create {kind}"
+      "submit": "Create {kind}",
+      "namespace": "Choose a namespace first: a namespaced kind is created into one, and this list is showing every namespace."
     },
     "exec": {
       "title": "Open a terminal in {pod}",
@@ -312,6 +314,16 @@
       "open": "Open terminal",
       "notRunning": "A terminal can only be opened in a pod that is running.",
       "noContainer": "This pod has no container to open a terminal in."
+    },
+    "files": {
+      "tabName": "{name} files",
+      "failed": "Could not open the files of {name}: {reason}",
+      "title": "Browse the files of {pod}",
+      "message": "Choose the container to browse.",
+      "container": "Container",
+      "open": "Open files",
+      "notRunning": "Files can only be browsed in a pod that is running.",
+      "noContainer": "This pod has no container to browse."
     },
     "events": {
       "none": "No events recorded for this object."

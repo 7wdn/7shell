@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use sevenshell_container::Runner;
+use sevenshell_container::{InputStream, Runner};
 use sevenshell_error::ErrorCode;
 
 fn argv(parts: &[&str]) -> Vec<String> {
@@ -157,4 +157,98 @@ async fn a_terminal_carries_bytes_in_both_directions() {
     );
 
     terminal.close().await.expect("close should be accepted");
+}
+
+#[tokio::test]
+async fn a_standard_input_streamed_from_a_reader_reaches_the_program() {
+    // `sort` reads all of its input before answering, so the answer proves both that the producer
+    // was drained and that the far side saw its end.
+    #[cfg(windows)]
+    let command = argv(&["cmd", "/c", "sort"]);
+    #[cfg(not(windows))]
+    let command = argv(&["sort"]);
+
+    let source: &[u8] = b"beta\nalpha\n";
+    let output = Runner::Local
+        .run_stream_stdin(&command, InputStream::from_reader(source))
+        .await
+        .expect("sort should run");
+    let lines: Vec<&str> = output.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    assert_eq!(lines, vec!["alpha", "beta"]);
+}
+
+/// A source that stops before its end, the way a file on a failing disk would.
+struct FailingSource;
+
+impl tokio::io::AsyncRead for FailingSource {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        _context: &mut std::task::Context<'_>,
+        _buffer: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Err(std::io::Error::other("the source gave up")))
+    }
+}
+
+#[tokio::test]
+async fn a_source_that_fails_is_named_instead_of_the_commands_complaint_about_it() {
+    // The command is `cat`: it sees the end of a short input and exits well, so the only account of
+    // what happened is the one the runner keeps for the source.
+    #[cfg(windows)]
+    let command = argv(&["cmd", "/c", "more"]);
+    #[cfg(not(windows))]
+    let command = argv(&["cat"]);
+
+    let error = Runner::Local
+        .run_stream_stdin(&command, InputStream::from_reader(FailingSource))
+        .await
+        .expect_err("a source that failed is not a successful transfer");
+    assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
+    let detail = error.detail().unwrap_or_default();
+    assert!(detail.contains("gave up"), "detail was {detail:?}");
+}
+
+#[tokio::test]
+async fn streamed_output_arrives_in_chunks_and_adds_up_to_the_whole_answer() {
+    // A megabyte through a pipe: more than one read, which is what makes this a stream.
+    let path = std::env::temp_dir().join(format!("7shell-stream-bytes-{}.bin", std::process::id()));
+    let payload: Vec<u8> = (0..1024 * 1024).map(|index| (index % 251) as u8).collect();
+    std::fs::write(&path, &payload).expect("a temporary file");
+    #[cfg(windows)]
+    let command = argv(&["cmd", "/c", "type", &path.to_string_lossy()]);
+    #[cfg(not(windows))]
+    let command = shell(&format!("cat '{}'", path.display()));
+
+    let mut stream = Runner::Local
+        .stream_bytes(&command)
+        .await
+        .expect("a stream should start");
+    let mut received = Vec::new();
+    let mut chunks = 0usize;
+    while let Some(chunk) = stream.next().await {
+        chunks += 1;
+        received.extend_from_slice(&chunk);
+    }
+    let failure = stream.failure();
+    let _ = std::fs::remove_file(&path);
+
+    assert_eq!(failure, None, "a command that succeeded must not look failed");
+    assert!(chunks > 1, "the answer arrived in one chunk, so nothing was streamed");
+    assert_eq!(received, payload);
+}
+
+#[tokio::test]
+async fn a_streamed_command_that_failed_reports_its_own_words_after_the_output_ended() {
+    #[cfg(windows)]
+    let command = shell("echo stream-refused 1>&2 & exit 9");
+    #[cfg(not(windows))]
+    let command = shell("echo stream-refused >&2; exit 9");
+
+    let mut stream = Runner::Local
+        .stream_bytes(&command)
+        .await
+        .expect("a stream should start");
+    while stream.next().await.is_some() {}
+    let failure = stream.failure().expect("a failing command has an ending");
+    assert!(failure.contains("stream-refused"), "the ending was {failure:?}");
 }

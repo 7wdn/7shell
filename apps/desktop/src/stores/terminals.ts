@@ -92,6 +92,18 @@ export function containerFilesSessionId(sessionId: string, containerId: string):
   return `${sessionId}:${containerId}`;
 }
 
+/**
+ * The pseudo-session id a pod's file manager tab carries.
+ *
+ * A pod is not a saved session either, and one cluster can hold two pods with the same name in
+ * different namespaces — so the tab is identified by the cluster session plus the pod's whole
+ * address, and the container is part of it because each container is its own file system. That is
+ * also what "the tab for this pod's container" is looked up by.
+ */
+export function podFilesSessionId(sessionId: string, namespace: string, pod: string, container: string): string {
+  return `${sessionId}:${namespace}/${pod}/${container}`;
+}
+
 export type TerminalTabStatus = "open" | "ended" | "failed";
 
 /** A file browser has no stream that can end: it opened, or it did not. */
@@ -531,6 +543,73 @@ export const useTerminalsStore = defineStore("terminals", () => {
       toast(
         translate("container.filesFailed", {
           name: containerName,
+          reason: describeShellError(translate, failure).message,
+        }),
+        "failure",
+      );
+    } finally {
+      connectingSessionIds.value = connectingSessionIds.value.filter((entry) => entry !== id);
+    }
+  }
+
+  /**
+   * Opens the file manager for one container of a pod, in a tab of its own.
+   *
+   * Same shape as a container's files, one level further out: the browser rides the cluster
+   * connection the Kubernetes workspace already holds and reaches the pod over an exec into the
+   * chosen container. The tab's session names the pod and the container rather than an address,
+   * which is what makes "the tab for this pod's container" findable — and why asking twice goes
+   * to that tab instead of opening a second browser on it.
+   *
+   * A failure leaves no tab and is said against the pod, because nothing came up to draw and the
+   * row the person clicked is where the answer belongs.
+   */
+  async function openPodFiles(
+    session: Session,
+    connectionId: string,
+    namespace: string,
+    pod: string,
+    container: string,
+  ): Promise<void> {
+    const id = podFilesSessionId(session.id, namespace, pod, container);
+    const showing = tabs.value.find(
+      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === id && entry.handle !== null,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+    if (connectingSessionIds.value.includes(id)) {
+      return;
+    }
+
+    connectingSessionIds.value.push(id);
+    try {
+      const outcome = await files.openPod(id, connectionId, namespace, pod, container, "/");
+      if (outcome.kind !== "opened") {
+        // No decision can arise here: the cluster connection decided its host key when it was
+        // opened, and there is no second door into a pod's files to repeat it from.
+        return;
+      }
+      addFiles(
+        {
+          ...session,
+          id,
+          name: translate("k8s.files.tabName", { name: `${pod}/${container}` }),
+          // The address belongs to the cluster rather than to the pod, so the tab carries none of
+          // it: what it reaches is named by the connection it was opened through.
+          protocol: "kubernetes",
+          host: "",
+          port: 0,
+          user: "",
+        },
+        { handle: outcome.handle, status: "open", failure: null, packed: outcome.packed },
+      );
+    } catch (error) {
+      const failure = asShellError(error, "files_open");
+      toast(
+        translate("k8s.files.failed", {
+          name: `${pod}/${container}`,
           reason: describeShellError(translate, failure).message,
         }),
         "failure",
@@ -1554,6 +1633,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     open,
     openFiles,
     openContainerFiles,
+    openPodFiles,
     openDesktop,
     reopen,
     goTo,

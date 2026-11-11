@@ -197,7 +197,8 @@ impl Core {
     /// Loads an image archive from a file the person chose in a native dialog.
     ///
     /// The path stays on this side of the window: it is never handed to the interface, and it never
-    /// becomes part of a command line — the archive's bytes reach the runtime on standard input.
+    /// becomes part of a command line — the archive's bytes reach the runtime on standard input, as
+    /// they are read from the file.
     pub async fn container_image_load(&self, connection_id: &str, archive: &Path) -> Result<String, ShellError> {
         self.container_provider(connection_id)?.image_load_file(archive).await
     }

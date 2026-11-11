@@ -18,17 +18,21 @@ use tokio::time::Instant;
 use crate::archive;
 use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
-use sevenshell_container::ContainerFiles;
+use sevenshell_container::{
+    ByteStream, CommandFuture, CommandTransport, ContainerFiles, InputStream, StreamState, script_of,
+};
 use sevenshell_error::ShellError;
 use sevenshell_ftp::{FtpConnectionOptions, FtpEntry, FtpSession};
+use sevenshell_k8s::{K8sManager, RunOutput, RunSession};
 use sevenshell_sftp::{SftpSession, TransferProgress};
 use sevenshell_ssh::{ExecOutcome, ShellListing, SshSession, TransferOptions};
 use sevenshell_sync::{DavEntry, WebDavFiles, normalize_dav_path};
 use sevenshell_types::{
-    EntryKind, Protocol, Session, SftpEntry, SftpListing, SftpOutcome, SftpPasteItem, SftpPasteOutcome,
-    TransferDirection, TransferInfo, TransferState,
+    ContainerRuntime, EntryKind, K8sExecRequest, Protocol, Session, SftpEntry, SftpListing, SftpOutcome, SftpPasteItem,
+    SftpPasteOutcome, TransferDirection, TransferInfo, TransferState,
 };
 use sevenshell_vault::ServicePassword;
+use tokio::sync::mpsc;
 
 /// One open file browser: the connection it rides on, and the backend it speaks.
 pub struct FileSession {
@@ -55,10 +59,12 @@ enum FileBackend {
     /// The shell of an SSH server with no SFTP subsystem: listing and file operations go through
     /// commands, and file bodies through SCP.
     Scp { connection: Arc<SshSession> },
-    /// Files inside a running container, reached through the runtime's own `exec`.
+    /// Files inside a running container, reached through a shell in it.
     ///
     /// There is no channel to keep open and no path on this machine: every operation is one `sh -c`
     /// script run inside the container, so what is held here is the handle that builds the scripts.
+    /// A pod's container is the same backend: the script is the same one, and only the transport
+    /// that runs it differs (a runtime's `exec` there, the API server's `exec` channel here).
     Container(Arc<ContainerFiles>),
 }
 
@@ -531,6 +537,66 @@ impl Core {
                 backend: FileBackend::Container(files),
                 // The container connection is what a transfer started here belongs to: it is the
                 // tab the browser was opened from, and the one thing that outlives the panel.
+                session_id: connection_id.to_owned(),
+            }),
+        );
+
+        Ok(SftpOutcome::Opened {
+            handle,
+            session_id: connection_id.to_owned(),
+            listing,
+            // A selection is fetched entry by entry rather than as one archive, but the browser
+            // offers packing the same way: what lands is the entries themselves either way.
+            packed: true,
+        })
+    }
+
+    /// Opens a browser for the files inside one container of one pod.
+    ///
+    /// The same file backend the container path uses, with a transport that runs its scripts
+    /// through the API server's `exec` channel instead of a runtime's CLI: every path, every
+    /// quoting rule and every tar check is therefore the one the container browser already made.
+    /// Nothing here is a path on this machine, and the first listing is part of the answer — it is
+    /// what resolves the path and what refuses a pod that is not reachable before a handle exists.
+    pub async fn open_pod_files(
+        &self,
+        connection_id: &str,
+        namespace: &str,
+        pod: &str,
+        container: &str,
+        path: &str,
+    ) -> Result<SftpOutcome, ShellError> {
+        let transport = PodTransport {
+            clusters: Arc::clone(&self.clusters),
+            connection_id: connection_id.to_owned(),
+            namespace: namespace.trim().to_owned(),
+            pod: pod.trim().to_owned(),
+            container: container.trim().to_owned(),
+        };
+        // The runtime name shapes the argv a pod never sees — the transport takes the script out of
+        // it — and `Docker` is the shape every runtime shares, so it is also the shape a pod's
+        // script is spelled in. The namespace of a pod is the API's, not a runtime's, so it stays
+        // empty here and the pod name is what the backend validates as the container it addresses.
+        let pod_name = transport.pod.clone();
+        let files = Arc::new(ContainerFiles::from_transport(
+            ContainerRuntime::Docker,
+            "",
+            &pod_name,
+            Arc::new(transport),
+        )?);
+
+        // A pod container has no home directory either; its filesystem root is the one place every
+        // container has, so an empty starting path means that.
+        let start = if path.trim().is_empty() { "/" } else { path };
+        let listing = files.list(start).await?;
+
+        let handle = format!("f{}", self.next_file.fetch_add(1, Ordering::Relaxed));
+        self.files.lock().await.insert(
+            handle.clone(),
+            Arc::new(FileSession {
+                backend: FileBackend::Container(files),
+                // The cluster connection is what a transfer started here belongs to: it is the tab
+                // the browser was opened from, and the one thing that outlives the panel.
                 session_id: connection_id.to_owned(),
             }),
         );
@@ -1847,6 +1913,164 @@ async fn container_size_of(files: &ContainerFiles, path: &str) -> Result<u64, Sh
         .map_or(0, |entry| entry.size))
 }
 
+/// Files inside one pod container, run through the API server's `exec` channel.
+///
+/// The container crate's file backend is reused whole — its paths, its quoting and its tar checks —
+/// and this is only the answer to "where does the script run". The argv it is handed names a
+/// runtime and a container because that is how the backend spells a command; nothing before the
+/// script is read here, and [`script_of`] refuses anything that is not the `sh -c` tail the backend
+/// builds, so a change there cannot quietly turn into a different command inside the pod.
+///
+/// Every call opens its own channel rather than sharing one: a file browser's operations are
+/// independent, and a shared socket would need a queue to keep one upload from interleaving with a
+/// listing, which is a second scheduler nobody asked for.
+struct PodTransport {
+    clusters: Arc<K8sManager>,
+    connection_id: String,
+    namespace: String,
+    pod: String,
+    container: String,
+}
+
+impl PodTransport {
+    /// The exec request one script becomes.
+    ///
+    /// The three names come from the interface and are percent-escaped into their path segments by
+    /// the URL builder, so none of them can spell a different resource. An empty container is the
+    /// pod's own annotation, which is what "no container chosen" means in the API.
+    fn request(&self, script: &str) -> K8sExecRequest {
+        K8sExecRequest {
+            namespace: self.namespace.clone(),
+            pod: self.pod.clone(),
+            container: self.container.clone(),
+            command: script.to_owned(),
+        }
+    }
+
+    async fn open(&self, argv: &[String]) -> Result<RunSession, ShellError> {
+        let command = script_of(argv)?;
+        self.clusters
+            .exec_run(&self.connection_id, &self.request(command.script), command.stdin)
+            .await
+    }
+}
+
+impl CommandTransport for PodTransport {
+    fn run<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, String> {
+        Box::pin(async move {
+            let session = self.open(argv).await?;
+            finished(session.run_to_end(&[]).await?)
+        })
+    }
+
+    fn run_stdin<'a>(&'a self, argv: &'a [String], input: Vec<u8>) -> CommandFuture<'a, String> {
+        Box::pin(async move {
+            let session = self.open(argv).await?;
+            finished(session.run_to_end(&input).await?)
+        })
+    }
+
+    fn stream_stdin<'a>(&'a self, argv: &'a [String], mut input: InputStream) -> CommandFuture<'a, String> {
+        Box::pin(async move {
+            let session = self.open(argv).await?;
+            let mut stdout = session.take_stdout();
+            // The command's own output is read beside the input: an unread answer queue stops the
+            // session reading its socket, and the socket is how the input is getting there.
+            let drained = tokio::spawn(async move {
+                let mut collected = Vec::new();
+                if let Some(mut stdout) = stdout.take() {
+                    while let Some(chunk) = stdout.recv().await {
+                        collected.extend_from_slice(&chunk);
+                    }
+                }
+                collected
+            });
+
+            let mut chunks = input.take_chunks();
+            let mut write_failure = None;
+            while let Some(chunk) = chunks.recv().await {
+                if let Err(error) = session.write(&chunk).await {
+                    write_failure = Some(error);
+                    break;
+                }
+            }
+            session.end_stdin();
+            let collected = drained.await.unwrap_or_default();
+
+            // The input's own failure comes first, the way the runner reports it: a command fed half
+            // an archive can only complain about the archive.
+            if let Some(detail) = input.failure() {
+                return Err(ShellError::container_command_failed("the standard input", detail));
+            }
+            if let Some(error) = write_failure {
+                return Err(error);
+            }
+            let ending = session.wait_ended().await;
+            if let Some(error) = ending {
+                return Err(error);
+            }
+            finished(RunOutput {
+                stdout: collected,
+                stderr: session.stderr(),
+                exit_status: session.exit_status(),
+                // An upload is the one file command whose input has to be ended by closing the
+                // channel: the container's `tar` reads to the end, and the protocol has no other
+                // way to say there is no more.
+                input_ended_by_close: session.input_ended_by_close(),
+            })
+        })
+    }
+
+    fn stream_bytes<'a>(&'a self, argv: &'a [String]) -> CommandFuture<'a, ByteStream> {
+        Box::pin(async move {
+            let session = self.open(argv).await?;
+            let mut stdout = session
+                .take_stdout()
+                .ok_or_else(|| ShellError::app_internal("the pod exec session has no standard output"))?;
+            let (sender, chunks) = mpsc::channel(POD_STREAM_QUEUE);
+            let state = StreamState::new();
+            let recorded = state.clone();
+
+            tokio::spawn(async move {
+                while let Some(chunk) = stdout.recv().await {
+                    if sender.send(chunk).await.is_err() {
+                        // Nobody is reading any more: the command should not keep streaming into
+                        // this process for a destination that has already closed.
+                        session.close();
+                        break;
+                    }
+                }
+                let error = session.wait_ended().await;
+                let status = session.exit_status().and_then(|code| u32::try_from(code).ok());
+                // A zero status means the command's own complaints are warnings, and a stream is
+                // only failed by the reason it stopped: the reader is mid-archive and has no room
+                // for a note.
+                let detail = match (error, status) {
+                    (Some(error), _) => error.detail().map(str::to_owned).unwrap_or_else(|| error.to_string()),
+                    (None, Some(0)) => String::new(),
+                    (None, _) => session.stderr(),
+                };
+                // Written before the last chunk is handed over, which is what makes the reader's
+                // question about the ending answerable.
+                recorded.finish(status, detail);
+            });
+
+            Ok(ByteStream::from_receiver(chunks, &state))
+        })
+    }
+}
+
+/// How many chunks of a pod's tar stream may wait for the reader.
+const POD_STREAM_QUEUE: usize = 8;
+
+/// The answer of a command that is over, as text, or why it was not an answer.
+fn finished(output: RunOutput) -> Result<String, ShellError> {
+    match output.failure() {
+        Some(detail) => Err(ShellError::container_command_failed("the container command", detail)),
+        None => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
+    }
+}
+
 async fn scp_read_text(connection: &SshSession, path: &str) -> Result<String, ShellError> {
     let command = format!("cat -- {}", archive::shell_quote(path));
     let captured = connection
@@ -2689,6 +2913,64 @@ mod tests {
             core.list_files("f7", "/").await.expect_err("closed").code(),
             sevenshell_error::ErrorCode::AppInternal,
             "a closed handle is as unknown as one that was never opened"
+        );
+    }
+
+    // --- A pod browser, before a cluster is involved -------------------------
+
+    fn pod_transport() -> PodTransport {
+        PodTransport {
+            clusters: Arc::new(K8sManager::new()),
+            connection_id: "k1".to_owned(),
+            namespace: "sevenshell-lab".to_owned(),
+            pod: "lab-shell".to_owned(),
+            container: "app".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_pod_file_command_names_the_pod_and_the_script_it_was_given() {
+        let request = pod_transport().request("cd '/' && pwd -P && LC_ALL=C ls -la");
+        assert_eq!(request.namespace, "sevenshell-lab");
+        assert_eq!(request.pod, "lab-shell");
+        assert_eq!(request.container, "app");
+        assert_eq!(
+            request.command, "cd '/' && pwd -P && LC_ALL=C ls -la",
+            "the backend's script travels as it was built, marker and all added below this line"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pod_browser_refuses_a_relative_path_before_it_reaches_the_cluster() {
+        let (core, _directory) = container_core();
+        let error = core
+            .open_pod_files("missing", "sevenshell-lab", "lab-shell", "", "relative/path")
+            .await
+            .expect_err("a relative path is not a container path");
+
+        assert_eq!(
+            error.code(),
+            sevenshell_error::ErrorCode::ContainerCommandFailed,
+            "the refusal is the file backend's, made before any channel was opened"
+        );
+        assert!(
+            core.files.lock().await.is_empty(),
+            "an open that could not list must not leave a handle behind"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pod_browser_for_an_unknown_connection_names_the_connection() {
+        let (core, _directory) = container_core();
+        let error = core
+            .open_pod_files("missing", "sevenshell-lab", "lab-shell", "lab-shell", "/")
+            .await
+            .expect_err("no connection means nothing to reach");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sNotConnected);
+        assert!(
+            core.files.lock().await.is_empty(),
+            "nothing was opened, so nothing is kept"
         );
     }
 }

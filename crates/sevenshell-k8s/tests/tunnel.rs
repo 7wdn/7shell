@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 
 use sevenshell_error::{ErrorCode, ShellError};
 use sevenshell_k8s::{ApiDialer, BoxedApiStream, DialFuture, K8sManager, Kubeconfig, TunneledCluster};
-use sevenshell_types::K8sExecRequest;
 use tokio::net::TcpStream;
 
 use common::{pem, tls_server};
@@ -141,89 +140,6 @@ async fn a_named_server_is_asked_for_by_name_so_the_certificate_still_matches_it
         vec![("localhost".to_owned(), 1)],
         "the tunnel was not asked for the name the kubeconfig gave"
     );
-
-    manager.disconnect(&connection);
-}
-
-#[tokio::test]
-async fn a_pod_terminal_is_refused_rather_than_connected_around_the_tunnel() {
-    let far = tls_server(&pem("server1.pem"), &pem("server1.key"));
-    let dialer = LocalDialer::new(address_of(&far.base));
-    let config = Kubeconfig::parse(document("https://127.0.0.1:1").as_bytes()).expect("a kubeconfig");
-    let prepared = TunneledCluster::prepare(&config, None).expect("a tunneled cluster");
-
-    let manager = K8sManager::new();
-    let shared: Arc<dyn ApiDialer> = dialer;
-    let connection = manager.connect_via(prepared, shared).await.expect("connect");
-
-    // The WebSocket the terminal runs on does not go through the HTTP client, so it cannot follow
-    // the tunnel; connecting directly instead would break the promise the connection makes.
-    let opened = manager
-        .exec_open(
-            &connection,
-            &K8sExecRequest {
-                namespace: "lab".to_owned(),
-                pod: "web-0".to_owned(),
-                container: "app".to_owned(),
-                command: String::new(),
-            },
-            80,
-            24,
-        )
-        .await;
-    let error = match opened {
-        Ok(session) => {
-            session.close();
-            panic!("a tunneled cluster handed out a pod terminal");
-        }
-        Err(error) => error,
-    };
-
-    assert_eq!(error.code(), ErrorCode::K8sUnavailable);
-    assert!(
-        error.detail().unwrap_or_default().contains("SSH tunnel"),
-        "the refusal did not say why: {error}"
-    );
-
-    manager.disconnect(&connection);
-}
-
-#[tokio::test]
-async fn a_pod_log_stream_is_refused_rather_than_followed_around_the_tunnel() {
-    let far = tls_server(&pem("server1.pem"), &pem("server1.key"));
-    let dialer = LocalDialer::new(address_of(&far.base));
-    let config = Kubeconfig::parse(document("https://127.0.0.1:1").as_bytes()).expect("a kubeconfig");
-    let prepared = TunneledCluster::prepare(&config, None).expect("a tunneled cluster");
-
-    let manager = K8sManager::new();
-    let shared: Arc<dyn ApiDialer> = dialer;
-    let connection = manager.connect_via(prepared, shared).await.expect("connect");
-
-    let (lines, _line_events) = tokio::sync::mpsc::unbounded_channel();
-    let (end, _end_events) = tokio::sync::mpsc::unbounded_channel();
-    let stream = manager
-        .logs_start(
-            &connection,
-            &sevenshell_types::K8sLogRequest {
-                namespace: "lab".to_owned(),
-                pod: "web-0".to_owned(),
-                container: "app".to_owned(),
-                tail_lines: 10,
-                timestamps: false,
-                previous: false,
-            },
-            lines,
-            end,
-        )
-        .await;
-
-    // The log stream's own client ignores proxies, so it would dial the cluster directly; a
-    // stream that says it is following the tunnel must not be one that quietly is not.
-    let error = match stream {
-        Ok(id) => panic!("a tunneled cluster started a log stream ({id})"),
-        Err(error) => error,
-    };
-    assert_eq!(error.code(), ErrorCode::K8sUnavailable);
 
     manager.disconnect(&connection);
 }

@@ -16,6 +16,7 @@ import {
   Box,
   CircleCheck,
   CirclePower,
+  FolderOpen,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -31,7 +32,7 @@ import { useI18n } from "vue-i18n";
 import SortHeader from "@/components/ui/SortHeader.vue";
 import { boolAt, nameOf, namespaceOf, type K8sObject, type Usage } from "@/components/k8s/objects";
 import { numericValueOf } from "@/components/k8s/quantity";
-import type { ColumnDef, ResourceAction, ResourceDescriptor } from "@/components/k8s/resources";
+import { type ColumnDef, type ResourceAction, type ResourceDescriptor, rowActions } from "@/components/k8s/resources";
 import { describeShellError } from "@/i18n/errors";
 import type { ShellError } from "@/lib/backend/errors";
 import { TABLE, rowClass } from "@/lib/table";
@@ -70,6 +71,7 @@ function translate(key: string, params?: Record<string, string>): string {
 const ICONS: Readonly<Record<ResourceAction, Component>> = {
   logs: ScrollText,
   terminal: SquareTerminal,
+  files: FolderOpen,
   viewPods: Box,
   restart: Repeat,
   scale: ArrowUpDown,
@@ -88,6 +90,8 @@ function actionLabel(action: ResourceAction, obj: K8sObject): string {
       return t("k8s.actions.logs");
     case "terminal":
       return t("k8s.actions.terminal");
+    case "files":
+      return t("k8s.actions.files");
     case "viewPods":
       return t("k8s.actions.viewPods");
     case "restart":
@@ -198,7 +202,13 @@ function rowTone(obj: K8sObject): string {
 
 const columnCount = computed(() => props.descriptor.columns.length + (props.descriptor.actions.length > 0 ? 1 : 0));
 
-const showCreate = computed(() => props.descriptor.createTemplate !== undefined);
+/**
+ * Whether the kind offers a New button.
+ *
+ * The flag rather than the template's presence: the button says this build can post an object of the
+ * kind, which is a decision about the kind and not a side effect of holding some starting text.
+ */
+const showCreate = computed(() => props.descriptor.canCreate === true);
 
 /** A row's identity, which an all-namespaces list needs: two namespaces may hold the same name. */
 function keyOf(obj: K8sObject): string {
@@ -324,8 +334,9 @@ function keyOf(obj: K8sObject): string {
             </td>
             <td v-if="props.descriptor.actions.length > 0" :class="cn(TABLE.page.cell, 'w-px whitespace-nowrap')">
               <div class="flex items-center justify-end gap-0.5">
+                <!-- The row's own list, not the kind's: a pending pod has no container to browse. -->
                 <button
-                  v-for="action in props.descriptor.actions"
+                  v-for="action in rowActions(props.descriptor, obj)"
                   :key="action"
                   type="button"
                   class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
