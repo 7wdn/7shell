@@ -1,7 +1,8 @@
 use sevenshell_error::ShellError;
 use sevenshell_types::AppSettings;
-use tauri::{Manager as _, WebviewWindow};
+use tauri::{Manager as _, State, WebviewWindow};
 
+use crate::state::ShellState;
 use crate::window_chrome::{apply_menus_theme, effective_theme, theme_name, window_theme_for};
 
 /// The non-secret preferences of this installation.
@@ -17,12 +18,24 @@ pub fn settings_get() -> Result<AppSettings, ShellError> {
 /// Secrets never travel through here: this file is readable by anyone who can read the user's
 /// home directory, and it is treated as such.
 #[tauri::command]
-pub fn settings_set(window: WebviewWindow, settings: AppSettings) -> Result<(), ShellError> {
+pub async fn settings_set(
+    window: WebviewWindow,
+    state: State<'_, ShellState>,
+    settings: AppSettings,
+) -> Result<(), ShellError> {
+    // Read before the write: the listener restarts only when the *listener's* settings changed, and
+    // a font or a window width must not interrupt a call an agent is in the middle of.
+    let previous = sevenshell_platform::load().unwrap_or_default();
+
     sevenshell_platform::save(&settings)?;
     apply_window_theme(&window, settings.theme_mode.as_str());
     // The two the shell itself obeys, which the window cannot apply by being restyled: whether there
     // is an icon, and what closing does.
     crate::apply_shell_settings(window.app_handle(), &settings);
+
+    // A failure to bind is returned rather than hidden: the settings page asked for a listener and
+    // has to be told there is none, even though the preference itself was saved.
+    crate::mcp::apply_settings(window.app_handle(), state.mcp(), &previous, &settings).await?;
     Ok(())
 }
 

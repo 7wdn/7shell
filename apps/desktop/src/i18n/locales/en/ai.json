@@ -1,0 +1,142 @@
+{
+  "ai": {
+    "title": "Assistant",
+    "subtitle": "Ask about the host you are working on.",
+    "close": "Put the assistant away",
+    "empty": {
+      "title": "Nothing asked yet.",
+      "body": "A question can carry the last lines of the terminal on screen, and the assistant can use this application's tools when it needs to look at the host itself."
+    },
+    "setup": {
+      "noProvider": {
+        "title": "No provider configured",
+        "body": "The assistant speaks to a model service you configure. Nothing has been configured on this installation yet."
+      },
+      "noKey": {
+        "title": "No key stored for this provider",
+        "body": "The provider is configured, but no API key is stored for it — or the key was removed. Add one in the settings."
+      },
+      "locked": "The vault is locked, so the panel cannot tell whether a key is stored. Unlock it to ask.",
+      "action": "Open the assistant settings"
+    },
+    "provider": {
+      "label": "Provider",
+      "keyMissing": "No key",
+      "keyLocked": "Vault locked"
+    },
+    "message": {
+      "you": "You",
+      "thinking": "Thinking",
+      "context": "{count} lines from the terminal",
+      "contextNone": "No terminal attached",
+      "streaming": "Replying…"
+    },
+    "tool": {
+      "running": "Running",
+      "ok": "Done",
+      "failed": "Failed",
+      "empty": "No output was returned.",
+      "truncated": "The result was truncated.",
+      "duration": "{ms} ms",
+      "input": "Input"
+    },
+    "composer": {
+      "placeholder": "Ask about this host…",
+      "send": "Send",
+      "stop": "Stop",
+      "clear": "Clear the chat",
+      "hint": "Enter sends; Shift+Enter starts a new line.",
+      "clearFailed": "The chat could not be cleared."
+    },
+    "usage": {
+      "title": "Last answer",
+      "tokens": "{input} in / {output} out",
+      "cached": "{cached} cached",
+      "turns": "{count} turns"
+    },
+    "stopReason": {
+      "endTurn": "Finished",
+      "maxTurns": "Stopped at the turn limit",
+      "cancelled": "Stopped",
+      "error": "Stopped with an error",
+      "unknown": "Ended"
+    },
+    "context": {
+      "title": "Terminal context",
+      "enabled": "Attach the terminal on screen",
+      "lines": "Lines",
+      "linesHint": "How many lines of the terminal travel with a question. Zero attaches nothing.",
+      "preview": "What will be sent",
+      "empty": "No terminal is on screen, so nothing will be attached.",
+      "attached": "{count} lines ready",
+      "off": "Nothing is attached.",
+      "refresh": "Read it again",
+      "limits": "Stripped of control sequences, with anything that looks like a credential replaced, and capped at {chars} characters."
+    },
+    "error": {
+      "title": "The assistant stopped",
+      "retryable": "Asking again may work."
+    },
+    "settings": {
+      "description": "Where the assistant's questions go. The keys are kept in the vault, never in the settings file, and this window never reads one back.",
+      "providers": {
+        "title": "Providers",
+        "description": "One entry per service. The active one is where a new question goes.",
+        "empty": "No provider has been configured yet.",
+        "add": "Add a provider",
+        "edit": "Edit",
+        "remove": "Remove",
+        "save": "Save provider",
+        "cancel": "Cancel",
+        "test": "Test",
+        "testing": "Testing…",
+        "testOk": "The provider answered.",
+        "testFailed": "The provider did not answer.",
+        "active": "Active provider",
+        "activeHint": "The provider a new conversation starts with. \"First configured\" applies while nothing is chosen.",
+        "activeAutomatic": "First configured",
+        "name": "Name",
+        "nameHint": "What this entry is called in the list. Nothing is sent with it.",
+        "kind": "Service",
+        "baseUrl": "Address",
+        "baseUrlHint": "Where requests go. Only https is accepted, except for a server on this machine, which may use http on 127.0.0.1, localhost or ::1.",
+        "model": "Model",
+        "modelHint": "The model name the service expects.",
+        "maxOutput": "Output limit",
+        "maxOutputHint": "The most tokens one answer may produce.",
+        "key": "API key",
+        "keyHint": "Written to the vault and never shown again. Leave it empty to keep the key that is stored.",
+        "keySaved": "A key is stored.",
+        "keyMissing": "No key is stored.",
+        "keyLocked": "The vault is locked, so whether a key is stored cannot be told.",
+        "keyClear": "Forget the key",
+        "saved": "The provider was saved.",
+        "removeTitle": "Remove this provider?",
+        "removeMessage": "Its entry and the key stored for it go away. Sessions are not affected."
+      },
+      "new": {
+        "title": "New provider"
+      },
+      "editTitle": "Edit provider",
+      "kind": {
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "local": "Local (OpenAI-compatible)",
+        "anthropicHint": "Anthropic's Messages API.",
+        "openaiHint": "OpenAI's Chat Completions API.",
+        "localHint": "A server on this machine or the network that speaks the OpenAI shape: Ollama, vLLM, LM Studio."
+      },
+      "context": {
+        "title": "Terminal context",
+        "enabled": "Attach the terminal to a question",
+        "lines": "Lines to attach",
+        "save": "Save",
+        "saved": "Saved."
+      },
+      "privacy": {
+        "title": "What leaves this machine",
+        "body": "Only the question you typed, the terminal lines shown in the preview, and what a tool call returns. Keys, vault passwords, sync tokens and private keys are never sent — the preview is the exact text that travels, with anything that looks like a credential replaced before it leaves."
+      }
+    }
+  }
+}

@@ -1,18 +1,26 @@
 //! What the shell keeps between commands.
 //!
-//! Two long-lived things: the vault (one file, one lock state) and the core (the registry of open
-//! terminals, plus the receiver their output arrives on). Both are created once, in `setup`, and
-//! handed to every command through managed state.
+//! Three long-lived things: the vault (one file, one lock state), the core (the registry of open
+//! terminals, plus the receiver their output arrives on), and the pieces the tool layer's two
+//! callers share — the MCP listener and the assistant ([`SharedAgent`]). All are created once, in
+//! `setup`, and handed to every command through managed state.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
 
+use sevenshell_api::local::ConnectionCache;
+use sevenshell_api::{AuditRecord, AuditSink, ToolRegistry};
 use sevenshell_core::Core;
 use sevenshell_vault::Vault;
 
+use crate::ai::AiRuntime;
 use crate::dropped::PendingDrops;
+use crate::mcp::McpRuntime;
+use crate::mcp::approval::ApprovalRegistry;
+use crate::mcp::audit::AuditLog;
 use crate::uploads::PendingUploads;
 
 /// A file an operation is in the middle of, waiting for an answer about it.
@@ -57,10 +65,150 @@ impl PendingFile {
     }
 }
 
+/// The pieces both callers of the tool layer use, created once for the shell.
+///
+/// An MCP client and the assistant panel are two doors onto the same ten tools, and three things
+/// must not exist twice:
+///
+/// * **The tool list.** It is this build's own and does not depend on settings; two lists would let
+///   the two callers disagree about what a name means.
+/// * **The approval questions.** The window draws one dialog and answers by call id, so both
+///   callers' questions park in one registry and one command answers them.
+/// * **The connection cache.** A session the assistant opened is the session an MCP call reads
+///   through, and the vault lock empties one cache rather than two.
+///
+/// The audit trail is shared for the same reason in the other direction: two writers appending to
+/// one JSONL file — through one sink — is what keeps rotation and retention a rule about the file
+/// instead of a rule each caller remembers.
+pub struct SharedAgent {
+    registry: Arc<ToolRegistry>,
+    approvals: Arc<ApprovalRegistry>,
+    connections: Arc<ConnectionCache>,
+    audit: Arc<SharedAudit>,
+}
+
+impl SharedAgent {
+    pub fn new(core: Arc<Core>) -> Self {
+        let audit = match crate::mcp::audit::default_path() {
+            Ok(path) => SharedAudit::at(Some(path)),
+            Err(error) => {
+                log::warn!("the agent audit trail has nowhere to live: {error}");
+                SharedAudit::at(None)
+            }
+        };
+        Self::with_audit(core, Arc::new(audit))
+    }
+
+    /// The same pieces, with the trail somewhere the caller chose. Tests use this so an assertion
+    /// about an audit line never writes into the machine's real configuration directory.
+    pub(crate) fn with_audit(core: Arc<Core>, audit: Arc<SharedAudit>) -> Self {
+        Self {
+            registry: Arc::new(sevenshell_api::local::default_registry()),
+            approvals: Arc::new(ApprovalRegistry::new()),
+            connections: Arc::new(ConnectionCache::new(core)),
+            audit,
+        }
+    }
+
+    pub fn registry(&self) -> &Arc<ToolRegistry> {
+        &self.registry
+    }
+
+    pub fn approvals(&self) -> &Arc<ApprovalRegistry> {
+        &self.approvals
+    }
+
+    pub fn connections(&self) -> &Arc<ConnectionCache> {
+        &self.connections
+    }
+
+    pub fn audit(&self) -> &Arc<SharedAudit> {
+        &self.audit
+    }
+}
+
+/// One JSONL trail, written to by both callers.
+///
+/// [`AuditLog`] is the file — append, rotate, prune — and this is the sharing: the sink is handed to
+/// the MCP handler and to every assistant run, and the retention setting arrives with whichever of
+/// them is the first to run. A record that arrives before anybody configured the file is written
+/// under the default retention rather than dropped: an audit line is evidence, and evidence that
+/// depended on which caller happened to speak first would be worse than none.
+pub struct SharedAudit {
+    path: Option<PathBuf>,
+    log: Mutex<Option<AuditLog>>,
+}
+
+impl SharedAudit {
+    pub fn at(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            log: Mutex::new(None),
+        }
+    }
+
+    /// Points the trail at this installation's retention window, and applies it once.
+    ///
+    /// Called when the MCP listener starts and before an assistant run: both are the moment a
+    /// person's setting is known to matter, and neither is frequent enough for the rebuild to cost
+    /// anything.
+    pub fn configure(&self, retention_days: u32) {
+        let Some(path) = self.path.clone() else {
+            log::warn!("the agent audit trail has nowhere to live, so nothing is recorded");
+            return;
+        };
+        let log = AuditLog::new(path, retention_days);
+        log.prune(SystemTime::now());
+        log::debug!("the agent audit trail is {}", log.path().display());
+        *self.lock() = Some(log);
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<AuditLog>> {
+        match self.log.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+impl AuditSink for SharedAudit {
+    fn record(&self, record: AuditRecord) {
+        let mut guard = self.lock();
+        if guard.is_none() {
+            let Some(path) = self.path.clone() else {
+                log::warn!("an agent call could not be audited: this machine has no configuration directory");
+                return;
+            };
+            let log = AuditLog::new(path, sevenshell_types::MCP_AUDIT_RETENTION_DAYS_DEFAULT);
+            log.prune(SystemTime::now());
+            *guard = Some(log);
+        }
+        if let Some(log) = guard.as_ref() {
+            // The sink's contract is that a failed write is said out loud and the call goes on.
+            AuditSink::record(log, record);
+        }
+    }
+}
+
 /// The application state commands borrow.
 pub struct ShellState {
     vault: Arc<Vault>,
     core: Arc<Core>,
+    /// The loopback listener an MCP bridge calls, and the token this run rotates for it.
+    ///
+    /// Always present, listening or not: a command that turns it on needs the same object a command
+    /// that reads its status does, and an absent runtime would make "off" and "not built yet" look
+    /// alike.
+    mcp: Arc<McpRuntime>,
+    /// The assistant panel's conversation and the run it is answering right now.
+    ///
+    /// In memory only, deliberately: a conversation is the person's own typing and the terminal
+    /// text they chose to attach, and neither is worth a second encrypted store of its own.
+    ai: Arc<AiRuntime>,
     /// Files the operating system dropped or the clipboard held, waiting to be uploaded.
     pending_drops: PendingDrops,
     /// Uploads that stopped to ask about a name already on the far side, waiting for the answer.
@@ -112,10 +260,15 @@ impl ShellState {
 
         let vault = Arc::new(Vault::open_at(path));
         let (core, events) = Core::new(Arc::clone(&vault));
+        let shared = Arc::new(SharedAgent::new(Arc::clone(&core)));
+        let mcp = Arc::new(McpRuntime::new(Arc::clone(&shared)));
+        let ai = Arc::new(AiRuntime::new(Arc::clone(&vault), Arc::clone(&shared)));
         (
             Self {
                 vault,
                 core,
+                mcp,
+                ai,
                 pending_drops: PendingDrops::default(),
                 pending_uploads: PendingUploads::default(),
                 pending_import: PendingFile::default(),
@@ -142,6 +295,26 @@ impl ShellState {
     /// A handle to the core that can be moved onto another task, for work that outlives a command.
     pub fn core_arc(&self) -> Arc<Core> {
         Arc::clone(&self.core)
+    }
+
+    /// The agent interface's listener and the questions it is waiting on.
+    pub fn mcp(&self) -> &McpRuntime {
+        &self.mcp
+    }
+
+    /// A handle to the agent interface for the one path that outlives a command: the window closing.
+    pub fn mcp_arc(&self) -> Arc<McpRuntime> {
+        Arc::clone(&self.mcp)
+    }
+
+    /// The assistant: its one conversation, and whichever run is answering.
+    pub fn ai(&self) -> &AiRuntime {
+        &self.ai
+    }
+
+    /// A handle to the assistant for the same path as [`Self::mcp_arc`]: the window closing.
+    pub fn ai_arc(&self) -> Arc<AiRuntime> {
+        Arc::clone(&self.ai)
     }
 
     /// What a drop or a paste left behind, keyed by the token the interface was given.
@@ -231,6 +404,15 @@ impl ShellState {
     pub fn lock_vault(&self) {
         self.pending_import.clear();
         self.pending_restore.clear();
+        // The assistant's run was started with a key that is about to stop existing, and any
+        // question it is waiting on belongs to a tool call that can no longer be answered with
+        // anything useful. Both go before the vault does.
+        self.ai.on_vault_locked();
+        // The agent interface's file, container and cluster handles were opened with credentials
+        // that are about to stop existing. They go now; the listener itself stays up so a call
+        // answers `VAULT-LOCKED` rather than looking like a desktop that is not running. The cache
+        // is the one the assistant used too.
+        self.mcp.close_connections();
         self.vault.lock();
     }
 }
@@ -259,5 +441,57 @@ mod tests {
         pending.remember(PathBuf::from("second.json"));
 
         assert_eq!(pending.path(), Some(PathBuf::from("second.json")));
+    }
+
+    #[test]
+    fn one_trail_records_what_both_callers_did() {
+        // Two writers, one file: the assistant writes while no MCP listener is up, and the MCP
+        // handler writes through the same sink. A second sink would be a second file to rotate, and
+        // a rotation racing another writer is a line that ends up in neither.
+        use sevenshell_api::AuditStatus;
+        use sevenshell_types::{AgentOrigin, McpScope};
+
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let path = crate::mcp::audit::path_in(directory.path());
+        let audit = SharedAudit::at(Some(path.clone()));
+        audit.configure(30);
+
+        audit.record(AuditRecord::new(
+            "sshell_sessions_list",
+            McpScope::ReadOnly,
+            AuditStatus::Succeeded,
+        ));
+        audit.record(
+            AuditRecord::new("sshell_exec_run", McpScope::ReadOnly, AuditStatus::Failed).with_origin(AgentOrigin::Ai),
+        );
+
+        let records = crate::mcp::audit::read_tail(&path, 10);
+        assert_eq!(records.len(), 2, "both callers' lines are in the one file");
+        assert_eq!(
+            records[0].origin,
+            AgentOrigin::Mcp,
+            "an unnamed caller is the MCP client"
+        );
+        assert_eq!(records[1].origin, AgentOrigin::Ai);
+    }
+
+    #[test]
+    fn a_record_before_anybody_configured_the_trail_is_still_written() {
+        // The assistant can ask a tool before the MCP listener was ever started, so the first line
+        // may arrive with no retention configured. Dropping it would make the trail depend on which
+        // caller spoke first.
+        use sevenshell_api::AuditStatus;
+        use sevenshell_types::{AgentOrigin, McpScope};
+
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let path = crate::mcp::audit::path_in(directory.path());
+        let audit = SharedAudit::at(Some(path.clone()));
+
+        audit.record(
+            AuditRecord::new("sshell_sessions_list", McpScope::ReadOnly, AuditStatus::Succeeded)
+                .with_origin(AgentOrigin::Ai),
+        );
+
+        assert_eq!(crate::mcp::audit::read_tail(&path, 10).len(), 1);
     }
 }

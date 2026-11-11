@@ -4,6 +4,8 @@
 //! the descriptor tables generated from `descriptors/`. The generated module is
 //! included from `OUT_DIR`, so it always reflects the committed manifest.
 
+mod agent;
+mod ai;
 mod app_info;
 mod batch;
 mod completion;
@@ -24,6 +26,12 @@ mod generated {
     include!(concat!(env!("OUT_DIR"), "/descriptors.rs"));
 }
 
+pub use agent::AgentOrigin;
+pub use ai::{
+    AI_CONTEXT_LINES_DEFAULT, AI_CONTEXT_LINES_MAX, AI_CONTEXT_LINES_MIN, AI_MAX_OUTPUT_TOKENS_DEFAULT,
+    AiProviderConfig, AiProviderKind, AiProviderView, ai_context_enabled_default, ai_context_lines_default,
+    ai_max_output_tokens_default, normalize_ai_context_lines,
+};
 pub use app_info::{AppInfo, PRODUCT_NAME};
 pub use batch::{BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, HostFailure};
 pub use completion::{
@@ -61,10 +69,15 @@ pub use session::{
 };
 pub use settings::{
     AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
-    CornerStyle, CustomColors, FilesLayout, HomeLayout, SYNC_AUTO_UPLOAD_MINUTES_DEFAULT, SYNC_AUTO_UPLOAD_MINUTES_MAX,
+    CornerStyle, CustomColors, FilesLayout, HomeLayout, MCP_APPROVAL_TIMEOUT_SECONDS_DEFAULT,
+    MCP_APPROVAL_TIMEOUT_SECONDS_MAX, MCP_APPROVAL_TIMEOUT_SECONDS_MIN, MCP_AUDIT_RETENTION_DAYS_DEFAULT,
+    MCP_AUDIT_RETENTION_DAYS_MAX, MCP_AUDIT_RETENTION_DAYS_MIN, MCP_MAX_RESULT_BYTES_DEFAULT, MCP_MAX_RESULT_BYTES_MAX,
+    MCP_MAX_RESULT_BYTES_MIN, McpScope, SYNC_AUTO_UPLOAD_MINUTES_DEFAULT, SYNC_AUTO_UPLOAD_MINUTES_MAX,
     SYNC_AUTO_UPLOAD_MINUTES_MIN, SessionLayout, SessionReopen, TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN,
     TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, UI_SCALE_PERCENTS,
-    background_blur_default, background_transparency_default, command_completion_on, monitor_on,
+    background_blur_default, background_transparency_default, command_completion_on,
+    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default, monitor_on,
+    normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes,
     normalize_sync_auto_upload_minutes, normalize_terminal_font_size, normalize_ui_scale, sidebar_on,
     sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
 };

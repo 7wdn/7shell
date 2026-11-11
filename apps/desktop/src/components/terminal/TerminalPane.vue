@@ -44,6 +44,7 @@ import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { formatShortcutDisplay } from "@/lib/shortcuts/display";
 import { bindingFor } from "@/lib/shortcuts/registry";
 import { registerInputReset, registerTerminalSink } from "@/lib/terminal/bus";
+import { registerTerminalBuffer, tailOfBuffer } from "@/lib/terminal/buffers";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
 import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
 import { useAppStore } from "@/stores/app";
@@ -101,6 +102,7 @@ let terminal: Terminal | undefined;
 let fitAddon: FitAddon | undefined;
 let unregister: (() => void) | undefined;
 let unregisterInputReset: (() => void) | undefined;
+let unregisterBuffer: (() => void) | undefined;
 let osc7: { dispose: () => void } | undefined;
 let observer: ResizeObserver | undefined;
 let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -576,6 +578,9 @@ onMounted(() => {
   terminal = instance;
   fitAddon = fit;
   unregisterInputReset = registerInputReset(props.handle, resetCompletion);
+  // The assistant panel reads the terminal on screen through this: what it previews is what it
+  // sends, and only the pane can read the buffer it is drawing.
+  unregisterBuffer = registerTerminalBuffer(props.handle, (lines) => tailOfBuffer(instance.buffer.active, lines));
   unregister = registerTerminalSink(props.handle, (bytes) => {
     completionOutput();
     instance.write(bytes);
@@ -718,6 +723,7 @@ onBeforeUnmount(() => {
   observer?.disconnect();
   unregister?.();
   unregisterInputReset?.();
+  unregisterBuffer?.();
   osc7?.dispose();
   terminal?.dispose();
 });

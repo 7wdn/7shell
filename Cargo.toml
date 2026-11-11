@@ -68,6 +68,9 @@ uuid = { version = "1.26", features = ["v4", "serde"] }
 zeroize = { version = "1.9", features = ["derive"] }
 tempfile = "3"
 async-trait = "0.1"
+# The desktop's loopback control endpoint is an HTTP service on this machine. Axum is the same
+# tokio/hyper stack reqwest already uses as a client; the server side is one module and no TLS.
+axum = "0.8"
 # Kubeconfigs are YAML documents, not JSON: a client that only reads the fields it knows loses
 # contexts and credentials it has not been taught about yet. The maintained fork rather than the
 # archived original, because a parser that no longer receives fixes is a parser nobody can audit.
@@ -150,6 +153,9 @@ sevenshell-platform = { version = "0.1.3", path = "crates/sevenshell-platform" }
 sevenshell-policy = { version = "0.1.3", path = "crates/sevenshell-policy" }
 sevenshell-vault = { version = "0.1.3", path = "crates/sevenshell-vault" }
 sevenshell-core = { version = "0.1.3", path = "crates/sevenshell-core" }
+sevenshell-api = { version = "0.1.3", path = "crates/sevenshell-api" }
+sevenshell-ai = { version = "0.1.3", path = "crates/sevenshell-ai" }
+sevenshell-agent = { version = "0.1.3", path = "crates/sevenshell-agent" }
 sevenshell-ssh = { version = "0.1.3", path = "crates/sevenshell-ssh" }
 sevenshell-term = { version = "0.1.3", path = "crates/sevenshell-term" }
 sevenshell-sync = { version = "0.1.3", path = "crates/sevenshell-sync" }

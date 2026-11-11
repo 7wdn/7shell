@@ -14,6 +14,7 @@
 import {
   Activity,
   ArrowUpDown,
+  Bot,
   ChevronsRight,
   ListChecks,
   Lock,
@@ -32,6 +33,7 @@ import UpdateEntry from "@/components/shell/UpdateEntry.vue";
 import WindowControls from "@/components/shell/WindowControls.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import { useAppStore } from "@/stores/app";
+import { useAssistantStore } from "@/stores/assistant";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
@@ -45,6 +47,7 @@ const terminals = useTerminalsStore();
 const files = useFilesStore();
 const updates = useUpdatesStore();
 const vault = useVaultStore();
+const assistant = useAssistantStore();
 
 const { isMac, showControls, isMaximized, isAlwaysOnTop, minimize, toggleMaximize, toggleAlwaysOnTop, close } =
   useWindowControls(() => app.info?.os ?? "");
@@ -271,6 +274,25 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
         @click="preferences.setMonitorEnabled(!preferences.monitorEnabled)"
       >
         <Activity :size="15" />
+      </button>
+
+      <!--
+        The assistant, a panel like the monitor rather than a page: it is opened while working in a
+        terminal and put away again, so it carries its state the way the two above it do.
+      -->
+      <button
+        type="button"
+        data-assistant-toggle
+        class="grid size-8 place-items-center rounded-md transition-colors"
+        :class="
+          assistant.open ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+        "
+        :title="t('ai.title')"
+        :aria-label="t('ai.title')"
+        :aria-pressed="assistant.open"
+        @click="assistant.toggle()"
+      >
+        <Bot :size="15" />
       </button>
 
       <button

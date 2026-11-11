@@ -44,6 +44,18 @@ import type {
   SnippetGroup,
 } from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
+import type { McpApprovalDecision, McpApprovalRequest, McpAuditEntry, McpStatus } from "@/types/mcp";
+import type {
+  AiChatRequest,
+  AiChatStarted,
+  AiDeltaEvent,
+  AiDoneEvent,
+  AiErrorEvent,
+  AiProviderTestResult,
+  AiProviderView,
+  AiToolCallEvent,
+  AiToolResultEvent,
+} from "@/types/ai";
 import type { HostSystem } from "@/types/system";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
@@ -141,6 +153,65 @@ export const backend = {
   settings: {
     get: (): Promise<AppSettings> => forward("settings_get", () => desktop.settingsGet()),
     set: (settings: AppSettings): Promise<void> => forward("settings_set", () => desktop.settingsSet(settings)),
+  },
+
+  /**
+   * The agent interface: one loopback listener an MCP bridge may call.
+   *
+   * Turning it on and off are commands of their own rather than a field on the settings, because
+   * enabling starts a socket. Nothing here returns the token — the bridge reads it from the endpoint
+   * file, and the window is never told it — so the copy of a client's configuration carries none.
+   */
+  mcp: {
+    /** What the listener is doing, which is its own answer rather than a reading of the file. */
+    status: (): Promise<McpStatus> => forward("mcp_status", () => desktop.mcpStatus()),
+    /**
+     * Starts it, or restarts it so it picks up the settings on screen.
+     *
+     * The same call for both because the listener has one answer: whether it is running with the
+     * configuration that was just written. A separate restart command would be a second way to
+     * reach a state that is only interesting while it is changing.
+     */
+    enable: (): Promise<McpStatus> => forward("mcp_enable", () => desktop.mcpEnable()),
+    disable: (): Promise<McpStatus> => forward("mcp_disable", () => desktop.mcpDisable()),
+    /** The snippet a client's configuration takes, without the token. The page copies it, never draws it. */
+    clientConfig: (): Promise<string> => forward("mcp_client_config", () => desktop.mcpClientConfig()),
+    auditTail: (limit: number): Promise<McpAuditEntry[]> =>
+      forward("mcp_audit_tail", () => desktop.mcpAuditTail(limit)),
+    /** Answers one waiting call, by the id it was asked about. */
+    answerApproval: (callId: string, decision: McpApprovalDecision): Promise<void> =>
+      forward("mcp_approval_answer", () => desktop.mcpApprovalAnswer(callId, decision)),
+  },
+
+  /**
+   * The in-application assistant: providers, keys, and one conversation at a time.
+   *
+   * Three rules shape this group, and they are the ones the surfaces above follow too:
+   *
+   * 1. **A key goes in and never comes out.** `setKey` is the only call that carries one, and its
+   *    answer is the provider with `hasKey` — the same view the list carries.
+   * 2. **A run is an id, and everything after it is an event.** `send` answers as soon as the run
+   *    exists, because a stream cannot be awaited: the chat is drawn from the events, and the run
+   *    the events name is the only one this side renders.
+   * 3. **The terminal is sent as text the window prepared.** The host is told what to send, not
+   *    where to look — there is no handle here, so nothing can read a buffer the person did not see.
+   */
+  ai: {
+    /** Every configured provider, each with whether its key is held. Never the key itself. */
+    providers: (): Promise<AiProviderView[]> => forward("ai_providers", () => desktop.aiProviders()),
+    /** Keeps a key for one provider, or forgets it when `key` is null. */
+    setKey: (providerId: string, key: string | null): Promise<AiProviderView> =>
+      forward("ai_provider_key_set", () => desktop.aiProviderKeySet(providerId, key)),
+    remove: (providerId: string): Promise<void> =>
+      forward("ai_provider_remove", () => desktop.aiProviderRemove(providerId)),
+    /** Asks the provider whether it answers. A refusal is the answer, not a rejection. */
+    test: (providerId: string): Promise<AiProviderTestResult> =>
+      forward("ai_provider_test", () => desktop.aiProviderTest(providerId)),
+    send: (request: AiChatRequest): Promise<AiChatStarted> =>
+      forward("ai_chat_send", () => desktop.aiChatSend(request)),
+    cancel: (runId: string): Promise<void> => forward("ai_chat_cancel", () => desktop.aiChatCancel(runId)),
+    /** Forgets the conversation the host kept, so the next question starts from nothing. */
+    reset: (): Promise<void> => forward("ai_chat_reset", () => desktop.aiChatReset()),
   },
 
   /** The window the interface is drawn in. Meaningless without the desktop shell. */
@@ -727,6 +798,35 @@ export const backend = {
     /** How far an update download has got, and when the installer has taken it over. */
     onUpdateProgress: (listener: (payload: UpdateProgress) => void): Promise<Unlisten> =>
       subscribe(desktop.onUpdateProgress, listener),
+    /**
+     * A call an agent asked for that stopped for a person's answer.
+     *
+     * The question arrives here rather than in the answer to some call, because the call was made by
+     * another process: there is nothing in this window waiting on it, and the dialog is the only
+     * surface the agent's request has.
+     */
+    onMcpApproval: (listener: (payload: McpApprovalRequest) => void): Promise<Unlisten> =>
+      subscribe(desktop.onMcpApproval, listener),
+    /** The listener starting, restarting or stopping — its own answer, pushed rather than polled. */
+    onMcpStatus: (listener: (payload: McpStatus) => void): Promise<Unlisten> =>
+      subscribe(desktop.onMcpStatus, listener),
+    /**
+     * One assistant run, in the pieces it arrives in.
+     *
+     * Six channels rather than one with a kind field, because that is the shape the host emits and
+     * a subscription is cheap: the store opens all six when the window starts and closes them when
+     * it goes away. Every payload names its run, which is what lets the chat ignore the tail of a
+     * run somebody cleared.
+     */
+    onAiDelta: (listener: (payload: AiDeltaEvent) => void): Promise<Unlisten> => subscribe(desktop.onAiDelta, listener),
+    onAiThinking: (listener: (payload: AiDeltaEvent) => void): Promise<Unlisten> =>
+      subscribe(desktop.onAiThinking, listener),
+    onAiToolCall: (listener: (payload: AiToolCallEvent) => void): Promise<Unlisten> =>
+      subscribe(desktop.onAiToolCall, listener),
+    onAiToolResult: (listener: (payload: AiToolResultEvent) => void): Promise<Unlisten> =>
+      subscribe(desktop.onAiToolResult, listener),
+    onAiDone: (listener: (payload: AiDoneEvent) => void): Promise<Unlisten> => subscribe(desktop.onAiDone, listener),
+    onAiError: (listener: (payload: AiErrorEvent) => void): Promise<Unlisten> => subscribe(desktop.onAiError, listener),
     onTerminalData: (listener: (payload: TerminalData) => void): Promise<Unlisten> =>
       subscribe(desktop.onTerminalData, listener),
     onTerminalClosed: (listener: (payload: TerminalClosed) => void): Promise<Unlisten> =>

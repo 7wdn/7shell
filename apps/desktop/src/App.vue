@@ -25,6 +25,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 
 import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
+import AssistantPanel from "@/components/assistant/AssistantPanel.vue";
+import ApprovalDialog from "@/components/mcp/ApprovalDialog.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import ImportPassphraseDialog from "@/components/sessions/ImportPassphraseDialog.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
@@ -47,9 +49,11 @@ import { resolveBindings } from "@/lib/shortcuts/registry";
 import { useTransferNotices } from "@/composables/useTransferNotices";
 import { isTextEntry } from "@/lib/menu/editable";
 import { useAppStore } from "@/stores/app";
+import { useAssistantStore } from "@/stores/assistant";
 import { useBatchStore } from "@/stores/batch";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useFilesStore } from "@/stores/files";
+import { useMcpStore } from "@/stores/mcp";
 import { backend } from "@/lib/backend/api";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
@@ -68,6 +72,8 @@ const batch = useBatchStore();
 const editor = useSessionEditorStore();
 const library = useSessionsStore();
 const updates = useUpdatesStore();
+const mcp = useMcpStore();
+const assistant = useAssistantStore();
 
 /**
  * The timed backup, armed by the frame rather than by the page that configures it.
@@ -93,6 +99,8 @@ let stopStraySelection: (() => void) | undefined;
 let stopQuitRequested: (() => void) | undefined;
 let stopVaultLocked: (() => void) | undefined;
 let stopZmodem: (() => void) | undefined;
+let stopMcpEvents: (() => void) | undefined;
+let stopAssistantEvents: (() => void) | undefined;
 
 /**
  * Says what a ZMODEM session is doing, because its file traffic never reaches the transfer list.
@@ -293,6 +301,12 @@ function onGlobalKey(event: KeyboardEvent): void {
     return;
   }
 
+  if (matchesShortcut(event, shortcuts.value["global.toggleAssistant"], platform.value)) {
+    event.preventDefault();
+    assistant.toggle();
+    return;
+  }
+
   pasteInto(event);
 }
 
@@ -436,6 +450,13 @@ onMounted(async () => {
   // the window has to put the gate back up whether or not anybody is looking at the vault.
   stopVaultLocked = await backend.events.onVaultLocked(() => vault.markLocked());
   stopZmodem = await backend.events.onZmodemEvent(reportZmodem);
+  // The agent interface's question is asked by another process, at a moment no page chose: it has
+  // to be drawable whatever tab is on screen, which is why the subscription belongs to the frame.
+  stopMcpEvents = mcp.initialize();
+  // The assistant's run outlives a look at another page for the same reason: its rows keep arriving
+  // while the panel is put away, and a subscription made by the panel would stop at the moment
+  // somebody looked elsewhere.
+  stopAssistantEvents = assistant.initialize();
   await preferences.load();
   await app.load();
   await reportFirstFrame();
@@ -457,6 +478,8 @@ onBeforeUnmount(() => {
   stopQuitRequested?.();
   stopVaultLocked?.();
   stopZmodem?.();
+  stopMcpEvents?.();
+  stopAssistantEvents?.();
 });
 </script>
 
@@ -519,6 +542,14 @@ onBeforeUnmount(() => {
       <MonitorPanel v-if="preferences.monitorEnabled" />
 
       <!--
+        The assistant, docked at the window's right edge beside the monitor: a conversation about
+        whatever is on screen, put away rather than closed. Mounted only while it is open, so a
+        panel nobody is using costs nothing — the run itself is the store's and keeps arriving
+        either way.
+      -->
+      <AssistantPanel v-if="assistant.open" />
+
+      <!--
         The transfers, drawn over the workspace rather than inside a tab's own panel: a transfer
         holds the channel it is moving bytes over for as long as it runs, so it outlives the file
         tab that started it — and a row that keeps moving with nothing on screen to show or stop it
@@ -536,6 +567,13 @@ onBeforeUnmount(() => {
       @replace="terminals.confirmReplace()"
       @cancel="terminals.dismiss()"
     />
+
+    <!--
+      The question an agent's call is holding on: drawn by the frame rather than by the page that
+      configures the listener, because the call may arrive while that page — or any part of the
+      workspace — is not on screen. It draws nothing while nothing is waiting.
+    -->
+    <ApprovalDialog />
 
     <!--
       The session editor, drawn by the frame rather than by the sidebar it used to live in: it is

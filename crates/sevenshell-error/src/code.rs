@@ -225,6 +225,22 @@ error_catalog! {
     #[doc = "The cluster connection this call names is no longer open."]
     K8sNotConnected => "K8S-NOT-CONNECTED", "errors.k8s.notConnected";
 
+    // -- Assistant ---------------------------------------------------------
+    #[doc = "The assistant has no provider configured yet."]
+    AiNoProvider => "AI-NO-PROVIDER", "errors.ai.noProvider";
+    #[doc = "No API key is stored for the chosen provider."]
+    AiNoKey => "AI-NO-KEY", "errors.ai.noKey";
+    #[doc = "The provider could not be reached, refused the request, or answered with an error."]
+    AiProviderUnavailable => "AI-PROVIDER-UNAVAILABLE", "errors.ai.providerUnavailable";
+    #[doc = "The conversation is larger than the model's context window."]
+    AiContextTooLong => "AI-CONTEXT-TOO-LONG", "errors.ai.contextTooLong";
+    #[doc = "The assistant stopped after reaching its tool-call limit."]
+    AiMaxTurns => "AI-MAX-TURNS", "errors.ai.maxTurns";
+    #[doc = "The request was called off before it finished."]
+    AiCancelled => "AI-CANCELLED", "errors.ai.cancelled";
+    #[doc = "A tool call was skipped because only one may run per turn."]
+    AiToolSkipped => "AI-TOOL-SKIPPED", "errors.ai.toolSkipped";
+
     // -- Application -------------------------------------------------------
     #[doc = "A required service is not ready yet, for example the vault during startup."]
     AppNotReady => "APP-NOT-READY", "errors.app.notReady";

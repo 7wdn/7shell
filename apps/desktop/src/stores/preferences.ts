@@ -21,6 +21,9 @@ import { deriveCustomColors } from "@/lib/settings/customColors";
 import type { ShortcutActionId } from "@/lib/shortcuts/registry";
 import type { SnippetProvider } from "@/types/sync";
 import {
+  AI_CONTEXT_LINES_DEFAULT,
+  AI_CONTEXT_LINES_MAX,
+  AI_CONTEXT_LINES_MIN,
   BACKGROUND_BLUR_MAX,
   DEFAULT_SYNC_AUTO_UPLOAD_MINUTES,
   SYNC_AUTO_UPLOAD_MINUTES_MAX,
@@ -42,10 +45,12 @@ import {
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_MCP_SCOPE,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
+  type AiProviderConfig,
   type AppLayout,
   type AppSettings,
   type BackgroundDisplayMode,
@@ -59,16 +64,38 @@ import {
   type HomeLayout,
   type CustomColors,
   type FilesLayout,
+  type McpScope,
   type ResolvedTheme,
   type SessionLayout,
   type SessionReopen,
   type ThemeMode,
   type ThemePalette,
 } from "@/types/app";
+import {
+  DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
+  DEFAULT_MCP_AUDIT_RETENTION_DAYS,
+  DEFAULT_MCP_ENABLED,
+  DEFAULT_MCP_MAX_RESULT_BYTES,
+  DEFAULT_MCP_PORT,
+  isMcpScope,
+  MCP_APPROVAL_TIMEOUT_SECONDS_MAX,
+  MCP_APPROVAL_TIMEOUT_SECONDS_MIN,
+  MCP_AUDIT_RETENTION_DAYS_MAX,
+  MCP_AUDIT_RETENTION_DAYS_MIN,
+  MCP_MAX_RESULT_BYTES_MAX,
+  MCP_MAX_RESULT_BYTES_MIN,
+  MCP_PORT_MAX,
+} from "@/types/mcp";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-/** One field of the settings file, named the way the file names it. */
+/**
+ * One field of the settings file, named the way the file names it.
+ *
+ * Every field is here now, the assistant's included: its page is the one that offers to restore
+ * them, and a field with a row but no way back to its default would be a row that can only be
+ * changed in one direction.
+ */
 export type PreferenceField = keyof AppSettings;
 
 /**
@@ -123,6 +150,16 @@ const FRESH: Omit<AppSettings, "locale"> = {
   syncSnippetProvider: undefined,
   syncSnippetInstance: undefined,
   syncSnippetIds: {},
+  mcpEnabled: DEFAULT_MCP_ENABLED,
+  mcpPort: DEFAULT_MCP_PORT,
+  mcpScope: DEFAULT_MCP_SCOPE,
+  mcpApprovalTimeoutSeconds: DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
+  mcpAuditRetentionDays: DEFAULT_MCP_AUDIT_RETENTION_DAYS,
+  mcpMaxResultBytes: DEFAULT_MCP_MAX_RESULT_BYTES,
+  aiProviders: [],
+  aiDefaultProviderId: undefined,
+  aiContextEnabled: true,
+  aiContextLines: AI_CONTEXT_LINES_DEFAULT,
 };
 
 /**
@@ -407,6 +444,41 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const syncSnippetProvider = ref<SnippetProvider | undefined>(undefined);
   const syncSnippetInstance = ref("");
   const syncSnippetIds = ref<Record<string, string>>({});
+  /**
+   * The agent interface's non-secret fields: what it listens on, what an agent may do, how long it
+   * waits, and what it keeps.
+   *
+   * Here rather than inside `McpSettings.vue` because they are settings like the rest — written by
+   * the page's Apply, read back by the shell when the listener starts, and reset with nothing. What
+   * is *not* here is whether the listener is running: that is a command and a live status, and a
+   * switch that only changed a file would say "on" over a port with nothing bound to it.
+   *
+   * The numbers are clamped where they are set rather than trusted, for the reason a font size is:
+   * a number typed into a box is one somebody can mistype, and a port of 70000 cannot be bound at
+   * all.
+   */
+  const mcpEnabled = ref(DEFAULT_MCP_ENABLED);
+  const mcpPort = ref(DEFAULT_MCP_PORT);
+  const mcpScope = ref<McpScope>(DEFAULT_MCP_SCOPE);
+  const mcpApprovalTimeoutSeconds = ref(DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS);
+  const mcpAuditRetentionDays = ref(DEFAULT_MCP_AUDIT_RETENTION_DAYS);
+  const mcpMaxResultBytes = ref(DEFAULT_MCP_MAX_RESULT_BYTES);
+  /**
+   * The assistant's providers and its context defaults, without any key.
+   *
+   * This is the one place in the store that holds a list rather than a value, and it is a list the
+   * page edits as a whole: adding, changing and removing a provider is one answer to "which
+   * providers exist", so it is written back as one. The keys are not here — they are in the vault,
+   * named by each entry's `id` — and the page learns only whether one is held.
+   *
+   * The context is on by default and eighty lines, which is what a fresh install has on the far side
+   * too. Both are read by the panel before it asks anything, so what the preview shows and what is
+   * sent cannot disagree about how much terminal travels.
+   */
+  const aiProviders = ref<readonly AiProviderConfig[]>([]);
+  const aiDefaultProviderId = ref<string | null>(null);
+  const aiContextEnabled = ref(true);
+  const aiContextLines = ref(AI_CONTEXT_LINES_DEFAULT);
   const problem = ref<ShellError | null>(null);
 
   const resolvedTheme = computed<ResolvedTheme>(() => {
@@ -669,6 +741,24 @@ export const usePreferencesStore = defineStore("preferences", () => {
       syncSnippetProvider.value = settings.syncSnippetProvider;
       syncSnippetInstance.value = settings.syncSnippetInstance ?? "";
       syncSnippetIds.value = { ...settings.syncSnippetIds };
+      // A settings file written before the agent interface existed has none of these; the defaults
+      // are what an installation that never turned it on means, which is off.
+      mcpEnabled.value = settings.mcpEnabled ?? DEFAULT_MCP_ENABLED;
+      mcpPort.value = clampMcpPort(settings.mcpPort ?? DEFAULT_MCP_PORT);
+      mcpScope.value = isMcpScope(settings.mcpScope) ? settings.mcpScope : DEFAULT_MCP_SCOPE;
+      mcpApprovalTimeoutSeconds.value = clampMcpApprovalTimeout(
+        settings.mcpApprovalTimeoutSeconds ?? DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
+      );
+      mcpAuditRetentionDays.value = clampMcpRetentionDays(
+        settings.mcpAuditRetentionDays ?? DEFAULT_MCP_AUDIT_RETENTION_DAYS,
+      );
+      mcpMaxResultBytes.value = clampMcpMaxResultBytes(settings.mcpMaxResultBytes ?? DEFAULT_MCP_MAX_RESULT_BYTES);
+      // An installation that has never opened the assistant page has an empty list, which is what
+      // the page draws as "nothing configured yet" rather than as a failure to read.
+      aiProviders.value = settings.aiProviders ?? [];
+      aiDefaultProviderId.value = settings.aiDefaultProviderId ?? null;
+      aiContextEnabled.value = settings.aiContextEnabled ?? true;
+      aiContextLines.value = clampAiContextLines(settings.aiContextLines ?? AI_CONTEXT_LINES_DEFAULT);
       if (settings.locale && isSupportedLocale(settings.locale)) {
         locale.value = settings.locale;
         localeChosen.value = true;
@@ -769,6 +859,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
         syncSnippetProvider: syncSnippetProvider.value,
         syncSnippetInstance: syncSnippetInstance.value.trim() || undefined,
         syncSnippetIds: { ...syncSnippetIds.value },
+        // Whether the listener is running is written here too, so a settings file saved while it is
+        // on does not say it was off: the ref follows the command that started it.
+        mcpEnabled: mcpEnabled.value,
+        mcpPort: mcpPort.value,
+        mcpScope: mcpScope.value,
+        mcpApprovalTimeoutSeconds: mcpApprovalTimeoutSeconds.value,
+        mcpAuditRetentionDays: mcpAuditRetentionDays.value,
+        mcpMaxResultBytes: mcpMaxResultBytes.value,
+        // The providers travel as configuration only. A key is not a field of the settings file,
+        // and omitting the list here would erase it on every save from another page.
+        aiProviders: [...aiProviders.value],
+        aiDefaultProviderId: aiDefaultProviderId.value ?? undefined,
+        aiContextEnabled: aiContextEnabled.value,
+        aiContextLines: clampAiContextLines(aiContextLines.value),
       });
     } catch (error) {
       problem.value = asShellError(error, "settings_set");
@@ -1199,6 +1303,117 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * The agent interface's fields, each kept inside the range its own control offers.
+   *
+   * Written here rather than at the three call sites that reach them — the two fields somebody types
+   * in and the read of the settings file — so that a value that could not be bound or could truncate
+   * every answer is corrected once, in the only place the value exists.
+   */
+  function clampMcpPort(port: number): number {
+    const rounded = Number.isFinite(port) ? Math.round(port) : DEFAULT_MCP_PORT;
+    return Math.min(Math.max(rounded, 0), MCP_PORT_MAX);
+  }
+
+  function clampMcpApprovalTimeout(seconds: number): number {
+    const rounded = Number.isFinite(seconds) ? Math.round(seconds) : DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS;
+    return Math.min(Math.max(rounded, MCP_APPROVAL_TIMEOUT_SECONDS_MIN), MCP_APPROVAL_TIMEOUT_SECONDS_MAX);
+  }
+
+  function clampMcpRetentionDays(days: number): number {
+    const rounded = Number.isFinite(days) ? Math.round(days) : DEFAULT_MCP_AUDIT_RETENTION_DAYS;
+    return Math.min(Math.max(rounded, MCP_AUDIT_RETENTION_DAYS_MIN), MCP_AUDIT_RETENTION_DAYS_MAX);
+  }
+
+  function clampMcpMaxResultBytes(bytes: number): number {
+    const rounded = Number.isFinite(bytes) ? Math.round(bytes) : DEFAULT_MCP_MAX_RESULT_BYTES;
+    return Math.min(Math.max(rounded, MCP_MAX_RESULT_BYTES_MIN), MCP_MAX_RESULT_BYTES_MAX);
+  }
+
+  function setMcpPort(port: number): void {
+    mcpPort.value = clampMcpPort(port);
+    dirty.value = true;
+  }
+
+  /** What an agent may do. Narrowing takes effect when the listener restarts, which saving asks for. */
+  function setMcpScope(scope: McpScope): void {
+    mcpScope.value = scope;
+    dirty.value = true;
+  }
+
+  function setMcpApprovalTimeoutSeconds(seconds: number): void {
+    mcpApprovalTimeoutSeconds.value = clampMcpApprovalTimeout(seconds);
+    dirty.value = true;
+  }
+
+  function setMcpAuditRetentionDays(days: number): void {
+    mcpAuditRetentionDays.value = clampMcpRetentionDays(days);
+    dirty.value = true;
+  }
+
+  function setMcpMaxResultBytes(bytes: number): void {
+    mcpMaxResultBytes.value = clampMcpMaxResultBytes(bytes);
+    dirty.value = true;
+  }
+
+  /**
+   * A line count inside the range the panel offers.
+   *
+   * Zero is a real answer — it means "attach nothing" — so it is kept rather than corrected to the
+   * default; a ceiling exists because the number is typed, and a typed 500 would send the whole
+   * screen.
+   */
+  function clampAiContextLines(lines: number): number {
+    const rounded = Number.isFinite(lines) ? Math.round(lines) : AI_CONTEXT_LINES_DEFAULT;
+    return Math.min(Math.max(rounded, AI_CONTEXT_LINES_MIN), AI_CONTEXT_LINES_MAX);
+  }
+
+  /**
+   * The provider list, as one answer.
+   *
+   * Written on every add, change and removal rather than field by field: a provider is one entry,
+   * and a store that patched it in place would let half of an edit reach the file.
+   */
+  function setAiProviders(providers: readonly AiProviderConfig[]): void {
+    aiProviders.value = [...providers];
+    // A list that no longer holds the active provider has no active provider. Pointing at an id
+    // nobody configures is a chat that cannot start, and the page would show an empty selector.
+    if (aiDefaultProviderId.value !== null && !providers.some((entry) => entry.id === aiDefaultProviderId.value)) {
+      aiDefaultProviderId.value = null;
+    }
+    dirty.value = true;
+  }
+
+  /** Which provider a new conversation uses. `null` means the first one configured. */
+  function setAiDefaultProviderId(id: string | null): void {
+    aiDefaultProviderId.value = id;
+    dirty.value = true;
+  }
+
+  /** Whether the terminal's last lines travel with a question. */
+  function setAiContextEnabled(enabled: boolean): void {
+    aiContextEnabled.value = enabled;
+    dirty.value = true;
+  }
+
+  /** How many lines travel, kept inside the range the panel offers. */
+  function setAiContextLines(lines: number): void {
+    aiContextLines.value = clampAiContextLines(lines);
+    dirty.value = true;
+  }
+
+  /**
+   * Records what the listener said about itself, without calling it a choice.
+   *
+   * `mcp_enable` and `mcp_disable` are what write this field — they are the side that starts and
+   * stops the socket, and they save the file themselves. Marking the page dirty here would make the
+   * Apply button offer to write something nobody changed; leaving the ref behind would make the
+   * next write put back the stale value the file no longer holds.
+   */
+  function adoptMcpEnabled(enabled: boolean): void {
+    mcpEnabled.value = enabled;
+  }
+
+  /**
    * Changes what one action answers to.
    *
    * Passing nothing puts the action back to the default, which is stored as *not being in the map at
@@ -1431,6 +1646,18 @@ export const usePreferencesStore = defineStore("preferences", () => {
           localeChosen.value = false;
           locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
           break;
+        case "aiProviders":
+          aiProviders.value = [];
+          break;
+        case "aiDefaultProviderId":
+          aiDefaultProviderId.value = null;
+          break;
+        case "aiContextEnabled":
+          aiContextEnabled.value = true;
+          break;
+        case "aiContextLines":
+          aiContextLines.value = AI_CONTEXT_LINES_DEFAULT;
+          break;
       }
     }
     apply();
@@ -1499,6 +1726,16 @@ export const usePreferencesStore = defineStore("preferences", () => {
     syncSnippetProvider,
     syncSnippetInstance,
     syncSnippetIds,
+    mcpEnabled,
+    mcpPort,
+    mcpScope,
+    mcpApprovalTimeoutSeconds,
+    mcpAuditRetentionDays,
+    mcpMaxResultBytes,
+    aiProviders,
+    aiDefaultProviderId,
+    aiContextEnabled,
+    aiContextLines,
     problem,
     dirty,
     initialize,
@@ -1548,6 +1785,16 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSyncSnippetProvider,
     setSyncSnippetInstance,
     setSyncSnippetId,
+    setMcpPort,
+    setMcpScope,
+    setMcpApprovalTimeoutSeconds,
+    setMcpAuditRetentionDays,
+    setMcpMaxResultBytes,
+    setAiProviders,
+    setAiDefaultProviderId,
+    setAiContextEnabled,
+    setAiContextLines,
+    adoptMcpEnabled,
     setKeybinding,
     setPanelHeight,
     rememberPanelHeight,

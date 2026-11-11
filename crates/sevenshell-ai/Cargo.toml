@@ -1,0 +1,27 @@
+[package]
+name = "sevenshell-ai"
+description = "Provider clients for the in-application assistant: request types, streaming events and the Anthropic/OpenAI adapters."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures-util = { workspace = true }
+# A retry that waits is worth one debug line: without it a slow provider and a hung one look the
+# same from the outside. No adapter logs anything a person typed, and none of these lines can carry
+# a header.
+log = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+# A provider key lives in this crate for the length of one request and is wiped when the request is
+# done. The value never reaches a log line, an error or an event.
+zeroize = { workspace = true }

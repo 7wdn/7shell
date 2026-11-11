@@ -18,6 +18,8 @@ coverage/
 /target/
 src-tauri/target/
 src-tauri/gen/
+# The MCP bridge built and renamed for Tauri's sidecar bundling; `pnpm build:sidecar` writes it.
+/src-tauri/binaries/
 **/*.rs.bk
 *.pdb
 

@@ -14,6 +14,17 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { AppInfo, AppSettings } from "@/types/app";
+import type {
+  AiChatRequest,
+  AiChatStarted,
+  AiDeltaEvent,
+  AiDoneEvent,
+  AiErrorEvent,
+  AiProviderTestResult,
+  AiProviderView,
+  AiToolCallEvent,
+  AiToolResultEvent,
+} from "@/types/ai";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type {
   ContainerCommitRequest,
@@ -40,6 +51,7 @@ import type {
   KubeContextInfo,
 } from "@/types/k8s";
 import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
+import type { McpApprovalDecision, McpApprovalRequest, McpAuditEntry, McpStatus } from "@/types/mcp";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
@@ -220,8 +232,128 @@ export async function onSystemThemeChanged(listener: (theme: "dark" | "light" | 
   return listen<"dark" | "light" | null>("system-theme-changed", (event) => listener(event.payload));
 }
 
-// -- Window ------------------------------------------------------------------
+// -- The agent interface (MCP) -----------------------------------------------
+//
+// The window learns what the listener is doing, never the secret it is doing it with: the token
+// lives in the endpoint file and no command here returns it. Turning the listener on and off has
+// commands of its own rather than a field on the settings, because it starts and stops a socket and
+// a settings write cannot do that.
 
+export function mcpStatus(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_status");
+}
+
+/** Starts the loopback listener, or restarts it so it picks up the settings on screen. */
+export function mcpEnable(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_enable");
+}
+
+export function mcpDisable(): Promise<McpStatus> {
+  return invoke<McpStatus>("mcp_disable");
+}
+
+/** The snippet a client's configuration takes. Names the bridge and the endpoint file, never the token. */
+export function mcpClientConfig(): Promise<string> {
+  return invoke<string>("mcp_client_config");
+}
+
+export function mcpAuditTail(limit: number): Promise<McpAuditEntry[]> {
+  return invoke<McpAuditEntry[]>("mcp_audit_tail", { limit });
+}
+
+/** Answers one waiting call. The call id travels, so an answer cannot land on a newer question. */
+export function mcpApprovalAnswer(callId: string, decision: McpApprovalDecision): Promise<void> {
+  return invoke<void>("mcp_approval_answer", { callId, decision });
+}
+
+/** Calls `listener` when a call stops for a person's answer. */
+export async function onMcpApproval(listener: (payload: McpApprovalRequest) => void): Promise<Unlisten> {
+  return listen<McpApprovalRequest>("mcp:approval", (event) => listener(event.payload));
+}
+
+/** Calls `listener` when the listener's own state changes — enabled, restarted, or stopped. */
+export async function onMcpStatus(listener: (payload: McpStatus) => void): Promise<Unlisten> {
+  return listen<McpStatus>("mcp:status", (event) => listener(event.payload));
+}
+
+// -- The assistant -----------------------------------------------------------
+//
+// Providers are configured in the settings file and their keys live in the vault, so nothing here
+// returns a key: a view carries `hasKey`, and `ai_provider_key_set` is a write with no read back.
+// A chat run is named by the id its events carry; the window never sees the conversation the host
+// keeps, only what the run says about itself.
+
+/** Every configured provider, each with whether its key is held. Never the key itself. */
+export function aiProviders(): Promise<AiProviderView[]> {
+  return invoke<AiProviderView[]>("ai_providers");
+}
+
+/**
+ * Keeps a key for one provider, or forgets the one that was kept. `null` is forgetting.
+ *
+ * The answer is the provider as the settings page draws it, so the row shows what the vault now
+ * holds rather than what was typed.
+ */
+export function aiProviderKeySet(providerId: string, key: string | null): Promise<AiProviderView> {
+  return invoke<AiProviderView>("ai_provider_key_set", { providerId, key });
+}
+
+/** Removes a provider's key and its entry. Nothing is returned: the row is gone. */
+export function aiProviderRemove(providerId: string): Promise<void> {
+  return invoke<void>("ai_provider_remove", { providerId });
+}
+
+/** Asks the provider whether it answers. `ok` is the answer; a refusal is not a rejection. */
+export function aiProviderTest(providerId: string): Promise<AiProviderTestResult> {
+  return invoke<AiProviderTestResult>("ai_provider_test", { providerId });
+}
+
+/** Starts a run and answers its id; everything after that arrives on the `ai:*` events. */
+export function aiChatSend(request: AiChatRequest): Promise<AiChatStarted> {
+  // The command takes the three fields it acts on, not the request object: the host builds the
+  // message from `text`, the provider choice from `providerId` and the preview from `context`.
+  return invoke<AiChatStarted>("ai_chat_send", {
+    text: request.text,
+    providerId: request.providerId ?? null,
+    context: request.context ?? null,
+  });
+}
+
+/** Asks one run to stop. The run ends with `cancelled`, not with a failure. */
+export function aiChatCancel(runId: string): Promise<void> {
+  return invoke<void>("ai_chat_cancel", { runId });
+}
+
+/** Forgets the conversation the host kept. The next run starts with no history. */
+export function aiChatReset(): Promise<void> {
+  return invoke<void>("ai_chat_reset");
+}
+
+export async function onAiDelta(listener: (payload: AiDeltaEvent) => void): Promise<Unlisten> {
+  return listen<AiDeltaEvent>("ai:delta", (event) => listener(event.payload));
+}
+
+export async function onAiThinking(listener: (payload: AiDeltaEvent) => void): Promise<Unlisten> {
+  return listen<AiDeltaEvent>("ai:thinking", (event) => listener(event.payload));
+}
+
+export async function onAiToolCall(listener: (payload: AiToolCallEvent) => void): Promise<Unlisten> {
+  return listen<AiToolCallEvent>("ai:tool_call", (event) => listener(event.payload));
+}
+
+export async function onAiToolResult(listener: (payload: AiToolResultEvent) => void): Promise<Unlisten> {
+  return listen<AiToolResultEvent>("ai:tool_result", (event) => listener(event.payload));
+}
+
+export async function onAiDone(listener: (payload: AiDoneEvent) => void): Promise<Unlisten> {
+  return listen<AiDoneEvent>("ai:done", (event) => listener(event.payload));
+}
+
+export async function onAiError(listener: (payload: AiErrorEvent) => void): Promise<Unlisten> {
+  return listen<AiErrorEvent>("ai:error", (event) => listener(event.payload));
+}
+
+// -- Window ------------------------------------------------------------------
 export function windowMinimize(): Promise<void> {
   return getCurrentWindow().minimize();
 }

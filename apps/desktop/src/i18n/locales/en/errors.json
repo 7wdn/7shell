@@ -113,6 +113,15 @@
       "requestFailed": "The API server answered {status}.",
       "notConnected": "That cluster connection is no longer open."
     },
+    "ai": {
+      "noProvider": "No AI provider has been set up yet.",
+      "noKey": "No API key is stored for this provider.",
+      "providerUnavailable": "The AI provider could not be reached, refused the request, or answered with an error.",
+      "contextTooLong": "The conversation is longer than the model's context window. Clear the chat and try again.",
+      "maxTurns": "The assistant stopped after reaching its tool-call limit.",
+      "cancelled": "The request was cancelled, so the assistant stopped.",
+      "toolSkipped": "Only one tool may run per turn, so this call was skipped."
+    },
     "app": {
       "notReady": "The application is still starting up.",
       "noTransport": "{operation} needs the desktop application.",

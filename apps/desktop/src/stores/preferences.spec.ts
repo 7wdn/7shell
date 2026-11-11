@@ -29,6 +29,7 @@ import {
 } from "@/stores/preferences";
 import { DEFAULT_SYNC_AUTO_UPLOAD_MINUTES } from "@/types/app";
 import {
+  AI_CONTEXT_LINES_DEFAULT,
   DEFAULT_APP_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE,
   DEFAULT_CORNER_STYLE,
@@ -107,6 +108,20 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     syncSnippetProvider: undefined,
     syncSnippetInstance: undefined,
     syncSnippetIds: {},
+    // The agent interface, off with nothing configured — which is what a fresh install has and what
+    // the listener commands are the only way to change.
+    mcpEnabled: false,
+    mcpPort: 0,
+    mcpScope: "readOnly",
+    mcpApprovalTimeoutSeconds: 120,
+    mcpAuditRetentionDays: 30,
+    mcpMaxResultBytes: 262_144,
+    // The assistant, with nothing configured: no provider, no pinned one, and the context the
+    // contract's default describes.
+    aiProviders: [],
+    aiDefaultProviderId: undefined,
+    aiContextEnabled: true,
+    aiContextLines: AI_CONTEXT_LINES_DEFAULT,
     ...overrides,
   };
 }
@@ -310,6 +325,18 @@ describe("preferences store", () => {
       syncSnippetProvider: undefined,
       syncSnippetInstance: undefined,
       syncSnippetIds: {},
+      mcpEnabled: false,
+      mcpPort: 0,
+      mcpScope: "readOnly",
+      mcpApprovalTimeoutSeconds: 120,
+      mcpAuditRetentionDays: 30,
+      mcpMaxResultBytes: 262_144,
+      // Written on every save, including the pages that do not show them: leaving them out would
+      // erase the provider list the next time somebody saved the appearance.
+      aiProviders: [],
+      aiDefaultProviderId: undefined,
+      aiContextEnabled: true,
+      aiContextLines: AI_CONTEXT_LINES_DEFAULT,
     });
   });
 
@@ -365,6 +392,18 @@ describe("preferences store", () => {
       syncSnippetProvider: undefined,
       syncSnippetInstance: undefined,
       syncSnippetIds: {},
+      mcpEnabled: false,
+      mcpPort: 0,
+      mcpScope: "readOnly",
+      mcpApprovalTimeoutSeconds: 120,
+      mcpAuditRetentionDays: 30,
+      mcpMaxResultBytes: 262_144,
+      // Written on every save, including the pages that do not show them: leaving them out would
+      // erase the provider list the next time somebody saved the appearance.
+      aiProviders: [],
+      aiDefaultProviderId: undefined,
+      aiContextEnabled: true,
+      aiContextLines: AI_CONTEXT_LINES_DEFAULT,
     });
     expect(document.documentElement.lang).toBe("zh-CN");
   });
@@ -531,6 +570,18 @@ describe("the terminal palette", () => {
       syncSnippetProvider: undefined,
       syncSnippetInstance: undefined,
       syncSnippetIds: {},
+      mcpEnabled: false,
+      mcpPort: 0,
+      mcpScope: "readOnly",
+      mcpApprovalTimeoutSeconds: 120,
+      mcpAuditRetentionDays: 30,
+      mcpMaxResultBytes: 262_144,
+      // Written on every save, including the pages that do not show them: leaving them out would
+      // erase the provider list the next time somebody saved the appearance.
+      aiProviders: [],
+      aiDefaultProviderId: undefined,
+      aiContextEnabled: true,
+      aiContextLines: AI_CONTEXT_LINES_DEFAULT,
     });
   });
 
@@ -1382,6 +1433,18 @@ describe("restoring the defaults", () => {
       syncSnippetProvider: undefined,
       syncSnippetInstance: undefined,
       syncSnippetIds: {},
+      mcpEnabled: false,
+      mcpPort: 0,
+      mcpScope: "readOnly",
+      mcpApprovalTimeoutSeconds: 120,
+      mcpAuditRetentionDays: 30,
+      mcpMaxResultBytes: 262_144,
+      // Written on every save, including the pages that do not show them: leaving them out would
+      // erase the provider list the next time somebody saved the appearance.
+      aiProviders: [],
+      aiDefaultProviderId: undefined,
+      aiContextEnabled: true,
+      aiContextLines: AI_CONTEXT_LINES_DEFAULT,
     });
   });
 

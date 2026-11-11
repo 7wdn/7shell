@@ -4,10 +4,12 @@
 //! in the `sevenshell-*` crates so the same operations can later be driven from a command line
 //! or an agent without going through a webview.
 
+mod ai;
 mod clipboard;
 mod close;
 mod commands;
 mod dropped;
+mod mcp;
 mod reveal;
 mod state;
 mod tray;
@@ -116,7 +118,19 @@ pub fn run() {
                 && let Some(shell_state) = window.try_state::<state::ShellState>()
             {
                 let core: Arc<Core> = shell_state.core_arc();
-                tauri::async_runtime::spawn(async move { core.close_all().await });
+                let mcp = shell_state.mcp_arc();
+                let ai = shell_state.ai_arc();
+                tauri::async_runtime::spawn(async move {
+                    // First, because it is the one thing that might still be producing: a run whose
+                    // window is gone is cancelled here rather than left to finish against a
+                    // conversation nobody will read.
+                    ai.shutdown();
+                    // The endpoint file names a token this process is about to stop accepting, and a
+                    // bridge that found it after the window was gone would report a desktop that is
+                    // not answering. Removed before the last connection is closed.
+                    mcp.stop().await;
+                    core.close_all().await
+                });
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -279,6 +293,19 @@ pub fn run() {
             commands::k8s::k8s_logs_start,
             commands::k8s::k8s_stream_stop,
             commands::k8s::k8s_exec_open,
+            commands::mcp::mcp_status,
+            commands::mcp::mcp_enable,
+            commands::mcp::mcp_disable,
+            commands::mcp::mcp_client_config,
+            commands::mcp::mcp_audit_tail,
+            commands::mcp::mcp_approval_answer,
+            commands::ai::ai_providers,
+            commands::ai::ai_provider_key_set,
+            commands::ai::ai_provider_remove,
+            commands::ai::ai_provider_test,
+            commands::ai::ai_chat_send,
+            commands::ai::ai_chat_cancel,
+            commands::ai::ai_chat_reset,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the 7Shell desktop shell");
@@ -354,7 +381,15 @@ fn report_drag<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tauri::Drag
 /// window closing the application — both of which are states a person can get out of.
 fn apply_startup_shell_settings(app: &tauri::AppHandle) {
     match sevenshell_platform::load() {
-        Ok(settings) => apply_shell_settings(app, &settings),
+        Ok(settings) => {
+            apply_shell_settings(app, &settings);
+            // After the state is managed, because the listener keeps its runtime there. Spawned
+            // rather than awaited: opening a socket is not a reason for the window to wait, and the
+            // interface's first `mcp_status` reports what actually came up.
+            if let Some(state) = app.try_state::<state::ShellState>() {
+                crate::mcp::start_if_enabled(app, state.mcp_arc(), &settings);
+            }
+        }
         Err(error) => {
             log::warn!("settings could not be read at startup, so the shell keeps its defaults: {error}");
         }

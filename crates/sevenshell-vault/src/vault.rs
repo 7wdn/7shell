@@ -907,6 +907,28 @@ impl Vault {
         state.write_to(&self.path)
     }
 
+    /// The API key kept for one assistant provider, if one was.
+    ///
+    /// Keyed by the provider id from the settings file — the one name the two halves share. What comes
+    /// back is wiped when it is dropped, and it exists for the one caller that puts it in a request
+    /// header; nothing in the settings file, the interface or an event ever holds it.
+    pub fn ai_token(&self, provider_id: &str) -> Result<Option<ServicePassword>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.ai_token(provider_id))
+    }
+
+    /// Keeps an API key for one provider, or forgets the one that was kept.
+    ///
+    /// An empty value is a deletion, the same rule the snippet tokens follow: there is one path for
+    /// forgetting, so "cleared" and "never kept" cannot become two different states.
+    pub fn set_ai_token(&self, provider_id: &str, token: Option<String>) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+
+        state.document.set_ai_token(provider_id, token);
+        state.write_to(&self.path)
+    }
+
     /// Stores key material under the handle it arrived with.
     ///
     /// [`Vault::import_key`] makes a handle because nothing has seen that key before. A file that
@@ -1933,6 +1955,47 @@ mod tests {
     }
 
     #[test]
+    fn an_assistant_key_round_trips_survives_a_reopen_and_can_be_forgotten() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+
+        assert!(vault.ai_token("ollama").expect("read").is_none());
+
+        vault
+            .set_ai_token("ollama", Some("sk-local-one".to_owned()))
+            .expect("keep");
+        assert_eq!(
+            vault.ai_token("ollama").expect("read").expect("kept").expose(),
+            "sk-local-one",
+            "the key did not round-trip through the vault"
+        );
+        assert!(
+            vault.ai_token("openai").expect("read").is_none(),
+            "one provider's key is not another's"
+        );
+
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        assert_eq!(
+            vault.ai_token("ollama").expect("read").expect("kept").expose(),
+            "sk-local-one",
+            "the key did not survive a reopen"
+        );
+
+        vault.set_ai_token("ollama", None).expect("forget");
+        assert!(vault.ai_token("ollama").expect("read").is_none());
+        vault
+            .set_ai_token("ollama", Some(String::new()))
+            .expect("forget with nothing");
+        assert!(
+            vault.ai_token("ollama").expect("read").is_none(),
+            "an empty key is nobody keeping one"
+        );
+    }
+
+    #[test]
     fn every_document_operation_reports_locked_while_locked() {
         let directory = tempdir().expect("temp dir");
         let path = directory.path().join("vault.json");
@@ -1964,6 +2027,8 @@ mod tests {
         locked(vault.key_material("key-1").expect_err("material"));
         locked(vault.forget_key("key-1").expect_err("forget key"));
         locked(vault.secret_for_session("s1").expect_err("secret"));
+        locked(vault.ai_token("ollama").expect_err("assistant key"));
+        locked(vault.set_ai_token("ollama", None).expect_err("keep assistant key"));
         locked(vault.change_password("master", "next").expect_err("change password"));
     }
 

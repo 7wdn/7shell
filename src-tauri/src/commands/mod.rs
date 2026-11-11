@@ -8,6 +8,7 @@
 //! command, and no command ever returns one — not in a result, not in a diagnostic, not in an
 //! error detail.
 
+pub mod ai;
 pub mod app;
 pub mod background;
 pub mod batch;
@@ -20,6 +21,7 @@ pub mod fonts;
 pub mod k8s;
 pub mod keys;
 pub mod known_hosts;
+pub mod mcp;
 pub mod monitor;
 pub mod sessions;
 pub mod settings;

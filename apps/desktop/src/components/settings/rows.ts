@@ -39,6 +39,8 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [
   "commands",
   "words",
   "sync",
+  "mcp",
+  "ai",
   "about",
 ];
 
@@ -48,7 +50,19 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryId[] = [
  * Their rows are not preferences — nobody sets a trusted key to a value — so they draw their own
  * content and the search does not look inside them.
  */
-export const LIST_CATEGORIES: readonly SettingsCategoryId[] = ["security", "shortcuts", "commands", "words", "sync"];
+export const LIST_CATEGORIES: readonly SettingsCategoryId[] = [
+  "security",
+  "shortcuts",
+  "commands",
+  "words",
+  "sync",
+  // The agent interface is one block rather than a set of rows: whether it is running is a command
+  // and a live status, and the rows are about the listener rather than about one value.
+  "mcp",
+  // The assistant's page is the same shape: a list of providers with a key state the host answers,
+  // and two context fields beside it. None of it is a row somebody sets to a value on its own.
+  "ai",
+];
 
 /**
  * What each category is called, as a key rather than as a resolved string.
@@ -67,6 +81,8 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
   commands: "settings.nav.commands",
   words: "settings.nav.words",
   sync: "settings.nav.sync",
+  mcp: "settings.nav.mcp",
+  ai: "settings.nav.ai",
   about: "settings.nav.about",
 };
 

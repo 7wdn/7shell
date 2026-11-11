@@ -113,6 +113,15 @@
       "requestFailed": "API 服务器返回了 {status}。",
       "notConnected": "这个集群连接已经关闭。"
     },
+    "ai": {
+      "noProvider": "还没有配置 AI 服务商。",
+      "noKey": "该服务商还没有保存 API 密钥。",
+      "providerUnavailable": "无法连接 AI 服务商：请求被拒绝，或服务返回了错误。",
+      "contextTooLong": "对话超过了模型的上下文长度，请清空聊天后重试。",
+      "maxTurns": "助手达到工具调用次数上限，已停止。",
+      "cancelled": "请求已取消，助手停止。",
+      "toolSkipped": "每一轮只能执行一个工具调用，因此这一项被跳过。"
+    },
     "app": {
       "notReady": "应用仍在启动中。",
       "noTransport": "{operation} 需要在桌面应用中使用。",

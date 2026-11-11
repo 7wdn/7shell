@@ -16,6 +16,7 @@
 export type ShortcutActionId =
   | "global.uploadClipboard"
   | "global.toggleTransfers"
+  | "global.toggleAssistant"
   | "terminal.find"
   | "commands.completionAccept"
   | "commands.completionTrigger";
@@ -49,6 +50,14 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     scope: "global",
     labelKey: "settings.shortcuts.actions.toggleTransfers",
     defaultBinding: "Mod+Shift+D",
+  },
+  // Shifted for the same reason: the assistant panel has to open while somebody is typing into a
+  // terminal, and every plain control combination below belongs to the shell on the far side.
+  {
+    id: "global.toggleAssistant",
+    scope: "global",
+    labelKey: "settings.shortcuts.actions.toggleAssistant",
+    defaultBinding: "Mod+Shift+A",
   },
   {
     id: "terminal.find",

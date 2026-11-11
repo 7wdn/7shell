@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ai::{AiProviderConfig, ai_context_enabled_default, ai_context_lines_default};
 use crate::sync::SnippetProvider;
 
 /// How the file browser is laid out.
@@ -620,6 +621,100 @@ impl BackgroundDisplayMode {
     }
 }
 
+/// What an agent connected over MCP is allowed to do.
+///
+/// Three tiers rather than one switch, because "let an agent read" and "let an agent change things"
+/// are different questions, and the answer to the second is not one answer: somebody may trust an
+/// agent to run a command while still wanting a window in front of the command that deletes a
+/// service. A tier decides what is offered at all; a destructive call is a separate decision inside
+/// every tier, including the widest one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum McpScope {
+    /// Listing and reading only: no command runs, no file is written, no container changes.
+    ///
+    /// What a fresh install has. It is the tier under which an agent can look at a machine and
+    /// answer questions about it, which is most of what an agent is asked to do.
+    #[default]
+    ReadOnly,
+    /// Writes a person allowed by choosing this tier: running a command, writing a remote file.
+    /// A destructive command still stops for approval.
+    SafeWrite,
+    /// Everything the tools offer, with the policy gate still in front of anything destructive.
+    HighRisk,
+}
+
+impl McpScope {
+    pub const ALL: &'static [McpScope] = &[McpScope::ReadOnly, McpScope::SafeWrite, McpScope::HighRisk];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "readOnly",
+            Self::SafeWrite => "safeWrite",
+            Self::HighRisk => "highRisk",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|scope| scope.as_str() == id)
+    }
+}
+
+/// How long a call waits for a person's answer before it is treated as refused.
+///
+/// A number rather than "until somebody answers": the window the question is asked in may be put
+/// away, and an agent holding a connection open behind a dialog nobody is looking at is a call that
+/// never finishes and never fails.
+pub const MCP_APPROVAL_TIMEOUT_SECONDS_DEFAULT: u64 = 120;
+
+/// How many days the audit file is kept.
+///
+/// The audit is a local JSONL file, one line per call. A month is long enough to answer "what did
+/// the agent do last week" and short enough that the file does not become a second history nobody
+/// prunes.
+pub const MCP_AUDIT_RETENTION_DAYS_DEFAULT: u32 = 30;
+
+/// The most one call may return, in bytes.
+///
+/// A result travels into an agent's context, which is finite; a directory listing of a huge
+/// directory or a long log would otherwise push the conversation out of the window that reads it.
+pub const MCP_MAX_RESULT_BYTES_DEFAULT: u64 = 262_144;
+
+pub fn mcp_approval_timeout_seconds_default() -> u64 {
+    MCP_APPROVAL_TIMEOUT_SECONDS_DEFAULT
+}
+
+pub fn mcp_audit_retention_days_default() -> u32 {
+    MCP_AUDIT_RETENTION_DAYS_DEFAULT
+}
+
+pub fn mcp_max_result_bytes_default() -> u64 {
+    MCP_MAX_RESULT_BYTES_DEFAULT
+}
+
+/// The ends of the numbers the settings page offers.
+///
+/// Repeated here because the file is a boundary too: a hand-edited settings file must not be able to
+/// hold a call open for a day, keep an audit forever, or truncate every answer to nothing.
+pub const MCP_APPROVAL_TIMEOUT_SECONDS_MIN: u64 = 10;
+pub const MCP_APPROVAL_TIMEOUT_SECONDS_MAX: u64 = 1_800;
+pub const MCP_AUDIT_RETENTION_DAYS_MIN: u32 = 1;
+pub const MCP_AUDIT_RETENTION_DAYS_MAX: u32 = 365;
+pub const MCP_MAX_RESULT_BYTES_MIN: u64 = 16_384;
+pub const MCP_MAX_RESULT_BYTES_MAX: u64 = 16_777_216;
+
+pub fn normalize_mcp_approval_timeout_seconds(value: u64) -> u64 {
+    value.clamp(MCP_APPROVAL_TIMEOUT_SECONDS_MIN, MCP_APPROVAL_TIMEOUT_SECONDS_MAX)
+}
+
+pub fn normalize_mcp_audit_retention_days(value: u32) -> u32 {
+    value.clamp(MCP_AUDIT_RETENTION_DAYS_MIN, MCP_AUDIT_RETENTION_DAYS_MAX)
+}
+
+pub fn normalize_mcp_max_result_bytes(value: u64) -> u64 {
+    value.clamp(MCP_MAX_RESULT_BYTES_MIN, MCP_MAX_RESULT_BYTES_MAX)
+}
+
 /// The most the surfaces are allowed to let through, in percent.
 ///
 /// Not all of it: a window whose own surfaces are entirely transparent is a window whose text floats
@@ -990,6 +1085,48 @@ pub struct AppSettings {
     /// the token, which is in the vault.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sync_snippet_ids: BTreeMap<String, String>,
+    /// Whether the loopback control endpoint an MCP bridge talks to is running.
+    ///
+    /// Off unless somebody turns it on. The endpoint is bound to 127.0.0.1 and every call has to
+    /// present the token from the endpoint file, but a listener nobody asked for is still a
+    /// listener: this switch is what decides whether this build can be driven by another process.
+    #[serde(default)]
+    pub mcp_enabled: bool,
+    /// The port the control endpoint listens on.
+    ///
+    /// Zero asks the operating system for a free one, which is what a fresh install does: the
+    /// bridge learns the port from the endpoint file, so a fixed number would only be a number for
+    /// two installations to collide over.
+    #[serde(default)]
+    pub mcp_port: u16,
+    /// What an agent may do. See [`McpScope`].
+    #[serde(default)]
+    pub mcp_scope: McpScope,
+    /// How long a call waits for a person's answer before it is treated as refused.
+    #[serde(default = "mcp_approval_timeout_seconds_default")]
+    pub mcp_approval_timeout_seconds: u64,
+    /// How many days the audit file is kept.
+    #[serde(default = "mcp_audit_retention_days_default")]
+    pub mcp_audit_retention_days: u32,
+    /// The largest result one call may return, in bytes.
+    #[serde(default = "mcp_max_result_bytes_default")]
+    pub mcp_max_result_bytes: u64,
+    /// The assistant's providers, without their keys.
+    ///
+    /// A list rather than one provider, because the same installation may talk to a hosted service
+    /// in the morning and a model on this machine in the afternoon. Nothing here is a secret: the
+    /// key for each one is filed in the vault under its id.
+    #[serde(default)]
+    pub ai_providers: Vec<AiProviderConfig>,
+    /// Which provider a new conversation starts with. Absent means the first one configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_default_provider_id: Option<String>,
+    /// Whether the terminal's recent lines travel with a question.
+    #[serde(default = "ai_context_enabled_default")]
+    pub ai_context_enabled: bool,
+    /// How many lines of terminal output are attached. Zero attaches nothing; the ends are 0 and 200.
+    #[serde(default = "ai_context_lines_default")]
+    pub ai_context_lines: u32,
 }
 
 /// The interface's own size when nobody has changed it.
@@ -1105,6 +1242,16 @@ impl Default for AppSettings {
             sync_snippet_provider: None,
             sync_snippet_instance: None,
             sync_snippet_ids: BTreeMap::new(),
+            mcp_enabled: false,
+            mcp_port: 0,
+            mcp_scope: McpScope::default(),
+            mcp_approval_timeout_seconds: mcp_approval_timeout_seconds_default(),
+            mcp_audit_retention_days: mcp_audit_retention_days_default(),
+            mcp_max_result_bytes: mcp_max_result_bytes_default(),
+            ai_providers: Vec::new(),
+            ai_default_provider_id: None,
+            ai_context_enabled: ai_context_enabled_default(),
+            ai_context_lines: ai_context_lines_default(),
         }
     }
 }
@@ -1149,6 +1296,16 @@ impl AppSettings {
             && self.custom_colors.is_none()
             && self.custom_colors_dark.is_none()
             && self.locale.is_none()
+            && !self.mcp_enabled
+            && self.mcp_port == 0
+            && self.mcp_scope == McpScope::ReadOnly
+            && self.mcp_approval_timeout_seconds == mcp_approval_timeout_seconds_default()
+            && self.mcp_audit_retention_days == mcp_audit_retention_days_default()
+            && self.mcp_max_result_bytes == mcp_max_result_bytes_default()
+            && self.ai_providers.is_empty()
+            && self.ai_default_provider_id.is_none()
+            && self.ai_context_enabled == ai_context_enabled_default()
+            && self.ai_context_lines == ai_context_lines_default()
     }
 }
 
@@ -1340,5 +1497,42 @@ mod tests {
                 "a palette whose name does not read back is one the settings file cannot hold"
             );
         }
+    }
+
+    #[test]
+    fn the_assistant_starts_with_no_provider_and_the_terminal_attached() {
+        let settings = AppSettings::default();
+
+        assert!(
+            settings.ai_providers.is_empty(),
+            "a fresh install has nowhere to send a question yet"
+        );
+        assert_eq!(settings.ai_default_provider_id, None);
+        assert!(
+            settings.ai_context_enabled,
+            "the terminal travels until somebody says otherwise"
+        );
+        assert_eq!(settings.ai_context_lines, ai_context_lines_default());
+        assert!(settings.is_untouched(), "none of that is a choice somebody made");
+    }
+
+    #[test]
+    fn every_mcp_scope_round_trips_through_its_own_name() {
+        for scope in McpScope::ALL {
+            assert_eq!(
+                McpScope::from_id(scope.as_str()),
+                Some(*scope),
+                "a scope whose name does not read back is one the settings file cannot hold"
+            );
+        }
+        assert_eq!(
+            McpScope::default(),
+            McpScope::ReadOnly,
+            "an agent gets to look until somebody says otherwise"
+        );
+        assert!(
+            !AppSettings::default().mcp_enabled,
+            "and nothing is listening until somebody turns it on"
+        );
     }
 }

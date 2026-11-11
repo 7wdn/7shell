@@ -21,8 +21,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 base64 = { workspace = true }
 log = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+getrandom = { workspace = true }
+uuid = { workspace = true }
+sevenshell-api = { workspace = true }
 sevenshell-core = { workspace = true }
 sevenshell-error = { workspace = true }
+sevenshell-agent = { workspace = true }
+sevenshell-ai = { workspace = true }
 sevenshell-platform = { workspace = true }
 sevenshell-session = { workspace = true }
 sevenshell-term = { workspace = true }
@@ -34,9 +41,16 @@ tauri-plugin-dialog = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
 tokio = { workspace = true }
+# The assistant reads the first item of a provider stream in a connection test.
+futures-util = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# The HTTP tests drive the real router through `Service::oneshot`, which is how axum itself is
+# tested: a request that never touches a socket still passes every layer the socket would.
+tower = { version = "0.5", features = ["util"] }
+# Paused time, so an approval timeout is asserted in microseconds rather than by sleeping.
+tokio = { workspace = true, features = ["test-util"] }
 
 [target."cfg(windows)".dependencies]
 clipboard-win = { workspace = true }

@@ -18,12 +18,16 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX, BackgroundDisplayMode, BackgroundImage,
-    CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, SessionReopen, SnippetProvider, TabGroupMode,
-    TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, background_blur_default,
-    background_transparency_default, command_completion_on, monitor_on, normalize_sync_auto_upload_minutes,
-    normalize_terminal_font_size, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
-    terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
+    AiProviderConfig, AiProviderKind, AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX,
+    BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FilesLayout, HomeLayout, McpScope,
+    SessionLayout, SessionReopen, SnippetProvider, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    ThemeMode, ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
+    background_blur_default, background_transparency_default, command_completion_on,
+    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default, monitor_on,
+    normalize_ai_context_lines, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
+    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
+    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
+    ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -72,6 +76,64 @@ impl StoredBackgroundImage {
             transparency: self.transparency.min(BACKGROUND_TRANSPARENCY_MAX),
             blur: self.blur.min(BACKGROUND_BLUR_MAX),
         }
+    }
+}
+
+/// The kind is a string here for the reason the theme is: a file written by a build with a fourth
+/// protocol in it has to open in this one, and an entry this build cannot speak is not offered
+/// rather than guessed at.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredAiProviderConfig {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    base_url: String,
+    #[serde(default)]
+    model: String,
+    #[serde(default = "ai_max_output_tokens_default")]
+    max_output_tokens: u32,
+}
+
+impl StoredAiProviderConfig {
+    fn from_settings(config: &AiProviderConfig) -> Self {
+        Self {
+            id: config.id.clone(),
+            name: config.name.clone(),
+            kind: config.kind.as_str().to_owned(),
+            base_url: config.base_url.clone(),
+            model: config.model.clone(),
+            max_output_tokens: config.max_output_tokens,
+        }
+    }
+
+    /// One entry this build can offer, or nothing.
+    ///
+    /// An entry with no id cannot be looked up or have a key filed under it, and one naming a
+    /// protocol this build does not speak is dropped rather than guessed at: sending a key to the
+    /// wrong kind of API is worse than not offering the provider at all.
+    fn to_settings(&self) -> Option<AiProviderConfig> {
+        let id = self.id.trim();
+        if id.is_empty() {
+            return None;
+        }
+        Some(AiProviderConfig {
+            id: id.to_owned(),
+            name: self.name.trim().to_owned(),
+            kind: AiProviderKind::from_id(self.kind.trim())?,
+            base_url: self.base_url.trim().to_owned(),
+            model: self.model.trim().to_owned(),
+            // Zero is not a budget, and a hand-edited file must not leave the provider to decide.
+            max_output_tokens: if self.max_output_tokens == 0 {
+                ai_max_output_tokens_default()
+            } else {
+                self.max_output_tokens
+            },
+        })
     }
 }
 
@@ -238,6 +300,42 @@ struct StoredSettings {
     sync_snippet_instance: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     sync_snippet_ids: BTreeMap<String, String>,
+    /// The agent-facing endpoint. Absent in a file written before there was one, which reads as
+    /// "nothing is listening" — the state a fresh install is meant to be in, since a listener is
+    /// something somebody turns on rather than something they discover later.
+    ///
+    /// The scope is a string here for the reason the theme is: a file written by a build with a
+    /// fourth tier in it has to open in this one, and an unknown name reads as the narrowest tier
+    /// rather than as the widest.
+    #[serde(default)]
+    mcp_enabled: bool,
+    #[serde(default)]
+    mcp_port: u16,
+    #[serde(default)]
+    mcp_scope: String,
+    #[serde(default = "mcp_approval_timeout_seconds_default")]
+    mcp_approval_timeout_seconds: u64,
+    #[serde(default = "mcp_audit_retention_days_default")]
+    mcp_audit_retention_days: u32,
+    #[serde(default = "mcp_max_result_bytes_default")]
+    mcp_max_result_bytes: u64,
+    /// The assistant's providers. Absent in a file written before there was an assistant, which
+    /// reads as "nothing configured" — there is nowhere to send a question yet.
+    ///
+    /// This is the non-secret half of each provider. Nothing in this struct has a field a key could
+    /// be written to: the key lives in the vault, under the provider's id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ai_providers: Vec<StoredAiProviderConfig>,
+    /// Which provider a new conversation starts with, absent until one has been chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_default_provider_id: Option<String>,
+    /// Whether the terminal's recent lines travel with a question. Absent reads as on, which is what
+    /// the assistant was designed around rather than a feature somebody turned on.
+    #[serde(default = "ai_context_enabled_default")]
+    ai_context_enabled: bool,
+    /// How many lines travel. Absent reads as the default the build ships.
+    #[serde(default = "ai_context_lines_default")]
+    ai_context_lines: u32,
 }
 
 impl StoredSettings {
@@ -290,10 +388,42 @@ impl StoredSettings {
                 .map(|provider| provider.as_str().to_owned()),
             sync_snippet_instance: settings.sync_snippet_instance.clone(),
             sync_snippet_ids: settings.sync_snippet_ids.clone(),
+            mcp_enabled: settings.mcp_enabled,
+            mcp_port: settings.mcp_port,
+            mcp_scope: settings.mcp_scope.as_str().to_owned(),
+            mcp_approval_timeout_seconds: settings.mcp_approval_timeout_seconds,
+            mcp_audit_retention_days: settings.mcp_audit_retention_days,
+            mcp_max_result_bytes: settings.mcp_max_result_bytes,
+            ai_providers: settings
+                .ai_providers
+                .iter()
+                .map(StoredAiProviderConfig::from_settings)
+                .collect(),
+            ai_default_provider_id: settings.ai_default_provider_id.clone(),
+            ai_context_enabled: settings.ai_context_enabled,
+            ai_context_lines: settings.ai_context_lines,
         }
     }
 
     fn into_settings(self) -> AppSettings {
+        // Worked out before the struct literal because each answer depends on the others: a provider
+        // this build cannot offer must take its id with it, and a default naming one that is gone is
+        // no default at all. A hand-edited file is still a boundary.
+        let mut seen = std::collections::BTreeSet::new();
+        let ai_providers: Vec<AiProviderConfig> = self
+            .ai_providers
+            .iter()
+            .filter_map(StoredAiProviderConfig::to_settings)
+            .filter(|provider| seen.insert(provider.id.clone()))
+            .collect();
+        let ai_default_provider_id = self
+            .ai_default_provider_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .filter(|id| ai_providers.iter().any(|provider| provider.id == *id))
+            .map(str::to_owned);
+
         AppSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
             theme_palette: ThemePalette::from_id(&self.theme_palette).unwrap_or_default(),
@@ -344,6 +474,21 @@ impl StoredSettings {
             sync_snippet_provider: self.sync_snippet_provider.as_deref().and_then(SnippetProvider::from_id),
             sync_snippet_instance: self.sync_snippet_instance.filter(|value| !value.trim().is_empty()),
             sync_snippet_ids: self.sync_snippet_ids,
+            mcp_enabled: self.mcp_enabled,
+            mcp_port: self.mcp_port,
+            // A tier this build does not know reads as the narrowest one, never as the widest: a file
+            // written by a newer build must not widen what an agent may do in this one.
+            mcp_scope: McpScope::from_id(&self.mcp_scope).unwrap_or_default(),
+            // Read through the same ends the page offers: a file edited by hand is still a file this
+            // build has to survive.
+            mcp_approval_timeout_seconds: normalize_mcp_approval_timeout_seconds(self.mcp_approval_timeout_seconds),
+            mcp_audit_retention_days: normalize_mcp_audit_retention_days(self.mcp_audit_retention_days),
+            mcp_max_result_bytes: normalize_mcp_max_result_bytes(self.mcp_max_result_bytes),
+            ai_providers,
+            ai_default_provider_id,
+            ai_context_enabled: self.ai_context_enabled,
+            // The same ends the page offers, and zero survives as "attach nothing".
+            ai_context_lines: normalize_ai_context_lines(self.ai_context_lines),
         }
     }
 }
@@ -479,7 +624,158 @@ mod tests {
             sync_snippet_provider: None,
             sync_snippet_instance: None,
             sync_snippet_ids: BTreeMap::new(),
+            mcp_enabled: false,
+            mcp_port: 0,
+            mcp_scope: McpScope::default(),
+            mcp_approval_timeout_seconds: mcp_approval_timeout_seconds_default(),
+            mcp_audit_retention_days: mcp_audit_retention_days_default(),
+            mcp_max_result_bytes: mcp_max_result_bytes_default(),
+            ai_providers: Vec::new(),
+            ai_default_provider_id: None,
+            ai_context_enabled: ai_context_enabled_default(),
+            ai_context_lines: ai_context_lines_default(),
         }
+    }
+
+    #[test]
+    fn the_agent_endpoint_survives_a_round_trip_and_an_unknown_scope_reads_narrow() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        let mut written = settings(ThemeMode::Dark, ThemeMode::System, None);
+        written.mcp_enabled = true;
+        written.mcp_port = 4711;
+        written.mcp_scope = McpScope::SafeWrite;
+        written.mcp_approval_timeout_seconds = 90;
+        save_to(&path, &written).expect("write");
+
+        assert_eq!(load_from(&path).expect("read"), written);
+
+        // A tier written by a build that has one this build does not must not widen the scope: the
+        // narrowest tier is the one whose answer cannot be wrong about what an agent may do.
+        std::fs::write(&path, r#"{"schemaVersion":1,"mcpScope":"godmode"}"#).expect("write");
+        assert_eq!(load_from(&path).expect("read").mcp_scope, McpScope::ReadOnly);
+    }
+
+    #[test]
+    fn an_agent_number_written_outside_its_range_reads_at_the_nearest_end() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"mcpApprovalTimeoutSeconds":0,"mcpAuditRetentionDays":0,"mcpMaxResultBytes":1}"#,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("read");
+
+        // A hand-edited file is still a boundary: zero would hold every approval until the tool's own
+        // timeout, keep no audit at all, and truncate every answer to a single byte.
+        assert_eq!(
+            loaded.mcp_approval_timeout_seconds,
+            sevenshell_types::MCP_APPROVAL_TIMEOUT_SECONDS_MIN
+        );
+        assert_eq!(
+            loaded.mcp_audit_retention_days,
+            sevenshell_types::MCP_AUDIT_RETENTION_DAYS_MIN
+        );
+        assert_eq!(loaded.mcp_max_result_bytes, sevenshell_types::MCP_MAX_RESULT_BYTES_MIN);
+    }
+
+    #[test]
+    fn an_assistant_provider_survives_a_round_trip_and_no_key_is_ever_written() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        let mut written = settings(ThemeMode::Dark, ThemeMode::System, None);
+        written.ai_providers = vec![AiProviderConfig {
+            id: "ollama".to_owned(),
+            name: "Ollama".to_owned(),
+            kind: AiProviderKind::Local,
+            base_url: "http://127.0.0.1:11434/v1".to_owned(),
+            model: "llama3.1".to_owned(),
+            max_output_tokens: 2_048,
+        }];
+        written.ai_default_provider_id = Some("ollama".to_owned());
+        written.ai_context_enabled = false;
+        written.ai_context_lines = 40;
+        save_to(&path, &written).expect("write");
+
+        assert_eq!(load_from(&path).expect("read"), written);
+
+        let stored: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
+        let provider = stored["aiProviders"][0].as_object().expect("one provider");
+        assert_eq!(provider.get("kind").and_then(|kind| kind.as_str()), Some("local"));
+        assert_eq!(
+            provider.len(),
+            6,
+            "a provider is id, name, kind, address, model and a budget — nothing a key could be written to"
+        );
+        for forbidden in ["key", "apiKey", "hasKey", "token", "secret"] {
+            assert!(
+                !provider.contains_key(forbidden),
+                "`{forbidden}` reached the settings file, which anything can read"
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_written_before_the_assistant_reads_as_nothing_configured() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(&path, r#"{"schemaVersion":1}"#).expect("write");
+
+        let loaded = load_from(&path).expect("an older file is not an error");
+
+        assert!(loaded.ai_providers.is_empty(), "there is nowhere to send a question");
+        assert_eq!(loaded.ai_default_provider_id, None);
+        assert!(loaded.ai_context_enabled, "the terminal travels by default");
+        assert_eq!(loaded.ai_context_lines, ai_context_lines_default());
+    }
+
+    #[test]
+    fn the_assistant_context_is_clamped_to_the_range_the_page_offers() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        std::fs::write(&path, r#"{"schemaVersion":1,"aiContextLines":900}"#).expect("write");
+        assert_eq!(
+            load_from(&path).expect("read").ai_context_lines,
+            sevenshell_types::AI_CONTEXT_LINES_MAX
+        );
+
+        // Zero is a choice — attach nothing — rather than a missing value, so it survives.
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"aiContextLines":0,"aiContextEnabled":false}"#,
+        )
+        .expect("write");
+        let loaded = load_from(&path).expect("read");
+        assert_eq!(loaded.ai_context_lines, 0);
+        assert!(!loaded.ai_context_enabled);
+    }
+
+    #[test]
+    fn a_provider_this_build_cannot_speak_is_dropped_with_its_default() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"aiProviders":[{"id":"gemini","name":"Gemini","kind":"gemini","baseUrl":"https://example.test","model":"x","maxOutputTokens":100}],"aiDefaultProviderId":"gemini"}"#,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("an unknown protocol is not a refusal to open");
+
+        assert!(
+            loaded.ai_providers.is_empty(),
+            "a provider whose protocol this build does not speak is not offered"
+        );
+        assert_eq!(
+            loaded.ai_default_provider_id, None,
+            "and a default naming it is no default at all"
+        );
     }
 
     #[test]

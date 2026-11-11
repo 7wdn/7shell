@@ -18,6 +18,8 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "pretypecheck": "pnpm generate:descriptors",
+    "build:sidecar": "node scripts/prepare-mcp-sidecar.mjs",
+    "build:sidecar:dev": "node scripts/prepare-mcp-sidecar.mjs --debug",
     "typecheck": "vue-tsc --noEmit --project apps/desktop/tsconfig.json",
     "generate:descriptors": "node scripts/sync-descriptors.mjs",
     "check:descriptors": "node scripts/sync-descriptors.mjs --check",

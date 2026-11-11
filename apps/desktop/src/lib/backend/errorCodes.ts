@@ -101,6 +101,14 @@ export const ERROR_CATALOG = {
   "UPDATE-NOT-AVAILABLE": "errors.update.notAvailable",
   "UPDATE-INSTALL-FAILED": "errors.update.installFailed",
   "UPDATE-RELEASE-PAGE-FAILED": "errors.update.releasePageFailed",
+  // Assistant
+  "AI-NO-PROVIDER": "errors.ai.noProvider",
+  "AI-NO-KEY": "errors.ai.noKey",
+  "AI-PROVIDER-UNAVAILABLE": "errors.ai.providerUnavailable",
+  "AI-CONTEXT-TOO-LONG": "errors.ai.contextTooLong",
+  "AI-MAX-TURNS": "errors.ai.maxTurns",
+  "AI-CANCELLED": "errors.ai.cancelled",
+  "AI-TOOL-SKIPPED": "errors.ai.toolSkipped",
   // Application
   "APP-NOT-READY": "errors.app.notReady",
   "APP-NO-TRANSPORT": "errors.app.noTransport",

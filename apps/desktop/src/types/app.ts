@@ -256,6 +256,8 @@ export type SettingsCategoryId =
   | "commands"
   | "words"
   | "sync"
+  | "mcp"
+  | "ai"
   | "about";
 
 /**
@@ -359,6 +361,48 @@ export type SessionReopen = "ask" | "new-tab" | "focus";
 
 /** The question, until a dialog's "remember my choice" answers it. */
 export const DEFAULT_SESSION_REOPEN: SessionReopen = "ask";
+
+/**
+ * What an agent connected over MCP may do, from `sevenshell_types::McpScope`.
+ *
+ * `readOnly` is the fresh install: an agent may look at a machine until a person says it may change
+ * one. A destructive call asks for approval inside every tier, including `highRisk`.
+ */
+export type McpScope = "readOnly" | "safeWrite" | "highRisk";
+
+/** What an agent may do until somebody widens it. */
+export const DEFAULT_MCP_SCOPE: McpScope = "readOnly";
+
+/**
+ * Which API an assistant provider speaks, from `sevenshell_types::AiProviderKind`.
+ *
+ * `local` is not a fourth protocol: it is an OpenAI-compatible server on this machine or the
+ * network, and it is its own word because the settings page says different things about its key.
+ */
+export type AiProviderKind = "anthropic" | "openai" | "local";
+
+/**
+ * One configured assistant provider, from `sevenshell_types::AiProviderConfig`.
+ *
+ * No key can appear here: the key lives in the vault under `id`, and the only question the interface
+ * asks about it is `hasKey` — which is `null`, not `false`, while the vault is locked.
+ */
+export interface AiProviderConfig {
+  readonly id: string;
+  readonly name: string;
+  readonly kind: AiProviderKind;
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly maxOutputTokens: number;
+}
+
+/** How many lines of terminal output travel by default, and the ends the page offers. */
+export const AI_CONTEXT_LINES_DEFAULT = 80;
+export const AI_CONTEXT_LINES_MIN = 0;
+export const AI_CONTEXT_LINES_MAX = 200;
+
+/** The output budget a provider entry gets when the file does not name one. */
+export const AI_MAX_OUTPUT_TOKENS_DEFAULT = 4096;
 
 /** Non-secret preferences, from `sevenshell_types::AppSettings`. */
 export interface AppSettings {
@@ -480,4 +524,36 @@ export interface AppSettings {
    * what names an account.
    */
   readonly syncSnippetIds: Readonly<Record<string, string>>;
+  /**
+   * Whether the loopback control endpoint an MCP bridge talks to is running.
+   *
+   * Off unless somebody turns it on: the endpoint is bound to 127.0.0.1 and every call presents a
+   * token, but a listener nobody asked for is still a listener.
+   */
+  readonly mcpEnabled: boolean;
+  /** The port the endpoint listens on. Zero asks the system for a free one. */
+  readonly mcpPort: number;
+  /** What an agent may do. */
+  readonly mcpScope: McpScope;
+  /** How long a call waits for a person's answer before it is treated as refused. */
+  readonly mcpApprovalTimeoutSeconds: number;
+  /** How many days the audit file is kept. */
+  readonly mcpAuditRetentionDays: number;
+  /** The largest result one call may return, in bytes. */
+  readonly mcpMaxResultBytes: number;
+  /**
+   * The assistant's providers, without their keys.
+   *
+   * Optional rather than required only because the preferences store has not been taught to carry
+   * them yet: the shell always writes the list, and an absent one reads as "nothing configured".
+   * The assistant lane makes these page fields; until then, a save from this store would leave them
+   * at the shell's defaults, which is why the feature is not reachable before that lane lands.
+   */
+  readonly aiProviders?: readonly AiProviderConfig[];
+  /** Which provider a new conversation starts with. Absent means the first one configured. */
+  readonly aiDefaultProviderId?: string;
+  /** Whether the terminal's recent lines travel with a question. Defaults to on. */
+  readonly aiContextEnabled?: boolean;
+  /** How many lines travel. Zero attaches nothing; the ends are 0 and 200. Defaults to 80. */
+  readonly aiContextLines?: number;
 }

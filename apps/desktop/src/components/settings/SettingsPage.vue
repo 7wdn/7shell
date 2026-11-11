@@ -44,6 +44,8 @@ import SettingsRow from "@/components/settings/SettingsRow.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
 import CommandsLibrary from "@/components/settings/CommandsLibrary.vue";
+import McpSettings from "@/components/settings/McpSettings.vue";
+import AiSettings from "@/components/settings/AiSettings.vue";
 import WordsSettings from "@/components/settings/WordsSettings.vue";
 import ShortcutsSettings from "@/components/settings/ShortcutsSettings.vue";
 import SyncSettings from "@/components/settings/SyncSettings.vue";
@@ -271,6 +273,37 @@ const wordHits = computed(() => {
   );
 });
 
+/**
+ * The agent page the search is about.
+ *
+ * The page is a block rather than rows, so it is found by name: what somebody looking for it types
+ * is the thing they were told the feature is called — the navigation's own word, or "MCP" — and
+ * neither is a row this search could read.
+ */
+const mcpHits = computed(() => {
+  if (!searching.value) {
+    return false;
+  }
+
+  const needle = query.value.trim().toLowerCase();
+  return [t("settings.nav.mcp"), t("mcp.title")].some((name) => name.toLowerCase().includes(needle));
+});
+
+/**
+ * The assistant page the search is about.
+ *
+ * A block like the agent page, found by name: what somebody types is the word the navigation uses
+ * or the one the panel carries, and neither is a row this search could read.
+ */
+const aiHits = computed(() => {
+  if (!searching.value) {
+    return false;
+  }
+
+  const needle = query.value.trim().toLowerCase();
+  return [t("settings.nav.ai"), t("ai.title")].some((name) => name.toLowerCase().includes(needle));
+});
+
 function hitsIn(id: SettingsCategoryId): number {
   if (id === "shortcuts") {
     return shortcutHits.value.length;
@@ -281,6 +314,12 @@ function hitsIn(id: SettingsCategoryId): number {
   }
   if (id === "words") {
     return wordHits.value ? 1 : 0;
+  }
+  if (id === "mcp") {
+    return mcpHits.value ? 1 : 0;
+  }
+  if (id === "ai") {
+    return aiHits.value ? 1 : 0;
   }
   return hits.value.filter((row) => row.category === id).length;
 }
@@ -315,6 +354,12 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
     // The library's width is on the same page and is restored with it, being the same kind of thing:
     // a divider on the page rather than a row in the list.
     fields.push("commandCompletion", "commandsLibraryWidth");
+  }
+  if (id === "ai") {
+    // None of the assistant's four fields is a row: the providers are a list somebody edits and the
+    // two context fields are drawn beside it, on the panel and on the page. Restoring the category
+    // still has to put them back, so the category names them here.
+    fields.push("aiProviders", "aiDefaultProviderId", "aiContextEnabled", "aiContextLines");
   }
   return fields;
 }
@@ -406,7 +451,25 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       // The same, for the sync page: its form is its own component, and these cases are the switch
       // saying so rather than forgetting about fields that are not rows anywhere.
       return "";
+    case "mcpEnabled":
+    case "mcpPort":
+    case "mcpScope":
+    case "mcpApprovalTimeoutSeconds":
+    case "mcpAuditRetentionDays":
+    case "mcpMaxResultBytes":
+      // And the same for the agent page: whether the listener is on is a command's answer, and the
+      // five fields behind it are drawn by `McpSettings.vue` beside the status they belong to.
+      return "";
+    case "aiProviders":
+    case "aiDefaultProviderId":
+    case "aiContextEnabled":
+    case "aiContextLines":
+      // The assistant's four, drawn by `AiSettings.vue` — a provider list and two context fields.
+      return "";
   }
+  // Unreachable for the fields the table writes, and written out rather than left implicit: a row
+  // that carries a field this function forgot would otherwise draw nothing at all.
+  return "";
 }
 
 /**
@@ -497,6 +560,20 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "keybindings":
       // Written one action at a time by the page that lists them, never by a row.
+      return;
+    case "mcpEnabled":
+    case "mcpPort":
+    case "mcpScope":
+    case "mcpApprovalTimeoutSeconds":
+    case "mcpAuditRetentionDays":
+    case "mcpMaxResultBytes":
+      // Written by `McpSettings.vue`, which is the block they are drawn in.
+      return;
+    case "aiProviders":
+    case "aiDefaultProviderId":
+    case "aiContextEnabled":
+    case "aiContextLines":
+      // Written by `AiSettings.vue` and by the panel's own context controls.
       return;
   }
 }
@@ -860,8 +937,20 @@ function translate(key: string, params?: Record<string, string>): string {
                   <WordsSettings />
                 </section>
 
+                <section v-if="mcpHits" class="space-y-2">
+                  <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.nav.mcp") }}</h3>
+                  <McpSettings />
+                </section>
+
+                <section v-if="aiHits" class="space-y-2">
+                  <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.nav.ai") }}</h3>
+                  <AiSettings />
+                </section>
+
                 <p
-                  v-if="groups.length === 0 && shortcutHits.length === 0 && !commandHits && !wordHits"
+                  v-if="
+                    groups.length === 0 && shortcutHits.length === 0 && !commandHits && !wordHits && !mcpHits && !aiHits
+                  "
                   class="rounded-lg border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground"
                 >
                   {{ t("settings.search.empty", { query: query.trim() }) }}
@@ -908,6 +997,12 @@ function translate(key: string, params?: Record<string, string>): string {
                 <WordsSettings v-else-if="category === 'words'" />
 
                 <SyncSettings v-else-if="category === 'sync'" />
+
+                <!-- The agent interface: a switch, its settings and the audit, as one block. -->
+                <McpSettings v-else-if="category === 'mcp'" />
+
+                <!-- The assistant: providers, their keys and the terminal context, as one block. -->
+                <AiSettings v-else-if="category === 'ai'" />
 
                 <div v-else-if="category === 'security'" class="space-y-5">
                   <!-- The vault first: everything under it is held by it. -->

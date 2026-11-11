@@ -6,6 +6,7 @@
 
 import { createI18n } from "vue-i18n";
 
+import enAi from "./locales/en/ai.json";
 import enApp from "./locales/en/app.json";
 import enAuth from "./locales/en/auth.json";
 import enBatch from "./locales/en/batch.json";
@@ -18,6 +19,7 @@ import enFiles from "./locales/en/files.json";
 import enHome from "./locales/en/home.json";
 import enInspect from "./locales/en/inspect.json";
 import enK8s from "./locales/en/k8s.json";
+import enMcp from "./locales/en/mcp.json";
 import enMenu from "./locales/en/menu.json";
 import enMonitor from "./locales/en/monitor.json";
 import enProtocol from "./locales/en/protocol.json";
@@ -28,6 +30,7 @@ import enShell from "./locales/en/shell.json";
 import enSync from "./locales/en/sync.json";
 import enTerminal from "./locales/en/terminal.json";
 import enVault from "./locales/en/vault.json";
+import zhCnAi from "./locales/zh-CN/ai.json";
 import zhCnApp from "./locales/zh-CN/app.json";
 import zhCnAuth from "./locales/zh-CN/auth.json";
 import zhCnBatch from "./locales/zh-CN/batch.json";
@@ -40,6 +43,7 @@ import zhCnFiles from "./locales/zh-CN/files.json";
 import zhCnHome from "./locales/zh-CN/home.json";
 import zhCnInspect from "./locales/zh-CN/inspect.json";
 import zhCnK8s from "./locales/zh-CN/k8s.json";
+import zhCnMcp from "./locales/zh-CN/mcp.json";
 import zhCnMenu from "./locales/zh-CN/menu.json";
 import zhCnMonitor from "./locales/zh-CN/monitor.json";
 import zhCnProtocol from "./locales/zh-CN/protocol.json";
@@ -107,6 +111,8 @@ const messages = {
     ...enSync,
     ...enContainer,
     ...enK8s,
+    ...enMcp,
+    ...enAi,
   },
   "zh-CN": {
     ...zhCnCommands,
@@ -131,6 +137,8 @@ const messages = {
     ...zhCnSync,
     ...zhCnContainer,
     ...zhCnK8s,
+    ...zhCnMcp,
+    ...zhCnAi,
   },
 };
 

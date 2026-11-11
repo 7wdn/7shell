@@ -13,20 +13,21 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use sevenshell_types::{
-    AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef,
-    BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord,
-    ContainerDetail, ContainerMount, ContainerPort, ContainerRuntime, ContainerSettings, ContainerSummary,
-    ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage,
-    DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem,
-    K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo, KubeconfigSource,
-    KubernetesSettings, LoadAverage, LocalForward, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel,
-    PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
-    SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
-    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet,
-    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
-    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
-    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
-    ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    AgentOrigin, AiProviderConfig, AiProviderKind, AiProviderView, AppLayout, AppSettings, AuthMethod,
+    BackgroundDisplayMode, BackgroundImage, BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome,
+    BatchRequest, CommandHistoryEntry, CompletionExecuteResult, CompletionWord, ContainerDetail, ContainerMount,
+    ContainerPort, ContainerRuntime, ContainerSettings, ContainerSummary, ContainerTransport, CornerStyle, CpuCounters,
+    CpuModel, CpuStates, CreatedKey, CustomColors, DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout,
+    ForwardMode, HomeLayout, HostFailure, HostMetrics, HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm,
+    KeyInfo, KnownHostEntry, KubeContextInfo, KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward,
+    McpScope, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage,
+    ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget,
+    Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
+    SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider,
+    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
+    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
+    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -617,8 +618,59 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             sync_snippet_provider: Some(SnippetProvider::GitLab),
             sync_snippet_instance: Some("https://gitlab.example.com".to_owned()),
             sync_snippet_ids: BTreeMap::from([("gitlab:https://gitlab.example.com".to_owned(), "42".to_owned())]),
+            mcp_enabled: true,
+            mcp_port: 4711,
+            mcp_scope: McpScope::SafeWrite,
+            mcp_approval_timeout_seconds: 90,
+            mcp_audit_retention_days: 14,
+            mcp_max_result_bytes: 131_072,
+            ai_providers: vec![AiProviderConfig {
+                id: "local".to_owned(),
+                name: "Ollama".to_owned(),
+                kind: AiProviderKind::Local,
+                base_url: "http://127.0.0.1:11434/v1".to_owned(),
+                model: "llama3.1".to_owned(),
+                max_output_tokens: 2_048,
+            }],
+            ai_default_provider_id: Some("local".to_owned()),
+            ai_context_enabled: false,
+            ai_context_lines: 40,
         },
         "AppSettings",
+    );
+    // The scope is a word on the wire, and it is the camelCase one the interface's union spells:
+    // `read_only` here would be a value the settings page cannot match against anything.
+    let scope = check(&McpScope::HighRisk, "McpScope");
+    assert_eq!(scope, serde_json::json!("highRisk"));
+
+    // The assistant: who is asking, and a provider that carries no key of its own.
+    let origin = check(&AgentOrigin::Ai, "AgentOrigin");
+    assert_eq!(origin, serde_json::json!("ai"));
+    let kind = check(&AiProviderKind::OpenAi, "AiProviderKind");
+    assert_eq!(kind, serde_json::json!("openai"));
+    let provider = AiProviderConfig::new(
+        "hosted",
+        "Hosted",
+        AiProviderKind::Anthropic,
+        "https://api.anthropic.com",
+        "claude-sonnet-4-5",
+    );
+    let config = check(&provider, "AiProviderConfig");
+    assert_eq!(config["baseUrl"], serde_json::json!("https://api.anthropic.com"));
+    assert_eq!(config["maxOutputTokens"], serde_json::json!(4_096));
+    assert!(
+        config.get("hasKey").is_none(),
+        "a configuration says nothing about a key, and the view below is where that question is asked"
+    );
+    let view = check(&AiProviderView::new(provider, None), "AiProviderView");
+    assert_eq!(
+        view["id"],
+        serde_json::json!("hosted"),
+        "the view is the config plus one fact"
+    );
+    assert!(
+        view["hasKey"].is_null(),
+        "a locked vault could not ask, which is null rather than false"
     );
     check(&CustomColors::light_default(), "CustomColors");
     // The corner style is a word on the wire, like the theme: a variant that serialized as `large`

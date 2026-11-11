@@ -43,6 +43,8 @@
       "commands": "命令库",
       "words": "联想词",
       "sync": "同步",
+      "mcp": "Agent 访问",
+      "ai": "AI 助手",
       "terminal": "SSH 终端"
     },
     "tab": {
@@ -440,6 +442,7 @@
       "actions": {
         "uploadClipboard": "上传剪贴板中的文件",
         "toggleTransfers": "显示传输面板",
+        "toggleAssistant": "显示 AI 助手",
         "terminalFind": "在终端里查找",
         "completionAccept": "取用方向键指到的那一行",
         "completionTrigger": "打开联想列表"

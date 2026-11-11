@@ -1,0 +1,23 @@
+[package]
+name = "sevenshell-api"
+description = "The operations an agent may call: the tool contract, the policy gate in front of it and the audit trail behind it."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-core = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-policy = { workspace = true }
+sevenshell-types = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+sevenshell-vault = { workspace = true }
+tempfile = { workspace = true }

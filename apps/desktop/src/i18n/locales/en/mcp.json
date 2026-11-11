@@ -1,0 +1,105 @@
+{
+  "mcp": {
+    "title": "Agent access (MCP)",
+    "description": "A loopback control service an MCP bridge may call, so an agent can look at your sessions and, if you allow it, change them. It listens on 127.0.0.1 only, and every call presents a token that this window never sees.",
+    "switch": {
+      "label": "Allow agent access",
+      "help": "Off unless you turn it on. While it is on, this machine opens one port on the loopback interface and writes the token a bridge needs to a file only your account can read. Turning it off closes the port and deletes that file."
+    },
+    "status": {
+      "heading": "Listener",
+      "running": "Listening on 127.0.0.1:{port}",
+      "stopped": "Not running",
+      "unknown": "Checking…",
+      "port": "Port",
+      "portAutomatic": "Automatic (currently {port})",
+      "scope": "Tier",
+      "pending": "Waiting for approval",
+      "pendingCount": "{count}",
+      "pendingNone": "None",
+      "auditPath": "Audit log",
+      "countNote": "The count and the port come from the listener, not from the settings file — what is written down and what is running are two answers."
+    },
+    "config": {
+      "title": "Client configuration",
+      "description": "The snippet below is copied, not shown: put it in your MCP client's configuration file. It names the bridge and the endpoint file, and it carries no token — the bridge reads the secret from that file itself.",
+      "copy": "Copy client configuration",
+      "copied": "Copied to the clipboard.",
+      "copyFailed": "The clipboard refused the text."
+    },
+    "fields": {
+      "heading": "Settings",
+      "port": "Port",
+      "portHint": "Zero lets the system choose a free port, which is what a fresh install does. The bridge learns the number from the endpoint file, so a fixed port is only needed if something else expects one.",
+      "scope": "What an agent may do",
+      "approvalTimeout": "Approval timeout",
+      "approvalTimeoutHint": "How long a call waits for your answer before it is refused. A question nobody answers must not hold an agent's connection open for ever.",
+      "retentionDays": "Audit retention",
+      "retentionDaysHint": "How many days the audit file is kept. Each call is one line; nothing is pruned before this.",
+      "maxResult": "Result limit",
+      "maxResultHint": "The most one call may return, so a huge directory listing or a long log cannot push everything else out of an agent's context. Longer results are truncated and marked.",
+      "save": "Save and apply",
+      "saved": "Saved. The listener will start with these settings.",
+      "savedRestarted": "Saved. The listener restarted with these settings.",
+      "restartRequired": "Saved, but the listener did not restart — turn it off and on again to apply them.",
+      "unitSeconds": "s",
+      "unitDays": "days",
+      "unitKiB": "KiB"
+    },
+    "scope": {
+      "readOnly": "Read only",
+      "readOnlyHint": "Listing and reading: sessions, directory listings, text files, containers and cluster objects. Nothing runs and nothing is written.",
+      "safeWrite": "Writes you allow",
+      "safeWriteHint": "Also runs commands and writes remote text files. A destructive command still stops and asks you first.",
+      "highRisk": "Everything",
+      "highRiskHint": "Everything the tools offer, including container and cluster changes that are usually destructive — and those still stop and ask you first."
+    },
+    "audit": {
+      "title": "Recent activity",
+      "description": "The tail of this machine's audit file: who called what, how it ended, and how long it took. Nothing here holds a credential or the text a call read.",
+      "empty": "No agent has called this build yet.",
+      "loading": "Reading the audit log…",
+      "refresh": "Refresh",
+      "columns": {
+        "at": "Time",
+        "tool": "Tool",
+        "status": "Status",
+        "risk": "Risk",
+        "duration": "Took"
+      },
+      "status": {
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "denied": "Refused"
+      },
+      "none": "—"
+    },
+    "approval": {
+      "title": "An agent is asking to act",
+      "description": "Nothing has been sent yet. This call is held until you answer, and it is refused if the question is ignored.",
+      "tool": "Tool",
+      "origin": {
+        "label": "Asked by",
+        "mcp": "An agent, over MCP",
+        "ai": "The assistant in this window"
+      },
+      "session": "Session",
+      "subject": "What it would do",
+      "reason": "Why it stopped",
+      "noSubject": "Not stated",
+      "hostKey": {
+        "title": "This host's key is not one this device has seen",
+        "body": "Approving lets this one call connect. The fingerprint is what the host presented; check it against the machine yourself if you do not know it.",
+        "host": "Host",
+        "keyType": "Key type",
+        "fingerprint": "Fingerprint"
+      },
+      "expiresIn": "Refused automatically in {time}",
+      "expired": "This request has expired.",
+      "deny": "Refuse",
+      "approve": "Approve",
+      "answering": "Answering…",
+      "failed": "The answer could not be delivered. The request is still waiting."
+    }
+  }
+}

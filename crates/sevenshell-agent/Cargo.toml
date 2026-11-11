@@ -1,0 +1,27 @@
+[package]
+name = "sevenshell-agent"
+description = "The assistant's turn loop: conversation, tool calls, limits and the events the window draws."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-ai = { workspace = true }
+sevenshell-api = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+async-trait = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+# The loop's tests build a real `ToolContext`, which needs a vault and a core; nothing in the tests
+# talks to a network or a host, so the vault is an empty file in a temporary directory.
+sevenshell-core = { workspace = true }
+sevenshell-vault = { workspace = true }
+tempfile = { workspace = true }

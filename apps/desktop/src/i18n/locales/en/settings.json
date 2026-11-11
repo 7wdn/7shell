@@ -43,6 +43,8 @@
       "commands": "Command library",
       "words": "Suggested words",
       "sync": "Sync",
+      "mcp": "Agent access",
+      "ai": "Assistant",
       "terminal": "SSH terminal"
     },
     "tab": {
@@ -440,6 +442,7 @@
       "actions": {
         "uploadClipboard": "Upload the files on the clipboard",
         "toggleTransfers": "Show the transfers",
+        "toggleAssistant": "Show the assistant",
         "terminalFind": "Find in the terminal",
         "completionAccept": "Take the row the arrows are on",
         "completionTrigger": "Open the completion list"

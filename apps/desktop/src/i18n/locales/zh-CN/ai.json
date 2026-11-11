@@ -1,0 +1,142 @@
+{
+  "ai": {
+    "title": "AI 助手",
+    "subtitle": "针对当前主机提问。",
+    "close": "收起助手",
+    "empty": {
+      "title": "还没有提问。",
+      "body": "每个问题可以带上当前终端的最后若干行；需要查看主机本身时，助手可以调用这个应用的工具。"
+    },
+    "setup": {
+      "noProvider": {
+        "title": "还没有配置服务商",
+        "body": "助手通过你配置的模型服务对话。这台安装上还没有任何配置。"
+      },
+      "noKey": {
+        "title": "该服务商没有保存密钥",
+        "body": "服务商已配置，但没有为它保存 API 密钥（也可能已被删除）。请在设置里添加。"
+      },
+      "locked": "保险库已锁定，面板无法判断是否保存了密钥。解锁后再提问。",
+      "action": "打开助手设置"
+    },
+    "provider": {
+      "label": "服务商",
+      "keyMissing": "无密钥",
+      "keyLocked": "保险库已锁定"
+    },
+    "message": {
+      "you": "你",
+      "thinking": "思考",
+      "context": "来自终端的 {count} 行",
+      "contextNone": "未附带终端内容",
+      "streaming": "正在回复…"
+    },
+    "tool": {
+      "running": "执行中",
+      "ok": "完成",
+      "failed": "失败",
+      "empty": "没有返回内容。",
+      "truncated": "结果已截断。",
+      "duration": "{ms} 毫秒",
+      "input": "输入"
+    },
+    "composer": {
+      "placeholder": "针对这台主机提问…",
+      "send": "发送",
+      "stop": "停止",
+      "clear": "清空聊天",
+      "hint": "Enter 发送，Shift+Enter 换行。",
+      "clearFailed": "无法清空聊天。"
+    },
+    "usage": {
+      "title": "上一次回答",
+      "tokens": "输入 {input} / 输出 {output}",
+      "cached": "缓存 {cached}",
+      "turns": "{count} 轮"
+    },
+    "stopReason": {
+      "endTurn": "已完成",
+      "maxTurns": "达到轮数上限后停止",
+      "cancelled": "已停止",
+      "error": "因错误停止",
+      "unknown": "已结束"
+    },
+    "context": {
+      "title": "终端上下文",
+      "enabled": "附带当前终端",
+      "lines": "行数",
+      "linesHint": "提问时附带终端的多少行。0 表示不附带任何内容。",
+      "preview": "将要发送的内容",
+      "empty": "当前没有终端，因此不会附带任何内容。",
+      "attached": "已准备 {count} 行",
+      "off": "未附带任何内容。",
+      "refresh": "重新读取",
+      "limits": "已剥离控制序列，形似凭据的内容已替换，并限制在 {chars} 个字符以内。"
+    },
+    "error": {
+      "title": "助手已停止",
+      "retryable": "可以再问一次。"
+    },
+    "settings": {
+      "description": "助手的提问发往哪里。密钥保存在保险库中，绝不写进设置文件，这个窗口也从不回显任何密钥。",
+      "providers": {
+        "title": "服务商",
+        "description": "每个服务一条记录，新问题发往当前激活的那一条。",
+        "empty": "还没有配置任何服务商。",
+        "add": "新增服务商",
+        "edit": "编辑",
+        "remove": "删除",
+        "save": "保存服务商",
+        "cancel": "取消",
+        "test": "测试",
+        "testing": "正在测试…",
+        "testOk": "服务商已应答。",
+        "testFailed": "服务商没有应答。",
+        "active": "当前服务商",
+        "activeHint": "新对话使用的服务商。未选择时使用第一条配置。",
+        "activeAutomatic": "第一条配置",
+        "name": "名称",
+        "nameHint": "这条记录在列表里的名字，不会随请求发送。",
+        "kind": "协议",
+        "baseUrl": "地址",
+        "baseUrlHint": "请求发往的地址。只接受 https；本机服务可以在这台机器上使用 http（127.0.0.1、localhost 或 ::1）。",
+        "model": "模型",
+        "modelHint": "服务商要求的模型名。",
+        "maxOutput": "输出上限",
+        "maxOutputHint": "一次回答最多生成的 token 数。",
+        "key": "API 密钥",
+        "keyHint": "写入保险库后不再回显。留空表示保留已保存的密钥。",
+        "keySaved": "已保存密钥。",
+        "keyMissing": "没有保存密钥。",
+        "keyLocked": "保险库已锁定，无法判断是否保存了密钥。",
+        "keyClear": "忘记密钥",
+        "saved": "服务商已保存。",
+        "removeTitle": "删除这个服务商？",
+        "removeMessage": "它的记录和为它保存的密钥都会删除。会话不受影响。"
+      },
+      "new": {
+        "title": "新增服务商"
+      },
+      "editTitle": "编辑服务商",
+      "kind": {
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "local": "本地（OpenAI 兼容）",
+        "anthropicHint": "Anthropic 的 Messages API。",
+        "openaiHint": "OpenAI 的 Chat Completions API。",
+        "localHint": "本机或网络中提供 OpenAI 形状接口的服务：Ollama、vLLM、LM Studio。"
+      },
+      "context": {
+        "title": "终端上下文",
+        "enabled": "提问时附带终端内容",
+        "lines": "附带行数",
+        "save": "保存",
+        "saved": "已保存。"
+      },
+      "privacy": {
+        "title": "什么内容会离开这台机器",
+        "body": "只有你输入的问题、预览里显示的终端行，以及工具调用返回的内容。密钥、保险库密码、同步令牌和私钥从不发送；预览就是实际发送的文本，形似凭据的内容在离开之前已经被替换。"
+      }
+    }
+  }
+}

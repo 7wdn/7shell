@@ -1,0 +1,105 @@
+{
+  "mcp": {
+    "title": "Agent 访问（MCP）",
+    "description": "一个只在本机回环地址上的控制服务，供 MCP 桥调用：Agent 可以查看你的会话，并在你允许时改动它们。它只监听 127.0.0.1，每次调用都必须带上一个令牌，而这个窗口永远看不到那个令牌。",
+    "switch": {
+      "label": "允许 Agent 访问",
+      "help": "默认关闭，由你自己打开。打开期间，本机在回环接口上开一个端口，并把桥需要的令牌写进一个只有你的账户能读的文件；关闭时端口关掉，那个文件也会删掉。"
+    },
+    "status": {
+      "heading": "监听器",
+      "running": "正在监听 127.0.0.1:{port}",
+      "stopped": "未运行",
+      "unknown": "正在检查…",
+      "port": "端口",
+      "portAutomatic": "自动（当前 {port}）",
+      "scope": "权限层级",
+      "pending": "等待审批",
+      "pendingCount": "{count} 个",
+      "pendingNone": "无",
+      "auditPath": "审计日志",
+      "countNote": "端口和待审批数量来自监听器本身，而不是设置文件——写下来的和正在运行的是两个答案。"
+    },
+    "config": {
+      "title": "客户端配置",
+      "description": "下面这段配置是复制走的，不显示在页面上：把它放进你的 MCP 客户端配置里。它只写桥的位置和端点文件，不含令牌——桥自己从那个文件里读密钥。",
+      "copy": "复制客户端配置",
+      "copied": "已复制到剪贴板。",
+      "copyFailed": "剪贴板拒绝了这段文本。"
+    },
+    "fields": {
+      "heading": "设置",
+      "port": "端口",
+      "portHint": "填 0 表示让系统挑一个空闲端口，全新安装就是这样。桥是从端点文件里读到端口的，所以只有别的程序点名要某个端口时才需要固定它。",
+      "scope": "Agent 可以做什么",
+      "approvalTimeout": "审批超时",
+      "approvalTimeoutHint": "一次调用等你回答多久，超过就按拒绝处理。没人回答的问题不能让 Agent 的连接一直挂着。",
+      "retentionDays": "审计保留",
+      "retentionDaysHint": "审计日志保留多少天。每次调用一行；在这个期限之内不会清理。",
+      "maxResult": "结果上限",
+      "maxResultHint": "一次调用最多能返回多少，免得一个巨大的目录列表或很长的日志把 Agent 的上下文里别的内容全挤出去。超出部分会被截断并标注。",
+      "save": "保存并应用",
+      "saved": "已保存。监听器下次会用这些设置启动。",
+      "savedRestarted": "已保存，监听器已按这些设置重启。",
+      "restartRequired": "已保存，但监听器没能重启——请关掉再打开一次来应用这些设置。",
+      "unitSeconds": "秒",
+      "unitDays": "天",
+      "unitKiB": "KiB"
+    },
+    "scope": {
+      "readOnly": "只读",
+      "readOnlyHint": "只列和只读：会话、目录、文本文件、容器和集群对象。不运行任何命令，也不写任何东西。",
+      "safeWrite": "允许的写入",
+      "safeWriteHint": "还会运行命令、写远端文本文件。破坏性命令仍然会先停下来问你。",
+      "highRisk": "全部",
+      "highRiskHint": "工具提供的全部能力，包括通常会破坏东西的容器和集群改动——那些仍然会先停下来问你。"
+    },
+    "audit": {
+      "title": "最近活动",
+      "description": "本机审计文件的末尾几行：谁调用了什么、结果如何、用了多久。这里没有凭据，也没有调用读到的正文。",
+      "empty": "还没有 Agent 调用过这个构建。",
+      "loading": "正在读取审计日志…",
+      "refresh": "刷新",
+      "columns": {
+        "at": "时间",
+        "tool": "工具",
+        "status": "状态",
+        "risk": "风险",
+        "duration": "耗时"
+      },
+      "status": {
+        "succeeded": "成功",
+        "failed": "失败",
+        "denied": "被拒"
+      },
+      "none": "—"
+    },
+    "approval": {
+      "title": "Agent 请求执行操作",
+      "description": "现在什么都还没发出去。这次调用会一直停在这里等你回答；不理它就会按拒绝处理。",
+      "tool": "工具",
+      "origin": {
+        "label": "发起方",
+        "mcp": "通过 MCP 的 Agent",
+        "ai": "本窗口的 AI 助手"
+      },
+      "session": "会话",
+      "subject": "要做什么",
+      "reason": "为什么停下来",
+      "noSubject": "未说明",
+      "hostKey": {
+        "title": "这台主机的密钥本机没见过",
+        "body": "批准只让这一次调用连上去。指纹是主机出示的那一个；如果不认识这台机器，请自己到机器上核对。",
+        "host": "主机",
+        "keyType": "密钥类型",
+        "fingerprint": "指纹"
+      },
+      "expiresIn": "还有 {time} 将自动拒绝",
+      "expired": "这个请求已经过期。",
+      "deny": "拒绝",
+      "approve": "批准",
+      "answering": "正在回答…",
+      "failed": "回答没能送达，这次请求还在等。"
+    }
+  }
+}

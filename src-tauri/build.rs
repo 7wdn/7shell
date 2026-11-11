@@ -6,5 +6,36 @@ fn main() {
     // regenerated icon would sit in the folder while every binary kept the artwork it was linked
     // with. That failure has no error message: it reads as "the new icon did not show up".
     println!("cargo:rerun-if-changed=icons");
+    ensure_mcp_sidecar();
     tauri_build::build();
+}
+
+/// Gives `tauri-build` the resource it checks for, without pretending the bridge is installed.
+///
+/// `tauri.conf.json` declares the MCP bridge as an `externalBin`, and `tauri-build` refuses to
+/// compile when that file is absent. The real bridge is produced by `pnpm build:sidecar` before a
+/// bundle and by `beforeDevCommand` before a dev run; a plain `cargo check` or `cargo test` runs
+/// neither, and a fresh checkout has no built binary to copy. An empty file satisfies the
+/// compile-time check and is never what the application serves: `client_config` refuses a zero-byte
+/// bridge, and both Tauri commands replace this file with the real one before the application is
+/// built.
+fn ensure_mcp_sidecar() {
+    let target = std::env::var("TARGET").unwrap_or_default();
+    if target.is_empty() {
+        return;
+    }
+
+    let extension = if target.contains("windows") { ".exe" } else { "" };
+    let path = std::path::Path::new("binaries").join(format!("sshell-mcp-{target}{extension}"));
+    if path.exists() {
+        return;
+    }
+
+    if let Err(error) = std::fs::create_dir_all("binaries") {
+        println!("cargo:warning=the MCP sidecar directory could not be created: {error}");
+        return;
+    }
+    if let Err(error) = std::fs::write(&path, []) {
+        println!("cargo:warning=the MCP sidecar placeholder could not be written: {error}");
+    }
 }

@@ -39,8 +39,10 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// older build would drop on its next write, which would look exactly like "the password was
 /// forgotten". Version 8 added the access tokens for code-hosting accounts, which an older build
 /// would drop in exactly the same way: the token that was kept would simply be gone. Version 9
-/// added a remote desktop's size, screen mode and drive mapping, for the same reason.
-pub const VAULT_SCHEMA_VERSION: u32 = 10;
+/// added a remote desktop's size, screen mode and drive mapping, for the same reason. Version 10
+/// added a kubeconfig document as a session secret. Version 11 added the API keys for assistant
+/// providers, which an older build would drop on its next write exactly like the tokens above.
+pub const VAULT_SCHEMA_VERSION: u32 = 11;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -94,6 +96,14 @@ pub struct Document {
     /// learn a third service should not need the vault to change shape for it.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     snippet_tokens: BTreeMap<String, SecretString>,
+    /// The API key kept for each assistant provider, by the provider's id.
+    ///
+    /// Beside the snippet tokens and for the same reason: two providers are two keys, and a
+    /// provider this build has not learnt to speak yet is still one whose key has to survive an
+    /// upgrade rather than be dropped by it. The settings file holds the non-secret half of the same
+    /// provider; only this side ever holds the key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    ai_tokens: BTreeMap<String, SecretString>,
 }
 
 impl Document {
@@ -112,6 +122,7 @@ impl Document {
             sync_password: None,
             sync_passphrase: None,
             snippet_tokens: BTreeMap::new(),
+            ai_tokens: BTreeMap::new(),
         }
     }
 
@@ -610,6 +621,32 @@ impl Document {
             }
         }
     }
+
+    /// The API key kept for one assistant provider, if one was.
+    ///
+    /// Keyed by the provider's id, which is the only name the settings file and this table share.
+    /// The vault does not know what kind of provider that is; it stores a value it never interprets,
+    /// which is what lets a provider be added or removed without the vault changing shape.
+    pub(crate) fn ai_token(&self, provider_id: &str) -> Option<ServicePassword> {
+        self.ai_tokens
+            .get(provider_id)
+            .map(|token| ServicePassword::new(token.expose().to_owned()))
+    }
+
+    /// Keeps an API key for one provider, or forgets the one that was kept.
+    ///
+    /// `None` and a value of nothing are the same answer, like the tokens above: nobody wants to keep
+    /// an empty key, and one path for forgetting cannot disagree with itself.
+    pub(crate) fn set_ai_token(&mut self, provider_id: &str, token: Option<String>) {
+        match token.filter(|value| !value.trim().is_empty()) {
+            Some(token) => {
+                self.ai_tokens.insert(provider_id.to_owned(), SecretString::new(token));
+            }
+            None => {
+                self.ai_tokens.remove(provider_id);
+            }
+        }
+    }
 }
 
 impl fmt::Debug for Document {
@@ -628,6 +665,7 @@ impl fmt::Debug for Document {
             .field("sync_password", &self.sync_password.is_some())
             .field("sync_passphrase", &self.sync_passphrase.is_some())
             .field("snippet_tokens", &self.snippet_tokens.keys().collect::<Vec<_>>())
+            .field("ai_tokens", &self.ai_tokens.keys().collect::<Vec<_>>())
             .finish()
     }
 }
@@ -799,8 +837,10 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // gained recording. 5 → 6: a document gained the list of words somebody added, which an older one
     // simply has none of. None of them has anything to rewrite — the defaults are what every document
     // meant — so the steps are the version number alone. 9 → 10: a session secret may now be a
-    // kubeconfig document. The number moves so an older build refuses the whole file as too new
-    // instead of failing to read one unknown secret variant and calling the vault corrupt.
+    // kubeconfig document. 10 → 11: the document may now carry an assistant provider's key. The number
+    // moves so an older build refuses the whole file as too new instead of failing to read one unknown
+    // secret variant and calling the vault corrupt, and so a build that predates the keys cannot drop
+    // them by writing the document back.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)
@@ -1104,6 +1144,55 @@ mod tests {
         assert!(
             !rendered.contains("ghp_secret"),
             "a token reached Debug output: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_document_written_before_the_assistant_keys_reads_as_having_none() {
+        // Version 10 is the shape from before this application could keep an API key for an assistant
+        // provider. An absent table has to read as "nothing kept" rather than as a document that will
+        // not open — and the keys left behind by an upgrade have to survive the trip either way.
+        let raw = br#"{"schemaVersion":10,"sessions":[],"groups":[],"keys":[],"secrets":[],"knownHosts":[]}"#;
+
+        let mut document = from_slice(raw).expect("a version 10 document is readable");
+
+        assert_eq!(document.schema_version, VAULT_SCHEMA_VERSION);
+        assert!(document.ai_token("ollama").is_none());
+
+        document.set_ai_token("ollama", Some("sk-local-one".to_owned()));
+        assert_eq!(
+            document.ai_token("ollama").expect("kept").expose(),
+            "sk-local-one",
+            "the key did not round-trip through the document"
+        );
+        assert!(
+            document.ai_token("anthropic").is_none(),
+            "one provider's key is not another's"
+        );
+
+        document.set_ai_token("ollama", None);
+        assert!(document.ai_token("ollama").is_none(), "forgetting one leaves the rest");
+        document.set_ai_token("anthropic", Some("   ".to_owned()));
+        assert!(
+            document.ai_token("anthropic").is_none(),
+            "a key of nothing is nobody keeping one"
+        );
+    }
+
+    #[test]
+    fn an_assistant_key_is_never_printed() {
+        let mut document = Document::empty();
+        document.set_ai_token("openai", Some("sk-live-secret".to_owned()));
+
+        let rendered = format!("{document:?} {:?}", document.ai_token("openai"));
+
+        assert!(
+            !rendered.contains("sk-live-secret"),
+            "an assistant key reached Debug output: {rendered}"
+        );
+        assert!(
+            rendered.contains("openai"),
+            "which provider has a key is not a secret and is what a reader needs"
         );
     }
 

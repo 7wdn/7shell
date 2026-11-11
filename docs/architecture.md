@@ -416,6 +416,72 @@ version is refused with `STORE-SCHEMA-NEWER` rather than guessed at. The interfa
 tokens for files the user picked through a native dialog, never paths — which is also why the
 Tauri capability file grants no filesystem or dialog permission to the renderer.
 
+## The agent interface (MCP)
+
+The desktop is the only process that holds the vault, the known hosts and the live sessions, so it is
+the process an agent's bridge talks to. `sshell-mcp` is the stdio MCP server a client launches: it
+speaks the protocol on standard input and output and forwards each call to a loopback endpoint the
+desktop writes down. The bridge never opens the vault, never starts the desktop and never sees a
+password.
+
+The endpoint listens on `127.0.0.1` on a configured or system-chosen port and exposes one route,
+`POST /tools/call`. Its bearer token is rotated on every run and written to
+`<config>/mcp-endpoint.json` with owner-only permissions; the window is told whether the listener is
+on, its port, the scope and the audit path, and is never told the token. A request with an `Origin`
+header, a non-loopback `Host`, a missing or wrong token, a non-JSON body or more than two mebibytes is
+refused before a tool runs.
+
+`crates/sevenshell-api` is the one place a tool is described and gated: a registry, a closed JSON
+Schema per tool, the policy verdict, the approval broker and the audit line. The desktop builds one
+context per request with a shared connection cache, and the registry calls the core the way the window
+does. The first wave's `sshell_` tools cover saved and open sessions, opening one, exec and batch,
+SFTP listing and text, container list/action, and a Kubernetes GET. A destructive command or action
+stops for a person's approval; an unknown host key is a question and a changed one is a hard stop; the
+agent cannot send `acknowledged`. Files are remote text only — the agent is never given a path on the
+machine the desktop runs on.
+
+| Piece | Where |
+|---|---|
+| Tool contract, registry and gate | `crates/sevenshell-api` |
+| Stdio bridge and control-endpoint client | `crates/sevenshell-mcp` |
+| Loopback server, token, approval and audit | `src-tauri/src/mcp/` |
+| Settings page, approval dialog and store | `apps/desktop/src/components/mcp/`, `components/settings/McpSettings.vue`, `stores/mcp.ts` |
+| Sidecar build and bundle | `scripts/prepare-mcp-sidecar.mjs`, `src-tauri/tauri.conf.json` (`externalBin`) |
+
+The bridge is a Tauri sidecar: the development and build commands stage it under
+`src-tauri/binaries/`, and `externalBin` puts it beside the application. The "copy client
+configuration" button names that path and the endpoint file; it never carries the token.
+
+## The assistant
+
+The in-application assistant is a second caller of the same tool layer an MCP client reaches. A
+question and an answer are a conversation the desktop keeps in memory; the provider adapter in
+`sevenshell-ai` speaks one wire protocol (Anthropic Messages or OpenAI-compatible Chat Completions),
+and `sevenshell-agent` runs the loop: one turn at a time, at most one tool per turn, through the same
+`ToolRegistry` and `ToolContext` the MCP bridge uses.
+
+The provider's key is a vault entry, never a settings field: the settings file holds only the
+non-secret configuration (kind, base URL, model). The window asks for `hasKey`, which is `null`
+while the vault is locked. A provider address is `https`, or plain `http` only to
+`127.0.0.1`/`localhost`/`::1`; a key never crosses a network in the clear. A local model server such
+as Ollama, vLLM or LM Studio may have no key at all.
+
+A tool call from the assistant is not special: it meets the same scope, policy gate, approval window
+and audit line as an MCP call. The only difference is `origin: "ai"` on the approval question and the
+audit record. A destructive action still waits for a person; a changed host key is still a hard stop.
+
+The terminal excerpt a question carries is prepared in the window (tail, ANSI and control stripping,
+redaction) and shown as the exact text that will be sent; the host strips, redacts and bounds it
+again. Conversations are not persisted in this wave: closing the window forgets them.
+
+| Piece | Where |
+|---|---|
+| Provider adapters, SSE and retry | `crates/sevenshell-ai` |
+| Turn loop, tool dispatch and events | `crates/sevenshell-agent` |
+| Vault key, runtime, context and `ai:*` events | `src-tauri/src/ai/`, `src-tauri/src/commands/ai.rs` |
+| Assistant panel, store and provider settings | `apps/desktop/src/components/assistant/`, `stores/assistant.ts`, `components/settings/AiSettings.vue` |
+| Terminal snapshot and redaction | `apps/desktop/src/lib/assistant/terminalContext.ts`, `lib/terminal/buffers.ts` |
+
 ## The shell
 
 The window is undecorated on Windows and Linux (`set_decorations(false)` from
