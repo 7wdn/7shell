@@ -81,6 +81,17 @@ import { protocolSupports } from "@/types/generated/protocols";
 /** What the backend answers when an attempt was called off, which is not a failure. */
 export const CANCELLED_OPEN = "SESSION-OPEN-CANCELLED";
 
+/**
+ * The pseudo-session id a container's file manager tab carries.
+ *
+ * A container has no saved session of its own, so the tab is identified by the engine session plus
+ * the container. That is what keeps one container's browser apart from another's on the same
+ * engine, and what "the tab for this container" is looked up by.
+ */
+export function containerFilesSessionId(sessionId: string, containerId: string): string {
+  return `${sessionId}:${containerId}`;
+}
+
 export type TerminalTabStatus = "open" | "ended" | "failed";
 
 /** A file browser has no stream that can end: it opened, or it did not. */
@@ -458,6 +469,74 @@ export const useTerminalsStore = defineStore("terminals", () => {
       recordFailure(session, asShellError(error, "files_open"));
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
+    }
+  }
+
+  /**
+   * Opens the file manager for one container, in a tab of its own.
+   *
+   * The tab's session is a name rather than an address: a container has no host of its own, and the
+   * browser reaches it over the engine connection the container workspace already holds. That is
+   * why the connection id is handed in — a second connection to the same engine would be a second
+   * process nobody can see — and why a container tab that has gone away takes its file tabs'
+   * channel with it.
+   *
+   * The session id carries the container, so one tab exists per container: asking for the same
+   * container's files twice goes to the tab that is already open rather than opening a second
+   * browser on it. A failure leaves no tab — nothing came up, so there is nothing to draw — and is
+   * said against the container's name, which is the row the person clicked.
+   */
+  async function openContainerFiles(
+    session: Session,
+    connectionId: string,
+    containerId: string,
+    containerName: string,
+  ): Promise<void> {
+    const id = containerFilesSessionId(session.id, containerId);
+    const showing = tabs.value.find(
+      (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === id && entry.handle !== null,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+    if (connectingSessionIds.value.includes(id)) {
+      return;
+    }
+
+    connectingSessionIds.value.push(id);
+    try {
+      const outcome = await files.openContainer(id, connectionId, containerId);
+      if (outcome.kind !== "opened") {
+        // A decision cannot arise here: the engine connection this rides on decided its host key
+        // when it was opened, and there is no second door to a container's files to repeat it from.
+        return;
+      }
+      addFiles(
+        {
+          ...session,
+          id,
+          name: translate("container.filesTabName", { name: containerName }),
+          // The address belongs to the engine rather than to the container, so the tab carries none
+          // of it: what it reaches is named by the connection it was opened through.
+          protocol: "container",
+          host: "",
+          port: 0,
+          user: "",
+        },
+        { handle: outcome.handle, status: "open", failure: null, packed: outcome.packed },
+      );
+    } catch (error) {
+      const failure = asShellError(error, "files_open");
+      toast(
+        translate("container.filesFailed", {
+          name: containerName,
+          reason: describeShellError(translate, failure).message,
+        }),
+        "failure",
+      );
+    } finally {
+      connectingSessionIds.value = connectingSessionIds.value.filter((entry) => entry !== id);
     }
   }
 
@@ -1474,6 +1553,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     initialize,
     open,
     openFiles,
+    openContainerFiles,
     openDesktop,
     reopen,
     goTo,

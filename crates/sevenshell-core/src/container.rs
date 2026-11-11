@@ -8,6 +8,7 @@
 //! Destructive operations are decided here, before the connection is looked up, so an
 //! unacknowledged stop or removal fails the same way whether or not a runtime is reachable.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use sevenshell_container::{LineStream, Provider, Runner};
@@ -193,8 +194,12 @@ impl Core {
         self.container_provider(connection_id)?.image_tag(image, tag).await
     }
 
-    pub async fn container_image_load(&self, connection_id: &str, archive: Vec<u8>) -> Result<String, ShellError> {
-        self.container_provider(connection_id)?.image_load(archive).await
+    /// Loads an image archive from a file the person chose in a native dialog.
+    ///
+    /// The path stays on this side of the window: it is never handed to the interface, and it never
+    /// becomes part of a command line — the archive's bytes reach the runtime on standard input.
+    pub async fn container_image_load(&self, connection_id: &str, archive: &Path) -> Result<String, ShellError> {
+        self.container_provider(connection_id)?.image_load_file(archive).await
     }
 
     pub async fn container_image_commit(

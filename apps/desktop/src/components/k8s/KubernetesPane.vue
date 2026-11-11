@@ -60,7 +60,9 @@ const namespace = ref(props.tab.session.kubernetes?.namespace ?? "");
 
 const connection = computed(() => store.connectionOf(props.tab.session.id));
 const connId = computed(() => store.connectionIdOf(props.tab.session.id));
-const descriptor = computed(() => (selected.value === OVERVIEW_KEY ? null : descriptorOf(selected.value)));
+const descriptor = computed(() =>
+  selected.value === OVERVIEW_KEY ? null : descriptorOf(selected.value, connId.value ?? undefined),
+);
 const namespaced = computed(() => descriptor.value?.namespaced ?? false);
 
 const namespaceOptions = computed(() => {
@@ -558,7 +560,7 @@ async function retry(): Promise<void> {
 
     <div v-else class="flex min-h-0 flex-1">
       <aside class="w-44 shrink-0 overflow-hidden border-r border-border">
-        <K8sTree :selected="selected" class="h-full" @select="choose" />
+        <K8sTree :selected="selected" :connection-id="connId ?? undefined" class="h-full" @select="choose" />
       </aside>
 
       <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">

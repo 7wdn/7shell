@@ -5310,3 +5310,46 @@ test("a cluster session lists pods, follows a log, and opens a terminal", async 
     await close();
   }
 });
+
+test("a running container's files open in the workbench and a folder can be made", async () => {
+  let docker = true;
+  const fixture = "sevenshell-e2e-files";
+  try {
+    execFileSync("docker", ["rm", "-f", fixture], { stdio: "ignore" });
+    execFileSync("docker", ["run", "-d", "--name", fixture, "busybox:1.36", "sleep", "600"], { stdio: "ignore" });
+  } catch {
+    docker = false;
+  }
+  test.skip(!docker, "Docker Desktop is not running on this machine");
+
+  const { page, close } = await openApp();
+  try {
+    await clearSessionSearch(page);
+    await saveContainerSession(page, "e2e-files");
+    await searchForSession(page, "e2e-files");
+    await sessionRow(page, "e2e-files").click();
+    await page.mouse.move(1000, 700);
+
+    const rail = page.getByRole("navigation", { name: "Container workspace" });
+    await expect(rail).toBeVisible();
+    await rail.getByRole("button", { name: /^Containers/ }).click();
+
+    const row = page.getByRole("row", { name: new RegExp(fixture) }).first();
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await row.getByRole("button", { name: `Browse the files of ${fixture}` }).click();
+
+    await expect(page.getByText(`${fixture} files`, { exact: false })).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "New folder", exact: true }).click({ timeout: 10_000 });
+    const field = page.getByRole("textbox", { name: "Folder name" });
+    await field.fill("from-the-window");
+    await field.press("Enter");
+    await expect(page.getByText("from-the-window", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+  } finally {
+    await close();
+    try {
+      execFileSync("docker", ["rm", "-f", fixture], { stdio: "ignore" });
+    } catch {
+      // the fixture may already be gone
+    }
+  }
+});

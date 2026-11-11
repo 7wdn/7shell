@@ -97,12 +97,16 @@ const props = withDefaults(defineProps<{ handle: string; protocol?: Protocol; pa
 /**
  * The features that belong to one backend rather than to every browser.
  *
- * Permission bits are the SSH family's; a packed archive needs a remote shell, so SFTP and the
- * SCP fallback differ even though both are SSH sessions. Copy needs the server to do it — FTP
- * cannot, every other backend here can.
+ * Permission bits are the SSH family's, and a container is not part of it: its shell cannot be
+ * relied on to report a mode, so that browser has no editor for one. A packed archive needs a
+ * remote `tar`, so SFTP and the SCP fallback differ even though both are SSH sessions — and a
+ * container has one only when its open answer said so, which is the `packed` the tab carries. Copy
+ * needs the server to do it — FTP cannot, every other backend here can.
  */
 const supportsPermissions = computed(() => props.protocol === "ssh");
-const supportsPacked = computed(() => props.protocol === "ssh" && props.packedTransfers);
+const supportsPacked = computed(
+  () => (props.protocol === "ssh" || props.protocol === "container") && props.packedTransfers,
+);
 const supportsCopy = computed(() => props.protocol !== "ftp");
 
 /**
@@ -1592,6 +1596,7 @@ function openAreaMenu(event: MouseEvent): void {
       :open="properties !== null"
       :entry="properties"
       :handle="props.handle"
+      :editable-permissions="props.protocol === 'ssh'"
       @update:open="(open: boolean) => !open && (properties = null)"
     />
 

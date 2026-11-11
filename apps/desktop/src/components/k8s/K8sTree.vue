@@ -5,7 +5,8 @@
  * It is driven by the descriptor table rather than by a list of buttons here: a kind that exists in
  * the table is drawn, and a kind added there needs no change in this file. The groups are collapsible
  * because a cluster has more kinds than a sidebar has room for, and Access is closed by default —
- * it is the group somebody opens on purpose.
+ * it is the group somebody opens on purpose. The last group is not in the table: it is whatever
+ * kinds the cluster's CRDs define, which is why those entries carry the cluster's own names.
  */
 import {
   Bell,
@@ -34,7 +35,7 @@ import { useI18n } from "vue-i18n";
 import { OVERVIEW_KEY, resourceGroups, type ResourceIcon } from "@/components/k8s/resources";
 import { cn } from "@/lib/utils";
 
-defineProps<{ selected: string }>();
+const props = defineProps<{ selected: string; connectionId?: string }>();
 const emit = defineEmits<{ select: [key: string] }>();
 
 const { t } = useI18n();
@@ -60,7 +61,7 @@ const ICONS: Readonly<Record<ResourceIcon, Component>> = {
   gauge: Gauge,
 };
 
-const groups = computed(() => resourceGroups());
+const groups = computed(() => resourceGroups(props.connectionId));
 
 /**
  * Which groups are open.
@@ -123,10 +124,11 @@ function toggle(group: string): void {
             )
           "
           :aria-current="selected === resource.key ? 'true' : undefined"
+          :title="resource.kindLabel ? `${resource.kindLabel} (${resource.apiVersion})` : undefined"
           @click="emit('select', resource.key)"
         >
           <component :is="ICONS[resource.icon]" :size="13" class="shrink-0 opacity-80" />
-          <span class="truncate">{{ t(resource.labelKey) }}</span>
+          <span class="truncate">{{ resource.kindLabel ?? t(resource.labelKey) }}</span>
         </button>
       </template>
     </div>

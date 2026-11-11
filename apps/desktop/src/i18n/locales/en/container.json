@@ -17,6 +17,8 @@
     "namespace": "Namespace",
     "refresh": "Read again",
     "dismiss": "Dismiss this message",
+    "filesTabName": "{name} files",
+    "filesFailed": "Could not open the files of {name}: {reason}",
     "overview": {
       "runtime": "Runtime",
       "host": "Host",
@@ -62,6 +64,7 @@
     "action": {
       "exec": "Open a shell in {name}",
       "logs": "Show the logs of {name}",
+      "files": "Browse the files of {name}",
       "start": "Start {name}",
       "stop": "Stop {name}",
       "restart": "Restart",
@@ -175,6 +178,11 @@
     "image": {
       "pull": "Pull",
       "push": "Push",
+      "load": "Load image",
+      "loadTitle": "Load an image from an archive",
+      "loading": "Loading…",
+      "loaded": "Loaded {name}.",
+      "loadedUnnamed": "The archive was loaded.",
       "run": "New container from this image",
       "prune": "Remove unused images",
       "pruneMessage": "Every image not used by a container is deleted. This cannot be undone.",

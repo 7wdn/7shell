@@ -31,7 +31,8 @@
       "config": "配置",
       "storage": "存储",
       "cluster": "集群",
-      "rbac": "访问控制"
+      "rbac": "访问控制",
+      "custom": "自定义资源"
     },
     "resources": {
       "pods": "Pod",
@@ -56,7 +57,9 @@
       "namespaces": "命名空间",
       "events": "事件",
       "roles": "Role",
-      "rolebindings": "RoleBinding"
+      "rolebindings": "RoleBinding",
+      "customresourcedefinitions": "自定义资源定义",
+      "custom": "自定义资源"
     },
     "columns": {
       "name": "名称",
@@ -110,7 +113,11 @@
       "subjects": "主体",
       "rules": "规则",
       "secrets": "凭据",
-      "roles": "角色"
+      "roles": "角色",
+      "group": "组",
+      "kind": "类型",
+      "scope": "作用域",
+      "versions": "版本"
     },
     "detail": {
       "cluster": "集群",
@@ -136,7 +143,9 @@
         "event": "事件",
         "autoscaler": "伸缩器",
         "access": "权限",
-        "events": "事件"
+        "events": "事件",
+        "crd": "定义",
+        "custom": "读数"
       },
       "fields": {
         "name": "名称",
@@ -197,12 +206,26 @@
         "role": "角色",
         "ingressRules": "入站规则",
         "egressRules": "出站规则",
-        "tls": "TLS 主机"
+        "tls": "TLS 主机",
+        "group": "组",
+        "kind": "类型",
+        "plural": "复数名",
+        "scope": "作用域",
+        "versions": "版本",
+        "storageVersion": "存储版本",
+        "apiVersion": "API 版本"
       }
     },
     "yaml": {
       "copy": "复制",
-      "copied": "已复制"
+      "copied": "已复制",
+      "edit": "编辑",
+      "save": "保存",
+      "editor": "清单",
+      "invalid": "无法解析这段 YAML。",
+      "notObject": "清单必须是字段映射，不能是列表或单个值。",
+      "noConnection": "这个对象不在任何实时列表中，没有可以保存的位置。",
+      "redacted": "Secret 的值在这里是隐藏的，因此这份文档不能编辑。"
     },
     "list": {
       "filter": "按名称或读数筛选",

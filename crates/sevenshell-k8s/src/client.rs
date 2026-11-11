@@ -5,15 +5,21 @@
 //! module) an exec channel therefore cannot come to trust different things than each other.
 
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use sevenshell_error::ShellError;
 use sevenshell_types::{K8sResponse, K8sStreamEnd, K8sWatchEvent};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::watch as cancel_channel;
+use tokio::sync::watch as stop_channel;
+use tokio::task::JoinHandle;
 
-use crate::kubeconfig::{Cluster, User};
+use crate::kubeconfig::{Cluster, Selected, User};
 use crate::rest;
 use crate::watch;
 
@@ -54,19 +60,37 @@ pub(crate) struct K8sTransport {
 impl K8sClient {
     pub async fn connect(config: &Kubeconfig, context: Option<&str>) -> Result<Self, ShellError> {
         let selected = config.select(context)?;
-        let server = rest::parse_server(&selected.cluster.server)?;
-        let tls = connector(&selected.cluster, &selected.user)?;
-        let http = http_client(&tls)?;
+        let transport = transport_of(&selected)?;
+        let http = http_client(&transport.tls, None)?;
 
-        Ok(Self {
-            transport: K8sTransport {
-                base: server.base,
-                server: server.host,
-                tls,
-                authorization: selected.user.authorization(),
+        Ok(Self { transport, http })
+    }
+
+    /// Opens the listener and builds the client that reaches the server through `dialer`.
+    ///
+    /// The URL keeps the host the kubeconfig named, so the certificate is checked against the
+    /// cluster and not against the listener; every connection underneath it goes to the listener,
+    /// which carries it through the dialer.
+    async fn open_via(
+        prepared: TunneledCluster,
+        dialer: Arc<dyn ApiDialer>,
+    ) -> Result<(Self, TunnelEndpoint), ShellError> {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.map_err(|error| {
+            ShellError::k8s_unavailable(format!("the local end of the tunnel could not listen: {error}"))
+        })?;
+        let address = listener.local_addr().map_err(|error| {
+            ShellError::k8s_unavailable(format!("the local end of the tunnel has no address: {error}"))
+        })?;
+
+        let http = http_client(&prepared.transport.tls, Some(address))?;
+        let tunnel = TunnelEndpoint::start(listener, prepared.target, dialer);
+        Ok((
+            Self {
+                transport: prepared.transport,
+                http,
             },
-            http,
-        })
+            tunnel,
+        ))
     }
 
     /// The parts a WebSocket upgrade needs, which are the same parts every request uses.
@@ -138,6 +162,305 @@ impl K8sClient {
 
         Ok(K8sResponse { status, body })
     }
+}
+
+/// One connection to the API server, as whatever carries it produces it.
+///
+/// The trait exists so the client can be reached through something this crate does not depend on:
+/// an SSH channel, in practice. Both halves are required because an HTTP connection is a
+/// conversation, not a single request.
+pub trait ApiStream: AsyncRead + AsyncWrite + Unpin + Send {}
+
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> ApiStream for T {}
+
+/// The stream a dialer answers with.
+pub type BoxedApiStream = Box<dyn ApiStream>;
+
+/// The future one dial answers with.
+pub type DialFuture = Pin<Box<dyn std::future::Future<Output = Result<BoxedApiStream, ShellError>> + Send>>;
+
+/// Opens connections to the API server from wherever the caller's network is.
+///
+/// Called once per connection the local listener carries, so an implementation that reuses one
+/// session — an SSH connection, in practice — has to be cheap to call repeatedly and safe from
+/// several tasks at once.
+pub trait ApiDialer: Send + Sync + 'static {
+    /// Opens one byte stream to `host:port` as that network sees it.
+    fn dial(&self, host: String, port: u16) -> DialFuture;
+}
+
+/// Where the API server listens, as the kubeconfig spells it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ServerAddress {
+    /// Without brackets: this string is also what a direct-tcpip channel names.
+    host: String,
+    port: u16,
+}
+
+/// Reads the host and port a tunnel has to reach.
+///
+/// The address is validated by the same function a direct connection uses, so a tunnel refuses
+/// exactly what a direct connection refuses; only the default port, which the direct path leaves
+/// inside the URL, is made explicit here.
+fn server_address(server: &str) -> Result<ServerAddress, ShellError> {
+    let parsed = rest::parse_server(server)?;
+    let url = reqwest::Url::parse(&parsed.base)
+        .map_err(|error| ShellError::k8s_kubeconfig_invalid(format!("the cluster address is not a URL: {error}")))?;
+    let port = url.port_or_known_default().ok_or_else(|| {
+        ShellError::k8s_kubeconfig_invalid("the cluster address has no port and its scheme has no default")
+    })?;
+    Ok(ServerAddress {
+        host: parsed.host,
+        port,
+    })
+}
+
+/// A cluster prepared to be reached through a dialer.
+///
+/// Everything the kubeconfig alone can refuse is refused before this value exists, so a cluster
+/// that cannot be carried through a tunnel never costs a listener, an SSH connection or a
+/// host-key question.
+pub struct TunneledCluster {
+    transport: K8sTransport,
+    target: ServerAddress,
+}
+
+impl TunneledCluster {
+    /// Reads and checks what a tunnelled connection needs, without opening anything.
+    pub fn prepare(config: &Kubeconfig, context: Option<&str>) -> Result<Self, ShellError> {
+        let selected = config.select(context)?;
+        let transport = transport_of(&selected)?;
+
+        // The local end of a tunnel answers CONNECT and nothing else. A plain-HTTP server would
+        // have its requests sent to that listener as absolute URLs, which is a forward proxy this
+        // side does not implement; refusing the address is clearer than a tunnel that refuses
+        // every request it is sent.
+        if !transport.base.starts_with("https://") {
+            return Err(ShellError::app_unsupported(
+                "a cluster reached through an SSH session has to be an https address",
+            ));
+        }
+
+        let target = server_address(&selected.cluster.server)?;
+        Ok(Self { transport, target })
+    }
+}
+
+/// Everything a connection needs that the kubeconfig names.
+fn transport_of(selected: &Selected) -> Result<K8sTransport, ShellError> {
+    let server = rest::parse_server(&selected.cluster.server)?;
+    let tls = connector(&selected.cluster, &selected.user)?;
+    Ok(K8sTransport {
+        base: server.base,
+        server: server.host,
+        tls,
+        authorization: selected.user.authorization(),
+    })
+}
+
+/// How long the local end of a tunnel has to say what it wants carried.
+const BRIDGE_HEAD_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The largest head the bridge will read. A CONNECT request is a few lines; anything bigger is
+/// not one, and buffering it would be buffering whatever found the port.
+const MAX_BRIDGE_HEAD: usize = 8 * 1024;
+
+/// What the local end is told when its request is carried.
+const BRIDGE_ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+
+/// What the local end is told when it asked for a server this bridge does not carry.
+const BRIDGE_REFUSED: &[u8] = b"HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+
+/// What the local end is told when the far side of the tunnel could not be reached.
+const BRIDGE_UNREACHABLE: &[u8] = b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+
+/// The local end of a tunnel: a loopback listener the HTTP client is pointed at, and the task that
+/// carries each accepted connection through the dialer.
+///
+/// Dropping this stops the listener and signals every connection it is carrying. The client holds
+/// it for exactly as long as the connection, so a disconnect is a drop.
+struct TunnelEndpoint {
+    stop: stop_channel::Sender<bool>,
+    task: JoinHandle<()>,
+}
+
+impl TunnelEndpoint {
+    fn start(listener: TcpListener, target: ServerAddress, dialer: Arc<dyn ApiDialer>) -> Self {
+        let (stop, stopped) = stop_channel::channel(false);
+        let task = tokio::spawn(accept_connections(listener, target, dialer, stopped));
+        Self { stop, task }
+    }
+}
+
+impl Drop for TunnelEndpoint {
+    fn drop(&mut self) {
+        let _ = self.stop.send(true);
+        // Aborted as well as signalled: while the task is waiting for a connection, the signal
+        // would not be looked at until the next one arrived.
+        self.task.abort();
+    }
+}
+
+/// Accepts local connections and carries each one through the dialer.
+async fn accept_connections(
+    listener: TcpListener,
+    target: ServerAddress,
+    dialer: Arc<dyn ApiDialer>,
+    mut stop: stop_channel::Receiver<bool>,
+) {
+    loop {
+        let accepted = tokio::select! {
+            _ = stop.changed() => break,
+            accepted = listener.accept() => accepted,
+        };
+
+        let Ok((client, _peer)) = accepted else {
+            // The listener itself is gone; nothing is left to wait for.
+            break;
+        };
+
+        let target = target.clone();
+        let dialer = Arc::clone(&dialer);
+        let mut stopping = stop.clone();
+        tokio::spawn(async move {
+            let _ = carry(client, target, dialer, &mut stopping).await;
+        });
+    }
+}
+
+/// One connection as the local end phrased it: the head, and whatever followed it.
+struct BridgeHead {
+    text: String,
+    leftover: Vec<u8>,
+}
+
+/// Carries one local connection through the dialer, after checking it asked for this server.
+async fn carry(
+    mut client: TcpStream,
+    target: ServerAddress,
+    dialer: Arc<dyn ApiDialer>,
+    stop: &mut stop_channel::Receiver<bool>,
+) -> Result<(), ShellError> {
+    let head = tokio::select! {
+        _ = stop.changed() => return Ok(()),
+        head = tokio::time::timeout(BRIDGE_HEAD_TIMEOUT, read_head(&mut client)) => match head {
+            Ok(head) => head?,
+            // A connection that says nothing is not an error worth reporting: it is somebody's
+            // probe, and there is nothing to answer.
+            Err(_) => return Ok(()),
+        },
+    };
+
+    if !asks_for_target(&head.text, &target) {
+        // A loopback port is reachable by every process on this machine; carrying whatever it asks
+        // for would turn the saved SSH session into a proxy for anyone who can connect, so only
+        // the server this tunnel was opened for is ever carried.
+        let _ = client.write_all(BRIDGE_REFUSED).await;
+        return Ok(());
+    }
+
+    let mut tunnel = tokio::select! {
+        _ = stop.changed() => return Ok(()),
+        dialed = dialer.dial(target.host.clone(), target.port) => match dialed {
+            Ok(tunnel) => tunnel,
+            Err(error) => {
+                let _ = client.write_all(BRIDGE_UNREACHABLE).await;
+                return Err(error);
+            }
+        },
+    };
+
+    client.write_all(BRIDGE_ESTABLISHED).await.map_err(|error| {
+        ShellError::k8s_unavailable(format!("the local end of the tunnel could not be answered: {error}"))
+    })?;
+    if !head.leftover.is_empty() {
+        tunnel
+            .write_all(&head.leftover)
+            .await
+            .map_err(|error| ShellError::k8s_unavailable(format!("the tunnel could not be written to: {error}")))?;
+    }
+
+    tokio::select! {
+        _ = stop.changed() => {}
+        copied = tokio::io::copy_bidirectional(&mut client, &mut tunnel) => {
+            copied.map_err(|error| ShellError::k8s_unavailable(format!("the tunnel ended: {error}")))?;
+        }
+    }
+    Ok(())
+}
+
+/// Reads one request head, keeping the bytes that followed it.
+async fn read_head(stream: &mut TcpStream) -> Result<BridgeHead, ShellError> {
+    let mut buffer = Vec::with_capacity(512);
+    let mut chunk = [0u8; 512];
+    loop {
+        let read = stream.read(&mut chunk).await.map_err(|error| {
+            ShellError::k8s_unavailable(format!("the local end of the tunnel could not be read: {error}"))
+        })?;
+        if read == 0 {
+            return Err(ShellError::k8s_unavailable(
+                "the local end of the tunnel ended before it said what it wanted",
+            ));
+        }
+        buffer.extend_from_slice(&chunk[..read]);
+
+        if let Some(end) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+            return Ok(BridgeHead {
+                text: String::from_utf8_lossy(&buffer[..end]).into_owned(),
+                leftover: buffer[end + 4..].to_vec(),
+            });
+        }
+        if buffer.len() > MAX_BRIDGE_HEAD {
+            return Err(ShellError::k8s_unavailable(
+                "the local end of the tunnel sent a head larger than a tunnel request",
+            ));
+        }
+    }
+}
+
+/// Whether a request head asks for the server this bridge is pinned to.
+fn asks_for_target(head: &str, target: &ServerAddress) -> bool {
+    let Some(line) = head.lines().next() else {
+        return false;
+    };
+    let mut parts = line.split_whitespace();
+    if parts.next() != Some("CONNECT") {
+        return false;
+    }
+    let Some(authority) = parts.next() else {
+        return false;
+    };
+    authority_is(authority, target)
+}
+
+/// Whether `host:port` is the pinned server.
+///
+/// The spelling differs by where the address came from: a URL lower-cases a domain and compresses
+/// an IPv6 address, while a kubeconfig may spell either another way, and both name the same
+/// server.
+fn authority_is(authority: &str, target: &ServerAddress) -> bool {
+    let Some((host, port)) = split_host_port(authority) else {
+        return false;
+    };
+    port == target.port && same_host(&host, &target.host)
+}
+
+/// Splits `host:port` and `[v6]:port`, the two shapes a CONNECT authority takes.
+fn split_host_port(authority: &str) -> Option<(String, u16)> {
+    if let Some(rest) = authority.strip_prefix('[') {
+        let (host, after) = rest.split_once(']')?;
+        let port = after.strip_prefix(':')?.parse().ok()?;
+        return Some((host.to_owned(), port));
+    }
+    let (host, port) = authority.rsplit_once(':')?;
+    Some((host.to_owned(), port.parse().ok()?))
+}
+
+fn same_host(left: &str, right: &str) -> bool {
+    if let (Ok(left), Ok(right)) = (left.parse::<std::net::IpAddr>(), right.parse::<std::net::IpAddr>()) {
+        return left == right;
+    }
+    left.eq_ignore_ascii_case(right)
 }
 
 /// The connector one cluster's certificates are checked with.
@@ -301,21 +624,48 @@ fn normalized_key(key: &[u8]) -> Result<Vec<u8>, ShellError> {
         .map_err(|error| ShellError::k8s_kubeconfig_invalid(format!("the client key could not be converted: {error}")))
 }
 
-fn http_client(tls: &native_tls::TlsConnector) -> Result<reqwest::Client, ShellError> {
+fn http_client(tls: &native_tls::TlsConnector, endpoint: Option<SocketAddr>) -> Result<reqwest::Client, ShellError> {
     // No total timeout on the client: a watch is supposed to stay open, and a client-wide deadline
     // would cut it off after five minutes. Ordinary requests apply their own deadline instead.
-    reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .tls_backend_preconfigured(tls.clone())
         .connect_timeout(CONNECT_TIMEOUT)
-        .user_agent(concat!("7Shell/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("7Shell/", env!("CARGO_PKG_VERSION")));
+
+    if let Some(endpoint) = endpoint {
+        // A proxy rather than a DNS override: an address written as an IP literal is connected to
+        // without ever being resolved, so nothing can stand in for it at the resolver. The CONNECT
+        // this client sends is what the listener answers, and the TLS handshake that follows is
+        // between this client and the cluster, with the host name the kubeconfig gave.
+        let proxy = reqwest::Proxy::all(format!("http://{endpoint}")).map_err(|error| {
+            ShellError::k8s_unavailable(format!("the local end of the tunnel is not a usable proxy: {error}"))
+        })?;
+        builder = builder.proxy(proxy);
+    }
+
+    builder
         .build()
         .map_err(|error| ShellError::k8s_unavailable(format!("the HTTP client could not be built: {error}")))
 }
 
 /// The cluster connections a window holds open, and the streams they are feeding.
 pub struct K8sManager {
-    connections: Mutex<HashMap<String, Arc<K8sClient>>>,
+    connections: Mutex<HashMap<String, Connection>>,
     streams: Arc<Streams>,
+}
+
+/// One open connection: the client, and the local end of the tunnel when there is one.
+struct Connection {
+    client: Arc<K8sClient>,
+    /// Held, not read: dropping it stops the listener and the connections it is carrying.
+    tunnel: Option<TunnelEndpoint>,
+}
+
+/// What one open connection offers a request.
+struct Opened {
+    client: Arc<K8sClient>,
+    /// Whether a tunnel carries it, which the WebSocket paths cannot follow yet.
+    tunneled: bool,
 }
 
 impl K8sManager {
@@ -331,17 +681,41 @@ impl K8sManager {
         // Built before the id exists, so a connection that cannot be built leaves nothing behind.
         let client = Arc::new(K8sClient::connect(config, context).await?);
         let id = uuid::Uuid::new_v4().to_string();
-        self.connections().insert(id.clone(), client);
+        self.connections()
+            .insert(id.clone(), Connection { client, tunnel: None });
+        Ok(id)
+    }
+
+    /// Opens a connection whose traffic goes through `dialer` instead of this machine's network.
+    pub async fn connect_via(
+        &self,
+        prepared: TunneledCluster,
+        dialer: Arc<dyn ApiDialer>,
+    ) -> Result<String, ShellError> {
+        // Built before the id exists, for the same reason a direct connection is: a listener with
+        // no id would be a listener nobody can stop.
+        let (client, tunnel) = K8sClient::open_via(prepared, dialer).await?;
+        let id = uuid::Uuid::new_v4().to_string();
+        self.connections().insert(
+            id.clone(),
+            Connection {
+                client: Arc::new(client),
+                tunnel: Some(tunnel),
+            },
+        );
         Ok(id)
     }
 
     /// Drops a connection and everything it was streaming. Answers whether it was open.
     pub fn disconnect(&self, connection_id: &str) -> bool {
-        let client = self.connections().remove(connection_id);
+        // Taken out of the map and dropped before this returns: that drop is what stops a tunnel's
+        // listener and releases the dialer it held, so nothing keeps carrying traffic for a tab
+        // that is gone.
+        let connection = self.connections().remove(connection_id);
         // Streams are stopped even when the connection was already gone: the two maps are written
         // separately, and a watch whose connection was dropped is still a watch holding a socket.
         self.streams.stop_connection(connection_id);
-        client.is_some()
+        connection.is_some()
     }
 
     pub async fn request(
@@ -426,8 +800,16 @@ impl K8sManager {
         events: tokio::sync::mpsc::UnboundedSender<sevenshell_types::K8sStreamLine>,
         end: tokio::sync::mpsc::UnboundedSender<sevenshell_types::K8sStreamEnd>,
     ) -> Result<String, ShellError> {
-        let client = self.client(connection_id)?;
-        let mut stream = crate::logs::open_logs(&client, request)?;
+        let opened = self.opened(connection_id)?;
+        if opened.tunneled {
+            // A log stream builds a client of its own, and that client deliberately ignores
+            // proxies. Following the tunnel from here would mean giving it the tunnel's endpoint;
+            // until it has one, refusing is the answer that keeps the connection's promise.
+            return Err(ShellError::k8s_unavailable(
+                "following a pod's log through an SSH tunnel is not available yet",
+            ));
+        }
+        let mut stream = crate::logs::open_logs(&opened.client, request)?;
         let handle = stream.handle();
 
         let stream_id = uuid::Uuid::new_v4().to_string();
@@ -464,18 +846,35 @@ impl K8sManager {
         columns: u32,
         rows: u32,
     ) -> Result<crate::exec::ExecSession, ShellError> {
-        let client = self.client(connection_id)?;
-        crate::exec::open_exec(&client, request, columns, rows).await
+        let opened = self.opened(connection_id)?;
+        if opened.tunneled {
+            // A pod terminal is a WebSocket this crate opens itself, over a connection it dials:
+            // it does not go through the HTTP client and cannot follow the tunnel. Refused rather
+            // than connected directly, because reaching the server the long way round is what the
+            // connection promises.
+            return Err(ShellError::k8s_unavailable(
+                "a pod terminal cannot be opened through an SSH tunnel yet",
+            ));
+        }
+        crate::exec::open_exec(&opened.client, request, columns, rows).await
     }
 
     fn client(&self, connection_id: &str) -> Result<Arc<K8sClient>, ShellError> {
-        self.connections()
-            .get(connection_id)
-            .cloned()
-            .ok_or_else(|| ShellError::k8s_not_connected(connection_id))
+        self.opened(connection_id).map(|opened| opened.client)
     }
 
-    fn connections(&self) -> MutexGuard<'_, HashMap<String, Arc<K8sClient>>> {
+    fn opened(&self, connection_id: &str) -> Result<Opened, ShellError> {
+        let connections = self.connections();
+        let connection = connections
+            .get(connection_id)
+            .ok_or_else(|| ShellError::k8s_not_connected(connection_id))?;
+        Ok(Opened {
+            client: Arc::clone(&connection.client),
+            tunneled: connection.tunnel.is_some(),
+        })
+    }
+
+    fn connections(&self) -> MutexGuard<'_, HashMap<String, Connection>> {
         // A poisoned lock is recovered rather than reported, for the same reason the vault recovers:
         // the connections are still the best copy of what is open, and refusing every call would
         // turn one panic into a window that can no longer reach any cluster.
@@ -594,5 +993,267 @@ mod key_tests {
     fn a_key_in_no_known_pem_shape_is_refused_by_name() {
         let error = normalized_key(b"not a key").expect_err("rubbish is not a key");
         assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sKubeconfigInvalid);
+    }
+}
+
+#[cfg(test)]
+mod tunnel_tests {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    /// A kubeconfig pointing at `server`, with a token so the document is a usable one.
+    fn document(server: &str) -> String {
+        format!(
+            r#"apiVersion: v1
+kind: Config
+current-context: test
+clusters:
+  - name: test
+    cluster:
+      server: {server}
+contexts:
+  - name: test
+    context:
+      cluster: test
+      user: test
+users:
+  - name: test
+    user:
+      token: not-a-real-token
+"#
+        )
+    }
+
+    /// A dialer that answers with a socket to `address`, recording what it was asked for.
+    struct LocalDialer {
+        address: SocketAddr,
+        asked: Mutex<Vec<(String, u16)>>,
+        calls: AtomicUsize,
+    }
+
+    impl LocalDialer {
+        fn new(address: SocketAddr) -> Arc<Self> {
+            Arc::new(Self {
+                address,
+                asked: Mutex::new(Vec::new()),
+                calls: AtomicUsize::new(0),
+            })
+        }
+
+        fn asked(&self) -> Vec<(String, u16)> {
+            self.asked.lock().expect("the asked lock").clone()
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(Ordering::SeqCst)
+        }
+    }
+
+    impl ApiDialer for LocalDialer {
+        fn dial(&self, host: String, port: u16) -> DialFuture {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.asked.lock().expect("the asked lock").push((host, port));
+            let address = self.address;
+            Box::pin(async move {
+                let stream = TcpStream::connect(address).await.map_err(|error| {
+                    ShellError::k8s_unavailable(format!("the test tunnel could not connect: {error}"))
+                })?;
+                let stream: BoxedApiStream = Box::new(stream);
+                Ok(stream)
+            })
+        }
+    }
+
+    /// A TCP server that echoes back whatever one connection sends, so a carried connection has
+    /// something to show for itself.
+    async fn echo_once() -> SocketAddr {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.expect("a free port");
+        let address = listener.local_addr().expect("an address");
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buffer = [0u8; 64];
+                    if let Ok(read) = stream.read(&mut buffer).await
+                        && read > 0
+                    {
+                        let _ = stream.write_all(&buffer[..read]).await;
+                    }
+                });
+            }
+        });
+        address
+    }
+
+    fn target(host: &str, port: u16) -> ServerAddress {
+        ServerAddress {
+            host: host.to_owned(),
+            port,
+        }
+    }
+
+    /// Reads one HTTP answer head, so an assertion is about the status line rather than a length.
+    async fn read_answer_head(stream: &mut TcpStream) -> String {
+        let mut answer = Vec::new();
+        let mut chunk = [0u8; 256];
+        while !answer.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut chunk).await.expect("the answer");
+            assert!(read > 0, "the bridge closed before it answered");
+            answer.extend_from_slice(&chunk[..read]);
+        }
+        String::from_utf8_lossy(&answer).into_owned()
+    }
+
+    #[test]
+    fn a_server_address_carries_the_port_its_scheme_defaults_to() {
+        assert_eq!(
+            server_address("https://api.example.test").expect("an https address"),
+            target("api.example.test", 443)
+        );
+        assert_eq!(
+            server_address("https://api.example.test:6443/k8s").expect("an explicit port"),
+            target("api.example.test", 6443)
+        );
+        assert_eq!(
+            server_address("http://api.example.test").expect("an http address"),
+            target("api.example.test", 80)
+        );
+    }
+
+    #[test]
+    fn an_ipv6_server_address_is_dialled_without_its_brackets() {
+        // Brackets are how a URL spells an IPv6 authority; a direct-tcpip channel names the
+        // address, and a host spelled with brackets is not one.
+        assert_eq!(
+            server_address("https://[::1]:6443").expect("an ipv6 address"),
+            target("::1", 6443)
+        );
+        assert_eq!(
+            server_address("https://[2001:db8::1]").expect("an ipv6 address without a port"),
+            target("2001:db8::1", 443)
+        );
+    }
+
+    #[test]
+    fn an_address_that_is_not_a_cluster_address_is_refused_as_a_kubeconfig_problem() {
+        let error = server_address("api.example.test:6443").expect_err("no scheme is not an address");
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sKubeconfigInvalid);
+    }
+
+    #[test]
+    fn a_tunnel_request_names_the_server_whatever_the_urls_spelling() {
+        let target = target("api.example.test", 443);
+        assert!(asks_for_target("CONNECT api.example.test:443 HTTP/1.1", &target));
+        // A URL lower-cases a domain; a kubeconfig may not.
+        assert!(asks_for_target("CONNECT API.EXAMPLE.TEST:443 HTTP/1.1", &target));
+        assert!(!asks_for_target("CONNECT api.example.test:6443 HTTP/1.1", &target));
+        assert!(!asks_for_target("CONNECT other.example.test:443 HTTP/1.1", &target));
+        // An ordinary request in absolute form is not a tunnel request.
+        assert!(!asks_for_target(
+            "GET http://api.example.test/api/v1/pods HTTP/1.1",
+            &target
+        ));
+    }
+
+    #[test]
+    fn an_ipv6_tunnel_request_is_compared_as_an_address() {
+        let target = target("2001:db8::1", 6443);
+        assert!(asks_for_target("CONNECT [2001:db8::1]:6443 HTTP/1.1", &target));
+        assert!(asks_for_target(
+            "CONNECT [2001:0db8:0000:0000:0000:0000:0000:0001]:6443 HTTP/1.1",
+            &target
+        ));
+    }
+
+    #[test]
+    fn a_plain_http_cluster_is_refused_before_a_listener_exists() {
+        let config = Kubeconfig::parse(document("http://api.example.test").as_bytes()).expect("a kubeconfig");
+        let prepared = TunneledCluster::prepare(&config, None);
+        let error = match prepared {
+            Ok(_) => panic!("a plain-HTTP cluster was prepared for a tunnel"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::AppUnsupported);
+    }
+
+    #[tokio::test]
+    async fn the_bridge_answers_a_connect_for_its_server_and_carries_the_bytes_through_the_dialer() {
+        let far = echo_once().await;
+        let dialer = LocalDialer::new(far);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.expect("a free port");
+        let address = listener.local_addr().expect("an address");
+        let _endpoint = TunnelEndpoint::start(listener, target("api.example.test", 6443), dialer.clone());
+
+        let mut local = TcpStream::connect(address).await.expect("the listener");
+        local
+            .write_all(b"CONNECT api.example.test:6443 HTTP/1.1\r\nHost: api.example.test:6443\r\n\r\n")
+            .await
+            .expect("the tunnel request");
+        let answer = read_answer_head(&mut local).await;
+        assert!(
+            answer.starts_with("HTTP/1.1 200"),
+            "the tunnel request was not carried: {answer}"
+        );
+
+        local.write_all(b"hello").await.expect("bytes for the far side");
+        let mut echoed = [0u8; 5];
+        local.read_exact(&mut echoed).await.expect("the far side's answer");
+        assert_eq!(&echoed, b"hello");
+
+        assert_eq!(dialer.asked(), vec![("api.example.test".to_owned(), 6443)]);
+    }
+
+    #[tokio::test]
+    async fn the_bridge_refuses_a_connect_for_another_server_instead_of_carrying_it() {
+        let far = echo_once().await;
+        let dialer = LocalDialer::new(far);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.expect("a free port");
+        let address = listener.local_addr().expect("an address");
+        let _endpoint = TunnelEndpoint::start(listener, target("api.example.test", 443), dialer.clone());
+
+        let mut local = TcpStream::connect(address).await.expect("the listener");
+        local
+            .write_all(b"CONNECT elsewhere.example.test:443 HTTP/1.1\r\nHost: elsewhere.example.test:443\r\n\r\n")
+            .await
+            .expect("the tunnel request");
+        let answer = read_answer_head(&mut local).await;
+
+        assert!(
+            answer.starts_with("HTTP/1.1 403"),
+            "a request for another server was not refused: {answer}"
+        );
+        assert_eq!(
+            dialer.calls(),
+            0,
+            "the bridge dialled for a server it was not opened for"
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_the_endpoint_stops_the_listener() {
+        let far = echo_once().await;
+        let dialer = LocalDialer::new(far);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.expect("a free port");
+        let address = listener.local_addr().expect("an address");
+        let endpoint = TunnelEndpoint::start(listener, target("api.example.test", 443), dialer);
+
+        assert!(
+            TcpStream::connect(address).await.is_ok(),
+            "the listener did not answer while the endpoint lived"
+        );
+        drop(endpoint);
+
+        // The task is aborted, so the socket is released when the runtime next polls it; a few
+        // attempts cover that without making the answer depend on the scheduler.
+        let mut closed = false;
+        for _ in 0..100 {
+            if TcpStream::connect(address).await.is_err() {
+                closed = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(closed, "the listener outlived the endpoint");
     }
 }

@@ -6,6 +6,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   droppedUpload: vi.fn(),
   clipboardFiles: vi.fn(),
   filesOpen: vi.fn(),
+  filesOpenContainer: vi.fn(),
   filesList: vi.fn(),
   filesCreateFolder: vi.fn(),
   filesRename: vi.fn(),
@@ -40,6 +41,7 @@ import {
   filesDownload,
   filesList,
   filesOpen,
+  filesOpenContainer,
   filesRename,
   filesPaste,
   filesSetPermissions,
@@ -66,6 +68,7 @@ import { TRANSFER_POLL_MS, useFilesStore } from "@/stores/files";
 import type { SftpEntry, SftpListing, SftpOutcome, TransferInfo } from "@/types/session";
 
 const filesOpenMock = vi.mocked(filesOpen);
+const filesOpenContainerMock = vi.mocked(filesOpenContainer);
 const filesListMock = vi.mocked(filesList);
 const filesCreateFolderMock = vi.mocked(filesCreateFolder);
 const filesRenameMock = vi.mocked(filesRename);
@@ -155,6 +158,7 @@ describe("files store", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     filesOpenMock.mockReset();
+    filesOpenContainerMock.mockReset();
     filesListMock.mockReset().mockResolvedValue(listing("/home/user"));
     filesCreateFolderMock.mockReset().mockResolvedValue(undefined);
     filesRenameMock.mockReset().mockResolvedValue(undefined);
@@ -197,6 +201,45 @@ describe("files store", () => {
     expect(store.browser(handle)?.entries.map((item) => item.name)).toEqual(["notes.txt", "photos"]);
     // The first listing is part of the open answer; nothing had to be asked for separately.
     expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("opens a container's files through the engine, scoped to the tab that asked", async () => {
+    filesOpenContainerMock.mockResolvedValue({
+      kind: "opened",
+      handle: "c1",
+      sessionId: "engine-1:abc",
+      listing: listing("/", ["etc", "var"]),
+      packed: false,
+    });
+
+    const store = useFilesStore();
+    const outcome = await store.openContainer("engine-1:abc", "engine-conn", "abc");
+
+    // The engine's connection is what the browser is opened through, and the container is named to
+    // it; the path is where the tab starts.
+    expect(filesOpenContainerMock).toHaveBeenCalledWith("engine-conn", "abc", "/");
+    expect(outcome.kind).toBe("opened");
+    // Everything after the open is an ordinary browser: one handle, one listing, one clipboard scope.
+    expect(store.browser("c1")?.sessionId).toBe("engine-1:abc");
+    expect(store.browser("c1")?.path).toBe("/");
+    expect(store.browser("c1")?.entries.map((item) => item.name)).toEqual(["etc", "var"]);
+    // The first listing is part of the answer, so nothing is asked for a second time.
+    expect(filesListMock).not.toHaveBeenCalled();
+  });
+
+  it("records nothing for a container open that answered with a question", async () => {
+    // A container has no host key of its own; an answer shaped like a decision is still not a browser,
+    // and a browser that does not exist must not be invented here.
+    filesOpenContainerMock.mockResolvedValue({
+      kind: "hostKeyUnknown",
+      key: { host: "engine", port: 22, keyType: "ssh-ed25519", publicKey: "AAA", fingerprint: "SHA256:x" },
+    });
+
+    const store = useFilesStore();
+    const outcome = await store.openContainer("engine-1:abc", "engine-conn", "abc");
+
+    expect(outcome.kind).toBe("hostKeyUnknown");
+    expect(store.browsers).toEqual({});
   });
 
   it("replaces the listing when the path changes", async () => {

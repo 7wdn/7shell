@@ -36,12 +36,13 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 encrypted store), `sevenshell-policy` (what may be run, and how dangerous it is), `sevenshell-ssh`
 (host key verification, authentication, a terminal channel), `sevenshell-term` (the terminals that
 are not SSH), `sevenshell-ftp` (the far side of FTP and FTPS file browsers), `sevenshell-k8s` (a
-Kubernetes API client: kubeconfig, REST, watches, pod logs and the exec WebSocket),
-`sevenshell-session` (the registry of open terminals), `sevenshell-sftp` (the far side of the file
-workbench), `sevenshell-container` (Docker, Podman, nerdctl and WSLC through their command lines),
-`sevenshell-sync` (a copy of the library that travels: what a snapshot holds, where it goes, and the
-WebDAV transport the file browser borrows) and `sevenshell-core` (the order of operations), with
-`sevenshell-desktop` as the window and the command surface. The host
+Kubernetes API client: kubeconfig, REST, watches, pod logs, the exec WebSocket and a pinned CONNECT
+bridge for a cluster reached through SSH), `sevenshell-session` (the registry of open terminals),
+`sevenshell-sftp` (the far side of the file workbench), `sevenshell-container` (Docker, Podman,
+nerdctl and WSLC through their command lines, including files reached through a shell in the
+container), `sevenshell-sync` (a copy of the library that travels: what a snapshot holds, where it
+goes, and the WebDAV transport the file browser borrows) and `sevenshell-core` (the order of
+operations), with `sevenshell-desktop` as the window and the command surface. The host
 crates for a command line and an agent interface arrive with the features that need them, so that
 nothing exists without a test.
 

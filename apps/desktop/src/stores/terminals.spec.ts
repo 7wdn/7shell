@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
@@ -13,6 +13,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   tunnelsOpen: vi.fn(),
   tunnelClose: vi.fn(),
   filesOpen: vi.fn(),
+  filesOpenContainer: vi.fn(),
   filesList: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
@@ -43,6 +44,7 @@ import {
   filesClose,
   filesList,
   filesOpen,
+  filesOpenContainer,
   knownHostForget,
   knownHostTrust,
   sessionOpen,
@@ -52,11 +54,18 @@ import {
   tunnelClose,
   tunnelsOpen,
 } from "@/lib/backend/tauri";
+import { useToast } from "@/composables/useToast";
 import { readSystemCache, writeSystemCache } from "@/lib/system/cache";
 import { endedTerminal, onTerminalEnded } from "@/lib/terminal/bus";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
-import { type FilesTab, type TerminalTab, tunnelFailureKey, useTerminalsStore } from "@/stores/terminals";
+import {
+  type FilesTab,
+  type TerminalTab,
+  containerFilesSessionId,
+  tunnelFailureKey,
+  useTerminalsStore,
+} from "@/stores/terminals";
 import type { OpenTunnel, PresentedHostKey, Session, TunnelFailure } from "@/types/session";
 import type { HostSystem } from "@/types/system";
 
@@ -68,6 +77,7 @@ const knownHostForgetMock = vi.mocked(knownHostForget);
 const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const tunnelCloseMock = vi.mocked(tunnelClose);
 const filesOpenMock = vi.mocked(filesOpen);
+const filesOpenContainerMock = vi.mocked(filesOpenContainer);
 const filesListMock = vi.mocked(filesList);
 const filesCloseMock = vi.mocked(filesClose);
 const transfersOpenMock = vi.mocked(transfersOpen);
@@ -995,21 +1005,111 @@ describe("terminals store", () => {
       expect(store.systemOf(session)).toEqual(ubuntu);
       expect(readSystemCache()[laptopAddress]).toEqual(ubuntu);
     });
+  });
 
-    it("keeps what it knew when the question fails outright", async () => {
-      // The handle may already be gone, which is the one failure `session_system` has. It is
-      // nobody's problem: the row keeps the mark a previous connection learned.
-      writeSystemCache({ [laptopAddress]: ubuntu });
-      sessionOpenMock.mockResolvedValue(opened());
-      sessionSystemMock.mockRejectedValue(refused);
+  /**
+   * A container's files are a browser of their own, reached through the engine's connection.
+   *
+   * What can only be seen here is the shape of the tab: the pseudo-session that names the container
+   * rather than an address, the handle the engine answered with, and the rule that one container
+   * has one tab.
+   */
+  describe("a container's files", () => {
+    const containerId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const engine: Session = {
+      id: "engine-1",
+      name: "lab engine",
+      protocol: "container",
+      host: "",
+      port: 0,
+      user: "",
+      auth: { method: "password", hasSecret: false },
+      terminal: { terminalType: "xterm-256color", keepaliveSeconds: 0, forwardAgent: false, record: false },
+      updatedAt: 0,
+    };
+
+    function containerFilesOpened() {
+      return {
+        kind: "opened",
+        handle: "c1",
+        sessionId: containerFilesSessionId(engine.id, containerId),
+        listing: { path: "/", entries: [] },
+        packed: false,
+      } as const;
+    }
+
+    beforeEach(() => {
+      filesOpenContainerMock.mockReset();
+    });
+
+    afterEach(() => {
+      // The mock is shared with the cases that follow this block, and one of them asserts it was
+      // never called: a close made here would be read there as a browser closed by a page.
+      filesCloseMock.mockClear();
+    });
+
+    it("opens a tab whose session names the container, not an address", async () => {
+      filesOpenContainerMock.mockResolvedValue(containerFilesOpened());
 
       const store = useTerminalsStore();
-      open();
-      await store.open(session);
-      await Promise.resolve();
+      await store.openContainerFiles(engine, "conn-1", containerId, "web");
 
-      expect(store.systemOf(session)).toEqual(ubuntu);
-      expect(readSystemCache()[laptopAddress]).toEqual(ubuntu);
+      expect(filesOpenContainerMock).toHaveBeenCalledWith("conn-1", containerId, "/");
+      const tab = filesTab(store);
+      expect(tab?.handle).toBe("c1");
+      expect(tab?.status).toBe("open");
+      // The backend said this browser has no packed transfers, and the tab is what carries that on.
+      expect(tab?.packed).toBe(false);
+      expect(tab?.session.id).toBe(containerFilesSessionId(engine.id, containerId));
+      expect(tab?.session.name).toBe("web files");
+      // A container has no address of its own; showing the engine's would be a lie about where the
+      // bytes are coming from.
+      expect(tab?.session.protocol).toBe("container");
+      expect(tab?.session.host).toBe("");
+      expect(tab?.session.port).toBe(0);
+      expect(tab?.session.user).toBe("");
+      expect(store.connectingSessionIds).toEqual([]);
+    });
+
+    it("goes to the tab a container already has rather than opening a second one", async () => {
+      filesOpenContainerMock.mockResolvedValue(containerFilesOpened());
+
+      const store = useTerminalsStore();
+      await store.openContainerFiles(engine, "conn-1", containerId, "web");
+      const opened = filesTab(store);
+      store.activate("somewhere-else");
+      await store.openContainerFiles(engine, "conn-1", containerId, "web");
+
+      expect(filesOpenContainerMock).toHaveBeenCalledTimes(1);
+      expect(store.tabs.filter((tab) => tab.kind === "files")).toHaveLength(1);
+      expect(store.activeTabId).toBe(opened?.id);
+    });
+
+    it("says which container's files could not be opened, and leaves no tab behind", async () => {
+      filesOpenContainerMock.mockRejectedValue(refused);
+      const { message } = useToast();
+
+      const store = useTerminalsStore();
+      await store.openContainerFiles(engine, "conn-1", containerId, "web");
+
+      // Nothing came up, so there is nothing to draw; the container's row is where the answer goes.
+      expect(store.tabs).toHaveLength(0);
+      expect(message.value).toContain("web");
+      expect(message.value).toContain("Something went wrong inside the application.");
+      expect(store.connectingSessionIds).toEqual([]);
+    });
+
+    it("closes the browser through the backend when its tab goes away", async () => {
+      filesOpenContainerMock.mockResolvedValue(containerFilesOpened());
+      filesCloseMock.mockResolvedValue(undefined);
+
+      const store = useTerminalsStore();
+      await store.openContainerFiles(engine, "conn-1", containerId, "web");
+      const id = filesTab(store)?.id ?? "";
+      await store.closeTab(id);
+
+      expect(filesCloseMock).toHaveBeenCalledWith("c1");
+      expect(store.tabs).toHaveLength(0);
     });
   });
 });

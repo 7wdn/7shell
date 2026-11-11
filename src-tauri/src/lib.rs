@@ -213,6 +213,7 @@ pub fn run() {
             commands::monitor::monitor_process_detail,
             commands::monitor::monitor_sockets,
             commands::files::files_open,
+            commands::files::files_open_container,
             commands::files::files_list,
             commands::files::files_create_folder,
             commands::files::files_create_file,

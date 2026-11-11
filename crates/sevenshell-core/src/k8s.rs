@@ -12,9 +12,12 @@
 //! 3. **Disconnecting stops the streams.** A watch outlives no connection: the socket would keep
 //!    reporting on a tab that no longer exists.
 
+use std::sync::Arc;
+
 use sevenshell_error::ShellError;
-use sevenshell_k8s::Kubeconfig;
+use sevenshell_k8s::{ApiDialer, BoxedApiStream, DialFuture, Kubeconfig, TunneledCluster};
 use sevenshell_session::{ForwardedControl, ForwardedSession};
+use sevenshell_ssh::SshSession;
 use sevenshell_types::{
     K8sExecRequest, K8sLogRequest, K8sRequest, K8sResponse, K8sStreamEnd, K8sStreamLine, K8sWatchEvent,
     KubeContextInfo, KubeconfigSource, Protocol, SecretInput,
@@ -22,6 +25,7 @@ use sevenshell_types::{
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::Core;
+use crate::sessions::{ConnectionOutcome, HostKeyDecision};
 
 impl Core {
     /// The contexts a kubeconfig offers, without any credential in them.
@@ -57,15 +61,6 @@ impl Core {
             ));
         }
 
-        // Reaching an API server through an SSH connection is the shape a jump host has for a
-        // terminal: it is a later feature, and saying so is better than connecting somewhere else
-        // and reporting a timeout.
-        if let Some(via) = session.kubernetes.via_ssh.as_deref().filter(|via| !via.is_empty()) {
-            return Err(ShellError::app_unsupported(&format!(
-                "reaching an API server through the SSH session `{via}`"
-            )));
-        }
-
         let config = match session.kubernetes.source {
             KubeconfigSource::DefaultPath => Kubeconfig::load_default()?,
             // The namespace a list opens in belongs to the interface, not to the connection: the
@@ -73,9 +68,39 @@ impl Core {
             // in its path anyway.
             KubeconfigSource::Imported => self.imported_kubeconfig(session_id)?,
         };
+        let context = session.kubernetes.context.as_deref();
+
+        let via = session
+            .kubernetes
+            .via_ssh
+            .as_deref()
+            .map(str::trim)
+            .filter(|via| !via.is_empty());
+        let Some(via) = via else {
+            return self.clusters.connect(&config, context).await;
+        };
+
+        // Read and checked before the SSH session is opened: a cluster this build cannot carry
+        // through a tunnel must not cost a connection to a server, or a host-key question.
+        let prepared = TunneledCluster::prepare(&config, context)?;
+
+        let transport = self.session(via)?;
+        if transport.protocol != Protocol::Ssh {
+            return Err(ShellError::app_unsupported(
+                "the session a cluster is reached through is not an SSH session",
+            ));
+        }
+        let connection = match self.open_carrier(&transport).await? {
+            ConnectionOutcome::Ready(connection) => connection,
+            // The cluster workspace has no host-key prompt of its own, so the decision is refused
+            // with the host's identity — the same answer the container workspace gives. Opening
+            // that SSH session once is how the decision is made, and every later cluster
+            // connection reuses the trust.
+            ConnectionOutcome::Decision(decision) => return Err(host_key_error(*decision)),
+        };
 
         self.clusters
-            .connect(&config, session.kubernetes.context.as_deref())
+            .connect_via(prepared, Arc::new(SshDialer { session: connection }))
             .await
     }
 
@@ -188,12 +213,47 @@ impl Core {
     }
 }
 
+/// Carries the client's connections over one SSH session: one direct-tcpip channel each.
+///
+/// The session is an `Arc` because the client holds the dialer for as long as the connection: a
+/// cluster tab with nothing else on that server is the reason the connection is open at all.
+struct SshDialer {
+    session: Arc<SshSession>,
+}
+
+impl ApiDialer for SshDialer {
+    fn dial(&self, host: String, port: u16) -> DialFuture {
+        let session = Arc::clone(&self.session);
+        Box::pin(async move {
+            // The primitive a jump host and a local forward are both built from: a channel to
+            // `host:port` as the far side sees it, handed over as a byte stream.
+            let stream = session.open_tunnel_stream(&host, port).await?;
+            let stream: BoxedApiStream = Box::new(stream);
+            Ok(stream)
+        })
+    }
+}
+
+/// The decision a tunnel cannot make on its own, shaped like the container workspace shapes it.
+fn host_key_error(decision: HostKeyDecision) -> ShellError {
+    match decision {
+        HostKeyDecision::Unknown(key) => ShellError::ssh_host_key_unknown(&key.host, key.port, &key.key_type),
+        HostKeyDecision::Mismatch { trusted, .. } => {
+            ShellError::ssh_host_key_mismatch(&trusted.host, trusted.port, &trusted.key_type)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use sevenshell_types::{K8sMethod, RiskLevel};
-    use sevenshell_vault::Vault;
+    use sevenshell_types::{
+        AuthMethod, K8sMethod, KubeconfigSource, KubernetesSettings, Protocol, RiskLevel, Session, SessionAuth,
+        TerminalSettings,
+    };
+    use sevenshell_vault::{SessionSecret, Vault};
+    use tempfile::{TempDir, tempdir};
 
     use crate::Core;
 
@@ -215,6 +275,92 @@ mod tests {
             content_type: None,
             acknowledged,
         }
+    }
+
+    /// A vault that has been created and can be filled with sessions.
+    fn vault() -> (TempDir, Arc<Vault>) {
+        let directory = tempdir().expect("temp dir");
+        let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
+        vault.create("correct horse battery staple").expect("create");
+        (directory, vault)
+    }
+
+    fn session(id: &str, protocol: Protocol) -> Session {
+        Session {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            group_id: None,
+            protocol,
+            host: "127.0.0.1".to_owned(),
+            // Port 1 is where a connect to this machine fails at once: a test that gets past the
+            // local checks would report an unreachable server instead of the refusal it is about.
+            port: 1,
+            user: "someone".to_owned(),
+            auth: SessionAuth::with_password(AuthMethod::Password),
+            terminal: TerminalSettings::default(),
+            desktop: sevenshell_types::DesktopSettings::default(),
+            telnet: sevenshell_types::TelnetSettings::default(),
+            serial: sevenshell_types::SerialSettings::default(),
+            local: sevenshell_types::LocalSettings::default(),
+            wsl: sevenshell_types::WslSettings::default(),
+            container: sevenshell_types::ContainerSettings::default(),
+            kubernetes: KubernetesSettings::default(),
+            webdav: sevenshell_types::WebDavSettings::default(),
+            ftp: sevenshell_types::FtpSettings::default(),
+            jump: Vec::new(),
+            forwards: Vec::new(),
+            updated_at: 0,
+        }
+    }
+
+    /// An SSH session, saved with a password when one is given.
+    fn save_ssh(vault: &Vault, id: &str, password: Option<&str>) {
+        vault
+            .save_session(
+                session(id, Protocol::Ssh),
+                password.map(|password| SessionSecret::Password(password.to_owned())),
+            )
+            .expect("save the ssh session");
+    }
+
+    /// A cluster session whose kubeconfig points at `server`, reached through `via` when set.
+    fn save_cluster(vault: &Vault, server: &str, via: Option<&str>) {
+        let mut cluster = session("cluster", Protocol::Kubernetes);
+        cluster.kubernetes = KubernetesSettings {
+            source: KubeconfigSource::Imported,
+            context: None,
+            namespace: String::new(),
+            via_ssh: via.map(str::to_owned),
+        };
+        vault
+            .save_session(cluster, Some(SessionSecret::Kubeconfig(cluster_document(server))))
+            .expect("save the cluster session");
+    }
+
+    /// A one-context kubeconfig. The certificate story is deliberately the insecure one: what
+    /// these tests ask is where a connection goes, not what it trusts, and a real authority would
+    /// be a fixture with no bearing on the answer.
+    fn cluster_document(server: &str) -> String {
+        format!(
+            r#"apiVersion: v1
+kind: Config
+current-context: test
+clusters:
+  - name: test
+    cluster:
+      server: {server}
+      insecure-skip-tls-verify: true
+contexts:
+  - name: test
+    context:
+      cluster: test
+      user: test
+users:
+  - name: test
+    user:
+      token: not-a-real-token
+"#
+        )
     }
 
     #[tokio::test]
@@ -259,5 +405,94 @@ mod tests {
 
         // A read gets to the connection and fails there: the gate did not stand in its way.
         assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sNotConnected);
+    }
+
+    #[tokio::test]
+    async fn a_cluster_address_that_is_not_https_is_refused_before_the_tunnel_is_opened() {
+        let (_directory, vault) = vault();
+        save_ssh(&vault, "gateway", Some("hunter2"));
+        save_cluster(&vault, "http://127.0.0.1:1", Some("gateway"));
+        let (core, _events) = Core::new(vault);
+
+        // The SSH session is one that would fail with the network's own error if it were opened;
+        // the address refusal proves the kubeconfig was read and judged before any socket was.
+        let error = core
+            .k8s_connect("cluster")
+            .await
+            .expect_err("a plain-HTTP server cannot be carried through the tunnel");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::AppUnsupported);
+        assert_eq!(
+            error.message_params().get("what").map(String::as_str),
+            Some("a cluster reached through an SSH session has to be an https address")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tunnel_session_that_is_not_saved_is_named_in_the_failure() {
+        let (_directory, vault) = vault();
+        save_cluster(&vault, "https://127.0.0.1:1", Some("gateway-that-never-existed"));
+        let (core, _events) = Core::new(vault);
+
+        let error = core.k8s_connect("cluster").await.expect_err("the tunnel is gone");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionNotFound);
+        assert_eq!(
+            error.diagnostics().get("sessionId").map(String::as_str),
+            Some("gateway-that-never-existed")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tunnel_session_that_is_not_an_ssh_session_is_refused_by_name() {
+        let (_directory, vault) = vault();
+        // A second cluster: it exists, so the failure is about what it is, not about it being gone.
+        vault
+            .save_session(session("another-cluster", Protocol::Kubernetes), None)
+            .expect("save the other cluster");
+        save_cluster(&vault, "https://127.0.0.1:1", Some("another-cluster"));
+        let (core, _events) = Core::new(vault);
+
+        let error = core
+            .k8s_connect("cluster")
+            .await
+            .expect_err("a cluster is not a carrier");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::AppUnsupported);
+        assert_eq!(
+            error.message_params().get("what").map(String::as_str),
+            Some("the session a cluster is reached through is not an SSH session")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tunnel_session_without_a_stored_password_fails_before_any_network_use() {
+        let (_directory, vault) = vault();
+        save_ssh(&vault, "gateway", None);
+        save_cluster(&vault, "https://127.0.0.1:1", Some("gateway"));
+        let (core, _events) = Core::new(vault);
+
+        // The credential is resolved before the socket is dialled, which is what turns "the tunnel
+        // was rejected as unsupported" into "the tunnel ran and asked for a password".
+        let error = core.k8s_connect("cluster").await.expect_err("no password stored");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SshAuthFailed);
+        assert_eq!(error.detail(), Some("no password is stored for this session"));
+    }
+
+    #[tokio::test]
+    async fn an_empty_tunnel_setting_connects_directly() {
+        let (_directory, vault) = vault();
+        save_cluster(&vault, "https://127.0.0.1:1", Some(""));
+        let (core, _events) = Core::new(vault);
+
+        // A cleared picker is not a tunnel: the connection is built the way it always was — no
+        // session resolved, no listener, and the address is only dialled by the first request.
+        let connection = core.k8s_connect("cluster").await.expect("a direct connection");
+        let error = core
+            .k8s_request(&connection, request(K8sMethod::Get, "/api/v1/pods", false))
+            .await
+            .expect_err("nothing listens on port 1");
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sUnavailable);
     }
 }

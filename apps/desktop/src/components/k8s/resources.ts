@@ -9,6 +9,8 @@
  *
  * The paths are built from the descriptor too. Nothing anywhere else pastes a name into a URL.
  */
+import { computed, shallowRef } from "vue";
+
 import {
   accessModesOf,
   age,
@@ -48,8 +50,13 @@ import {
 } from "@/components/k8s/objects";
 import { formatCpu, formatMemory, parseCpu, parseMemory, percent } from "@/components/k8s/quantity";
 
-/** The groups the tree draws, in the order it draws them. */
-export type ResourceGroup = "workloads" | "network" | "config" | "storage" | "cluster" | "rbac";
+/**
+ * The groups the tree draws, in the order it draws them.
+ *
+ * `custom` is the group the cluster fills: every kind a CRD defines lands there, and the entries are
+ * remembered by the store rather than written in this file.
+ */
+export type ResourceGroup = "workloads" | "network" | "config" | "storage" | "cluster" | "rbac" | "custom";
 
 /**
  * What the tree calls the overview.
@@ -66,6 +73,7 @@ export const RESOURCE_GROUPS: readonly ResourceGroup[] = [
   "storage",
   "cluster",
   "rbac",
+  "custom",
 ];
 
 /** The icons the tree knows how to draw. A name rather than a component, so this file stays data. */
@@ -123,6 +131,21 @@ export type ResourceAction = "logs" | "terminal" | "viewPods" | "restart" | "sca
 export interface ResourceDescriptor {
   readonly key: string;
   readonly kind: string;
+  /**
+   * The collection segment of the API path, when it is not the key.
+   *
+   * A kind discovered from a CRD is keyed by something that survives a cluster with two groups both
+   * spelling `widgets`, but its URL still ends in the plain plural the API server registered.
+   */
+  readonly plural?: string;
+  /**
+   * The kind's own name, for a descriptor the cluster defined rather than this file.
+   *
+   * A CRD's kind is the cluster's word for it; there is no message key for a name this build did not
+   * know when it was made, so the tree and the drawer show this verbatim while everything around it
+   * stays translated.
+   */
+  readonly kindLabel?: string;
   /** `v1` or `group/version`, exactly as the object's `apiVersion` spells it. */
   readonly apiVersion: string;
   readonly group: ResourceGroup;
@@ -153,11 +176,16 @@ function segment(value: string): string {
   return encodeURIComponent(value);
 }
 
+/** The plural a collection URL ends in: the key for the kinds written here, the CRD's for the rest. */
+function pluralOf(desc: ResourceDescriptor): string {
+  return desc.plural ?? desc.key;
+}
+
 /** The collection itself, with no query. This is where a create posts and where a watch starts. */
 export function collectionPath(desc: ResourceDescriptor, namespace: string): string {
-  const base = `${basePathOf(desc)}/${desc.key}`;
+  const base = `${basePathOf(desc)}/${pluralOf(desc)}`;
   return desc.namespaced && namespace !== ""
-    ? `${basePathOf(desc)}/namespaces/${segment(namespace)}/${desc.key}`
+    ? `${basePathOf(desc)}/namespaces/${segment(namespace)}/${pluralOf(desc)}`
     : base;
 }
 
@@ -965,6 +993,45 @@ const ROLE_BINDING = {
   ],
 } satisfies ResourceDescriptor;
 
+/**
+ * The definitions themselves.
+ *
+ * Worth drawing for two reasons: it is how somebody checks what a cluster can hold before creating
+ * something, and every one of them is what the tree's Custom resources group is built from.
+ */
+const CUSTOM_RESOURCE_DEFINITION = {
+  key: "customresourcedefinitions",
+  kind: "CustomResourceDefinition",
+  apiVersion: "apiextensions.k8s.io/v1",
+  group: "cluster" as const,
+  namespaced: false,
+  labelKey: "k8s.resources.customresourcedefinitions",
+  icon: "package" as const,
+  columns: [
+    nameColumn(),
+    column("group", (obj) => textAt(obj, "spec", "group"), { searchable: true }),
+    column("kind", (obj) => textAt(obj, "spec", "names", "kind"), { searchable: true }),
+    column("versions", (obj) => crdVersionNames(obj).join(", "), { searchable: true }),
+    column("scope", (obj) => textAt(obj, "spec", "scope"), { searchable: true }),
+    ageColumn(),
+  ],
+  actions: ["delete"] as const,
+  detail: [
+    metadataSection(),
+    section("crd", [
+      field("group", (obj) => textAt(obj, "spec", "group") || "—"),
+      field("kind", (obj) => textAt(obj, "spec", "names", "kind") || "—"),
+      field("plural", (obj) => textAt(obj, "spec", "names", "plural") || "—"),
+      field("scope", (obj) => textAt(obj, "spec", "scope") || "—"),
+      field("versions", (obj) => crdVersionNames(obj).join("\n") || "—"),
+      field("storageVersion", (obj) => crdStorageVersion(obj) || "—"),
+    ]),
+  ],
+} satisfies ResourceDescriptor;
+
+/** The key the store compares a cache against to know it is looking at definitions. */
+export const CRD_KEY = CUSTOM_RESOURCE_DEFINITION.key;
+
 /** Every kind this build draws a list for, in the order the tree groups them. */
 export const RESOURCES: readonly ResourceDescriptor[] = [
   POD,
@@ -990,25 +1057,252 @@ export const RESOURCES: readonly ResourceDescriptor[] = [
   EVENT,
   ROLE,
   ROLE_BINDING,
+  CUSTOM_RESOURCE_DEFINITION,
 ];
 
 const BY_KEY: Readonly<Record<string, ResourceDescriptor>> = Object.fromEntries(
   RESOURCES.map((desc) => [desc.key, desc]),
 );
 
+// ── kinds the cluster defines ───────────────────────────────────
+
+/** One printer column, as a CRD declares it: the heading a cluster prints and where it reads it. */
+export interface CrdPrinterColumn {
+  readonly name: string;
+  readonly jsonPath: string;
+}
+
+/** What a CustomResourceDefinition says about the kind it introduces. */
+export interface CrdShape {
+  readonly group: string;
+  /** The served version to list: the storage one when there is one, else the first served. */
+  readonly version: string;
+  readonly plural: string;
+  readonly kind: string;
+  readonly namespaced: boolean;
+  readonly printerColumns: readonly CrdPrinterColumn[];
+}
+
+/** The served versions of a definition, in the order it declares them. */
+function servedVersionsOf(crd: K8sObject): readonly K8sObject[] {
+  return arrayAt(crd, "spec", "versions")
+    .map((entry) => asObject(entry))
+    .filter((entry): entry is K8sObject => entry !== null && boolAt(entry, "served"));
+}
+
+function crdVersionNames(crd: K8sObject): readonly string[] {
+  return servedVersionsOf(crd)
+    .map((version) => textAt(version, "name"))
+    .filter((name) => name !== "");
+}
+
+function crdStorageVersion(crd: K8sObject): string {
+  const storage = servedVersionsOf(crd).find((version) => boolAt(version, "storage"));
+  return storage ? textAt(storage, "name") : "";
+}
+
+/**
+ * The kind a definition introduces, or `null` when the object is not one this build can read.
+ *
+ * The version chosen is the one the cluster stores, because that is the one whose schema and printer
+ * columns are authoritative; a definition that marks no version as stored falls back to its first
+ * served one, since only a served version can be listed at all.
+ */
+export function crdShapeOf(crd: K8sObject): CrdShape | null {
+  const group = textAt(crd, "spec", "group");
+  const plural = textAt(crd, "spec", "names", "plural");
+  const kind = textAt(crd, "spec", "names", "kind");
+  if (group === "" || plural === "" || kind === "") {
+    return null;
+  }
+  const versions = servedVersionsOf(crd);
+  const chosen = versions.find((version) => boolAt(version, "storage")) ?? versions[0];
+  const version = chosen ? textAt(chosen, "name") : "";
+  if (version === "") {
+    return null;
+  }
+  const printerColumns = arrayAt(chosen, "additionalPrinterColumns")
+    .map((entry) => asObject(entry))
+    .filter((entry): entry is K8sObject => entry !== null)
+    .map((entry) => ({
+      name: textAt(entry, "name"),
+      // `JSONPath` is the spelling older definitions used; the API keeps answering with either.
+      jsonPath: textAt(entry, "jsonPath") || textAt(entry, "JSONPath"),
+    }))
+    .filter((column) => column.name !== "" && column.jsonPath !== "");
+  return {
+    group,
+    version,
+    plural,
+    kind,
+    namespaced: textAt(crd, "spec", "scope") !== "Cluster",
+    printerColumns,
+  };
+}
+
+/**
+ * A value read out of a CRD's `jsonPath`, for the columns a cluster prints.
+ *
+ * A subset on purpose: a leading dot, dotted keys, and an optional `[index]`. Nothing here evaluates
+ * expressions — a printer column from a cluster is not code this build runs.
+ */
+export function jsonPathValue(obj: K8sObject, path: string): string {
+  if (path === "") {
+    return "";
+  }
+  const clean = path.startsWith(".") ? path.slice(1) : path;
+  let current: unknown = obj;
+  for (const part of clean.split(".")) {
+    if (current === null || current === undefined) {
+      return "";
+    }
+    const match = /^([^[\]]+)(?:\[(\d+)\])?$/.exec(part);
+    if (!match) {
+      return "";
+    }
+    const key = match[1] ?? "";
+    if (typeof current !== "object") {
+      return "";
+    }
+    current = (current as K8sObject)[key];
+    if (match[2] !== undefined) {
+      if (!Array.isArray(current)) {
+        return "";
+      }
+      current = current[Number(match[2])];
+    }
+  }
+  if (current === null || current === undefined) {
+    return "";
+  }
+  return typeof current === "object" ? JSON.stringify(current) : String(current);
+}
+
+/** A key that names the kind rather than its contents: two groups may both spell `widgets`. */
+export function crdKeyOf(shape: CrdShape): string {
+  return `crd:${shape.plural}.${shape.group}`;
+}
+
+/** A heading a cluster chose. Its own word, which is why it is not a message key of ours. */
+function printerColumn(index: number, printer: CrdPrinterColumn): ColumnDef {
+  return {
+    key: `printer${index}`,
+    headerKey: printer.name,
+    text: (obj) => jsonPathValue(obj, printer.jsonPath),
+    searchable: true,
+  };
+}
+
+/**
+ * The descriptor for a CRD's instances, built from the definition itself.
+ *
+ * This is the whole drilldown: a custom kind is not a component and not a sixth list view, it is the
+ * same table with the columns the cluster says it prints. A definition this build cannot read
+ * answers `null` rather than half a descriptor.
+ */
+export function customResourceDescriptor(crd: K8sObject): ResourceDescriptor | null {
+  const shape = crdShapeOf(crd);
+  if (!shape) {
+    return null;
+  }
+  const columns = [nameColumn()];
+  if (shape.namespaced) {
+    columns.push(namespaceColumn());
+  }
+  shape.printerColumns.forEach((printer, index) => columns.push(printerColumn(index, printer)));
+  columns.push(ageColumn());
+  const printerFields: DetailFieldDef[] = shape.printerColumns.map((printer, index) => ({
+    key: `printer${index}`,
+    labelKey: printer.name,
+    value: (obj) => jsonPathValue(obj, printer.jsonPath) || "—",
+  }));
+  return {
+    key: crdKeyOf(shape),
+    plural: shape.plural,
+    kind: shape.kind,
+    kindLabel: shape.kind,
+    apiVersion: `${shape.group}/${shape.version}`,
+    group: "custom",
+    namespaced: shape.namespaced,
+    labelKey: "k8s.resources.custom",
+    icon: "package",
+    columns,
+    actions: ["delete"],
+    detail: [
+      metadataSection(),
+      section("custom", [field("apiVersion", (obj) => textAt(obj, "apiVersion") || "—"), ...printerFields]),
+    ],
+  };
+}
+
+/**
+ * The custom kinds this window has discovered, one entry per connection.
+ *
+ * A CRD is data from a cluster, so its descriptor cannot be a constant above; it is built when the
+ * definition is read and remembered here, where the tree and `descriptorOf` both find it. The tree
+ * has no connection prop (the pane hands it a selection and nothing else), so what it draws is the
+ * union of every live connection's definitions. Two clusters that define the same kind share one
+ * entry, which is harmless: the entry names the API path both of them serve.
+ */
+const discovered = shallowRef<ReadonlyMap<string, readonly ResourceDescriptor[]>>(new Map());
+
+/** Replaces the kinds one connection contributes. Empty after a reconnect that saw nothing. */
+export function setCustomResourceDescriptors(connId: string, descriptors: readonly ResourceDescriptor[]): void {
+  const next = new Map(discovered.value);
+  next.set(connId, descriptors);
+  discovered.value = next;
+}
+
+/** Lets go of the kinds a closed connection contributed; its API paths are no longer reachable. */
+export function clearCustomResourceDescriptors(connId: string): void {
+  if (!discovered.value.has(connId)) {
+    return;
+  }
+  const next = new Map(discovered.value);
+  next.delete(connId);
+  discovered.value = next;
+}
+
+const discoveredByKey = computed<ReadonlyMap<string, ResourceDescriptor>>(() => {
+  const map = new Map<string, ResourceDescriptor>();
+  for (const list of discovered.value.values()) {
+    for (const desc of list) {
+      if (!map.has(desc.key)) {
+        map.set(desc.key, desc);
+      }
+    }
+  }
+  return map;
+});
+
+/** Every custom kind on offer, in the order the tree draws them. */
+export function customResourceDescriptors(connId?: string): readonly ResourceDescriptor[] {
+  const descriptors = connId === undefined ? [...discoveredByKey.value.values()] : (discovered.value.get(connId) ?? []);
+  return [...descriptors].sort((left, right) =>
+    (left.kindLabel ?? left.key).localeCompare(right.kindLabel ?? right.key),
+  );
+}
+
 /** The descriptor for a resource key, or `null` for a key this build does not draw. */
-export function descriptorOf(key: string): ResourceDescriptor | null {
-  return BY_KEY[key] ?? null;
+export function descriptorOf(key: string, connId?: string): ResourceDescriptor | null {
+  if (BY_KEY[key] !== undefined) {
+    return BY_KEY[key];
+  }
+  if (connId !== undefined) {
+    return discovered.value.get(connId)?.find((descriptor) => descriptor.key === key) ?? null;
+  }
+  return discoveredByKey.value.get(key) ?? null;
 }
 
 /** The tree's groups, each with the kinds it holds, in table order. */
-export function resourceGroups(): readonly {
+export function resourceGroups(connId?: string): readonly {
   readonly group: ResourceGroup;
   readonly resources: readonly ResourceDescriptor[];
 }[] {
+  const custom = customResourceDescriptors(connId);
   return RESOURCE_GROUPS.map((group) => ({
     group,
-    resources: RESOURCES.filter((desc) => desc.group === group),
+    resources: group === "custom" ? custom : RESOURCES.filter((desc) => desc.group === group),
   })).filter((entry) => entry.resources.length > 0);
 }
 

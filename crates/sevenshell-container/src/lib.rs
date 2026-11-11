@@ -10,11 +10,13 @@
 //! machine or an SSH exec channel, and the manager above it asks the same questions of both.
 
 mod commands;
+mod files;
 mod local;
 mod manager;
 mod parse;
 mod remote;
 mod runner;
 
+pub use files::{ContainerFiles, MAX_TEXT_BYTES, MAX_TRANSFER_BYTES};
 pub use manager::{ContainerManager, Provider};
 pub use runner::{LineStream, PtySession, Runner};

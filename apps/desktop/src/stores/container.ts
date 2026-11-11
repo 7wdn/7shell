@@ -226,6 +226,33 @@ export function supportsCommit(runtime: ContainerRuntime): boolean {
   return runtime === "docker";
 }
 
+/**
+ * Whether a runtime can load an image archive from a file.
+ *
+ * Docker and Podman both read a save archive on standard input, which is what the backend hands
+ * them. nerdctl and the WSL container service are left out because neither was verified on a
+ * machine this build can reach — a button that always refuses is worse than no button.
+ */
+export function supportsImageLoad(runtime: ContainerRuntime): boolean {
+  return runtime === "docker" || runtime === "podman";
+}
+
+/** The CLI's wording in front of a reference it reports after a load. */
+const LOADED_PREFIX = /^Loaded image(?: ID)?:\s*/i;
+
+/**
+ * The image references a `load` reported, in the order it printed them.
+ *
+ * `docker load` answers with one `Loaded image: repo:tag` line per image and `Loaded image ID:`
+ * when the archive carried no tag; the person wants the reference, not the sentence around it.
+ */
+export function loadedImages(output: string): string[] {
+  return output
+    .split("\n")
+    .map((line) => line.trim().replace(LOADED_PREFIX, ""))
+    .filter((line) => line !== "");
+}
+
 /** Whether a runtime can add a second tag to an image. */
 export function supportsTag(runtime: ContainerRuntime): boolean {
   return runtime !== "wslc";
@@ -958,6 +985,34 @@ export const useContainerStore = defineStore("container", () => {
     return image;
   }
 
+  /**
+   * Loads an archive the host asked for in a native dialog, then reads the image list again.
+   *
+   * The answer is the runtime's own report, or `null` when the dialog was dismissed — which is not
+   * a failure and must not touch the banner. A refusal is kept and rethrown, the same shape as the
+   * other image actions, so the view that asked can say so where the person is looking.
+   */
+  async function loadImage(tabId: string, title: string): Promise<string | null> {
+    const session = sessions.value[tabId];
+    if (!session?.connectionId) {
+      return null;
+    }
+    const connectionId = session.connectionId;
+    let loaded: string | null;
+    try {
+      loaded = await backend.containers.imageLoad(connectionId, title);
+    } catch (error) {
+      const failure = asShellError(error, "container_image_load");
+      session.error = failure;
+      throw failure;
+    }
+    if (loaded === null) {
+      return null;
+    }
+    await loadImages(tabId);
+    return loaded;
+  }
+
   /** Folds one output line into a task's log and its progress. */
   function sinkFor(task: ImageTask): StreamSink["onLine"] {
     return (line: string) => {
@@ -1123,6 +1178,7 @@ export const useContainerStore = defineStore("container", () => {
     pruneImages,
     tagImage,
     commit,
+    loadImage,
     pullImage,
     pushImage,
     stopTask,

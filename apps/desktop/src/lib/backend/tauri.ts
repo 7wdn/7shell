@@ -702,6 +702,17 @@ export function filesOpen(sessionId: string): Promise<SftpOutcome> {
   return invoke<SftpOutcome>("files_open", { sessionId });
 }
 
+/**
+ * Opens a browser on a container's own file system, through the engine connection already up.
+ *
+ * `path` is where the browser starts. The answer is an ordinary file handle from then on: listing,
+ * creating, renaming, deleting, reading, writing and moving bytes all take it exactly as they take
+ * an SFTP browser's.
+ */
+export function filesOpenContainer(connectionId: string, containerId: string, path: string): Promise<SftpOutcome> {
+  return invoke<SftpOutcome>("files_open_container", { connectionId, containerId, path });
+}
+
 export function filesList(handle: string, path: string): Promise<SftpListing> {
   return invoke<SftpListing>("files_list", { handle, path });
 }
@@ -1088,8 +1099,14 @@ export function containerImageTag(connectionId: string, image: string, tag: stri
   return invoke<void>("container_image_tag", { connectionId, image, tag });
 }
 
-export function containerImageLoad(connectionId: string, grant: string): Promise<string> {
-  return invoke<string>("container_image_load", { connectionId, grant });
+/**
+ * Opens a native dialog in Rust and loads the chosen archive. `null` is a dismissed dialog.
+ *
+ * No path crosses either way: the file is chosen and read in the host process, and what comes back
+ * is the runtime's own one-line report.
+ */
+export function containerImageLoad(connectionId: string, title: string): Promise<string | null> {
+  return invoke<string | null>("container_image_load", { connectionId, title });
 }
 
 export function containerImageCommit(

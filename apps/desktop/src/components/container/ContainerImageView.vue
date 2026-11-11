@@ -9,16 +9,27 @@
  * Pulls and pushes are rows in a panel below the table rather than modal progress dialogs: several
  * can run at once, and a dialog that blocks the table would make starting the second one impossible.
  *
- * Loading an archive from a file is deliberately absent: the wire takes a grant produced by a native
- * dialog, and this build has no such command to ask for one. An entry that could not produce a token
- * would be a button that always failed.
+ * Loading an archive is one button and no dialog of its own: the file is chosen by a native dialog
+ * that runs in Rust, so the only thing to decide here is when to ask. The runtime's answer is a
+ * toast, because a load leaves no trace in this page except the row that appears in the table.
  */
-import { ArrowDownToLine, ArrowUpFromLine, Ellipsis, LogIn, Play, RotateCw, Tag, Trash2 } from "@lucide/vue";
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Ellipsis,
+  LogIn,
+  PackagePlus,
+  Play,
+  RotateCw,
+  Tag,
+  Trash2,
+} from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import { asShellError } from "@/lib/backend/errors";
 import type { MenuEntry } from "@/lib/menu/types";
@@ -28,8 +39,10 @@ import {
   type ContainerSession,
   filterImages,
   imageRef,
+  loadedImages,
   relatedContainers,
   shortId,
+  supportsImageLoad,
   supportsTag,
   useContainerStore,
 } from "@/stores/container";
@@ -49,6 +62,7 @@ const emit = defineEmits<{ "view-related": [reference: string] }>();
 const { t } = useI18n();
 const containers = useContainerStore();
 const { openMenu } = useContextMenu();
+const { toast } = useToast();
 
 const text = ref("");
 const rows = computed(() => filterImages(props.session.images, text.value));
@@ -87,6 +101,39 @@ function startTransfer(request: ContainerImageTransfer): void {
       : containers.pushImage(props.tab.id, request);
   // The task panel owns the outcome from here; a refusal to start is drawn on its row.
   void starting;
+}
+
+// -- loading an archive --------------------------------------------------------
+
+const loadingArchive = ref(false);
+
+/**
+ * Asks the host for an archive and waits for the runtime to take it.
+ *
+ * A dismissal changes nothing, so it says nothing, and a refusal is not repeated here: the store
+ * kept the envelope and the pane's banner is where it is shown. What this owns is the button, held
+ * down for as long as a large archive is being read.
+ */
+async function loadArchive(): Promise<void> {
+  if (loadingArchive.value) {
+    return;
+  }
+  loadingArchive.value = true;
+  try {
+    const loaded = await containers.loadImage(props.tab.id, t("container.image.loadTitle"));
+    if (loaded === null) {
+      return;
+    }
+    const names = loadedImages(loaded);
+    toast(
+      names.length > 0 ? t("container.image.loaded", { name: names.join(", ") }) : t("container.image.loadedUnnamed"),
+      "result",
+    );
+  } catch {
+    // The store kept the envelope; the pane's banner is where it is shown.
+  } finally {
+    loadingArchive.value = false;
+  }
 }
 
 function openDetail(image: ContainerImage): void {
@@ -224,6 +271,17 @@ function openRowMenu(event: MouseEvent, image: ContainerImage): void {
       />
       <div class="min-w-0 flex-1"></div>
 
+      <button
+        v-if="supportsImageLoad(props.session.runtime)"
+        type="button"
+        class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="loadingArchive"
+        :aria-label="t('container.image.loadTitle')"
+        @click="loadArchive()"
+      >
+        <PackagePlus :size="11" />
+        {{ loadingArchive ? t("container.image.loading") : t("container.image.load") }}
+      </button>
       <button
         type="button"
         class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"

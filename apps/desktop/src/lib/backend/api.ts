@@ -224,6 +224,14 @@ export const backend = {
   /** Remote files, and the transfers that move them. */
   files: {
     open: (sessionId: string): Promise<SftpOutcome> => forward("files_open", () => desktop.filesOpen(sessionId)),
+    /**
+     * Opens a browser on a container's file system.
+     *
+     * A container is not reachable over SFTP, so the engine opens the browser instead — and from
+     * that answer on it is an ordinary handle, which every other call in this group takes.
+     */
+    openContainer: (connectionId: string, containerId: string, path: string): Promise<SftpOutcome> =>
+      forward("files_open_container", () => desktop.filesOpenContainer(connectionId, containerId, path)),
     list: (handle: string, path: string): Promise<SftpListing> =>
       forward("files_list", () => desktop.filesList(handle, path)),
     createFolder: (handle: string, path: string): Promise<void> =>
@@ -485,8 +493,9 @@ export const backend = {
       forward("container_image_prune", () => desktop.containerImagePrune(connectionId, acknowledged)),
     imageTag: (connectionId: string, image: string, tag: string): Promise<void> =>
       forward("container_image_tag", () => desktop.containerImageTag(connectionId, image, tag)),
-    imageLoad: (connectionId: string, grant: string): Promise<string> =>
-      forward("container_image_load", () => desktop.containerImageLoad(connectionId, grant)),
+    /** Opens a native dialog in Rust; the path never crosses. `null` means the dialog was dismissed. */
+    imageLoad: (connectionId: string, title: string): Promise<string | null> =>
+      forward("container_image_load", () => desktop.containerImageLoad(connectionId, title)),
     imageCommit: (connectionId: string, request: ContainerCommitRequest, acknowledged: boolean): Promise<string> =>
       forward("container_image_commit", () => desktop.containerImageCommit(connectionId, request, acknowledged)),
     registryLogin: (connectionId: string, request: ContainerRegistryLogin): Promise<void> =>

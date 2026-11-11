@@ -12,6 +12,7 @@ use sevenshell_types::{
     ContainerSummary, ImageLayer,
 };
 use tauri::{AppHandle, Emitter as _, State};
+use tauri_plugin_dialog::DialogExt;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::state::ShellState;
@@ -229,17 +230,41 @@ pub async fn container_image_tag(
     state.core().container_image_tag(&connection_id, &image, &tag).await
 }
 
-/// Loading an archive needs a file chosen in a native dialog, which is not wired yet. The command
-/// stays so the interface has a name to call, and says exactly what is missing.
+/// The archive shapes a runtime's `load` reads. The CLI detects the compression itself, so the
+/// dialog offers every container rather than asking which one it is.
+const ARCHIVE_EXTENSIONS: &[&str] = &["tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "zst", "tzst"];
+
+/// Asks for an image archive in a native dialog and loads it into the connected engine.
+///
+/// The dialog runs here, and the chosen file is read here: what the interface receives is the
+/// runtime's own one-line answer ("Loaded image: busybox:1.36"), never a path and never the archive.
+/// `Ok(None)` means the dialog was dismissed, which is a person changing their mind rather than a
+/// failure.
 #[tauri::command]
 pub async fn container_image_load(
-    _state: State<'_, ShellState>,
-    _connection_id: String,
-    _grant: String,
-) -> Result<String, ShellError> {
-    Err(ShellError::app_unsupported(
-        "choosing an image archive from this machine",
-    ))
+    app: AppHandle,
+    state: State<'_, ShellState>,
+    connection_id: String,
+    title: String,
+) -> Result<Option<String>, ShellError> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title(title)
+            .add_filter("container image archive", ARCHIVE_EXTENSIONS)
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|error| ShellError::app_internal(format!("the file dialog could not be opened: {error}")))?;
+
+    let Some(chosen) = picked else {
+        return Ok(None);
+    };
+    let path = chosen.into_path().map_err(|error| {
+        ShellError::container_command_failed("the image archive", format!("that file cannot be read: {error}"))
+    })?;
+
+    state.core().container_image_load(&connection_id, &path).await.map(Some)
 }
 
 #[tauri::command]

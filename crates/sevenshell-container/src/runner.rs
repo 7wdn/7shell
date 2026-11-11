@@ -103,6 +103,11 @@ impl PtySession {
 }
 
 /// Which side of the connection a container command runs on.
+///
+/// Cloned rather than shared: a second user of the same connection — the file browser an exec tab
+/// opened — has to run its commands there too, and both variants are cheap to copy (a unit, and an
+/// `Arc` of the session that is already open).
+#[derive(Clone)]
 pub enum Runner {
     /// A process on this machine. The runtime's binary is found on `PATH`.
     Local,

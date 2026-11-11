@@ -18,6 +18,7 @@ use tokio::time::Instant;
 use crate::archive;
 use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
+use sevenshell_container::ContainerFiles;
 use sevenshell_error::ShellError;
 use sevenshell_ftp::{FtpConnectionOptions, FtpEntry, FtpSession};
 use sevenshell_sftp::{SftpSession, TransferProgress};
@@ -54,13 +55,18 @@ enum FileBackend {
     /// The shell of an SSH server with no SFTP subsystem: listing and file operations go through
     /// commands, and file bodies through SCP.
     Scp { connection: Arc<SshSession> },
+    /// Files inside a running container, reached through the runtime's own `exec`.
+    ///
+    /// There is no channel to keep open and no path on this machine: every operation is one `sh -c`
+    /// script run inside the container, so what is held here is the handle that builds the scripts.
+    Container(Arc<ContainerFiles>),
 }
 
 impl FileSession {
     fn sftp(&self) -> Result<&Arc<SftpSession>, ShellError> {
         match &self.backend {
             FileBackend::Sftp { sftp, .. } => Ok(sftp),
-            FileBackend::WebDav(_) | FileBackend::Ftp(_) | FileBackend::Scp { .. } => {
+            FileBackend::WebDav(_) | FileBackend::Ftp(_) | FileBackend::Scp { .. } | FileBackend::Container(_) => {
                 Err(ShellError::app_unsupported("this file browser is not an SFTP channel"))
             }
         }
@@ -72,9 +78,9 @@ impl FileSession {
         match &self.backend {
             FileBackend::Sftp { connection, .. } => Ok(Arc::clone(connection)),
             FileBackend::Scp { connection } => Ok(Arc::clone(connection)),
-            FileBackend::WebDav(_) | FileBackend::Ftp(_) => Err(ShellError::app_unsupported(
-                "this file browser has no shell to run a command in",
-            )),
+            FileBackend::WebDav(_) | FileBackend::Ftp(_) | FileBackend::Container(_) => Err(
+                ShellError::app_unsupported("this file browser has no shell to run a command in"),
+            ),
         }
     }
 
@@ -95,6 +101,7 @@ impl FileSession {
                 }
             }
             FileBackend::Scp { connection } => scp_remove(connection, path).await,
+            FileBackend::Container(container) => container.remove(path, true).await,
         }
     }
 
@@ -110,6 +117,7 @@ impl FileSession {
                 let listing = connection.list_via_shell(path, SHELL_TIMEOUT).await?;
                 Ok(scp_listing(listing))
             }
+            FileBackend::Container(container) => container.list(path).await,
         }
     }
 
@@ -130,6 +138,9 @@ impl FileSession {
                 }
                 scp_exec_ok(connection, &format!("mkdir -- {}", archive::shell_quote(path)), path).await
             }
+            // `mkdir -p` inside the container, and idempotent by design: the backend refuses a name
+            // that is a file, and a folder that is already there is the folder the person asked for.
+            FileBackend::Container(container) => container.create_dir(path).await,
         }
     }
 
@@ -151,6 +162,9 @@ impl FileSession {
                 }
                 scp_exec_ok(connection, &format!("set -C; : > {}", archive::shell_quote(path)), path).await
             }
+            // `touch` and never a redirection: a name that is already there is left with its content
+            // rather than emptied, which is the one thing "create" must not do by surprise.
+            FileBackend::Container(container) => container.create_file(path).await,
         }
     }
 
@@ -166,6 +180,15 @@ impl FileSession {
                     to,
                 )
                 .await
+            }
+            FileBackend::Container(container) => {
+                // `mv` replaces whatever is at the target, and a rename onto an existing name is a
+                // whole file gone. The question is asked here because the backend cannot ask it
+                // without a second command, and a name that is taken is a refusal, not a rename.
+                if container_exists(container, to).await? {
+                    return Err(ShellError::sftp_exists(to));
+                }
+                container.rename(from, to).await
             }
         }
     }
@@ -183,6 +206,7 @@ impl FileSession {
                 )
                 .await
             }
+            FileBackend::Container(container) => container.set_mode(path, mode).await,
         }
     }
 
@@ -206,6 +230,7 @@ impl FileSession {
                 }
                 _ => scp_exec_ok(connection, &format!("rm -f -- {}", archive::shell_quote(path)), path).await,
             },
+            FileBackend::Container(container) => container.remove(path, kind == EntryKind::Directory).await,
         }
     }
 
@@ -221,6 +246,7 @@ impl FileSession {
                     .map_err(|_| ShellError::ftp_operation_failed("the file is not UTF-8 text"))
             }
             FileBackend::Scp { connection } => scp_read_text(connection, path).await,
+            FileBackend::Container(container) => container.read_text(path).await,
         }
     }
 
@@ -233,6 +259,7 @@ impl FileSession {
                 ftp.lock().await.upload(path, &mut input).await.map(|_| ())
             }
             FileBackend::Scp { connection } => scp_write_text(connection, path, text).await,
+            FileBackend::Container(container) => container.write_text(path, text).await,
         }
     }
 
@@ -242,6 +269,7 @@ impl FileSession {
             FileBackend::WebDav(dav) => dav.exists(path).await,
             FileBackend::Ftp(ftp) => ftp.lock().await.exists(path).await,
             FileBackend::Scp { connection } => scp_exists(connection, path).await,
+            FileBackend::Container(container) => container_exists(container, path).await,
         }
     }
 
@@ -251,6 +279,7 @@ impl FileSession {
             FileBackend::WebDav(dav) => Ok(dav.stat(path).await?.map(|entry| entry.size).unwrap_or(0)),
             FileBackend::Ftp(ftp) => Ok(ftp.lock().await.stat(path).await?.map(|entry| entry.size).unwrap_or(0)),
             FileBackend::Scp { connection } => scp_size(connection, path).await,
+            FileBackend::Container(container) => container_size_of(container, path).await,
         }
     }
 }
@@ -473,6 +502,49 @@ impl Core {
         })
     }
 
+    /// Opens a browser for the files inside a running container.
+    ///
+    /// One `exec` per operation, on the runner the container connection was opened with: a second
+    /// `Arc` of the same SSH session is the same connection, which is why the provider hands its
+    /// runner out rather than the caller finding one. The first listing is part of the answer and is
+    /// what resolves the path — a symlinked directory is shown where it leads, not where it was asked
+    /// about — and it is also what refuses a container that is not running, before a handle exists.
+    pub async fn open_container_files(
+        &self,
+        connection_id: &str,
+        container_id: &str,
+        path: &str,
+    ) -> Result<SftpOutcome, ShellError> {
+        let provider = self.containers.provider(connection_id)?;
+        let runner = provider.runner()?;
+        let files = Arc::new(ContainerFiles::for_provider(&provider, container_id, runner)?);
+
+        // A container has no home directory the way a login shell does; its filesystem root is the
+        // one place every container has, so an empty starting path means that.
+        let start = if path.trim().is_empty() { "/" } else { path };
+        let listing = files.list(start).await?;
+
+        let handle = format!("f{}", self.next_file.fetch_add(1, Ordering::Relaxed));
+        self.files.lock().await.insert(
+            handle.clone(),
+            Arc::new(FileSession {
+                backend: FileBackend::Container(files),
+                // The container connection is what a transfer started here belongs to: it is the
+                // tab the browser was opened from, and the one thing that outlives the panel.
+                session_id: connection_id.to_owned(),
+            }),
+        );
+
+        Ok(SftpOutcome::Opened {
+            handle,
+            session_id: connection_id.to_owned(),
+            listing,
+            // A selection is fetched entry by entry rather than as one archive, but the browser
+            // offers packing the same way: what lands is the entries themselves either way.
+            packed: true,
+        })
+    }
+
     /// Reads a directory.
     pub async fn list_files(&self, handle: &str, path: &str) -> Result<SftpListing, ShellError> {
         self.file_session(handle).await?.list(path).await
@@ -627,6 +699,16 @@ impl Core {
                         Err("an FTP server cannot copy a file without transferring its bytes".to_owned())
                     }
                 }
+                FileBackend::Container(container) => {
+                    // The container's own `mv`/`cp -a`: the far side already has the bytes, and a
+                    // recursive copy through this channel would carry every one of them back here.
+                    let outcome = if moving {
+                        container.rename(&source, &target).await
+                    } else {
+                        container.copy(&source, &target).await
+                    };
+                    outcome.map_err(|error| error.to_string())
+                }
             };
 
             match outcome {
@@ -676,7 +758,9 @@ impl Core {
         let source = remote.to_owned();
         let id = self.reserve_transfer_id();
         let session_id = browser.session_id();
-        let pausable = !matches!(&browser.backend, FileBackend::Scp { .. });
+        // A container download is one `tar | base64` answered as text by the runner: there is no
+        // stream to hold where it stopped, so a paused row could not be continued from it.
+        let pausable = !matches!(&browser.backend, FileBackend::Scp { .. } | FileBackend::Container(_));
         let facts = TransferFacts {
             direction: TransferDirection::Download,
             name,
@@ -750,6 +834,29 @@ impl Core {
                 })
                 .await
             }
+            FileBackend::Container(container) => {
+                let container = Arc::clone(container);
+                let total = size;
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let container = Arc::clone(&container);
+                    let source = source.clone();
+                    let local = local.clone();
+
+                    Box::pin(async move {
+                        // Nothing of the tree is written here until the archive inside the container
+                        // is complete: the bytes arrive as one answer, so a stop during the wait
+                        // leaves no half-written file behind.
+                        tokio::select! {
+                            outcome = container.download(&source, &local) => outcome?,
+                            _ = wait_cancelled(Arc::clone(&progress)) => return Err(cancelled(&source)),
+                        }
+                        progress.set_transferred(total);
+                        Ok(())
+                    }) as TransferAttempt
+                })
+                .await
+            }
         }
     }
 
@@ -799,7 +906,9 @@ impl Core {
         let destination = remote.clone();
         let id = self.reserve_transfer_id();
         let session_id = browser.session_id();
-        let pausable = !matches!(&browser.backend, FileBackend::Scp { .. });
+        // A container upload is one `tar` handed to `sh` on standard input, with no stream of its
+        // own: there is nowhere to hold it, so it cannot be paused.
+        let pausable = !matches!(&browser.backend, FileBackend::Scp { .. } | FileBackend::Container(_));
         let facts = TransferFacts {
             direction: TransferDirection::Upload,
             name,
@@ -893,6 +1002,31 @@ impl Core {
                 })
                 .await
             }
+            FileBackend::Container(container) => {
+                let container = Arc::clone(container);
+                let directory = remote_dir.to_owned();
+                let total = size;
+
+                self.spawn_transfer(id, facts, move |progress| {
+                    let container = Arc::clone(&container);
+                    let local = local.clone();
+                    let destination = destination.clone();
+                    // The archive carries the chosen name, so it is unpacked *into* the folder that
+                    // was being browsed rather than onto the path the file lands at: `tar xf - -C`
+                    // naming a file would make a folder of that name and put the file inside it.
+                    let directory = directory.clone();
+
+                    Box::pin(async move {
+                        tokio::select! {
+                            outcome = container.upload(&local, &directory) => outcome?,
+                            _ = wait_cancelled(Arc::clone(&progress)) => return Err(cancelled(&destination)),
+                        }
+                        progress.set_transferred(total);
+                        Ok(())
+                    }) as TransferAttempt
+                })
+                .await
+            }
         }
     }
 
@@ -915,6 +1049,11 @@ impl Core {
         into: PathBuf,
     ) -> Result<String, ShellError> {
         let session = self.file_session(handle).await?;
+        if let FileBackend::Container(container) = &session.backend {
+            return self
+                .start_container_download(Arc::clone(container), &session.session_id(), entries, into)
+                .await;
+        }
         let files = Arc::clone(session.sftp()?);
         let connection = session.connection()?;
         let id = self.reserve_transfer_id();
@@ -1023,6 +1162,11 @@ impl Core {
         remote_dir: &str,
     ) -> Result<String, ShellError> {
         let session = self.file_session(handle).await?;
+        if let FileBackend::Container(container) = &session.backend {
+            return self
+                .start_container_upload(Arc::clone(container), &session.session_id(), sources, remote_dir)
+                .await;
+        }
         let files = Arc::clone(session.sftp()?);
         let connection = session.connection()?;
         let id = self.reserve_transfer_id();
@@ -1074,6 +1218,118 @@ impl Core {
                     let _ = files.remove_file(&staging).await;
                     let _ = std::fs::remove_file(&archive_here);
                     outcome
+                }) as TransferAttempt
+            },
+        )
+        .await
+    }
+
+    /// Fetches a selection out of a container, one entry at a time.
+    ///
+    /// There is no archive to make on this side: a container's `tar` writes its bytes to the
+    /// runner's answer, so several entries would be several archives — and the container's file
+    /// handle already turns one entry into one archive. What lands is what the SFTP path lands: the
+    /// entries themselves, under their own names, inside the folder that was chosen.
+    async fn start_container_download(
+        &self,
+        container: Arc<ContainerFiles>,
+        session_id: &str,
+        entries: &[String],
+        into: PathBuf,
+    ) -> Result<String, ShellError> {
+        let Some(first) = entries.first() else {
+            return Err(ShellError::sftp_archive_failed("(nothing)", "there is nothing to pack"));
+        };
+        let id = self.reserve_transfer_id();
+        let held = match entries {
+            [only] => archive::archive_name(&file_name_of(only)),
+            several => archive::downloaded_name(several.len()),
+        };
+        // Where the selection came from, which is what the row is about. A download has no directory
+        // that is read again afterwards, so a selection spread over two folders is described by the
+        // first entry's parent rather than refused the way one archive would have to.
+        let origin = split_remote(first).0;
+        let label = first.clone();
+        let plan: Vec<(String, PathBuf)> = entries
+            .iter()
+            .map(|entry| (entry.clone(), into.join(file_name_of(entry))))
+            .collect();
+
+        self.spawn_transfer(
+            id,
+            TransferFacts {
+                direction: TransferDirection::Download,
+                name: held,
+                remote_path: origin,
+                session_id: session_id.to_owned(),
+                size: 0,
+                packed: true,
+                pausable: false,
+                local: Some(into),
+            },
+            move |progress| {
+                let container = Arc::clone(&container);
+                let plan = plan.clone();
+                let label = label.clone();
+
+                Box::pin(async move {
+                    for (entry, destination) in &plan {
+                        if progress.is_cancelled() {
+                            return Err(cancelled(&label));
+                        }
+                        container.download(entry, destination).await?;
+                    }
+                    Ok(())
+                }) as TransferAttempt
+            },
+        )
+        .await
+    }
+
+    /// Sends a selection into a container, one source at a time.
+    ///
+    /// Each source crosses as its own archive, because a container `exec` carries one standard input
+    /// and the only `tar` that can unpack it is the container's own. The row is one transfer, the way
+    /// the SFTP path's packed upload is — with one difference worth knowing: a failure part-way
+    /// leaves what already arrived, where one archive would have been all or nothing.
+    async fn start_container_upload(
+        &self,
+        container: Arc<ContainerFiles>,
+        session_id: &str,
+        sources: Vec<PathBuf>,
+        directory: &str,
+    ) -> Result<String, ShellError> {
+        let id = self.reserve_transfer_id();
+        let name = archive::uploaded_name(sources.len());
+        // The folder the files land in, which is what the panel reads again when this finishes: a
+        // packed upload puts them *in* it rather than one file inside it.
+        let directory = directory.to_owned();
+
+        self.spawn_transfer(
+            id,
+            TransferFacts {
+                direction: TransferDirection::Upload,
+                name,
+                remote_path: directory.clone(),
+                session_id: session_id.to_owned(),
+                size: 0,
+                packed: true,
+                pausable: false,
+                local: None,
+            },
+            move |progress| {
+                let container = Arc::clone(&container);
+                let sources = sources.clone();
+                let directory = directory.clone();
+
+                Box::pin(async move {
+                    for source in &sources {
+                        if progress.is_cancelled() {
+                            return Err(cancelled(&directory));
+                        }
+                        container.upload(source, &directory).await?;
+                    }
+                    Ok(())
                 }) as TransferAttempt
             },
         )
@@ -1560,6 +1816,35 @@ async fn scp_size(connection: &SshSession, path: &str) -> Result<u64, ShellError
         return Ok(0);
     }
     Ok(captured.stdout.trim().parse().unwrap_or(0))
+}
+
+/// Whether a container's directory listing carries this name.
+///
+/// The container backend has no `stat`, and a listing of the parent is the only look it offers. That
+/// parent therefore has to exist, which it does for every question asked here: a rename target's
+/// folder, a paste destination, and the directory an upload is aimed at.
+async fn container_exists(files: &ContainerFiles, path: &str) -> Result<bool, ShellError> {
+    let (parent, name) = split_remote(path);
+    if name.is_empty() {
+        // Only the container's root has no name of its own, and it is always there.
+        return Ok(true);
+    }
+    let listing = files.list(&parent).await?;
+    Ok(listing.entries.iter().any(|entry| entry.name == name))
+}
+
+/// The size a container listing gave a path, when it is a file.
+///
+/// A folder has no single size, and the tar this backend carries it in is base64 of the whole tree,
+/// so a folder download starts without a number the way a packed transfer does.
+async fn container_size_of(files: &ContainerFiles, path: &str) -> Result<u64, ShellError> {
+    let (parent, name) = split_remote(path);
+    let listing = files.list(&parent).await?;
+    Ok(listing
+        .entries
+        .iter()
+        .find(|entry| entry.name == name && entry.kind == EntryKind::File)
+        .map_or(0, |entry| entry.size))
 }
 
 async fn scp_read_text(connection: &SshSession, path: &str) -> Result<String, ShellError> {
@@ -2301,5 +2586,109 @@ mod tests {
     #[test]
     fn a_root_listing_joins_a_name_without_a_double_slash() {
         assert_eq!(join_remote("/", "notes.txt"), "/notes.txt");
+    }
+
+    // --- A container browser behind the same commands -------------------------
+
+    /// A core with a vault of its own, and nothing else: every test here stops at a refusal the
+    /// container backend makes before a process exists, so no runtime has to be installed.
+    fn container_core() -> (Arc<Core>, tempfile::TempDir) {
+        let directory = tempfile::tempdir().expect("a temporary folder");
+        let vault = Arc::new(sevenshell_vault::Vault::open_at(directory.path().join("vault.json")));
+        vault.create("the password of the vault").expect("create the vault");
+        let (core, _events) = Core::new(vault);
+        (core, directory)
+    }
+
+    #[tokio::test]
+    async fn a_container_browser_for_an_unknown_connection_names_the_connection() {
+        let (core, _directory) = container_core();
+
+        let error = core
+            .open_container_files("missing", "cid", "/")
+            .await
+            .expect_err("no connection means nothing to browse");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::ContainerNotConnected);
+        assert_eq!(
+            error.message_params().get("connection").map(String::as_str),
+            Some("missing"),
+            "the refusal names the connection that is not open"
+        );
+        assert!(
+            core.files.lock().await.is_empty(),
+            "nothing was opened, so nothing is kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_container_browser_that_cannot_list_its_first_directory_registers_no_handle() {
+        let (core, _directory) = container_core();
+        core.containers
+            .connect(
+                "c1",
+                sevenshell_types::ContainerRuntime::Docker,
+                "",
+                sevenshell_container::Runner::Local,
+            )
+            .expect("a local connection is a name until something runs");
+
+        // A relative path is refused by the container backend itself before any process exists,
+        // which is what says this request reached that backend rather than another one.
+        let error = core
+            .open_container_files("c1", "cid", "relative/path")
+            .await
+            .expect_err("a relative path is not a container path");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::ContainerCommandFailed);
+        assert!(
+            core.files.lock().await.is_empty(),
+            "an open that could not list must not leave a handle behind"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_file_commands_reach_the_container_backend_only_through_an_open_handle() {
+        let (core, _directory) = container_core();
+        let files = Arc::new(
+            ContainerFiles::new(
+                sevenshell_types::ContainerRuntime::Docker,
+                "",
+                "cid",
+                sevenshell_container::Runner::Local,
+            )
+            .expect("a container id with no namespace is valid"),
+        );
+        core.files.lock().await.insert(
+            "f7".to_owned(),
+            Arc::new(FileSession {
+                backend: FileBackend::Container(files),
+                session_id: "c1".to_owned(),
+            }),
+        );
+
+        let error = core
+            .list_files("f7", "relative")
+            .await
+            .expect_err("a relative path never becomes a script");
+        assert_eq!(
+            error.code(),
+            sevenshell_error::ErrorCode::ContainerCommandFailed,
+            "the handle must route to the container backend, whose refusal this is"
+        );
+
+        let error = core.list_files("f8", "/").await.expect_err("no such handle is open");
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::AppInternal);
+        assert!(
+            error.to_string().contains("f8"),
+            "the refusal names the handle that is gone: {error}"
+        );
+
+        core.close_files("f7").await.expect("closing a browser is always fine");
+        assert_eq!(
+            core.list_files("f7", "/").await.expect_err("closed").code(),
+            sevenshell_error::ErrorCode::AppInternal,
+            "a closed handle is as unknown as one that was never opened"
+        );
     }
 }

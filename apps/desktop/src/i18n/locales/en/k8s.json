@@ -31,7 +31,8 @@
       "config": "Config",
       "storage": "Storage",
       "cluster": "Cluster",
-      "rbac": "Access"
+      "rbac": "Access",
+      "custom": "Custom resources"
     },
     "resources": {
       "pods": "Pods",
@@ -56,7 +57,9 @@
       "namespaces": "Namespaces",
       "events": "Events",
       "roles": "Roles",
-      "rolebindings": "Role bindings"
+      "rolebindings": "Role bindings",
+      "customresourcedefinitions": "Custom resource definitions",
+      "custom": "Custom resource"
     },
     "columns": {
       "name": "Name",
@@ -110,7 +113,11 @@
       "subjects": "Subjects",
       "rules": "Rules",
       "secrets": "Secrets",
-      "roles": "Roles"
+      "roles": "Roles",
+      "group": "Group",
+      "kind": "Kind",
+      "scope": "Scope",
+      "versions": "Versions"
     },
     "detail": {
       "cluster": "cluster",
@@ -136,7 +143,9 @@
         "event": "Event",
         "autoscaler": "Autoscaler",
         "access": "Access",
-        "events": "Events"
+        "events": "Events",
+        "crd": "Definition",
+        "custom": "Readings"
       },
       "fields": {
         "name": "Name",
@@ -197,12 +206,26 @@
         "role": "Role",
         "ingressRules": "Ingress rules",
         "egressRules": "Egress rules",
-        "tls": "TLS hosts"
+        "tls": "TLS hosts",
+        "group": "Group",
+        "kind": "Kind",
+        "plural": "Plural",
+        "scope": "Scope",
+        "versions": "Versions",
+        "storageVersion": "Storage version",
+        "apiVersion": "API version"
       }
     },
     "yaml": {
       "copy": "Copy",
-      "copied": "Copied"
+      "copied": "Copied",
+      "edit": "Edit",
+      "save": "Save",
+      "editor": "Manifest",
+      "invalid": "The YAML could not be read.",
+      "notObject": "The manifest has to be a mapping of fields, not a list or a single value.",
+      "noConnection": "This object is not in a live list, so there is nowhere to save it.",
+      "redacted": "A Secret's values are hidden here, so this document cannot be edited."
     },
     "list": {
       "filter": "Filter by name or reading",

@@ -25,7 +25,10 @@ import { octalMode, parseOctalMode } from "@/lib/files/mode";
 import { useFilesStore } from "@/stores/files";
 import type { SftpEntry } from "@/types/session";
 
-const props = defineProps<{ open: boolean; entry: SftpEntry | null; handle: string }>();
+const props = withDefaults(
+  defineProps<{ open: boolean; entry: SftpEntry | null; handle: string; editablePermissions?: boolean }>(),
+  { editablePermissions: true },
+);
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
 
 const { t } = useI18n();
@@ -158,35 +161,37 @@ async function apply(): Promise<void> {
             </template>
           </dl>
 
-          <PermissionMatrix
-            :model-value="modeText"
-            :label="t('files.properties.permissions')"
-            @update:model-value="modeText = $event"
-          />
-
-          <div class="space-y-1.5">
-            <label class="block text-xs font-medium" for="file-properties-mode">
-              {{ t("files.properties.permissions") }}
-            </label>
-            <input
-              id="file-properties-mode"
-              ref="modeField"
-              v-model="modeText"
-              type="text"
-              spellcheck="false"
-              inputmode="numeric"
-              class="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm select-text focus:border-primary focus:outline-none"
-              :class="parsedMode === null ? 'border-destructive' : ''"
-              :aria-label="t('files.properties.permissions')"
-              :aria-invalid="parsedMode === null"
+          <template v-if="props.editablePermissions">
+            <PermissionMatrix
+              :model-value="modeText"
+              :label="t('files.properties.permissions')"
+              @update:model-value="modeText = $event"
             />
-            <p class="text-[11px] leading-relaxed text-muted-foreground">{{ t("files.chmod.hint") }}</p>
-            <p v-if="parsedMode === null" class="text-[11px] text-destructive">
-              {{ t("files.properties.invalid") }}
-            </p>
-            <p v-if="saved" class="text-[11px] text-muted-foreground">{{ t("files.properties.saved") }}</p>
-            <p v-if="failure" class="text-[11px] text-destructive">{{ failure.message }}</p>
-          </div>
+
+            <div class="space-y-1.5">
+              <label class="block text-xs font-medium" for="file-properties-mode">
+                {{ t("files.properties.permissions") }}
+              </label>
+              <input
+                id="file-properties-mode"
+                ref="modeField"
+                v-model="modeText"
+                type="text"
+                spellcheck="false"
+                inputmode="numeric"
+                class="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm select-text focus:border-primary focus:outline-none"
+                :class="parsedMode === null ? 'border-destructive' : ''"
+                :aria-label="t('files.properties.permissions')"
+                :aria-invalid="parsedMode === null"
+              />
+              <p class="text-[11px] leading-relaxed text-muted-foreground">{{ t("files.chmod.hint") }}</p>
+              <p v-if="parsedMode === null" class="text-[11px] text-destructive">
+                {{ t("files.properties.invalid") }}
+              </p>
+              <p v-if="saved" class="text-[11px] text-muted-foreground">{{ t("files.properties.saved") }}</p>
+              <p v-if="failure" class="text-[11px] text-destructive">{{ failure.message }}</p>
+            </div>
+          </template>
         </div>
 
         <footer
@@ -201,6 +206,7 @@ async function apply(): Promise<void> {
             {{ t("files.properties.close") }}
           </button>
           <button
+            v-if="props.editablePermissions"
             type="button"
             class="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="busy || parsedMode === null || !props.entry"

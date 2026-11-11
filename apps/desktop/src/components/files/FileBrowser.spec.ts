@@ -59,7 +59,7 @@ let host: HTMLDivElement;
 let app: App | undefined;
 
 /** Mounts the panel over a directory the store is told about, which is what the panel draws. */
-async function render(entries: readonly SftpEntry[]): Promise<void> {
+async function render(entries: readonly SftpEntry[], props: Record<string, unknown> = {}): Promise<void> {
   useFilesStore().browsers[HANDLE] = {
     handle: HANDLE,
     sessionId: "session-1",
@@ -71,7 +71,7 @@ async function render(entries: readonly SftpEntry[]): Promise<void> {
     failure: null,
   };
 
-  app = createApp({ render: () => h(FileBrowser, { handle: HANDLE }) }).use(i18n);
+  app = createApp({ render: () => h(FileBrowser, { handle: HANDLE, ...props }) }).use(i18n);
   app.mount(host);
   await nextTick();
 }
@@ -309,6 +309,41 @@ describe("the directory's own menu", () => {
     await vi.waitFor(() => expect(vi.mocked(filesCreateFile)).toHaveBeenCalled());
 
     expect(vi.mocked(filesCreateFile)).toHaveBeenCalledWith(HANDLE, "/home/user/notes.txt");
+  });
+});
+
+/**
+ * A container's browser is not an SSH one.
+ *
+ * Two things differ, and both are about what the backend can actually do rather than about taste:
+ * a mode bit written by a chmod dialog is not something a container's shell can be relied on to
+ * report, and a packed archive needs a `tar` the open answer did or did not promise. Everything
+ * else the panel draws stays, because those are ordinary handle commands.
+ */
+describe("a container's browser", () => {
+  it("offers no permission editor, because the container cannot report a mode", async () => {
+    await render([file], { protocol: "container" });
+
+    const entries = await rightClickRow(0);
+    // The entry beside it is there, so the case cannot pass by the row not answering at all.
+    expect(ids(entries)).toContain("rename");
+    expect(ids(entries)).not.toContain("permissions");
+  });
+
+  it("carries the packed switch when the open answer said the engine has one", async () => {
+    await render([], { protocol: "container", packedTransfers: true });
+
+    const entries = await rightClickArea();
+    expect(pick(entries, "packed").checked).toBe(false);
+  });
+
+  it("hides the packed switch when the open answer said it has none", async () => {
+    await render([], { protocol: "container", packedTransfers: false });
+
+    const entries = await rightClickArea();
+    // The menu is there — refresh is the entry every directory has — and the switch is not.
+    expect(ids(entries)).toContain("refresh");
+    expect(ids(entries)).not.toContain("packed");
   });
 });
 

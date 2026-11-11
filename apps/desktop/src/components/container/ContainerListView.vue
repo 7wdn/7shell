@@ -12,7 +12,19 @@
  * table keeps its width for the columns people read. What the menu offers depends on the runtime:
  * see the `supports*` predicates in the store.
  */
-import { Camera, Ellipsis, Pencil, Play, RotateCw, ScrollText, Square, SquareTerminal, Trash2, X } from "@lucide/vue";
+import {
+  Camera,
+  Ellipsis,
+  FolderOpen,
+  Pencil,
+  Play,
+  RotateCw,
+  ScrollText,
+  Square,
+  SquareTerminal,
+  Trash2,
+  X,
+} from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -155,6 +167,21 @@ async function openShell(container: ContainerSummary): Promise<void> {
   } catch (error) {
     containers.reportError(props.tab.id, error, "container_exec_open");
   }
+}
+
+/**
+ * Opens the container's files in a tab of their own.
+ *
+ * The tab is the engine's, not the container's: it browses through the connection this workspace
+ * already holds, so a container has to be running for there to be a file system to list — the
+ * button says so rather than failing after the click.
+ */
+async function openFiles(container: ContainerSummary): Promise<void> {
+  const connectionId = props.session.connectionId;
+  if (connectionId === null) {
+    return;
+  }
+  await terminals.openContainerFiles(props.tab.session, connectionId, container.id, container.name);
 }
 
 // -- actions ------------------------------------------------------------------
@@ -485,6 +512,16 @@ function openRowMenu(event: MouseEvent, container: ContainerSummary): void {
                   @click="openLogs(container)"
                 >
                   <ScrollText :size="12" />
+                </button>
+                <button
+                  type="button"
+                  class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                  :title="t('container.action.files', { name: container.name })"
+                  :aria-label="t('container.action.files', { name: container.name })"
+                  :disabled="container.state !== 'running'"
+                  @click="openFiles(container)"
+                >
+                  <FolderOpen :size="12" />
                 </button>
                 <button
                   v-if="container.state !== 'running'"

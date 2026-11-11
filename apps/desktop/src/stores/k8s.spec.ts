@@ -50,7 +50,7 @@ import {
   onK8sWatch,
 } from "@/lib/backend/tauri";
 import { nameOf, uidOf } from "@/components/k8s/objects";
-import { descriptorOf } from "@/components/k8s/resources";
+import { clearCustomResourceDescriptors, descriptorOf } from "@/components/k8s/resources";
 import { K8sHttpError, cacheKeyOf, scopedNamespace, useK8sStore } from "@/stores/k8s";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { K8sResponse, K8sWatchEvent } from "@/types/k8s";
@@ -85,6 +85,26 @@ const pod = (name: string, uid: string, resourceVersion: string, extra: Record<s
   spec: { nodeName: "node-a", containers: [{ name: "main", image: "nginx:1.27" }] },
   ...extra,
 });
+
+/** A definition whose kind the tree should be able to list after the connection reads it. */
+const widgetCrd = {
+  apiVersion: "apiextensions.k8s.io/v1",
+  kind: "CustomResourceDefinition",
+  metadata: { name: "widgets.example.com" },
+  spec: {
+    group: "example.com",
+    names: { plural: "widgets", kind: "Widget" },
+    scope: "Namespaced",
+    versions: [
+      {
+        name: "v1",
+        served: true,
+        storage: true,
+        additionalPrinterColumns: [{ name: "Size", jsonPath: ".spec.size" }],
+      },
+    ],
+  },
+};
 
 function answer(status: number, body: unknown): K8sResponse {
   return { status, body: JSON.stringify(body) };
@@ -125,6 +145,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // The discovered kinds are module state shared by every store instance in this file.
+  clearCustomResourceDescriptors("conn-1");
 });
 
 /** Connects the session and returns the store, which most tests need before anything else. */
@@ -381,6 +403,52 @@ describe("metrics", () => {
 });
 
 describe("writes", () => {
+  it("replaces an edited manifest with an acknowledged PUT and relists what holds it", async () => {
+    const configMap = {
+      apiVersion: "v1",
+      kind: "ConfigMap",
+      metadata: { name: "settings", namespace: "default", uid: "uid-cm", resourceVersion: "7" },
+      data: { mode: "old" },
+    };
+    requestMock.mockImplementation(async (_connId, request) =>
+      request.path === "/api/v1/namespaces/default/configmaps?limit=500" ? listOf([configMap], "7") : listOf([], "1"),
+    );
+
+    const store = await connected();
+    store.subscribe("conn-1", "configmaps", "default");
+    await settle();
+
+    const descriptor = descriptorOf("configmaps");
+    if (!descriptor) {
+      throw new Error("the configmaps descriptor is missing");
+    }
+    const body = JSON.stringify({ ...configMap, data: { mode: "new" } });
+
+    expect(store.connectionIdOfObject(configMap)).toBe("conn-1");
+    await store.replaceObject("conn-1", descriptor, configMap, body);
+    await settle();
+
+    const put = requestMock.mock.calls.find(([, request]) => request.method === "put")?.[1];
+    expect(put).toEqual({
+      method: "put",
+      path: "/api/v1/namespaces/default/configmaps/settings",
+      body,
+      contentType: "application/json",
+      acknowledged: true,
+    });
+    const lists = requestMock.mock.calls.filter(
+      ([, request]) => request.path === "/api/v1/namespaces/default/configmaps?limit=500",
+    );
+    expect(lists).toHaveLength(2);
+  });
+
+  it("answers nothing for an object no list is holding", async () => {
+    const store = await connected();
+    expect(
+      store.connectionIdOfObject({ metadata: { name: "gone", namespace: "default", uid: "uid-gone" } }),
+    ).toBeNull();
+  });
+
   it("acknowledges a delete and asks for the grace period a force delete means", async () => {
     requestMock.mockResolvedValue(answer(200, { kind: "Status", status: "Success" }));
     const store = await connected();
@@ -466,6 +534,36 @@ describe("writes", () => {
     expect(evictions).toHaveLength(1);
     expect(evictions[0]?.path).toBe("/api/v1/namespaces/default/pods/web-0/eviction");
     expect(evictions[0]?.acknowledged).toBe(true);
+  });
+});
+
+describe("kinds a cluster defines", () => {
+  it("offers the kinds its definitions introduce, and forgets them when the connection closes", async () => {
+    requestMock.mockImplementation(async (_connId, request) =>
+      request.path === "/apis/apiextensions.k8s.io/v1/customresourcedefinitions?limit=500"
+        ? listOf([widgetCrd], "1")
+        : listOf([], "1"),
+    );
+
+    const store = await connected();
+    expect(descriptorOf("crd:widgets.example.com")).not.toBeNull();
+
+    await store.disconnectSession(session.id);
+    expect(descriptorOf("crd:widgets.example.com")).toBeNull();
+  });
+
+  it("picks up a definition that arrives while the definitions are being followed", async () => {
+    const store = await connected();
+    store.subscribe("conn-1", "customresourcedefinitions", "");
+    await settle();
+    expect(descriptorOf("crd:widgets.example.com")).toBeNull();
+
+    watchListener?.({
+      streamId: "stream-1",
+      kind: "ADDED",
+      object: JSON.stringify({ ...widgetCrd, metadata: { uid: "uid-crd", name: "widgets.example.com" } }),
+    });
+    expect(descriptorOf("crd:widgets.example.com")).not.toBeNull();
   });
 });
 

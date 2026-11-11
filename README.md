@@ -44,8 +44,8 @@ it, never in advance.
 | FTP / FTPS folders: a saved FTP account, or explicit TLS before the login, in the same workbench | Working, with an in-process FTP server |
 | SCP fallback: a server with no SFTP subsystem, browsed through its shell and SCP | Working, live-tested against a server with SFTP switched off |
 | ZMODEM: `rz` and `sz` inside a terminal, with the system file picker and save dialog | Working, with protocol tests; a real `rz`/`sz` was not run because the lab has no lrzsz |
-| Containers: Docker, Podman, nerdctl and WSLC — containers, images, logs, stats and an exec terminal, on this machine or through a saved SSH session | Working; Docker live-tested locally and over SSH; the other three runtimes have argument/parser tests only |
-| Kubernetes: kubeconfig contexts, resource lists and watches, pod logs, an exec terminal and metrics-server usage | Working; live-tested against a real k3s cluster (API, logs and exec) |
+| Containers: Docker, Podman, nerdctl and WSLC — containers, images, logs, stats, an exec terminal, file browsing and image-archive import, on this machine or through a saved SSH session | Working; Docker live-tested locally and over SSH, including files and archive loading; the other three runtimes have argument/parser tests only |
+| Kubernetes: kubeconfig contexts, resource lists and watches, pod logs, an exec terminal, metrics-server usage, editable YAML, CRDs and reaching the API server through an SSH session | Working; live-tested against a real k3s cluster, directly and through the SSH lab |
 | Transfers: queued and listed, pausable and resumable, packed as one archive for a whole tree, outliving the tab they started in | Working, tested against a real sshd and a 50,000-file directory; packed archives are SSH-only |
 | Host monitor: load, memory, disks, processes and sockets, sampled over the connection you already have | Working |
 | Batch execution: one command, several hosts, a per-host result, and a risk verdict before it runs | Working, tested against a real sshd |
@@ -56,9 +56,11 @@ it, never in advance.
 
 **Not implemented:** remote forwarding (the third kind — refused rather than half-done), agent
 forwarding (implemented, deliberately unclaimed until a real far side has been proved to use it),
-Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. Container file browsing and loading
-an image from a local archive are not wired yet; the registry and image commands themselves have
-tests, but an archive has to be chosen in a native dialog that does not exist. Remote desktops are a
+Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. A Kubernetes connection reached through
+an SSH tunnel supports REST, watches and metrics; pod logs and exec on such a connection are refused
+rather than sent around the tunnel. Container file transfers and image archives are bounded by the
+runner's capture ceiling (32 MiB for a tree, 2 GiB for an archive) rather than streamed. Secrets in
+Kubernetes are read-only. Remote desktops are a
 Windows-only feature of this build: the session is handed to the system Remote Desktop client, so
 macOS and Linux do not offer one. A WebDAV or FTP folder cannot be downloaded as one packed archive; its files are
 fetched one at a time. An FTP server also has no server-side copy, so the file menu offers move but
@@ -70,7 +72,10 @@ FTPS certificate chain and a real `rz`/`sz` session were not run on this machine
 refuses FTP images, and the SSH lab has no `lrzsz`. Container support was live-tested against Docker
 Desktop locally and through the SSH lab's `docker:dind`; Podman, nerdctl and WSLC have no live
 runtime on this machine, so they are covered by argument and parser fixtures. Kubernetes was
-live-tested against a one-node k3s (`deploy/lab/kubernetes`).
+live-tested against a one-node k3s (`deploy/lab/kubernetes`), directly and through the SSH lab; the
+YAML editor and CRD drill-down are covered by unit/component tests but not by a live cluster write.
+Container files and image-archive loading were live-tested against Docker Desktop; the archive case
+used an uncompressed tar, and transfers above the capture ceiling are refused rather than streamed.
 
 ## Installing
 

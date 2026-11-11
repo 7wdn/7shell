@@ -16,6 +16,8 @@ mod metrics;
 mod rest;
 mod watch;
 
-pub use client::{K8sClient, K8sManager, KubeContext, Kubeconfig};
+pub use client::{
+    ApiDialer, ApiStream, BoxedApiStream, DialFuture, K8sClient, K8sManager, KubeContext, Kubeconfig, TunneledCluster,
+};
 pub use exec::{ExecSession, open_exec};
 pub use logs::{LogHandle, LogOptions, LogStream, open_logs, open_logs_with_options};

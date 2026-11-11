@@ -6,18 +6,26 @@
  * in a path. The rest is a check that the table itself stays coherent: every kind's label exists, no
  * key is claimed twice, and a cluster-wide kind never builds a namespaced URL.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  CRD_KEY,
   OVERVIEW_KEY,
   RESOURCES,
   RESOURCE_GROUPS,
   basePathOf,
+  clearCustomResourceDescriptors,
   collectionPath,
+  crdKeyOf,
+  crdShapeOf,
+  customResourceDescriptor,
+  customResourceDescriptors,
   descriptorOf,
+  jsonPathValue,
   listPathOf,
   resourceGroups,
   selfPathOf,
+  setCustomResourceDescriptors,
   watchPathOf,
 } from "@/components/k8s/resources";
 
@@ -98,6 +106,151 @@ describe("the table", () => {
   it("hides a Secret's values in the YAML view and nothing else's", () => {
     expect(descriptorOf("secrets")?.redactData).toBe(true);
     expect(descriptorOf("configmaps")?.redactData).toBeUndefined();
+  });
+});
+
+/**
+ * The definitions a cluster sends are data, so the descriptor for what they introduce is built at
+ * read time. These cases pin the parts that would otherwise fail quietly: the version picked, the
+ * URL built from the plural rather than from the descriptor's own key, and the registry the tree
+ * reads.
+ */
+const widgetCrd = {
+  apiVersion: "apiextensions.k8s.io/v1",
+  kind: "CustomResourceDefinition",
+  metadata: { name: "widgets.example.com" },
+  spec: {
+    group: "example.com",
+    names: { plural: "widgets", kind: "Widget" },
+    scope: "Namespaced",
+    versions: [
+      { name: "v1alpha1", served: true, storage: false, additionalPrinterColumns: [] },
+      {
+        name: "v1",
+        served: true,
+        storage: true,
+        additionalPrinterColumns: [
+          { name: "Size", jsonPath: ".spec.size", type: "string" },
+          { name: "Phase", jsonPath: ".status.phase" },
+        ],
+      },
+    ],
+  },
+};
+
+afterEach(() => {
+  clearCustomResourceDescriptors("conn-a");
+  clearCustomResourceDescriptors("conn-b");
+});
+
+describe("a custom kind", () => {
+  it("reads the kind from the version the cluster stores, with that version's printer columns", () => {
+    const shape = crdShapeOf(widgetCrd);
+    expect(shape).not.toBeNull();
+    expect(shape?.group).toBe("example.com");
+    expect(shape?.version).toBe("v1");
+    expect(shape?.plural).toBe("widgets");
+    expect(shape?.kind).toBe("Widget");
+    expect(shape?.namespaced).toBe(true);
+    expect(shape?.printerColumns.map((column) => column.name)).toEqual(["Size", "Phase"]);
+  });
+
+  it("falls back to a served version when no version says it is stored", () => {
+    const noStorage = {
+      spec: { ...widgetCrd.spec, versions: [{ name: "v2", served: true, storage: false }] },
+    };
+    expect(crdShapeOf(noStorage)?.version).toBe("v2");
+  });
+
+  it("answers nothing for an object that is not a definition", () => {
+    expect(crdShapeOf({ metadata: { name: "not-a-crd" } })).toBeNull();
+    expect(crdShapeOf({ spec: { group: "example.com", names: {} } })).toBeNull();
+  });
+
+  it("builds cluster and namespaced collection paths from the plural, not the key", () => {
+    const namespaced = customResourceDescriptor(widgetCrd) ?? fail();
+    expect(namespaced.key).toBe("crd:widgets.example.com");
+    expect(namespaced.apiVersion).toBe("example.com/v1");
+    expect(collectionPath(namespaced, "team-a")).toBe("/apis/example.com/v1/namespaces/team-a/widgets");
+    expect(listPathOf(namespaced, "team-a")).toBe("/apis/example.com/v1/namespaces/team-a/widgets?limit=500");
+    expect(watchPathOf(namespaced, "", "9")).toBe(
+      "/apis/example.com/v1/widgets?watch=true&allowWatchBookmarks=true&resourceVersion=9",
+    );
+    expect(selfPathOf(namespaced, { metadata: { name: "w a", namespace: "team-a" } })).toBe(
+      "/apis/example.com/v1/namespaces/team-a/widgets/w%20a",
+    );
+
+    const clusterWide =
+      customResourceDescriptor({
+        spec: { ...widgetCrd.spec, scope: "Cluster" },
+      }) ?? fail();
+    expect(clusterWide.namespaced).toBe(false);
+    expect(clusterWide.columns.map((column) => column.key)).toEqual(["name", "printer0", "printer1", "age"]);
+    expect(listPathOf(clusterWide, "team-a")).toBe("/apis/example.com/v1/widgets?limit=500");
+  });
+
+  it("draws Name, printer columns and Age, and offers a delete", () => {
+    const descriptor = customResourceDescriptor(widgetCrd) ?? fail();
+    expect(descriptor.labelKey).toBe("k8s.resources.custom");
+    expect(descriptor.kindLabel).toBe("Widget");
+    expect(descriptor.columns.map((column) => column.key)).toEqual([
+      "name",
+      "namespace",
+      "printer0",
+      "printer1",
+      "age",
+    ]);
+    expect(descriptor.columns.map((column) => column.headerKey)).toEqual([
+      "k8s.columns.name",
+      "k8s.columns.namespace",
+      "Size",
+      "Phase",
+      "k8s.columns.age",
+    ]);
+    expect(descriptor.actions).toEqual(["delete"]);
+    const size = descriptor.columns.find((column) => column.key === "printer0");
+    expect(size?.text({ status: {}, spec: { size: "L" } })).toBe("L");
+  });
+
+  it("reads a printer column's value through the JSONPath subset and answers nothing on a miss", () => {
+    const obj = { spec: { size: "L" }, status: { conditions: [{ type: "Ready" }] } };
+    expect(jsonPathValue(obj, ".spec.size")).toBe("L");
+    expect(jsonPathValue(obj, "status.conditions[0].type")).toBe("Ready");
+    expect(jsonPathValue(obj, ".spec.missing")).toBe("");
+    expect(jsonPathValue(obj, "spec")).toBe('{"size":"L"}');
+  });
+
+  it("offers a discovered kind to the tree and takes it away when the connection closes", () => {
+    const descriptor = customResourceDescriptor(widgetCrd) ?? fail();
+    setCustomResourceDescriptors("conn-a", [descriptor]);
+
+    expect(descriptorOf(crdKeyOf(crdShapeOf(widgetCrd) ?? fail()))).toEqual(descriptor);
+    const custom = resourceGroups().find((entry) => entry.group === "custom");
+    expect(custom?.resources.map((entry) => entry.kindLabel)).toEqual(["Widget"]);
+
+    clearCustomResourceDescriptors("conn-a");
+    expect(descriptorOf(descriptor.key)).toBeNull();
+    expect(customResourceDescriptors()).toEqual([]);
+    expect(resourceGroups().some((entry) => entry.group === "custom")).toBe(false);
+  });
+
+  it("keeps one entry when two connections define the same kind", () => {
+    const descriptor = customResourceDescriptor(widgetCrd) ?? fail();
+    setCustomResourceDescriptors("conn-a", [descriptor]);
+    setCustomResourceDescriptors("conn-b", [descriptor]);
+    expect(customResourceDescriptors()).toHaveLength(1);
+
+    clearCustomResourceDescriptors("conn-a");
+    expect(customResourceDescriptors()).toHaveLength(1);
+  });
+});
+
+describe("the definitions themselves", () => {
+  it("are a cluster-wide kind under the apiextensions group", () => {
+    const descriptor = descriptorOf(CRD_KEY) ?? fail();
+    expect(descriptor.kind).toBe("CustomResourceDefinition");
+    expect(descriptor.namespaced).toBe(false);
+    expect(listPathOf(descriptor, "team-a")).toBe("/apis/apiextensions.k8s.io/v1/customresourcedefinitions?limit=500");
   });
 });
 

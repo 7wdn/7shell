@@ -181,18 +181,47 @@ export const useFilesStore = defineStore("files", () => {
   async function open(sessionId: string): Promise<SftpOutcome> {
     const outcome = await backend.files.open(sessionId);
     if (outcome.kind === "opened") {
-      browsers.value[outcome.handle] = {
-        handle: outcome.handle,
-        sessionId,
-        path: outcome.listing.path,
-        home: outcome.listing.path,
-        shellPath: outcome.listing.path,
-        entries: [...outcome.listing.entries],
-        loading: false,
-        failure: null,
-      };
+      remember(sessionId, outcome);
     }
     return outcome;
+  }
+
+  /**
+   * Opens a browser on a container's file system, through the engine connection already up.
+   *
+   * It is recorded exactly as any other browser is, so everything after it — a listing, a change, a
+   * transfer, closing — takes the same path an SFTP browser does. `sessionId` is the tab's own
+   * pseudo-session rather than a saved session: it is what the clipboard and the transfers are
+   * scoped to, and it keeps one container's browser apart from another's on the same engine.
+   *
+   * Nothing here can raise a host key question: the engine connection answered that when it was
+   * opened, and this rides on it.
+   */
+  async function openContainer(
+    sessionId: string,
+    connectionId: string,
+    containerId: string,
+    path = "/",
+  ): Promise<SftpOutcome> {
+    const outcome = await backend.files.openContainer(connectionId, containerId, path);
+    if (outcome.kind === "opened") {
+      remember(sessionId, outcome);
+    }
+    return outcome;
+  }
+
+  /** Keeps the browser an open answer describes, with the first listing as its own starting place. */
+  function remember(sessionId: string, opened: Extract<SftpOutcome, { kind: "opened" }>): void {
+    browsers.value[opened.handle] = {
+      handle: opened.handle,
+      sessionId,
+      path: opened.listing.path,
+      home: opened.listing.path,
+      shellPath: opened.listing.path,
+      entries: [...opened.listing.entries],
+      loading: false,
+      failure: null,
+    };
   }
 
   function browser(handle: string): FileBrowser | null {
@@ -884,6 +913,7 @@ export const useFilesStore = defineStore("files", () => {
     unattendedFailures,
     attendFailures,
     open,
+    openContainer,
     browser,
     directories,
     uploadDropped,

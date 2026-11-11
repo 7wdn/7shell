@@ -30,6 +30,23 @@ pub async fn files_open(state: State<'_, ShellState>, session_id: String) -> Res
     state.core().open_files(&session_id).await
 }
 
+/// Opens a file browser inside a running container, through the runtime's own `exec`.
+///
+/// The connection is the container tab's, and the path is a path inside the container: nothing here
+/// is a path on this machine, and uploads and downloads still go through the native dialogs above.
+#[tauri::command]
+pub async fn files_open_container(
+    state: State<'_, ShellState>,
+    connection_id: String,
+    container_id: String,
+    path: String,
+) -> Result<SftpOutcome, ShellError> {
+    state
+        .core()
+        .open_container_files(&connection_id, &container_id, &path)
+        .await
+}
+
 /// Reads a directory.
 #[tauri::command]
 pub async fn files_list(state: State<'_, ShellState>, handle: String, path: String) -> Result<SftpListing, ShellError> {

@@ -45,6 +45,13 @@ vi.mock("@/lib/backend/tauri", () => ({
   containerLogsStart: vi.fn(async () => "log-1"),
   containerStreamStop: vi.fn(async () => {}),
   containerExecOpen: vi.fn(async () => "pty-1"),
+  filesOpenContainer: vi.fn(async () => ({
+    kind: "opened",
+    handle: "container-f1",
+    sessionId: "session-1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    listing: { path: "/", entries: [] },
+    packed: false,
+  })),
   containerImageInspect: vi.fn(),
   containerImageHistory: vi.fn(async () => []),
   containerImagePull: vi.fn(async () => "pull-1"),
@@ -60,12 +67,13 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import ContainerListView from "@/components/container/ContainerListView.vue";
 import { i18n } from "@/i18n";
-import { containerAction, containerExecOpen } from "@/lib/backend/tauri";
+import { containerAction, containerExecOpen, filesOpenContainer } from "@/lib/backend/tauri";
 import { useContainerStore, type ContainerSession } from "@/stores/container";
 import { useTerminalsStore, type ContainerTab } from "@/stores/terminals";
 
 const actionMock = vi.mocked(containerAction);
 const execMock = vi.mocked(containerExecOpen);
+const filesMock = vi.mocked(filesOpenContainer);
 
 let app: App | undefined;
 let host: HTMLDivElement | undefined;
@@ -137,6 +145,7 @@ afterEach(() => {
 beforeEach(() => {
   actionMock.mockResolvedValue(undefined);
   execMock.mockResolvedValue("pty-1");
+  filesMock.mockClear();
 });
 
 describe("container list", () => {
@@ -169,6 +178,35 @@ describe("container list", () => {
 
     expect(button("Open a shell in old").disabled).toBe(true);
     expect(button("Open a shell in web").disabled).toBe(false);
+  });
+
+  /**
+   * A stopped container has no file system to list, so the action says so by being unavailable —
+   * the same rule the shell button follows, for the same reason: a click that can only fail is
+   * worse than a button that is visibly not offered.
+   */
+  it("offers a container's files only while the container is running", async () => {
+    await mount();
+    const runningOnly = host?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    runningOnly?.click();
+    await nextTick();
+
+    expect(button("Browse the files of web").disabled).toBe(false);
+    expect(button("Browse the files of old").disabled).toBe(true);
+  });
+
+  it("opens a container's files through the engine the workspace already holds", async () => {
+    await mount();
+
+    button("Browse the files of web").click();
+
+    await vi.waitFor(() => {
+      expect(filesMock).toHaveBeenCalledWith("conn-1", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "/");
+    });
+    await vi.waitFor(() => {
+      const terminals = useTerminalsStore();
+      expect(terminals.tabs.some((entry) => entry.kind === "files" && entry.handle === "container-f1")).toBe(true);
+    });
   });
 
   it("opens a shell as an ordinary terminal tab on the handle the backend made", async () => {

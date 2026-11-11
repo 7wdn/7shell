@@ -36,8 +36,8 @@
 | FTP / FTPS 目录：保存的 FTP 账号，或登录前先建立 TLS 的显式 FTPS，在同一个文件工作台里 | 可用，在进程内 FTP 服务器上验证过 |
 | SCP 降级：没有 SFTP 子系统的服务器，用 shell 列表 + SCP 传输浏览 | 可用，在关闭 SFTP 的服务器上跑过 live |
 | ZMODEM：终端里的 `rz`/`sz`，使用系统文件选择与保存对话框 | 可用，有协议测试；实验场没有 lrzsz，未跑真实 `rz`/`sz` |
-| 容器：Docker、Podman、nerdctl、WSLC 的容器、镜像、日志、统计与 exec 终端，可走本机或已保存的 SSH 会话 | 可用；Docker 在本机与 SSH 实验场都跑过 live，另外三种只有参数与解析 fixture |
-| Kubernetes：kubeconfig 上下文、资源列表与 watch、Pod 日志、exec 终端与 metrics-server 用量 | 可用；在真实 k3s 集群上跑过 API、日志与 exec 的 live |
+| 容器：Docker、Podman、nerdctl、WSLC 的容器、镜像、日志、统计、exec 终端、文件浏览与镜像归档导入，可走本机或已保存的 SSH 会话 | 可用；Docker 在本机与 SSH 实验场都跑过 live（含文件与归档），另外三种只有参数与解析 fixture |
+| Kubernetes：kubeconfig 上下文、资源列表与 watch、Pod 日志、exec 终端、metrics-server 用量、YAML 编辑、CRD 与经 SSH 会话访问 API server | 可用；在真实 k3s 集群上跑过直连与经 SSH 实验场的 live |
 | 传输：排队并列成清单、可暂停与续传、整棵目录可打包成一个归档、在发起它的标签页关闭后继续 | 可用，在真实 sshd 与五万条目录上验证过；打包归档仅限 SSH |
 | 主机监控：负载、内存、磁盘、进程与连接，全部走你已有的那条连接采样 | 可用 |
 | 批量执行：一条命令、多台主机、逐主机结果，运行前给出风险判定 | 可用，在真实 sshd 上验证过 |
@@ -48,8 +48,9 @@
 
 **尚未实现：** 远程转发（三种转发里的第三种——直接拒绝，而不是做一半）、代理转发（已实现，
 但在真实远端被证明用得上之前刻意不声明）、Pageant，以及**经由** SOCKS5 或 HTTP 代理连接主机。
-容器内的文件浏览、从本地归档导入镜像还没有接上：镜像与 registry 命令本身有测试，但归档需要
-一个尚不存在的原生文件对话框。远程桌面是本版本的 Windows-only 功能：会话交给系统远程桌面客户端，
+经 SSH 隧道的 Kubernetes 连接支持 REST、watch 与指标；这类连接上的 Pod 日志/exec 会明确拒绝，
+不会绕过隧道直连。容器文件传输与镜像归档受 runner 采集上限约束（整棵树 32 MiB、归档 2 GiB），
+尚未做成流式。Kubernetes Secret 只读。远程桌面是本版本的 Windows-only 功能：会话交给系统远程桌面客户端，
 macOS/Linux 不提供入口。
 WebDAV 或 FTP 目录不能整目录打包下载，只能逐个文件下载。FTP 服务器也没有服务端复制，
 所以文件菜单只提供移动而不提供复制。命令行与 agent 接口、插件平台属于 1.x：
@@ -58,7 +59,9 @@ WebDAV 或 FTP 目录不能整目录打包下载，只能逐个文件下载。FT
 **验证说明：** FTP/FTPS 与 ZMODEM 由进程内/协议测试覆盖，但本机没有跑过真实 FTPS 证书链和真实
 `rz`/`sz`：Docker registry 拒绝 FTP 镜像，SSH 实验场也没有 `lrzsz`。容器已在本机 Docker Desktop
 和实验场的 `docker:dind` 上跑过 live；Podman、nerdctl、WSLC 在这台机器上没有真实运行时，只有参数
-与解析 fixture。Kubernetes 在单节点 k3s（`deploy/lab/kubernetes`）上跑过 live。
+与解析 fixture。Kubernetes 在单节点 k3s（`deploy/lab/kubernetes`）上跑过 live，包含直连与经 SSH
+实验场两条路径；YAML 编辑与 CRD 钻取由单元/组件测试覆盖，没有在真实集群上写回。容器的文件浏览与
+镜像归档在 Docker Desktop 上跑过 live；归档只验过未压缩 tar，超过采集上限的传输会明确拒绝而不是流式。
 
 ## 安装
 

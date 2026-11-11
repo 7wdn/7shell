@@ -10,6 +10,7 @@
 //! it.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
@@ -22,6 +23,15 @@ use sevenshell_types::{
 use crate::commands::{self, ImageTransfer};
 use crate::parse;
 use crate::runner::{LineStream, PtySession, Runner};
+
+/// The largest archive this build hands to a runtime in one piece.
+///
+/// `load` reads its archive from standard input, and both runners take that input as one buffer, so
+/// the whole archive is in memory for the length of the call. Streaming it — a reader piped into the
+/// local child and into the SSH exec channel — is what removes this ceiling; until the runners can
+/// accept a reader, a size refused before the read is better than an allocation the machine may not
+/// be able to honour.
+const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// The four things a runtime's CLI can be asked to do, as one interface.
 ///
@@ -59,6 +69,10 @@ pub struct Provider {
     runtime: ContainerRuntime,
     namespace: String,
     runner: Arc<dyn CommandRunner>,
+    /// The concrete runner this provider was built from, when it was built from one. A file browser
+    /// runs its own commands on the same connection, and a trait object cannot be turned back into
+    /// the handle that knows where it runs; a provider built around a recorder therefore has none.
+    handle: Option<Runner>,
 }
 
 // The runner is a process handle or a session; printing it would print neither anything a log can
@@ -77,7 +91,9 @@ impl Provider {
     /// A provider that runs its commands through `runner`. The namespace is refused here rather
     /// than at first use: a tab that cannot name a valid namespace has no business connecting.
     pub fn new(runtime: ContainerRuntime, namespace: &str, runner: Runner) -> Result<Self, ShellError> {
-        Self::from_parts(runtime, namespace, Arc::new(runner))
+        let mut provider = Self::from_parts(runtime, namespace, Arc::new(runner.clone()))?;
+        provider.handle = Some(runner);
+        Ok(provider)
     }
 
     fn from_parts(
@@ -89,6 +105,7 @@ impl Provider {
             runtime,
             namespace: namespace_for(runtime, namespace)?,
             runner,
+            handle: None,
         })
     }
 
@@ -98,6 +115,17 @@ impl Provider {
 
     pub fn namespace(&self) -> &str {
         &self.namespace
+    }
+
+    /// The runner this provider was built from, for a caller that has to keep using the same
+    /// connection — the file browser runs one `exec` per file operation on it.
+    ///
+    /// A provider built around a recorder has no runner to hand out, and says so rather than
+    /// pretending to have one.
+    pub fn runner(&self) -> Result<Runner, ShellError> {
+        self.handle
+            .clone()
+            .ok_or_else(|| ShellError::app_unsupported("a container provider without a runner to hand out"))
     }
 
     pub async fn list(&self) -> Result<Vec<ContainerSummary>, ShellError> {
@@ -195,12 +223,38 @@ impl Provider {
     /// Loads an archive that the core read from a file the person chose. The bytes travel on
     /// standard input; they are never part of the argv and never cross to the interface.
     pub async fn image_load(&self, archive: Vec<u8>) -> Result<String, ShellError> {
-        if self.runtime != ContainerRuntime::Docker {
-            return Err(ShellError::app_unsupported("image archives on this runtime"));
-        }
+        self.require_image_load()?;
         let argv = commands::load(self.runtime, &self.namespace);
         let output = self.runner.run_stdin(&argv, archive).await?;
         Ok(output.trim().to_owned())
+    }
+
+    /// Loads an archive from a file on this machine, which is where the native dialog left it.
+    ///
+    /// The path is read here rather than by the caller so the ceiling and the runtime check are one
+    /// decision: an archive this build will not take is refused before a byte is read, and the
+    /// refusal says how large it was and how large this build allows.
+    pub async fn image_load_file(&self, path: &Path) -> Result<String, ShellError> {
+        self.require_image_load()?;
+        let archive = {
+            let path = path.to_path_buf();
+            tokio::task::spawn_blocking(move || read_archive(&path, MAX_ARCHIVE_BYTES))
+                .await
+                .map_err(|error| ShellError::app_internal(error.to_string()))??
+        };
+        self.image_load(archive).await
+    }
+
+    /// Whether an archive can be handed to this runtime at all.
+    ///
+    /// Docker and Podman both read a save archive on standard input. nerdctl and WSLC are left out
+    /// because neither was exercised on a machine this build can reach, and "not supported here" is
+    /// a truer answer than an untested command line.
+    fn require_image_load(&self) -> Result<(), ShellError> {
+        if self.runtime == ContainerRuntime::Docker || self.runtime == ContainerRuntime::Podman {
+            return Ok(());
+        }
+        Err(ShellError::app_unsupported("image archives on this runtime"))
     }
 
     pub async fn image_commit(&self, request: &ContainerCommitRequest) -> Result<String, ShellError> {
@@ -262,6 +316,7 @@ impl Provider {
             runtime: self.runtime,
             namespace: namespace_for(self.runtime, namespace)?,
             runner: Arc::clone(&self.runner),
+            handle: self.handle.clone(),
         })
     }
 }
@@ -275,6 +330,39 @@ fn namespace_for(runtime: ContainerRuntime, namespace: &str) -> Result<String, S
         return Ok("default".to_owned());
     }
     Ok(namespace.to_owned())
+}
+
+/// Reads an image archive, refusing anything this build will not hand to a runtime.
+///
+/// The ceiling is a parameter rather than the constant so a test can prove the refusal without
+/// writing a two-gigabyte file, and so the size rule is exercised by the same code that enforces it.
+fn read_archive(path: &Path, ceiling: u64) -> Result<Vec<u8>, ShellError> {
+    let metadata = std::fs::metadata(path).map_err(|error| {
+        ShellError::container_command_failed("the image archive", format!("the file could not be read: {error}"))
+    })?;
+    if !metadata.is_file() {
+        return Err(ShellError::container_command_failed(
+            "the image archive",
+            "that is not a regular file",
+        ));
+    }
+    if metadata.len() > ceiling {
+        return Err(ShellError::container_command_failed(
+            "the image archive",
+            format!(
+                "the archive is {} MiB and this build loads at most {} MiB in one piece",
+                mebibytes(metadata.len()),
+                mebibytes(ceiling)
+            ),
+        ));
+    }
+    std::fs::read(path).map_err(|error| {
+        ShellError::container_command_failed("the image archive", format!("the file could not be read: {error}"))
+    })
+}
+
+fn mebibytes(bytes: u64) -> u64 {
+    bytes.div_ceil(1024 * 1024)
 }
 
 /// The container manager.
@@ -441,6 +529,13 @@ mod tests {
             .expect("the namespace should be valid")
     }
 
+    /// A file in the temporary directory whose name is unique to this process and to `label`.
+    fn temporary_file(label: &str, contents: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("7shell-{label}-{}.tar", std::process::id()));
+        std::fs::write(&path, contents).expect("a temporary archive");
+        path
+    }
+
     #[tokio::test]
     async fn a_rejected_container_id_never_reaches_the_runner() {
         let recorder = Arc::new(RecordingRunner::default());
@@ -604,13 +699,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_image_archive_and_a_commit_are_docker_only() {
+    async fn an_image_archive_reaches_docker_and_podman_and_a_commit_stays_docker_only() {
         let recorder = Arc::new(RecordingRunner::default());
-        let provider = build_provider(ContainerRuntime::Podman, "", &recorder);
-        assert_eq!(
-            provider.image_load(vec![1, 2, 3]).await.unwrap_err().code(),
-            ErrorCode::AppUnsupported
-        );
         let commit = ContainerCommitRequest {
             container_id: "abc123".to_owned(),
             image: "team/web:built".to_owned(),
@@ -618,10 +708,34 @@ mod tests {
             message: String::new(),
         };
         assert_eq!(
-            provider.image_commit(&commit).await.unwrap_err().code(),
+            build_provider(ContainerRuntime::Podman, "", &recorder)
+                .image_commit(&commit)
+                .await
+                .unwrap_err()
+                .code(),
             ErrorCode::AppUnsupported
         );
-        assert!(recorder.calls().is_empty());
+
+        // Podman reads a docker-save archive on standard input just as Docker does, so the button
+        // the interface draws exists on both; the other two runtimes refuse before any process.
+        build_provider(ContainerRuntime::Podman, "", &recorder)
+            .image_load(vec![1, 2, 3])
+            .await
+            .expect("podman should take an archive");
+        assert_eq!(recorder.calls(), vec![vec!["podman", "load"]]);
+
+        for runtime in [ContainerRuntime::Nerdctl, ContainerRuntime::Wslc] {
+            assert_eq!(
+                build_provider(runtime, "", &recorder)
+                    .image_load(vec![1, 2, 3])
+                    .await
+                    .unwrap_err()
+                    .code(),
+                ErrorCode::AppUnsupported,
+                "{runtime:?} accepted an archive it cannot load"
+            );
+        }
+        assert_eq!(recorder.calls(), vec![vec!["podman", "load"]]);
     }
 
     #[tokio::test]
@@ -705,6 +819,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_archive_named_by_a_file_reaches_the_runtime_as_standard_input() {
+        let recorder = Arc::new(RecordingRunner {
+            output: "Loaded image: team/web:built\n".to_owned(),
+            ..RecordingRunner::default()
+        });
+        let path = temporary_file("from-file", b"an archive on disk");
+        let loaded = build_provider(ContainerRuntime::Docker, "", &recorder)
+            .image_load_file(&path)
+            .await
+            .expect("a regular file under the ceiling is an archive");
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(loaded, "Loaded image: team/web:built");
+        assert_eq!(recorder.calls(), vec![vec!["docker", "load"]]);
+        let inputs = recorder
+            .inputs
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        assert_eq!(
+            inputs,
+            vec![b"an archive on disk".to_vec()],
+            "the file's bytes, not its name, must be what the runtime reads"
+        );
+    }
+
+    #[test]
+    fn an_archive_over_the_ceiling_is_refused_with_its_size_before_it_is_read() {
+        let path = std::env::temp_dir().join(format!("7shell-too-large-{}.tar", std::process::id()));
+        std::fs::write(&path, vec![0u8; 1025 * 1024]).expect("a temporary archive");
+        let error = read_archive(&path, 1024 * 1024).expect_err("the file is larger than the ceiling");
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
+        let detail = error.detail().unwrap_or_default();
+        assert!(
+            detail.contains("the archive is 2 MiB"),
+            "the size that was refused is in the message: {detail}"
+        );
+        assert!(
+            detail.contains("at most 1 MiB"),
+            "the ceiling this build does allow is in the message: {detail}"
+        );
+    }
+
+    #[test]
+    fn a_directory_is_not_an_image_archive() {
+        let directory = std::env::temp_dir().join(format!("7shell-archive-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).expect("a temporary directory");
+        let error = read_archive(&directory, MAX_ARCHIVE_BYTES).expect_err("a directory has no archive in it");
+        let _ = std::fs::remove_dir(&directory);
+        assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
+        assert!(error.detail().unwrap_or_default().contains("regular file"));
+    }
+
+    #[tokio::test]
     async fn wslc_history_asks_for_the_image_inspect_it_does_have() {
         let recorder = Arc::new(RecordingRunner {
             output: "[{\"Id\":\"abc\",\"RootFS\":{\"Layers\":[\"sha256:aaaa\",\"sha256:bbbb\"]}}]".to_owned(),
@@ -734,5 +904,112 @@ mod tests {
             ErrorCode::ContainerNotConnected,
             "a refused connection must not be left registered"
         );
+    }
+
+    #[tokio::test]
+    async fn a_provider_hands_out_the_runner_it_was_built_from_and_only_that() {
+        let manager = ContainerManager::new();
+        manager
+            .connect("tab", ContainerRuntime::Nerdctl, "k8s.io", Runner::Local)
+            .expect("a local connection is only a name until something runs");
+        let provider = manager.provider("tab").unwrap();
+        assert!(
+            matches!(
+                provider.runner().expect("a connected provider has a runner"),
+                Runner::Local
+            ),
+            "the file browser must run on the connection the tab opened"
+        );
+
+        // Changing the namespace rebuilds the provider; the runner has to survive the rebuild, or
+        // every file command would go somewhere the tab is not.
+        manager.set_namespace("tab", "default").unwrap();
+        assert!(matches!(
+            manager.provider("tab").unwrap().runner().expect("still a runner"),
+            Runner::Local
+        ));
+
+        let recorder = Arc::new(RecordingRunner::default());
+        let recorder_provider = build_provider(ContainerRuntime::Docker, "", &recorder);
+        let Err(error) = recorder_provider.runner() else {
+            panic!("a provider built around a recorder has no runner, and must not pretend to");
+        };
+        assert_eq!(error.code(), ErrorCode::AppUnsupported);
+    }
+
+    /// Real Docker Desktop: `docker save` writes an archive, this crate loads it back.
+    ///
+    /// Ignored by default, and it skips with a sentence rather than failing when the engine is not
+    /// reachable. The archive is saved from a tag of this test's own, so the removal that makes the
+    /// load provable never touches an image the machine already had.
+    ///
+    /// ```text
+    /// SEVENSHELL_TEST_DOCKER=1 cargo test -p sevenshell-container -- --ignored a_real_engine_loads
+    /// ```
+    #[tokio::test]
+    #[ignore = "needs Docker Desktop and SEVENSHELL_TEST_DOCKER=1"]
+    async fn a_real_engine_loads_a_saved_archive_and_lists_the_image_again() {
+        if std::env::var("SEVENSHELL_TEST_DOCKER").as_deref() != Ok("1") {
+            eprintln!("skipped: set SEVENSHELL_TEST_DOCKER=1 to run the live archive test");
+            return;
+        }
+        if !docker(&["version"]).is_some_and(|output| output.status.success()) {
+            eprintln!("skipped: the Docker engine is not reachable from this process");
+            return;
+        }
+        // The archive is made from a small image every engine can fetch. A pull that fails is a
+        // machine without a registry, not a defect in this crate.
+        if !docker(&["image", "inspect", "busybox:1.36"]).is_some_and(|output| output.status.success())
+            && !docker(&["pull", "busybox:1.36"]).is_some_and(|output| output.status.success())
+        {
+            eprintln!("skipped: busybox:1.36 is neither present nor pullable here");
+            return;
+        }
+
+        let tag = format!("7shell-live-load:{}", std::process::id());
+        let saved = temporary_file("live-load", b"");
+        let archive = saved.to_string_lossy().into_owned();
+        assert!(
+            docker(&["tag", "busybox:1.36", &tag]).is_some_and(|output| output.status.success()),
+            "the image could not be given a tag of its own"
+        );
+        assert!(
+            docker(&["save", "-o", &archive, &tag]).is_some_and(|output| output.status.success()),
+            "the archive could not be written to {archive}"
+        );
+        // Without this the assertion below would pass on an image that never left.
+        assert!(
+            docker(&["rmi", &tag]).is_some_and(|output| output.status.success()),
+            "the tag could not be removed after saving"
+        );
+
+        let provider = Provider::new(ContainerRuntime::Docker, "", Runner::Local).expect("a provider");
+        let before = provider.images().await.expect("the image list should answer");
+        assert!(
+            !before.iter().any(|row| row.repository == "7shell-live-load"),
+            "the tag survived its own removal, so the load below proves nothing"
+        );
+
+        let loaded = provider
+            .image_load_file(&saved)
+            .await
+            .expect("a saved archive should load");
+        assert!(loaded.contains("7shell-live-load"), "the runtime said: {loaded}");
+
+        let after = provider.images().await.expect("the image list should answer");
+        assert!(
+            after.iter().any(|row| row.repository == "7shell-live-load"),
+            "the loaded image is not in the list: {after:?}"
+        );
+
+        assert!(
+            provider.image_remove(&tag).await.is_ok(),
+            "the tag this test made could not be removed again"
+        );
+        let _ = std::fs::remove_file(&saved);
+    }
+
+    fn docker(arguments: &[&str]) -> Option<std::process::Output> {
+        std::process::Command::new("docker").args(arguments).output().ok()
     }
 }

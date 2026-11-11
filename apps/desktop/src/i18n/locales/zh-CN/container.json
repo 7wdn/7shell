@@ -17,6 +17,8 @@
     "namespace": "命名空间",
     "refresh": "重新读取",
     "dismiss": "关闭这条消息",
+    "filesTabName": "{name} 的文件",
+    "filesFailed": "无法打开 {name} 的文件：{reason}",
     "overview": {
       "runtime": "运行时",
       "host": "主机",
@@ -62,6 +64,7 @@
     "action": {
       "exec": "在 {name} 中打开 Shell",
       "logs": "查看 {name} 的日志",
+      "files": "浏览 {name} 的文件",
       "start": "启动 {name}",
       "stop": "停止 {name}",
       "restart": "重启",
@@ -175,6 +178,11 @@
     "image": {
       "pull": "拉取",
       "push": "推送",
+      "load": "导入镜像",
+      "loadTitle": "从归档文件导入镜像",
+      "loading": "导入中…",
+      "loaded": "已导入 {name}。",
+      "loadedUnnamed": "归档已导入。",
       "run": "用这个镜像新建容器",
       "prune": "删除未使用的镜像",
       "pruneMessage": "所有没有被容器使用的镜像都会被删除，且无法撤销。",

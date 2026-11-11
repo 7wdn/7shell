@@ -58,10 +58,14 @@ import {
   type Usage,
 } from "@/components/k8s/objects";
 import {
+  CRD_KEY,
+  clearCustomResourceDescriptors,
   collectionPath,
+  customResourceDescriptor,
   descriptorOf,
   listPathOf,
   selfPathOf,
+  setCustomResourceDescriptors,
   watchPathOf,
   type ResourceDescriptor,
 } from "@/components/k8s/resources";
@@ -241,6 +245,13 @@ function parseJson(body: string): unknown {
   }
 }
 
+/** The objects of a list answer, dropping anything that is not one. */
+function itemsOf(body: unknown): readonly K8sObject[] {
+  return arrayAt(body, "items")
+    .map((entry) => asObject(entry))
+    .filter((entry): entry is K8sObject => entry !== null);
+}
+
 export const useK8sStore = defineStore("k8s", () => {
   const connections = ref<Record<string, K8sConnection>>({});
   const caches = ref<Record<string, ResourceCache>>({});
@@ -353,6 +364,7 @@ export const useK8sStore = defineStore("k8s", () => {
     await listen();
     const namespaces = await readNamespaces(id);
     patchConnection(session.id, { namespaces });
+    await readCustomResources(id);
   }
 
   /** Closes a failed or stale connection and opens it again, which is what the retry button does. */
@@ -387,6 +399,8 @@ export const useK8sStore = defineStore("k8s", () => {
     delete remaining[sessionId];
     connections.value = remaining;
     if (connection.id !== "") {
+      // The tree may still be drawing this connection's custom kinds; their paths go with it.
+      clearCustomResourceDescriptors(connection.id);
       try {
         await backend.k8s.disconnect(connection.id);
       } catch {
@@ -444,6 +458,43 @@ export const useK8sStore = defineStore("k8s", () => {
       // picker with the all-namespaces reading and whatever the session named.
       return [];
     }
+  }
+
+  /**
+   * Reads the defined kinds a connection offers.
+   *
+   * A refusal is not reported: a cluster that will not list CRDs still browses every built-in kind,
+   * and the tree simply has no custom group. An API server without apiextensions answers 404, which
+   * is the same fact.
+   */
+  async function readCustomResources(connId: string): Promise<void> {
+    const desc = descriptorOf(CRD_KEY);
+    if (!desc) {
+      return;
+    }
+    try {
+      const body = await request(connId, { method: "get", path: listPathOf(desc, "") });
+      // The tab may have closed while the answer was on its way; a registration for a connection
+      // that no longer exists would keep its kinds in the tree with nowhere to list them.
+      if (!Object.values(connections.value).some((entry) => entry.id === connId)) {
+        return;
+      }
+      publishCustomResources(connId, itemsOf(body));
+    } catch {
+      // No definitions to offer; every other list still works.
+    }
+  }
+
+  /** Turns the definitions a connection sent into the descriptors the tree draws. */
+  function publishCustomResources(connId: string, items: Iterable<K8sObject>): void {
+    const descriptors: ResourceDescriptor[] = [];
+    for (const item of items) {
+      const descriptor = customResourceDescriptor(item);
+      if (descriptor !== null) {
+        descriptors.push(descriptor);
+      }
+    }
+    setCustomResourceDescriptors(connId, descriptors);
   }
 
   // ── lists ─────────────────────────────────────────────────────
@@ -584,6 +635,9 @@ export const useK8sStore = defineStore("k8s", () => {
       loading: false,
       failure: null,
     });
+    if (cache.resourceKey === CRD_KEY) {
+      publishCustomResources(cache.connId, items.values());
+    }
     await startWatch(key, generation);
   }
 
@@ -654,12 +708,19 @@ export const useK8sStore = defineStore("k8s", () => {
       const items = new Map(cache.items);
       items.set(id, object);
       patch(key, { items, revision: cache.revision + 1, resourceVersion: version || cache.resourceVersion });
+      if (cache.resourceKey === CRD_KEY) {
+        // A definition somebody just created is a new kind to draw; nothing else announces it.
+        publishCustomResources(cache.connId, items.values());
+      }
       return;
     }
     if (event.kind === "DELETED") {
       const items = new Map(cache.items);
       items.delete(id);
       patch(key, { items, revision: cache.revision + 1, resourceVersion: version || cache.resourceVersion });
+      if (cache.resourceKey === CRD_KEY) {
+        publishCustomResources(cache.connId, items.values());
+      }
     }
   }
 
@@ -900,6 +961,49 @@ export const useK8sStore = defineStore("k8s", () => {
   // ── writes ────────────────────────────────────────────────────
 
   /**
+   * The connection an object on screen belongs to.
+   *
+   * The detail drawer is handed the object and its descriptor, not the connection — the pane's props
+   * are fixed — and the cache that is following the object is where the connection id still is. A
+   * row that is on screen is always in one: the drawer draws what the list drew.
+   */
+  function connectionIdOfObject(obj: K8sObject): string | null {
+    const id = idOf(obj);
+    for (const cache of Object.values(caches.value)) {
+      if (cache.items.has(id)) {
+        return cache.connId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Replaces one object with the document a person edited.
+   *
+   * A PUT, not a merge patch: the editor shows the whole object, so the whole object is what is
+   * written back. `acknowledged` travels because writing to a cluster is policy-gated exactly as a
+   * delete is; the person answered by pressing Save on a document they could read.
+   *
+   * Every cache holding the object is relisted afterwards: the answer is what the server accepted,
+   * and a tab whose watch is slow should not keep showing the draft it replaced.
+   */
+  async function replaceObject(connId: string, desc: ResourceDescriptor, obj: K8sObject, body: string): Promise<void> {
+    await request(connId, {
+      method: "put",
+      path: selfPathOf(desc, obj),
+      body,
+      contentType: "application/json",
+      acknowledged: true,
+    });
+    const id = idOf(obj);
+    for (const cache of Object.values(caches.value)) {
+      if (cache.connId === connId && cache.items.has(id)) {
+        refresh(connId, cache.resourceKey, cache.namespace);
+      }
+    }
+  }
+
+  /**
    * Deletes one object.
    *
    * `acknowledged` travels because this is a destructive request: the backend's policy gate refuses
@@ -1067,6 +1171,8 @@ export const useK8sStore = defineStore("k8s", () => {
     clusterUsage,
     loadOverview,
     overviewAge,
+    connectionIdOfObject,
+    replaceObject,
     deleteObject,
     restartWorkload,
     scaleWorkload,
