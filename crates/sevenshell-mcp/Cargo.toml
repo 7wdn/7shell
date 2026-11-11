@@ -25,6 +25,9 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-std"] }
+# A call id for every tools/call: unique across sessions, so a cancellation names one call even
+# after the bridge that minted it is gone.
+uuid = { workspace = true }
 
 [dev-dependencies]
 sevenshell-error = { workspace = true }

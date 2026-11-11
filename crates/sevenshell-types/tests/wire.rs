@@ -20,15 +20,15 @@ use sevenshell_types::{
     ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors,
     DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics,
     HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo,
-    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpScope, MemoryUsage, NetworkCounters,
-    OpenOutcome, OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment,
-    RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
-    SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen,
-    SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt,
-    SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt,
-    SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
-    TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer,
-    UploadOutcome, VaultArchive, VaultState,
+    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpScope, McpServerConfig, McpServerState,
+    McpServerStatus, McpServerTransport, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey,
+    ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure,
+    SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
+    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet,
+    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
+    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
+    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
+    ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -637,6 +637,16 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             ai_context_enabled: false,
             ai_context_lines: 40,
             ai_session_retention_days: 45,
+            mcp_client_servers: vec![McpServerConfig {
+                id: "files".to_owned(),
+                name: "Files".to_owned(),
+                transport: McpServerTransport::Stdio,
+                command: Some("npx".to_owned()),
+                args: vec!["-y".to_owned(), "@modelcontextprotocol/server-filesystem".to_owned()],
+                url: None,
+                enabled: true,
+                tool_timeout_seconds: 60,
+            }],
         },
         "AppSettings",
     );
@@ -645,6 +655,22 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         serde_json::json!(45),
         "the retention is a page field like the two above it, and the window reads this name"
     );
+    // An external server travels as configuration only: the transport is the lower-case word the
+    // page matches, and the timeout is the camelCase name the row reads.
+    let external = &settings["mcpClientServers"][0];
+    assert_eq!(external["transport"], serde_json::json!("stdio"));
+    assert_eq!(external["toolTimeoutSeconds"], serde_json::json!(60));
+    assert_eq!(external["args"][0], serde_json::json!("-y"));
+    assert!(
+        external.get("url").is_none(),
+        "an address nobody set is absent rather than null"
+    );
+    for forbidden in ["env", "headers", "token", "secret", "password"] {
+        assert!(
+            external.get(forbidden).is_none(),
+            "`{forbidden}` would put a credential in a file anything can read: {external}"
+        );
+    }
     // The scope is a word on the wire, and it is the camelCase one the interface's union spells:
     // `read_only` here would be a value the settings page cannot match against anything.
     let scope = check(&McpScope::HighRisk, "McpScope");
@@ -1597,4 +1623,28 @@ fn container_and_cluster_wire_types_keep_their_camel_case_fields() {
         "K8sResponse",
     );
     assert_eq!(response["status"], serde_json::json!(200));
+}
+
+/// An external MCP server's two shapes: the configuration the settings file holds, and the state
+/// the page draws for it.
+///
+/// The words are checked rather than only their casing: `stdio`, `ready` and `serverId` are what the
+/// page matches on, and a state that arrived as `Ready` would draw as an unknown row.
+#[test]
+fn an_external_server_and_its_status_speak_the_interface_s_words() {
+    let transport = check(&McpServerTransport::Sse, "McpServerTransport");
+    assert_eq!(transport, serde_json::json!("sse"));
+
+    let state = check(&McpServerState::Ready, "McpServerState");
+    assert_eq!(state, serde_json::json!("ready"));
+
+    let status = check(
+        &McpServerStatus::new("files", McpServerState::Connecting)
+            .with_failure("MCP-SERVER-CONNECT-FAILED", "the server did not answer"),
+        "McpServerStatus",
+    );
+    assert_eq!(status["serverId"], serde_json::json!("files"));
+    assert_eq!(status["state"], serde_json::json!("failed"));
+    assert_eq!(status["tools"], serde_json::json!(0));
+    assert_eq!(status["code"], serde_json::json!("MCP-SERVER-CONNECT-FAILED"));
 }

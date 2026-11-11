@@ -30,6 +30,27 @@ pub const ENDPOINT_FILE_NAME: &str = "mcp-endpoint.json";
 /// Where a call is posted.
 pub const TOOL_CALL_PATH: &str = "/tools/call";
 
+/// Where the tool list is read from.
+///
+/// Added for the second wave: the bridge starts with the built-in list compiled in and asks the
+/// desktop for the whole table once it is reachable, so external servers' tools reach a client
+/// without the bridge having to know what an external server is. The desktop is authoritative; a
+/// bridge that cannot reach it falls back to the compiled list rather than to a partial one.
+pub const TOOLS_PATH: &str = "/tools";
+
+/// Where a call in flight can be called off.
+///
+/// The body names the call by id; the caller's connection is not the thing being cancelled, because
+/// a tool call may outlive the request that started it (an approval waits for a person).
+pub const TOOL_CANCEL_PATH: &str = "/tools/cancel";
+
+/// The header that carries a call's own id.
+///
+/// A header rather than a field of [`crate::ToolCall`]: that type is frozen and refuses unknown
+/// fields, and adding one would make an older desktop reject every call from a newer bridge. A
+/// header is ignored by anything that does not know it, which is the compatibility this needs.
+pub const CALL_ID_HEADER: &str = "x-sshell-call-id";
+
 /// The largest request body the endpoint accepts.
 ///
 /// Two mebibytes. A tool argument is a command line, a path or a file's text: large enough for a

@@ -2,9 +2,9 @@
 //!
 //! The desktop is the only process with the vault, the known hosts and the live sessions, so it is
 //! the process the MCP bridge talks to. It listens on `127.0.0.1` — the configured port or one the
-//! system assigns — exposes exactly one route (`POST /tools/call`), and writes down the port and the
-//! token for this run in `<config_dir>/mcp-endpoint.json`. The bridge reads that file; the interface
-//! never does.
+//! system assigns — exposes three routes on loopback (`POST /tools/call`, `GET /tools` and
+//! `POST /tools/cancel`), and writes down the port and the token for this run in
+//! `<config_dir>/mcp-endpoint.json`. The bridge reads that file; the interface never does.
 //!
 //! The pieces, and why they are apart:
 //!

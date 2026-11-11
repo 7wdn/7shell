@@ -33,6 +33,20 @@ pub async fn settings_set(
     // is an icon, and what closing does.
     crate::apply_shell_settings(window.app_handle(), &settings);
 
+    // The external servers are a list in this same file, and the settings page is not the only place
+    // it can change (the server commands write it too). Compared rather than applied every time: a
+    // save that touched the font must not reconnect five servers, and `replace` keeps the sessions
+    // of entries that did not move — but the comparison is what keeps the emit quiet as well. The
+    // result bound travels with the same apply because it, too, belongs to the manager.
+    if (previous.mcp_client_servers != settings.mcp_client_servers
+        || previous.mcp_max_result_bytes != settings.mcp_max_result_bytes)
+        && let Err(error) = state.mcp_client().apply_and_refresh(&settings)
+    {
+        // The settings page has already been written, so the refusal is the manager's: say what it
+        // is and leave the file alone rather than reverting somebody's other preferences.
+        log::warn!("the external MCP servers could not be updated from the settings page: {error}");
+    }
+
     // A failure to bind is returned rather than hidden: the settings page asked for a listener and
     // has to be told there is none, even though the preference itself was saved.
     crate::mcp::apply_settings(window.app_handle(), state.mcp(), &previous, &settings).await?;

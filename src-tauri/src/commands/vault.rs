@@ -26,6 +26,22 @@ fn state_of(vault: &sevenshell_vault::Vault) -> VaultState {
     }
 }
 
+/// Tells the external servers that the credentials they were missing can be read again.
+///
+/// The settings file is re-read rather than taken from the caller: the list is the file's, and the
+/// window that just typed a password has no reason to know what servers are configured. Spawned work
+/// inside — the handshakes are somebody else's servers.
+fn reopen_external_servers(state: &ShellState) {
+    let settings = match sevenshell_platform::load() {
+        Ok(settings) => settings,
+        Err(error) => {
+            log::warn!("settings could not be read, so the external MCP servers are not reopened: {error}");
+            return;
+        }
+    };
+    state.mcp_client().on_vault_unlocked(&settings);
+}
+
 /// Whether a vault exists and whether it is open.
 #[tauri::command]
 pub fn vault_state(state: State<'_, ShellState>) -> VaultState {
@@ -36,12 +52,14 @@ pub fn vault_state(state: State<'_, ShellState>) -> VaultState {
 #[tauri::command]
 pub fn vault_create(state: State<'_, ShellState>, password: String) -> Result<VaultState, ShellError> {
     state.vault().create(&password)?;
+    reopen_external_servers(&state);
     Ok(state_of(state.vault()))
 }
 
 #[tauri::command]
 pub fn vault_unlock(state: State<'_, ShellState>, password: String) -> Result<VaultState, ShellError> {
     state.vault().unlock(&password)?;
+    reopen_external_servers(&state);
     Ok(state_of(state.vault()))
 }
 

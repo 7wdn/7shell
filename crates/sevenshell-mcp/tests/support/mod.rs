@@ -1,10 +1,11 @@
 //! What the integration tests need on the other side of the bridge.
 //!
 //! The desktop is a listener on loopback that speaks exactly the contract in
-//! `sevenshell-api/src/endpoint.rs`: one `POST /tools/call`, a bearer token, a JSON body. It is
-//! hand-written on `tokio::net` rather than built out of an HTTP framework because what the tests
-//! have to assert is the bytes — the method line, the headers, the body — and a framework's typed
-//! handler is precisely the layer that hides them. One route is not worth a dependency.
+//! `sevenshell-api/src/endpoint.rs`: `POST /tools/call`, `GET /tools`, `POST /tools/cancel`, a
+//! bearer token, a JSON body. It is hand-written on `tokio::net` rather than built out of an HTTP
+//! framework because what the tests have to assert is the bytes — the method line, the headers, the
+//! body — and a framework's typed handler is precisely the layer that hides them. Three routes are
+//! not worth a dependency.
 
 #![allow(dead_code)]
 
@@ -15,7 +16,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
-use sevenshell_api::{ENDPOINT_FILE_NAME, EndpointFile, ToolError, ToolOutcome, ToolResult};
+use sevenshell_api::{ENDPOINT_FILE_NAME, EndpointFile, TOOLS_PATH, ToolError, ToolOutcome, ToolResult};
 
 /// One request as it arrived, before anything interpreted it.
 #[derive(Debug, Clone)]
@@ -61,6 +62,14 @@ impl Reply {
         }
     }
 
+    /// Whatever body a test wants, for a route whose answer is not a tool outcome.
+    pub fn with_body(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            body: body.into(),
+        }
+    }
+
     fn outcome(outcome: ToolOutcome) -> Self {
         Self {
             status: 200,
@@ -72,44 +81,68 @@ impl Reply {
         match self.status {
             200 => "OK",
             401 => "Unauthorized",
+            404 => "Not Found",
             413 => "Payload Too Large",
+            500 => "Internal Server Error",
             _ => "Error",
         }
     }
 }
 
-/// A desktop's loopback endpoint, answering every connection with one configured reply.
+/// A desktop's loopback endpoint, answering each connection with its configured reply.
 pub struct FakeDesktop {
     reply: Arc<Mutex<Reply>>,
+    /// What `GET /tools` answers, when a test needs a real table beside a call's answer.
+    tools: Arc<Mutex<Option<Reply>>>,
     captured: Arc<Mutex<Vec<Captured>>>,
     port: u16,
 }
 
 impl FakeDesktop {
     pub async fn start(reply: Reply) -> Self {
+        Self::start_routed(reply, None).await
+    }
+
+    /// A desktop that lists its tools as well as answering a call.
+    ///
+    /// The table is a separate answer because the two routes carry different bodies; a fake with one
+    /// reply for both could not tell a bridge that read the wrong route from one that read the right
+    /// one and got a tool outcome where a table belongs.
+    pub async fn start_with_tools(tools: Reply, reply: Reply) -> Self {
+        Self::start_routed(reply, Some(tools)).await
+    }
+
+    async fn start_routed(reply: Reply, tools: Option<Reply>) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("a loopback port is available");
         let port = listener.local_addr().expect("a bound address").port();
         let reply = Arc::new(Mutex::new(reply));
+        let tools = Arc::new(Mutex::new(tools));
         let captured = Arc::new(Mutex::new(Vec::<Captured>::new()));
 
-        let accepting = (Arc::clone(&reply), Arc::clone(&captured));
+        let accepting = (Arc::clone(&reply), Arc::clone(&tools), Arc::clone(&captured));
         tokio::spawn(async move {
-            let (reply, captured) = accepting;
+            let (reply, tools, captured) = accepting;
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     break;
                 };
                 let reply = Arc::clone(&reply);
+                let tools = Arc::clone(&tools);
                 let captured = Arc::clone(&captured);
                 tokio::spawn(async move {
-                    let _ = answer(stream, reply, captured).await;
+                    let _ = answer(stream, reply, tools, captured).await;
                 });
             }
         });
 
-        Self { reply, captured, port }
+        Self {
+            reply,
+            tools,
+            captured,
+            port,
+        }
     }
 
     pub fn port(&self) -> u16 {
@@ -142,6 +175,7 @@ pub fn write_endpoint_file(path: &Path, port: u16, token: &str) {
 async fn answer(
     stream: TcpStream,
     reply: Arc<Mutex<Reply>>,
+    tools: Arc<Mutex<Option<Reply>>>,
     captured: Arc<Mutex<Vec<Captured>>>,
 ) -> std::io::Result<()> {
     let (read, mut write) = stream.into_split();
@@ -176,6 +210,10 @@ async fn answer(
     let mut body = vec![0_u8; length];
     reader.read_exact(&mut body).await?;
 
+    // Decided before the request is moved into the capture: the table route has its own answer when
+    // a test configured one, and every other path — a call, a cancellation — uses the default.
+    let is_tool_table = path == TOOLS_PATH;
+
     captured.lock().expect("the capture lock").push(Captured {
         method,
         path,
@@ -184,7 +222,12 @@ async fn answer(
     });
 
     let (status, reason, body) = {
-        let reply = reply.lock().expect("the reply lock");
+        let routed = if is_tool_table {
+            tools.lock().expect("the tools reply lock").clone()
+        } else {
+            None
+        };
+        let reply = routed.unwrap_or_else(|| reply.lock().expect("the reply lock").clone());
         (reply.status, reply.reason(), reply.body.clone())
     };
 

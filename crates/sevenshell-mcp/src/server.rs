@@ -13,21 +13,25 @@
 //! `initialize` still gets answers, because there is nothing this bridge would decide differently.
 //! What would be wrong is refusing a request over a step that changes no answer.
 //!
-//! Two shapes are deliberately absent. Cancel is one: `notifications/cancelled` is read and
-//! ignored, because the work it names runs inside the desktop, a call is a task of its own here,
-//! and a bridge that answered "cancelled" while a batch kept writing to servers would be lying to
-//! the agent. Its lifetime is the desktop's timeout, and that is what the note on stderr says.
-//! The other is an unbounded fan-out: a client may send lines faster than calls finish, and a
-//! bridge that spawned a task per line would hold every one of them in memory behind one person's
-//! approval window.
+//! Cancellation is forwarded rather than swallowed: each call is started under an id this bridge
+//! minted, so `notifications/cancelled` can name a request, the mapping turns it into that call id,
+//! and the desktop calls off exactly that work. The notification still gets no reply — the protocol
+//! has none for it — and the request the agent named still gets its own answer, which is the
+//! cancelled tool's outcome. A cancellation naming something that already ended is ignored.
+//!
+//! What is deliberately absent is an unbounded fan-out: a client may send lines faster than calls
+//! finish, and a bridge that spawned a task per line would hold every one of them in memory behind
+//! one person's approval window.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
+use uuid::Uuid;
 
 use sevenshell_api::{ToolAccess, ToolDescriptor, ToolOutcome, ToolResult};
 
@@ -43,14 +47,37 @@ pub const DEFAULT_MAX_CONCURRENCY: usize = 8;
 /// What the bridge needs from the desktop.
 ///
 /// A trait rather than the HTTP client itself so the protocol can be tested without a listener: the
-/// fake supplies descriptors and outcomes, and the server cannot tell the difference. Listing is
-/// local and therefore infallible — the descriptors are compiled into this build, so `tools/list`
-/// answers even when the desktop is missing, and it is a *call* that then says why it cannot.
+/// fake supplies descriptors and outcomes, and the server cannot tell the difference. Listing starts
+/// from descriptors compiled into this build and is refreshed from the desktop when it answers —
+/// which is how an external server's tools reach a client — so `tools/list` always has an answer,
+/// and it is a *call* that then says why the desktop cannot be reached.
 #[async_trait]
 pub trait ToolClient: Send + Sync {
+    /// The descriptors to list, as last known. Cached: [`Self::refresh_descriptors`] moves it on.
     fn descriptors(&self) -> Vec<ToolDescriptor>;
 
-    async fn call(&self, name: &str, arguments: Value) -> Result<ToolOutcome, RpcError>;
+    /// Asks the desktop for its whole tool table.
+    ///
+    /// The default is "nothing to refresh", which is what a client with a fixed list answers. A
+    /// failure is information, not a dead end: the compiled list is still a complete answer for this
+    /// build, so `tools/list` never turns into an error because the desktop is not running.
+    async fn refresh_descriptors(&self) -> Result<(), RpcError> {
+        Ok(())
+    }
+
+    /// Runs one tool. `call_id` is this bridge's name for the call, and it is what a later
+    /// cancellation addresses: the desktop starts the work under that id, so a notification reaches
+    /// exactly this call and no other.
+    async fn call(&self, name: &str, arguments: Value, call_id: &str) -> Result<ToolOutcome, RpcError>;
+
+    /// Asks the desktop to call off the work it started under `call_id`.
+    ///
+    /// The default is "nothing to cancel" for a client that starts no work of its own. A failure is
+    /// reported on stderr but changes no answer: the original request is answered by [`Self::call`]
+    /// whatever a cancellation did.
+    async fn cancel(&self, _call_id: &str) -> Result<(), RpcError> {
+        Ok(())
+    }
 
     /// The largest result this bridge will put on stdout.
     ///
@@ -66,6 +93,11 @@ pub struct McpServer {
     client: Arc<dyn ToolClient>,
     max_result_bytes: usize,
     max_concurrency: usize,
+    /// The request id of every call in flight, mapped to the id this bridge gave the call.
+    ///
+    /// A `std::sync::Mutex` because the map is read and written in one statement and never held
+    /// across an await: the lock is a few hash lookups, not a gate on the desktop's answer.
+    calls: Mutex<HashMap<Id, String>>,
 }
 
 impl McpServer {
@@ -74,6 +106,7 @@ impl McpServer {
             client,
             max_result_bytes,
             max_concurrency: DEFAULT_MAX_CONCURRENCY,
+            calls: Mutex::new(HashMap::new()),
         }
     }
 
@@ -116,27 +149,12 @@ impl McpServer {
         }
 
         // A message without an id is a notification, and the protocol gives it no answer. That is
-        // also everything `notifications/initialized` needs: it changes nothing here.
+        // also everything `notifications/initialized` needs: it changes nothing here. Cancellation is
+        // the one notification that does something, and it still gets no reply — the answer belongs
+        // to the request it names, and that request is already in flight.
         if request.id.is_none() {
             if request.method == "notifications/cancelled" {
-                // Nothing is cancelled, and saying so is the honest answer: the call runs in the
-                // desktop behind its own timeout, this bridge only holds a task waiting for the
-                // answer, and a notification has no reply to carry the explanation in. Dropping the
-                // named task instead would close the pipe under a request the desktop is still
-                // working on; answering the notification would invent a reply the protocol has no
-                // place for. So the line goes to stderr — where a person debugging an agent looks —
-                // and the call ends the way it would have ended anyway.
-                let cancelled = request.params.as_ref().and_then(|params| params.get("requestId"));
-                match cancelled {
-                    Some(cancelled) => eprintln!(
-                        "sshell-mcp: ignoring notifications/cancelled for request {cancelled}: \
-                         a call ends at its own timeout, not when an agent asks"
-                    ),
-                    None => eprintln!(
-                        "sshell-mcp: ignoring notifications/cancelled: \
-                         a call ends at its own timeout, not when an agent asks"
-                    ),
-                }
+                self.cancel_request(request.params).await;
             }
             return None;
         }
@@ -146,7 +164,7 @@ impl McpServer {
         let response = match request.method.as_str() {
             "initialize" => self.initialize(id, request.params),
             "ping" => Response::result(Some(id), json!({})),
-            "tools/list" => self.tools_list(id),
+            "tools/list" => self.tools_list(id).await,
             "tools/call" => self.tools_call(id, request.params).await,
             other => Response::error(Some(id), RpcError::method_not_found(other)),
         };
@@ -259,9 +277,49 @@ impl McpServer {
         )
     }
 
-    fn tools_list(&self, id: Id) -> Response {
+    async fn tools_list(&self, id: Id) -> Response {
+        // The desktop is authoritative: it knows the external servers' tools, which no bridge
+        // compiles in. A refresh that cannot reach it leaves the compiled list in place, so the
+        // answer is still complete for this build — what is missing is only what this build could
+        // never have named.
+        if let Err(error) = self.client.refresh_descriptors().await {
+            eprintln!(
+                "sshell-mcp: the desktop's tool list could not be read; answering with the built-in one: {}",
+                error.message
+            );
+        }
+
         let tools: Vec<Value> = self.client.descriptors().into_iter().map(tool_listing).collect();
         Response::result(Some(id), json!({ "tools": tools }))
+    }
+
+    /// Forwards one `notifications/cancelled` to the desktop.
+    ///
+    /// Every outcome here is quiet, because a notification has nowhere to carry an explanation: no
+    /// `requestId`, an id nothing is in flight under (the answer was already written, or the client
+    /// named a request this bridge never accepted), or a desktop that cannot be reached — the last
+    /// one with a line on stderr, where a person debugging an agent looks.
+    async fn cancel_request(&self, params: Option<Value>) {
+        let Some(request_id) = params
+            .as_ref()
+            .and_then(|params| params.get("requestId"))
+            .and_then(|value| serde_json::from_value::<Id>(value.clone()).ok())
+        else {
+            return;
+        };
+
+        // The mapping is removed by the call itself once it has an answer, so "not found" means the
+        // work is over. There is nothing to call off, and an error would be addressed to nobody.
+        let Some(call_id) = self.call_id_for(&request_id) else {
+            return;
+        };
+
+        if let Err(error) = self.client.cancel(&call_id).await {
+            eprintln!(
+                "sshell-mcp: cancelling request {request_id} did not reach the desktop: {}",
+                error.message
+            );
+        }
     }
 
     async fn tools_call(&self, id: Id, params: Option<Value>) -> Response {
@@ -304,11 +362,42 @@ impl McpServer {
             return Response::error(Some(id), RpcError::invalid_params(format!("no tool is named `{name}`")));
         }
 
-        match self.client.call(name, arguments).await {
+        // The call's own id, minted here rather than by the desktop: the client's request id is only
+        // unique within its session, and a cancellation has to name a call in a way the desktop can
+        // match after the bridge is gone. It is remembered before the call starts, so a cancellation
+        // that arrives while the desktop is still working finds it; it is forgotten as soon as the
+        // answer exists, so a later cancellation is ignored instead of calling off something else.
+        let call_id = Uuid::new_v4().to_string();
+        self.remember_call(&id, &call_id);
+
+        let outcome = self.client.call(name, arguments, &call_id).await;
+        self.forget_call(&id);
+
+        match outcome {
             Ok(ToolOutcome::Succeeded { result }) => Response::result(Some(id), self.tool_content(*result)),
             Ok(ToolOutcome::Failed { error }) => Response::error(Some(id), RpcError::from(error)),
             Err(error) => Response::error(Some(id), error),
         }
+    }
+
+    fn remember_call(&self, id: &Id, call_id: &str) {
+        self.calls().insert(id.clone(), call_id.to_owned());
+    }
+
+    fn forget_call(&self, id: &Id) {
+        self.calls().remove(id);
+    }
+
+    fn call_id_for(&self, id: &Id) -> Option<String> {
+        self.calls().get(id).cloned()
+    }
+
+    /// The map, with a poisoned lock recovered rather than propagated.
+    ///
+    /// No code path here panics while holding it, and a session that answered no more calls because
+    /// an unrelated task died is worse than one that goes on with the map it had.
+    fn calls(&self) -> std::sync::MutexGuard<'_, HashMap<Id, String>> {
+        self.calls.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Turns one tool result into the protocol's content blocks, bounded.

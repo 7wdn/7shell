@@ -46,6 +46,78 @@
       "unitDays": "days",
       "unitKiB": "KiB"
     },
+    "servers": {
+      "title": "External servers",
+      "description": "MCP servers this installation calls beside its own tools. Their tools appear to the assistant and over MCP under a name built from the server's identifier and the tool's own; one a server marks read-only may be listed, and every other one is approved on each call.",
+      "add": "Add server",
+      "empty": "No external servers are configured.",
+      "loading": "Reading the servers…",
+      "state": {
+        "connecting": "Connecting",
+        "ready": "Ready",
+        "failed": "Failed",
+        "disabled": "Disabled"
+      },
+      "transport": {
+        "stdio": "stdio",
+        "http": "HTTP",
+        "sse": "SSE"
+      },
+      "toolCount": "{count} tools",
+      "refresh": "Reconnect",
+      "edit": "Edit",
+      "remove": "Remove",
+      "removeTitle": "Remove external server",
+      "removeMessage": "Its configuration and the secrets held for it are deleted, and its tools stop being offered. Nothing on the server itself is touched.",
+      "newTitle": "New external server",
+      "editTitle": "Edit external server",
+      "id": "Identifier",
+      "idHint": "One to 32 characters: letters, digits, underscores and hyphens, and never a double underscore — it is part of every tool name.",
+      "name": "Name",
+      "nameHint": "What the list draws. Empty falls back to the identifier.",
+      "transportLabel": "Transport",
+      "command": "Command",
+      "commandHint": "The program this machine starts, resolved on PATH.",
+      "args": "Arguments",
+      "argsHint": "One argument per line.",
+      "url": "URL",
+      "urlHint": "The address the server is reached at.",
+      "timeout": "Tool timeout",
+      "timeoutHint": "How long one call to one of its tools may take, from 5 to 600 seconds.",
+      "enabled": "Enabled",
+      "enabledHint": "While off, its tools are not offered and no connection is attempted.",
+      "save": "Save",
+      "cancel": "Cancel",
+      "saved": "Saved.",
+      "removed": "Removed.",
+      "validation": {
+        "id": "Use one to 32 letters, digits, underscores or hyphens, and no double underscore.",
+        "idTaken": "Another server already uses this identifier.",
+        "command": "A stdio server needs a command.",
+        "url": "An HTTP or SSE server needs a URL."
+      },
+      "secrets": {
+        "title": "Secrets",
+        "description": "The environment a stdio server is started with, and the headers an HTTP or SSE server sends. They are kept in the vault under this server's identifier and are never read back.",
+        "state": {
+          "saved": "Secrets saved",
+          "missing": "No secrets saved",
+          "locked": "Vault locked — cannot tell"
+        },
+        "env": "Environment",
+        "headers": "Headers",
+        "key": "Name",
+        "value": "Value",
+        "add": "Add",
+        "remove": "Remove this entry",
+        "save": "Save secrets",
+        "saved": "Saved. The values are not shown again.",
+        "cleared": "Cleared. Nothing is stored for this server.",
+        "hint": "Saving replaces the whole set. Saving with no entries removes what is stored.",
+        "invalid": "Every entry needs a name, and two entries cannot share one.",
+        "close": "Close"
+      }
+    },
     "scope": {
       "readOnly": "Read only",
       "readOnlyHint": "Listing and reading: sessions, directory listings, text files, containers and cluster objects. Nothing runs and nothing is written.",
@@ -93,6 +165,12 @@
         "host": "Host",
         "keyType": "Key type",
         "fingerprint": "Fingerprint"
+      },
+      "external": {
+        "title": "An external server's tool is asking to act",
+        "body": "{server} provides this tool. Nothing here wrote it, so what it does with the request cannot be checked on this side — approving lets it run.",
+        "server": "Server",
+        "tool": "Tool"
       },
       "expiresIn": "Refused automatically in {time}",
       "expired": "This request has expired.",

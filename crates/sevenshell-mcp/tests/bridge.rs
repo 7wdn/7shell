@@ -9,8 +9,8 @@
 
 mod support;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -19,7 +19,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
-use sevenshell_api::{ENDPOINT_FILE_NAME, ToolAccess, ToolDescriptor, ToolOutcome, ToolResult, local};
+use sevenshell_api::{
+    CALL_ID_HEADER, ENDPOINT_FILE_NAME, TOOL_CALL_PATH, TOOLS_PATH, ToolAccess, ToolDescriptor, ToolInputSchema,
+    ToolOutcome, ToolResult, local,
+};
 use sevenshell_mcp::{DESKTOP_UNAVAILABLE, HttpToolClient, LATEST_PROTOCOL_VERSION, McpServer, RpcError, ToolClient};
 
 use support::{FakeDesktop, Reply};
@@ -103,7 +106,7 @@ impl ToolClient for ValueClient {
         local::default_registry().descriptors()
     }
 
-    async fn call(&self, _name: &str, _arguments: Value) -> Result<ToolOutcome, RpcError> {
+    async fn call(&self, _name: &str, _arguments: Value, _call_id: &str) -> Result<ToolOutcome, RpcError> {
         Ok(ToolOutcome::succeeded(ToolResult::new(self.value.clone())))
     }
 }
@@ -120,7 +123,7 @@ impl ToolClient for LimitedValueClient {
         local::default_registry().descriptors()
     }
 
-    async fn call(&self, _name: &str, _arguments: Value) -> Result<ToolOutcome, RpcError> {
+    async fn call(&self, _name: &str, _arguments: Value, _call_id: &str) -> Result<ToolOutcome, RpcError> {
         Ok(ToolOutcome::succeeded(ToolResult::new(self.value.clone())))
     }
 
@@ -170,7 +173,7 @@ impl ToolClient for GatedClient {
         local::default_registry().descriptors()
     }
 
-    async fn call(&self, _name: &str, _arguments: Value) -> Result<ToolOutcome, RpcError> {
+    async fn call(&self, _name: &str, _arguments: Value, _call_id: &str) -> Result<ToolOutcome, RpcError> {
         self.started.fetch_add(1, Ordering::SeqCst);
         let in_flight = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
         self.max_in_flight.fetch_max(in_flight, Ordering::SeqCst);
@@ -195,12 +198,87 @@ impl ToolClient for SlowClient {
         local::default_registry().descriptors()
     }
 
-    async fn call(&self, name: &str, _arguments: Value) -> Result<ToolOutcome, RpcError> {
+    async fn call(&self, name: &str, _arguments: Value, _call_id: &str) -> Result<ToolOutcome, RpcError> {
         if name == self.slow {
             tokio::time::sleep(self.delay).await;
         }
         Ok(ToolOutcome::succeeded(ToolResult::new(json!({ "tool": name }))))
     }
+}
+
+/// A desktop that starts one slow call and records both the id it was started under and every
+/// cancellation it receives. `ToolInputSchema` is unused here but the descriptors are the real ones.
+struct CancelRecordingClient {
+    started: AtomicUsize,
+    call_ids: Mutex<Vec<String>>,
+    cancels: Mutex<Vec<String>>,
+}
+
+impl Default for CancelRecordingClient {
+    fn default() -> Self {
+        Self {
+            started: AtomicUsize::new(0),
+            call_ids: Mutex::new(Vec::new()),
+            cancels: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl CancelRecordingClient {
+    fn started(&self) -> usize {
+        self.started.load(Ordering::SeqCst)
+    }
+
+    fn call_ids(&self) -> Vec<String> {
+        self.call_ids.lock().expect("the call id lock is not poisoned").clone()
+    }
+
+    fn cancels(&self) -> Vec<String> {
+        self.cancels.lock().expect("the cancel lock is not poisoned").clone()
+    }
+}
+
+#[async_trait]
+impl ToolClient for CancelRecordingClient {
+    fn descriptors(&self) -> Vec<ToolDescriptor> {
+        local::default_registry().descriptors()
+    }
+
+    async fn call(&self, name: &str, _arguments: Value, call_id: &str) -> Result<ToolOutcome, RpcError> {
+        self.call_ids
+            .lock()
+            .expect("the call id lock is not poisoned")
+            .push(call_id.to_owned());
+        self.started.fetch_add(1, Ordering::SeqCst);
+        // Only the tool a cancellation test names is slow: long enough for the notice to be read and
+        // forwarded while the call is still in flight, without slowing the other tests down.
+        if name == "sshell_exec_run" {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+        Ok(ToolOutcome::succeeded(ToolResult::new(json!({ "tool": name }))))
+    }
+
+    async fn cancel(&self, call_id: &str) -> Result<(), RpcError> {
+        self.cancels
+            .lock()
+            .expect("the cancel lock is not poisoned")
+            .push(call_id.to_owned());
+        Ok(())
+    }
+}
+
+/// A desktop that lists one tool this build does not compile in, and one compiled tool, so a call
+/// to the compiled tool is still known to the bridge after the refresh.
+fn a_table_with_an_external_tool() -> Vec<ToolDescriptor> {
+    let mut descriptors = local::default_registry().descriptors();
+    descriptors.push(ToolDescriptor {
+        name: "mcp__lab__list_things".to_owned(),
+        title: "List things".to_owned(),
+        description: "Lists things on the lab server.".to_owned(),
+        input_schema: ToolInputSchema::object(json!({}), &[]),
+        access: ToolAccess::Read,
+    });
+    descriptors
 }
 
 /// Waits for a condition a task sets, or fails with the sentence a reader needs.
@@ -218,7 +296,12 @@ async fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
 
 #[tokio::test]
 async fn a_session_over_the_pipe_reaches_the_desktop_and_every_line_is_json() {
-    let desktop = FakeDesktop::start(Reply::succeeded(json!({ "sessions": [] }))).await;
+    let table = serde_json::to_string(&a_table_with_an_external_tool()).expect("a table is JSON");
+    let desktop = FakeDesktop::start_with_tools(
+        Reply::with_body(200, table),
+        Reply::succeeded(json!({ "sessions": [] })),
+    )
+    .await;
     let directory = tempfile::tempdir().expect("a temporary directory");
     let endpoint = desktop.write_endpoint(directory.path(), "a-token");
 
@@ -228,11 +311,13 @@ async fn a_session_over_the_pipe_reaches_the_desktop_and_every_line_is_json() {
     let initialize = bridge.initialize().await;
     assert_eq!(initialize["result"]["protocolVersion"], json!(LATEST_PROTOCOL_VERSION));
 
+    // The table came from the desktop over `GET /tools`, not from the bridge's compiled list.
     let listing = bridge.request("tools/list", json!({})).await;
-    assert_eq!(
-        listing["result"]["tools"].as_array().expect("a list of tools").len(),
-        10,
-        "the listing has to be answered without the desktop: {listing}"
+    let tools = listing["result"]["tools"].as_array().expect("a list of tools");
+    assert_eq!(tools.len(), 11, "the desktop's table has one tool more: {listing}");
+    assert!(
+        tools.iter().any(|tool| tool["name"] == json!("mcp__lab__list_things")),
+        "a tool the desktop listed has to reach the agent: {listing}"
     );
 
     let call = bridge
@@ -248,10 +333,28 @@ async fn a_session_over_the_pipe_reaches_the_desktop_and_every_line_is_json() {
     );
 
     let captured = desktop.captured();
-    assert_eq!(captured.len(), 1, "exactly one call reached the desktop");
-    assert_eq!(captured[0].header("authorization"), Some("Bearer a-token"));
+    let tool_list = captured
+        .iter()
+        .find(|request| request.path == TOOLS_PATH)
+        .expect("the bridge has to read the desktop's table");
+    assert_eq!(tool_list.method, "GET");
+    assert_eq!(tool_list.header("authorization"), Some("Bearer a-token"));
 
-    let sent: sevenshell_api::ToolCall = serde_json::from_slice(&captured[0].body).expect("the body is a tool call");
+    let calls: Vec<_> = captured
+        .iter()
+        .filter(|request| request.path == TOOL_CALL_PATH)
+        .collect();
+    assert_eq!(calls.len(), 1, "exactly one call reached the desktop");
+    assert_eq!(calls[0].header("authorization"), Some("Bearer a-token"));
+    assert!(
+        calls[0]
+            .header(CALL_ID_HEADER)
+            .is_some_and(|call_id| !call_id.is_empty()),
+        "every call travels under an id a cancellation can name: {:?}",
+        calls[0].header(CALL_ID_HEADER)
+    );
+
+    let sent: sevenshell_api::ToolCall = serde_json::from_slice(&calls[0].body).expect("the body is a tool call");
     assert_eq!(sent.name, "sshell_sessions_list");
     assert_eq!(sent.arguments, json!({ "kind": "saved" }));
 }
@@ -412,14 +515,20 @@ async fn a_fast_call_is_answered_while_a_slow_one_is_still_running() {
 // -- Notifications ------------------------------------------------------
 
 #[tokio::test]
-async fn a_cancellation_is_read_and_ignored_rather_than_answered() {
-    let mut bridge = Bridge::over(McpServer::new(
-        Arc::new(SlowClient {
-            slow: "sshell_exec_run",
-            delay: Duration::from_millis(50),
-        }),
-        262_144,
-    ));
+async fn a_cancellation_reaches_the_desktop_under_the_call_id_of_its_request() {
+    let client = Arc::new(CancelRecordingClient::default());
+    let mut bridge = Bridge::over(McpServer::new(client.clone(), 262_144));
+
+    bridge
+        .send(
+            7,
+            "tools/call",
+            json!({ "name": "sshell_exec_run", "arguments": { "sessionId": "lab", "command": "sleep 1" } }),
+        )
+        .await;
+    // The mapping exists before the call reaches the desktop, so waiting for the call is enough to
+    // know a cancellation naming request 7 has something to find.
+    wait_until("the call to start", || client.started() == 1).await;
 
     bridge
         .write_raw(
@@ -431,13 +540,62 @@ async fn a_cancellation_is_read_and_ignored_rather_than_answered() {
             .to_string(),
         )
         .await;
+    wait_until("the cancellation to reach the desktop", || !client.cancels().is_empty()).await;
 
-    // No answer may follow: a notification has no reply, and anything here would be read as the
-    // answer to the next request.
+    assert_eq!(
+        client.cancels(),
+        client.call_ids(),
+        "the desktop has to be asked to call off the id the call was started under"
+    );
+
+    // No line may answer the notification: the next line is the answer to request 7, which the
+    // protocol still requires even though the work was called off.
+    let answer = bridge.read().await;
+    assert_eq!(
+        answer["id"],
+        json!(7),
+        "a reply to the notification would be read as this answer: {answer}"
+    );
+    assert_eq!(answer["result"]["structuredContent"]["tool"], json!("sshell_exec_run"));
+}
+
+#[tokio::test]
+async fn a_cancellation_for_a_request_that_already_ended_is_ignored() {
+    let client = Arc::new(CancelRecordingClient::default());
+    let mut bridge = Bridge::over(McpServer::new(client.clone(), 262_144));
+
+    // The call completes first, so its mapping is gone by the time the notification is read.
+    let answer = bridge
+        .request("tools/call", json!({ "name": "sshell_sessions_list", "arguments": {} }))
+        .await;
+    assert_eq!(
+        answer["result"]["structuredContent"]["tool"],
+        json!("sshell_sessions_list")
+    );
+
+    bridge
+        .write_raw(
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/cancelled",
+                "params": { "requestId": 1 }
+            })
+            .to_string(),
+        )
+        .await;
+
     bridge.next_id = 40;
     let ping = bridge.request("ping", json!({})).await;
-    assert_eq!(ping["id"], json!(41));
-    assert_eq!(ping["result"], json!({}));
+    assert_eq!(
+        ping["id"],
+        json!(41),
+        "the session goes on after an unanswerable notice"
+    );
+    assert!(
+        client.cancels().is_empty(),
+        "a request that already has its answer has no work left to cancel: {:?}",
+        client.cancels()
+    );
 }
 
 // -- The result limit ---------------------------------------------------

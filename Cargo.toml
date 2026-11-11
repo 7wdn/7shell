@@ -154,6 +154,7 @@ sevenshell-policy = { version = "0.1.3", path = "crates/sevenshell-policy" }
 sevenshell-vault = { version = "0.1.3", path = "crates/sevenshell-vault" }
 sevenshell-core = { version = "0.1.3", path = "crates/sevenshell-core" }
 sevenshell-api = { version = "0.1.3", path = "crates/sevenshell-api" }
+sevenshell-mcp-client = { version = "0.1.3", path = "crates/sevenshell-mcp-client" }
 sevenshell-ai = { version = "0.1.3", path = "crates/sevenshell-ai" }
 sevenshell-agent = { version = "0.1.3", path = "crates/sevenshell-agent" }
 sevenshell-ssh = { version = "0.1.3", path = "crates/sevenshell-ssh" }

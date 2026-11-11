@@ -87,6 +87,13 @@ pub enum ApprovalReason {
     /// A host whose key has never been seen. The fingerprint is what the person compares against
     /// what the server's administrator gave them; the key itself is what gets trusted.
     HostKeyUnknown { key: PresentedHostKey },
+    /// A tool from an external MCP server.
+    ///
+    /// Nothing about that tool can be judged here: this build did not write it, cannot see what it
+    /// will do with the arguments, and has only the server's own word that it is read-only. An
+    /// external call therefore stops for an answer every time, which is why the question names the
+    /// server and the tool rather than a risk verdict it would have had to invent.
+    External { server: String, tool: String },
 }
 
 /// One question about one call.
@@ -136,6 +143,27 @@ impl ApprovalRequest {
             session_name: None,
             subject: None,
             reason: ApprovalReason::HostKeyUnknown { key },
+            timeout_seconds: 0,
+        }
+    }
+
+    /// A question about a tool an external server provides.
+    ///
+    /// No session and no risk verdict: the call is not necessarily about a host this window has
+    /// open, and this build has no rules for a tool it did not write. The server and the tool are
+    /// the whole of what a person can decide on, so they are the whole of the reason.
+    pub fn external(server: impl Into<String>, tool: impl Into<String>) -> Self {
+        let tool = tool.into();
+        Self {
+            tool: tool.clone(),
+            origin: AgentOrigin::default(),
+            session_id: None,
+            session_name: None,
+            subject: None,
+            reason: ApprovalReason::External {
+                server: server.into(),
+                tool,
+            },
             timeout_seconds: 0,
         }
     }

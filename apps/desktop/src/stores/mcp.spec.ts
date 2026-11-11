@@ -22,6 +22,12 @@ vi.mock("@/lib/backend/tauri", () => ({
   mcpApprovalAnswer: vi.fn(),
   onMcpApproval: vi.fn(),
   onMcpStatus: vi.fn(),
+  mcpServersList: vi.fn(),
+  mcpServerSave: vi.fn(),
+  mcpServerRemove: vi.fn(),
+  mcpServerSecretsSet: vi.fn(),
+  mcpServerRefresh: vi.fn(),
+  onMcpServerStatus: vi.fn(),
 }));
 
 import {
@@ -30,18 +36,35 @@ import {
   mcpClientConfig,
   mcpDisable,
   mcpEnable,
+  mcpServerRefresh,
+  mcpServerRemove,
+  mcpServerSave,
+  mcpServerSecretsSet,
+  mcpServersList,
   mcpStatus,
   onMcpApproval,
+  onMcpServerStatus,
   onMcpStatus,
 } from "@/lib/backend/tauri";
 import {
   MCP_AUDIT_STATUS_LABEL_KEYS,
   MCP_SCOPE_HINT_KEYS,
   MCP_SCOPE_LABEL_KEYS,
+  MCP_SERVER_STATE_LABEL_KEYS,
+  MCP_SERVER_TRANSPORT_LABEL_KEYS,
   RISK_LEVEL_LABEL_KEYS,
 } from "@/lib/mcp/labels";
 import { useMcpStore } from "@/stores/mcp";
-import type { McpApprovalRequest, McpAuditEntry, McpStatus } from "@/types/mcp";
+import type {
+  McpApprovalRequest,
+  McpAuditEntry,
+  McpServerConfig,
+  McpServerState,
+  McpServerStatus,
+  McpServerTransport,
+  McpServerView,
+  McpStatus,
+} from "@/types/mcp";
 
 const statusMock = vi.mocked(mcpStatus);
 const enableMock = vi.mocked(mcpEnable);
@@ -51,6 +74,12 @@ const auditMock = vi.mocked(mcpAuditTail);
 const answerMock = vi.mocked(mcpApprovalAnswer);
 const approvalEventMock = vi.mocked(onMcpApproval);
 const statusEventMock = vi.mocked(onMcpStatus);
+const serverListMock = vi.mocked(mcpServersList);
+const serverSaveMock = vi.mocked(mcpServerSave);
+const serverRemoveMock = vi.mocked(mcpServerRemove);
+const serverSecretsMock = vi.mocked(mcpServerSecretsSet);
+const serverRefreshMock = vi.mocked(mcpServerRefresh);
+const serverStatusEventMock = vi.mocked(onMcpServerStatus);
 
 const LOCALES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../i18n/locales");
 
@@ -92,13 +121,50 @@ const audited: McpAuditEntry = {
   durationMs: 12,
 };
 
+/** An envelope the interface would be handed when one of these commands fails. */
+function failed(code: string): Record<string, unknown> {
+  return { version: 1, code, messageKey: "errors.store.io", origin: { subsystem: "app" } };
+}
+
+const SERVER_CONFIG: McpServerConfig = {
+  id: "files",
+  name: "Files",
+  transport: "stdio",
+  command: "npx",
+  args: ["-y", "server-files"],
+  enabled: true,
+  toolTimeoutSeconds: 60,
+};
+
+/** One server as the host answers: configuration, state and whether the vault holds secrets. */
+function view(
+  id: string,
+  options: {
+    state?: McpServerState;
+    transport?: McpServerTransport;
+    tools?: number;
+    hasSecrets?: boolean | null;
+    config?: Partial<McpServerConfig>;
+    status?: Partial<McpServerStatus>;
+  } = {},
+): McpServerView {
+  return {
+    config: { ...SERVER_CONFIG, id, name: id, transport: options.transport ?? "stdio", ...options.config },
+    status: { serverId: id, state: options.state ?? "ready", tools: options.tools ?? 3, ...options.status },
+    // `null` is a real answer — the vault is locked — so only an absent one reads as "none".
+    hasSecrets: options.hasSecrets === undefined ? false : options.hasSecrets,
+  };
+}
+
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
   approvalEventMock.mockResolvedValue(() => {});
   statusEventMock.mockResolvedValue(() => {});
+  serverStatusEventMock.mockResolvedValue(() => {});
   statusMock.mockResolvedValue(stopped());
   auditMock.mockResolvedValue([]);
+  serverListMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -226,24 +292,28 @@ describe("the agent interface as the window watches it", () => {
     stop();
   });
 
-  it("drops both subscriptions when the window goes away", async () => {
+  it("drops every subscription when the window goes away", async () => {
     const store = useMcpStore();
     const stopApproval = vi.fn();
     const stopStatus = vi.fn();
+    const stopServer = vi.fn();
     approvalEventMock.mockResolvedValue(stopApproval);
     statusEventMock.mockResolvedValue(stopStatus);
+    serverStatusEventMock.mockResolvedValue(stopServer);
 
     const stop = store.initialize();
     await vi.waitFor(() => {
       expect(approvalEventMock).toHaveBeenCalled();
       expect(statusEventMock).toHaveBeenCalled();
+      expect(serverStatusEventMock).toHaveBeenCalled();
     });
-    // One more turn, so the store has been handed both unsubscribe functions before they are used.
+    // One more turn, so the store has been handed every unsubscribe function before they are used.
     await Promise.resolve();
     stop();
 
     expect(stopApproval).toHaveBeenCalled();
     expect(stopStatus).toHaveBeenCalled();
+    expect(stopServer).toHaveBeenCalled();
   });
 
   it("copies the client configuration instead of keeping it on screen", async () => {
@@ -274,6 +344,149 @@ describe("the agent interface as the window watches it", () => {
     expect(await store.copyClientConfig()).toBe(false);
     expect(store.copyFailed).toBe(true);
     expect(store.failure).not.toBeNull();
+  });
+});
+
+describe("the external servers the window lists", () => {
+  it("replaces the list with the host's answer and remembers that it was read", async () => {
+    serverListMock.mockResolvedValue([view("files", { tools: 4 }), view("search", { transport: "http" })]);
+    const store = useMcpStore();
+
+    expect(store.serversLoaded).toBe(false);
+    await store.loadServers();
+
+    expect(store.servers.map((entry) => entry.config.id)).toEqual(["files", "search"]);
+    expect(store.servers[0]?.status.tools).toBe(4);
+    expect(store.serversLoaded).toBe(true);
+    expect(store.loadingServers).toBe(false);
+    expect(store.failure).toBeNull();
+  });
+
+  it("keeps the last answer on screen when the list could not be read", async () => {
+    serverListMock.mockRejectedValueOnce(failed("MCP-SERVER-LIST"));
+    const store = useMcpStore();
+
+    await store.loadServers();
+
+    expect(store.servers).toEqual([]);
+    expect(store.failure?.code).toBe("MCP-SERVER-LIST");
+    // Read, even though it failed: the empty state must not go on saying "reading" for ever.
+    expect(store.serversLoaded).toBe(true);
+  });
+
+  it("adds a server the host saved and replaces the row it already had", async () => {
+    serverListMock.mockResolvedValue([view("files")]);
+    const store = useMcpStore();
+    await store.loadServers();
+
+    serverSaveMock.mockResolvedValueOnce(view("search"));
+    expect(await store.saveServer({ ...SERVER_CONFIG, id: "search", name: "Search" })).toBe(true);
+    expect(store.servers.map((entry) => entry.config.id)).toEqual(["files", "search"]);
+
+    // The answer is adopted rather than the draft: the host decides what the row now says.
+    serverSaveMock.mockResolvedValueOnce(view("files", { tools: 9, config: { name: "Renamed" } }));
+    expect(await store.saveServer({ ...SERVER_CONFIG, name: "Renamed" })).toBe(true);
+
+    expect(store.servers).toHaveLength(2);
+    expect(store.servers[0]?.config.name).toBe("Renamed");
+    expect(store.servers[0]?.status.tools).toBe(9);
+  });
+
+  it("keeps the row and says why when a save was refused", async () => {
+    serverListMock.mockResolvedValue([view("files")]);
+    serverSaveMock.mockRejectedValueOnce(failed("MCP-SERVER-DUPLICATE"));
+    const store = useMcpStore();
+    await store.loadServers();
+
+    expect(await store.saveServer(SERVER_CONFIG)).toBe(false);
+
+    expect(store.servers).toHaveLength(1);
+    expect(store.failure?.code).toBe("MCP-SERVER-DUPLICATE");
+    expect(store.busyServer).toBeNull();
+  });
+
+  it("removes only the server the host removed", async () => {
+    serverListMock.mockResolvedValue([view("files"), view("search")]);
+    serverRemoveMock.mockResolvedValue(undefined);
+    const store = useMcpStore();
+    await store.loadServers();
+
+    expect(await store.removeServer("files")).toBe(true);
+
+    expect(store.servers.map((entry) => entry.config.id)).toEqual(["search"]);
+    expect(serverRemoveMock).toHaveBeenCalledWith("files");
+  });
+
+  it("adopts whether secrets are held, including the vault's unknown answer", async () => {
+    serverListMock.mockResolvedValue([view("files", { hasSecrets: null })]);
+    const store = useMcpStore();
+    await store.loadServers();
+    expect(store.servers[0]?.hasSecrets).toBeNull();
+
+    serverSecretsMock.mockResolvedValueOnce(view("files", { hasSecrets: true }));
+    expect(await store.setServerSecrets("files", { TOKEN: "abc" }, { Authorization: "Bearer x" })).toBe(true);
+    expect(serverSecretsMock).toHaveBeenCalledWith("files", { TOKEN: "abc" }, { Authorization: "Bearer x" });
+    expect(store.servers[0]?.hasSecrets).toBe(true);
+
+    // Empty objects are how the page clears; the answer is the same view with nothing held.
+    serverSecretsMock.mockResolvedValueOnce(view("files", { hasSecrets: false }));
+    expect(await store.setServerSecrets("files", {}, {})).toBe(true);
+    expect(store.servers[0]?.hasSecrets).toBe(false);
+  });
+
+  it("takes the state a reconnect answered with", async () => {
+    serverListMock.mockResolvedValue([view("files", { state: "failed", tools: 0 })]);
+    serverRefreshMock.mockResolvedValue(view("files", { state: "ready", tools: 6 }));
+    const store = useMcpStore();
+    await store.loadServers();
+
+    expect(await store.refreshServer("files")).toBe(true);
+
+    expect(serverRefreshMock).toHaveBeenCalledWith("files");
+    expect(store.servers[0]?.status.state).toBe("ready");
+    expect(store.servers[0]?.status.tools).toBe(6);
+  });
+
+  it("patches the row a status event names, without asking the host again", async () => {
+    serverListMock.mockResolvedValue([view("files")]);
+    const store = useMcpStore();
+    await store.loadServers();
+
+    let changed: ((next: McpServerStatus) => void) | undefined;
+    serverStatusEventMock.mockImplementation(async (listener) => {
+      changed = listener;
+      return () => {};
+    });
+    const stop = store.initialize();
+    await vi.waitFor(() => expect(changed).toBeDefined());
+
+    changed?.({ serverId: "files", state: "failed", tools: 0, code: "MCP-EXTERNAL-FAILED", message: "refused" });
+
+    expect(store.servers[0]?.status.state).toBe("failed");
+    expect(store.servers[0]?.status.code).toBe("MCP-EXTERNAL-FAILED");
+    expect(serverListMock).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("reloads the list when a status event names a server it does not know", async () => {
+    serverListMock.mockResolvedValueOnce([view("files")]);
+    const store = useMcpStore();
+    await store.loadServers();
+
+    let changed: ((next: McpServerStatus) => void) | undefined;
+    serverStatusEventMock.mockImplementation(async (listener) => {
+      changed = listener;
+      return () => {};
+    });
+    const stop = store.initialize();
+    await vi.waitFor(() => expect(changed).toBeDefined());
+
+    serverListMock.mockResolvedValue([view("files"), view("search", { state: "connecting", tools: 0 })]);
+    changed?.({ serverId: "search", state: "connecting", tools: 0 });
+
+    // A row is never invented from an event: it carries no configuration, so the list is asked again.
+    await vi.waitFor(() => expect(store.servers.map((entry) => entry.config.id)).toEqual(["files", "search"]));
+    stop();
   });
 });
 
@@ -321,12 +534,14 @@ describe("the words the agent interface draws", () => {
     expect(missing).toEqual([]);
   });
 
-  it("names every tier and its explanation, in every language", () => {
+  it("names every tier, state and transport, in every language", () => {
     const missing: string[] = [];
     const keys = [
       ...Object.values(MCP_SCOPE_LABEL_KEYS),
       ...Object.values(MCP_SCOPE_HINT_KEYS),
       ...Object.values(MCP_AUDIT_STATUS_LABEL_KEYS),
+      ...Object.values(MCP_SERVER_STATE_LABEL_KEYS),
+      ...Object.values(MCP_SERVER_TRANSPORT_LABEL_KEYS),
       "settings.nav.mcp",
     ];
     for (const language of languages) {

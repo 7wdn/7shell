@@ -1,8 +1,17 @@
 //! The loopback control endpoint: the only door an MCP bridge has.
 //!
-//! One route, one method. `POST /tools/call` carries a [`ToolCall`] and answers a [`ToolOutcome`]; a
-//! `GET /health` exists so a person or a script can tell a running endpoint from a port somebody else
-//! took, without a token and without touching a tool.
+//! Three routes, all on loopback and all behind the same boundary:
+//!
+//! * `POST /tools/call` carries a [`ToolCall`] and answers a [`ToolOutcome`]. The call's own id
+//!   travels in [`CALL_ID_HEADER`] when the bridge minted one, so a later cancel can name it.
+//! * `GET /tools` answers the one table an agent sees — the built-in tools and every external
+//!   server's, merged by the registry. The desktop is authoritative: a bridge that cannot reach it
+//!   falls back to its compiled list rather than to a partial one.
+//! * `POST /tools/cancel` stops one call by the id the caller gave it. The caller's connection is
+//!   not the thing being stopped: a tool call may outlive the request that started it.
+//!
+//! A `GET /health` exists so a person or a script can tell a running endpoint from a port somebody
+//! else took, without a token and without touching a tool.
 //!
 //! The checks happen in an order that keeps work off a request that could never be allowed:
 //!
@@ -23,7 +32,8 @@
 //! is built, and it is built per request because approval is a question about this call and the
 //! broker must be able to answer it by id.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use axum::body::{Body, to_bytes};
@@ -33,19 +43,103 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use sevenshell_api::{
-    AuditSink, MAX_BODY_BYTES, TOOL_CALL_PATH, ToolCall, ToolContext, ToolOutcome, ToolRegistry, local::ConnectionCache,
+    AuditSink, CALL_ID_HEADER, Cancel, MAX_BODY_BYTES, TOOL_CALL_PATH, TOOL_CANCEL_PATH, TOOLS_PATH, ToolCall,
+    ToolContext, ToolOutcome, ToolRegistry, local::ConnectionCache,
 };
 use sevenshell_core::Core;
-use sevenshell_types::McpScope;
+use sevenshell_types::{AgentOrigin, McpScope};
 
 use crate::mcp::approval::{ApprovalPresenter, ApprovalRegistry, WindowBroker};
 use crate::mcp::auth::{bearer_value, host_is_loopback, is_json_content_type, tokens_match};
 
-/// What the server keeps between requests: the token every call must present and one way to run it.
+/// The longest call id this build will carry.
+///
+/// The id becomes a map key and an approval id. A bridge sends a UUID; anything far past that is a
+/// caller mistake, and the fallback — a fresh id — keeps the call runnable instead of refusing it.
+const MAX_CALL_ID_CHARS: usize = 128;
+
+/// The calls in flight, by the id their caller gave them.
+///
+/// The bridge mints one id per `tools/call` and sends it in [`CALL_ID_HEADER`], so a later
+/// `POST /tools/cancel` can name the same call without the desktop knowing anything about JSON-RPC
+/// ids. An entry exists only for as long as the call runs: the handler inserts it before the tool is
+/// entered and removes it however the call ends, which is what makes `{"cancelled": false}` mean
+/// "that call is not running any more" rather than merely "an id I do not know".
+///
+/// A repeated id replaces the earlier entry. Two calls with one id is a bridge bug, and the later
+/// call's handle is the one a cancel reaches; the earlier one is unreachable rather than wrongly
+/// stopped.
+#[derive(Debug, Default)]
+pub struct CallRegistry {
+    calls: Mutex<HashMap<String, Cancel>>,
+}
+
+impl CallRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers one call and answers the handle it can be stopped through.
+    fn begin(&self, call_id: &str) -> Cancel {
+        let cancel = Cancel::new();
+        self.lock().insert(call_id.to_owned(), cancel.clone());
+        cancel
+    }
+
+    /// The call is over: nothing may stop it, and a later cancel answers `false`.
+    fn finish(&self, call_id: &str) {
+        self.lock().remove(call_id);
+    }
+
+    /// Stops one call. `false` when it is not running any more — already answered, or never began.
+    ///
+    /// The entry stays until the handler removes it, so a second cancel for a call that is still
+    /// unwinding is honestly answered "yes" rather than pretending the id is unknown.
+    pub fn cancel(&self, call_id: &str) -> bool {
+        match self.lock().get(call_id) {
+            Some(cancel) => {
+                cancel.cancel();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Stops every call that is running, and answers how many there were.
+    pub fn cancel_all(&self) -> usize {
+        let guard = self.lock();
+        for cancel in guard.values() {
+            cancel.cancel();
+        }
+        guard.len()
+    }
+
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Cancel>> {
+        match self.calls.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+/// What the server keeps between requests: the token every call must present, one way to run it,
+/// the table `GET /tools` reads, and the calls a cancel can reach.
 pub struct ServerState {
     token: Arc<str>,
     handler: Arc<dyn CallHandler>,
+    registry: Arc<ToolRegistry>,
+    calls: Arc<CallRegistry>,
 }
 
 impl ServerState {
@@ -53,7 +147,25 @@ impl ServerState {
         Self {
             token: Arc::from(token.into()),
             handler,
+            // A state without a table still answers `GET /tools` with an empty list rather than
+            // with nothing: the route exists for every listener, and a test that does not care
+            // about the list should not have to build one.
+            registry: Arc::new(ToolRegistry::new()),
+            calls: Arc::new(CallRegistry::new()),
         }
+    }
+
+    /// The one table an agent sees, which the listener's registry already holds.
+    pub fn with_registry(mut self, registry: Arc<ToolRegistry>) -> Self {
+        self.registry = registry;
+        self
+    }
+
+    /// The registry the handler inserts its calls into. It must be the same one for
+    /// `POST /tools/cancel` to reach a running call.
+    pub fn with_calls(mut self, calls: Arc<CallRegistry>) -> Self {
+        self.calls = calls;
+        self
     }
 }
 
@@ -84,6 +196,9 @@ pub struct RegistryHandler {
     /// a conversation and one authentication per question.
     connections: Arc<ConnectionCache>,
     approvals: Arc<ApprovalRegistry>,
+    /// The calls this handler is running, by the id their caller gave them. Shared with the server,
+    /// which is the side `POST /tools/cancel` arrives on.
+    calls: Arc<CallRegistry>,
     presenter: Arc<dyn ApprovalPresenter>,
     audit: Arc<dyn AuditSink>,
     limits: CallLimits,
@@ -95,6 +210,7 @@ impl RegistryHandler {
         registry: Arc<ToolRegistry>,
         connections: Arc<ConnectionCache>,
         approvals: Arc<ApprovalRegistry>,
+        calls: Arc<CallRegistry>,
         presenter: Arc<dyn ApprovalPresenter>,
         audit: Arc<dyn AuditSink>,
         limits: CallLimits,
@@ -104,6 +220,7 @@ impl RegistryHandler {
             registry,
             connections,
             approvals,
+            calls,
             presenter,
             audit,
             limits,
@@ -114,12 +231,21 @@ impl RegistryHandler {
 #[async_trait]
 impl CallHandler for RegistryHandler {
     async fn call(&self, call_id: &str, call: ToolCall) -> ToolOutcome {
+        // Registered before the broker and the context exist: a cancel that arrives while the call
+        // is waiting for a person has to find something to cancel, and the id is the only thing the
+        // caller and this handler share.
+        let cancel = self.calls.begin(call_id);
+
         let broker = WindowBroker::new(self.approvals.clone(), self.presenter.clone(), call_id.to_owned());
         let context = ToolContext::new(self.core.clone(), self.limits.scope)
             .with_cache(self.connections.clone())
             .with_approvals(Arc::new(broker))
             .with_audit(self.audit.clone())
-            .with_approval_timeout_seconds(self.limits.approval_timeout_seconds);
+            .with_approval_timeout_seconds(self.limits.approval_timeout_seconds)
+            .with_cancel(cancel)
+            // Who asked: a call through this endpoint is an MCP client's, and its approvals and its
+            // audit line have to say so — the assistant uses the same registry and the same truth.
+            .with_origin(AgentOrigin::Mcp);
 
         let outcome = self.registry.call(&context, call).await;
 
@@ -133,6 +259,10 @@ impl CallHandler for RegistryHandler {
             );
         }
 
+        // However it ended — answered, refused, failed, cancelled — the id is free again and a
+        // cancel for it answers `false`.
+        self.calls.finish(call_id);
+
         outcome
     }
 }
@@ -141,49 +271,55 @@ impl CallHandler for RegistryHandler {
 pub fn router(state: Arc<ServerState>) -> Router {
     Router::new()
         .route(TOOL_CALL_PATH, post(handle_tool_call))
+        .route(TOOLS_PATH, get(handle_tools))
+        .route(TOOL_CANCEL_PATH, post(handle_tool_cancel))
         .route("/health", get(handle_health))
         .with_state(state)
 }
 
 async fn handle_tool_call(State(state): State<Arc<ServerState>>, headers: HeaderMap, body: Body) -> Response {
-    if let Some(refusal) = boundary_refusal(&headers) {
+    if let Some(refusal) = refusal(&state, &headers) {
         return refusal;
     }
-    if !authorized(&headers, &state.token) {
-        let mut response = StatusCode::UNAUTHORIZED.into_response();
-        response
-            .headers_mut()
-            .insert(WWW_AUTHENTICATE, "Bearer".parse().expect("a valid header value"));
-        return response;
-    }
-    if !headers
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(is_json_content_type)
-    {
-        return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
-    }
-    if content_length(&headers).is_some_and(|length| length > MAX_BODY_BYTES) {
-        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
-    }
 
-    // The limit is passed to the reader as well as checked above: a chunked body states no length,
-    // and reading it without a bound is how a two-mebibyte rule becomes advisory.
-    let bytes = match to_bytes(body, MAX_BODY_BYTES).await {
-        Ok(bytes) => bytes,
-        Err(_) => return StatusCode::PAYLOAD_TOO_LARGE.into_response(),
-    };
-
-    let call: ToolCall = match serde_json::from_slice(&bytes) {
+    let call: ToolCall = match read_json(&headers, body).await {
         Ok(call) => call,
-        Err(error) => {
-            log::debug!("a control endpoint body was not a tool call: {error}");
-            return StatusCode::BAD_REQUEST.into_response();
-        }
+        Err(refusal) => return *refusal,
     };
 
-    let call_id = uuid::Uuid::new_v4().to_string();
+    let call_id = call_id_from(&headers);
     Json(state.handler.call(&call_id, call).await).into_response()
+}
+
+async fn handle_tools(State(state): State<Arc<ServerState>>, headers: HeaderMap) -> Response {
+    if let Some(refusal) = refusal(&state, &headers) {
+        return refusal;
+    }
+    // The desktop's own table: the built-in tools and every external server that has answered a
+    // handshake. A bridge that asks twice gets the second answer, which is how a server that came
+    // up while the client was connected becomes visible without a restart.
+    Json(state.registry.descriptors()).into_response()
+}
+
+async fn handle_tool_cancel(State(state): State<Arc<ServerState>>, headers: HeaderMap, body: Body) -> Response {
+    if let Some(refusal) = refusal(&state, &headers) {
+        return refusal;
+    }
+
+    let request: CancelRequest = match read_json(&headers, body).await {
+        Ok(request) => request,
+        Err(refusal) => return *refusal,
+    };
+
+    let cancelled = state.calls.cancel(&request.call_id);
+    Json(serde_json::json!({ "cancelled": cancelled })).into_response()
+}
+
+/// What a cancel names. Camel case, like every other body this endpoint takes.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelRequest {
+    call_id: String,
 }
 
 async fn handle_health(State(_state): State<Arc<ServerState>>, headers: HeaderMap) -> Response {
@@ -191,6 +327,68 @@ async fn handle_health(State(_state): State<Arc<ServerState>>, headers: HeaderMa
         return refusal;
     }
     Json(serde_json::json!({ "status": "ok" })).into_response()
+}
+
+/// The two checks every route but `GET /health` makes, in the order the module doc describes.
+///
+/// `GET /health` answers without a token because it is how somebody tells a live edge from a port
+/// somebody else took; nothing it says comes from a tool or from the vault.
+fn refusal(state: &ServerState, headers: &HeaderMap) -> Option<Response> {
+    if let Some(refusal) = boundary_refusal(headers) {
+        return Some(refusal);
+    }
+    if !authorized(headers, &state.token) {
+        let mut response = StatusCode::UNAUTHORIZED.into_response();
+        response
+            .headers_mut()
+            .insert(WWW_AUTHENTICATE, "Bearer".parse().expect("a valid header value"));
+        return Some(response);
+    }
+    None
+}
+
+/// The content type, the size, and the body — read once, with the same bound the header check used.
+///
+/// The limit is passed to the reader as well as checked beforehand: a chunked body states no length,
+/// and reading it without a bound is how a two-mebibyte rule becomes advisory.
+///
+/// The refusal is boxed because a response is much larger than the body being parsed: every
+/// successful read would otherwise carry the room for an error it did not have.
+async fn read_json<T: DeserializeOwned>(headers: &HeaderMap, body: Body) -> Result<T, Box<Response>> {
+    if !headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(is_json_content_type)
+    {
+        return Err(Box::new(StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response()));
+    }
+    if content_length(headers).is_some_and(|length| length > MAX_BODY_BYTES) {
+        return Err(Box::new(StatusCode::PAYLOAD_TOO_LARGE.into_response()));
+    }
+
+    let bytes = to_bytes(body, MAX_BODY_BYTES)
+        .await
+        .map_err(|_| Box::new(StatusCode::PAYLOAD_TOO_LARGE.into_response()))?;
+
+    serde_json::from_slice(&bytes).map_err(|error| {
+        log::debug!("a control endpoint body was not what its route takes: {error}");
+        Box::new(StatusCode::BAD_REQUEST.into_response())
+    })
+}
+
+/// The id the bridge minted for this call, or a fresh one when it did not send one.
+///
+/// A bridge from before the header existed sends none, and it still gets a working call: the id only
+/// matters to a cancel, and a call nobody can name is one nobody can stop — which is what every call
+/// was before this route existed.
+fn call_id_from(headers: &HeaderMap) -> String {
+    headers
+        .get(CALL_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|id| !id.is_empty() && id.chars().count() <= MAX_CALL_ID_CHARS)
+        .map(str::to_owned)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
 }
 
 /// Refuses a request whose address or origin is not this machine's own.
@@ -471,6 +669,10 @@ mod tests {
     }
 
     fn registry_handler(registry: ToolRegistry) -> Arc<dyn CallHandler> {
+        registry_handler_with(registry, Arc::new(CallRegistry::new()))
+    }
+
+    fn registry_handler_with(registry: ToolRegistry, calls: Arc<CallRegistry>) -> Arc<dyn CallHandler> {
         let directory = tempfile::tempdir().expect("a temp directory");
         let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
         let (core, events) = Core::new(vault);
@@ -482,6 +684,7 @@ mod tests {
             Arc::new(registry),
             connections,
             Arc::new(ApprovalRegistry::default()),
+            calls,
             Arc::new(silent_presenter()),
             Arc::new(NoAuditSink),
             CallLimits {
@@ -614,6 +817,7 @@ mod tests {
             Arc::new(registry),
             connections,
             Arc::new(ApprovalRegistry::default()),
+            Arc::new(CallRegistry::new()),
             Arc::new(SilentPresenter),
             sink.clone(),
             CallLimits {
@@ -627,5 +831,256 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The tool list, the call id and cancellation
+    // -----------------------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn the_tool_list_is_refused_without_the_token_and_answered_with_it() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(EchoTool)).expect("a unique name");
+        let state =
+            Arc::new(ServerState::new(TOKEN, Arc::new(FakeHandler::default())).with_registry(Arc::new(registry)));
+
+        let (status, _) = send(
+            Arc::clone(&state),
+            a_request("GET", TOOLS_PATH, &[(HOST.as_str(), "127.0.0.1:4711")], Body::empty()),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "the list names every tool an agent may call, so it needs the token like a call does"
+        );
+
+        let (status, _) = send(
+            Arc::clone(&state),
+            a_request(
+                "GET",
+                TOOLS_PATH,
+                &[
+                    (HOST.as_str(), "127.0.0.1:4711"),
+                    (ORIGIN.as_str(), "http://evil.example"),
+                    (AUTHORIZATION.as_str(), "Bearer the-token-of-this-run"),
+                ],
+                Body::empty(),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let (status, body) = send(
+            state,
+            a_request(
+                "GET",
+                TOOLS_PATH,
+                &[
+                    (HOST.as_str(), "127.0.0.1:4711"),
+                    (AUTHORIZATION.as_str(), "Bearer the-token-of-this-run"),
+                ],
+                Body::empty(),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let listed: Vec<Value> = serde_json::from_slice(&body).expect("a tool list");
+        let names: Vec<&str> = listed
+            .iter()
+            .filter_map(|descriptor| descriptor["name"].as_str())
+            .collect();
+        assert_eq!(names, vec!["test_echo"]);
+        assert!(
+            listed[0].get("inputSchema").is_some(),
+            "a client needs the schema to fill the arguments in"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_call_id_the_bridge_sent_is_the_one_the_handler_sees() {
+        let handler = Arc::new(FakeHandler::default());
+        let state = state_with(handler.clone());
+
+        let (status, _) = send(
+            state,
+            a_request(
+                "POST",
+                TOOL_CALL_PATH,
+                &[
+                    (HOST.as_str(), "127.0.0.1:4711"),
+                    (AUTHORIZATION.as_str(), "Bearer the-token-of-this-run"),
+                    (CONTENT_TYPE.as_str(), "application/json"),
+                    (CALL_ID_HEADER, "call-42"),
+                ],
+                r#"{"name":"test_echo"}"#,
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        let calls = handler.calls.lock().expect("not poisoned");
+        assert_eq!(
+            calls[0].0, "call-42",
+            "the id the bridge minted is the one a cancel names"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_call_without_the_header_still_gets_an_id_of_its_own() {
+        let handler = Arc::new(FakeHandler::default());
+        let state = state_with(handler.clone());
+
+        let (status, _) = send(state, authenticated(r#"{"name":"test_echo"}"#)).await;
+
+        assert_eq!(status, StatusCode::OK);
+        let calls = handler.calls.lock().expect("not poisoned");
+        assert_eq!(
+            calls[0].0.len(),
+            36,
+            "a fresh UUID, so two calls cannot answer to one id"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cancel_for_a_call_that_is_not_running_answers_false() {
+        let state = state_with(Arc::new(FakeHandler::default()));
+
+        let (status, body) = send(Arc::clone(&state), cancel_request("nobody")).await;
+        assert_eq!(status, StatusCode::OK);
+        let answer: Value = serde_json::from_slice(&body).expect("a cancel answer");
+        assert_eq!(
+            answer["cancelled"],
+            json!(false),
+            "a call that already answered is not stoppable"
+        );
+
+        let (status, _) = send(
+            state,
+            a_request(
+                "POST",
+                TOOL_CANCEL_PATH,
+                &[
+                    (HOST.as_str(), "127.0.0.1:4711"),
+                    (CONTENT_TYPE.as_str(), "application/json"),
+                ],
+                r#"{"callId":"nobody"}"#,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "stopping a call needs the token too");
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_call_ends_with_the_cancelled_code() {
+        let calls = Arc::new(CallRegistry::new());
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(SlowTool)).expect("a unique name");
+        let state = Arc::new(
+            ServerState::new(TOKEN, registry_handler_with(registry, Arc::clone(&calls))).with_calls(Arc::clone(&calls)),
+        );
+
+        let running = tokio::spawn({
+            let state = Arc::clone(&state);
+            async move {
+                send(
+                    state,
+                    a_request(
+                        "POST",
+                        TOOL_CALL_PATH,
+                        &[
+                            (HOST.as_str(), "127.0.0.1:4711"),
+                            (AUTHORIZATION.as_str(), "Bearer the-token-of-this-run"),
+                            (CONTENT_TYPE.as_str(), "application/json"),
+                            (CALL_ID_HEADER, "call-to-stop"),
+                        ],
+                        r#"{"name":"test_slow"}"#,
+                    ),
+                )
+                .await
+            }
+        });
+
+        // The handler registers the call before it enters the tool; wait for that rather than for a
+        // guessed number of milliseconds.
+        for _ in 0..500 {
+            if !calls.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(calls.len(), 1, "the call registered itself before it ran");
+
+        let (status, body) = send(state, cancel_request("call-to-stop")).await;
+        assert_eq!(status, StatusCode::OK);
+        let answer: Value = serde_json::from_slice(&body).expect("a cancel answer");
+        assert_eq!(answer["cancelled"], json!(true));
+
+        let (status, body) = running.await.expect("the request task");
+        assert_eq!(status, StatusCode::OK);
+        let outcome: ToolOutcome = serde_json::from_slice(&body).expect("a tool outcome");
+        assert_eq!(
+            outcome.error().expect("the call was stopped").code(),
+            "MCP-CANCELLED",
+            "a stopped call is an outcome the bridge can render, not a broken connection"
+        );
+        assert!(calls.is_empty(), "the id is free once the call is over");
+    }
+
+    #[test]
+    fn cancelling_everything_answers_how_many_calls_it_stopped() {
+        let calls = CallRegistry::new();
+        let first = calls.begin("one");
+        let _second = calls.begin("two");
+        assert_eq!(calls.len(), 2);
+
+        assert_eq!(calls.cancel_all(), 2);
+        assert!(first.is_cancelled(), "the handle a caller kept sees the cancellation");
+        assert!(calls.cancel("one"), "a call that is still unwinding is still stoppable");
+
+        calls.finish("one");
+        calls.finish("two");
+        assert!(!calls.cancel("one"), "a finished call cannot be cancelled");
+        assert!(calls.is_empty());
+    }
+
+    /// A tool that waits until the call is cancelled, like a batch over a slow link.
+    struct SlowTool;
+
+    #[async_trait]
+    impl Tool for SlowTool {
+        fn descriptor(&self) -> ToolDescriptor {
+            ToolDescriptor {
+                name: "test_slow".to_owned(),
+                title: "Slow".to_owned(),
+                description: "Waits to be cancelled.".to_owned(),
+                input_schema: ToolInputSchema::object(json!({}), &[]),
+                access: ToolAccess::Read,
+            }
+        }
+
+        async fn call(&self, context: &ToolContext, _arguments: Value) -> Result<ToolResult, ToolError> {
+            context
+                .cancel()
+                .guard(async {
+                    // Long enough that a test which never cancels fails instead of hanging.
+                    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                    Ok(ToolResult::new(json!({ "late": true })))
+                })
+                .await
+        }
+    }
+
+    fn cancel_request(call_id: &str) -> Request<Body> {
+        a_request(
+            "POST",
+            TOOL_CANCEL_PATH,
+            &[
+                (HOST.as_str(), "127.0.0.1:4711"),
+                (AUTHORIZATION.as_str(), "Bearer the-token-of-this-run"),
+                (CONTENT_TYPE.as_str(), "application/json"),
+            ],
+            serde_json::json!({ "callId": call_id }).to_string(),
+        )
     }
 }

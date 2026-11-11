@@ -5,8 +5,8 @@
 //! nothing on the wire that is not JSON. The desktop is a fake `ToolClient`, which is the point of
 //! the trait: the protocol can be tested without a running application, a vault or a network.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 use tokio::time::timeout;
 
-use sevenshell_api::{ToolDescriptor, ToolError, ToolOutcome, ToolResult, local};
+use sevenshell_api::{ToolAccess, ToolDescriptor, ToolError, ToolInputSchema, ToolOutcome, ToolResult, local};
 use sevenshell_error::ShellError;
 use sevenshell_mcp::{
     DESKTOP_UNAVAILABLE, INVALID_PARAMS, INVALID_REQUEST, LATEST_PROTOCOL_VERSION, METHOD_NOT_FOUND, McpServer,
@@ -23,7 +23,11 @@ use sevenshell_mcp::{
 
 /// A desktop that answers with whatever a test told it to.
 struct FakeClient {
-    descriptors: Vec<ToolDescriptor>,
+    descriptors: Mutex<Vec<ToolDescriptor>>,
+    /// What a refresh replaces the list with, when a test wants the desktop to be authoritative.
+    refresh_to: Option<Vec<ToolDescriptor>>,
+    /// The desktop failing to list its tools.
+    refresh_error: Option<RpcError>,
     /// The tool's own refusal, as a result the desktop returns normally.
     tool_error: Option<ToolError>,
     /// The desktop not answering at all.
@@ -33,17 +37,28 @@ struct FakeClient {
     /// A result larger than any sane context window.
     huge: bool,
     calls: AtomicUsize,
+    /// The call id each call carried, in arrival order.
+    call_ids: Mutex<Vec<String>>,
+    /// How many times the desktop was asked for its table.
+    refreshes: AtomicUsize,
+    /// The call id each cancellation named, in arrival order.
+    cancels: Mutex<Vec<String>>,
 }
 
 impl FakeClient {
     fn new() -> Self {
         Self {
-            descriptors: local::default_registry().descriptors(),
+            descriptors: Mutex::new(local::default_registry().descriptors()),
+            refresh_to: None,
+            refresh_error: None,
             tool_error: None,
             client_error: None,
             slow: None,
             huge: false,
             calls: AtomicUsize::new(0),
+            call_ids: Mutex::new(Vec::new()),
+            refreshes: AtomicUsize::new(0),
+            cancels: Mutex::new(Vec::new()),
         }
     }
 
@@ -72,18 +87,64 @@ impl FakeClient {
         }
     }
 
+    /// A desktop whose table is the given one, so a test can tell a refreshed list from a compiled
+    /// one by name.
+    fn refreshing_to(self, descriptors: Vec<ToolDescriptor>) -> Self {
+        Self {
+            refresh_to: Some(descriptors),
+            ..self
+        }
+    }
+
+    fn refresh_failing(self, error: RpcError) -> Self {
+        Self {
+            refresh_error: Some(error),
+            ..self
+        }
+    }
+
     fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
+    }
+
+    fn call_ids(&self) -> Vec<String> {
+        self.call_ids.lock().expect("the call id lock is not poisoned").clone()
+    }
+
+    fn refreshes(&self) -> usize {
+        self.refreshes.load(Ordering::SeqCst)
+    }
+
+    fn cancels(&self) -> Vec<String> {
+        self.cancels.lock().expect("the cancel lock is not poisoned").clone()
     }
 }
 
 #[async_trait]
 impl ToolClient for FakeClient {
     fn descriptors(&self) -> Vec<ToolDescriptor> {
-        self.descriptors.clone()
+        self.descriptors
+            .lock()
+            .expect("the descriptor lock is not poisoned")
+            .clone()
     }
 
-    async fn call(&self, name: &str, _arguments: Value) -> Result<ToolOutcome, RpcError> {
+    async fn refresh_descriptors(&self) -> Result<(), RpcError> {
+        self.refreshes.fetch_add(1, Ordering::SeqCst);
+        if let Some(error) = &self.refresh_error {
+            return Err(error.clone());
+        }
+        if let Some(descriptors) = &self.refresh_to {
+            *self.descriptors.lock().expect("the descriptor lock is not poisoned") = descriptors.clone();
+        }
+        Ok(())
+    }
+
+    async fn call(&self, name: &str, _arguments: Value, call_id: &str) -> Result<ToolOutcome, RpcError> {
+        self.call_ids
+            .lock()
+            .expect("the call id lock is not poisoned")
+            .push(call_id.to_owned());
         self.calls.fetch_add(1, Ordering::SeqCst);
 
         if let Some(error) = &self.client_error {
@@ -105,6 +166,36 @@ impl ToolClient for FakeClient {
         };
         Ok(ToolOutcome::succeeded(ToolResult::new(value)))
     }
+
+    async fn cancel(&self, call_id: &str) -> Result<(), RpcError> {
+        self.cancels
+            .lock()
+            .expect("the cancel lock is not poisoned")
+            .push(call_id.to_owned());
+        Ok(())
+    }
+}
+
+/// A tool this build does not compile in, as a desktop with external servers would list it.
+fn external_tool() -> ToolDescriptor {
+    ToolDescriptor {
+        name: "mcp__lab__list_things".to_owned(),
+        title: "List things".to_owned(),
+        description: "Lists things on the lab server.".to_owned(),
+        input_schema: ToolInputSchema::object(json!({}), &[]),
+        access: ToolAccess::Read,
+    }
+}
+
+/// Waits for a condition a running task sets, or fails with the sentence a reader needs.
+async fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
+    for _ in 0..300 {
+        if condition() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting: {what}");
 }
 
 /// One bridge on one pipe, with the fake desktop behind it.
@@ -152,6 +243,11 @@ impl Harness {
 
     async fn notify(&mut self, method: &str) {
         let message = json!({ "jsonrpc": "2.0", "method": method });
+        self.write_raw(&message.to_string()).await;
+    }
+
+    async fn notify_with(&mut self, method: &str, params: Value) {
+        let message = json!({ "jsonrpc": "2.0", "method": method, "params": params });
         self.write_raw(&message.to_string()).await;
     }
 
@@ -283,6 +379,51 @@ async fn the_tool_list_is_the_ten_prefixed_tools_with_closed_schemas() {
         .find(|tool| tool["name"] == json!("sshell_exec_run"))
         .expect("a write tool");
     assert_eq!(write["annotations"]["readOnlyHint"], json!(false));
+}
+
+#[tokio::test]
+async fn the_tool_list_is_the_desktops_table_when_the_desktop_can_be_asked() {
+    // A desktop with an external server lists a tool this build never compiled in. The bridge has
+    // to show it: the desktop is the authority on what can be called, and a compiled list alone
+    // would hide every external tool from every agent.
+    let listed = vec![external_tool()];
+    let mut harness = Harness::with(FakeClient::new().refreshing_to(listed.clone()), 262_144);
+    harness.initialize().await;
+
+    let response = harness.request("tools/list", json!({})).await;
+
+    assert_eq!(
+        harness.client.refreshes(),
+        1,
+        "tools/list has to ask the desktop for its table"
+    );
+    let tools = response["result"]["tools"].as_array().expect("a list of tools");
+    assert_eq!(tools.len(), 1, "the desktop's table, not the compiled one: {response}");
+    assert_eq!(tools[0]["name"], json!("mcp__lab__list_things"));
+    assert_eq!(tools[0]["inputSchema"], *listed[0].input_schema.as_value());
+    assert_eq!(tools[0]["annotations"]["readOnlyHint"], json!(true));
+}
+
+#[tokio::test]
+async fn a_list_whose_refresh_failed_is_answered_from_the_compiled_table() {
+    let mut harness = Harness::with(
+        FakeClient::new().refresh_failing(RpcError::desktop_unavailable("it is not answering")),
+        262_144,
+    );
+    harness.initialize().await;
+
+    let response = harness.request("tools/list", json!({})).await;
+
+    assert_eq!(harness.client.refreshes(), 1, "the attempt was made");
+    let tools = response["result"]["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a failed refresh must not turn the list into an error: {response}"));
+    assert_eq!(
+        tools.len(),
+        10,
+        "the compiled list is still a complete answer for this build"
+    );
+    assert_eq!(response.get("error"), None);
 }
 
 // -- Refusals -----------------------------------------------------------
@@ -455,6 +596,98 @@ async fn a_string_id_is_echoed_as_the_string_it_was() {
     let response = harness.read().await;
 
     assert_eq!(response["id"], json!("call-1"));
+}
+
+// -- Call ids and cancellation ------------------------------------------
+
+#[tokio::test]
+async fn every_call_is_given_an_id_of_its_own() {
+    let mut harness = Harness::new();
+    harness.initialize().await;
+
+    for _ in 0..2 {
+        harness
+            .request("tools/call", json!({ "name": "sshell_sessions_list", "arguments": {} }))
+            .await;
+    }
+
+    let ids = harness.client.call_ids();
+    assert_eq!(ids.len(), 2);
+    assert_ne!(
+        ids[0], ids[1],
+        "two calls cannot share one id: a cancellation would name both"
+    );
+    for id in &ids {
+        assert_eq!(id.len(), 36, "{id} is not a uuid");
+        assert_eq!(&id[14..15], "4", "{id} is not a v4 uuid");
+    }
+}
+
+#[tokio::test]
+async fn a_cancellation_is_forwarded_under_the_call_id_of_the_request_it_names() {
+    let mut harness = Harness::with(
+        FakeClient::new().slow_on("sshell_exec_run", Duration::from_millis(300)),
+        262_144,
+    );
+    harness.initialize().await;
+
+    harness
+        .send(
+            7,
+            "tools/call",
+            json!({ "name": "sshell_exec_run", "arguments": { "sessionId": "lab", "command": "sleep 1" } }),
+        )
+        .await;
+    // The mapping exists before the call reaches the desktop, so once the fake has the call the
+    // cancellation cannot be racing the registration.
+    wait_until("the call to reach the desktop", || harness.client.calls() == 1).await;
+
+    harness
+        .notify_with(
+            "notifications/cancelled",
+            json!({ "requestId": 7, "reason": "the agent changed its mind" }),
+        )
+        .await;
+    wait_until("the cancellation to reach the desktop", || {
+        !harness.client.cancels().is_empty()
+    })
+    .await;
+
+    assert_eq!(
+        harness.client.cancels(),
+        harness.client.call_ids(),
+        "the cancellation has to name the id the call was started under"
+    );
+
+    // The notification itself gets no line; the answer to the request it named still arrives.
+    let answer = harness.read().await;
+    assert_eq!(
+        answer["id"],
+        json!(7),
+        "the request that was called off still gets its own answer: {answer}"
+    );
+    assert_eq!(answer["result"]["structuredContent"]["tool"], json!("sshell_exec_run"));
+}
+
+#[tokio::test]
+async fn a_cancellation_for_a_request_that_is_not_in_flight_is_safely_ignored() {
+    let client = Arc::new(FakeClient::new());
+    let server = McpServer::new(client.clone(), 262_144);
+
+    for notification in [
+        json!({ "jsonrpc": "2.0", "method": "notifications/cancelled", "params": { "requestId": 99 } }),
+        json!({ "jsonrpc": "2.0", "method": "notifications/cancelled" }),
+    ] {
+        assert!(
+            server.dispatch(&notification.to_string()).await.is_none(),
+            "a notification is never answered: {notification}"
+        );
+    }
+
+    assert!(
+        client.cancels().is_empty(),
+        "a request id nothing is in flight under cannot name a call to cancel"
+    );
 }
 
 // -- The result limit ---------------------------------------------------

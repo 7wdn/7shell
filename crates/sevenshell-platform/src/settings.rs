@@ -20,14 +20,16 @@ use sevenshell_error::ShellError;
 use sevenshell_types::{
     AiProviderConfig, AiProviderKind, AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX,
     BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FilesLayout, HomeLayout, McpScope,
-    SessionLayout, SessionReopen, SnippetProvider, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    ThemeMode, ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
-    ai_session_retention_days_default, background_blur_default, background_transparency_default, command_completion_on,
-    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default, monitor_on,
-    normalize_ai_context_lines, normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds,
-    normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes,
-    normalize_terminal_font_size, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
-    terminal_font_size_default, tray_icon_on, ui_scale_default, update_check_on,
+    McpServerConfig, McpServerTransport, SessionLayout, SessionReopen, SnippetProvider, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, ai_context_enabled_default,
+    ai_context_lines_default, ai_max_output_tokens_default, ai_session_retention_days_default, background_blur_default,
+    background_transparency_default, command_completion_on, is_valid_mcp_server_id,
+    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default,
+    mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
+    normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
+    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
+    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
+    ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -134,6 +136,73 @@ impl StoredAiProviderConfig {
                 self.max_output_tokens
             },
         })
+    }
+}
+
+/// One external MCP server as the file holds it.
+///
+/// The transport is a string here for the reason the provider's kind is: a file written by a build
+/// with a fourth transport in it has to open in this one, and a server this build cannot reach is
+/// not offered rather than guessed at. Nothing in this struct has a field an environment value or a
+/// header could be written to — those are in the vault.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredMcpServerConfig {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    transport: String,
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default = "mcp_server_enabled_default")]
+    enabled: bool,
+    #[serde(default = "mcp_server_tool_timeout_seconds_default")]
+    tool_timeout_seconds: u64,
+}
+
+impl StoredMcpServerConfig {
+    fn from_settings(config: &McpServerConfig) -> Self {
+        Self {
+            id: config.id.clone(),
+            name: config.name.clone(),
+            transport: config.transport.as_str().to_owned(),
+            command: config.command.clone(),
+            args: config.args.clone(),
+            url: config.url.clone(),
+            enabled: config.enabled,
+            tool_timeout_seconds: config.tool_timeout_seconds,
+        }
+    }
+
+    /// One entry this build can offer, or nothing.
+    ///
+    /// An id that cannot be read back out of a tool name is dropped, because every call to this
+    /// server would otherwise be made under a name no agent can hold; a transport this build does
+    /// not speak is dropped for the same reason a provider of an unknown kind is.
+    fn to_settings(&self) -> Option<McpServerConfig> {
+        let id = self.id.trim();
+        if !is_valid_mcp_server_id(id) {
+            return None;
+        }
+        Some(
+            McpServerConfig {
+                id: id.to_owned(),
+                name: self.name.clone(),
+                transport: McpServerTransport::from_id(self.transport.trim())?,
+                command: self.command.clone(),
+                args: self.args.clone(),
+                url: self.url.clone(),
+                enabled: self.enabled,
+                tool_timeout_seconds: self.tool_timeout_seconds,
+            }
+            .normalized(),
+        )
     }
 }
 
@@ -340,6 +409,10 @@ struct StoredSettings {
     /// remembered anything, which reads as the default the build ships rather than as "keep none".
     #[serde(default = "ai_session_retention_days_default")]
     ai_session_retention_days: u32,
+    /// External MCP servers. Absent in a file written before there were any, which reads as an
+    /// empty list rather than as a refusal to open. Secrets are not here: they are in the vault.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    mcp_client_servers: Vec<StoredMcpServerConfig>,
 }
 
 impl StoredSettings {
@@ -407,6 +480,11 @@ impl StoredSettings {
             ai_context_enabled: settings.ai_context_enabled,
             ai_context_lines: settings.ai_context_lines,
             ai_session_retention_days: settings.ai_session_retention_days,
+            mcp_client_servers: settings
+                .mcp_client_servers
+                .iter()
+                .map(StoredMcpServerConfig::from_settings)
+                .collect(),
         }
     }
 
@@ -428,6 +506,18 @@ impl StoredSettings {
             .filter(|id| !id.is_empty())
             .filter(|id| ai_providers.iter().any(|provider| provider.id == *id))
             .map(str::to_owned);
+
+        // Worked out the same way, and for the same reason: two servers may not share an id, since
+        // the id is the vault key for their secrets and the half of every tool name that says which
+        // server answers. The first entry with an id wins, so a hand-edited duplicate cannot make
+        // which secrets a call uses depend on file order.
+        let mut seen_servers = std::collections::BTreeSet::new();
+        let mcp_client_servers: Vec<McpServerConfig> = self
+            .mcp_client_servers
+            .iter()
+            .filter_map(StoredMcpServerConfig::to_settings)
+            .filter(|server| seen_servers.insert(server.id.clone()))
+            .collect();
 
         AppSettings {
             theme_mode: ThemeMode::from_id(&self.theme_mode).unwrap_or_default(),
@@ -496,6 +586,7 @@ impl StoredSettings {
             ai_context_lines: normalize_ai_context_lines(self.ai_context_lines),
             // A retention, so zero is not a choice: read through the same ends the page offers.
             ai_session_retention_days: normalize_ai_session_retention_days(self.ai_session_retention_days),
+            mcp_client_servers,
         }
     }
 }
@@ -642,6 +733,7 @@ mod tests {
             ai_context_enabled: ai_context_enabled_default(),
             ai_context_lines: ai_context_lines_default(),
             ai_session_retention_days: ai_session_retention_days_default(),
+            mcp_client_servers: Vec::new(),
         }
     }
 
@@ -1165,6 +1257,78 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&blocker).expect("still readable"),
             "do not touch"
+        );
+    }
+
+    #[test]
+    fn an_external_server_round_trips_and_no_secret_is_ever_written() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+
+        let mut written = settings(ThemeMode::Dark, ThemeMode::System, None);
+        written.mcp_client_servers = vec![McpServerConfig {
+            id: "files".to_owned(),
+            name: "Files".to_owned(),
+            transport: McpServerTransport::Stdio,
+            command: Some("npx".to_owned()),
+            args: vec!["-y".to_owned(), "server-filesystem".to_owned()],
+            url: None,
+            enabled: false,
+            tool_timeout_seconds: 30,
+        }];
+        save_to(&path, &written).expect("write");
+
+        assert_eq!(load_from(&path).expect("read"), written);
+
+        let stored: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read")).expect("json");
+        let server = stored["mcpClientServers"][0].as_object().expect("one server");
+        assert_eq!(server["transport"], serde_json::json!("stdio"));
+        assert_eq!(server["toolTimeoutSeconds"], serde_json::json!(30));
+        assert_eq!(server["enabled"], serde_json::json!(false));
+        for forbidden in ["env", "headers", "token", "secret", "password"] {
+            assert!(
+                !server.contains_key(forbidden),
+                "`{forbidden}` reached the settings file, where the vault is the only place it belongs"
+            );
+        }
+    }
+
+    #[test]
+    fn a_server_this_build_cannot_reach_is_dropped_and_a_timeout_is_clamped() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"mcpClientServers":[
+                {"id":"bad id","transport":"stdio","command":"npx"},
+                {"id":"mystery","transport":"websocket","url":"https://example.test/mcp"},
+                {"id":" slow ","name":" Slow ","transport":"http","url":"https://example.test/mcp","toolTimeoutSeconds":0},
+                {"id":"slow","transport":"http","url":"https://example.test/other"}
+            ]}"#,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("a file with an unusable server still opens");
+
+        assert_eq!(
+            loaded.mcp_client_servers.len(),
+            1,
+            "an id that cannot name a tool, an unknown transport and a duplicate are all not servers"
+        );
+        let server = &loaded.mcp_client_servers[0];
+        assert_eq!(server.id, "slow", "the id is trimmed before it is compared");
+        assert_eq!(server.name, "Slow");
+        assert_eq!(
+            server.tool_timeout_seconds,
+            sevenshell_types::MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN,
+            "zero would fail before trying, so it reads as the shortest real budget"
+        );
+
+        std::fs::write(&path, r#"{"schemaVersion":1}"#).expect("write");
+        assert!(
+            load_from(&path).expect("read").mcp_client_servers.is_empty(),
+            "a file written before there were external servers has none"
         );
     }
 }

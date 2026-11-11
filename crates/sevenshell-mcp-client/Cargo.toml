@@ -1,0 +1,34 @@
+[package]
+name = "sevenshell-mcp-client"
+description = "The client side of MCP: connecting to external servers, caching their tools and calling them under this build's gates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-api = { workspace = true }
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+async-trait = { workspace = true }
+bytes = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# `process` is the stdio transport: an external server may be a program on this machine. The rest
+# of the workspace's features are already what the reader tasks need.
+tokio = { workspace = true, features = ["process"] }
+
+[dev-dependencies]
+# A context to call an adapter through is built the same way the host builds one: a core around a
+# vault that exists but was never unlocked. Nothing here opens a connection.
+sevenshell-core = { workspace = true }
+sevenshell-vault = { workspace = true }
+tempfile = { workspace = true }
+
+[[test]]
+name = "stdio_fake_server"
+path = "tests/stdio_fake_server.rs"
+harness = false

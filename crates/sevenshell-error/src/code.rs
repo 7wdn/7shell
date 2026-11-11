@@ -225,6 +225,26 @@ error_catalog! {
     #[doc = "The cluster connection this call names is no longer open."]
     K8sNotConnected => "K8S-NOT-CONNECTED", "errors.k8s.notConnected";
 
+    // -- External MCP servers ----------------------------------------------
+    #[doc = "Two external MCP servers were configured with the same id."]
+    McpServerDuplicate => "MCP-SERVER-DUPLICATE", "errors.mcp.serverDuplicate";
+    #[doc = "An external MCP server could not be reached, or refused the protocol handshake."]
+    McpServerConnectFailed => "MCP-SERVER-CONNECT-FAILED", "errors.mcp.serverConnectFailed";
+    #[doc = "An external MCP server's settings cannot be used at all."]
+    McpInvalidArguments => "MCP-INVALID-ARGUMENTS", "errors.mcp.invalidArguments";
+    #[doc = "A command named an external MCP server that is not configured."]
+    McpServerNotFound => "MCP-SERVER-NOT-FOUND", "errors.mcp.serverNotFound";
+    #[doc = "One external MCP server listed two tools with the same name."]
+    McpDuplicateTool => "MCP-DUPLICATE-TOOL", "errors.mcp.duplicateTool";
+    #[doc = "An external MCP server listed a tool this build cannot serve."]
+    McpInvalidTool => "MCP-INVALID-TOOL", "errors.mcp.invalidTool";
+    #[doc = "A tool an external MCP server provides ran and failed."]
+    McpExternalFailed => "MCP-EXTERNAL-FAILED", "errors.mcp.externalFailed";
+    #[doc = "A tool an external MCP server provides exceeded its time budget."]
+    McpExternalTimeout => "MCP-EXTERNAL-TIMEOUT", "errors.mcp.externalTimeout";
+    #[doc = "An external MCP call was cancelled before it finished."]
+    McpCancelled => "MCP-CANCELLED", "errors.mcp.cancelled";
+
     // -- Assistant ---------------------------------------------------------
     #[doc = "The assistant has no provider configured yet."]
     AiNoProvider => "AI-NO-PROVIDER", "errors.ai.noProvider";

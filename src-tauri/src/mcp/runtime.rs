@@ -31,7 +31,7 @@ use crate::mcp::McpStatus;
 use crate::mcp::approval::{ApprovalRegistry, TauriPresenter};
 use crate::mcp::auth::{generate_token, tokens_match};
 use crate::mcp::endpoint;
-use crate::mcp::server::{CallLimits, RegistryHandler, ServerState, router};
+use crate::mcp::server::{CallLimits, CallRegistry, RegistryHandler, ServerState, router};
 use crate::state::{SharedAgent, SharedAudit};
 
 /// How long a stop waits for in-flight requests before cutting them off.
@@ -67,6 +67,12 @@ pub struct McpRuntime {
     /// The trail both callers write to. Not owned by a run: the assistant writes to the same file
     /// while no listener is up, and two writers appending to one file is what the shared sink is for.
     audit: Arc<SharedAudit>,
+    /// The calls this listener is running, by the id their caller gave them.
+    ///
+    /// The listener's own rather than a run's: a stop is exactly the moment somebody wants every
+    /// call in flight ended, and the registry is what makes that one loop rather than a list of
+    /// futures nobody kept.
+    calls: Arc<CallRegistry>,
     running: Mutex<Option<Running>>,
     /// Bumped by every stop. A start that was waiting for the lock while a stop happened is a start
     /// whose premise is gone — the common case is startup still binding when somebody turns the
@@ -84,6 +90,7 @@ impl McpRuntime {
             connections: Arc::clone(shared.connections()),
             approvals: Arc::clone(shared.approvals()),
             audit: Arc::clone(shared.audit()),
+            calls: Arc::new(CallRegistry::new()),
             running: Mutex::new(None),
             stopped: AtomicU64::new(0),
         }
@@ -147,11 +154,16 @@ impl McpRuntime {
             self.registry.clone(),
             self.connections.clone(),
             self.approvals.clone(),
+            self.calls.clone(),
             Arc::new(TauriPresenter::new(app.clone())),
             self.audit.clone() as Arc<dyn AuditSink>,
             limits,
         ));
-        let service = router(Arc::new(ServerState::new(token, handler)));
+        let service = router(Arc::new(
+            ServerState::new(token, handler)
+                .with_registry(self.registry.clone())
+                .with_calls(self.calls.clone()),
+        ));
 
         let (shutdown, shutdown_receiver) = oneshot::channel();
         let task = tokio::spawn(async move {
@@ -212,6 +224,18 @@ impl McpRuntime {
             log::info!("{dropped} of them belonged to the agent interface and are refused");
         }
 
+        // Every call still running is one this listener is being turned off under. Cancelling them
+        // is the honest answer to "stop": a call that kept going would finish against a desktop
+        // whose endpoint file has just been removed. Counted before they are stopped, because each
+        // entry stays until its call unwinds and a count afterwards is a race.
+        if !self.calls().is_empty() {
+            log::info!(
+                "the agent interface is stopping with {} call(s) in flight; they are cancelled",
+                self.calls().len()
+            );
+            self.calls().cancel_all();
+        }
+
         // Stop accepting before the connections go: a call that arrived between the two would find
         // half a cache and report a failure that has nothing to do with what it asked.
         if let Some(shutdown) = shutdown {
@@ -268,6 +292,15 @@ impl McpRuntime {
     /// Answers one pending approval. An id that is not waiting is ignored.
     pub fn answer(&self, call_id: &str, decision: ApprovalDecision) -> bool {
         self.approvals.answer(call_id, decision)
+    }
+
+    /// The calls this listener is running.
+    ///
+    /// Exposed for the two things that are not the HTTP route: the tests, which have to watch a
+    /// cancel land on a call that is really running, and a future command that wants to say how
+    /// many calls turning the interface off would stop.
+    pub fn calls(&self) -> &Arc<CallRegistry> {
+        &self.calls
     }
 
     /// Where the audit trail lives, for the command that reads its tail.

@@ -46,6 +46,78 @@
       "unitDays": "天",
       "unitKiB": "KiB"
     },
+    "servers": {
+      "title": "外部服务器",
+      "description": "本机在自己的工具之外调用的 MCP 服务器。它们的工具会带着由服务器标识和工具名拼成的名字出现在助手和 MCP 客户端面前；服务器自己标注为只读的工具可以被列出，其余每次调用都要你批准。",
+      "add": "添加服务器",
+      "empty": "还没有配置外部服务器。",
+      "loading": "正在读取服务器…",
+      "state": {
+        "connecting": "正在连接",
+        "ready": "就绪",
+        "failed": "失败",
+        "disabled": "已停用"
+      },
+      "transport": {
+        "stdio": "stdio",
+        "http": "HTTP",
+        "sse": "SSE"
+      },
+      "toolCount": "{count} 个工具",
+      "refresh": "重新连接",
+      "edit": "编辑",
+      "remove": "删除",
+      "removeTitle": "删除外部服务器",
+      "removeMessage": "它的配置和保存的密钥会被一起删掉，它的工具也不再提供。服务器本身不做任何改动。",
+      "newTitle": "新建外部服务器",
+      "editTitle": "编辑外部服务器",
+      "id": "标识",
+      "idHint": "1 到 32 个字符：字母、数字、下划线和连字符，且不能有双下划线——它会出现在每个工具名里。",
+      "name": "名称",
+      "nameHint": "列表上显示的名字。留空就用标识。",
+      "transportLabel": "传输方式",
+      "command": "命令",
+      "commandHint": "本机要启动的程序，从 PATH 里解析。",
+      "args": "参数",
+      "argsHint": "一行一个参数。",
+      "url": "URL",
+      "urlHint": "访问这个服务器的地址。",
+      "timeout": "工具超时",
+      "timeoutHint": "调用它某个工具最多等多久，5 到 600 秒。",
+      "enabled": "启用",
+      "enabledHint": "关闭时它的工具不提供，也不会尝试连接。",
+      "save": "保存",
+      "cancel": "取消",
+      "saved": "已保存。",
+      "removed": "已删除。",
+      "validation": {
+        "id": "请使用 1 到 32 个字母、数字、下划线或连字符，且不要有双下划线。",
+        "idTaken": "已经有一个服务器在用这个标识。",
+        "command": "stdio 服务器需要一个命令。",
+        "url": "HTTP 或 SSE 服务器需要一个 URL。"
+      },
+      "secrets": {
+        "title": "密钥",
+        "description": "stdio 服务器启动时的环境变量，以及 HTTP 或 SSE 服务器发送的请求头。它们保存在保险库里、记在这个服务器的标识下，永远不会读回界面。",
+        "state": {
+          "saved": "密钥已保存",
+          "missing": "没有保存密钥",
+          "locked": "保险库已锁定——无法判断"
+        },
+        "env": "环境变量",
+        "headers": "请求头",
+        "key": "名称",
+        "value": "值",
+        "add": "添加",
+        "remove": "删除这一项",
+        "save": "保存密钥",
+        "saved": "已保存，这些值不会再显示。",
+        "cleared": "已清除，这个服务器现在没有保存任何密钥。",
+        "hint": "保存会替换整组内容；一项都不填直接保存就是清除。",
+        "invalid": "每一项都要有名称，且两项不能同名。",
+        "close": "关闭"
+      }
+    },
     "scope": {
       "readOnly": "只读",
       "readOnlyHint": "只列和只读：会话、目录、文本文件、容器和集群对象。不运行任何命令，也不写任何东西。",
@@ -93,6 +165,12 @@
         "host": "主机",
         "keyType": "密钥类型",
         "fingerprint": "指纹"
+      },
+      "external": {
+        "title": "外部服务器的工具请求执行",
+        "body": "这个工具由 {server} 提供。它不是本版本写的，因此它拿这个请求去做什么，本机无法检查——批准后它就会执行。",
+        "server": "服务器",
+        "tool": "工具"
       },
       "expiresIn": "还有 {time} 将自动拒绝",
       "expired": "这个请求已经过期。",

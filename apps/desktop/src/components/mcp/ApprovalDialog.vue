@@ -77,6 +77,14 @@ const session = computed(() => {
  */
 const risk = computed(() => (request.value?.reason.kind === "risk" ? request.value.reason.assessment : null));
 const hostKey = computed(() => (request.value?.reason.kind === "hostKeyUnknown" ? request.value.reason.key : null));
+/**
+ * A tool an external server provides.
+ *
+ * This dialog is the only chance to see where such a call came from: the tool's name is the
+ * server's, but what the tool does with the request was written by somebody else and cannot be
+ * checked on this side — which is exactly what the person deciding has to be told.
+ */
+const external = computed(() => (request.value?.reason.kind === "external" ? request.value.reason : null));
 
 /**
  * Who is waiting.
@@ -183,6 +191,9 @@ const SECONDARY = "rounded-md border border-border px-3 py-1.5 text-xs transitio
       -->
       <DialogContent
         class="fixed top-1/2 left-1/2 z-50 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-xl select-none focus:outline-none"
+        data-mcp-approval
+        :data-approval-origin="origin"
+        :data-approval-reason="request?.reason.kind ?? ''"
         @open-auto-focus="focusDeny"
         @interact-outside.prevent="answer('denied')"
         @escape-key-down.prevent="answer('denied')"
@@ -251,6 +262,26 @@ const SECONDARY = "rounded-md border border-border px-3 py-1.5 text-xs transitio
               <dd class="font-mono text-[11px] break-all">{{ hostKey.keyType }}</dd>
               <dt class="text-muted-foreground">{{ t("mcp.approval.hostKey.fingerprint") }}</dt>
               <dd class="font-mono text-[11px] break-all">{{ hostKey.fingerprint }}</dd>
+            </dl>
+          </div>
+
+          <!--
+            A tool an external server provides. Neither this build nor the person wrote it, so the
+            one thing worth saying is where it came from — approving lets that server act.
+          -->
+          <div v-else-if="external" class="space-y-2 rounded-md border border-border bg-background px-3 py-2">
+            <div class="flex items-center gap-1.5 text-xs">
+              <ShieldQuestionMark :size="13" class="text-muted-foreground" />
+              <span class="font-medium">{{ t("mcp.approval.external.title") }}</span>
+            </div>
+            <p class="text-[11px] leading-relaxed text-muted-foreground">
+              {{ t("mcp.approval.external.body", { server: external.server }) }}
+            </p>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+              <dt class="text-muted-foreground">{{ t("mcp.approval.external.server") }}</dt>
+              <dd class="font-mono text-[11px] break-all">{{ external.server }}</dd>
+              <dt class="text-muted-foreground">{{ t("mcp.approval.external.tool") }}</dt>
+              <dd class="font-mono text-[11px] break-all">{{ external.tool }}</dd>
             </dl>
           </div>
 

@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ai::{AiProviderConfig, ai_context_enabled_default, ai_context_lines_default};
+use crate::mcp_client::McpServerConfig;
 use crate::sync::SnippetProvider;
 
 /// How the file browser is laid out.
@@ -1161,6 +1162,15 @@ pub struct AppSettings {
     /// anything, which reads as the default the build ships.
     #[serde(default = "ai_session_retention_days_default")]
     pub ai_session_retention_days: u32,
+    /// External MCP servers whose tools this installation may call.
+    ///
+    /// A list rather than a single server, because an agent is often pointed at more than one — a
+    /// files server and a tickets server are different programs with different jobs. Nothing here
+    /// is a secret: the environment or headers a server needs are filed in the vault under its id.
+    /// Empty in a file written before there was anywhere to add one, which is what a fresh install
+    /// has until somebody adds a server by hand.
+    #[serde(default)]
+    pub mcp_client_servers: Vec<McpServerConfig>,
 }
 
 /// The interface's own size when nobody has changed it.
@@ -1287,6 +1297,7 @@ impl Default for AppSettings {
             ai_context_enabled: ai_context_enabled_default(),
             ai_context_lines: ai_context_lines_default(),
             ai_session_retention_days: ai_session_retention_days_default(),
+            mcp_client_servers: Vec::new(),
         }
     }
 }
@@ -1342,6 +1353,7 @@ impl AppSettings {
             && self.ai_context_enabled == ai_context_enabled_default()
             && self.ai_context_lines == ai_context_lines_default()
             && self.ai_session_retention_days == ai_session_retention_days_default()
+            && self.mcp_client_servers.is_empty()
     }
 }
 
@@ -1553,6 +1565,10 @@ mod tests {
             settings.ai_session_retention_days,
             ai_session_retention_days_default(),
             "a fresh install keeps a month of conversations, which is the default the host prunes with"
+        );
+        assert!(
+            settings.mcp_client_servers.is_empty(),
+            "a fresh install has no external server to call tools on"
         );
         assert!(settings.is_untouched(), "none of that is a choice somebody made");
     }

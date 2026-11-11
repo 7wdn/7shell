@@ -44,7 +44,15 @@ import type {
   SnippetGroup,
 } from "@/types/snippet";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
-import type { McpApprovalDecision, McpApprovalRequest, McpAuditEntry, McpStatus } from "@/types/mcp";
+import type {
+  McpApprovalDecision,
+  McpApprovalRequest,
+  McpAuditEntry,
+  McpServerConfig,
+  McpServerStatus,
+  McpServerView,
+  McpStatus,
+} from "@/types/mcp";
 import type {
   AiChatRequest,
   AiChatStarted,
@@ -185,6 +193,28 @@ export const backend = {
     /** Answers one waiting call, by the id it was asked about. */
     answerApproval: (callId: string, decision: McpApprovalDecision): Promise<void> =>
       forward("mcp_approval_answer", () => desktop.mcpApprovalAnswer(callId, decision)),
+
+    /**
+     * The external servers this installation calls, and the five commands that change one.
+     *
+     * A server's environment and headers are secrets and are kept in the vault under its id, so no
+     * call here returns them: `setSecrets` carries them inwards, `{}` clears them, and every answer
+     * says only whether any are held.
+     */
+    servers: (): Promise<McpServerView[]> => forward("mcp_servers_list", () => desktop.mcpServersList()),
+    saveServer: (config: McpServerConfig): Promise<McpServerView> =>
+      forward("mcp_server_save", () => desktop.mcpServerSave(config)),
+    removeServer: (serverId: string): Promise<void> =>
+      forward("mcp_server_remove", () => desktop.mcpServerRemove(serverId)),
+    setServerSecrets: (
+      serverId: string,
+      env: Record<string, string>,
+      headers: Record<string, string>,
+    ): Promise<McpServerView> =>
+      forward("mcp_server_secrets_set", () => desktop.mcpServerSecretsSet(serverId, env, headers)),
+    /** Reconnects one server now; the answer is the row with whatever state that attempt reached. */
+    refreshServer: (serverId: string): Promise<McpServerView> =>
+      forward("mcp_server_refresh", () => desktop.mcpServerRefresh(serverId)),
   },
 
   /**
@@ -833,6 +863,14 @@ export const backend = {
     /** The listener starting, restarting or stopping — its own answer, pushed rather than polled. */
     onMcpStatus: (listener: (payload: McpStatus) => void): Promise<Unlisten> =>
       subscribe(desktop.onMcpStatus, listener),
+    /**
+     * One external server connecting, failing or being switched off.
+     *
+     * Pushed rather than polled because the state changes on the server's own timer: a row that
+     * only re-read when somebody looked would say "connecting" long after it gave up.
+     */
+    onMcpServerStatus: (listener: (payload: McpServerStatus) => void): Promise<Unlisten> =>
+      subscribe(desktop.onMcpServerStatus, listener),
     /**
      * One assistant run, in the pieces it arrives in.
      *

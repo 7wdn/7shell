@@ -117,6 +117,9 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     mcpApprovalTimeoutSeconds: 120,
     mcpAuditRetentionDays: 30,
     mcpMaxResultBytes: 262_144,
+    // No external servers: what a fresh install has, and what every case here that is not about
+    // the agent page expects.
+    mcpClientServers: [],
     // The assistant, with nothing configured: no provider, no pinned one, and the context the
     // contract's default describes.
     aiProviders: [],
@@ -333,8 +336,9 @@ describe("preferences store", () => {
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
-      // Written on every save, including the pages that do not show them: leaving them out would
-      // erase the provider list the next time somebody saved the appearance.
+      // Written on every save, including the pages that do not show them: leaving either list out
+      // would erase it the next time somebody saved the appearance.
+      mcpClientServers: [],
       aiProviders: [],
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
@@ -401,8 +405,9 @@ describe("preferences store", () => {
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
-      // Written on every save, including the pages that do not show them: leaving them out would
-      // erase the provider list the next time somebody saved the appearance.
+      // Written on every save, including the pages that do not show them: leaving either list out
+      // would erase it the next time somebody saved the appearance.
+      mcpClientServers: [],
       aiProviders: [],
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
@@ -580,8 +585,9 @@ describe("the terminal palette", () => {
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
-      // Written on every save, including the pages that do not show them: leaving them out would
-      // erase the provider list the next time somebody saved the appearance.
+      // Written on every save, including the pages that do not show them: leaving either list out
+      // would erase it the next time somebody saved the appearance.
+      mcpClientServers: [],
       aiProviders: [],
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,
@@ -1444,8 +1450,9 @@ describe("restoring the defaults", () => {
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
-      // Written on every save, including the pages that do not show them: leaving them out would
-      // erase the provider list the next time somebody saved the appearance.
+      // Written on every save, including the pages that do not show them: leaving either list out
+      // would erase it the next time somebody saved the appearance.
+      mcpClientServers: [],
       aiProviders: [],
       aiDefaultProviderId: undefined,
       aiContextEnabled: true,

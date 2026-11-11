@@ -10,6 +10,7 @@ mod close;
 mod commands;
 mod dropped;
 mod mcp;
+mod mcp_client;
 mod reveal;
 mod state;
 mod tray;
@@ -59,7 +60,7 @@ pub fn run() {
             apply_startup_window_theme(app.handle());
             window_chrome::watch_system_theme(app.handle());
 
-            let (shell_state, events) = state::ShellState::new();
+            let (shell_state, events) = state::ShellState::new(app.handle());
             commands::terminal::pump_events(app.handle().clone(), shell_state.core_arc(), events);
             app.manage(shell_state);
 
@@ -119,6 +120,7 @@ pub fn run() {
             {
                 let core: Arc<Core> = shell_state.core_arc();
                 let mcp = shell_state.mcp_arc();
+                let mcp_client = shell_state.mcp_client_arc();
                 let ai = shell_state.ai_arc();
                 tauri::async_runtime::spawn(async move {
                     // First, because it is the one thing that might still be producing: a run whose
@@ -129,6 +131,9 @@ pub fn run() {
                     // bridge that found it after the window was gone would report a desktop that is
                     // not answering. Removed before the last connection is closed.
                     mcp.stop().await;
+                    // The external servers were opened with this window's vault; nothing is left to
+                    // read their answers, so the sessions go too.
+                    mcp_client.shutdown();
                     core.close_all().await
                 });
             }
@@ -299,6 +304,11 @@ pub fn run() {
             commands::mcp::mcp_client_config,
             commands::mcp::mcp_audit_tail,
             commands::mcp::mcp_approval_answer,
+            commands::mcp::mcp_servers_list,
+            commands::mcp::mcp_server_save,
+            commands::mcp::mcp_server_remove,
+            commands::mcp::mcp_server_secrets_set,
+            commands::mcp::mcp_server_refresh,
             commands::ai::ai_providers,
             commands::ai::ai_provider_key_set,
             commands::ai::ai_provider_remove,
@@ -387,10 +397,17 @@ fn apply_startup_shell_settings(app: &tauri::AppHandle) {
     match sevenshell_platform::load() {
         Ok(settings) => {
             apply_shell_settings(app, &settings);
-            // After the state is managed, because the listener keeps its runtime there. Spawned
-            // rather than awaited: opening a socket is not a reason for the window to wait, and the
-            // interface's first `mcp_status` reports what actually came up.
             if let Some(state) = app.try_state::<state::ShellState>() {
+                // The external servers first: the listener's `GET /tools` answers with whatever the
+                // registry holds at the moment it is asked, and a configured server's tools should
+                // be on the way before the first agent asks. Applied before the socket opens, and
+                // opened on a task of its own — no handshake delays the window.
+                if let Err(error) = state.mcp_client().apply_and_refresh(&settings) {
+                    log::warn!("the external MCP servers could not be applied at startup: {error}");
+                }
+                // After the state is managed, because the listener keeps its runtime there. Spawned
+                // rather than awaited: opening a socket is not a reason for the window to wait, and
+                // the interface's first `mcp_status` reports what actually came up.
                 crate::mcp::start_if_enabled(app, state.mcp_arc(), &settings);
             }
         }

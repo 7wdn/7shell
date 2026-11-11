@@ -1,8 +1,8 @@
 /**
- * The agent interface as the window watches it: whether it is on, what it has done, and what it is
- * waiting for a person to answer.
+ * The agent interface as the window watches it: whether it is on, what it has done, what it is
+ * waiting for a person to answer, and the external servers whose tools it may call.
  *
- * Three things are kept apart on purpose:
+ * Four things are kept apart on purpose:
  *
  * 1. **The listener's status and the settings file are two answers.** The status is what is actually
  *    bound to a port; the settings are what the next start will use. A page that read `mcpEnabled`
@@ -12,6 +12,9 @@
  *    request that vanished because a redraw happened is a request nobody answered.
  * 3. **The audit is read, never accumulated.** `loadAudit` asks for the tail and replaces what was
  *    on screen, so the table cannot drift from the file it is a window onto.
+ * 4. **A server's row is what the host last said, not what the form typed.** Its state and its
+ *    secret state come from the answers and the events; the configuration is mirrored into the
+ *    settings store only so that a save from another page cannot erase it.
  *
  * The subscription is made once for the whole window: the question has to be drawable whatever tab
  * is on screen, which is also why the store is initialized by the frame rather than by the page that
@@ -24,19 +27,38 @@ import { computed, ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import type { Unlisten } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { usePreferencesStore } from "@/stores/preferences";
 import {
   type McpApprovalDecision,
   type McpApprovalRequest,
   type McpAuditEntry,
   MCP_AUDIT_TAIL_LIMIT,
+  type McpServerConfig,
+  type McpServerStatus,
+  type McpServerView,
   type McpStatus,
 } from "@/types/mcp";
 
 export const useMcpStore = defineStore("mcp", () => {
+  const preferences = usePreferencesStore();
+
   /** What the listener says it is doing, or nothing until it has been asked once. */
   const status = ref<McpStatus | null>(null);
   /** The tail of the audit file, newest last — the order it was written in. */
   const audit = ref<McpAuditEntry[]>([]);
+  /**
+   * The external servers, each with its state and whether the vault holds secrets for it.
+   *
+   * The list comes from the host rather than from the settings file: what is configured and what
+   * is running are two answers, and only the host knows the second. It is mirrored into the
+   * preferences store as configuration alone, because the next settings save writes that list back.
+   */
+  const servers = ref<McpServerView[]>([]);
+  /** Whether the server list has been read once, so an empty one can say "none configured". */
+  const serversLoaded = ref(false);
+  const loadingServers = ref(false);
+  /** The server a write is in flight for: one row waits without freezing the rest of the page. */
+  const busyServer = ref<string | null>(null);
   /** The call waiting for an answer, or nothing while none is. */
   const pendingApproval = ref<McpApprovalRequest | null>(null);
   /** The last failure, kept until the next attempt rather than shouted: the page draws it. */
@@ -127,6 +149,156 @@ export const useMcpStore = defineStore("mcp", () => {
   }
 
   /**
+   * Replaces the list with the host's answer.
+   *
+   * Replaced rather than merged: the host is the authority on which servers exist, and a row kept
+   * from an earlier read would be a server somebody already removed. A failure leaves the last
+   * answer on screen, the same rule the listener's own status follows.
+   */
+  async function loadServers(): Promise<void> {
+    if (loadingServers.value) {
+      return;
+    }
+    loadingServers.value = true;
+    failure.value = null;
+    try {
+      servers.value = await backend.mcp.servers();
+      syncServerConfigs();
+    } catch (error) {
+      failure.value = asShellError(error, "mcp_servers_list");
+    } finally {
+      serversLoaded.value = true;
+      loadingServers.value = false;
+    }
+  }
+
+  /**
+   * Writes one server's configuration, and takes the row the host answered with.
+   *
+   * The answer is adopted rather than the draft: the host normalizes the id, trims what it stores
+   * and decides where supervision starts, so what the page draws next is its answer and not the
+   * form's guess.
+   */
+  async function saveServer(config: McpServerConfig): Promise<boolean> {
+    if (busyServer.value !== null) {
+      return false;
+    }
+    busyServer.value = config.id;
+    failure.value = null;
+    try {
+      adoptServer(await backend.mcp.saveServer(config));
+      return true;
+    } catch (error) {
+      failure.value = asShellError(error, "mcp_server_save");
+      return false;
+    } finally {
+      busyServer.value = null;
+    }
+  }
+
+  /** Removes one server, with the secrets the host files under it. */
+  async function removeServer(serverId: string): Promise<boolean> {
+    if (busyServer.value !== null) {
+      return false;
+    }
+    busyServer.value = serverId;
+    failure.value = null;
+    try {
+      await backend.mcp.removeServer(serverId);
+      servers.value = servers.value.filter((view) => view.config.id !== serverId);
+      syncServerConfigs();
+      return true;
+    } catch (error) {
+      failure.value = asShellError(error, "mcp_server_remove");
+      return false;
+    } finally {
+      busyServer.value = null;
+    }
+  }
+
+  /**
+   * Keeps the environment and headers one server is reached with.
+   *
+   * Empty objects clear what is stored, which is the host's own rule. Nothing is read back: the
+   * answer carries `hasSecrets`, and `null` there means the vault is locked rather than "none".
+   */
+  async function setServerSecrets(
+    serverId: string,
+    env: Record<string, string>,
+    headers: Record<string, string>,
+  ): Promise<boolean> {
+    if (busyServer.value !== null) {
+      return false;
+    }
+    busyServer.value = serverId;
+    failure.value = null;
+    try {
+      adoptServer(await backend.mcp.setServerSecrets(serverId, env, headers));
+      return true;
+    } catch (error) {
+      failure.value = asShellError(error, "mcp_server_secrets_set");
+      return false;
+    } finally {
+      busyServer.value = null;
+    }
+  }
+
+  /** Reconnects one server now, and takes the state that attempt reached. */
+  async function refreshServer(serverId: string): Promise<boolean> {
+    if (busyServer.value !== null) {
+      return false;
+    }
+    busyServer.value = serverId;
+    failure.value = null;
+    try {
+      adoptServer(await backend.mcp.refreshServer(serverId));
+      return true;
+    } catch (error) {
+      failure.value = asShellError(error, "mcp_server_refresh");
+      return false;
+    } finally {
+      busyServer.value = null;
+    }
+  }
+
+  /** Replaces one row, or appends it when the host answered about a server this side did not have. */
+  function adoptServer(view: McpServerView): void {
+    const known = servers.value.some((entry) => entry.config.id === view.config.id);
+    servers.value = known
+      ? servers.value.map((entry) => (entry.config.id === view.config.id ? view : entry))
+      : [...servers.value, view];
+    syncServerConfigs();
+  }
+
+  /**
+   * Keeps the settings store's copy of the list in step with what the host just answered.
+   *
+   * Without this the next save from any other settings page would write the list it read at
+   * startup — erasing a server that was added or renamed since.
+   */
+  function syncServerConfigs(): void {
+    preferences.setMcpClientServers(servers.value.map((view) => view.config));
+  }
+
+  /**
+   * Takes one status event.
+   *
+   * A server this side has no row for is not invented from the event: the event carries a state and
+   * a tool count, not a configuration, and a row drawn from it would have nothing to edit. The list
+   * is asked again instead, which is also how a server added by another window appears here.
+   */
+  function applyServerStatus(next: McpServerStatus): void {
+    const known = servers.value.some((entry) => entry.config.id === next.serverId);
+    if (!known) {
+      void loadServers();
+      return;
+    }
+    servers.value = servers.value.map((entry) =>
+      entry.config.id === next.serverId ? { ...entry, status: next } : entry,
+    );
+  }
+
+  /**
    * Answers the call on screen.
    *
    * The dialog is cleared only once the answer has been delivered: a question that disappeared while
@@ -192,22 +364,25 @@ export const useMcpStore = defineStore("mcp", () => {
   }
 
   /**
-   * Listens for the two things the listener says on its own.
+   * Listens for the three things the host says on its own.
    *
-   * A question and a status change, each pushed rather than polled: the first has to reach a person
-   * while the listener waits, and the second happens when the listener is started from a place this
-   * window did not press. The returned function drops both, and a subscription that arrives after
-   * the window has been torn down is dropped at once — a listener outliving the store would keep
-   * asking a dead page to draw.
+   * A question, the listener's state and each external server's state, all pushed rather than
+   * polled: the first has to reach a person while the listener waits, the second happens when the
+   * listener is started from a place this window did not press, and the third changes on a server's
+   * own timer — a row that only re-read when somebody looked would say "connecting" long after it
+   * gave up. The returned function drops all three, and a subscription that arrives after the window
+   * has been torn down is dropped at once — a listener outliving the store would keep asking a dead
+   * page to draw.
    */
   function initialize(): () => void {
     let stopped = false;
     let stopApproval: Unlisten | null = null;
     let stopStatus: Unlisten | null = null;
+    let stopServer: Unlisten | null = null;
 
     void (async () => {
       try {
-        const [approval, listener] = await Promise.all([
+        const [approval, listener, server] = await Promise.all([
           backend.events.onMcpApproval((request) => {
             // A new question replaces the one on screen: the listener asks one at a time, and the
             // older question's deadline is the listener's to enforce.
@@ -217,14 +392,17 @@ export const useMcpStore = defineStore("mcp", () => {
           backend.events.onMcpStatus((next) => {
             status.value = next;
           }),
+          backend.events.onMcpServerStatus(applyServerStatus),
         ]);
         if (stopped) {
           approval();
           listener();
+          server();
           return;
         }
         stopApproval = approval;
         stopStatus = listener;
+        stopServer = server;
       } catch (error) {
         failure.value = asShellError(error, "mcp_listen");
       }
@@ -236,12 +414,17 @@ export const useMcpStore = defineStore("mcp", () => {
       stopped = true;
       stopApproval?.();
       stopStatus?.();
+      stopServer?.();
     };
   }
 
   return {
     status,
     audit,
+    servers,
+    serversLoaded,
+    loadingServers,
+    busyServer,
     pendingApproval,
     failure,
     changing,
@@ -254,6 +437,11 @@ export const useMcpStore = defineStore("mcp", () => {
     enable,
     disable,
     loadAudit,
+    loadServers,
+    saveServer,
+    removeServer,
+    setServerSecrets,
+    refreshServer,
     answerApproval,
     forgetApproval,
     copyClientConfig,

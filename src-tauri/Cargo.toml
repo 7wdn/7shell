@@ -30,6 +30,7 @@ sevenshell-core = { workspace = true }
 sevenshell-error = { workspace = true }
 sevenshell-agent = { workspace = true }
 sevenshell-ai = { workspace = true }
+sevenshell-mcp-client = { workspace = true }
 sevenshell-platform = { workspace = true }
 sevenshell-session = { workspace = true }
 sevenshell-term = { workspace = true }

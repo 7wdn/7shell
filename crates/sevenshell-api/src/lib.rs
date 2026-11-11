@@ -30,9 +30,11 @@ pub use context::{
     ApprovalBroker, ApprovalDecision, ApprovalReason, ApprovalRecord, ApprovalRequest, AuditRecord, AuditSink,
     AuditStatus, Cancel, DenyingBroker, NoAuditSink, ToolContext,
 };
-pub use endpoint::{ENDPOINT_FILE_NAME, EndpointFile, MAX_BODY_BYTES, TOOL_CALL_PATH};
+pub use endpoint::{
+    CALL_ID_HEADER, ENDPOINT_FILE_NAME, EndpointFile, MAX_BODY_BYTES, TOOL_CALL_PATH, TOOL_CANCEL_PATH, TOOLS_PATH,
+};
 pub use error::ApiError;
-pub use registry::{Tool, ToolRegistry, scope_allows};
+pub use registry::{Tool, ToolRegistry, ToolSource, scope_allows};
 pub use tool::{
     ToolAccess, ToolAudit, ToolCall, ToolDescriptor, ToolError, ToolInputSchema, ToolOutcome, ToolResult,
     parse_arguments,

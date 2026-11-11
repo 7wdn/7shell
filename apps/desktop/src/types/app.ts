@@ -5,6 +5,7 @@
  * in both directions, so a rename on one side fails the test suite rather than a release.
  */
 
+import type { McpServerConfig } from "@/types/mcp";
 import type { SnippetProvider } from "@/types/sync";
 
 /** Facts about the running application, from `sevenshell_types::AppInfo`. */
@@ -554,6 +555,14 @@ export interface AppSettings {
   readonly mcpAuditRetentionDays: number;
   /** The largest result one call may return, in bytes. */
   readonly mcpMaxResultBytes: number;
+  /**
+   * External MCP servers whose tools this installation may call.
+   *
+   * Optional because a settings file written before they existed has none, and an absent list reads
+   * as "none configured". Nothing here is a secret — a server's environment or headers are filed in
+   * the vault under its id, and the page that edits them writes through the host's own commands.
+   */
+  readonly mcpClientServers?: readonly McpServerConfig[];
   /**
    * The assistant's providers, without their keys.
    *

@@ -74,7 +74,12 @@ const inputText = computed(() => {
 </script>
 
 <template>
-  <div class="rounded-md border border-border bg-card/40">
+  <!--
+    `data-tool-card` and the call's id are the stable handles an end-to-end run finds a card by:
+    the name and the status are translated text, and the id is the only part of a card that is
+    the same in every language and every build.
+  -->
+  <div class="rounded-md border border-border bg-card/40" data-tool-card :data-call-id="block.callId">
     <div class="flex items-center gap-2 px-2.5 py-1.5">
       <span class="size-1.5 shrink-0 rounded-full" :class="dotClass" aria-hidden="true"></span>
       <span class="min-w-0 flex-1 truncate font-mono text-[11px]">{{ block.tool }}</span>

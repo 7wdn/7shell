@@ -113,6 +113,17 @@
       "requestFailed": "The API server answered {status}.",
       "notConnected": "That cluster connection is no longer open."
     },
+    "mcp": {
+      "serverDuplicate": "Another external server already uses the id {server}.",
+      "serverConnectFailed": "The external MCP server {server} could not be reached, or refused the connection.",
+      "invalidArguments": "The external MCP server's settings are not complete enough to use.",
+      "serverNotFound": "No external MCP server is configured with that id.",
+      "duplicateTool": "The external server {server} offers two tools named {tool}.",
+      "invalidTool": "The external server {server} offers a tool this build cannot serve ({tool}).",
+      "externalFailed": "The tool {tool} on {server} failed.",
+      "externalTimeout": "The tool {tool} on {server} did not answer within {seconds} seconds.",
+      "cancelled": "The external MCP call was cancelled."
+    },
     "ai": {
       "noProvider": "No AI provider has been set up yet.",
       "noKey": "No API key is stored for this provider.",

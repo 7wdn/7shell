@@ -17,10 +17,11 @@
  * 4. **The audit is read from the file, not collected in memory.** A page that accumulated what it
  *    happened to see would disagree with the log as soon as anything happened while it was closed.
  */
-import { Check, Copy, LoaderCircle, RefreshCw } from "@lucide/vue";
+import { Check, Copy, KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Trash2 } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select from "@/components/ui/Select.vue";
 import Switch from "@/components/ui/Switch.vue";
 import SettingsHelp from "@/components/settings/SettingsHelp.vue";
@@ -29,8 +30,11 @@ import {
   MCP_AUDIT_STATUS_LABEL_KEYS,
   MCP_SCOPE_HINT_KEYS,
   MCP_SCOPE_LABEL_KEYS,
+  MCP_SERVER_STATE_LABEL_KEYS,
+  MCP_SERVER_TRANSPORT_LABEL_KEYS,
   RISK_LEVEL_LABEL_KEYS,
 } from "@/lib/mcp/labels";
+import { type KeyValueDraft, keyValueRecord, parseServerArgs } from "@/lib/mcp/servers";
 import { TABLE, rowClass } from "@/lib/table";
 import { useMcpStore } from "@/stores/mcp";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -42,10 +46,19 @@ import {
   MCP_MAX_RESULT_BYTES_MAX,
   MCP_MAX_RESULT_BYTES_MIN,
   MCP_PORT_MAX,
+  MCP_SERVER_TOOL_TIMEOUT_SECONDS_DEFAULT,
+  MCP_SERVER_TOOL_TIMEOUT_SECONDS_MAX,
+  MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN,
+  MCP_SERVER_TRANSPORTS,
   isMcpScope,
+  isValidMcpServerId,
+  type McpAuditEntry,
+  type McpServerConfig,
+  type McpServerState,
+  type McpServerTransport,
+  type McpServerView,
 } from "@/types/mcp";
 import { DEFAULT_MCP_SCOPE, type McpScope } from "@/types/app";
-import type { McpAuditEntry } from "@/types/mcp";
 
 const { t } = useI18n();
 const mcp = useMcpStore();
@@ -150,9 +163,305 @@ function when(at: number): string {
   return new Date(at * 1000).toLocaleString();
 }
 
+// -- External servers ---------------------------------------------------------
+//
+// Everything below is about the servers this installation calls beside its own tools. Three rules:
+//
+// 1. **The row is the host's answer.** Its state, its tool count and whether secrets are held come
+//    from `mcp_servers_list` and the `mcp:server_status` event — never from the form.
+// 2. **Secrets go in and do not come back.** The editor is empty every time it opens, saving
+//    replaces the whole set, and `hasSecrets` is the only statement the page makes about the vault.
+//    Saving with no entries clears what is stored, which is the command's own contract.
+// 3. **An id is part of every tool name.** It is chosen once and then fixed: renaming it would
+//    orphan the secrets filed under it and break calls an agent already knows.
+
+/** One server's configuration while it is being edited. Secrets are not part of it. */
+interface ServerDraft {
+  id: string;
+  isNew: boolean;
+  name: string;
+  transport: McpServerTransport;
+  command: string;
+  args: string;
+  url: string;
+  toolTimeoutSeconds: number;
+  enabled: boolean;
+}
+
+/** The server whose configuration form is open, if any. */
+const serverDraft = ref<ServerDraft | null>(null);
+/** What the last server write did, said under the list. */
+const serverNotice = ref<"" | "saved" | "removed">("");
+/** The server whose removal is being asked about. */
+const removingServer = ref<McpServerView | null>(null);
+/** The server whose secrets editor is open; one at a time, like the configuration form. */
+const secretsFor = ref<string | null>(null);
+/** The two maps being typed. They start empty and are emptied again after every save. */
+const envRows = ref<KeyValueDraft[]>([blankRow()]);
+const headerRows = ref<KeyValueDraft[]>([blankRow()]);
+const secretsNotice = ref<"" | "saved" | "cleared">("");
+
+function blankRow(): KeyValueDraft {
+  return { key: "", value: "" };
+}
+
+/** The transports the form offers, in the order the dropdown lists them. */
+const transportOptions = computed(() =>
+  MCP_SERVER_TRANSPORTS.map((value) => ({ value, label: t(MCP_SERVER_TRANSPORT_LABEL_KEYS[value]) })),
+);
+
+/**
+ * What is wrong with the draft, as the sentence to draw under the form.
+ *
+ * Checked as one answer rather than as four red boxes: the reason Save stays disabled is the first
+ * thing that must be fixed, and four messages at once would be a form arguing with itself.
+ */
+const serverDraftProblem = computed<string | null>(() => {
+  const current = serverDraft.value;
+  if (!current) {
+    return null;
+  }
+  const id = current.id.trim();
+  if (!isValidMcpServerId(id)) {
+    return t("mcp.servers.validation.id");
+  }
+  if (current.isNew && mcp.servers.some((view) => view.config.id === id)) {
+    return t("mcp.servers.validation.idTaken");
+  }
+  if (current.transport === "stdio" && current.command.trim() === "") {
+    return t("mcp.servers.validation.command");
+  }
+  if (current.transport !== "stdio" && current.url.trim() === "") {
+    return t("mcp.servers.validation.url");
+  }
+  return null;
+});
+
+const canSaveServerDraft = computed(() => serverDraft.value !== null && serverDraftProblem.value === null);
+
+/** The secrets rows as the command takes them, or nothing while a row cannot be one. */
+const envRecord = computed(() => keyValueRecord(envRows.value));
+const headerRecord = computed(() => keyValueRecord(headerRows.value));
+const secretsProblem = computed<string | null>(() =>
+  envRecord.value === null || headerRecord.value === null ? t("mcp.servers.secrets.invalid") : null,
+);
+
+function serverName(view: McpServerView): string {
+  return view.config.name.trim() === "" ? view.config.id : view.config.name;
+}
+
+function serverStateClass(state: McpServerState): string {
+  switch (state) {
+    case "ready":
+      return "text-success";
+    case "connecting":
+      return "text-warning";
+    case "failed":
+      return "text-destructive";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function serverDotClass(state: McpServerState): string {
+  switch (state) {
+    case "ready":
+      return "bg-success";
+    case "connecting":
+      return "bg-warning animate-pulse";
+    case "failed":
+      return "bg-destructive";
+    default:
+      return "bg-muted-foreground";
+  }
+}
+
+/**
+ * Whether the vault holds secrets for a server, said as one of three answers.
+ *
+ * `null` is "cannot tell", not "none": a locked vault knows nothing, and drawing "no secrets saved"
+ * over it would invite somebody to type a secret they had already saved.
+ */
+function secretsStateLabel(view: McpServerView): string {
+  if (view.hasSecrets === true) {
+    return t("mcp.servers.secrets.state.saved");
+  }
+  return t(view.hasSecrets === false ? "mcp.servers.secrets.state.missing" : "mcp.servers.secrets.state.locked");
+}
+
+function secretsStateClass(view: McpServerView): string {
+  return view.hasSecrets === false ? "text-warning" : "text-muted-foreground";
+}
+
+function startNewServer(): void {
+  serverNotice.value = "";
+  serverDraft.value = {
+    id: "",
+    isNew: true,
+    name: "",
+    transport: "stdio",
+    command: "",
+    args: "",
+    url: "",
+    toolTimeoutSeconds: MCP_SERVER_TOOL_TIMEOUT_SECONDS_DEFAULT,
+    enabled: true,
+  };
+}
+
+function startEditServer(view: McpServerView): void {
+  serverNotice.value = "";
+  serverDraft.value = {
+    id: view.config.id,
+    isNew: false,
+    name: view.config.name,
+    transport: view.config.transport,
+    command: view.config.command ?? "",
+    args: view.config.args.join("\n"),
+    url: view.config.url ?? "",
+    toolTimeoutSeconds: view.config.toolTimeoutSeconds,
+    enabled: view.config.enabled,
+  };
+}
+
+function cancelServerDraft(): void {
+  serverDraft.value = null;
+}
+
+function chooseServerTransport(value: string): void {
+  if (serverDraft.value && MCP_SERVER_TRANSPORTS.includes(value as McpServerTransport)) {
+    serverDraft.value.transport = value as McpServerTransport;
+  }
+}
+
+function setDraftEnabled(enabled: boolean): void {
+  if (serverDraft.value) {
+    serverDraft.value.enabled = enabled;
+  }
+}
+
+/** A number typed into the timeout box, with an empty or unreadable box reading as the default. */
+function typedServerTimeout(event: Event): void {
+  const current = serverDraft.value;
+  if (!current) {
+    return;
+  }
+  const value = Number((event.target as HTMLInputElement).value || "0");
+  current.toolTimeoutSeconds = Number.isFinite(value) ? Math.round(value) : MCP_SERVER_TOOL_TIMEOUT_SECONDS_DEFAULT;
+}
+
+function serverConfigFromDraft(current: ServerDraft): McpServerConfig {
+  const stdio = current.transport === "stdio";
+  return {
+    id: current.id.trim(),
+    name: current.name.trim(),
+    transport: current.transport,
+    command: stdio ? current.command.trim() : undefined,
+    // Only what the chosen transport reads is sent: a URL left over from a previous choice must
+    // not travel with a stdio server, and vice versa.
+    args: stdio ? parseServerArgs(current.args) : [],
+    url: stdio ? undefined : current.url.trim(),
+    enabled: current.enabled,
+    toolTimeoutSeconds: Math.min(
+      Math.max(current.toolTimeoutSeconds, MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN),
+      MCP_SERVER_TOOL_TIMEOUT_SECONDS_MAX,
+    ),
+  };
+}
+
+async function saveServerDraft(): Promise<void> {
+  const current = serverDraft.value;
+  if (!current || !canSaveServerDraft.value) {
+    return;
+  }
+  serverNotice.value = "";
+  if (await mcp.saveServer(serverConfigFromDraft(current))) {
+    serverDraft.value = null;
+    serverNotice.value = "saved";
+  }
+}
+
+/** Turning the switch is a write of its own: a server that is off is a file change, not a form. */
+async function toggleServer(view: McpServerView, enabled: boolean): Promise<void> {
+  serverNotice.value = "";
+  await mcp.saveServer({ ...view.config, enabled });
+}
+
+async function refreshServer(view: McpServerView): Promise<void> {
+  serverNotice.value = "";
+  await mcp.refreshServer(view.config.id);
+}
+
+async function confirmRemoveServer(): Promise<void> {
+  const view = removingServer.value;
+  removingServer.value = null;
+  if (!view) {
+    return;
+  }
+  serverNotice.value = "";
+  if (await mcp.removeServer(view.config.id)) {
+    serverNotice.value = "removed";
+  }
+}
+
+function toggleSecrets(view: McpServerView): void {
+  secretsNotice.value = "";
+  if (secretsFor.value === view.config.id) {
+    secretsFor.value = null;
+    return;
+  }
+  secretsFor.value = view.config.id;
+  // Never filled in from the vault: the values cannot be read back, so a box holding anything
+  // would be this page inventing a secret. One empty row each is what an editor opens with.
+  envRows.value = [blankRow()];
+  headerRows.value = [blankRow()];
+}
+
+function addSecretRow(kind: "env" | "headers"): void {
+  if (kind === "env") {
+    envRows.value = [...envRows.value, blankRow()];
+  } else {
+    headerRows.value = [...headerRows.value, blankRow()];
+  }
+}
+
+/** Removing the last row leaves an empty one, so the form never has nowhere to type. */
+function removeSecretRow(kind: "env" | "headers", index: number): void {
+  const rows = kind === "env" ? envRows.value : headerRows.value;
+  const left = rows.filter((_, at) => at !== index);
+  const next = left.length > 0 ? left : [blankRow()];
+  if (kind === "env") {
+    envRows.value = next;
+  } else {
+    headerRows.value = next;
+  }
+}
+
+/**
+ * Writes both maps, or clears them when nothing was typed.
+ *
+ * The rows are emptied afterwards whether they held secrets or not: what was typed has been sent,
+ * and a box that kept it would be the one place the values could be read back from.
+ */
+async function saveSecrets(): Promise<void> {
+  const serverId = secretsFor.value;
+  const env = envRecord.value;
+  const headers = headerRecord.value;
+  if (serverId === null || env === null || headers === null) {
+    return;
+  }
+  const empty = Object.keys(env).length === 0 && Object.keys(headers).length === 0;
+  secretsNotice.value = "";
+  if (await mcp.setServerSecrets(serverId, env, headers)) {
+    envRows.value = [blankRow()];
+    headerRows.value = [blankRow()];
+    secretsNotice.value = empty ? "cleared" : "saved";
+  }
+}
+
 onMounted(() => {
   void mcp.refresh();
   void mcp.loadAudit();
+  void mcp.loadServers();
 });
 </script>
 
@@ -357,6 +666,427 @@ onMounted(() => {
       </div>
     </div>
 
+    <!--
+      The external servers: one card each, the form that edits a configuration, and the editor for
+      the secrets that configuration is reached with. The row is the host's answer, never the form.
+    -->
+    <div class="space-y-2 rounded-md border border-border px-3 py-3" data-mcp-servers>
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h4 class="text-sm font-medium">{{ t("mcp.servers.title") }}</h4>
+          <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">{{ t("mcp.servers.description") }}</p>
+        </div>
+        <button
+          type="button"
+          data-mcp-server-add
+          class="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+          :disabled="serverDraft !== null || mcp.busyServer !== null"
+          @click="startNewServer()"
+        >
+          <Plus :size="12" />
+          {{ t("mcp.servers.add") }}
+        </button>
+      </div>
+
+      <p v-if="mcp.servers.length === 0 && serverDraft === null" class="text-xs text-muted-foreground">
+        {{ mcp.loadingServers ? t("mcp.servers.loading") : t("mcp.servers.empty") }}
+      </p>
+
+      <ul class="space-y-1.5">
+        <li
+          v-for="view in mcp.servers"
+          :key="view.config.id"
+          data-mcp-server-row
+          :data-mcp-server-id="view.config.id"
+          class="rounded-md border border-border bg-muted/20 px-3 py-2"
+        >
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span
+              class="size-1.5 shrink-0 rounded-full"
+              :class="serverDotClass(view.status.state)"
+              aria-hidden="true"
+            ></span>
+            <span class="text-xs font-medium">{{ serverName(view) }}</span>
+            <span v-if="view.config.name.trim() !== ''" class="font-mono text-[11px] text-muted-foreground">
+              {{ view.config.id }}
+            </span>
+            <span class="text-[11px] text-muted-foreground">
+              {{ t(MCP_SERVER_TRANSPORT_LABEL_KEYS[view.config.transport]) }}
+            </span>
+            <span class="text-[11px]" :class="serverStateClass(view.status.state)">
+              {{ t(MCP_SERVER_STATE_LABEL_KEYS[view.status.state]) }}
+            </span>
+            <span class="text-[11px] text-muted-foreground">
+              {{ t("mcp.servers.toolCount", { count: String(view.status.tools) }) }}
+            </span>
+            <Switch
+              class="ml-auto"
+              :model-value="view.config.enabled"
+              :disabled="mcp.busyServer !== null"
+              :aria-label="t('mcp.servers.enabled')"
+              @update:model-value="(value: boolean) => toggleServer(view, value)"
+            />
+          </div>
+
+          <!-- A failure is the one thing on the row somebody has to act on, so it names its code. -->
+          <p
+            v-if="view.status.state === 'failed'"
+            class="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[11px] text-destructive"
+          >
+            <span class="font-mono">{{ view.status.code }}</span>
+            <span v-if="view.status.message">{{ view.status.message }}</span>
+          </p>
+
+          <div class="mt-1 flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              data-mcp-server-refresh
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              :disabled="mcp.busyServer !== null"
+              @click="refreshServer(view)"
+            >
+              <LoaderCircle v-if="mcp.busyServer === view.config.id" :size="10" class="animate-spin" />
+              <RefreshCw v-else :size="10" />
+              {{ t("mcp.servers.refresh") }}
+            </button>
+            <button
+              type="button"
+              data-mcp-server-edit
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              :disabled="serverDraft !== null || mcp.busyServer !== null"
+              @click="startEditServer(view)"
+            >
+              <Pencil :size="10" />
+              {{ t("mcp.servers.edit") }}
+            </button>
+            <button
+              type="button"
+              data-mcp-server-secrets
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              :disabled="mcp.busyServer !== null"
+              @click="toggleSecrets(view)"
+            >
+              <KeyRound :size="10" />
+              {{ t("mcp.servers.secrets.title") }}
+            </button>
+            <button
+              type="button"
+              data-mcp-server-remove
+              class="ml-auto flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-0.5 text-[11px] text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
+              :disabled="serverDraft !== null || mcp.busyServer !== null"
+              @click="removingServer = view"
+            >
+              <Trash2 :size="10" />
+              {{ t("mcp.servers.remove") }}
+            </button>
+          </div>
+          <p class="mt-0.5 text-[11px]" :class="secretsStateClass(view)">{{ secretsStateLabel(view) }}</p>
+
+          <!-- What the server is reached with. Write-only: saving replaces the whole set. -->
+          <div
+            v-if="secretsFor === view.config.id"
+            data-mcp-server-secrets-form
+            class="mt-2 space-y-2 rounded-md border border-primary/40 px-3 py-2.5"
+          >
+            <div>
+              <h5 class="text-xs font-medium">{{ t("mcp.servers.secrets.title") }}</h5>
+              <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                {{ t("mcp.servers.secrets.description") }}
+              </p>
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <h6 class="text-[11px] font-medium text-muted-foreground">{{ t("mcp.servers.secrets.env") }}</h6>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] transition-colors hover:bg-accent"
+                  @click="addSecretRow('env')"
+                >
+                  <Plus :size="9" />
+                  {{ t("mcp.servers.secrets.add") }}
+                </button>
+              </div>
+              <div
+                v-for="(row, index) in envRows"
+                :key="index"
+                data-mcp-server-env-row
+                class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5"
+              >
+                <input
+                  v-model="row.key"
+                  data-secret-key
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] focus:outline-none select-text"
+                  :aria-label="t('mcp.servers.secrets.key')"
+                  :placeholder="t('mcp.servers.secrets.key')"
+                />
+                <input
+                  v-model="row.value"
+                  data-secret-value
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] focus:outline-none select-text"
+                  :aria-label="t('mcp.servers.secrets.value')"
+                  :placeholder="t('mcp.servers.secrets.value')"
+                />
+                <button
+                  type="button"
+                  class="rounded-md border border-border px-1.5 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  :aria-label="t('mcp.servers.secrets.remove')"
+                  :title="t('mcp.servers.secrets.remove')"
+                  @click="removeSecretRow('env', index)"
+                >
+                  <Trash2 :size="10" />
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex items-center justify-between gap-2">
+                <h6 class="text-[11px] font-medium text-muted-foreground">
+                  {{ t("mcp.servers.secrets.headers") }}
+                </h6>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[11px] transition-colors hover:bg-accent"
+                  @click="addSecretRow('headers')"
+                >
+                  <Plus :size="9" />
+                  {{ t("mcp.servers.secrets.add") }}
+                </button>
+              </div>
+              <div
+                v-for="(row, index) in headerRows"
+                :key="index"
+                data-mcp-server-header-row
+                class="grid grid-cols-[1fr_1fr_auto] items-center gap-1.5"
+              >
+                <input
+                  v-model="row.key"
+                  data-secret-key
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] focus:outline-none select-text"
+                  :aria-label="t('mcp.servers.secrets.key')"
+                  :placeholder="t('mcp.servers.secrets.key')"
+                />
+                <input
+                  v-model="row.value"
+                  data-secret-value
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="min-w-0 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] focus:outline-none select-text"
+                  :aria-label="t('mcp.servers.secrets.value')"
+                  :placeholder="t('mcp.servers.secrets.value')"
+                />
+                <button
+                  type="button"
+                  class="rounded-md border border-border px-1.5 py-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  :aria-label="t('mcp.servers.secrets.remove')"
+                  :title="t('mcp.servers.secrets.remove')"
+                  @click="removeSecretRow('headers', index)"
+                >
+                  <Trash2 :size="10" />
+                </button>
+              </div>
+            </div>
+
+            <p class="text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.secrets.hint") }}</p>
+            <p v-if="secretsProblem" class="text-[11px] text-destructive">{{ secretsProblem }}</p>
+
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-mcp-server-secrets-save
+                class="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+                :disabled="mcp.busyServer !== null || secretsProblem !== null"
+                @click="saveSecrets()"
+              >
+                {{ t("mcp.servers.secrets.save") }}
+              </button>
+              <button
+                type="button"
+                data-mcp-server-secrets-close
+                class="rounded-md border border-border px-3 py-1 text-xs transition-colors hover:bg-accent"
+                :disabled="mcp.busyServer !== null"
+                @click="secretsFor = null"
+              >
+                {{ t("mcp.servers.secrets.close") }}
+              </button>
+              <span v-if="secretsNotice === 'saved'" class="text-xs text-success">
+                {{ t("mcp.servers.secrets.saved") }}
+              </span>
+              <span v-else-if="secretsNotice === 'cleared'" class="text-xs text-muted-foreground">
+                {{ t("mcp.servers.secrets.cleared") }}
+              </span>
+            </div>
+          </div>
+        </li>
+      </ul>
+
+      <!-- The configuration form: one server at a time, with the id fixed once it exists. -->
+      <div v-if="serverDraft" data-mcp-server-form class="space-y-2 rounded-md border border-primary/40 px-3 py-2.5">
+        <h5 class="text-xs font-medium">
+          {{ t(serverDraft.isNew ? "mcp.servers.newTitle" : "mcp.servers.editTitle") }}
+        </h5>
+
+        <div class="grid gap-2 sm:grid-cols-2">
+          <div>
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-id">
+              {{ t("mcp.servers.id") }}
+            </label>
+            <input
+              id="mcp-server-id"
+              v-model="serverDraft.id"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              class="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:outline-none select-text disabled:opacity-60"
+              :disabled="!serverDraft.isNew"
+              :placeholder="t('mcp.servers.id')"
+            />
+            <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.idHint") }}</p>
+          </div>
+          <div>
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-name">
+              {{ t("mcp.servers.name") }}
+            </label>
+            <input
+              id="mcp-server-name"
+              v-model="serverDraft.name"
+              type="text"
+              class="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none select-text"
+              :placeholder="t('mcp.servers.name')"
+            />
+            <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.nameHint") }}</p>
+          </div>
+
+          <div>
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-transport">
+              {{ t("mcp.servers.transportLabel") }}
+            </label>
+            <div class="mt-0.5">
+              <Select
+                id="mcp-server-transport"
+                :model-value="serverDraft.transport"
+                :options="transportOptions"
+                :aria-label="t('mcp.servers.transportLabel')"
+                @update:model-value="chooseServerTransport"
+              />
+            </div>
+          </div>
+          <div>
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-timeout">
+              {{ t("mcp.servers.timeout") }}
+            </label>
+            <div class="mt-0.5 flex items-center gap-2">
+              <input
+                id="mcp-server-timeout"
+                type="number"
+                :min="MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN"
+                :max="MCP_SERVER_TOOL_TIMEOUT_SECONDS_MAX"
+                step="1"
+                class="w-24 rounded-md border border-border bg-background px-2 py-1 text-xs focus:outline-none select-text"
+                :value="serverDraft.toolTimeoutSeconds"
+                @input="typedServerTimeout($event)"
+              />
+              <span class="text-[11px] text-muted-foreground">{{ t("mcp.fields.unitSeconds") }}</span>
+            </div>
+            <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.timeoutHint") }}</p>
+          </div>
+
+          <div v-if="serverDraft.transport === 'stdio'" class="sm:col-span-2">
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-command">
+              {{ t("mcp.servers.command") }}
+            </label>
+            <input
+              id="mcp-server-command"
+              v-model="serverDraft.command"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              class="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:outline-none select-text"
+              :placeholder="t('mcp.servers.command')"
+            />
+            <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.commandHint") }}</p>
+          </div>
+          <div v-if="serverDraft.transport === 'stdio'" class="sm:col-span-2">
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-args">
+              {{ t("mcp.servers.args") }}
+            </label>
+            <textarea
+              id="mcp-server-args"
+              v-model="serverDraft.args"
+              rows="2"
+              spellcheck="false"
+              class="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:outline-none select-text"
+              :placeholder="t('mcp.servers.args')"
+            ></textarea>
+            <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.argsHint") }}</p>
+          </div>
+          <div v-else class="sm:col-span-2">
+            <label class="block text-[11px] text-muted-foreground" for="mcp-server-url">
+              {{ t("mcp.servers.url") }}
+            </label>
+            <input
+              id="mcp-server-url"
+              v-model="serverDraft.url"
+              type="url"
+              autocomplete="off"
+              spellcheck="false"
+              class="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 font-mono text-xs focus:outline-none select-text"
+              :placeholder="t('mcp.servers.url')"
+            />
+            <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.urlHint") }}</p>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 sm:col-span-2">
+            <span class="text-[11px] leading-relaxed text-muted-foreground">{{ t("mcp.servers.enabledHint") }}</span>
+            <Switch
+              :model-value="serverDraft.enabled"
+              :aria-label="t('mcp.servers.enabled')"
+              @update:model-value="setDraftEnabled"
+            />
+          </div>
+        </div>
+
+        <p v-if="serverDraftProblem" data-mcp-server-problem class="text-[11px] text-destructive">
+          {{ serverDraftProblem }}
+        </p>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-mcp-server-save
+            class="rounded-md bg-primary px-3 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            :disabled="!canSaveServerDraft || mcp.busyServer !== null"
+            @click="saveServerDraft()"
+          >
+            {{ t("mcp.servers.save") }}
+          </button>
+          <button
+            type="button"
+            class="rounded-md border border-border px-3 py-1 text-xs transition-colors hover:bg-accent"
+            :disabled="mcp.busyServer !== null"
+            @click="cancelServerDraft()"
+          >
+            {{ t("mcp.servers.cancel") }}
+          </button>
+        </div>
+      </div>
+
+      <p v-if="serverNotice === 'saved'" class="text-xs text-muted-foreground">{{ t("mcp.servers.saved") }}</p>
+      <p v-else-if="serverNotice === 'removed'" class="text-xs text-muted-foreground">
+        {{ t("mcp.servers.removed") }}
+      </p>
+    </div>
+
     <!-- The tail of the audit file: what was called, how it ended, how long it took. -->
     <div class="space-y-2 rounded-md border border-border px-3 py-3">
       <div class="flex items-start justify-between gap-3">
@@ -409,5 +1139,17 @@ onMounted(() => {
         </table>
       </div>
     </div>
+
+    <ConfirmDialog
+      v-if="removingServer"
+      :open="true"
+      :title="t('mcp.servers.removeTitle')"
+      :message="t('mcp.servers.removeMessage')"
+      :details="[serverName(removingServer)]"
+      :confirm-label="t('mcp.servers.remove')"
+      danger
+      @confirm="confirmRemoveServer()"
+      @update:open="removingServer = null"
+    />
   </section>
 </template>

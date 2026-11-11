@@ -88,6 +88,7 @@ import {
   MCP_MAX_RESULT_BYTES_MAX,
   MCP_MAX_RESULT_BYTES_MIN,
   MCP_PORT_MAX,
+  type McpServerConfig,
 } from "@/types/mcp";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
@@ -468,6 +469,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const mcpAuditRetentionDays = ref(DEFAULT_MCP_AUDIT_RETENTION_DAYS);
   const mcpMaxResultBytes = ref(DEFAULT_MCP_MAX_RESULT_BYTES);
   /**
+   * The external servers, without their secrets.
+   *
+   * Held here only so that a save from *another* page does not erase them: the settings file is
+   * written whole, and a commit that left this list out would delete every server somebody had
+   * configured. The page that edits them writes through the host's own commands; this is the copy
+   * those answers are mirrored into, and it is never marked dirty — nothing on this page chose it.
+   */
+  const mcpClientServers = ref<readonly McpServerConfig[]>([]);
+  /**
    * The assistant's providers and its context defaults, without any key.
    *
    * This is the one place in the store that holds a list rather than a value, and it is a list the
@@ -765,6 +775,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         settings.mcpAuditRetentionDays ?? DEFAULT_MCP_AUDIT_RETENTION_DAYS,
       );
       mcpMaxResultBytes.value = clampMcpMaxResultBytes(settings.mcpMaxResultBytes ?? DEFAULT_MCP_MAX_RESULT_BYTES);
+      // A file written before external servers existed has none, which reads as "none configured".
+      mcpClientServers.value = settings.mcpClientServers ?? [];
       // An installation that has never opened the assistant page has an empty list, which is what
       // the page draws as "nothing configured yet" rather than as a failure to read.
       aiProviders.value = settings.aiProviders ?? [];
@@ -882,6 +894,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
         mcpApprovalTimeoutSeconds: mcpApprovalTimeoutSeconds.value,
         mcpAuditRetentionDays: mcpAuditRetentionDays.value,
         mcpMaxResultBytes: mcpMaxResultBytes.value,
+        // Same rule as the providers below: the file is written whole, so leaving the servers out
+        // here would delete them every time somebody saved the appearance. Secrets are not here —
+        // they live in the vault, under each server's id.
+        mcpClientServers: [...mcpClientServers.value],
         // The providers travel as configuration only. A key is not a field of the settings file,
         // and omitting the list here would erase it on every save from another page.
         aiProviders: [...aiProviders.value],
@@ -1443,6 +1459,16 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * Records the external servers the host just answered with, without calling it a choice.
+   *
+   * The host's commands are what writes that list; this keeps the copy the next settings save
+   * carries in step with it. Marking the page dirty would offer to write a change nobody made here.
+   */
+  function setMcpClientServers(servers: readonly McpServerConfig[]): void {
+    mcpClientServers.value = [...servers];
+  }
+
+  /**
    * Changes what one action answers to.
    *
    * Passing nothing puts the action back to the default, which is stored as *not being in the map at
@@ -1764,6 +1790,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     mcpApprovalTimeoutSeconds,
     mcpAuditRetentionDays,
     mcpMaxResultBytes,
+    mcpClientServers,
     aiProviders,
     aiDefaultProviderId,
     aiContextEnabled,
@@ -1829,6 +1856,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setAiContextLines,
     setAiSessionRetentionDays,
     adoptMcpEnabled,
+    setMcpClientServers,
     setKeybinding,
     setPanelHeight,
     rememberPanelHeight,

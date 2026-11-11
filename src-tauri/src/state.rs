@@ -1,9 +1,10 @@
 //! What the shell keeps between commands.
 //!
-//! Three long-lived things: the vault (one file, one lock state), the core (the registry of open
-//! terminals, plus the receiver their output arrives on), and the pieces the tool layer's two
-//! callers share — the MCP listener and the assistant ([`SharedAgent`]). All are created once, in
-//! `setup`, and handed to every command through managed state.
+//! Four long-lived things: the vault (one file, one lock state), the core (the registry of open
+//! terminals, plus the receiver their output arrives on), the pieces the tool layer's two callers
+//! share — the MCP listener and the assistant ([`SharedAgent`]) — and the external servers this
+//! desktop calls. All are created once, in `setup`, and handed to every command through managed
+//! state.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,6 +15,7 @@ use std::time::SystemTime;
 use sevenshell_api::local::ConnectionCache;
 use sevenshell_api::{AuditRecord, AuditSink, ToolRegistry};
 use sevenshell_core::Core;
+use sevenshell_mcp_client::McpClientManager;
 use sevenshell_vault::Vault;
 
 use crate::ai::AiRuntime;
@@ -21,6 +23,7 @@ use crate::dropped::PendingDrops;
 use crate::mcp::McpRuntime;
 use crate::mcp::approval::ApprovalRegistry;
 use crate::mcp::audit::AuditLog;
+use crate::mcp_client::{McpClientSupervisor, TauriServerStatusEvents};
 use crate::uploads::PendingUploads;
 
 /// A file an operation is in the middle of, waiting for an answer about it.
@@ -204,6 +207,12 @@ pub struct ShellState {
     /// that reads its status does, and an absent runtime would make "off" and "not built yet" look
     /// alike.
     mcp: Arc<McpRuntime>,
+    /// The external MCP servers this installation calls, and when they are opened.
+    ///
+    /// Separate from the listener above because it is the other direction: the listener is somebody
+    /// else calling this desktop's tools, this is this desktop calling somebody else's. They share
+    /// only the tool table, which is why both hold the same registry.
+    mcp_client: Arc<McpClientSupervisor>,
     /// The assistant: the conversation on screen and whichever run is answering.
     ///
     /// The conversation is a document in the vault (one opaque string per chat), written at the end
@@ -253,7 +262,9 @@ impl ShellState {
     /// Opens the vault at its usual place and builds the core around it.
     ///
     /// The vault is *not* unlocked here: it starts locked, and the interface asks for the password.
-    pub fn new() -> (Self, tokio::sync::mpsc::Receiver<sevenshell_core::CoreEvent>) {
+    /// The window handle is taken because one of the pieces below answers with an event — an
+    /// external server's state — and there is no other moment at which it can be handed over.
+    pub fn new(app: &tauri::AppHandle) -> (Self, tokio::sync::mpsc::Receiver<sevenshell_core::CoreEvent>) {
         let path = sevenshell_vault::default_path().unwrap_or_else(|| {
             log::warn!("the configuration directory could not be located; the vault will not persist");
             std::path::PathBuf::from("vault.json")
@@ -263,12 +274,25 @@ impl ShellState {
         let (core, events) = Core::new(Arc::clone(&vault));
         let shared = Arc::new(SharedAgent::new(Arc::clone(&core)));
         let mcp = Arc::new(McpRuntime::new(Arc::clone(&shared)));
+        // The settings are applied a moment later by `apply_startup_shell_settings`, which is the
+        // one path that hands the manager both its list, its secrets and the result bound. What
+        // starts here is the health loop: it watches the manager for as long as the window lives,
+        // retrying a failed server and pinging a ready one, even when no settings page is open.
+        let manager = Arc::new(McpClientManager::new());
+        let mcp_client = McpClientSupervisor::new(
+            manager,
+            Arc::clone(shared.registry()),
+            Arc::clone(&vault),
+            Arc::new(TauriServerStatusEvents::new(app.clone())),
+        );
+        mcp_client.start();
         let ai = Arc::new(AiRuntime::new(Arc::clone(&vault), Arc::clone(&shared)));
         (
             Self {
                 vault,
                 core,
                 mcp,
+                mcp_client,
                 ai,
                 pending_drops: PendingDrops::default(),
                 pending_uploads: PendingUploads::default(),
@@ -306,6 +330,17 @@ impl ShellState {
     /// A handle to the agent interface for the one path that outlives a command: the window closing.
     pub fn mcp_arc(&self) -> Arc<McpRuntime> {
         Arc::clone(&self.mcp)
+    }
+
+    /// The external servers this installation calls.
+    pub fn mcp_client(&self) -> &Arc<McpClientSupervisor> {
+        &self.mcp_client
+    }
+
+    /// A handle to the external-server supervisor for the paths that outlive a command: the vault
+    /// locking and the window closing.
+    pub fn mcp_client_arc(&self) -> Arc<McpClientSupervisor> {
+        Arc::clone(&self.mcp_client)
     }
 
     /// The assistant: its one conversation, and whichever run is answering.
@@ -414,6 +449,10 @@ impl ShellState {
         // answers `VAULT-LOCKED` rather than looking like a desktop that is not running. The cache
         // is the one the assistant used too.
         self.mcp.close_connections();
+        // An external MCP server's environment and headers came from the same vault. Their sessions
+        // are ended and the manager forgets the secrets *before* the vault closes, so a refresh
+        // racing the lock cannot reopen one with a credential the person just put away.
+        self.mcp_client.on_vault_locked();
         self.vault.lock();
     }
 }

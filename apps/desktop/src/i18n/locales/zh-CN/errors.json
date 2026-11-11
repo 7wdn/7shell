@@ -113,6 +113,17 @@
       "requestFailed": "API 服务器返回了 {status}。",
       "notConnected": "这个集群连接已经关闭。"
     },
+    "mcp": {
+      "serverDuplicate": "已有另一个外部服务器使用 id {server}。",
+      "serverConnectFailed": "无法连接外部 MCP 服务器 {server}，或它拒绝了连接。",
+      "invalidArguments": "外部 MCP 服务器的设置不完整，无法使用。",
+      "serverNotFound": "没有配置使用该 id 的外部 MCP 服务器。",
+      "duplicateTool": "外部服务器 {server} 提供了两个同名工具 {tool}。",
+      "invalidTool": "外部服务器 {server} 提供了本版本无法提供的工具（{tool}）。",
+      "externalFailed": "{server} 上的工具 {tool} 执行失败。",
+      "externalTimeout": "{server} 上的工具 {tool} 在 {seconds} 秒内没有响应。",
+      "cancelled": "外部 MCP 调用已取消。"
+    },
     "ai": {
       "noProvider": "还没有配置 AI 服务商。",
       "noKey": "该服务商还没有保存 API 密钥。",

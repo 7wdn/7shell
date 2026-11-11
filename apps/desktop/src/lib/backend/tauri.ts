@@ -55,7 +55,15 @@ import type {
   KubeContextInfo,
 } from "@/types/k8s";
 import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
-import type { McpApprovalDecision, McpApprovalRequest, McpAuditEntry, McpStatus } from "@/types/mcp";
+import type {
+  McpApprovalDecision,
+  McpApprovalRequest,
+  McpAuditEntry,
+  McpServerConfig,
+  McpServerStatus,
+  McpServerView,
+  McpStatus,
+} from "@/types/mcp";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
@@ -270,6 +278,43 @@ export function mcpApprovalAnswer(callId: string, decision: McpApprovalDecision)
   return invoke<void>("mcp_approval_answer", { callId, decision });
 }
 
+/**
+ * The external servers this installation calls, each with its state and whether the vault holds
+ * secrets for it. The secret values themselves have no field here and no command that returns one.
+ */
+export function mcpServersList(): Promise<McpServerView[]> {
+  return invoke<McpServerView[]>("mcp_servers_list");
+}
+
+/** Writes one server's non-secret configuration. The answer is the row as the page draws it. */
+export function mcpServerSave(config: McpServerConfig): Promise<McpServerView> {
+  return invoke<McpServerView>("mcp_server_save", { config });
+}
+
+/** Removes one server. Its secrets go with it, on the far side. */
+export function mcpServerRemove(serverId: string): Promise<void> {
+  return invoke<void>("mcp_server_remove", { serverId });
+}
+
+/**
+ * Keeps the environment and headers one server is reached with, or forgets them.
+ *
+ * Both objects travel whole and are written whole: `{}` is how the page clears what is stored. The
+ * values go inwards only — the answer carries `hasSecrets`, never an entry.
+ */
+export function mcpServerSecretsSet(
+  serverId: string,
+  env: Record<string, string>,
+  headers: Record<string, string>,
+): Promise<McpServerView> {
+  return invoke<McpServerView>("mcp_server_secrets_set", { serverId, env, headers });
+}
+
+/** Reconnects one server now, instead of waiting for its own backoff. */
+export function mcpServerRefresh(serverId: string): Promise<McpServerView> {
+  return invoke<McpServerView>("mcp_server_refresh", { serverId });
+}
+
 /** Calls `listener` when a call stops for a person's answer. */
 export async function onMcpApproval(listener: (payload: McpApprovalRequest) => void): Promise<Unlisten> {
   return listen<McpApprovalRequest>("mcp:approval", (event) => listener(event.payload));
@@ -278,6 +323,11 @@ export async function onMcpApproval(listener: (payload: McpApprovalRequest) => v
 /** Calls `listener` when the listener's own state changes — enabled, restarted, or stopped. */
 export async function onMcpStatus(listener: (payload: McpStatus) => void): Promise<Unlisten> {
   return listen<McpStatus>("mcp:status", (event) => listener(event.payload));
+}
+
+/** Calls `listener` when one external server connects, disconnects or fails. */
+export async function onMcpServerStatus(listener: (payload: McpServerStatus) => void): Promise<Unlisten> {
+  return listen<McpServerStatus>("mcp:server_status", (event) => listener(event.payload));
 }
 
 // -- The assistant -----------------------------------------------------------

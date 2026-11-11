@@ -8,12 +8,23 @@
 //! the setting on and the answer an error. That is deliberate: the switch must not claim a listener
 //! that is not there, and the next launch (or the next click) tries again rather than silently
 //! forgetting what the person asked for.
+//!
+//! The second half of the file is the *other* direction: the external servers this installation
+//! calls. Those commands keep their logic in [`crate::mcp_client`] — what is saved, what is refused
+//! and when a server is reopened is testable there without a webview — and only load the file, hand
+//! it over and write it back here. A server's environment and headers go in through
+//! `mcp_server_secrets_set` and never come out: every answer carries `hasSecrets`, never a value.
+
+use std::collections::BTreeMap;
 
 use sevenshell_api::{ApprovalDecision, AuditRecord};
 use sevenshell_error::ShellError;
+use sevenshell_mcp_client::McpServerSecrets;
+use sevenshell_types::{AppSettings, McpServerConfig};
 use tauri::{AppHandle, State};
 
 use crate::mcp::{McpStatus, audit};
+use crate::mcp_client::{McpServerView, shell_error};
 use crate::state::ShellState;
 
 /// What is listening, if anything.
@@ -92,4 +103,159 @@ pub fn mcp_approval_answer(state: State<'_, ShellState>, call_id: String, decisi
     // before the click, and that is a race, not a mistake worth an error box.
     state.mcp().answer(&call_id, decision);
     Ok(())
+}
+
+/// The preferences, or the defaults when the file cannot be read.
+///
+/// The same rule the listener's status follows: a settings file that cannot be read is not a reason
+/// to refuse to say what is configured. The defaults are an empty server list, which is honest.
+fn settings_or_default() -> AppSettings {
+    match sevenshell_platform::load() {
+        Ok(settings) => settings,
+        Err(error) => {
+            log::warn!("settings could not be read, so the external servers report none: {error}");
+            AppSettings::default()
+        }
+    }
+}
+
+/// An id no configured server answers to, as a sentence a page can show.
+fn unknown_server(server_id: &str) -> ShellError {
+    // The client's own code for this has no catalogue entry yet; the sentence names it so a log line
+    // and the page still agree about what happened, and it quotes only what the caller sent.
+    ShellError::app_internal(format!(
+        "MCP-SERVER-NOT-FOUND: no external MCP server is configured with the id `{server_id}`"
+    ))
+}
+
+/// Drops the entries a transport could not use, and trims the names.
+///
+/// A key with nothing in it is not an environment variable or a header. Values are left exactly as
+/// typed: surrounding spaces can be part of a token, and a token this build trims is one the server
+/// refuses.
+fn key_values(values: BTreeMap<String, String>) -> BTreeMap<String, String> {
+    values
+        .into_iter()
+        .filter_map(|(key, value)| {
+            let key = key.trim().to_owned();
+            (!key.is_empty()).then_some((key, value))
+        })
+        .collect()
+}
+
+/// Every external server, with where its supervision has got to and whether the vault holds secrets.
+#[tauri::command]
+pub async fn mcp_servers_list(state: State<'_, ShellState>) -> Result<Vec<McpServerView>, ShellError> {
+    Ok(state.mcp_client().list(&settings_or_default()))
+}
+
+/// Writes one server's non-secret configuration and answers the row as the page draws it.
+///
+/// The order is deliberate: the manager accepts the list *first*, and only then is the file written.
+/// A configuration the manager refuses is a page's answer, not a saved setting, and a list the
+/// manager holds but the file does not would be reverted by the next save from any other page.
+#[tauri::command]
+pub async fn mcp_server_save(
+    state: State<'_, ShellState>,
+    config: McpServerConfig,
+) -> Result<McpServerView, ShellError> {
+    let mut settings = sevenshell_platform::load()?;
+    let view = state
+        .mcp_client()
+        .save_server(&mut settings, config)
+        .map_err(|error| shell_error(&error))?;
+
+    sevenshell_platform::save(&settings)?;
+    // The handshake is somebody else's server: the page must not wait on it. A server whose settings
+    // did not change kept its session, so `refresh_if_needed` costs a connection only when the save
+    // changed something.
+    state.mcp_client().refresh_if_needed(&view.config.id);
+    Ok(view)
+}
+
+/// Removes one server, with the secrets the vault files under it.
+#[tauri::command]
+pub async fn mcp_server_remove(state: State<'_, ShellState>, server_id: String) -> Result<(), ShellError> {
+    let mut settings = sevenshell_platform::load()?;
+    let removed = state
+        .mcp_client()
+        .remove_server(&mut settings, &server_id)
+        .map_err(|error| shell_error(&error))?;
+
+    if removed {
+        sevenshell_platform::save(&settings)?;
+    }
+    // Nothing is emitted for a row that is gone: there is nothing left to draw, and the page learns
+    // the server is not there any more from the list it asks for.
+    Ok(())
+}
+
+/// Keeps the environment and headers one server is reached with, or forgets them.
+///
+/// Both objects travel whole and are written whole: `{}` in both is how the page clears what is
+/// stored. The values go inwards only — the answer carries `hasSecrets`, never an entry.
+#[tauri::command]
+pub async fn mcp_server_secrets_set(
+    state: State<'_, ShellState>,
+    server_id: String,
+    env: BTreeMap<String, String>,
+    headers: BTreeMap<String, String>,
+) -> Result<McpServerView, ShellError> {
+    let settings = sevenshell_platform::load()?;
+    let config = state
+        .mcp_client()
+        .server(&settings, &server_id)
+        .ok_or_else(|| unknown_server(&server_id))?;
+
+    let secrets = McpServerSecrets {
+        env: key_values(env),
+        headers: key_values(headers),
+    };
+    if secrets.is_empty() {
+        state.vault().set_mcp_server_secrets(&server_id, None)?;
+    } else {
+        let encoded = serde_json::to_string(&secrets)
+            .map_err(|error| ShellError::app_internal(format!("a server's secrets could not be encoded: {error}")))?;
+        // An empty string is how the vault deletes; this is never empty here, so `Some` is a save.
+        state.vault().set_mcp_server_secrets(&server_id, Some(encoded))?;
+    }
+
+    // The manager is handed the whole set again rather than the one entry: it reads the vault, so
+    // there is one place secrets come from and no second copy to keep in step.
+    state
+        .mcp_client()
+        .apply(&settings)
+        .map_err(|error| shell_error(&error))?;
+    // A server that failed for want of a token is retried now, which is what the person typing one
+    // is asking for.
+    state.mcp_client().refresh_in_background(config.id.clone());
+
+    Ok(state
+        .mcp_client()
+        .view(&settings, &server_id)
+        .expect("the server was checked to be configured above"))
+}
+
+/// Reconnects one server now, instead of waiting for its own backoff.
+///
+/// A failed attempt answers an error *and* leaves the row saying `failed` — the manager recorded it
+/// and the event was sent before this returns, so the page draws the same thing whichever of the two
+/// it looks at.
+#[tauri::command]
+pub async fn mcp_server_refresh(state: State<'_, ShellState>, server_id: String) -> Result<McpServerView, ShellError> {
+    let settings = sevenshell_platform::load()?;
+    if state.mcp_client().server(&settings, &server_id).is_none() {
+        return Err(unknown_server(&server_id));
+    }
+
+    let attempt = state.mcp_client().refresh(&server_id).await;
+    let view = state
+        .mcp_client()
+        .view(&settings, &server_id)
+        .expect("the server was checked to be configured above");
+
+    match attempt {
+        Ok(_) => Ok(view),
+        Err(error) => Err(shell_error(&error)),
+    }
 }

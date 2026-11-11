@@ -424,12 +424,16 @@ speaks the protocol on standard input and output and forwards each call to a loo
 desktop writes down. The bridge never opens the vault, never starts the desktop and never sees a
 password.
 
-The endpoint listens on `127.0.0.1` on a configured or system-chosen port and exposes one route,
-`POST /tools/call`. Its bearer token is rotated on every run and written to
+The endpoint listens on `127.0.0.1` on a configured or system-chosen port and exposes three
+routes: `POST /tools/call`, `GET /tools` (the same descriptors the bridge grows its tool list from,
+so an external server's tools are visible without restarting the bridge) and `POST /tools/cancel`
+(a call id to stop). Its bearer token is rotated on every run and written to
 `<config>/mcp-endpoint.json` with owner-only permissions; the window is told whether the listener is
 on, its port, the scope and the audit path, and is never told the token. A request with an `Origin`
 header, a non-loopback `Host`, a missing or wrong token, a non-JSON body or more than two mebibytes is
-refused before a tool runs.
+refused before a tool runs. A call carries its own UUID in `x-sshell-call-id`; the desktop builds a
+cancellation for that id and drops it when the call ends, and a `notifications/cancelled` from the
+client reaches it through the same route.
 
 `crates/sevenshell-api` is the one place a tool is described and gated: a registry, a closed JSON
 Schema per tool, the policy verdict, the approval broker and the audit line. The desktop builds one
@@ -440,10 +444,20 @@ stops for a person's approval; an unknown host key is a question and a changed o
 agent cannot send `acknowledged`. Files are remote text only — the agent is never given a path on the
 machine the desktop runs on.
 
+The other direction is `crates/sevenshell-mcp-client`: a server configured in the settings page is
+opened over stdio, Streamable HTTP or SSE, its `tools/list` is read through pagination, and each tool
+joins the same registry as `mcp__{server}__{tool}`. A server's `readOnlyHint` is the only thing that
+makes its tool a read; every other tool is a write and asks a person on every call, because this
+build did not write it and cannot judge what it does. Environment and header values live in the
+vault, one entry per server, and never in the settings file. The host supervisor retries a failed
+server on a 1s-to-30s backoff and pings a ready one every 60 seconds; one server failing leaves the
+others, and the built-in tools, untouched.
+
 | Piece | Where |
 |---|---|
 | Tool contract, registry and gate | `crates/sevenshell-api` |
 | Stdio bridge and control-endpoint client | `crates/sevenshell-mcp` |
+| External MCP client: transports, sessions, tools, health | `crates/sevenshell-mcp-client/`, `src-tauri/src/mcp_client/` |
 | Loopback server, token, approval and audit | `src-tauri/src/mcp/` |
 | Settings page, approval dialog and store | `apps/desktop/src/components/mcp/`, `components/settings/McpSettings.vue`, `stores/mcp.ts` |
 | Sidecar build and bundle | `scripts/prepare-mcp-sidecar.mjs`, `src-tauri/tauri.conf.json` (`externalBin`) |

@@ -34,6 +34,7 @@ const RANKS = new Map([
   ["sevenshell-cli", 7],
   ["sevenshell-agent", 7],
   ["sevenshell-mcp", 7],
+  ["sevenshell-mcp-client", 7],
   ["sevenshell-web", 7],
   ["sevenshell-desktop", 8],
 ]);

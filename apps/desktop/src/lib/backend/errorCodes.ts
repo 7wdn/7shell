@@ -101,6 +101,16 @@ export const ERROR_CATALOG = {
   "UPDATE-NOT-AVAILABLE": "errors.update.notAvailable",
   "UPDATE-INSTALL-FAILED": "errors.update.installFailed",
   "UPDATE-RELEASE-PAGE-FAILED": "errors.update.releasePageFailed",
+  // External MCP servers
+  "MCP-SERVER-DUPLICATE": "errors.mcp.serverDuplicate",
+  "MCP-SERVER-CONNECT-FAILED": "errors.mcp.serverConnectFailed",
+  "MCP-INVALID-ARGUMENTS": "errors.mcp.invalidArguments",
+  "MCP-SERVER-NOT-FOUND": "errors.mcp.serverNotFound",
+  "MCP-DUPLICATE-TOOL": "errors.mcp.duplicateTool",
+  "MCP-INVALID-TOOL": "errors.mcp.invalidTool",
+  "MCP-EXTERNAL-FAILED": "errors.mcp.externalFailed",
+  "MCP-EXTERNAL-TIMEOUT": "errors.mcp.externalTimeout",
+  "MCP-CANCELLED": "errors.mcp.cancelled",
   // Assistant
   "AI-NO-PROVIDER": "errors.ai.noProvider",
   "AI-NO-KEY": "errors.ai.noKey",

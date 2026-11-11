@@ -13,6 +13,7 @@ mod completion;
 mod container;
 mod descriptors;
 mod k8s;
+mod mcp_client;
 mod monitor;
 mod risk;
 mod session;
@@ -56,6 +57,12 @@ pub use generated::{
 pub use k8s::{
     K8sExecRequest, K8sLogRequest, K8sMethod, K8sRequest, K8sResponse, K8sStreamEnd, K8sStreamLine, K8sWatchEvent,
     KubeContextInfo, KubeconfigSource, KubernetesSettings,
+};
+pub use mcp_client::{
+    MCP_SERVER_ID_MAX_CHARS, MCP_SERVER_TOOL_SEPARATOR, MCP_SERVER_TOOL_TIMEOUT_SECONDS_DEFAULT,
+    MCP_SERVER_TOOL_TIMEOUT_SECONDS_MAX, MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN, McpServerConfig, McpServerState,
+    McpServerStatus, McpServerTransport, is_valid_mcp_server_id, mcp_server_enabled_default,
+    mcp_server_tool_timeout_seconds_default, normalize_mcp_server_tool_timeout_seconds,
 };
 pub use monitor::{
     CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, HostMetrics, LoadAverage, MAX_COMMAND_CHARS,
