@@ -416,7 +416,7 @@ function openRowMenu(event: MouseEvent, container: ContainerSummary): void {
       </button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-auto">
+    <div class="min-h-0 flex-1 overflow-auto px-3">
       <table
         :class="cn(TABLE.page.table, 'table-fixed')"
         :style="{ minWidth: '760px' }"

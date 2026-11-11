@@ -140,6 +140,12 @@ beforeEach(() => {
 });
 
 describe("container list", () => {
+  it("leaves room between the first column and the pane edge", async () => {
+    await mount();
+    const table = host?.querySelector("table");
+    expect(table?.parentElement?.className).toContain("px-3");
+  });
+
   it("shows running containers by default and all of them once the filter is off", async () => {
     await mount();
     expect(rows()).toHaveLength(1);

@@ -265,7 +265,7 @@ function keyOf(obj: K8sObject): string {
       {{ t("k8s.list.metricsMissing") }}
     </p>
 
-    <div class="min-h-0 flex-1 overflow-auto">
+    <div class="min-h-0 flex-1 overflow-auto px-3">
       <table
         :class="cn(TABLE.page.table, 'w-full')"
         :aria-label="t('k8s.list.table', { kind: t(props.descriptor.labelKey) })"
