@@ -122,6 +122,10 @@ impl Core {
         // were allowed would be a partial write nobody asked for.
         let subject = audit_subject(&risk);
         let mut strictest = PolicyAction::Allow;
+        // Which layer produced the strictest action, so the question a person is asked can name it.
+        // A later host wins a tie: the sources are equally strict, and the last one is still a
+        // truthful answer to "which rule asked" when several hosts did.
+        let mut strictest_source = "global".to_owned();
         for host in &hosts {
             let decision = self.policy_decision(
                 BATCH_ACTION,
@@ -130,7 +134,10 @@ impl Core {
                 Some(&host.session_id),
                 subject.as_deref(),
             );
-            strictest = strictest.max(decision.action);
+            if decision.action >= strictest {
+                strictest = decision.action;
+                strictest_source = decision.source.to_string();
+            }
         }
 
         if strictest == PolicyAction::Deny {
@@ -140,7 +147,10 @@ impl Core {
         // is a question like any other. A destructive verdict is Ask on its own, which keeps the
         // old stop for a run that names no host and therefore journaled nothing.
         if (strictest == PolicyAction::Ask || risk.needs_approval()) && !request.acknowledged {
-            return Ok(BatchOutcome::ApprovalRequired { risk });
+            return Ok(BatchOutcome::ApprovalRequired {
+                risk,
+                source: strictest_source,
+            });
         }
 
         let started = Instant::now();
@@ -503,7 +513,7 @@ mod tests {
             .expect("waiting for approval is not an error");
 
         match outcome {
-            BatchOutcome::ApprovalRequired { risk } => {
+            BatchOutcome::ApprovalRequired { risk, .. } => {
                 assert_eq!(risk.level, RiskLevel::Destructive);
                 assert!(risk.needs_approval());
                 assert!(
@@ -570,8 +580,9 @@ mod tests {
             .expect("a question is not an error");
 
         match outcome {
-            BatchOutcome::ApprovalRequired { risk } => {
+            BatchOutcome::ApprovalRequired { risk, source } => {
                 assert_eq!(risk.level, RiskLevel::Safe, "the classifier still says harmless");
+                assert_eq!(source, "global", "the layer that asked is named");
             }
             other => panic!("expected the matrix's question, got {other:?}"),
         }

@@ -238,6 +238,7 @@
       "session": "Session",
       "subject": "What it would do",
       "reason": "Why it stopped",
+      "policy": "The policy rule for {source} asks before this runs.",
       "noSubject": "Not stated",
       "hostKey": {
         "title": "This host's key is not one this device has seen",

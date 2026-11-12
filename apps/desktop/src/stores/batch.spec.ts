@@ -279,6 +279,7 @@ describe("batch store", () => {
     runMock.mockResolvedValue({
       kind: "approvalRequired",
       risk: assessment("destructive"),
+      source: "global",
     });
 
     await batch.run();

@@ -164,7 +164,9 @@ impl Tool for ExecRunTool {
             parallel: 1,
             acknowledged,
         };
-        let finished = run(context, EXEC_RUN, request, &mut approval).await?;
+        // One session, and this tool's own gate already resolved its group, host and directory:
+        // a core question stricter than that one is unreachable, not a second prompt.
+        let finished = run(context, EXEC_RUN, request, &mut approval, false, &subject).await?;
 
         let audit = match approval {
             Some(record) => ToolAudit::for_session(session_id)
@@ -255,7 +257,9 @@ impl Tool for BatchExecTool {
             parallel,
             acknowledged,
         };
-        let finished = run(context, BATCH_EXEC, request, &mut approval).await?;
+        // The gate above asked the global rule only; the core decides per host, and a host or group
+        // layer it finds stricter becomes one question here, then the whole run is retried.
+        let finished = run(context, BATCH_EXEC, request, &mut approval, true, &subject).await?;
 
         let mut audit = ToolAudit::default()
             .with_subject(subject)
@@ -294,8 +298,10 @@ struct Finished {
 async fn run(
     context: &ToolContext,
     tool: &str,
-    request: BatchRequest,
+    mut request: BatchRequest,
     approval: &mut Option<ApprovalRecord>,
+    ask_host_policy: bool,
+    subject: &str,
 ) -> Result<Finished, ToolError> {
     // The open budget plus the host budget is the worst case the core itself is allowed to take.
     let budget = Duration::from_millis(request.timeout_ms).saturating_add(OPEN_TIMEOUT);
@@ -350,10 +356,21 @@ async fn run(
             BatchOutcome::HostKeyMismatch { host, key, trusted } => {
                 return Err(mismatch(&host.session_id, &key, &trusted));
             }
-            // Unreachable while this tool and the core grade a command with the same classifier AND
-            // this tool always sends the acknowledgement it obtained. Answered as a failure rather
-            // than a panic: a disagreement between two versions is not the agent's problem.
-            BatchOutcome::ApprovalRequired { risk } => {
+            // A question the tool's own gate did not see: the matrix resolved a different layer
+            // for a host in this run. Asked once, with the layer named, then the whole run is
+            // retried acknowledged — the same prompt an ordinary approval produces, not a second
+            // one per host.
+            BatchOutcome::ApprovalRequired { risk, source } => {
+                if ask_host_policy && !request.acknowledged {
+                    let record = gate::approve_policy(context, tool, &risk, &source, subject).await?;
+                    *approval = Some(record);
+                    request.acknowledged = true;
+                    continue;
+                }
+
+                // Unreachable while the caller always sends the acknowledgement it obtained.
+                // Answered as a failure rather than a panic: a disagreement between two versions
+                // is not the agent's problem.
                 return Err(ToolError::new("POLICY-APPROVAL-REQUIRED")
                     .with_message(format!(
                         "the command was graded {} by the core after this tool had already asked",

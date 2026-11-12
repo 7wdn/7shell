@@ -122,6 +122,12 @@ export function isValidMcpServerId(id: string): boolean {
 /** Why one call stopped for an answer. */
 export type McpApprovalReason =
   | { readonly kind: "risk"; readonly assessment: RiskAssessment }
+  | {
+      readonly kind: "policy";
+      readonly assessment: RiskAssessment;
+      /** The layer that raised the question, e.g. `host:web:2222` or `group:prod`. */
+      readonly source: string;
+    }
   | { readonly kind: "hostKeyUnknown"; readonly key: PresentedHostKey }
   | { readonly kind: "external"; readonly server: string; readonly tool: string };
 

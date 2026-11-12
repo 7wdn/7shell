@@ -601,6 +601,21 @@ fn anything_written_before_origin_existed_reads_as_mcp() {
     assert_eq!(parsed.origin, AgentOrigin::Mcp);
 }
 
+#[test]
+fn a_policy_question_carries_the_layer_that_asked() {
+    // The window draws a policy question differently from a risk one: the verdict may be safe, and
+    // the source is the whole of what makes it a question at all.
+    let request =
+        ApprovalRequest::policy("sshell_batch_exec", RiskAssessment::safe(), "host:web:2222").with_subject("uptime");
+    let value = serde_json::to_value(&request).expect("a request is JSON");
+    assert_eq!(value["reason"]["kind"], json!("policy"));
+    assert_eq!(value["reason"]["source"], json!("host:web:2222"));
+    assert_eq!(value["reason"]["assessment"]["level"], json!("safe"));
+
+    let parsed: ApprovalRequest = serde_json::from_value(value).expect("the window's shape reads back");
+    assert_eq!(parsed.reason, request.reason);
+}
+
 // -- The endpoint file --------------------------------------------------
 
 #[test]

@@ -469,6 +469,110 @@ async fn a_blank_command_is_refused_before_anything_is_asked() {
 }
 
 #[tokio::test]
+async fn a_batch_host_rule_asks_once_naming_the_layer_and_retries_the_run() {
+    let broker = ScriptedBroker::new(&[ApprovalDecision::Approved]);
+    let journal = Arc::new(MemoryPolicyJournal::default());
+    let matrix = PolicyMatrix {
+        hosts: [("127.0.0.1".to_owned(), rule(PolicyAction::Ask))].into(),
+        ..PolicyMatrix::default()
+    };
+    let (_directory, vault, audit, context) = fixture_with_policy(McpScope::SafeWrite, &broker, matrix, &journal);
+
+    // Port 9 is the point: the retry has to get past the policy gate and reach the connection,
+    // which then fails. A run still waiting for approval would answer with no row at all.
+    let mut saved = session("lab", Protocol::Ssh);
+    saved.port = 9;
+    vault.save_session(saved, None).expect("save");
+
+    let outcome = local::default_registry()
+        .call(
+            &context,
+            call(
+                "sshell_batch_exec",
+                json!({ "sessionIds": ["lab"], "command": "uptime" }),
+            ),
+        )
+        .await;
+    let ToolOutcome::Succeeded { result } = outcome else {
+        panic!("an approved batch answers with its rows: {outcome:?}");
+    };
+    let rows = result.value["results"].as_array().expect("one row");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        rows[0]["ok"],
+        json!(false),
+        "the connection is what failed, not the policy"
+    );
+    assert_ne!(rows[0]["error"]["code"], json!("POLICY-APPROVAL-REQUIRED"));
+
+    let asked = broker.asked();
+    assert_eq!(asked.len(), 1, "the whole run is one question");
+    assert!(
+        matches!(
+            &asked[0].reason,
+            ApprovalReason::Policy { assessment, source }
+                if assessment.level == RiskLevel::Safe && source == "host:127.0.0.1"
+        ),
+        "the question names the layer that asked: {:?}",
+        asked[0].reason
+    );
+
+    let records = audit.records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].status, AuditStatus::Succeeded);
+    assert_eq!(
+        records[0].approval.as_ref().map(|approval| approval.decision),
+        Some(ApprovalDecision::Approved),
+        "the run carries the answer that let it proceed"
+    );
+    let events = journal.events();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.decision == PolicyAction::Ask && event.source == "host:127.0.0.1"),
+        "the host layer's first stop is on the policy trail: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_denied_host_rule_question_refuses_the_batch_before_a_connection() {
+    let broker = ScriptedBroker::new(&[ApprovalDecision::Denied]);
+    let journal = Arc::new(MemoryPolicyJournal::default());
+    let matrix = PolicyMatrix {
+        hosts: [("127.0.0.1".to_owned(), rule(PolicyAction::Ask))].into(),
+        ..PolicyMatrix::default()
+    };
+    let (_directory, vault, audit, context) = fixture_with_policy(McpScope::SafeWrite, &broker, matrix, &journal);
+    let mut saved = session("lab", Protocol::Ssh);
+    saved.port = 9;
+    vault.save_session(saved, None).expect("save");
+
+    let error = error_of(
+        local::default_registry()
+            .call(
+                &context,
+                call(
+                    "sshell_batch_exec",
+                    json!({ "sessionIds": ["lab"], "command": "uptime" }),
+                ),
+            )
+            .await,
+    );
+
+    assert_eq!(error.code(), "POLICY-DENIED");
+    let asked = broker.asked();
+    assert_eq!(asked.len(), 1, "one question, and it is the host layer's");
+    assert!(matches!(&asked[0].reason, ApprovalReason::Policy { source, .. } if source == "host:127.0.0.1"));
+
+    let records = audit.records();
+    assert_eq!(records[0].status, AuditStatus::Denied);
+    assert_eq!(
+        records[0].approval.as_ref().map(|approval| approval.decision),
+        Some(ApprovalDecision::Denied)
+    );
+}
+
+#[tokio::test]
 async fn a_batch_is_capped_at_the_number_the_contract_states() {
     let broker = ScriptedBroker::new(&[]);
     let (_directory, _vault, _audit, context) = fixture(McpScope::SafeWrite, &broker);

@@ -75,7 +75,12 @@ const session = computed(() => {
  * is not a narrowing the compiler carries into the element's other expressions, and two branches
  * that each re-tested the kind would be two places for the union to drift.
  */
-const risk = computed(() => (request.value?.reason.kind === "risk" ? request.value.reason.assessment : null));
+const risk = computed(() => {
+  const reason = request.value?.reason;
+  return reason?.kind === "risk" || reason?.kind === "policy" ? reason.assessment : null;
+});
+/** The matrix layer behind a policy question, when that is why the dialog is up. */
+const policySource = computed(() => (request.value?.reason.kind === "policy" ? request.value.reason.source : null));
 const hostKey = computed(() => (request.value?.reason.kind === "hostKeyUnknown" ? request.value.reason.key : null));
 /**
  * A tool an external server provides.
@@ -237,6 +242,9 @@ const SECONDARY = "rounded-md border border-border px-3 py-1.5 text-xs transitio
             </div>
             <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
               {{ t("mcp.approval.reason") }}
+            </p>
+            <p v-if="policySource" data-approval-policy-source class="mt-1 text-[11px] leading-relaxed">
+              {{ t("mcp.approval.policy", { source: policySource }) }}
             </p>
             <ul v-if="risk.reasons.length > 0" class="mt-1 space-y-0.5">
               <li v-for="reason in risk.reasons" :key="reason.ruleId" class="text-[11px] leading-relaxed">

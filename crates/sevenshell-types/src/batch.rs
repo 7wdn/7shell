@@ -62,7 +62,13 @@ pub enum BatchOutcome {
     /// rules that fired and ask again with `acknowledged: true`. The classifier is not weakened by
     /// acknowledgement: the flag records that somebody was shown the reasons, not that the
     /// command became safe.
-    ApprovalRequired { risk: RiskAssessment },
+    ApprovalRequired {
+        risk: RiskAssessment,
+        /// The layer that raised the strictest action — `global`, `group:<id>`,
+        /// `host:<host[:port]>` or `directory:<path>`. The command's own verdict may be safe: a
+        /// host or group rule asked, and the person answering has to be told which one.
+        source: String,
+    },
     /// Every host has an answer.
     Finished {
         /// The command that was run, so a result shown later still says what it was.

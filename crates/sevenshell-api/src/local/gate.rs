@@ -162,6 +162,33 @@ pub(crate) async fn approve_risk(
     }
 }
 
+/// Asks the person about a question a matrix layer raised, with the layer named.
+///
+/// Used when the core stops a batch after the tool's own (global) gate allowed it: a host or group
+/// rule asked, and no single session can be put on the prompt because the run names several. The
+/// answered record is returned so the caller can put it on the audit line of the run that follows.
+pub(crate) async fn approve_policy(
+    context: &ToolContext,
+    tool: &str,
+    risk: &RiskAssessment,
+    source: &str,
+    subject: &str,
+) -> Result<ApprovalRecord, ToolError> {
+    let request = ApprovalRequest::policy(tool, risk.clone(), source.to_owned()).with_subject(subject);
+    let record = context.request_approval(request).await?;
+
+    match record.decision {
+        ApprovalDecision::Approved => Ok(record),
+        ApprovalDecision::Denied | ApprovalDecision::TimedOut => Err(refusal(
+            record,
+            risk,
+            None,
+            subject,
+            "the person at the desktop denied this action",
+        )),
+    }
+}
+
 /// The matrix's verdict for one tool call, with every layer the call can name.
 ///
 /// The session's group, host and port come from the core's own lookup, so a tool cannot pass a

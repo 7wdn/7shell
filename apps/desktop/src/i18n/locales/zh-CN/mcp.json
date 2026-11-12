@@ -238,6 +238,7 @@
       "session": "会话",
       "subject": "要做什么",
       "reason": "为什么停下来",
+      "policy": "策略层 {source} 要求这次执行先确认。",
       "noSubject": "未说明",
       "hostKey": {
         "title": "这台主机的密钥本机没见过",

@@ -46,6 +46,15 @@ const external: McpApprovalRequest = {
   expiresAt: Date.now() + 120_000,
 };
 
+/** A safe command a host rule raised, with no single session for the batch to name. */
+const policy: McpApprovalRequest = {
+  callId: "call-11",
+  tool: "sshell_batch_exec",
+  subject: "uptime",
+  reason: { kind: "policy", assessment: { level: "safe", reasons: [] }, source: "host:web:2222" },
+  expiresAt: Date.now() + 120_000,
+};
+
 /** A destructive call, asked by this window's own assistant. */
 const destructive: McpApprovalRequest = {
   callId: "call-10",
@@ -125,6 +134,16 @@ describe("an external server's tool asking to act", () => {
 
     button(dialog, "Approve").click();
     await vi.waitFor(() => expect(answerMock).toHaveBeenCalledWith("call-9", "approved"));
+  });
+});
+
+describe("a command a policy layer raised", () => {
+  it("names the layer, so a safe verdict does not read as a contradiction", async () => {
+    const dialog = await mount(policy);
+
+    expect(dialog.dataset.approvalReason).toBe("policy");
+    expect(dialog.textContent).toContain("host:web:2222");
+    expect(dialog.querySelector("[data-approval-policy-source]")).not.toBeNull();
   });
 });
 

@@ -86,6 +86,12 @@ impl Cancel {
 pub enum ApprovalReason {
     /// A command or an action the policy graded destructive.
     Risk { assessment: RiskAssessment },
+    /// A command the matrix raised to a question at a particular layer.
+    ///
+    /// The verdict may be safe or caution: the classifier did not ask, a host, group or directory
+    /// rule did. The source is the layer that produced the strictest action, so the person sees
+    /// which rule is waiting rather than a verdict that looks contradictory.
+    Policy { assessment: RiskAssessment, source: String },
     /// A host whose key has never been seen. The fingerprint is what the person compares against
     /// what the server's administrator gave them; the key itself is what gets trusted.
     HostKeyUnknown { key: PresentedHostKey },
@@ -133,6 +139,22 @@ impl ApprovalRequest {
             session_name: None,
             subject: None,
             reason: ApprovalReason::Risk { assessment },
+            timeout_seconds: 0,
+        }
+    }
+
+    /// A question a matrix layer raised, with the layer named.
+    pub fn policy(tool: impl Into<String>, assessment: RiskAssessment, source: impl Into<String>) -> Self {
+        Self {
+            tool: tool.into(),
+            origin: AgentOrigin::default(),
+            session_id: None,
+            session_name: None,
+            subject: None,
+            reason: ApprovalReason::Policy {
+                assessment,
+                source: source.into(),
+            },
             timeout_seconds: 0,
         }
     }

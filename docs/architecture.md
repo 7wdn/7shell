@@ -516,7 +516,9 @@ all. The decision names the layer that supplied the winning action (`global`, `g
 `Core` holds one snapshot of the matrix and the journal it writes to, replaced together whenever
 the settings are applied, and `Core::policy_decision` decides and journals exactly once. The batch
 path builds one target per named host and stops the whole run on any deny — a batch that ran on
-the allowed hosts would be a partial write nobody asked for. Container and Kubernetes actions
+the allowed hosts would be a partial write nobody asked for. A host or group layer that raises a
+safe command returns the question with the layer's name; the tool asks once and retries the whole
+run after approval, so the person answers for the batch rather than for one row. Container and Kubernetes actions
 decide against the global rule, because these paths carry no saved session id to resolve a group
 or host layer from; naming a layer the decision never consulted would be worse than saying
 "global". A tool call goes through the same core

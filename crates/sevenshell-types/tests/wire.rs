@@ -803,11 +803,13 @@ fn a_batch_result_serializes_with_camel_case_fields() {
                 "risk.recursiveForceDelete",
                 RiskLevel::Destructive,
             )]),
+            source: "host:web".to_owned(),
         },
         "ApprovalRequired",
     );
     assert_eq!(approval["kind"], serde_json::json!("approvalRequired"));
     assert_eq!(approval["risk"]["level"], serde_json::json!("destructive"));
+    assert_eq!(approval["source"], serde_json::json!("host:web"));
     assert_eq!(
         approval["risk"]["reasons"][0]["ruleId"],
         serde_json::json!("recursive-force-delete")

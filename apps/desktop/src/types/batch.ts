@@ -93,7 +93,12 @@ export type BatchOutcome =
       readonly key: PresentedHostKey;
       readonly trusted: KnownHostEntry;
     }
-  | { readonly kind: "approvalRequired"; readonly risk: RiskAssessment }
+  | {
+      readonly kind: "approvalRequired";
+      readonly risk: RiskAssessment;
+      /** The layer that raised the strictest action, e.g. `global` or `host:web:2222`. */
+      readonly source: string;
+    }
   | {
       readonly kind: "finished";
       readonly command: string;
