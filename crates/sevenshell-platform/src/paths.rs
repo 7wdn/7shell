@@ -34,6 +34,41 @@ pub fn config_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<Stri
     }
 }
 
+/// Where this application keeps the MCP bridge it launches itself.
+///
+/// A program rather than data, so it belongs in the machine-local data directory rather than the
+/// roaming configuration: a binary must not travel through a roaming profile, and it must not sit
+/// beside the application either. An app update replaces files beside the application; an MCP
+/// client may be running the bridge from its own stable path while that update happens, and a
+/// running executable cannot be overwritten on Windows.
+pub const BRIDGE_DIR_OVERRIDE: &str = "SEVENSHELL_BRIDGE_DIR";
+
+/// Resolves the bridge directory for one platform, with the same testable environment seam as
+/// [`config_dir_for`].
+pub fn bridge_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    let base = match target_os {
+        "windows" => PathBuf::from(environment("LOCALAPPDATA")?),
+        "macos" => PathBuf::from(environment("HOME")?)
+            .join("Library")
+            .join("Application Support"),
+        _ => environment("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| environment("HOME").map(|home| PathBuf::from(home).join(".local").join("share")))?,
+    };
+    Some(base.join(APP_IDENTIFIER).join("bin"))
+}
+
+/// The bridge directory of the machine we are running on.
+pub fn bridge_dir() -> Option<PathBuf> {
+    if let Some(directory) = std::env::var_os(BRIDGE_DIR_OVERRIDE) {
+        let directory = PathBuf::from(directory);
+        if !directory.as_os_str().is_empty() {
+            return Some(directory);
+        }
+    }
+    bridge_dir_for(std::env::consts::OS, &|key| std::env::var(key).ok())
+}
+
 /// The environment variable that moves the application's data somewhere else.
 ///
 /// Two uses, both real: a portable installation that keeps its vault beside the binary, and a test
@@ -136,6 +171,42 @@ mod tests {
         assert_eq!(
             settings,
             Some(PathBuf::from("/tmp/seven-shell-test").join(SETTINGS_FILE_NAME))
+        );
+    }
+
+    #[test]
+    fn the_bridge_lives_in_machine_local_data_not_in_roaming_or_beside_the_app() {
+        let windows = environment(&[("LOCALAPPDATA", "C:\\Users\\someone\\AppData\\Local")]);
+        assert_eq!(
+            bridge_dir_for("windows", &windows).expect("LOCALAPPDATA is set"),
+            PathBuf::from("C:\\Users\\someone\\AppData\\Local")
+                .join(APP_IDENTIFIER)
+                .join("bin")
+        );
+
+        let macos = environment(&[("HOME", "/Users/someone")]);
+        assert_eq!(
+            bridge_dir_for("macos", &macos).expect("HOME is set"),
+            PathBuf::from("/Users/someone/Library/Application Support")
+                .join(APP_IDENTIFIER)
+                .join("bin")
+        );
+
+        let linux = environment(&[
+            ("XDG_DATA_HOME", "/home/someone/.local/share-custom"),
+            ("HOME", "/home/someone"),
+        ]);
+        assert_eq!(
+            bridge_dir_for("linux", &linux).expect("XDG_DATA_HOME is set"),
+            PathBuf::from("/home/someone/.local/share-custom")
+                .join(APP_IDENTIFIER)
+                .join("bin")
+        );
+        assert_eq!(
+            bridge_dir_for("linux", &environment(&[("HOME", "/home/someone")])).expect("HOME is set"),
+            PathBuf::from("/home/someone/.local/share")
+                .join(APP_IDENTIFIER)
+                .join("bin")
         );
     }
 

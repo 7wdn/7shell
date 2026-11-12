@@ -37,7 +37,8 @@ pub mod endpoint;
 mod runtime;
 pub mod server;
 
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use serde::Serialize;
 use sevenshell_error::ShellError;
@@ -67,30 +68,26 @@ pub struct McpStatus {
     pub pending_approvals: usize,
 }
 
+/// The file the installer places beside the application. It is a seed, not the program a client
+/// starts: an application update replaces this file while an MCP client may be running the copy in
+/// [`bridge_path`], and a running executable cannot be overwritten on Windows.
+const BRIDGE_SEED_NAME: &str = if cfg!(windows) {
+    "sshell-mcp-seed.exe"
+} else {
+    "sshell-mcp-seed"
+};
+
+/// The name the bridge has in its own directory, which is what a client starts.
+const BRIDGE_NAME: &str = if cfg!(windows) { "sshell-mcp.exe" } else { "sshell-mcp" };
+
 /// The client configuration snippet, without the token.
 ///
-/// The bridge is looked for beside this executable — that is where a packaged build puts it and where
-/// a development build leaves it. When it is not there this fails rather than naming a path that is
-/// not a program: a snippet pointing at nothing is a client that starts nothing, which is a worse
-/// answer than "not installed".
+/// The command is the bridge's own path, not the seed beside the application. An app update may
+/// replace the seed while a client is running the bridge; keeping those two files apart is what
+/// makes the update possible. When no bridge can be prepared this fails rather than naming a path
+/// that is not a program: a snippet pointing at nothing is a client that starts nothing.
 pub fn client_config() -> Result<String, ShellError> {
-    let executable = std::env::current_exe()
-        .map_err(|error| ShellError::app_internal(format!("this executable's own path could not be read: {error}")))?;
-    let directory = executable
-        .parent()
-        .ok_or_else(|| ShellError::app_internal("this executable has no directory"))?;
-
-    let bridge = directory.join(if cfg!(windows) { "sshell-mcp.exe" } else { "sshell-mcp" });
-    let installed = std::fs::metadata(&bridge)
-        .map(|metadata| metadata.is_file() && metadata.len() > 0)
-        .unwrap_or(false);
-    if !installed {
-        return Err(ShellError::app_internal(format!(
-            "the MCP bridge is missing or empty beside this application (looked for {}); run `pnpm build:sidecar` or install a packaged 7Shell",
-            bridge.display()
-        )));
-    }
-
+    let bridge = bridge_path()?;
     let endpoint = endpoint::path()?;
     Ok(serde_json::json!({
         "mcpServers": {
@@ -103,6 +100,165 @@ pub fn client_config() -> Result<String, ShellError> {
         },
     })
     .to_string())
+}
+
+/// Makes the bridge available in its own directory and answers where it is.
+///
+/// Release builds copy the seed to the machine-local bridge directory. A debug build returns the
+/// seed itself unless a test supplied [`sevenshell_platform::BRIDGE_DIR_OVERRIDE`], so running the
+/// development application does not replace the bridge an installed release left for a client.
+///
+/// The prepared path is remembered for this process: a status event asks for it repeatedly, and
+/// copying or comparing the same five megabytes on every event is work nobody asked for. A copy
+/// that could not replace a running bridge is not an error — the old bridge still works and the
+/// next launch tries again; only a missing bridge with nothing to fall back to is one.
+pub fn bridge_path() -> Result<PathBuf, ShellError> {
+    static PREPARED: OnceLock<PathBuf> = OnceLock::new();
+    if let Some(path) = PREPARED.get() {
+        return Ok(path.clone());
+    }
+
+    let path = prepare_bridge()?;
+    let _ = PREPARED.set(path.clone());
+    Ok(path)
+}
+
+fn prepare_bridge() -> Result<PathBuf, ShellError> {
+    let seed = seed_path()?;
+    let seed_ready = non_empty_file(&seed);
+    let uses_own_directory =
+        !cfg!(debug_assertions) || std::env::var_os(sevenshell_platform::BRIDGE_DIR_OVERRIDE).is_some();
+
+    if !uses_own_directory {
+        return if seed_ready {
+            Ok(seed)
+        } else {
+            Err(missing_bridge(&seed))
+        };
+    }
+
+    let directory = sevenshell_platform::bridge_dir()
+        .ok_or_else(|| ShellError::app_internal("the bridge directory could not be located on this machine"))?;
+    let target = directory.join(BRIDGE_NAME);
+
+    if seed_ready {
+        match install_bridge_from(&seed, &target) {
+            Ok(_) => return Ok(target),
+            Err(error) => {
+                // The old bridge is still a working program; an update that cannot replace it is
+                // deferred rather than turned into an application that cannot start.
+                if non_empty_file(&target) {
+                    log::warn!("the MCP bridge could not be replaced; the existing one stays: {error}");
+                    return Ok(target);
+                }
+                return Err(error);
+            }
+        }
+    }
+
+    if non_empty_file(&target) {
+        return Ok(target);
+    }
+    Err(missing_bridge(&seed))
+}
+
+/// Where the installer put the seed. It is beside the application executable in every packaged build.
+fn seed_path() -> Result<PathBuf, ShellError> {
+    let executable = std::env::current_exe()
+        .map_err(|error| ShellError::app_internal(format!("this executable's own path could not be read: {error}")))?;
+    let directory = executable
+        .parent()
+        .ok_or_else(|| ShellError::app_internal("this executable has no directory"))?;
+    Ok(directory.join(BRIDGE_SEED_NAME))
+}
+
+fn missing_bridge(seed: &Path) -> ShellError {
+    ShellError::app_internal(format!(
+        "the MCP bridge is missing or empty (looked for {}); run `pnpm build:sidecar` or install a packaged 7Shell",
+        seed.display()
+    ))
+}
+
+fn non_empty_file(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .map(|metadata| metadata.is_file() && metadata.len() > 0)
+        .unwrap_or(false)
+}
+
+/// Copies a seed to its final path, answering whether the file changed.
+///
+/// The target is replaced by renaming the old file aside and the new one into place. Windows permits
+/// renaming a running executable even though it cannot be overwritten; if any step fails the old
+/// path is put back, so a failed update never leaves the client without a bridge.
+fn install_bridge_from(seed: &Path, target: &Path) -> Result<bool, ShellError> {
+    if !non_empty_file(seed) {
+        return Err(ShellError::app_internal(format!(
+            "the MCP bridge seed is missing or empty: {}",
+            seed.display()
+        )));
+    }
+    if target.is_file() && std::fs::read(seed).ok() == std::fs::read(target).ok() {
+        return Ok(false);
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            ShellError::app_internal(format!(
+                "the bridge directory {} could not be created: {error}",
+                parent.display()
+            ))
+        })?;
+    }
+
+    let temporary = target.with_file_name(format!(
+        "{}.{}.tmp",
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("sshell-mcp"),
+        std::process::id()
+    ));
+    std::fs::copy(seed, &temporary).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        ShellError::app_internal(format!(
+            "the MCP bridge could not be staged at {}: {error}",
+            temporary.display()
+        ))
+    })?;
+
+    let backup = target.with_file_name(format!(
+        "{}.old",
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("sshell-mcp")
+    ));
+    let had_target = target.is_file();
+    if had_target {
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(target, &backup).map_err(|error| {
+            let _ = std::fs::remove_file(&temporary);
+            ShellError::app_internal(format!(
+                "the existing MCP bridge {} could not be moved aside: {error}",
+                target.display()
+            ))
+        })?;
+    }
+
+    if let Err(error) = std::fs::rename(&temporary, target) {
+        if had_target {
+            let _ = std::fs::rename(&backup, target);
+        }
+        let _ = std::fs::remove_file(&temporary);
+        return Err(ShellError::app_internal(format!(
+            "the MCP bridge could not be moved into place at {}: {error}",
+            target.display()
+        )));
+    }
+
+    // A running old bridge keeps the backup open; leaving it for the next update is harmless and
+    // better than turning a successful replacement into a failure.
+    let _ = std::fs::remove_file(&backup);
+    Ok(true)
 }
 
 /// Starts the listener and tells the interface.
@@ -174,5 +330,65 @@ fn listener_changed(previous: &AppSettings, next: &AppSettings) -> bool {
 fn emit_status(app: &AppHandle, status: &McpStatus) {
     if let Err(error) = app.emit(STATUS_EVENT, status) {
         log::warn!("the agent interface's status could not be sent to the window: {error}");
+    }
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+    use std::fs;
+
+    fn write(path: &Path, bytes: &[u8]) {
+        fs::write(path, bytes).expect("a test file");
+    }
+
+    #[test]
+    fn a_seed_is_copied_to_the_bridge_directory() {
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let seed = directory.path().join("seed.exe");
+        let target = directory.path().join("bin").join("sshell-mcp.exe");
+        write(&seed, b"new bridge");
+
+        assert!(install_bridge_from(&seed, &target).expect("the seed is installed"));
+        assert_eq!(fs::read(&target).expect("the target exists"), b"new bridge");
+    }
+
+    #[test]
+    fn an_unchanged_bridge_is_not_rewritten() {
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let seed = directory.path().join("seed.exe");
+        let target = directory.path().join("bridge.exe");
+        write(&seed, b"same bytes");
+        write(&target, b"same bytes");
+
+        assert!(!install_bridge_from(&seed, &target).expect("equal files are left alone"));
+        assert_eq!(fs::read(&target).expect("the target exists"), b"same bytes");
+    }
+
+    #[test]
+    fn a_changed_bridge_replaces_the_old_file() {
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let seed = directory.path().join("seed.exe");
+        let target = directory.path().join("bridge.exe");
+        write(&seed, b"new");
+        write(&target, b"old");
+
+        assert!(install_bridge_from(&seed, &target).expect("the new bridge is installed"));
+        assert_eq!(fs::read(&target).expect("the target exists"), b"new");
+        assert!(
+            !target.with_file_name("bridge.exe.old").exists(),
+            "the backup is cleared"
+        );
+    }
+
+    #[test]
+    fn an_empty_seed_is_refused_rather_than_installed() {
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let seed = directory.path().join("seed.exe");
+        let target = directory.path().join("bridge.exe");
+        write(&seed, b"");
+
+        assert!(install_bridge_from(&seed, &target).is_err());
+        assert!(!target.exists());
     }
 }

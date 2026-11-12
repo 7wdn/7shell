@@ -44,7 +44,7 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "externalBin": ["binaries/sshell-mcp"],
+    "externalBin": ["binaries/sshell-mcp-seed"],
     "shortDescription": "Open-source SSH and operations console",
     "longDescription": "7Shell is an open-source SSH and operations console for Windows, macOS and Linux. Credentials live in an encrypted, password-protected vault, and a server's host key is verified before any credential is sent to it.",
     "copyright": "Copyright 2026 SevenShell contributors",

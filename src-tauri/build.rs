@@ -12,12 +12,12 @@ fn main() {
 
 /// Gives `tauri-build` the resource it checks for, without pretending the bridge is installed.
 ///
-/// `tauri.conf.json` declares the MCP bridge as an `externalBin`, and `tauri-build` refuses to
+/// `tauri.conf.json` declares the MCP bridge seed as an `externalBin`, and `tauri-build` refuses to
 /// compile when that file is absent. The real bridge is produced by `pnpm build:sidecar` before a
 /// bundle and by `beforeDevCommand` before a dev run; a plain `cargo check` or `cargo test` runs
 /// neither, and a fresh checkout has no built binary to copy. An empty file satisfies the
-/// compile-time check and is never what the application serves: `client_config` refuses a zero-byte
-/// bridge, and both Tauri commands replace this file with the real one before the application is
+/// compile-time check and is never what the application serves: `bridge_path` refuses a zero-byte
+/// seed, and both Tauri commands replace this file with the real one before the application is
 /// built.
 fn ensure_mcp_sidecar() {
     let target = std::env::var("TARGET").unwrap_or_default();
@@ -26,7 +26,7 @@ fn ensure_mcp_sidecar() {
     }
 
     let extension = if target.contains("windows") { ".exe" } else { "" };
-    let path = std::path::Path::new("binaries").join(format!("sshell-mcp-{target}{extension}"));
+    let path = std::path::Path::new("binaries").join(format!("sshell-mcp-seed-{target}{extension}"));
     if path.exists() {
         return;
     }

@@ -15,7 +15,7 @@ import { chromium, expect, test, type Locator, type Page } from "@playwright/tes
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENDPOINT = path.join(HERE, ".run", "config", "mcp-endpoint.json");
-const BRIDGE = path.join(HERE, "..", "target", "debug", process.platform === "win32" ? "sshell-mcp.exe" : "sshell-mcp");
+const BRIDGE = path.join(HERE, ".run", "bridge", process.platform === "win32" ? "sshell-mcp.exe" : "sshell-mcp");
 const CDP_URL = process.env.SEVENSHELL_E2E_CDP ?? "http://127.0.0.1:9222";
 
 type Answer = {

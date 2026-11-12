@@ -13,5 +13,5 @@ pub mod settings;
 
 pub use downloads::{DownloadFolder, HISTORY_LIMIT, downloads_file};
 pub use fonts::list_families;
-pub use paths::{APP_IDENTIFIER, config_dir, settings_file};
+pub use paths::{APP_IDENTIFIER, BRIDGE_DIR_OVERRIDE, bridge_dir, config_dir, settings_file};
 pub use settings::{SETTINGS_SCHEMA_VERSION, load, load_from, save, save_to};

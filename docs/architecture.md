@@ -473,11 +473,15 @@ the built-in tools, untouched.
 | External MCP client: transports, sessions, tools, health | `crates/sevenshell-mcp-client/`, `src-tauri/src/mcp_client/` |
 | Loopback server, token, approval and audit | `src-tauri/src/mcp/` |
 | Settings page, approval dialog and store | `apps/desktop/src/components/mcp/`, `components/settings/McpSettings.vue`, `stores/mcp.ts` |
-| Sidecar build and bundle | `scripts/prepare-mcp-sidecar.mjs`, `src-tauri/tauri.conf.json` (`externalBin`) |
+| Bridge seed build and bundle | `scripts/prepare-mcp-sidecar.mjs`, `src-tauri/tauri.conf.json` (`externalBin`) |
 
-The bridge is a Tauri sidecar: the development and build commands stage it under
-`src-tauri/binaries/`, and `externalBin` puts it beside the application. The "copy client
-configuration" button names that path and the endpoint file; it never carries the token.
+The installer puts a **seed** (`sshell-mcp-seed.exe`) beside the application. At startup the host
+copies it to the machine-local bridge directory (on Windows `%LOCALAPPDATA%\com.sevenshell.app\bin`)
+and the "copy client configuration" button names that copy — never the seed and never the token. An
+application update can therefore replace the seed while an MCP client is running the other copy;
+if the bridge cannot be replaced because it is running, the old one stays and the next launch
+tries again. The bridge itself is still built by `scripts/prepare-mcp-sidecar.mjs` and bundled as an
+`externalBin`; only the name beside the application changed.
 
 ## MCP
 

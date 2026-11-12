@@ -62,6 +62,13 @@ pub fn run() {
             apply_startup_window_theme(app.handle());
             window_chrome::watch_system_theme(app.handle());
 
+            // Prepare the bridge a client will start before the first window asks for its config.
+            // A failure is not fatal: the settings page says the bridge is missing, and the rest of
+            // the application is not about it.
+            if let Err(error) = crate::mcp::bridge_path() {
+                log::warn!("the MCP bridge could not be prepared: {error}");
+            }
+
             let (shell_state, events) = state::ShellState::new(app.handle());
             commands::terminal::pump_events(app.handle().clone(), shell_state.core_arc(), events);
             app.manage(shell_state);

@@ -1,10 +1,16 @@
 #!/usr/bin/env node
-// Verifies that a Windows build actually ships the MCP bridge next to the application.
+// Verifies that a Windows build actually ships the MCP bridge seed beside the application, and that
+// it no longer ships a file named `sshell-mcp.exe` there.
 //
-// `tauri.conf.json` declares it as an `externalBin`; the bundler is what copies it. A green
-// `cargo check` says nothing about that step, so this script starts from the files a release left
-// behind: the release bridge, the generated NSIS script, the generated WiX source the MSI is built
-// from, and — on Windows — an administrative install of the MSI into a temporary directory.
+// `tauri.conf.json` declares the seed as an `externalBin`; the bundler is what copies it. The seed
+// is not what a client starts: the host copies it to the machine-local bridge directory, so an
+// update can replace the seed while a running bridge keeps the old copy. A build that put the old
+// name back beside the application would reintroduce the update lock, which is why the absence of
+// `sshell-mcp.exe` is part of the check.
+//
+// A green `cargo check` says nothing about that step, so this script starts from the files a release
+// left behind: the release bridge, the generated NSIS script, the generated WiX source the MSI is
+// built from, and — on Windows — an administrative install of the MSI into a temporary directory.
 //
 // The MSI's WiX puts the bridge in the optional `Environment` feature (the same feature that
 // carries PATH). An administrative install (`msiexec /a`) extracts only the features it is asked
@@ -23,7 +29,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const BINARY = process.platform === "win32" ? "sshell-mcp.exe" : "sshell-mcp";
+const RELEASE_BINARY = process.platform === "win32" ? "sshell-mcp.exe" : "sshell-mcp";
+const SEED = process.platform === "win32" ? "sshell-mcp-seed.exe" : "sshell-mcp-seed";
 
 function fail(message) {
   console.error(`installer-sidecar: ${message}`);
@@ -39,20 +46,20 @@ function stagedSidecar() {
   if (!existsSync(directory)) {
     fail("src-tauri/binaries is missing; run `pnpm build:sidecar` first");
   }
-  const candidates = readdirSync(directory).filter((name) => name.startsWith("sshell-mcp-"));
+  const candidates = readdirSync(directory).filter((name) => name.startsWith("sshell-mcp-seed-"));
   if (candidates.length !== 1) {
-    fail(`expected one staged bridge, found ${candidates.length}; run \`pnpm build:sidecar\``);
+    fail(`expected one staged bridge seed, found ${candidates.length}; run \`pnpm build:sidecar\``);
   }
   return path.join(directory, candidates[0]);
 }
 
 function checkReleaseBinary(staged) {
-  const release = path.join(ROOT, "target", "release", BINARY);
+  const release = path.join(ROOT, "target", "release", RELEASE_BINARY);
   if (!existsSync(release)) {
     fail("target/release has no bridge; run `pnpm tauri build --bundles nsis,msi`");
   }
   if (sha256(release) !== sha256(staged)) {
-    fail("the release bridge differs from the staged one; run `pnpm tauri build` again");
+    fail("the release bridge differs from the staged seed; run `pnpm tauri build` again");
   }
   return sha256(release);
 }
@@ -63,10 +70,15 @@ function checkNsis() {
     return "skipped (no NSIS script)";
   }
   const text = readFileSync(script, "utf8");
-  if (!text.includes("/oname=sshell-mcp.exe")) {
-    fail("the generated NSIS script does not install the bridge as sshell-mcp.exe");
+  if (!text.includes("/oname=sshell-mcp-seed.exe")) {
+    fail("the generated NSIS script does not install the bridge seed as sshell-mcp-seed.exe");
   }
-  return "ok (File /oname=sshell-mcp.exe)";
+  if (text.includes("/oname=sshell-mcp.exe")) {
+    fail(
+      "the generated NSIS script still installs sshell-mcp.exe beside the application; that file is the one an MCP client runs",
+    );
+  }
+  return "ok (File /oname=sshell-mcp-seed.exe, no sshell-mcp.exe)";
 }
 
 function checkMsi(stagedHash) {
@@ -75,14 +87,17 @@ function checkMsi(stagedHash) {
     return "skipped (no WiX source)";
   }
   const text = readFileSync(wix, "utf8");
-  if (!/Id="sshell_mcp\.exe"/.test(text)) {
-    fail("the generated WiX has no sidecar component");
+  if (!/Id="sshell_mcp_seed\.exe"/.test(text)) {
+    fail("the generated WiX has no seed component");
   }
-  if (!/ComponentRef Id="sshell_mcp\.exe"/.test(text)) {
-    fail("the generated WiX does not reference the sidecar component");
+  if (!/ComponentRef Id="sshell_mcp_seed\.exe"/.test(text)) {
+    fail("the generated WiX does not reference the seed component");
+  }
+  if (/Id="sshell_mcp\.exe"/.test(text)) {
+    fail("the generated WiX still carries sshell_mcp.exe beside the application");
   }
   if (process.platform !== "win32") {
-    return "ok (WiX component + ComponentRef; extraction is Windows-only)";
+    return "ok (WiX seed component + ComponentRef; extraction is Windows-only)";
   }
 
   const bundle = path.join(ROOT, "target", "release", "bundle", "msi");
@@ -108,15 +123,15 @@ function checkMsi(stagedHash) {
       fail(`msiexec could not lay the MSI down for inspection (exit ${result.status})`);
     }
 
-    const extracted = findFile(directory, BINARY);
+    const extracted = findFile(directory, SEED);
     if (!extracted) {
-      fail(`the administrative install left no ${BINARY} behind`);
+      fail(`the administrative install left no ${SEED} behind`);
     }
     const hash = sha256(extracted);
     if (hash !== stagedHash) {
-      fail("the sidecar inside the MSI differs from the staged bridge");
+      fail("the seed inside the MSI differs from the staged bridge");
     }
-    return `ok (WiX component + ComponentRef; administrative install carries it, sha256 ${hash.slice(0, 12)}…)`;
+    return `ok (WiX seed component + ComponentRef; administrative install carries it, sha256 ${hash.slice(0, 12)}…)`;
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

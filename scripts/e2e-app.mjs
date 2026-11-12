@@ -222,6 +222,9 @@ async function main() {
     env: {
       ...process.env,
       SEVENSHELL_CONFIG_DIR: DATA_DIR,
+      // The bridge is copied out of the application directory on startup; a test run keeps that
+      // copy in its own room rather than the person's real local data.
+      SEVENSHELL_BRIDGE_DIR: path.join(REPO_ROOT, "e2e", ".run", "bridge"),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${DEBUG_PORT}`,
       // The webview's own data folder, which is not the settings directory above: WebView2 keeps
       // it beside the application's local data unless told otherwise, so without this line a run's
