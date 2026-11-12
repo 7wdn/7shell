@@ -226,6 +226,153 @@ impl McpServerState {
     }
 }
 
+/// One resource an external server offers.
+///
+/// A resource is read, never called: the interface shows what the server says it has, a person asks
+/// for one by URI, and the answer is content rather than a result. `size` is the server's own claim
+/// in bytes, which may be absent or wrong; it is used to explain a refusal, never to trust a read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResource {
+    pub uri: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+}
+
+/// One argument a prompt template takes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPromptArgument {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Whether the server says the prompt is incomplete without it.
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// One prompt template an external server offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPrompt {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub arguments: Vec<McpPromptArgument>,
+}
+
+/// One server's resources and prompts, as the picker draws them.
+///
+/// The catalogue is per server rather than one flat list because both names are only unique inside
+/// their server: two servers may each offer a resource called `README`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerContent {
+    pub server_id: String,
+    /// The server's display name, so the picker does not have to join two lists.
+    pub name: String,
+    #[serde(default)]
+    pub resources: Vec<McpResource>,
+    #[serde(default)]
+    pub prompts: Vec<McpPrompt>,
+}
+
+/// One piece of a resource read.
+///
+/// Exactly one of `text` and `blob` is present for a piece this build can show. A text piece that
+/// was longer than the read budget is cut and `truncated` says so; a binary piece over the budget is
+/// left out entirely rather than cut in the middle, which is why `truncated` is described as "the
+/// answer is not whole" rather than "the text was shortened".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResourceContent {
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Base64, for a piece the host cannot read as text. The original bytes, not a re-encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blob: Option<String>,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+/// What `resources/read` answered for one URI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResourceRead {
+    pub server_id: String,
+    pub uri: String,
+    #[serde(default)]
+    pub contents: Vec<McpResourceContent>,
+    /// Whether any piece was cut or left out by the read budget.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+/// Who a rendered prompt message is from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpPromptRole {
+    #[default]
+    User,
+    Assistant,
+}
+
+impl McpPromptRole {
+    pub const ALL: &'static [McpPromptRole] = &[McpPromptRole::User, McpPromptRole::Assistant];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Assistant => "assistant",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|role| role.as_str() == id)
+    }
+}
+
+/// One message of a prompt the server rendered.
+///
+/// Only text is carried. A prompt whose content is an image or an embedded resource is answered with
+/// a sentence saying that piece was not included, rather than with bytes this surface cannot show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPromptMessage {
+    pub role: McpPromptRole,
+    pub text: String,
+}
+
+/// What `prompts/get` answered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPromptText {
+    pub server_id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub messages: Vec<McpPromptMessage>,
+    /// Whether the joined text was cut at the prompt budget.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
 /// One server's state, as the settings page and the status event carry it.
 ///
 /// `code` and `message` are the failure's own words when it failed, and absent otherwise. The

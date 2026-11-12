@@ -27,7 +27,9 @@ use std::time::{Duration, Instant};
 
 use sevenshell_api::{ToolDescriptor, ToolRegistry};
 use sevenshell_mcp_client::{McpClientError, McpClientManager, McpServerSecrets, validate_server};
-use sevenshell_types::{AppSettings, McpServerConfig, McpServerState, McpServerStatus};
+use sevenshell_types::{
+    AppSettings, McpPromptText, McpResourceRead, McpServerConfig, McpServerContent, McpServerState, McpServerStatus,
+};
 use sevenshell_vault::Vault;
 use tauri::{AppHandle, Emitter as _};
 
@@ -178,6 +180,26 @@ impl McpClientSupervisor {
     /// which entries are switched on.
     pub fn tools(&self) -> Vec<ToolDescriptor> {
         self.manager.tools()
+    }
+
+    /// Every ready server's resources and prompts, for the assistant's picker.
+    pub fn content_catalog(&self) -> Vec<McpServerContent> {
+        self.manager.content_catalog()
+    }
+
+    /// Reads one resource from one server. The manager owns the bound and the redaction rule.
+    pub async fn read_resource(&self, server_id: &str, uri: &str) -> Result<McpResourceRead, McpClientError> {
+        self.manager.read_resource(server_id, uri).await
+    }
+
+    /// Renders one prompt with the arguments a person typed.
+    pub async fn get_prompt(
+        &self,
+        server_id: &str,
+        name: &str,
+        arguments: BTreeMap<String, String>,
+    ) -> Result<McpPromptText, McpClientError> {
+        self.manager.get_prompt(server_id, name, arguments).await
     }
 
     /// One entry of the settings file, which is what a command checks before it writes anything.
@@ -562,12 +584,22 @@ mod tests {
         closed: AtomicBool,
         ping_fails: AtomicBool,
         notification: Mutex<Option<sevenshell_mcp_client::NotificationHandler>>,
+        /// Whether the handshake advertises resources and prompts, and the two lists answer.
+        content: bool,
     }
 
     impl Script {
         fn with_tools(tools: Vec<Value>) -> Arc<Self> {
             Arc::new(Self {
                 tools,
+                ..Self::default()
+            })
+        }
+
+        /// A server that offers one resource and one prompt beside its tools.
+        fn with_content() -> Arc<Self> {
+            Arc::new(Self {
+                content: true,
                 ..Self::default()
             })
         }
@@ -606,18 +638,26 @@ mod tests {
 
     #[async_trait]
     impl McpTransport for ScriptedTransport {
-        async fn request(&self, method: &str, _params: Option<Value>) -> Result<Value, McpClientError> {
+        async fn request(&self, method: &str, params: Option<Value>) -> Result<Value, McpClientError> {
             self.script
                 .methods
                 .lock()
                 .expect("not poisoned")
                 .push(method.to_owned());
             match method {
-                "initialize" => Ok(json!({
-                    "protocolVersion": "2025-06-18",
-                    "capabilities": { "tools": {} },
-                    "serverInfo": { "name": "scripted", "version": "0" },
-                })),
+                "initialize" => Ok(if self.script.content {
+                    json!({
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": { "tools": {}, "resources": {}, "prompts": {} },
+                        "serverInfo": { "name": "scripted", "version": "0" },
+                    })
+                } else {
+                    json!({
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": { "tools": {} },
+                        "serverInfo": { "name": "scripted", "version": "0" },
+                    })
+                }),
                 "tools/list" => {
                     let call = self.script.tool_lists.fetch_add(1, Ordering::SeqCst);
                     let changed = self.script.changed_tools.lock().expect("not poisoned").clone();
@@ -631,6 +671,40 @@ mod tests {
                     "content": [{ "type": "text", "text": "ok" }],
                     "isError": false,
                 })),
+                "resources/list" if self.script.content => Ok(json!({
+                    "resources": [{
+                        "uri": "file:///notes.txt",
+                        "name": "notes.txt",
+                        "mimeType": "text/plain",
+                    }],
+                })),
+                "resources/read" if self.script.content => Ok(json!({
+                    "contents": [{
+                        "uri": "file:///notes.txt",
+                        "mimeType": "text/plain",
+                        "text": "hello",
+                    }],
+                })),
+                "prompts/list" if self.script.content => Ok(json!({
+                    "prompts": [{
+                        "name": "summarize",
+                        "arguments": [{ "name": "topic", "required": true }],
+                    }],
+                })),
+                "prompts/get" if self.script.content => {
+                    let topic = params
+                        .as_ref()
+                        .and_then(|params| params.get("arguments"))
+                        .and_then(|arguments| arguments.get("topic"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    Ok(json!({
+                        "messages": [{
+                            "role": "user",
+                            "content": { "type": "text", "text": format!("Summarize {topic}") },
+                        }],
+                    }))
+                }
                 "ping" if self.script.ping_fails.load(Ordering::SeqCst) => Err(McpClientError::Failed {
                     server: "scripted".to_owned(),
                     message: "the server stopped answering".to_owned(),
@@ -839,6 +913,46 @@ mod tests {
             vec![McpServerState::Connecting, McpServerState::Ready],
             "the window was told about the attempt and the answer"
         );
+    }
+
+    #[tokio::test]
+    async fn the_supervisor_answers_the_content_catalogue_read_and_prompt() {
+        let host = host(Script::with_content(), None);
+        let settings = settings_of(vec![server("files", true)]);
+
+        host.supervisor.apply(&settings).expect("a valid list");
+        host.supervisor.refresh_pending().await;
+
+        let catalog = host.supervisor.content_catalog();
+        assert_eq!(catalog.len(), 1, "one server offers content");
+        assert_eq!(catalog[0].server_id, "files");
+        assert_eq!(catalog[0].resources[0].uri, "file:///notes.txt");
+        assert_eq!(catalog[0].prompts[0].name, "summarize");
+
+        let read = host
+            .supervisor
+            .read_resource("files", "file:///notes.txt")
+            .await
+            .expect("the scripted server answers the read");
+        assert_eq!(read.contents[0].text.as_deref(), Some("hello"));
+
+        let prompt = host
+            .supervisor
+            .get_prompt(
+                "files",
+                "summarize",
+                BTreeMap::from([("topic".to_owned(), "networks".to_owned())]),
+            )
+            .await
+            .expect("the scripted server renders the prompt");
+        assert_eq!(prompt.messages[0].text, "Summarize networks");
+
+        let unknown = host
+            .supervisor
+            .read_resource("missing", "file:///notes.txt")
+            .await
+            .expect_err("a server that is not configured cannot be read");
+        assert!(matches!(unknown, McpClientError::UnknownServer { .. }));
     }
 
     #[tokio::test]

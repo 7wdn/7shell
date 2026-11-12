@@ -52,9 +52,26 @@ export interface AiProviderTestResult {
  * deliberately a string rather than a handle: the host never reads a buffer of its own, and the
  * interface never names a path.
  */
+/**
+ * One external-server resource the person attached to the next question.
+ *
+ * `text` is what the resource read answered, already bounded. A binary resource is not attachable:
+ * this context is text the provider receives, and a base64 blob would spend tokens on something it
+ * cannot read. The picker still previews binary resources; it does not offer to attach them.
+ */
+export interface AiContextResource {
+  /** The external server's id, so the prompt can say where the text came from. */
+  readonly server: string;
+  readonly uri: string;
+  readonly name: string;
+  readonly mimeType?: string;
+  readonly text: string;
+}
+
 export interface AiChatContext {
   readonly sessionId?: string;
   readonly terminalText?: string;
+  readonly resources?: readonly AiContextResource[];
 }
 
 /**

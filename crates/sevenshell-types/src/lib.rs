@@ -61,9 +61,10 @@ pub use k8s::{
 };
 pub use mcp_client::{
     MCP_SERVER_ID_MAX_CHARS, MCP_SERVER_TOOL_SEPARATOR, MCP_SERVER_TOOL_TIMEOUT_SECONDS_DEFAULT,
-    MCP_SERVER_TOOL_TIMEOUT_SECONDS_MAX, MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN, McpServerConfig, McpServerState,
-    McpServerStatus, McpServerTransport, is_valid_mcp_server_id, mcp_server_enabled_default,
-    mcp_server_tool_timeout_seconds_default, normalize_mcp_server_tool_timeout_seconds,
+    MCP_SERVER_TOOL_TIMEOUT_SECONDS_MAX, MCP_SERVER_TOOL_TIMEOUT_SECONDS_MIN, McpPrompt, McpPromptArgument,
+    McpPromptMessage, McpPromptRole, McpPromptText, McpResource, McpResourceContent, McpResourceRead, McpServerConfig,
+    McpServerContent, McpServerState, McpServerStatus, McpServerTransport, is_valid_mcp_server_id,
+    mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, normalize_mcp_server_tool_timeout_seconds,
 };
 pub use monitor::{
     CpuCounters, CpuModel, CpuStates, DiskUsage, EnvironmentEntry, HostMetrics, LoadAverage, MAX_COMMAND_CHARS,

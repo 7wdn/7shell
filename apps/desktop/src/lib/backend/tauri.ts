@@ -60,7 +60,10 @@ import type {
   McpApprovalRequest,
   McpAuditEntry,
   McpCatalog,
+  McpPromptText,
+  McpResourceRead,
   McpServerConfig,
+  McpServerContent,
   McpServerStatus,
   McpServerView,
   McpStatus,
@@ -336,6 +339,25 @@ export function mcpServerSecretsSet(
 /** Reconnects one server now, instead of waiting for its own backoff. */
 export function mcpServerRefresh(serverId: string): Promise<McpServerView> {
   return invoke<McpServerView>("mcp_server_refresh", { serverId });
+}
+
+/**
+ * Every ready external server's resources and prompts, for the assistant's picker.
+ *
+ * A server that offers neither is left out by the host: an empty heading is not a choice.
+ */
+export function mcpContentCatalog(): Promise<McpServerContent[]> {
+  return invoke<McpServerContent[]>("mcp_content_catalog");
+}
+
+/** Reads one resource. The answer is bounded; `truncated` says whether it was cut. */
+export function mcpResourceRead(serverId: string, uri: string): Promise<McpResourceRead> {
+  return invoke<McpResourceRead>("mcp_resource_read", { serverId, uri });
+}
+
+/** Renders one prompt with the arguments a person typed. */
+export function mcpPromptGet(serverId: string, name: string, args: Record<string, string>): Promise<McpPromptText> {
+  return invoke<McpPromptText>("mcp_prompt_get", { serverId, name, arguments: args });
 }
 
 /** Calls `listener` when a call stops for a person's answer. */

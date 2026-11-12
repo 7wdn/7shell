@@ -48,6 +48,40 @@
       "hint": "Enter 发送，Shift+Enter 换行。",
       "clearFailed": "无法清空聊天。"
     },
+    "content": {
+      "open": "服务器内容",
+      "title": "服务器内容",
+      "description": "由就绪的外部服务器提供的资源与提示词。读取不会改变远端的任何状态。",
+      "loading": "正在读取服务器提供的内容…",
+      "empty": "没有就绪的外部服务器提供资源或提示词。",
+      "emptyTab": "当前没有这类内容。",
+      "tabResources": "资源",
+      "tabPrompts": "提示词",
+      "resource": {
+        "read": "读取",
+        "preview": "服务器返回的内容",
+        "truncated": "已被服务器的上限截断",
+        "attach": "附加",
+        "attached": "已附加",
+        "attachHint": "把这段文本随下一个问题一起发送。",
+        "noText": "只有文本可以附加，这个资源没有文本。",
+        "binary": "二进制内容（{mime}），无法附加。",
+        "unknownType": "未知类型",
+        "image": "服务器返回的图片",
+        "full": "已经附加了四个资源，请先移除一个再附加。"
+      },
+      "prompt": {
+        "render": "渲染",
+        "insert": "插入",
+        "inserted": "已插入输入框。",
+        "preview": "将要插入的内容",
+        "truncated": "已被服务器的上限截断",
+        "requiredMissing": "请先填写必填参数：{names}。"
+      }
+    },
+    "attachments": {
+      "remove": "从下一个问题中移除 {name}"
+    },
     "usage": {
       "title": "上一次回答",
       "tokens": "输入 {input} / 输出 {output}",
@@ -95,6 +129,8 @@
       "attached": "已准备 {count} 行",
       "off": "未附带任何内容。",
       "refresh": "重新读取",
+      "resources": "{count} 个服务器资源",
+      "server": "{server} ·",
       "limits": "已剥离控制序列，形似凭据的内容已替换，并限制在 {chars} 个字符以内。"
     },
     "error": {

@@ -10,7 +10,7 @@
  * Stopping replaces sending rather than standing beside it: the two are never both useful, and two
  * buttons that swap places are harder to miss than two that sit next to each other.
  */
-import { Eraser, LoaderCircle, SendHorizontal, Square } from "@lucide/vue";
+import { Eraser, Library, LoaderCircle, SendHorizontal, Square } from "@lucide/vue";
 import { nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -34,6 +34,8 @@ const emit = defineEmits<{
   send: [text: string];
   stop: [];
   clear: [];
+  /** Somebody wants the server-content picker, which only the panel owns. */
+  "open-content": [];
 }>();
 
 const { t } = useI18n();
@@ -74,6 +76,35 @@ watch(
     }
   },
 );
+
+/**
+ * Appends rendered text to whatever is already typed.
+ *
+ * A rendered prompt arrives while somebody may have written half a question, so it is added below
+ * rather than replacing the line, separated by a blank line — the insertion is a block of text that
+ * came from a server, and gluing it to the person's own sentence would make the two indistinguishable.
+ *
+ * The caret is put after the insertion: the text is a draft, and the next thing typed belongs at
+ * its end.
+ */
+function append(addition: string): void {
+  const block = addition.trim();
+  if (block === "") {
+    return;
+  }
+  const existing = text.value.replace(/\s+$/, "");
+  text.value = existing === "" ? block : `${existing}\n\n${block}`;
+  void nextTick(() => {
+    const element = box.value;
+    if (!element) {
+      return;
+    }
+    element.focus();
+    element.setSelectionRange(text.value.length, text.value.length);
+  });
+}
+
+defineExpose({ append });
 </script>
 
 <template>
@@ -91,6 +122,17 @@ watch(
 
     <div class="flex items-center gap-1.5">
       <p class="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">{{ t("ai.composer.hint") }}</p>
+
+      <button
+        type="button"
+        data-assistant-content
+        class="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+        :title="t('ai.content.open')"
+        :aria-label="t('ai.content.open')"
+        @click="emit('open-content')"
+      >
+        <Library :size="13" />
+      </button>
 
       <button
         type="button"

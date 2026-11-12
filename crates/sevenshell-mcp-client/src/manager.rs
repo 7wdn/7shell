@@ -18,6 +18,10 @@
 //! * **Every change goes through one lock.** The manager is read from several calls at once (the
 //!   registry asks for descriptors while a call is running) and written by the supervisor, so the
 //!   list and each entry's session sit behind one lock that is never held across an await.
+//!
+//! Resources and prompts live here too, but not in the tool table: reading a resource or rendering
+//! a prompt changes nothing on the server, so it takes no approval and no audit line, and its
+//! catalogue is asked for when a picker opens rather than pushed into every status event.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -27,7 +31,9 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use serde_json::Value;
 use sevenshell_api::{Tool, ToolContext, ToolDescriptor, ToolError, ToolResult, ToolSource};
-use sevenshell_types::{McpServerConfig, McpServerState, McpServerStatus};
+use sevenshell_types::{
+    McpPromptText, McpResourceRead, McpServerConfig, McpServerContent, McpServerState, McpServerStatus,
+};
 
 use crate::McpClientError;
 use crate::adapter::ExternalTool;
@@ -214,6 +220,65 @@ impl McpClientManager {
             .filter_map(|entry| entry.session.as_ref())
             .flat_map(|session| session.tools())
             .collect()
+    }
+
+    /// Every server that has something to put in a content picker, in the order it is configured.
+    ///
+    /// A server is left out when it is switched off or has no session: both mean nobody could read
+    /// a resource there right now. It is also left out when both of its lists are empty, because a
+    /// heading with no rows under it is a thing to scroll past rather than choose from.
+    pub fn content_catalog(&self) -> Vec<McpServerContent> {
+        self.read_state()
+            .servers
+            .iter()
+            .filter(|entry| entry.config.enabled)
+            .filter_map(|entry| entry.session.as_ref().map(|session| session.content()))
+            .filter(|content| !content.resources.is_empty() || !content.prompts.is_empty())
+            .collect()
+    }
+
+    /// Reads one resource from one server.
+    ///
+    /// The session is cloned out of the state before the await: the manager's lock is read by
+    /// every other call and must not be held while a remote server is being asked something.
+    pub async fn read_resource(&self, server_id: &str, uri: &str) -> Result<McpResourceRead, McpClientError> {
+        let session = self.content_session(server_id)?;
+        session.read_resource(uri).await
+    }
+
+    /// Renders one prompt from one server, for the same reason and with the same lock rule.
+    pub async fn get_prompt(
+        &self,
+        server_id: &str,
+        name: &str,
+        arguments: BTreeMap<String, String>,
+    ) -> Result<McpPromptText, McpClientError> {
+        let session = self.content_session(server_id)?;
+        session.get_prompt(name, arguments).await
+    }
+
+    /// The session a content call goes through, or the reason there is none.
+    ///
+    /// "Not configured" and "not connected yet" are different answers: the first is a caller that
+    /// named something the settings page does not hold, the second is a server whose row is still
+    /// `connecting` and which will answer in a moment.
+    fn content_session(&self, server_id: &str) -> Result<Arc<McpSession>, McpClientError> {
+        let state = self.read_state();
+        let entry = state
+            .servers
+            .iter()
+            .find(|entry| entry.config.id == server_id)
+            .ok_or_else(|| McpClientError::UnknownServer {
+                id: server_id.to_owned(),
+            })?;
+        entry
+            .session
+            .as_ref()
+            .map(Arc::clone)
+            .ok_or_else(|| McpClientError::Failed {
+                server: server_id.to_owned(),
+                message: "the server is not connected".to_owned(),
+            })
     }
 
     /// Opens (or reopens) one server's session and answers with its new state.
@@ -525,8 +590,9 @@ mod tests {
     use sevenshell_types::{McpScope, McpServerTransport};
 
     use crate::testing::{
-        FakeFactory, FakeTransport, context_denying, initialize_reply, read_tool_listing, text_result, tool_listing,
-        tools_reply,
+        FakeFactory, FakeTransport, context_denying, initialize_reply, initialize_reply_offering, prompt_listing,
+        prompt_message, prompt_reply, prompts_reply, read_tool_listing, resource_listing, resources_reply,
+        text_resource_read, text_result, tool_listing, tools_reply,
     };
 
     fn server(id: &str, enabled: bool) -> McpServerConfig {
@@ -1073,5 +1139,152 @@ mod tests {
         let printed = format!("{manager:?}");
         assert!(printed.contains("files"));
         assert!(printed.contains("Connecting"));
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Resources and prompts
+    // -----------------------------------------------------------------------------------------
+
+    fn content_transport(resources: &[Value], prompts: &[Value]) -> Arc<FakeTransport> {
+        Arc::new(
+            FakeTransport::new()
+                .on(
+                    "initialize",
+                    initialize_reply_offering(
+                        crate::session::LATEST_PROTOCOL_VERSION,
+                        &["tools", "resources", "prompts"],
+                    ),
+                )
+                .on("tools/list", tools_reply(&[]))
+                .on("resources/list", resources_reply(resources))
+                .on("prompts/list", prompts_reply(prompts)),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_content_catalog_lists_only_enabled_connected_servers_with_something_to_show() {
+        let factory = FakeFactory::new()
+            .answering(
+                "files",
+                content_transport(&[resource_listing("file:///welcome.txt", "welcome")], &[]),
+            )
+            .answering("tickets", content_transport(&[], &[]))
+            .answering(
+                "notes",
+                content_transport(&[resource_listing("file:///note.txt", "note")], &[]),
+            );
+        let manager = manager(Arc::clone(&factory));
+        manager
+            .replace(vec![
+                server("files", true),
+                server("tickets", true),
+                server("notes", false),
+            ])
+            .expect("a valid list");
+        manager.refresh_all().await;
+
+        let catalog = manager.content_catalog();
+        assert_eq!(
+            catalog.len(),
+            1,
+            "a server with no content and a switched-off server are both left out"
+        );
+        assert_eq!(catalog[0].server_id, "files");
+        assert_eq!(catalog[0].resources[0].uri, "file:///welcome.txt");
+        assert!(catalog[0].prompts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_content_read_from_a_server_that_is_not_configured_says_which_id_was_asked_for() {
+        let manager = McpClientManager::new();
+
+        let error = manager
+            .read_resource("absent", "file:///a")
+            .await
+            .expect_err("not configured");
+        assert_eq!(error.code(), "MCP-SERVER-NOT-FOUND");
+        assert!(error.to_string().contains("absent"), "the refusal names the id");
+
+        let error = manager
+            .get_prompt("absent", "summarize", BTreeMap::new())
+            .await
+            .expect_err("not configured");
+        assert_eq!(error.code(), "MCP-SERVER-NOT-FOUND");
+    }
+
+    #[tokio::test]
+    async fn a_content_read_from_a_server_with_no_session_says_it_is_not_connected() {
+        let manager = McpClientManager::new();
+        manager.replace(vec![server("files", true)]).expect("a valid list");
+
+        let error = manager
+            .read_resource("files", "file:///a")
+            .await
+            .expect_err("nothing is open yet");
+        assert_eq!(error.code(), "MCP-EXTERNAL-FAILED");
+        assert_eq!(error.detail(), Some("the server is not connected"));
+
+        let error = manager
+            .get_prompt("files", "summarize", BTreeMap::new())
+            .await
+            .expect_err("nothing is open yet");
+        assert_eq!(error.detail(), Some("the server is not connected"));
+    }
+
+    #[tokio::test]
+    async fn a_resource_read_and_a_prompt_render_go_through_the_server_that_owns_them() {
+        let transport = Arc::new(
+            FakeTransport::new()
+                .on(
+                    "initialize",
+                    initialize_reply_offering(crate::session::LATEST_PROTOCOL_VERSION, &["resources", "prompts"]),
+                )
+                .on(
+                    "resources/list",
+                    resources_reply(&[resource_listing("file:///welcome.txt", "welcome")]),
+                )
+                .on(
+                    "resources/read",
+                    text_resource_read("file:///welcome.txt", "Hello from the fixture."),
+                )
+                .on(
+                    "prompts/list",
+                    prompts_reply(&[prompt_listing("summarize", &["topic"])]),
+                )
+                .on(
+                    "prompts/get",
+                    prompt_reply(&[prompt_message("user", "Summarize networks")]),
+                ),
+        );
+        let factory = FakeFactory::new().answering("files", Arc::clone(&transport));
+        let manager = manager(Arc::clone(&factory));
+        manager.replace(vec![server("files", true)]).expect("a valid list");
+        manager.refresh("files").await.expect("a session");
+
+        let read = manager
+            .read_resource("files", "file:///welcome.txt")
+            .await
+            .expect("the session reads it");
+        assert_eq!(read.server_id, "files");
+        assert_eq!(read.contents[0].text.as_deref(), Some("Hello from the fixture."));
+
+        let prompt = manager
+            .get_prompt(
+                "files",
+                "summarize",
+                BTreeMap::from([("topic".to_owned(), "networks".to_owned())]),
+            )
+            .await
+            .expect("the session renders it");
+        assert_eq!(prompt.name, "summarize");
+        assert_eq!(prompt.messages[0].text, "Summarize networks");
+
+        assert_eq!(transport.calls("resources/read").len(), 1, "one read, on one session");
+        assert_eq!(transport.calls("prompts/get").len(), 1);
+        assert_eq!(
+            factory.opened("files"),
+            1,
+            "content is not what a session is reopened for"
+        );
     }
 }

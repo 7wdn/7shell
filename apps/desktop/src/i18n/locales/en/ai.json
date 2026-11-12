@@ -48,6 +48,40 @@
       "hint": "Enter sends; Shift+Enter starts a new line.",
       "clearFailed": "The chat could not be cleared."
     },
+    "content": {
+      "open": "Server content",
+      "title": "Server content",
+      "description": "Resources and prompts offered by the external servers that are ready. Reading one changes nothing on the far side.",
+      "loading": "Reading what the servers offer…",
+      "empty": "No ready external server offers resources or prompts.",
+      "emptyTab": "Nothing of this kind is offered right now.",
+      "tabResources": "Resources",
+      "tabPrompts": "Prompts",
+      "resource": {
+        "read": "Read",
+        "preview": "What the server returned",
+        "truncated": "cut by the server's limit",
+        "attach": "Attach",
+        "attached": "Attached",
+        "attachHint": "Send this text with the next question.",
+        "noText": "Only text can be attached. This resource has none.",
+        "binary": "Binary content ({mime}); it cannot be attached.",
+        "unknownType": "unknown type",
+        "image": "Image returned by the server",
+        "full": "Four resources are already attached. Remove one before attaching another."
+      },
+      "prompt": {
+        "render": "Render",
+        "insert": "Insert",
+        "inserted": "Inserted into the message.",
+        "preview": "What will be inserted",
+        "truncated": "cut by the server's limit",
+        "requiredMissing": "Fill in the required arguments first: {names}."
+      }
+    },
+    "attachments": {
+      "remove": "Remove {name} from the next question"
+    },
     "usage": {
       "title": "Last answer",
       "tokens": "{input} in / {output} out",
@@ -95,6 +129,8 @@
       "attached": "{count} lines ready",
       "off": "Nothing is attached.",
       "refresh": "Read it again",
+      "resources": "{count} server resources",
+      "server": "{server} ·",
       "limits": "Stripped of control sequences, with anything that looks like a credential replaced, and capped at {chars} characters."
     },
     "error": {

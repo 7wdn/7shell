@@ -28,6 +28,7 @@ import { useI18n } from "vue-i18n";
 import Composer from "@/components/assistant/Composer.vue";
 import ContextPreview from "@/components/assistant/ContextPreview.vue";
 import Message from "@/components/assistant/Message.vue";
+import ServerContentDialog from "@/components/assistant/ServerContentDialog.vue";
 import ToolCard from "@/components/assistant/ToolCard.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select from "@/components/ui/Select.vue";
@@ -53,6 +54,21 @@ const renamingId = ref<string | null>(null);
 const renameDraft = ref("");
 /** The conversation whose deletion is being asked about. */
 const removingSession = ref<AiSessionSummary | null>(null);
+/** Whether the server-content picker is up. */
+const contentOpen = ref(false);
+/**
+ * The composer, for the one thing the picker cannot do itself: put rendered prompt text into the
+ * line somebody is about to send. The text is inserted, never sent — the person edits it first.
+ */
+const composer = ref<InstanceType<typeof Composer> | null>(null);
+
+function openContent(): void {
+  contentOpen.value = true;
+}
+
+function insertContent(text: string): void {
+  composer.value?.append(text);
+}
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -551,6 +567,7 @@ function openSettings(): void {
       :lines="preferences.aiContextLines"
       :context="assistant.context"
       :line-count="assistant.contextLines"
+      :attachments="assistant.attachments"
       @toggle="(value) => preferences.setAiContextEnabled(value)"
       @lines="(value) => preferences.setAiContextLines(value)"
       @refresh="assistant.refreshContext()"
@@ -567,7 +584,36 @@ function openSettings(): void {
         <span v-if="problem" class="font-mono"> · {{ problem.code }}</span>
       </p>
 
+      <!--
+        The resources the next question carries, above the line that will carry them. Each chip is
+        removable in place: an attachment is something picked by hand, so it is put back by hand too.
+      -->
+      <div v-if="assistant.attachments.length > 0" data-assistant-attachments class="flex flex-wrap gap-1">
+        <span
+          v-for="attachment in assistant.attachments"
+          :key="`${attachment.server}:${attachment.uri}`"
+          data-assistant-attachment
+          :data-assistant-attachment-server="attachment.server"
+          :data-assistant-attachment-uri="attachment.uri"
+          class="flex min-w-0 max-w-full items-center gap-1 rounded-md border border-border bg-accent/40 px-1.5 py-0.5"
+          :title="`${attachment.server} · ${attachment.uri}`"
+        >
+          <span class="min-w-0 truncate text-[10px]">{{ attachment.name }}</span>
+          <button
+            type="button"
+            data-assistant-attachment-remove
+            class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('ai.attachments.remove', { name: attachment.name })"
+            :aria-label="t('ai.attachments.remove', { name: attachment.name })"
+            @click="assistant.removeAttachment(attachment.server, attachment.uri)"
+          >
+            <X :size="9" />
+          </button>
+        </span>
+      </div>
+
       <Composer
+        ref="composer"
         :running="assistant.running"
         :sending="assistant.sending"
         :can-clear="assistant.hasMessages"
@@ -576,8 +622,11 @@ function openSettings(): void {
         @send="(text) => assistant.send(text)"
         @stop="assistant.cancel()"
         @clear="clear()"
+        @open-content="openContent()"
       />
     </footer>
+
+    <ServerContentDialog :open="contentOpen" @update:open="(value) => (contentOpen = value)" @insert="insertContent" />
 
     <ConfirmDialog
       v-if="removingSession"

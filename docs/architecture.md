@@ -501,6 +501,36 @@ hiding a session needs no listener restart.
 A destructive command or action still asks a person in every tier. "Full access" is about which
 tools are offered, never about bypassing the gate.
 
+## Server content
+
+A ready external server may also offer resources and prompts, and the client keeps a cache of
+each beside its tools. The handshake records the two capabilities; a server that declares neither
+is simply absent from the picker. Content lists are paginated and bounded, a failed content list
+leaves an empty picker rather than taking the server's tools offline, and the two
+`list_changed` notifications replace the cache without reconnecting. This is the one place a
+failed external request is not a failed session: tools are what the server was added for.
+
+The assistant's composer has one picker. A resource is read first and drawn exactly as the server
+returned it; only then can it be attached to the next question. A prompt takes one input per
+argument the server declared, is rendered by the server, and is inserted into the composer as text
+the person edits — nothing is sent for them. Both are content rather than actions: no approval and
+no audit line, because nothing on the far side changes. Reads are bounded at 256 KiB of text (a
+binary piece over the budget is left out whole), prompts at 64 KiB.
+
+Attachments travel as `AiChatContext.resources`. The host strips control characters, redacts
+credentials, keeps the head of an over-long document, and accepts at most four resources of 16 000
+characters each. The system prompt labels them as data from a server, never as instructions, and
+their name, server and URI are scrubbed and quoted so a server cannot leave the element it was put
+in.
+
+| Piece | Where |
+|---|---|
+| Capability parsing, content caches and reads | `crates/sevenshell-mcp-client/src/session.rs` |
+| Catalogue and per-server delegation | `crates/sevenshell-mcp-client/src/manager.rs`, `src-tauri/src/mcp_client/supervisor.rs` |
+| Three commands | `src-tauri/src/commands/mcp.rs` |
+| Attachment bounds and system prompt | `src-tauri/src/ai/context.rs` |
+| Picker, attachments and preview | `apps/desktop/src/components/assistant/ServerContentDialog.vue`, `ContextPreview.vue` |
+
 ## The policy matrix
 
 The risk classifier answers "how dangerous is this". The matrix answers the second question:

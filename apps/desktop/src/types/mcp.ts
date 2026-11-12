@@ -108,6 +108,81 @@ export interface McpServerView {
   readonly hasSecrets: boolean | null;
 }
 
+/** One resource an external server offers, from `sevenshell_types::McpResource`. */
+export interface McpResource {
+  readonly uri: string;
+  readonly name: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly mimeType?: string;
+  /** The server's own claim, in bytes. It may be absent or wrong; it is only a hint. */
+  readonly size?: number;
+}
+
+/** One argument a prompt template takes, from `sevenshell_types::McpPromptArgument`. */
+export interface McpPromptArgument {
+  readonly name: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly required: boolean;
+}
+
+/** One prompt template, from `sevenshell_types::McpPrompt`. */
+export interface McpPrompt {
+  readonly name: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly arguments: readonly McpPromptArgument[];
+}
+
+/** One server's resources and prompts, from `sevenshell_types::McpServerContent`. */
+export interface McpServerContent {
+  readonly serverId: string;
+  readonly name: string;
+  readonly resources: readonly McpResource[];
+  readonly prompts: readonly McpPrompt[];
+}
+
+/**
+ * One piece of a resource read, from `sevenshell_types::McpResourceContent`.
+ *
+ * `text` and `blob` are alternatives: a binary piece is base64 in `blob`, and a piece too large for
+ * the read budget is left out rather than cut. `truncated` means the answer is not whole.
+ */
+export interface McpResourceContent {
+  readonly uri: string;
+  readonly mimeType?: string;
+  readonly text?: string;
+  readonly blob?: string;
+  readonly truncated: boolean;
+}
+
+/** What reading one resource answered, from `sevenshell_types::McpResourceRead`. */
+export interface McpResourceRead {
+  readonly serverId: string;
+  readonly uri: string;
+  readonly contents: readonly McpResourceContent[];
+  readonly truncated: boolean;
+}
+
+/** Who a rendered prompt message is from, from `sevenshell_types::McpPromptRole`. */
+export type McpPromptRole = "user" | "assistant";
+
+/** One message of a rendered prompt, from `sevenshell_types::McpPromptMessage`. */
+export interface McpPromptMessage {
+  readonly role: McpPromptRole;
+  readonly text: string;
+}
+
+/** What rendering one prompt answered, from `sevenshell_types::McpPromptText`. */
+export interface McpPromptText {
+  readonly serverId: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly messages: readonly McpPromptMessage[];
+  readonly truncated: boolean;
+}
+
 /**
  * Whether an id can name a server, mirroring `is_valid_mcp_server_id` in Rust.
  *

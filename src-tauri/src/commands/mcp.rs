@@ -23,7 +23,7 @@ use sevenshell_api::{
 };
 use sevenshell_error::ShellError;
 use sevenshell_mcp_client::{McpServerSecrets, split_tool_name};
-use sevenshell_types::{AppSettings, McpServerConfig};
+use sevenshell_types::{AppSettings, McpPromptText, McpResourceRead, McpServerConfig, McpServerContent};
 use tauri::{AppHandle, State};
 
 use crate::mcp::{McpStatus, audit};
@@ -261,6 +261,52 @@ pub async fn mcp_server_refresh(state: State<'_, ShellState>, server_id: String)
         Ok(_) => Ok(view),
         Err(error) => Err(shell_error(&error)),
     }
+}
+
+/// Every ready external server's resources and prompts, for the assistant's picker.
+///
+/// A server that offers neither is left out here: an empty heading is not a choice, and the picker
+/// draws what it was given. The catalogue is cached by each session, so opening the dialog does not
+/// send a request to every configured server.
+#[tauri::command]
+pub fn mcp_content_catalog(state: State<'_, ShellState>) -> Vec<McpServerContent> {
+    state.mcp_client().content_catalog()
+}
+
+/// Reads one resource from one external server.
+///
+/// Content, not an action: no approval and no audit line, because nothing on the far side changes.
+/// The answer is bounded by the client, and `truncated` says whether it was cut or a binary piece
+/// was left out rather than cut in half.
+#[tauri::command]
+pub async fn mcp_resource_read(
+    state: State<'_, ShellState>,
+    server_id: String,
+    uri: String,
+) -> Result<McpResourceRead, ShellError> {
+    state
+        .mcp_client()
+        .read_resource(&server_id, &uri)
+        .await
+        .map_err(|error| shell_error(&error))
+}
+
+/// Renders one prompt with the arguments a person typed.
+///
+/// The answer is text the person can edit before sending; rendering is not a tool call and is not
+/// audited. The client bounds the text and marks it when it was cut.
+#[tauri::command]
+pub async fn mcp_prompt_get(
+    state: State<'_, ShellState>,
+    server_id: String,
+    name: String,
+    arguments: BTreeMap<String, String>,
+) -> Result<McpPromptText, ShellError> {
+    state
+        .mcp_client()
+        .get_prompt(&server_id, &name, arguments)
+        .await
+        .map_err(|error| shell_error(&error))
 }
 
 // -------------------------------------------------------------------------------------------

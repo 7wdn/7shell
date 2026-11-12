@@ -20,13 +20,14 @@ use sevenshell_types::{
     ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors,
     DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics,
     HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo,
-    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpScope, McpServerConfig,
-    McpServerState, McpServerStatus, McpServerTransport, McpToolPolicy, MemoryUsage, NetworkCounters, OpenOutcome,
-    OpenTunnel, PolicyAction, PolicyMatrix, PolicyRule, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
-    Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
-    SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout,
-    SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus,
-    SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
+    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpPrompt, McpPromptArgument,
+    McpPromptMessage, McpPromptRole, McpPromptText, McpResource, McpResourceContent, McpResourceRead, McpScope,
+    McpServerConfig, McpServerContent, McpServerState, McpServerStatus, McpServerTransport, McpToolPolicy, MemoryUsage,
+    NetworkCounters, OpenOutcome, OpenTunnel, PolicyAction, PolicyMatrix, PolicyRule, PresentedHostKey, ProcessDetail,
+    ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport,
+    SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
+    SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider,
+    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
     SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
     TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
     UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
@@ -1669,4 +1670,81 @@ fn an_external_server_and_its_status_speak_the_interface_s_words() {
     assert_eq!(status["state"], serde_json::json!("failed"));
     assert_eq!(status["tools"], serde_json::json!(0));
     assert_eq!(status["code"], serde_json::json!("MCP-SERVER-CONNECT-FAILED"));
+}
+
+/// What the resource and prompt picker reads: the catalogue, one resource read and one prompt.
+///
+/// Every optional field is omitted rather than sent as null, and the prompt's role is the lower-case
+/// word the interface matches on. The blob is carried as base64 exactly as the server sent it.
+#[test]
+fn server_content_speaks_the_interface_s_words() {
+    let catalogue = check(
+        &McpServerContent {
+            server_id: "files".to_owned(),
+            name: "Files".to_owned(),
+            resources: vec![McpResource {
+                uri: "file:///notes.txt".to_owned(),
+                name: "notes.txt".to_owned(),
+                title: Some("Notes".to_owned()),
+                description: None,
+                mime_type: Some("text/plain".to_owned()),
+                size: Some(42),
+            }],
+            prompts: vec![McpPrompt {
+                name: "summarize".to_owned(),
+                title: None,
+                description: Some("Summarize a file".to_owned()),
+                arguments: vec![McpPromptArgument {
+                    name: "path".to_owned(),
+                    title: None,
+                    description: None,
+                    required: true,
+                }],
+            }],
+        },
+        "McpServerContent",
+    );
+    assert_eq!(catalogue["serverId"], serde_json::json!("files"));
+    assert_eq!(catalogue["resources"][0]["uri"], serde_json::json!("file:///notes.txt"));
+    assert_eq!(catalogue["resources"][0]["mimeType"], serde_json::json!("text/plain"));
+    assert!(catalogue["resources"][0].get("description").is_none());
+    assert_eq!(
+        catalogue["prompts"][0]["arguments"][0]["required"],
+        serde_json::json!(true)
+    );
+    assert!(catalogue["prompts"][0].get("title").is_none());
+
+    let read = check(
+        &McpResourceRead {
+            server_id: "files".to_owned(),
+            uri: "file:///notes.txt".to_owned(),
+            contents: vec![McpResourceContent {
+                uri: "file:///notes.txt".to_owned(),
+                mime_type: Some("text/plain".to_owned()),
+                text: Some("hello".to_owned()),
+                blob: None,
+                truncated: false,
+            }],
+            truncated: false,
+        },
+        "McpResourceRead",
+    );
+    assert_eq!(read["contents"][0]["text"], serde_json::json!("hello"));
+    assert!(read["contents"][0].get("blob").is_none());
+
+    let prompt = check(
+        &McpPromptText {
+            server_id: "files".to_owned(),
+            name: "summarize".to_owned(),
+            description: None,
+            messages: vec![McpPromptMessage {
+                role: McpPromptRole::Assistant,
+                text: "Summarize it".to_owned(),
+            }],
+            truncated: false,
+        },
+        "McpPromptText",
+    );
+    assert_eq!(prompt["messages"][0]["role"], serde_json::json!("assistant"));
+    assert!(prompt.get("description").is_none());
 }

@@ -9,8 +9,8 @@
 //!
 //! * the transport layer — one message channel per transport (a child process's stdio, Streamable
 //!   HTTP, or the older HTTP+SSE stream). It owns JSON-RPC ids and correlation and nothing else.
-//! * [`McpSession`] — the handshake, the cached tool list, and one `tools/call` under the server's
-//!   own time budget.
+//! * [`McpSession`] — the handshake, the cached tool, resource and prompt lists, and one call under
+//!   the server's own time budget.
 //! * [`ExternalTool`] — one remote tool as this build's registry sees it: a name that says which
 //!   server answers, the schema the server declared, and the approval every write goes through.
 //! * [`McpClientManager`] — the set of configured servers, one session and state per server, and
@@ -23,6 +23,10 @@
 //!   counts rather than values.
 //! * **A tool name says which server answered.** `mcp__{server}__{tool}`, with the server id
 //!   restricted so the name parses back into exactly two parts.
+//!
+//! A session also caches the server's resources and prompt templates, which are read rather than
+//! called and so never become tools. They are the weaker half of a session: a server whose content
+//! list cannot be read still offers its tools, because the tools are what a session is opened for.
 
 mod adapter;
 mod config;
@@ -42,7 +46,9 @@ pub use config::{
     validate_server,
 };
 pub use manager::McpClientManager;
-pub use session::{ExternalCall, McpSession, SUPPORTED_PROTOCOL_VERSIONS};
+pub use session::{
+    ExternalCall, MAX_PROMPT_TEXT_CHARS, MAX_RESOURCE_TEXT_CHARS, McpSession, SUPPORTED_PROTOCOL_VERSIONS,
+};
 pub use transport::{
     CONNECT_TIMEOUT, DefaultTransportFactory, LIST_TIMEOUT, McpTransport, NotificationHandler, TransportFactory,
     connect,

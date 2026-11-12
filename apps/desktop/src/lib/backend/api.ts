@@ -49,7 +49,10 @@ import type {
   McpApprovalRequest,
   McpAuditEntry,
   McpCatalog,
+  McpPromptText,
+  McpResourceRead,
   McpServerConfig,
+  McpServerContent,
   McpServerStatus,
   McpServerView,
   McpStatus,
@@ -224,6 +227,20 @@ export const backend = {
     /** Reconnects one server now; the answer is the row with whatever state that attempt reached. */
     refreshServer: (serverId: string): Promise<McpServerView> =>
       forward("mcp_server_refresh", () => desktop.mcpServerRefresh(serverId)),
+
+    /**
+     * The resources and prompts ready servers offer, and the two reads behind the picker.
+     *
+     * A resource is content, not an action: reading one has no approval and no audit line, because
+     * it changes nothing on the far side. A prompt is rendered by the server and then inserted into
+     * the composer as text the person can edit before sending.
+     */
+    contentCatalog: (): Promise<McpServerContent[]> =>
+      forward("mcp_content_catalog", () => desktop.mcpContentCatalog()),
+    readResource: (serverId: string, uri: string): Promise<McpResourceRead> =>
+      forward("mcp_resource_read", () => desktop.mcpResourceRead(serverId, uri)),
+    getPrompt: (serverId: string, name: string, args: Record<string, string>): Promise<McpPromptText> =>
+      forward("mcp_prompt_get", () => desktop.mcpPromptGet(serverId, name, args)),
   },
 
   /**

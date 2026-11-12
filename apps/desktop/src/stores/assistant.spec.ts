@@ -84,6 +84,7 @@ import { useAssistantStore } from "@/stores/assistant";
 import { usePreferencesStore } from "@/stores/preferences";
 import type {
   AiCompactedEvent,
+  AiContextResource,
   AiDeltaEvent,
   AiDoneEvent,
   AiErrorEvent,
@@ -477,6 +478,100 @@ describe("the terminal a question carries", () => {
       sessionId: undefined,
       context: undefined,
     });
+  });
+});
+
+describe("the resources attached to the next question", () => {
+  function resource(uri: string, server = "files", text = "Hello from the fixture."): AiContextResource {
+    return { server, uri, name: uri.split("/").pop() ?? uri, mimeType: "text/plain", text };
+  }
+
+  it("keeps four at most and replaces a resource that is attached again", () => {
+    const store = started();
+
+    expect(store.attachResource(resource("file:///a"))).toBe(true);
+    expect(store.attachResource({ ...resource("file:///a"), text: "read again" })).toBe(true);
+    expect(store.attachments).toHaveLength(1);
+    expect(store.attachments[0]?.text).toBe("read again");
+
+    for (const uri of ["file:///b", "file:///c", "file:///d"]) {
+      expect(store.attachResource(resource(uri)), uri).toBe(true);
+    }
+    // The fifth is refused, and what was already attached is untouched.
+    expect(store.attachResource(resource("file:///e"))).toBe(false);
+    expect(store.attachments.map((entry) => entry.uri)).toEqual(["file:///a", "file:///b", "file:///c", "file:///d"]);
+  });
+
+  it("removes one attachment by its server and URI, leaving the others", () => {
+    const store = started();
+    store.attachResource(resource("file:///a"));
+    store.attachResource(resource("file:///a", "other"));
+    store.attachResource(resource("file:///b"));
+
+    store.removeAttachment("files", "file:///a");
+
+    expect(store.attachments.map((entry) => `${entry.server}:${entry.uri}`)).toEqual([
+      "other:file:///a",
+      "files:file:///b",
+    ]);
+  });
+
+  it("sends the attachments with the question even when the terminal half is empty", async () => {
+    const store = started();
+    await store.refreshProviders();
+    // The switch is off, so the terminal contributes nothing: the question is about the resource.
+    usePreferencesStore().setAiContextEnabled(false);
+    store.attachResource(resource("file:///welcome.txt"));
+
+    expect(await store.send("summarize this")).toBe("sent");
+
+    expect(sendMock).toHaveBeenCalledWith({
+      text: "summarize this",
+      providerId: "anthropic-1",
+      sessionId: undefined,
+      context: { resources: [resource("file:///welcome.txt")] },
+    });
+  });
+
+  it("sends both halves when a terminal and a resource are attached", async () => {
+    const store = started();
+    await store.refreshProviders();
+    usePreferencesStore().setAiContextLines(40);
+    store.attachResource(resource("file:///welcome.txt"));
+
+    await store.send("why is it slow?");
+
+    expect(sendMock).toHaveBeenCalledWith({
+      text: "why is it slow?",
+      providerId: "anthropic-1",
+      sessionId: undefined,
+      context: {
+        sessionId: "session-1",
+        terminalText: TERMINAL_TEXT,
+        resources: [resource("file:///welcome.txt")],
+      },
+    });
+  });
+
+  it("clears the attachments only after a send the host accepted", async () => {
+    const store = started();
+    await store.refreshProviders();
+    usePreferencesStore().setAiContextEnabled(false);
+    store.attachResource(resource("file:///welcome.txt"));
+
+    sendMock.mockRejectedValueOnce({
+      version: 1,
+      code: "AI-PROVIDER-UNAVAILABLE",
+      messageKey: "errors.ai.providerUnavailable",
+      origin: { subsystem: "app" },
+    });
+    expect(await store.send("hello")).toBe("failed");
+    // What did not travel is still the next question's material.
+    expect(store.attachments).toHaveLength(1);
+    expect(store.failure?.code).toBe("AI-PROVIDER-UNAVAILABLE");
+
+    expect(await store.send("hello")).toBe("sent");
+    expect(store.attachments).toEqual([]);
   });
 });
 

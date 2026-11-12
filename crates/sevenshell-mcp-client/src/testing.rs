@@ -238,20 +238,25 @@ impl TransportFactory for FakeFactory {
 
 /// An `initialize` result that advertises the tools capability.
 pub fn initialize_reply(version: &str) -> Value {
+    initialize_reply_offering(version, &["tools"])
+}
+
+/// An `initialize` result that advertises exactly the capabilities a test names.
+pub fn initialize_reply_offering(version: &str, capabilities: &[&str]) -> Value {
+    let mut advertised = serde_json::Map::new();
+    for capability in capabilities {
+        advertised.insert((*capability).to_owned(), json!({}));
+    }
     json!({
         "protocolVersion": version,
-        "capabilities": { "tools": {} },
+        "capabilities": advertised,
         "serverInfo": { "name": "fake", "version": "0" },
     })
 }
 
 /// An `initialize` result from a server that offers no tools at all.
 pub fn initialize_reply_without_tools(version: &str) -> Value {
-    json!({
-        "protocolVersion": version,
-        "capabilities": {},
-        "serverInfo": { "name": "fake", "version": "0" },
-    })
+    initialize_reply_offering(version, &[])
 }
 
 /// One `tools/list` entry.
@@ -287,6 +292,45 @@ pub fn text_result(text: &str) -> Value {
         "content": [{ "type": "text", "text": text }],
         "isError": false,
     })
+}
+
+/// One `resources/list` entry.
+pub fn resource_listing(uri: &str, name: &str) -> Value {
+    json!({ "uri": uri, "name": name, "mimeType": "text/plain" })
+}
+
+pub fn resources_reply(listings: &[Value]) -> Value {
+    json!({ "resources": listings })
+}
+
+/// One `prompts/list` entry, with the argument names a test cares about.
+pub fn prompt_listing(name: &str, arguments: &[&str]) -> Value {
+    let arguments: Vec<Value> = arguments
+        .iter()
+        .map(|argument| json!({ "name": argument, "required": true }))
+        .collect();
+    json!({ "name": name, "description": "a template", "arguments": arguments })
+}
+
+pub fn prompts_reply(listings: &[Value]) -> Value {
+    json!({ "prompts": listings })
+}
+
+/// A `resources/read` result with one text piece.
+pub fn text_resource_read(uri: &str, text: &str) -> Value {
+    json!({
+        "contents": [{ "uri": uri, "mimeType": "text/plain", "text": text }],
+    })
+}
+
+/// One rendered prompt message with a text piece.
+pub fn prompt_message(role: &str, text: &str) -> Value {
+    json!({ "role": role, "content": { "type": "text", "text": text } })
+}
+
+/// A `prompts/get` result carrying the messages a test wrote.
+pub fn prompt_reply(messages: &[Value]) -> Value {
+    json!({ "description": "rendered", "messages": messages })
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -39,7 +39,9 @@ import { useTerminalsStore } from "@/stores/terminals";
 import {
   AI_CONTEXT_MAX_CHARS,
   AI_TOOL_PREVIEW_MAX_CHARS,
+  type AiChatContext,
   type AiCompactedEvent,
+  type AiContextResource,
   type AiContextSummary,
   type AiDeltaEvent,
   type AiDoneEvent,
@@ -116,6 +118,15 @@ export interface AssistantContextSnapshot {
 export type AssistantSendOutcome = "sent" | "empty" | "busy" | "noProvider" | "noKey" | "failed";
 
 const EMPTY_CONTEXT: AssistantContextSnapshot = { sessionId: null, lines: 0, text: "" };
+
+/**
+ * How many external-server resources one question may carry.
+ *
+ * Four is the host's own limit (`RESOURCE_MAX_COUNT` in `src-tauri/src/ai/context.rs`) and it is
+ * repeated here so the panel refuses before a send that would be quietly cut. The store is the
+ * authority for the window: the picker asks it, and it says no rather than growing past four.
+ */
+export const ASSISTANT_ATTACHMENT_LIMIT = 4;
 
 /**
  * The codes a card is left with when its call never reported.
@@ -329,6 +340,15 @@ export const useAssistantStore = defineStore("assistant", () => {
   const failure = ref<ShellError | null>(null);
   /** What the panel is about to attach. */
   const context = ref<AssistantContextSnapshot>(EMPTY_CONTEXT);
+  /**
+   * The external-server resources the next question will carry.
+   *
+   * These are choices somebody made one at a time, so they are not part of the terminal snapshot:
+   * that is read fresh before every send, while these stay until they are sent or removed. They
+   * survive a reset and a conversation switch — a resource attached for the next question is about
+   * the next question, not about the rows on screen.
+   */
+  const attachments = ref<AiContextResource[]>([]);
 
   /**
    * The conversations the host has stored, newest first, and the one on screen.
@@ -413,6 +433,32 @@ export const useAssistantStore = defineStore("assistant", () => {
       lines,
       text: prepareTerminalContext(raw, lines, AI_CONTEXT_MAX_CHARS),
     };
+  }
+
+  /**
+   * Attaches one resource to the next question.
+   *
+   * A resource already attached is replaced rather than added twice: it is the same URI on the same
+   * server, and the newer read is the one the person just looked at. The fifth is refused, because
+   * the host would cut it and a chip that vanished on send would be a lie about what travelled.
+   */
+  function attachResource(resource: AiContextResource): boolean {
+    const index = attachments.value.findIndex(
+      (entry) => entry.server === resource.server && entry.uri === resource.uri,
+    );
+    if (index === -1 && attachments.value.length >= ASSISTANT_ATTACHMENT_LIMIT) {
+      return false;
+    }
+    attachments.value =
+      index === -1
+        ? [...attachments.value, resource]
+        : attachments.value.map((entry, position) => (position === index ? resource : entry));
+    return true;
+  }
+
+  /** Takes one attachment back, named the way the picker names it. */
+  function removeAttachment(server: string, uri: string): void {
+    attachments.value = attachments.value.filter((entry) => !(entry.server === server && entry.uri === uri));
   }
 
   /** Asks the host which providers exist, and what it knows about their keys. */
@@ -845,6 +891,19 @@ export const useAssistantStore = defineStore("assistant", () => {
     // is sent is what this call just read.
     refreshContext();
     const snapshot = context.value;
+    // A resource attached for this question goes with it even when the terminal contributes nothing:
+    // the two halves of the context are chosen separately, and the question may be about the
+    // resource alone.
+    const resources = attachments.value.map((entry) => ({ ...entry }));
+    const contextPayload: AiChatContext | undefined =
+      snapshot.text === "" && resources.length === 0
+        ? undefined
+        : {
+            // The session id names the terminal the lines came from, so it travels only when lines do.
+            ...(snapshot.text !== "" && snapshot.sessionId !== null ? { sessionId: snapshot.sessionId } : {}),
+            ...(snapshot.text !== "" ? { terminalText: snapshot.text } : {}),
+            ...(resources.length > 0 ? { resources } : {}),
+          };
 
     failure.value = null;
     runError.value = null;
@@ -874,16 +933,17 @@ export const useAssistantStore = defineStore("assistant", () => {
         sessionId: currentSessionId.value ?? undefined,
         // Nothing is attached without text: a session id on its own would say which terminal
         // somebody is looking at without carrying anything they chose to send.
-        context:
-          snapshot.text === ""
-            ? undefined
-            : { sessionId: snapshot.sessionId ?? undefined, terminalText: snapshot.text },
+        context: contextPayload,
       });
       // The answer names the conversation the run belongs to, which is how a new one becomes the
       // one this panel is drawing — resets and the list both need that id.
       if (started.sessionId !== undefined) {
         currentSessionId.value = started.sessionId;
       }
+      // Only a send the host accepted takes the attachments with it. A refusal leaves them on
+      // screen: what did not travel is still the next question's material, not a reason to attach
+      // the same resource twice.
+      attachments.value = [];
       // A run that finished before this answer arrived was already drawn to its end; lighting the
       // panel up again would leave it saying "replying" over nothing.
       if (completedRunId.value !== started.runId) {
@@ -1018,6 +1078,9 @@ export const useAssistantStore = defineStore("assistant", () => {
     failure,
     context,
     contextLines,
+    attachments,
+    attachResource,
+    removeAttachment,
     activeProvider,
     setupProblem,
     hasMessages,

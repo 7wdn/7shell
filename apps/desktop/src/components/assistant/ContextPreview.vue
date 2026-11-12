@@ -17,7 +17,7 @@ import { useI18n } from "vue-i18n";
 import Switch from "@/components/ui/Switch.vue";
 import type { AssistantContextSnapshot } from "@/stores/assistant";
 import { AI_CONTEXT_LINES_MAX, AI_CONTEXT_LINES_MIN } from "@/types/app";
-import { AI_CONTEXT_MAX_CHARS } from "@/types/ai";
+import { AI_CONTEXT_MAX_CHARS, type AiContextResource } from "@/types/ai";
 
 defineProps<{
   enabled: boolean;
@@ -25,6 +25,13 @@ defineProps<{
   context: AssistantContextSnapshot;
   /** How many lines the prepared text holds, which is what "ready" counts. */
   lineCount: number;
+  /**
+   * The external-server resources attached to the next question.
+   *
+   * Drawn whether or not the terminal half is switched on: these were chosen one at a time, and the
+   * switch above is about reading a buffer rather than about what somebody attached on purpose.
+   */
+  attachments: readonly AiContextResource[];
 }>();
 
 const emit = defineEmits<{
@@ -95,6 +102,33 @@ const BUDGET = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).fo
         >{{ context.text }}</pre
       >
     </template>
+
+    <!--
+      The attached resources, whole. This is the exact text the host hands to the provider, so it is
+      drawn in full and scrolls rather than being shortened — a preview that abbreviated the thing
+      it previews would be the one piece of context nobody could check.
+    -->
+    <div v-if="attachments.length > 0" data-context-attachments class="space-y-1">
+      <p class="text-[10px] text-muted-foreground">
+        {{ t("ai.context.resources", { count: attachments.length }) }}
+      </p>
+      <div
+        v-for="attachment in attachments"
+        :key="`${attachment.server}:${attachment.uri}`"
+        data-context-attachment
+        class="space-y-0.5 rounded-md border border-border bg-background/60 px-2 py-1.5"
+      >
+        <p class="font-mono text-[10px] break-all">
+          <span class="text-muted-foreground">{{ t("ai.context.server", { server: attachment.server }) }}</span>
+          {{ attachment.name }}
+        </p>
+        <p class="font-mono text-[10px] break-all text-muted-foreground">{{ attachment.uri }}</p>
+        <pre
+          class="max-h-40 overflow-auto rounded-sm border border-border bg-background/60 px-2 py-1 font-mono text-[10px] leading-relaxed whitespace-pre-wrap break-words select-text"
+          >{{ attachment.text }}</pre
+        >
+      </div>
+    </div>
 
     <p class="text-[10px] leading-relaxed text-muted-foreground">
       {{ t("ai.context.limits", { chars: BUDGET }) }}
