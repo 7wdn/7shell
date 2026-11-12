@@ -43,8 +43,8 @@
       "commands": "命令库",
       "words": "联想词",
       "sync": "同步",
-      "mcp": "Agent 访问",
-      "ai": "AI 助手",
+      "mcp": "MCP",
+      "ai": "AI",
       "terminal": "SSH 终端"
     },
     "tab": {

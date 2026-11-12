@@ -250,7 +250,7 @@ test("the assistant refuses and then approves a destructive command", async () =
     }
     await expect(settings).toBeVisible();
 
-    await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+    await settings.getByRole("button", { name: "MCP", exact: true }).click();
     await settings.locator("#mcp-scope").click();
     await page.getByRole("option", { name: "Writes you allow", exact: true }).click();
     await settings.getByRole("button", { name: "Save and apply", exact: true }).click();
@@ -258,7 +258,7 @@ test("the assistant refuses and then approves a destructive command", async () =
 
     // The provider: address, model and key from the environment, the key only ever in the password
     // field. The kind changes the address default, so it is chosen before the address is typed.
-    await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+    await settings.getByRole("button", { name: "AI", exact: true }).click();
     await settings.locator("[data-ai-provider-add]").click();
     const form = settings.locator("[data-ai-provider-form]");
     await expect(form).toBeVisible();
@@ -351,13 +351,13 @@ async function restoreGlobalState(page: Page): Promise<void> {
     }
     await expect(settings).toBeVisible({ timeout: 10_000 });
 
-    await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+    await settings.getByRole("button", { name: "MCP", exact: true }).click();
     await settings.locator("#mcp-scope").click();
     await page.getByRole("option", { name: "Read only", exact: true }).click();
     await settings.getByRole("button", { name: "Save and apply", exact: true }).click();
     await expect(settings.getByText(/^Saved/)).toBeVisible({ timeout: 20_000 });
 
-    await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+    await settings.getByRole("button", { name: "AI", exact: true }).click();
     const provider = settings.locator("li").filter({ hasText: "AI lab gateway" }).first();
     if ((await provider.count()) > 0) {
       await provider.getByRole("button", { name: "Remove", exact: true }).click();

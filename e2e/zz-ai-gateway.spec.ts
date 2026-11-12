@@ -53,7 +53,7 @@ test("the assistant answers a real gateway", async () => {
       await bannerSettings.click();
     }
     await expect(settings).toBeVisible();
-    await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+    await settings.getByRole("button", { name: "AI", exact: true }).click();
 
     await settings.locator("[data-ai-provider-add]").click();
     const form = settings.locator("[data-ai-provider-form]");
@@ -121,7 +121,7 @@ async function removeProvider(page: Page, name: string): Promise<void> {
       await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
     }
     await expect(settings).toBeVisible({ timeout: 10_000 });
-    await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+    await settings.getByRole("button", { name: "AI", exact: true }).click();
     const provider = settings.locator("li").filter({ hasText: name }).first();
     if ((await provider.count()) > 0) {
       await provider.getByRole("button", { name: "Remove", exact: true }).click();

@@ -90,7 +90,7 @@ async function openAgentAccess(page: Page): Promise<Locator> {
     await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
   }
   await expect(settings).toBeVisible();
-  await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+  await settings.getByRole("button", { name: "MCP", exact: true }).click();
   await expect(page.locator('[data-mcp-tab="access"]')).toBeVisible();
   return settings;
 }

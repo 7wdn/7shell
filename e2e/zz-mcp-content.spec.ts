@@ -63,7 +63,7 @@ async function openAssistant(page: Page): Promise<Locator> {
  * have anything to draw.
  */
 async function addContentServer(page: Page, settings: Locator): Promise<void> {
-  await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+  await settings.getByRole("button", { name: "MCP", exact: true }).click();
   await expect(settings.locator("[data-mcp-servers]")).toBeVisible({ timeout: 15_000 });
 
   // A leftover from a run that failed before its cleanup would collide on the identifier.
@@ -107,7 +107,7 @@ async function removeContentServer(page: Page, settings: Locator): Promise<void>
  */
 async function addLocalProvider(page: Page): Promise<void> {
   const settings = await openSettings(page);
-  await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+  await settings.getByRole("button", { name: "AI", exact: true }).click();
   await settings.locator("[data-ai-provider-add]").click();
 
   const form = settings.locator("[data-ai-provider-form]");
@@ -128,7 +128,7 @@ async function addLocalProvider(page: Page): Promise<void> {
 /** Removes every provider row this case could have added. Best-effort: cleanup never fails the case. */
 async function removeLocalProviders(page: Page): Promise<void> {
   const settings = await openSettings(page);
-  await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+  await settings.getByRole("button", { name: "AI", exact: true }).click();
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const row = settings.locator("li").filter({ hasText: PROVIDER_NAME }).first();
@@ -250,7 +250,7 @@ test("server content reads, attaches and inserts from a real stdio server", asyn
       // A picker left open would swallow the clicks that reach the settings page.
       await page.keyboard.press("Escape");
       const settings = await openSettings(page);
-      await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+      await settings.getByRole("button", { name: "MCP", exact: true }).click();
       await removeContentServer(page, settings);
       await removeLocalProviders(page);
       await page.getByRole("button", { name: "Close settings" }).click();

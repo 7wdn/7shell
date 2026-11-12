@@ -43,8 +43,8 @@
       "commands": "Command library",
       "words": "Suggested words",
       "sync": "Sync",
-      "mcp": "Agent access",
-      "ai": "Assistant",
+      "mcp": "MCP",
+      "ai": "AI",
       "terminal": "SSH terminal"
     },
     "tab": {

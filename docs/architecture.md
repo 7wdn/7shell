@@ -479,7 +479,7 @@ The bridge is a Tauri sidecar: the development and build commands stage it under
 `src-tauri/binaries/`, and `externalBin` puts it beside the application. The "copy client
 configuration" button names that path and the endpoint file; it never carries the token.
 
-## Agent access
+## MCP
 
 The settings page asks three questions, in the order someone asks them. **Access** is where the
 listener, its port, the bridge sidecar, the client configuration snippets and the external servers

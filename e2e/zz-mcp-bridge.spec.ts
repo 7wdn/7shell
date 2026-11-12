@@ -46,7 +46,7 @@ test("the MCP bridge lists and calls the live tool table", async () => {
       await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
     }
     await expect(settings).toBeVisible();
-    await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+    await settings.getByRole("button", { name: "MCP", exact: true }).click();
 
     const toggle = settings.getByRole("switch", { name: "Allow agent access" });
     await expect(toggle).toBeEnabled({ timeout: 15_000 });

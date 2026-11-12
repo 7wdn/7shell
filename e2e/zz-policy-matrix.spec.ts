@@ -61,7 +61,7 @@ async function openAgentAccess(page: Page): Promise<Locator> {
     await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
   }
   await expect(settings).toBeVisible();
-  await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+  await settings.getByRole("button", { name: "MCP", exact: true }).click();
   const toggle = settings.getByRole("switch", { name: "Allow agent access" });
   await expect(toggle).toBeEnabled({ timeout: 15_000 });
   if ((await toggle.getAttribute("aria-checked")) !== "true") {
@@ -131,7 +131,7 @@ test("a global deny reaches the next tool call and the audit trail", async () =>
     await page.locator("[data-policy-apply]").click();
     await expect(page.locator("[data-policy-notice]")).toBeVisible({ timeout: 20_000 });
 
-    await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+    await settings.getByRole("button", { name: "MCP", exact: true }).click();
     await page.locator('[data-mcp-tab="permissions"]').click();
     await page.locator('[data-mcp-scope-card="readOnly"]').click();
     await page.locator('[data-mcp-apply="permissions"]').click();
