@@ -1434,6 +1434,93 @@ impl Core {
         .await
     }
 
+    /// Loads an image archive as a transfer row, so the panel shows bytes and can stop it.
+    ///
+    /// The command still answers with the image reference the runtime printed, which is why the
+    /// outcome is parked in a slot and read once the row settles. The archive is a local file whose
+    /// path never crosses to the interface; the row points at it only through the transfer's own
+    /// local end.
+    pub(crate) async fn container_image_load_transfer(
+        &self,
+        connection_id: &str,
+        archive: &Path,
+    ) -> Result<String, ShellError> {
+        let provider = self.containers.provider(connection_id)?;
+        let metadata = tokio::fs::metadata(archive).await.map_err(|error| {
+            ShellError::container_command_failed("the image archive", format!("that file cannot be read: {error}"))
+        })?;
+        let name = archive
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "image archive".to_owned());
+        let local = archive.to_path_buf();
+        let outcome: Arc<std::sync::Mutex<Option<Result<String, ShellError>>>> = Arc::new(std::sync::Mutex::new(None));
+        let slot = Arc::clone(&outcome);
+        let label = name.clone();
+        let connection = connection_id.to_owned();
+
+        let id = self.reserve_transfer_id();
+        let transfer_id = id.clone();
+        self.spawn_transfer(
+            id,
+            TransferFacts {
+                direction: TransferDirection::Upload,
+                name: name.clone(),
+                // There is no remote path: the bytes go into the engine's image store. The
+                // connection is what the row is about, and what the panel's tooltip can name.
+                remote_path: connection.clone(),
+                session_id: connection,
+                size: metadata.len(),
+                packed: false,
+                pausable: false,
+                local: Some(local.clone()),
+            },
+            move |progress| {
+                let provider = Arc::clone(&provider);
+                let local = local.clone();
+                let slot = Arc::clone(&slot);
+                let label = label.clone();
+
+                Box::pin(async move {
+                    let advancing = Arc::clone(&progress);
+                    let observe = move |bytes: u64| {
+                        advancing.advance(bytes);
+                        !advancing.is_cancelled()
+                    };
+                    let result = tokio::select! {
+                        result = provider.image_load_file_with(&local, observe) => result,
+                        _ = wait_cancelled(Arc::clone(&progress)) => Err(cancelled(&label)),
+                    };
+                    if let Ok(mut slot) = slot.lock() {
+                        *slot = Some(result.clone());
+                    }
+                    result.map(|_| ())
+                }) as TransferAttempt
+            },
+        )
+        .await?;
+
+        loop {
+            let settled = self
+                .transfers()
+                .await
+                .into_iter()
+                .find(|row| row.id == transfer_id)
+                .map(|row| row.state);
+            if !matches!(settled, Some(TransferState::Running | TransferState::Paused)) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        outcome.lock().ok().and_then(|mut slot| slot.take()).unwrap_or_else(|| {
+            Err(ShellError::container_command_failed(
+                "the image archive",
+                "the transfer ended without an answer",
+            ))
+        })
+    }
+
     /// The transfers that are running or have run, newest last.
     ///
     /// The size and the count come from the progress object rather than from what the record was

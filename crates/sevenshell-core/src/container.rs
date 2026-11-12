@@ -200,7 +200,7 @@ impl Core {
     /// becomes part of a command line — the archive's bytes reach the runtime on standard input, as
     /// they are read from the file.
     pub async fn container_image_load(&self, connection_id: &str, archive: &Path) -> Result<String, ShellError> {
-        self.container_provider(connection_id)?.image_load_file(archive).await
+        self.container_image_load_transfer(connection_id, archive).await
     }
 
     pub async fn container_image_commit(

@@ -10,6 +10,7 @@
 //! it.
 
 use std::collections::{HashMap, HashSet};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -22,7 +23,7 @@ use sevenshell_types::{
 
 use crate::commands::{self, ImageTransfer};
 use crate::parse;
-use crate::runner::{InputStream, LineStream, PtySession, Runner};
+use crate::runner::{ChunkSender, InputStream, LineStream, PtySession, Runner};
 
 /// The largest archive this build will hand to a runtime.
 ///
@@ -241,6 +242,18 @@ impl Provider {
     /// regular file of a plausible size — a wrong file should be refused by name, not by having
     /// fed a runtime for an hour.
     pub async fn image_load_file(&self, path: &Path) -> Result<String, ShellError> {
+        self.image_load_file_with(path, |_| true).await
+    }
+
+    /// The same load, counting the archive bytes it hands to the runtime and stopping on request.
+    ///
+    /// The observer runs on the thread reading the file, once per chunk; its total is the archive's
+    /// size, which the caller already knows. `false` ends the transfer before the next chunk is
+    /// written, and the row reports it as cancelled.
+    pub async fn image_load_file_with<F>(&self, path: &Path, observe: F) -> Result<String, ShellError>
+    where
+        F: Fn(u64) -> bool + Send + Sync + 'static,
+    {
         self.require_image_load()?;
         let metadata = tokio::fs::metadata(path)
             .await
@@ -252,11 +265,10 @@ impl Provider {
             ));
         }
         ensure_archive_fits(metadata.len(), MAX_ARCHIVE_BYTES)?;
-        let file = tokio::fs::File::open(path)
-            .await
-            .map_err(|error| archive_read_failure(&error))?;
+        let path = path.to_path_buf();
+        let input = InputStream::from_producer(move |sink| read_archive(&path, sink, &observe));
         let argv = commands::load(self.runtime, &self.namespace);
-        let output = self.runner.stream_stdin(&argv, InputStream::from_reader(file)).await?;
+        let output = self.runner.stream_stdin(&argv, input).await?;
         Ok(output.trim().to_owned())
     }
 
@@ -368,6 +380,30 @@ fn ensure_archive_fits(size: u64, ceiling: u64) -> Result<(), ShellError> {
 
 fn archive_read_failure(error: &std::io::Error) -> ShellError {
     ShellError::container_command_failed("the image archive", format!("the file could not be read: {error}"))
+}
+
+/// Hands one archive to the runtime, reporting each chunk and stopping when asked.
+fn read_archive(
+    path: &Path,
+    sink: &mut ChunkSender,
+    observe: &(dyn Fn(u64) -> bool + Send + Sync),
+) -> Result<(), ShellError> {
+    let mut file = std::fs::File::open(path).map_err(|error| archive_read_failure(&error))?;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| archive_read_failure(&error))?;
+        if read == 0 {
+            return Ok(());
+        }
+        sink.write_all(&buffer[..read])
+            .map_err(|error| ShellError::container_command_failed("the image archive", error.to_string()))?;
+        if !observe(read as u64) {
+            return Err(ShellError::container_command_failed(
+                "the image archive",
+                "the transfer was cancelled",
+            ));
+        }
+    }
 }
 
 fn mebibytes(bytes: u64) -> u64 {
@@ -532,6 +568,11 @@ mod tests {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .push(bytes);
+            // The real runner prefers the source's own failure; a recorder that did not would let
+            // a cancelled or unreadable archive look like a successful load.
+            if let Some(detail) = input.failure() {
+                return Err(ShellError::container_command_failed("the standard input", detail));
+            }
             Ok(self.output.clone())
         }
 
@@ -866,6 +907,39 @@ mod tests {
             vec![b"an archive on disk".to_vec()],
             "the file's bytes, not its name, must be what the runtime reads"
         );
+    }
+
+    #[tokio::test]
+    async fn an_archive_load_reports_bytes_and_stops_when_the_observer_does() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        let contents = vec![b'x'; 128 * 1024 + 7];
+        let path = temporary_file("load-progress", &contents);
+        let recorder = Arc::new(RecordingRunner::default());
+        let provider = build_provider(ContainerRuntime::Docker, "", &recorder);
+
+        let seen = Arc::new(AtomicU64::new(0));
+        let counted = Arc::clone(&seen);
+        let loaded = provider
+            .image_load_file_with(&path, move |bytes| {
+                counted.fetch_add(bytes, Ordering::SeqCst);
+                true
+            })
+            .await
+            .expect("the archive is read");
+        assert_eq!(loaded, "");
+        assert_eq!(seen.load(Ordering::SeqCst), contents.len() as u64);
+
+        let stopped = provider
+            .image_load_file_with(&path, |_| false)
+            .await
+            .expect_err("the observer stopped it");
+        assert_eq!(stopped.code(), ErrorCode::ContainerCommandFailed);
+        assert!(
+            stopped.detail().unwrap_or_default().contains("cancelled"),
+            "the refusal says why it stopped: {stopped:?}"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
