@@ -15,11 +15,14 @@
 //! it over and write it back here. A server's environment and headers go in through
 //! `mcp_server_secrets_set` and never come out: every answer carries `hasSecrets`, never a value.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use sevenshell_api::{ApprovalDecision, AuditRecord};
+use sevenshell_api::{
+    ApprovalDecision, AuditRecord, BUILTIN_CATALOG, CatalogCategory, ToolAccess, ToolDescriptor, ToolRegistry,
+    ToolRisk, catalog_entry,
+};
 use sevenshell_error::ShellError;
-use sevenshell_mcp_client::McpServerSecrets;
+use sevenshell_mcp_client::{McpServerSecrets, split_tool_name};
 use sevenshell_types::{AppSettings, McpServerConfig};
 use tauri::{AppHandle, State};
 
@@ -257,5 +260,319 @@ pub async fn mcp_server_refresh(state: State<'_, ShellState>, server_id: String)
     match attempt {
         Ok(_) => Ok(view),
         Err(error) => Err(shell_error(&error)),
+    }
+}
+
+// -------------------------------------------------------------------------------------------
+// The tool catalogue
+// -------------------------------------------------------------------------------------------
+
+/// One tool as the capabilities page draws it.
+///
+/// Presentation only: the name is the key everything else uses, and `enabled` is the page's one
+/// decision — written back through the ordinary settings save, never through this command.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpCatalogTool {
+    pub name: String,
+    pub title: String,
+    pub description: String,
+    pub access: ToolAccess,
+    pub risk: ToolRisk,
+    pub category: CatalogCategory,
+    pub enabled: bool,
+    /// `null` for a built-in tool; otherwise the id of the external server that offers it.
+    pub source: Option<String>,
+}
+
+/// How many tools there are and how many are switched on, for the page's summary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpCatalogCounts {
+    pub total: usize,
+    pub enabled: usize,
+}
+
+/// Everything the capabilities page has to draw, in one answer.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpCatalog {
+    pub tools: Vec<McpCatalogTool>,
+    pub counts: McpCatalogCounts,
+}
+
+/// Every tool this installation can switch on and off.
+///
+/// Two lists answer two different questions. The catalogue says a tool *exists* even when it is
+/// switched off — a page that drew only the registry's list could not offer the switch back on —
+/// while the registry says whether it is offered right now. External servers' tools join from the
+/// manager, which is the only side that knows what a server announced; their switch is the server's
+/// own `enabled` flag together with the per-tool set.
+#[tauri::command]
+pub fn mcp_catalog(state: State<'_, ShellState>) -> Result<McpCatalog, ShellError> {
+    let settings = settings_or_default();
+    let shared = state.shared();
+    Ok(build_catalog(
+        shared.registry(),
+        state.mcp_client().tools(),
+        &settings.mcp_client_servers,
+    ))
+}
+
+fn build_catalog(registry: &ToolRegistry, external: Vec<ToolDescriptor>, servers: &[McpServerConfig]) -> McpCatalog {
+    // A pristine built-in registry is where a switched-off tool's title and description still live:
+    // the live registry leaves a disabled tool out entirely, and a row with no words beside its
+    // switch would make the page unreadable exactly where somebody is looking for something.
+    let reference = sevenshell_api::local::default_registry();
+    let offered: BTreeSet<String> = registry
+        .descriptors()
+        .into_iter()
+        .map(|descriptor| descriptor.name)
+        .collect();
+    let disabled = registry.disabled_tools();
+
+    let mut tools = Vec::with_capacity(BUILTIN_CATALOG.len() + external.len());
+    for entry in BUILTIN_CATALOG {
+        let Some(descriptor) = reference.descriptor(entry.name) else {
+            log::error!(
+                "the tool catalogue names `{}` but this build registers no such tool; the page leaves it out",
+                entry.name
+            );
+            continue;
+        };
+        tools.push(McpCatalogTool {
+            name: entry.name.to_owned(),
+            title: descriptor.title,
+            description: descriptor.description,
+            access: descriptor.access,
+            risk: entry.risk,
+            category: entry.category,
+            // Present in the live registry unless the settings page switched it off.
+            enabled: offered.contains(entry.name),
+            source: None,
+        });
+    }
+
+    // A registry tool the page cannot place is a build mistake rather than a page state. It is said
+    // out loud and left out: one un-catalogued name must not blank the nine a person came to see.
+    for name in &offered {
+        if catalog_entry(name).is_none() && split_tool_name(name).is_none() {
+            log::error!("the tool registry offers `{name}`, which the tool catalogue does not name");
+        }
+    }
+
+    for descriptor in external {
+        let Some((server, _tool)) = split_tool_name(&descriptor.name) else {
+            log::error!("an external tool's name does not name a server: `{}`", descriptor.name);
+            continue;
+        };
+        let server_enabled = servers
+            .iter()
+            .find(|config| config.id == server)
+            .is_some_and(|config| config.enabled);
+        tools.push(McpCatalogTool {
+            name: descriptor.name.clone(),
+            title: descriptor.title,
+            description: descriptor.description,
+            access: descriptor.access,
+            // An external server says nothing about how dangerous its tool is beyond the protocol's
+            // own read-only hint, so the access class is the whole of what can be promised here.
+            risk: match descriptor.access {
+                ToolAccess::Read => ToolRisk::Read,
+                ToolAccess::Write => ToolRisk::Write,
+            },
+            category: CatalogCategory::External,
+            enabled: server_enabled && !disabled.contains(&descriptor.name),
+            source: Some(server.to_owned()),
+        });
+    }
+
+    tools.sort_by(|left, right| {
+        category_rank(left.category)
+            .cmp(&category_rank(right.category))
+            .then_with(|| left.name.cmp(&right.name))
+    });
+
+    let enabled = tools.iter().filter(|tool| tool.enabled).count();
+    McpCatalog {
+        counts: McpCatalogCounts {
+            total: tools.len(),
+            enabled,
+        },
+        tools,
+    }
+}
+
+/// The order the page lists categories in. Presentation, so it lives beside the answer rather than
+/// in the catalogue itself.
+fn category_rank(category: CatalogCategory) -> u8 {
+    match category {
+        CatalogCategory::Sessions => 0,
+        CatalogCategory::Exec => 1,
+        CatalogCategory::Files => 2,
+        CatalogCategory::Containers => 3,
+        CatalogCategory::Kubernetes => 4,
+        CatalogCategory::External => 5,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sevenshell_api::local;
+    use sevenshell_types::McpServerTransport;
+
+    fn external_tool(name: &str, access: ToolAccess) -> ToolDescriptor {
+        ToolDescriptor {
+            name: name.to_owned(),
+            title: name.to_owned(),
+            description: "a tool of somebody else's server".to_owned(),
+            input_schema: sevenshell_api::ToolInputSchema::object(serde_json::json!({}), &[]),
+            access,
+        }
+    }
+
+    fn server(id: &str, enabled: bool) -> McpServerConfig {
+        let mut server = McpServerConfig::new(id, id, McpServerTransport::Stdio);
+        server.command = Some("unused".to_owned());
+        server.enabled = enabled;
+        server
+    }
+
+    fn find<'a>(catalog: &'a McpCatalog, name: &str) -> &'a McpCatalogTool {
+        catalog
+            .tools
+            .iter()
+            .find(|tool| tool.name == name)
+            .unwrap_or_else(|| panic!("`{name}` is in the catalogue"))
+    }
+
+    #[test]
+    fn a_switched_off_built_in_is_still_listed_and_counted_but_not_enabled() {
+        // The page has to be able to switch it back on, so it must be drawn; the registry is where
+        // the answer "not offered right now" comes from.
+        let registry = local::default_registry();
+        registry.set_disabled_tools(BTreeSet::from(["sshell_exec_run".to_owned()]));
+
+        let catalog = build_catalog(&registry, Vec::new(), &[]);
+
+        let exec = find(&catalog, "sshell_exec_run");
+        assert!(!exec.enabled, "the settings file switched it off");
+        assert_eq!(exec.category, CatalogCategory::Exec);
+        assert_eq!(exec.risk, ToolRisk::CommandGraded);
+        assert!(!exec.title.is_empty(), "a disabled row still has words");
+        assert!(!exec.description.is_empty());
+        assert_eq!(exec.source, None, "a built-in tool belongs to no server");
+        assert_eq!(
+            exec.access,
+            ToolAccess::Write,
+            "from the descriptor, not from the catalogue"
+        );
+
+        assert_eq!(catalog.counts.total, 10, "every built-in is drawn");
+        assert_eq!(catalog.counts.enabled, 9);
+        assert!(find(&catalog, "sshell_sessions_list").enabled);
+    }
+
+    #[test]
+    fn an_external_tool_names_the_server_that_offers_it() {
+        let catalog = build_catalog(
+            &local::default_registry(),
+            vec![
+                external_tool("mcp__files__read", ToolAccess::Read),
+                external_tool("mcp__files__write", ToolAccess::Write),
+                external_tool("mcp__tickets__read", ToolAccess::Read),
+            ],
+            &[server("files", true), server("tickets", false)],
+        );
+
+        let read = find(&catalog, "mcp__files__read");
+        assert_eq!(read.source.as_deref(), Some("files"));
+        assert_eq!(read.category, CatalogCategory::External);
+        assert_eq!(read.risk, ToolRisk::Read);
+        assert!(read.enabled);
+
+        let write = find(&catalog, "mcp__files__write");
+        assert_eq!(write.source.as_deref(), Some("files"));
+        assert_eq!(write.risk, ToolRisk::Write, "the protocol's read-only hint is the risk");
+        assert!(write.enabled);
+
+        let switched_off = find(&catalog, "mcp__tickets__read");
+        assert_eq!(switched_off.source.as_deref(), Some("tickets"));
+        assert!(!switched_off.enabled, "a switched-off server offers nothing");
+
+        assert_eq!(catalog.counts.total, 13, "ten built-ins and three external tools");
+        assert_eq!(catalog.counts.enabled, 12);
+    }
+
+    #[test]
+    fn an_external_tool_in_the_disabled_set_is_not_enabled() {
+        let registry = local::default_registry();
+        registry.set_disabled_tools(BTreeSet::from(["mcp__files__read".to_owned()]));
+
+        let catalog = build_catalog(
+            &registry,
+            vec![external_tool("mcp__files__read", ToolAccess::Read)],
+            &[server("files", true)],
+        );
+
+        assert!(!find(&catalog, "mcp__files__read").enabled);
+        assert_eq!(catalog.counts.total, 11);
+        assert_eq!(
+            catalog.counts.enabled, 10,
+            "the ten built-ins are untouched by an external tool's switch"
+        );
+    }
+
+    #[test]
+    fn the_list_runs_by_category_then_name() {
+        let catalog = build_catalog(
+            &local::default_registry(),
+            vec![
+                external_tool("mcp__files__read", ToolAccess::Read),
+                external_tool("mcp__alpha__read", ToolAccess::Read),
+            ],
+            &[server("files", true), server("alpha", true)],
+        );
+
+        let keys: Vec<(u8, &str)> = catalog
+            .tools
+            .iter()
+            .map(|tool| (category_rank(tool.category), tool.name.as_str()))
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort();
+        assert_eq!(keys, sorted, "the page draws the list in a stable order");
+        assert_eq!(
+            keys.last().map(|(rank, _)| *rank),
+            Some(category_rank(CatalogCategory::External)),
+            "other people's tools come after this build's own"
+        );
+    }
+
+    #[test]
+    fn the_json_is_camel_case_and_a_built_in_source_is_null() {
+        let catalog = build_catalog(&local::default_registry(), Vec::new(), &[]);
+        let rendered = serde_json::to_value(&catalog).expect("the answer is JSON");
+
+        let first = &rendered["tools"][0];
+        for key in [
+            "name",
+            "title",
+            "description",
+            "access",
+            "risk",
+            "category",
+            "enabled",
+            "source",
+        ] {
+            assert!(first.get(key).is_some(), "the page matches on `{key}`: {rendered}");
+        }
+        assert!(
+            first["source"].is_null(),
+            "a built-in tool names no server, and the page matches on null rather than a missing field"
+        );
+        assert_eq!(rendered["counts"]["total"], serde_json::json!(10));
+        assert_eq!(rendered["counts"]["enabled"], serde_json::json!(10));
     }
 }

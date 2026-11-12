@@ -13,7 +13,7 @@
 //! than by each tool, so "every call is audited" is a property of the list and not of anybody's
 //! memory.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -67,6 +67,9 @@ pub struct ToolRegistry {
     /// enough to clone the list: a call does not hold it across an await, because a server that
     /// took a minute to answer must not block every other call.
     sources: RwLock<Vec<Arc<dyn ToolSource>>>,
+    /// Names the settings page switched off. Kept here rather than in every caller so the one list
+    /// an agent, the bridge and the assistant read is also the one list that honours the switch.
+    disabled: RwLock<BTreeSet<String>>,
 }
 
 impl ToolRegistry {
@@ -111,6 +114,31 @@ impl ToolRegistry {
         }
     }
 
+    /// Replaces the set of tools the settings page has switched off.
+    ///
+    /// A live change: the next `descriptors()` and `call()` see it, which is what makes the bridge's
+    /// `GET /tools` and the assistant agree with the page without a restart.
+    pub fn set_disabled_tools(&self, disabled: BTreeSet<String>) {
+        match self.disabled.write() {
+            Ok(mut current) => *current = disabled,
+            Err(poisoned) => *poisoned.into_inner() = disabled,
+        }
+    }
+
+    pub fn disabled_tools(&self) -> BTreeSet<String> {
+        match self.disabled.read() {
+            Ok(disabled) => disabled.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    pub fn is_disabled(&self, name: &str) -> bool {
+        match self.disabled.read() {
+            Ok(disabled) => disabled.contains(name),
+            Err(poisoned) => poisoned.into_inner().contains(name),
+        }
+    }
+
     /// Every descriptor, in name order — the built-in tools and the ones the sources offer now.
     ///
     /// A name two places claim is served once, by the one that was already there: the built-in
@@ -141,11 +169,15 @@ impl ToolRegistry {
             }
         }
 
+        merged.retain(|name, _| !self.is_disabled(name));
         merged.into_values().collect()
     }
 
-    /// One descriptor, when the registry or one of its sources has it.
+    /// One descriptor, when the registry or one of its sources has it and it is switched on.
     pub fn descriptor(&self, name: &str) -> Option<ToolDescriptor> {
+        if self.is_disabled(name) {
+            return None;
+        }
         if let Some(tool) = self.tools.get(name) {
             return Some(tool.descriptor());
         }
@@ -177,6 +209,10 @@ impl ToolRegistry {
     /// through.
     pub async fn call(&self, context: &ToolContext, call: ToolCall) -> ToolOutcome {
         let started = Instant::now();
+
+        if self.is_disabled(&call.name) {
+            return refuse_disabled(context, &call.name, started);
+        }
 
         if let Some(tool) = self.tools.get(&call.name).cloned() {
             let descriptor = tool.descriptor();
@@ -233,6 +269,19 @@ fn refuse_scope(context: &ToolContext, name: &str, started: Instant) -> ToolOutc
     ToolOutcome::failed(error)
 }
 
+/// Refuses a tool the settings page switched off. It is a decision, like a scope refusal, and is
+/// written down the same way rather than looking like a missing tool.
+fn refuse_disabled(context: &ToolContext, name: &str, started: Instant) -> ToolOutcome {
+    let error = ToolError::tool_disabled(name);
+    context.audit(
+        AuditRecord::new(name, context.scope(), AuditStatus::Denied)
+            .with_origin(context.origin())
+            .with_duration_ms(millis(started.elapsed()))
+            .with_error_code(error.code().to_owned()),
+    );
+    ToolOutcome::failed(error)
+}
+
 /// Turns one tool's answer into the outcome the caller gets, and writes the one audit line.
 fn finish(result: Result<ToolResult, ToolError>, context: &ToolContext, name: String, started: Instant) -> ToolOutcome {
     match result {
@@ -248,8 +297,12 @@ fn finish(result: Result<ToolResult, ToolError>, context: &ToolContext, name: St
         Err(error) => {
             // A policy refusal is a decision, not a malfunction: the audit's own word for it is
             // `denied`, which is also what the settings page shows. Every other failure keeps
-            // `failed` so the two are never confused when somebody reads the trail later.
-            let status = if error.code() == "POLICY-DENIED" {
+            // `failed` so the two are never confused when somebody reads the trail later. A hidden
+            // session is the same kind of decision as a scope refusal: the rules said no.
+            let status = if matches!(
+                error.code(),
+                "POLICY-DENIED" | "MCP-SESSION-HIDDEN" | "MCP-TOOL-DISABLED"
+            ) {
                 AuditStatus::Denied
             } else {
                 AuditStatus::Failed

@@ -388,6 +388,14 @@ struct StoredSettings {
     mcp_audit_retention_days: u32,
     #[serde(default = "mcp_max_result_bytes_default")]
     mcp_max_result_bytes: u64,
+    /// Absent in a file written before the settings page could switch tools off, which reads as
+    /// every tool on.
+    #[serde(default)]
+    mcp_tool_policy: sevenshell_types::McpToolPolicy,
+    /// Absent in a file written before per-session scopes existed, which reads as the global scope
+    /// for every session and every session visible.
+    #[serde(default)]
+    mcp_access_policy: sevenshell_types::McpAccessPolicy,
     /// The assistant's providers. Absent in a file written before there was an assistant, which
     /// reads as "nothing configured" — there is nowhere to send a question yet.
     ///
@@ -471,6 +479,8 @@ impl StoredSettings {
             mcp_approval_timeout_seconds: settings.mcp_approval_timeout_seconds,
             mcp_audit_retention_days: settings.mcp_audit_retention_days,
             mcp_max_result_bytes: settings.mcp_max_result_bytes,
+            mcp_tool_policy: settings.mcp_tool_policy.clone(),
+            mcp_access_policy: settings.mcp_access_policy.clone(),
             ai_providers: settings
                 .ai_providers
                 .iter()
@@ -579,6 +589,8 @@ impl StoredSettings {
             mcp_approval_timeout_seconds: normalize_mcp_approval_timeout_seconds(self.mcp_approval_timeout_seconds),
             mcp_audit_retention_days: normalize_mcp_audit_retention_days(self.mcp_audit_retention_days),
             mcp_max_result_bytes: normalize_mcp_max_result_bytes(self.mcp_max_result_bytes),
+            mcp_tool_policy: self.mcp_tool_policy.clone(),
+            mcp_access_policy: self.mcp_access_policy.clone(),
             ai_providers,
             ai_default_provider_id,
             ai_context_enabled: self.ai_context_enabled,
@@ -728,6 +740,8 @@ mod tests {
             mcp_approval_timeout_seconds: mcp_approval_timeout_seconds_default(),
             mcp_audit_retention_days: mcp_audit_retention_days_default(),
             mcp_max_result_bytes: mcp_max_result_bytes_default(),
+            mcp_tool_policy: Default::default(),
+            mcp_access_policy: Default::default(),
             ai_providers: Vec::new(),
             ai_default_provider_id: None,
             ai_context_enabled: ai_context_enabled_default(),

@@ -32,7 +32,7 @@ use crate::mcp::approval::{ApprovalRegistry, TauriPresenter};
 use crate::mcp::auth::{generate_token, tokens_match};
 use crate::mcp::endpoint;
 use crate::mcp::server::{CallLimits, CallRegistry, RegistryHandler, ServerState, router};
-use crate::state::{SharedAgent, SharedAudit};
+use crate::state::{AgentPolicy, SharedAgent, SharedAudit};
 
 /// How long a stop waits for in-flight requests before cutting them off.
 ///
@@ -67,6 +67,12 @@ pub struct McpRuntime {
     /// The trail both callers write to. Not owned by a run: the assistant writes to the same file
     /// while no listener is up, and two writers appending to one file is what the shared sink is for.
     audit: Arc<SharedAudit>,
+    /// The access policy the handler reads on every call.
+    ///
+    /// A handle rather than a copy of the settings, so a page that hides a session or narrows one's
+    /// scope takes effect on a listener that has been up for hours — the run's own limits keep the
+    /// scope it started with only as the status page's answer.
+    policy: AgentPolicy,
     /// The calls this listener is running, by the id their caller gave them.
     ///
     /// The listener's own rather than a run's: a stop is exactly the moment somebody wants every
@@ -90,6 +96,7 @@ impl McpRuntime {
             connections: Arc::clone(shared.connections()),
             approvals: Arc::clone(shared.approvals()),
             audit: Arc::clone(shared.audit()),
+            policy: shared.policy_handle(),
             calls: Arc::new(CallRegistry::new()),
             running: Mutex::new(None),
             stopped: AtomicU64::new(0),
@@ -158,6 +165,7 @@ impl McpRuntime {
             Arc::new(TauriPresenter::new(app.clone())),
             self.audit.clone() as Arc<dyn AuditSink>,
             limits,
+            self.policy.clone(),
         ));
         let service = router(Arc::new(
             ServerState::new(token, handler)

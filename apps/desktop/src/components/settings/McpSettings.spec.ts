@@ -16,6 +16,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   mcpEnable: vi.fn(),
   mcpDisable: vi.fn(),
   mcpClientConfig: vi.fn(),
+  mcpCatalog: vi.fn(),
   mcpAuditTail: vi.fn(),
   mcpApprovalAnswer: vi.fn(),
   onMcpApproval: vi.fn(),
@@ -427,5 +428,61 @@ describe("the row's own actions", () => {
     await vi.waitFor(() => expect(removeMock).toHaveBeenCalledWith("files"));
 
     await vi.waitFor(() => expect(host.querySelectorAll("[data-mcp-server-row]").length).toBe(0));
+  });
+});
+
+describe("the client templates", () => {
+  /** A host answer naming the bridge, plus a token this page must never draw or copy. */
+  function statusWithToken(): void {
+    statusMock.mockResolvedValue({
+      enabled: true,
+      port: 51234,
+      scope: "readOnly",
+      clientConfig: JSON.stringify({
+        mcpServers: {
+          "7shell": {
+            command: "C:/Program Files/7Shell/sshell-mcp.exe",
+            env: {
+              SEVENSHELL_ENDPOINT_FILE: "C:/config/mcp-endpoint.json",
+              SEVENSHELL_TOKEN: "a-token-that-must-not-be-shown",
+            },
+          },
+        },
+      }),
+      auditPath: "/config/audit.jsonl",
+      pendingApprovals: 0,
+    });
+  }
+
+  it("offers one tab per client, pointing at the bridge and never at a token", async () => {
+    statusWithToken();
+    await mount();
+
+    expect(host.querySelectorAll("[data-mcp-client-tab]").length).toBe(6);
+    const snippet = host.querySelector("[data-mcp-client-snippet]");
+    expect(snippet?.textContent).toContain("sshell-mcp.exe");
+    expect(snippet?.textContent).not.toContain("a-token-that-must-not-be-shown");
+
+    // VS Code keeps its servers under `servers`, not under the host's `mcpServers`.
+    await press('[data-mcp-client-tab="vscode"]');
+    const vscode = host.querySelector("[data-mcp-client-snippet]");
+    expect(vscode?.textContent).toContain('"servers"');
+    expect(vscode?.textContent).not.toContain("a-token-that-must-not-be-shown");
+    expect(host.textContent).toContain(".vscode/mcp.json");
+  });
+
+  it("copies the template on screen, not the host's whole answer", async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    statusWithToken();
+    await mount();
+
+    await press("[data-mcp-client-copy]");
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+
+    const copied = writeText.mock.calls[0]?.[0] ?? "";
+    expect(copied).toContain("sshell-mcp.exe");
+    expect(copied).not.toContain("a-token-that-must-not-be-shown");
+    expect(host.textContent).toContain("Copied to the clipboard.");
   });
 });

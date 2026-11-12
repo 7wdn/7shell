@@ -117,6 +117,8 @@
       "serverDuplicate": "Another external server already uses the id {server}.",
       "serverConnectFailed": "The external MCP server {server} could not be reached, or refused the connection.",
       "invalidArguments": "The external MCP server's settings are not complete enough to use.",
+      "toolDisabled": "The tool {tool} is switched off in Agent access.",
+      "sessionHidden": "The session {session} is not visible under the current agent access rules.",
       "serverNotFound": "No external MCP server is configured with that id.",
       "duplicateTool": "The external server {server} offers two tools named {tool}.",
       "invalidTool": "The external server {server} offers a tool this build cannot serve ({tool}).",

@@ -19,13 +19,16 @@
 //! Dependencies point downwards only: this crate knows the core, the policy and the wire types, and
 //! nothing here knows that a webview exists.
 
+mod catalog;
 mod context;
 mod endpoint;
 mod error;
 pub mod local;
+mod policy;
 mod registry;
 mod tool;
 
+pub use catalog::{BUILTIN_CATALOG, CatalogCategory, CatalogEntry, ToolRisk, catalog_entry};
 pub use context::{
     ApprovalBroker, ApprovalDecision, ApprovalReason, ApprovalRecord, ApprovalRequest, AuditRecord, AuditSink,
     AuditStatus, Cancel, DenyingBroker, NoAuditSink, ToolContext,
@@ -34,6 +37,7 @@ pub use endpoint::{
     CALL_ID_HEADER, ENDPOINT_FILE_NAME, EndpointFile, MAX_BODY_BYTES, TOOL_CALL_PATH, TOOL_CANCEL_PATH, TOOLS_PATH,
 };
 pub use error::ApiError;
+pub use policy::McpAccess;
 pub use registry::{Tool, ToolRegistry, ToolSource, scope_allows};
 pub use tool::{
     ToolAccess, ToolAudit, ToolCall, ToolDescriptor, ToolError, ToolInputSchema, ToolOutcome, ToolResult,

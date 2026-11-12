@@ -140,6 +140,9 @@ impl Tool for ContainersListTool {
     async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
         let input: ContainersListInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
+        // Before the runtime connection is opened: the session's own tier is what decides whether
+        // this runtime is reachable at all.
+        context.guard_session(session_id, ToolAccess::Read)?;
 
         let containers = gate::bounded(context, gate::READ_TIMEOUT, async {
             context.cache().containers(session_id).await.map_err(ToolError::from)
@@ -173,6 +176,9 @@ impl Tool for ContainerActionTool {
         if container_id.is_empty() {
             return Err(ToolError::invalid_arguments("containerId is empty"));
         }
+        // Before the verdict is read and before anybody is asked: an action on a session this
+        // caller may not see never becomes a question, let alone a command.
+        context.guard_session(session_id, ToolAccess::Write)?;
 
         let action = input.action;
         let subject = gate::subject(&format!("{} {container_id}", action.as_str()));

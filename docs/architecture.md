@@ -478,6 +478,28 @@ The bridge is a Tauri sidecar: the development and build commands stage it under
 `src-tauri/binaries/`, and `externalBin` puts it beside the application. The "copy client
 configuration" button names that path and the endpoint file; it never carries the token.
 
+## Agent access
+
+The settings page asks three questions, in the order someone asks them. **Access** is where the
+listener, its port, the bridge sidecar, the client configuration snippets and the external servers
+live. **Capabilities** is the tool catalogue: every built-in tool grouped by what it is, with a
+switch each, plus the tools external servers currently offer. **Permissions** is the default tier
+and the exceptions: a saved session can be hidden, a group or one session can be narrowed or
+widened, and every row shows the tier actually in force and which rule chose it.
+
+The page is only a view. The host builds one `McpAccess` snapshot from the settings and the saved
+sessions (a session's own tier, then the nearest group with one, then the global default) and puts
+it on the same `SharedAgent` the bridge and the assistant read. The registry holds the switched-off
+names. Every tool that acts on a session calls one guard before it opens a connection, asks for an
+approval or writes anything: a hidden session is refused by name, and a session whose tier does not
+offer the tool's access class is a policy refusal. A hidden session is also filtered out of
+`sshell_sessions_list`, so its name never becomes an agent's fact. The bridge's `GET /tools`, the
+in-window assistant and an external MCP client all read that one table; turning a tool off or
+hiding a session needs no listener restart.
+
+A destructive command or action still asks a person in every tier. "Full access" is about which
+tools are offered, never about bypassing the gate.
+
 ## The assistant
 
 The in-application assistant is a second caller of the same tool layer an MCP client reaches. A

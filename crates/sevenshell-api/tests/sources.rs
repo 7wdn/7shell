@@ -5,6 +5,7 @@
 //! the scope gate comes before anything runs — a source's tool is not a way around the tier — and
 //! that an external call leaves the same single audit line a built-in one does.
 
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -196,6 +197,44 @@ async fn a_source_tool_is_gated_by_the_scope_before_it_runs() {
         sevenshell_api::AuditStatus::Denied,
         "a scope refusal is a decision, and the trail says so"
     );
+}
+
+#[tokio::test]
+async fn a_switched_off_tool_is_not_offered_and_a_direct_call_is_refused_by_name() {
+    let audit = Arc::new(MemoryAudit::default());
+    let (_directory, context) = context(McpScope::ReadOnly, Arc::clone(&audit));
+    let registry = local::default_registry();
+
+    assert!(registry.contains("sshell_sessions_list"));
+    registry.set_disabled_tools(BTreeSet::from(["sshell_sessions_list".to_owned()]));
+
+    let names: Vec<String> = registry
+        .descriptors()
+        .into_iter()
+        .map(|descriptor| descriptor.name)
+        .collect();
+    assert_eq!(names.len(), 9, "the other nine tools stay on the list");
+    assert!(
+        !names.iter().any(|name| name == "sshell_sessions_list"),
+        "a switched-off tool must not be advertised: {names:?}"
+    );
+    assert!(!registry.contains("sshell_sessions_list"));
+    assert!(registry.descriptor("sshell_sessions_list").is_none());
+
+    // A stale agent that still has the name gets a refusal, not "no such tool": the tool exists and
+    // somebody switched it off, which is a different sentence.
+    let error = error_of(registry.call(&context, call("sshell_sessions_list")).await);
+    assert_eq!(error.code(), "MCP-TOOL-DISABLED");
+    assert_eq!(error.message_key(), Some("errors.mcp.toolDisabled"));
+    assert_eq!(
+        error.message_params().get("tool").map(String::as_str),
+        Some("sshell_sessions_list")
+    );
+
+    let records = audit.records.lock().expect("not poisoned").clone();
+    assert_eq!(records.len(), 1, "a refused call is still one audit line");
+    assert_eq!(records[0].status, sevenshell_api::AuditStatus::Denied);
+    assert_eq!(records[0].code.as_deref(), Some("MCP-TOOL-DISABLED"));
 }
 
 #[tokio::test]

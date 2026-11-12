@@ -304,6 +304,7 @@ pub fn run() {
             commands::mcp::mcp_client_config,
             commands::mcp::mcp_audit_tail,
             commands::mcp::mcp_approval_answer,
+            commands::mcp::mcp_catalog,
             commands::mcp::mcp_servers_list,
             commands::mcp::mcp_server_save,
             commands::mcp::mcp_server_remove,
@@ -398,6 +399,12 @@ fn apply_startup_shell_settings(app: &tauri::AppHandle) {
         Ok(settings) => {
             apply_shell_settings(app, &settings);
             if let Some(state) = app.try_state::<state::ShellState>() {
+                // What an agent may see and do, before anything can ask. The vault is still locked
+                // here, so a group's scope cannot be resolved yet — the visibility allowlist and the
+                // session-level overrides are applied now, and the whole snapshot is rebuilt when the
+                // vault opens. The tool registry's disabled set moves in the same pass, so a tool the
+                // settings file switched off is never offered by a listener that was already up.
+                state.apply_agent_policy(&settings);
                 // The external servers first: the listener's `GET /tools` answers with whatever the
                 // registry holds at the moment it is asked, and a configured server's tools should
                 // be on the way before the first agent asks. Applied before the socket opens, and

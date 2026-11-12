@@ -2,6 +2,11 @@
   "mcp": {
     "title": "Agent 访问（MCP）",
     "description": "一个只在本机回环地址上的控制服务，供 MCP 桥调用：Agent 可以查看你的会话，并在你允许时改动它们。它只监听 127.0.0.1，每次调用都必须带上一个令牌，而这个窗口永远看不到那个令牌。",
+    "tabs": {
+      "access": "接入方式",
+      "capabilities": "能力",
+      "permissions": "权限管理"
+    },
     "switch": {
       "label": "允许 Agent 访问",
       "help": "默认关闭，由你自己打开。打开期间，本机在回环接口上开一个端口，并把桥需要的令牌写进一个只有你的账户能读的文件；关闭时端口关掉，那个文件也会删掉。"
@@ -20,12 +25,86 @@
       "auditPath": "审计日志",
       "countNote": "端口和待审批数量来自监听器本身，而不是设置文件——写下来的和正在运行的是两个答案。"
     },
-    "config": {
+    "clients": {
       "title": "客户端配置",
-      "description": "下面这段配置是复制走的，不显示在页面上：把它放进你的 MCP 客户端配置里。它只写桥的位置和端点文件，不含令牌——桥自己从那个文件里读密钥。",
-      "copy": "复制客户端配置",
+      "description": "选你正在用的客户端。每段配置都会启动随本应用一起安装的桥，并告诉它端点文件在哪；配置里没有令牌——桥自己从那个文件里读密钥。",
+      "where": "写进",
+      "copy": "复制配置",
       "copied": "已复制到剪贴板。",
-      "copyFailed": "剪贴板拒绝了这段文本。"
+      "copyFailed": "剪贴板拒绝了这段文本。",
+      "unavailable": "现在读不到桥的位置。打开监听器，或者安装打包版本，配置片段就会出现。",
+      "name": {
+        "claudeCode": "Claude Code",
+        "cursor": "Cursor",
+        "vscode": "VS Code",
+        "windsurf": "Windsurf",
+        "qoder": "Qoder",
+        "codex": "Codex"
+      }
+    },
+    "capabilities": {
+      "title": "Agent 可以调用的工具",
+      "description": "把 Agent 不该调用的工具关掉。桥、本窗口的助手和所有外部客户端读的是同一张表；关掉的工具会被拒绝，而不只是不出现在列表里。",
+      "search": "搜索工具",
+      "onlyEnabled": "只看已开启",
+      "refresh": "刷新",
+      "counts": "已开启 {enabled} / 共 {total} 个工具",
+      "loading": "正在读取工具目录…",
+      "empty": "没有匹配的工具。",
+      "apply": "应用",
+      "applied": "已应用，Agent 看到的工具列表已经更新。",
+      "failed": "设置没能写入。",
+      "source": "来自 {source}",
+      "serverOff": "服务器已停用",
+      "externalHint": "外部工具也可以在这里单独关掉。服务器本身在「接入方式」页被停用时，它的工具会一直关闭，直到服务器重新启用；行上会标出来。",
+      "category": {
+        "sessions": "会话",
+        "exec": "命令",
+        "files": "文件",
+        "containers": "容器",
+        "kubernetes": "集群",
+        "external": "外部服务器"
+      },
+      "risk": {
+        "read": "只读",
+        "write": "写入",
+        "commandGraded": "按命令分级"
+      }
+    },
+    "permissions": {
+      "title": "默认权限与例外",
+      "description": "先选一个默认层级，再为组或会话写例外。会话自己的设置优先于它所在的组，组优先于默认；没写例外的一律跟随默认。",
+      "defaultTitle": "默认层级",
+      "defaultHint": "对每一个没有自己设置的已保存会话生效。可见性和例外在下面按行设置。",
+      "table": {
+        "title": "各层级允许什么",
+        "tier": "层级",
+        "allows": "允许",
+        "asks": "仍会先问",
+        "asksValue": "破坏性命令，以及容器和集群的改动"
+      },
+      "sessionsTitle": "会话与组",
+      "sessionsDescription": "取消勾选一个会话，Agent 就完全看不到它。组上的勾覆盖它下面的所有会话；下拉框写的是这一行自己的层级，旁边是真正生效的层级和它的来源。",
+      "search": "搜索会话",
+      "onlyOverrides": "只看有例外的",
+      "inherit": "继承",
+      "sessionScope": "这个会话的层级",
+      "groupScope": "这个组的层级",
+      "source": {
+        "session": "本会话自己的设置",
+        "group": "来自组「{group}」",
+        "global": "跟随默认"
+      },
+      "hidden": "已隐藏",
+      "allowlistHint": "已经隐藏过会话，所以只有下面勾选的会话可见。之后再保存的会话默认是隐藏的，需要在这里勾上。",
+      "allowAll": "显示所有会话",
+      "groupCount": "{count} 个会话",
+      "noSessions": "还没有保存的会话。",
+      "loading": "正在读取会话…",
+      "empty": "没有匹配的行。",
+      "apply": "应用",
+      "applied": "已应用，会话和工具会按这些规则执行。",
+      "failed": "设置没能写入。"
     },
     "fields": {
       "heading": "设置",
@@ -128,6 +207,7 @@
     },
     "audit": {
       "title": "最近活动",
+      "open": "查看 MCP 调用记录",
       "description": "本机审计文件的末尾几行：谁调用了什么、结果如何、用了多久。这里没有凭据，也没有调用读到的正文。",
       "empty": "还没有 Agent 调用过这个构建。",
       "loading": "正在读取审计日志…",

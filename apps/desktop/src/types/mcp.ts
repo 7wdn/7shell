@@ -230,3 +230,60 @@ export const MCP_MAX_RESULT_BYTES_MAX = 16_777_216;
 
 /** How many audit lines the settings page asks for at a time. */
 export const MCP_AUDIT_TAIL_LIMIT = 50;
+
+/**
+ * The heading a tool is drawn under, from `sevenshell_api::CatalogCategory`.
+ *
+ * A closed list rather than a prefix rule: the page groups by what a tool *is*, and a category that
+ * arrived only in a newer build's catalog would be drawn under the external heading rather than
+ * dropped — see {@link isMcpToolCategory}.
+ */
+export type McpToolCategory = "sessions" | "exec" | "files" | "containers" | "kubernetes" | "external";
+
+/** The categories, in the order the capabilities page lists them. */
+export const MCP_TOOL_CATEGORIES: readonly McpToolCategory[] = [
+  "sessions",
+  "exec",
+  "files",
+  "containers",
+  "kubernetes",
+  "external",
+];
+
+/** How carefully a tool has to be read before switching it on, from `sevenshell_api::ToolRisk`. */
+export type McpToolRisk = "read" | "write" | "commandGraded";
+
+/** What a tool does to what it touches, as the registry gates it. */
+export type McpToolAccess = "read" | "write";
+
+/**
+ * One tool as the catalog describes it.
+ *
+ * `source` is `null` for a built-in tool and the external server's id otherwise. It is the only
+ * thing that tells the two apart: an external tool may sit in any category, but its switch is its
+ * server's, not its own.
+ */
+export interface McpCatalogTool {
+  readonly name: string;
+  readonly title: string;
+  readonly description: string;
+  readonly access: McpToolAccess;
+  readonly risk: McpToolRisk;
+  readonly category: McpToolCategory;
+  readonly enabled: boolean;
+  readonly source: string | null;
+}
+
+/** The catalog the capabilities page draws, from `mcp_catalog`. */
+export interface McpCatalog {
+  readonly tools: readonly McpCatalogTool[];
+  readonly counts: {
+    readonly total: number;
+    readonly enabled: number;
+  };
+}
+
+/** Whether a value off the wire is a category this build draws. */
+export function isMcpToolCategory(value: unknown): value is McpToolCategory {
+  return MCP_TOOL_CATEGORIES.includes(value as McpToolCategory);
+}

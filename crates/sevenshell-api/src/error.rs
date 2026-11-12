@@ -97,6 +97,34 @@ impl ToolError {
         ApiError::Cancelled.into()
     }
 
+    /// A tool the settings page switched off. It is not offered, and a stale agent that calls it
+    /// anyway gets this rather than a "no such tool" that suggests a broken build.
+    pub fn tool_disabled(name: &str) -> Self {
+        Self::from_fields(ToolErrorFields {
+            code: "MCP-TOOL-DISABLED".to_owned(),
+            message: Some(format!("the tool `{name}` is switched off in Agent access")),
+            message_key: Some("errors.mcp.toolDisabled".to_owned()),
+            message_params: BTreeMap::from([("tool".to_owned(), name.to_owned())]),
+            detail: None,
+            audit: None,
+        })
+    }
+
+    /// A saved session the access policy hides. Its existence is not advertised in listings, but a
+    /// caller that names it is told why the call did not reach it.
+    pub fn session_hidden(id: &str) -> Self {
+        Self::from_fields(ToolErrorFields {
+            code: "MCP-SESSION-HIDDEN".to_owned(),
+            message: Some(format!(
+                "the session `{id}` is not visible under the current agent access rules"
+            )),
+            message_key: Some("errors.mcp.sessionHidden".to_owned()),
+            message_params: BTreeMap::from([("session".to_owned(), id.to_owned())]),
+            detail: None,
+            audit: None,
+        })
+    }
+
     /// A tool the configured scope does not offer. The message key is the catalog's, so the desktop
     /// can show the same sentence it shows for any other refused action.
     pub fn denied(action: &str) -> Self {

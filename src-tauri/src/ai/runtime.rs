@@ -301,6 +301,9 @@ impl AiRuntime {
         );
         let tool_context = ToolContext::new(Arc::clone(self.shared.connections().core()), settings.mcp_scope)
             .with_cache(Arc::clone(self.shared.connections()))
+            // The same resolved snapshot the bridge reads, taken when this run starts: what the
+            // assistant may reach is what the person allowed the agent, not a second opinion.
+            .with_access(self.shared.access())
             .with_approvals(Arc::new(broker))
             .with_audit(Arc::clone(self.shared.audit()) as Arc<dyn AuditSink>)
             .with_origin(AgentOrigin::Ai)

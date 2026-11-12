@@ -54,6 +54,7 @@ use sevenshell_types::{AgentOrigin, McpScope};
 
 use crate::mcp::approval::{ApprovalPresenter, ApprovalRegistry, WindowBroker};
 use crate::mcp::auth::{bearer_value, host_is_loopback, is_json_content_type, tokens_match};
+use crate::state::AgentPolicy;
 
 /// The longest call id this build will carry.
 ///
@@ -202,9 +203,19 @@ pub struct RegistryHandler {
     presenter: Arc<dyn ApprovalPresenter>,
     audit: Arc<dyn AuditSink>,
     limits: CallLimits,
+    /// What an agent may see and do right now.
+    ///
+    /// A handle rather than a value: the settings page can hide a session or narrow one session's
+    /// scope, and the next call must see it without the listener being restarted. Read on every call
+    /// so a change reaches a listener that has been up for hours.
+    policy: AgentPolicy,
 }
 
 impl RegistryHandler {
+    /// Assembled once, from the pieces the shell already holds. They stay arguments rather than
+    /// becoming a bundle: this list is the handler's whole world, and a wrapper struct would only
+    /// rename it.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         core: Arc<Core>,
         registry: Arc<ToolRegistry>,
@@ -214,6 +225,7 @@ impl RegistryHandler {
         presenter: Arc<dyn ApprovalPresenter>,
         audit: Arc<dyn AuditSink>,
         limits: CallLimits,
+        policy: AgentPolicy,
     ) -> Self {
         Self {
             core,
@@ -224,6 +236,7 @@ impl RegistryHandler {
             presenter,
             audit,
             limits,
+            policy,
         }
     }
 }
@@ -245,7 +258,10 @@ impl CallHandler for RegistryHandler {
             .with_cancel(cancel)
             // Who asked: a call through this endpoint is an MCP client's, and its approvals and its
             // audit line have to say so — the assistant uses the same registry and the same truth.
-            .with_origin(AgentOrigin::Mcp);
+            .with_origin(AgentOrigin::Mcp)
+            // The resolved snapshot, read now rather than captured when the listener started. It
+            // replaces the scope handed to `new` above, since it already knows the global default.
+            .with_access(self.policy.get());
 
         let outcome = self.registry.call(&context, call).await;
 
@@ -433,7 +449,8 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use serde_json::{Value, json};
     use sevenshell_api::{
-        AuditRecord, NoAuditSink, Tool, ToolAccess, ToolDescriptor, ToolError, ToolInputSchema, ToolResult, local,
+        AuditRecord, McpAccess, NoAuditSink, Tool, ToolAccess, ToolDescriptor, ToolError, ToolInputSchema, ToolResult,
+        local,
     };
     use sevenshell_vault::Vault;
     use tower::ServiceExt as _;
@@ -673,6 +690,14 @@ mod tests {
     }
 
     fn registry_handler_with(registry: ToolRegistry, calls: Arc<CallRegistry>) -> Arc<dyn CallHandler> {
+        registry_handler_with_policy(registry, calls, AgentPolicy::default())
+    }
+
+    fn registry_handler_with_policy(
+        registry: ToolRegistry,
+        calls: Arc<CallRegistry>,
+        policy: AgentPolicy,
+    ) -> Arc<dyn CallHandler> {
         let directory = tempfile::tempdir().expect("a temp directory");
         let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
         let (core, events) = Core::new(vault);
@@ -692,6 +717,7 @@ mod tests {
                 approval_timeout_seconds: 120,
                 max_result_bytes: sevenshell_api::DEFAULT_MAX_RESULT_BYTES,
             },
+            policy,
         ))
     }
 
@@ -723,10 +749,62 @@ mod tests {
         }
     }
 
+    /// A tool that changes something, so the scope gate is what decides whether it runs.
+    struct WriteTool;
+
+    #[async_trait]
+    impl Tool for WriteTool {
+        fn descriptor(&self) -> ToolDescriptor {
+            ToolDescriptor {
+                name: "test_write".to_owned(),
+                title: "Write".to_owned(),
+                description: "Changes one thing.".to_owned(),
+                input_schema: ToolInputSchema::object(json!({}), &[]),
+                access: ToolAccess::Write,
+            }
+        }
+
+        async fn call(&self, _context: &ToolContext, _arguments: Value) -> Result<ToolResult, ToolError> {
+            Ok(ToolResult::new(json!({ "wrote": true })))
+        }
+    }
+
+    #[tokio::test]
+    async fn a_narrowed_policy_stops_the_next_call_without_restarting_the_listener() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(WriteTool)).expect("a unique name");
+        // The listener started while the installation allowed writes.
+        let policy = AgentPolicy::new(McpAccess::open(McpScope::SafeWrite));
+        let state = state_with(registry_handler_with_policy(
+            registry,
+            Arc::new(CallRegistry::new()),
+            policy.clone(),
+        ));
+
+        let (status, body) = send(Arc::clone(&state), authenticated(r#"{"name":"test_write"}"#)).await;
+        assert_eq!(status, StatusCode::OK);
+        let outcome: ToolOutcome = serde_json::from_slice(&body).expect("a tool outcome");
+        assert!(
+            outcome.is_succeeded(),
+            "the scope the listener started with allowed the write"
+        );
+
+        // Somebody narrowed the global scope; the listener was not restarted.
+        policy.set(McpAccess::open(McpScope::ReadOnly));
+
+        let (status, body) = send(state, authenticated(r#"{"name":"test_write"}"#)).await;
+        assert_eq!(status, StatusCode::OK);
+        let outcome: ToolOutcome = serde_json::from_slice(&body).expect("a tool outcome");
+        assert_eq!(
+            outcome.error().expect("the write is refused now").code(),
+            "POLICY-DENIED",
+            "the handler reads the snapshot on every call rather than at start"
+        );
+    }
+
     #[tokio::test]
     async fn an_unknown_tool_is_an_outcome_not_an_http_error() {
         let state = state_with(registry_handler(ToolRegistry::new()));
-
         let (status, body) = send(state, authenticated(r#"{"name":"sshell_no_such_tool"}"#)).await;
 
         // A working desktop answered; the desktop's answer is that the tool does not exist. The
@@ -825,6 +903,7 @@ mod tests {
                 approval_timeout_seconds: 120,
                 max_result_bytes: sevenshell_api::DEFAULT_MAX_RESULT_BYTES,
             },
+            AgentPolicy::default(),
         ));
 
         let (status, _) = send(state_with(handler), authenticated(r#"{"name":"test_echo"}"#)).await;

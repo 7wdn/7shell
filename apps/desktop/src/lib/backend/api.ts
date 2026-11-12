@@ -48,6 +48,7 @@ import type {
   McpApprovalDecision,
   McpApprovalRequest,
   McpAuditEntry,
+  McpCatalog,
   McpServerConfig,
   McpServerStatus,
   McpServerView,
@@ -186,8 +187,16 @@ export const backend = {
      */
     enable: (): Promise<McpStatus> => forward("mcp_enable", () => desktop.mcpEnable()),
     disable: (): Promise<McpStatus> => forward("mcp_disable", () => desktop.mcpDisable()),
-    /** The snippet a client's configuration takes, without the token. The page copies it, never draws it. */
+    /**
+     * The snippet a client's configuration takes, without the token.
+     *
+     * The access page derives the per-client templates from it and copies those; the original is
+     * available for a client the list does not name. The token is not in it — the bridge reads the
+     * secret from the endpoint file.
+     */
     clientConfig: (): Promise<string> => forward("mcp_client_config", () => desktop.mcpClientConfig()),
+    /** Every tool an agent may call right now, with its heading, risk and switch state. */
+    catalog: (): Promise<McpCatalog> => forward("mcp_catalog", () => desktop.mcpCatalog()),
     auditTail: (limit: number): Promise<McpAuditEntry[]> =>
       forward("mcp_audit_tail", () => desktop.mcpAuditTail(limit)),
     /** Answers one waiting call, by the id it was asked about. */

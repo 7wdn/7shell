@@ -108,8 +108,13 @@ impl Tool for SessionsListTool {
                 // A locked vault answers with its own code, which is the diagnosable answer a bridge
                 // is asked for: the desktop is running, and nobody has unlocked it yet.
                 let sessions = context.core().vault().sessions().map_err(ToolError::from)?;
+                // Filtered before a name is copied into a row: a hidden session is not advertised
+                // at all, so an agent cannot learn it exists by reading this list. Naming a hidden
+                // id directly still gets an answer — MCP-SESSION-HIDDEN from the tool that acts on
+                // it — but that answer says only "not visible", never what the session is called.
                 let rows: Vec<SavedSession> = sessions
                     .into_iter()
+                    .filter(|session| context.access().visible(&session.id))
                     .map(|session| SavedSession {
                         id: session.id,
                         name: session.name,
@@ -126,8 +131,14 @@ impl Tool for SessionsListTool {
             SessionsListKind::Open => {
                 let terminals = context.core().open_terminals().await;
                 // Identifiers rather than handles: a handle is how this process names a terminal,
-                // and an agent gets to name the session it acts on, never a live object.
-                let mut ids: Vec<String> = terminals.into_iter().map(|open| open.session_id).collect();
+                // and an agent gets to name the session it acts on, never a live object. The access
+                // filter applies here too: a terminal a person has open is not something a hidden
+                // session may reveal through this list.
+                let mut ids: Vec<String> = terminals
+                    .into_iter()
+                    .map(|open| open.session_id)
+                    .filter(|session_id| context.access().visible(session_id))
+                    .collect();
                 ids.sort();
                 ids.dedup();
                 let rows: Vec<Value> = ids
@@ -183,6 +194,10 @@ impl Tool for SessionOpenTool {
     async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
         let input: SessionOpenInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
+        // Before the vault is read, a key is probed or anybody is asked: opening is a write, and a
+        // session this caller may not see is not one it can open. The guard is the tool's own, so a
+        // session-scoped tier narrower than the global one still stops here.
+        context.guard_session(session_id, ToolAccess::Write)?;
 
         let session = saved_session(context.core(), session_id);
         let name = session.as_ref().map(|session| session.name.clone());

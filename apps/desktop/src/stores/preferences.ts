@@ -45,7 +45,9 @@ import {
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_MCP_ACCESS_POLICY,
   DEFAULT_MCP_SCOPE,
+  DEFAULT_MCP_TOOL_POLICY,
   AI_SESSION_RETENTION_DAYS_DEFAULT,
   AI_SESSION_RETENTION_DAYS_MAX,
   AI_SESSION_RETENTION_DAYS_MIN,
@@ -67,7 +69,9 @@ import {
   type HomeLayout,
   type CustomColors,
   type FilesLayout,
+  type McpAccessPolicy,
   type McpScope,
+  type McpToolPolicy,
   type ResolvedTheme,
   type SessionLayout,
   type SessionReopen,
@@ -157,6 +161,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   mcpEnabled: DEFAULT_MCP_ENABLED,
   mcpPort: DEFAULT_MCP_PORT,
   mcpScope: DEFAULT_MCP_SCOPE,
+  mcpToolPolicy: DEFAULT_MCP_TOOL_POLICY,
+  mcpAccessPolicy: DEFAULT_MCP_ACCESS_POLICY,
   mcpApprovalTimeoutSeconds: DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
   mcpAuditRetentionDays: DEFAULT_MCP_AUDIT_RETENTION_DAYS,
   mcpMaxResultBytes: DEFAULT_MCP_MAX_RESULT_BYTES,
@@ -465,6 +471,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const mcpEnabled = ref(DEFAULT_MCP_ENABLED);
   const mcpPort = ref(DEFAULT_MCP_PORT);
   const mcpScope = ref<McpScope>(DEFAULT_MCP_SCOPE);
+  /**
+   * Which built-in tools are switched off, and what each group or session may do.
+   *
+   * Two refs rather than fields inside the page because the settings file is written whole: a save
+   * from the appearance page has to carry them or it erases them. They are drafts until the
+   * capabilities or permissions tab presses Apply, which is why a switch there is a local answer
+   * rather than a command — no socket and no tool call is started by either.
+   */
+  const mcpToolPolicy = ref<McpToolPolicy>({ ...DEFAULT_MCP_TOOL_POLICY });
+  const mcpAccessPolicy = ref<McpAccessPolicy>({
+    visibleSessionIds: null,
+    sessionScopes: {},
+    groupScopes: {},
+  });
   const mcpApprovalTimeoutSeconds = ref(DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS);
   const mcpAuditRetentionDays = ref(DEFAULT_MCP_AUDIT_RETENTION_DAYS);
   const mcpMaxResultBytes = ref(DEFAULT_MCP_MAX_RESULT_BYTES);
@@ -768,6 +788,17 @@ export const usePreferencesStore = defineStore("preferences", () => {
       mcpEnabled.value = settings.mcpEnabled ?? DEFAULT_MCP_ENABLED;
       mcpPort.value = clampMcpPort(settings.mcpPort ?? DEFAULT_MCP_PORT);
       mcpScope.value = isMcpScope(settings.mcpScope) ? settings.mcpScope : DEFAULT_MCP_SCOPE;
+      // A file written before the governance pages existed has neither policy, which reads as
+      // "nothing switched off, every session visible" — the same answer a fresh install has.
+      mcpToolPolicy.value = {
+        disabledTools: [...(settings.mcpToolPolicy?.disabledTools ?? [])],
+      };
+      mcpAccessPolicy.value = {
+        visibleSessionIds:
+          settings.mcpAccessPolicy?.visibleSessionIds == null ? null : [...settings.mcpAccessPolicy.visibleSessionIds],
+        sessionScopes: { ...settings.mcpAccessPolicy?.sessionScopes },
+        groupScopes: { ...settings.mcpAccessPolicy?.groupScopes },
+      };
       mcpApprovalTimeoutSeconds.value = clampMcpApprovalTimeout(
         settings.mcpApprovalTimeoutSeconds ?? DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
       );
@@ -891,6 +922,16 @@ export const usePreferencesStore = defineStore("preferences", () => {
         mcpEnabled: mcpEnabled.value,
         mcpPort: mcpPort.value,
         mcpScope: mcpScope.value,
+        // Both policies are written by every save, like the server list below: omitting them would
+        // put every tool back on and every session back in view the next time the appearance was
+        // saved. They travel as plain JSON — no secrets are in either.
+        mcpToolPolicy: { disabledTools: [...mcpToolPolicy.value.disabledTools] },
+        mcpAccessPolicy: {
+          visibleSessionIds:
+            mcpAccessPolicy.value.visibleSessionIds === null ? null : [...mcpAccessPolicy.value.visibleSessionIds],
+          sessionScopes: { ...mcpAccessPolicy.value.sessionScopes },
+          groupScopes: { ...mcpAccessPolicy.value.groupScopes },
+        },
         mcpApprovalTimeoutSeconds: mcpApprovalTimeoutSeconds.value,
         mcpAuditRetentionDays: mcpAuditRetentionDays.value,
         mcpMaxResultBytes: mcpMaxResultBytes.value,
@@ -1390,6 +1431,27 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * Keeps the tool switches the capabilities page applied, and marks the file due for a write.
+   *
+   * The page has already pressed Apply, so this is the change itself rather than a draft: the same
+   * rule the scope above follows, where the value is applied at once and written by `commit`.
+   */
+  function setMcpToolPolicy(policy: McpToolPolicy): void {
+    mcpToolPolicy.value = { disabledTools: [...policy.disabledTools] };
+    dirty.value = true;
+  }
+
+  /** The same for the per-session and per-group rules the permissions page applied. */
+  function setMcpAccessPolicy(policy: McpAccessPolicy): void {
+    mcpAccessPolicy.value = {
+      visibleSessionIds: policy.visibleSessionIds === null ? null : [...policy.visibleSessionIds],
+      sessionScopes: { ...policy.sessionScopes },
+      groupScopes: { ...policy.groupScopes },
+    };
+    dirty.value = true;
+  }
+
+  /**
    * A line count inside the range the panel offers.
    *
    * Zero is a real answer — it means "attach nothing" — so it is kept rather than corrected to the
@@ -1697,6 +1759,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "keybindings":
           keybindings.value = {};
           break;
+        case "mcpToolPolicy":
+          mcpToolPolicy.value = { ...DEFAULT_MCP_TOOL_POLICY, disabledTools: [] };
+          break;
+        case "mcpAccessPolicy":
+          mcpAccessPolicy.value = { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} };
+          break;
         case "locale":
           localeChosen.value = false;
           locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
@@ -1787,6 +1855,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     mcpEnabled,
     mcpPort,
     mcpScope,
+    mcpToolPolicy,
+    mcpAccessPolicy,
     mcpApprovalTimeoutSeconds,
     mcpAuditRetentionDays,
     mcpMaxResultBytes,
@@ -1847,6 +1917,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSyncSnippetId,
     setMcpPort,
     setMcpScope,
+    setMcpToolPolicy,
+    setMcpAccessPolicy,
     setMcpApprovalTimeoutSeconds,
     setMcpAuditRetentionDays,
     setMcpMaxResultBytes,

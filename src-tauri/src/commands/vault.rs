@@ -42,6 +42,19 @@ fn reopen_external_servers(state: &ShellState) {
     state.mcp_client().on_vault_unlocked(&settings);
 }
 
+/// Rebuilds the agent's access snapshot now that the saved sessions can be read.
+///
+/// A locked vault cannot say which saved session is in which group, so the group overrides applied
+/// at startup and while the window was locked only covered the session-level entries. Opening the
+/// vault is the moment the rest can be folded in; doing it here rather than on the next settings
+/// save is what makes "unlock, then let the agent work" one step.
+fn reapply_agent_policy(state: &ShellState) {
+    match sevenshell_platform::load() {
+        Ok(settings) => state.apply_agent_policy(&settings),
+        Err(error) => log::warn!("settings could not be read, so the agent access policy is not rebuilt: {error}"),
+    }
+}
+
 /// Whether a vault exists and whether it is open.
 #[tauri::command]
 pub fn vault_state(state: State<'_, ShellState>) -> VaultState {
@@ -53,6 +66,7 @@ pub fn vault_state(state: State<'_, ShellState>) -> VaultState {
 pub fn vault_create(state: State<'_, ShellState>, password: String) -> Result<VaultState, ShellError> {
     state.vault().create(&password)?;
     reopen_external_servers(&state);
+    reapply_agent_policy(&state);
     Ok(state_of(state.vault()))
 }
 
@@ -60,6 +74,7 @@ pub fn vault_create(state: State<'_, ShellState>, password: String) -> Result<Va
 pub fn vault_unlock(state: State<'_, ShellState>, password: String) -> Result<VaultState, ShellError> {
     state.vault().unlock(&password)?;
     reopen_external_servers(&state);
+    reapply_agent_policy(&state);
     Ok(state_of(state.vault()))
 }
 

@@ -59,6 +59,7 @@ import type {
   McpApprovalDecision,
   McpApprovalRequest,
   McpAuditEntry,
+  McpCatalog,
   McpServerConfig,
   McpServerStatus,
   McpServerView,
@@ -267,6 +268,18 @@ export function mcpDisable(): Promise<McpStatus> {
 /** The snippet a client's configuration takes. Names the bridge and the endpoint file, never the token. */
 export function mcpClientConfig(): Promise<string> {
   return invoke<string>("mcp_client_config");
+}
+
+/**
+ * The tool table an agent sees, as the host currently builds it.
+ *
+ * One entry per built-in tool and one per tool an external server announced, each with the heading
+ * it belongs under, how carefully it has to be read and whether it is switched on. It is read from
+ * the host rather than derived here: the registry is what refuses a disabled name, so the page
+ * draws its answer instead of keeping a second copy of the rules.
+ */
+export function mcpCatalog(): Promise<McpCatalog> {
+  return invoke<McpCatalog>("mcp_catalog");
 }
 
 export function mcpAuditTail(limit: number): Promise<McpAuditEntry[]> {

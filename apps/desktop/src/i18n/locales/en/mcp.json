@@ -2,6 +2,11 @@
   "mcp": {
     "title": "Agent access (MCP)",
     "description": "A loopback control service an MCP bridge may call, so an agent can look at your sessions and, if you allow it, change them. It listens on 127.0.0.1 only, and every call presents a token that this window never sees.",
+    "tabs": {
+      "access": "Access",
+      "capabilities": "Capabilities",
+      "permissions": "Permissions"
+    },
     "switch": {
       "label": "Allow agent access",
       "help": "Off unless you turn it on. While it is on, this machine opens one port on the loopback interface and writes the token a bridge needs to a file only your account can read. Turning it off closes the port and deletes that file."
@@ -20,12 +25,86 @@
       "auditPath": "Audit log",
       "countNote": "The count and the port come from the listener, not from the settings file — what is written down and what is running are two answers."
     },
-    "config": {
+    "clients": {
       "title": "Client configuration",
-      "description": "The snippet below is copied, not shown: put it in your MCP client's configuration file. It names the bridge and the endpoint file, and it carries no token — the bridge reads the secret from that file itself.",
-      "copy": "Copy client configuration",
+      "description": "Pick the client you connect with. Each snippet starts the bridge that ships beside this application and points it at the endpoint file; it carries no token — the bridge reads the secret from that file itself.",
+      "where": "Goes in",
+      "copy": "Copy snippet",
       "copied": "Copied to the clipboard.",
-      "copyFailed": "The clipboard refused the text."
+      "copyFailed": "The clipboard refused the text.",
+      "unavailable": "The bridge's location cannot be read right now. Turn the listener on, or install the packaged build, and the snippets will appear.",
+      "name": {
+        "claudeCode": "Claude Code",
+        "cursor": "Cursor",
+        "vscode": "VS Code",
+        "windsurf": "Windsurf",
+        "qoder": "Qoder",
+        "codex": "Codex"
+      }
+    },
+    "capabilities": {
+      "title": "Tools an agent may call",
+      "description": "Switch off what an agent must not call. The bridge, the assistant in this window and every external client read the same list, and a tool that is off is refused rather than only left out of the list.",
+      "search": "Search tools",
+      "onlyEnabled": "Only enabled",
+      "refresh": "Refresh",
+      "counts": "{enabled} of {total} tools enabled",
+      "loading": "Reading the tool catalog…",
+      "empty": "No tool matches.",
+      "apply": "Apply",
+      "applied": "Applied. The tool list an agent sees is updated.",
+      "failed": "The settings could not be written.",
+      "source": "from {source}",
+      "serverOff": "Server off",
+      "externalHint": "External tools can be switched off here too. One whose server is disabled on the Access tab stays off until that server is enabled; its row says so.",
+      "category": {
+        "sessions": "Sessions",
+        "exec": "Commands",
+        "files": "Files",
+        "containers": "Containers",
+        "kubernetes": "Kubernetes",
+        "external": "External servers"
+      },
+      "risk": {
+        "read": "Read",
+        "write": "Write",
+        "commandGraded": "Command-graded"
+      }
+    },
+    "permissions": {
+      "title": "Default and exceptions",
+      "description": "Choose the default tier, then write exceptions for groups or sessions. A session's own setting wins over its group, and a group wins over the default; anything without an exception follows the default.",
+      "defaultTitle": "Default tier",
+      "defaultHint": "Applies to every saved session that has no setting of its own. Visibility and exceptions are set row by row below.",
+      "table": {
+        "title": "What each tier allows",
+        "tier": "Tier",
+        "allows": "Allows",
+        "asks": "Still asks",
+        "asksValue": "Destructive commands, and container or cluster changes"
+      },
+      "sessionsTitle": "Sessions and groups",
+      "sessionsDescription": "Unticking a session hides it from agents completely. A group's tick covers every session under it; the dropdown sets the row's own tier, and the line beside it says which tier is in force and why.",
+      "search": "Search sessions",
+      "onlyOverrides": "Only exceptions",
+      "inherit": "Inherit",
+      "sessionScope": "This session's tier",
+      "groupScope": "This group's tier",
+      "source": {
+        "session": "set for this session",
+        "group": "from group {group}",
+        "global": "from the default"
+      },
+      "hidden": "Hidden",
+      "allowlistHint": "A session has been hidden, so only the sessions ticked below are visible. Sessions saved later start hidden until you tick them.",
+      "allowAll": "Show every session",
+      "groupCount": "{count} sessions",
+      "noSessions": "No saved sessions yet.",
+      "loading": "Reading the sessions…",
+      "empty": "Nothing matches.",
+      "apply": "Apply",
+      "applied": "Applied. Sessions and tools now follow these rules.",
+      "failed": "The settings could not be written."
     },
     "fields": {
       "heading": "Settings",
@@ -128,6 +207,7 @@
     },
     "audit": {
       "title": "Recent activity",
+      "open": "View MCP call records",
       "description": "The tail of this machine's audit file: who called what, how it ended, and how long it took. Nothing here holds a credential or the text a call read.",
       "empty": "No agent has called this build yet.",
       "loading": "Reading the audit log…",

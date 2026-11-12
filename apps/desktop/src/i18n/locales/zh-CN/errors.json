@@ -117,6 +117,8 @@
       "serverDuplicate": "已有另一个外部服务器使用 id {server}。",
       "serverConnectFailed": "无法连接外部 MCP 服务器 {server}，或它拒绝了连接。",
       "invalidArguments": "外部 MCP 服务器的设置不完整，无法使用。",
+      "toolDisabled": "工具 {tool} 已在 Agent access 中关闭。",
+      "sessionHidden": "会话 {session} 在当前 Agent 访问规则下不可见。",
       "serverNotFound": "没有配置使用该 id 的外部 MCP 服务器。",
       "duplicateTool": "外部服务器 {server} 提供了两个同名工具 {tool}。",
       "invalidTool": "外部服务器 {server} 提供了本版本无法提供的工具（{tool}）。",

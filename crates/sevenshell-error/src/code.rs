@@ -232,6 +232,10 @@ error_catalog! {
     McpServerConnectFailed => "MCP-SERVER-CONNECT-FAILED", "errors.mcp.serverConnectFailed";
     #[doc = "An external MCP server's settings cannot be used at all."]
     McpInvalidArguments => "MCP-INVALID-ARGUMENTS", "errors.mcp.invalidArguments";
+    #[doc = "The tool the caller named is switched off in the settings page."]
+    McpToolDisabled => "MCP-TOOL-DISABLED", "errors.mcp.toolDisabled";
+    #[doc = "The session the caller named is not visible under the configured MCP access policy."]
+    McpSessionHidden => "MCP-SESSION-HIDDEN", "errors.mcp.sessionHidden";
     #[doc = "A command named an external MCP server that is not configured."]
     McpServerNotFound => "MCP-SERVER-NOT-FOUND", "errors.mcp.serverNotFound";
     #[doc = "One external MCP server listed two tools with the same name."]

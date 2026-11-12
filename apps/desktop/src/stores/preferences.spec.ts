@@ -114,6 +114,8 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     mcpEnabled: false,
     mcpPort: 0,
     mcpScope: "readOnly",
+    mcpToolPolicy: { disabledTools: [] },
+    mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
     mcpApprovalTimeoutSeconds: 120,
     mcpAuditRetentionDays: 30,
     mcpMaxResultBytes: 262_144,
@@ -333,6 +335,8 @@ describe("preferences store", () => {
       mcpEnabled: false,
       mcpPort: 0,
       mcpScope: "readOnly",
+      mcpToolPolicy: { disabledTools: [] },
+      mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
@@ -402,6 +406,8 @@ describe("preferences store", () => {
       mcpEnabled: false,
       mcpPort: 0,
       mcpScope: "readOnly",
+      mcpToolPolicy: { disabledTools: [] },
+      mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
@@ -415,6 +421,43 @@ describe("preferences store", () => {
       aiSessionRetentionDays: AI_SESSION_RETENTION_DAYS_DEFAULT,
     });
     expect(document.documentElement.lang).toBe("zh-CN");
+  });
+
+  it("reads the agent's tool and access policies and writes them back on any save", async () => {
+    settingsGetMock.mockResolvedValue(
+      defaults({
+        mcpToolPolicy: { disabledTools: ["sshell_exec_run"] },
+        mcpAccessPolicy: {
+          visibleSessionIds: ["session-1"],
+          sessionScopes: { "session-1": "safeWrite" },
+          groupScopes: { "group-1": "readOnly" },
+        },
+      }),
+    );
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.mcpToolPolicy.disabledTools).toEqual(["sshell_exec_run"]);
+    expect(store.mcpAccessPolicy.visibleSessionIds).toEqual(["session-1"]);
+    expect(store.mcpAccessPolicy.sessionScopes["session-1"]).toBe("safeWrite");
+    expect(store.mcpAccessPolicy.groupScopes["group-1"]).toBe("readOnly");
+
+    // A save from a page that shows neither policy still carries both: otherwise opening the
+    // appearance page would switch every tool back on.
+    await store.commit();
+
+    expect(settingsSetMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpToolPolicy: { disabledTools: ["sshell_exec_run"] },
+        mcpAccessPolicy: {
+          visibleSessionIds: ["session-1"],
+          sessionScopes: { "session-1": "safeWrite" },
+          groupScopes: { "group-1": "readOnly" },
+        },
+      }),
+    );
   });
 
   it("opens anyway when the settings file cannot be read", async () => {
@@ -582,6 +625,8 @@ describe("the terminal palette", () => {
       mcpEnabled: false,
       mcpPort: 0,
       mcpScope: "readOnly",
+      mcpToolPolicy: { disabledTools: [] },
+      mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
@@ -1447,6 +1492,8 @@ describe("restoring the defaults", () => {
       mcpEnabled: false,
       mcpPort: 0,
       mcpScope: "readOnly",
+      mcpToolPolicy: { disabledTools: [] },
+      mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,

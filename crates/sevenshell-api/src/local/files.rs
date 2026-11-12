@@ -139,6 +139,9 @@ impl Tool for SftpListTool {
             .filter(|path| !path.is_empty())
             .map(remote_path)
             .transpose()?;
+        // A listing is a read, and the session's own tier decides whether even that is offered.
+        // Before the cache: opening a channel is the work a refusal exists to avoid.
+        context.guard_session(session_id, ToolAccess::Read)?;
 
         let listing = gate::bounded(context, gate::READ_TIMEOUT, async {
             context
@@ -175,6 +178,7 @@ impl Tool for SftpReadTextTool {
         let input: SftpReadTextInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         let path = remote_path(&input.path)?;
+        context.guard_session(session_id, ToolAccess::Read)?;
         let subject = gate::subject(&path);
         let audit = ToolAudit::for_session(session_id).with_subject(subject);
 
@@ -222,6 +226,9 @@ impl Tool for SftpWriteTextTool {
         let input: SftpWriteTextInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         let path = remote_path(&input.path)?;
+        // A write, so the session's tier is asked before a channel is opened and before the text
+        // spends a round trip being refused.
+        context.guard_session(session_id, ToolAccess::Write)?;
         let subject = gate::subject(&path);
         let bytes = input.text.len();
 

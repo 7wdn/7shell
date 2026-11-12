@@ -6,16 +6,19 @@
 //! desktop calls. All are created once, in `setup`, and handed to every command through managed
 //! state.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
 use sevenshell_api::local::ConnectionCache;
-use sevenshell_api::{AuditRecord, AuditSink, ToolRegistry};
+use sevenshell_api::{AuditRecord, AuditSink, McpAccess, ToolRegistry};
 use sevenshell_core::Core;
 use sevenshell_mcp_client::McpClientManager;
+use sevenshell_types::{AppSettings, McpScope, Session, SessionGroup};
 use sevenshell_vault::Vault;
 
 use crate::ai::AiRuntime;
@@ -88,6 +91,123 @@ pub struct SharedAgent {
     approvals: Arc<ApprovalRegistry>,
     connections: Arc<ConnectionCache>,
     audit: Arc<SharedAudit>,
+    policy: AgentPolicy,
+}
+
+/// The resolved session policy both callers read, replaceable while the window runs.
+///
+/// A handle rather than a field read once: the settings page can hide a session or narrow one
+/// session's scope, and the next bridge call must see it without restarting the listener or the
+/// assistant. The value itself is cheap to clone and never contains a secret.
+#[derive(Clone, Default)]
+pub struct AgentPolicy {
+    inner: Arc<RwLock<McpAccess>>,
+}
+
+impl AgentPolicy {
+    pub fn new(access: McpAccess) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(access)),
+        }
+    }
+
+    pub fn get(&self) -> Arc<McpAccess> {
+        match self.inner.read() {
+            Ok(access) => Arc::new(access.clone()),
+            Err(poisoned) => Arc::new(poisoned.into_inner().clone()),
+        }
+    }
+
+    pub fn set(&self, access: McpAccess) {
+        match self.inner.write() {
+            Ok(mut current) => *current = access,
+            Err(poisoned) => *poisoned.into_inner() = access,
+        }
+    }
+}
+
+/// Folds the settings' group and session overrides onto the saved sessions.
+///
+/// The API's snapshot is keyed by session id, and the settings are keyed by group and by session —
+/// only the host knows which saved session lives in which group, which is why this fold happens
+/// here rather than in the tool layer.
+///
+/// A group's scope is inherited down the tree: the nearest group with a scope decides, so a folder
+/// somebody narrowed narrows everything inside it without every child repeating the setting. A
+/// session's own entry beats any group. `sessions` is `None` while the vault is locked — group
+/// scopes cannot be resolved then, so only the session-level overrides and the visibility allowlist
+/// are applied, and the whole snapshot is rebuilt when the vault opens again.
+fn resolve_agent_access(
+    settings: &AppSettings,
+    sessions: Option<&[Session]>,
+    groups: Option<&[SessionGroup]>,
+) -> McpAccess {
+    let policy = &settings.mcp_access_policy;
+    let mut session_scopes = BTreeMap::new();
+
+    if let Some(sessions) = sessions {
+        let parents: BTreeMap<&str, Option<&str>> = groups
+            .unwrap_or_default()
+            .iter()
+            .map(|group| (group.id.as_str(), group.parent_id.as_deref()))
+            .collect();
+        for session in sessions {
+            let Some(group_id) = session.group_id.as_deref() else {
+                continue;
+            };
+            if let Some(scope) = inherited_group_scope(group_id, &policy.group_scopes, &parents) {
+                session_scopes.insert(session.id.clone(), scope);
+            }
+        }
+    }
+
+    // A session's own entry is the highest priority, whatever group it sits in.
+    for (id, scope) in &policy.session_scopes {
+        session_scopes.insert(id.clone(), *scope);
+    }
+
+    McpAccess {
+        default_scope: settings.mcp_scope,
+        visible_sessions: policy.visible_session_ids.clone(),
+        session_scopes,
+    }
+}
+
+/// The scope the nearest group in this group's ancestry gives, if any.
+fn inherited_group_scope(
+    group_id: &str,
+    scopes: &BTreeMap<String, McpScope>,
+    parents: &BTreeMap<&str, Option<&str>>,
+) -> Option<McpScope> {
+    let mut current = Some(group_id);
+    // A tree is not supposed to have a cycle; a guard here keeps a hand-edited file from becoming
+    // a hang rather than an answer.
+    let mut seen = BTreeSet::new();
+    while let Some(id) = current {
+        if !seen.insert(id) {
+            log::warn!("the session group tree contains a cycle at `{id}`; the walk stops there");
+            return None;
+        }
+        if let Some(scope) = scopes.get(id) {
+            return Some(*scope);
+        }
+        current = parents.get(id).copied().flatten();
+    }
+    None
+}
+
+/// Applies one settings snapshot to the two callers: the resolved access, and the switched-off tools.
+fn apply_access_policy(shared: &SharedAgent, vault: &Vault, settings: &AppSettings) {
+    let sessions = vault.sessions();
+    let groups = vault.groups();
+    if sessions.is_err() {
+        log::debug!("the agent access policy is applied without the saved sessions: the vault is not open");
+    }
+    let access = resolve_agent_access(settings, sessions.as_deref().ok(), groups.as_deref().ok());
+    shared.set_access(access);
+    shared
+        .registry()
+        .set_disabled_tools(settings.mcp_tool_policy.disabled_tools.clone());
 }
 
 impl SharedAgent {
@@ -110,6 +230,7 @@ impl SharedAgent {
             approvals: Arc::new(ApprovalRegistry::new()),
             connections: Arc::new(ConnectionCache::new(core)),
             audit,
+            policy: AgentPolicy::new(McpAccess::open(sevenshell_types::McpScope::ReadOnly)),
         }
     }
 
@@ -127,6 +248,19 @@ impl SharedAgent {
 
     pub fn audit(&self) -> &Arc<SharedAudit> {
         &self.audit
+    }
+
+    pub fn policy_handle(&self) -> AgentPolicy {
+        self.policy.clone()
+    }
+
+    pub fn access(&self) -> Arc<McpAccess> {
+        self.policy.get()
+    }
+
+    /// Replaces the resolved policy. The next call from either caller sees it.
+    pub fn set_access(&self, access: McpAccess) {
+        self.policy.set(access);
     }
 }
 
@@ -201,6 +335,10 @@ impl AuditSink for SharedAudit {
 pub struct ShellState {
     vault: Arc<Vault>,
     core: Arc<Core>,
+    /// The pieces both agent callers share: the one tool list, the one approval registry, the one
+    /// connection cache and the one audit trail. Held here as well because the settings page applies
+    /// a new access policy through it without either caller being restarted.
+    shared: Arc<SharedAgent>,
     /// The loopback listener an MCP bridge calls, and the token this run rotates for it.
     ///
     /// Always present, listening or not: a command that turns it on needs the same object a command
@@ -291,6 +429,7 @@ impl ShellState {
             Self {
                 vault,
                 core,
+                shared,
                 mcp,
                 mcp_client,
                 ai,
@@ -320,6 +459,21 @@ impl ShellState {
     /// A handle to the core that can be moved onto another task, for work that outlives a command.
     pub fn core_arc(&self) -> Arc<Core> {
         Arc::clone(&self.core)
+    }
+
+    /// The pieces both agent callers share, for a command that has to read the one tool list.
+    pub fn shared(&self) -> &Arc<SharedAgent> {
+        &self.shared
+    }
+
+    /// Recomputes what an agent may see and do, from the settings and the saved sessions.
+    ///
+    /// Called at startup, after every settings write and after the vault opens — the last one
+    /// because a locked vault cannot say which saved session is in which group, so group overrides
+    /// are only folded onto sessions once it can. The registry's disabled set is replaced in the
+    /// same pass, so the page, the bridge and the assistant agree without a listener restart.
+    pub fn apply_agent_policy(&self, settings: &AppSettings) {
+        apply_access_policy(&self.shared, &self.vault, settings);
     }
 
     /// The agent interface's listener and the questions it is waiting on.
@@ -533,5 +687,218 @@ mod tests {
         );
 
         assert_eq!(crate::mcp::audit::read_tail(&path, 10).len(), 1);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The agent access snapshot
+    // -----------------------------------------------------------------------------------------
+
+    fn group(id: &str, parent: Option<&str>) -> SessionGroup {
+        SessionGroup {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            parent_id: parent.map(str::to_owned),
+            order: 0,
+            pinned: false,
+        }
+    }
+
+    fn saved_session(id: &str, group_id: Option<&str>) -> Session {
+        Session {
+            id: id.to_owned(),
+            name: id.to_owned(),
+            group_id: group_id.map(str::to_owned),
+            protocol: sevenshell_types::Protocol::Ssh,
+            host: "host.example".to_owned(),
+            port: 22,
+            user: "root".to_owned(),
+            auth: sevenshell_types::SessionAuth::with_password(sevenshell_types::AuthMethod::Password),
+            terminal: sevenshell_types::TerminalSettings::default(),
+            desktop: sevenshell_types::DesktopSettings::default(),
+            telnet: sevenshell_types::TelnetSettings::default(),
+            serial: sevenshell_types::SerialSettings::default(),
+            local: sevenshell_types::LocalSettings::default(),
+            wsl: sevenshell_types::WslSettings::default(),
+            container: sevenshell_types::ContainerSettings::default(),
+            kubernetes: sevenshell_types::KubernetesSettings::default(),
+            webdav: sevenshell_types::WebDavSettings::default(),
+            ftp: sevenshell_types::FtpSettings::default(),
+            jump: Vec::new(),
+            forwards: Vec::new(),
+            updated_at: 1,
+        }
+    }
+
+    fn policy_with(
+        mcp_scope: McpScope,
+        group_scopes: &[(&str, McpScope)],
+        session_scopes: &[(&str, McpScope)],
+        visible: Option<&[&str]>,
+    ) -> AppSettings {
+        let mut settings = AppSettings {
+            mcp_scope,
+            ..AppSettings::default()
+        };
+        settings.mcp_access_policy.group_scopes = group_scopes
+            .iter()
+            .map(|(id, scope)| ((*id).to_owned(), *scope))
+            .collect();
+        settings.mcp_access_policy.session_scopes = session_scopes
+            .iter()
+            .map(|(id, scope)| ((*id).to_owned(), *scope))
+            .collect();
+        settings.mcp_access_policy.visible_session_ids =
+            visible.map(|ids| ids.iter().map(|id| (*id).to_owned()).collect());
+        settings
+    }
+
+    #[test]
+    fn a_group_scope_reaches_the_sessions_saved_in_it() {
+        let groups = vec![group("work", None), group("home", None)];
+        let sessions = vec![saved_session("a", Some("work")), saved_session("b", None)];
+        let settings = policy_with(McpScope::ReadOnly, &[("work", McpScope::SafeWrite)], &[], None);
+
+        let access = resolve_agent_access(&settings, Some(&sessions), Some(&groups));
+
+        assert_eq!(
+            access.default_scope,
+            McpScope::ReadOnly,
+            "the global scope is still the fallback"
+        );
+        assert_eq!(
+            access.scope_for("a"),
+            McpScope::SafeWrite,
+            "the group's scope is the session's"
+        );
+        assert_eq!(
+            access.scope_for("b"),
+            McpScope::ReadOnly,
+            "a session outside every scoped group keeps the default"
+        );
+        assert_eq!(
+            access.max_scope(),
+            McpScope::SafeWrite,
+            "the registry's early refusal must not be narrower than a session override"
+        );
+    }
+
+    #[test]
+    fn a_session_scope_beats_the_group_it_sits_in() {
+        let groups = vec![group("work", None)];
+        let sessions = vec![saved_session("a", Some("work")), saved_session("b", Some("work"))];
+        let settings = policy_with(
+            McpScope::HighRisk,
+            &[("work", McpScope::SafeWrite)],
+            &[("a", McpScope::ReadOnly)],
+            None,
+        );
+
+        let access = resolve_agent_access(&settings, Some(&sessions), Some(&groups));
+
+        assert_eq!(
+            access.scope_for("a"),
+            McpScope::ReadOnly,
+            "the session's own entry is the highest priority"
+        );
+        assert_eq!(
+            access.scope_for("b"),
+            McpScope::SafeWrite,
+            "its neighbour in the same group keeps the group's scope"
+        );
+    }
+
+    #[test]
+    fn a_nested_group_inherits_the_nearest_scope_up_the_tree() {
+        let groups = vec![group("work", None), group("rack", Some("work"))];
+        let sessions = vec![
+            saved_session("in-rack", Some("rack")),
+            saved_session("in-work", Some("work")),
+        ];
+        let settings = policy_with(
+            McpScope::ReadOnly,
+            &[("work", McpScope::HighRisk), ("rack", McpScope::SafeWrite)],
+            &[],
+            None,
+        );
+
+        let access = resolve_agent_access(&settings, Some(&sessions), Some(&groups));
+
+        assert_eq!(
+            access.scope_for("in-rack"),
+            McpScope::SafeWrite,
+            "the folder nearest the session decides"
+        );
+        assert_eq!(
+            access.scope_for("in-work"),
+            McpScope::HighRisk,
+            "the parent's own sessions keep the parent's scope"
+        );
+    }
+
+    #[test]
+    fn a_locked_vault_still_applies_visibility_and_session_overrides() {
+        // The vault cannot say which saved session is in which group while it is locked, so the
+        // group fold is impossible — but an allowlist and a session's own scope are session ids in
+        // the settings and do not need the vault at all.
+        let settings = policy_with(
+            McpScope::ReadOnly,
+            &[("work", McpScope::SafeWrite)],
+            &[("a", McpScope::HighRisk)],
+            Some(&["a"]),
+        );
+
+        let access = resolve_agent_access(&settings, None, None);
+
+        assert_eq!(access.scope_for("a"), McpScope::HighRisk);
+        assert_eq!(
+            access.scope_for("b"),
+            McpScope::ReadOnly,
+            "no group was folded, so everything else is the default"
+        );
+        assert!(access.visible("a"));
+        assert!(
+            !access.visible("b"),
+            "the allowlist applies while the vault is locked too"
+        );
+    }
+
+    #[test]
+    fn applying_a_policy_replaces_the_snapshot_and_the_disabled_set_together() {
+        // The two halves the settings page changes must move in one pass: a tool switched off while
+        // a scope stays behind is a page that disagrees with the bridge.
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
+        vault.create("master").expect("a new vault");
+        vault
+            .save_session(saved_session("a", Some("work")), None)
+            .expect("a saved session");
+        vault.save_group(group("work", None)).expect("a saved group");
+
+        let (core, events) = Core::new(Arc::clone(&vault));
+        drop(events);
+        let shared = SharedAgent::with_audit(core, Arc::new(SharedAudit::at(None)));
+
+        let mut settings = policy_with(McpScope::ReadOnly, &[("work", McpScope::SafeWrite)], &[], None);
+        settings
+            .mcp_tool_policy
+            .disabled_tools
+            .insert("sshell_exec_run".to_owned());
+
+        apply_access_policy(&shared, &vault, &settings);
+
+        assert_eq!(shared.access().scope_for("a"), McpScope::SafeWrite);
+        assert!(shared.registry().is_disabled("sshell_exec_run"));
+        assert!(shared.registry().descriptor("sshell_exec_run").is_none());
+
+        // Locking the vault removes what only the vault could say: the group scope falls back to the
+        // default, while the switched-off tool stays switched off.
+        vault.lock();
+        apply_access_policy(&shared, &vault, &settings);
+        assert_eq!(
+            shared.access().scope_for("a"),
+            McpScope::ReadOnly,
+            "a locked vault cannot resolve groups; the default is the honest answer until it opens"
+        );
+        assert!(shared.registry().is_disabled("sshell_exec_run"));
     }
 }

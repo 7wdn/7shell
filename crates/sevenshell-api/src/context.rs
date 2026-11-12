@@ -19,7 +19,9 @@ use sevenshell_types::{AgentOrigin, McpScope, PresentedHostKey, RiskAssessment};
 use tokio::sync::Notify;
 
 use crate::local::ConnectionCache;
-use crate::tool::{ToolAudit, ToolError};
+use crate::policy::McpAccess;
+use crate::registry::scope_allows;
+use crate::tool::{ToolAccess, ToolAudit, ToolError};
 
 /// Something a tool can be called off through.
 ///
@@ -342,6 +344,7 @@ pub struct ToolContext {
     approvals: Arc<dyn ApprovalBroker>,
     audit: Arc<dyn AuditSink>,
     scope: McpScope,
+    access: Arc<McpAccess>,
     /// Who the calls made through this context belong to. Written into the audit line and into any
     /// approval question a tool asks.
     origin: AgentOrigin,
@@ -364,6 +367,7 @@ impl ToolContext {
             approvals: Arc::new(DenyingBroker),
             audit: Arc::new(NoAuditSink),
             scope,
+            access: Arc::new(McpAccess::open(scope)),
             origin: AgentOrigin::default(),
             approval_timeout_seconds: sevenshell_types::MCP_APPROVAL_TIMEOUT_SECONDS_DEFAULT,
             cancel: Cancel::new(),
@@ -422,6 +426,37 @@ impl ToolContext {
 
     pub fn scope(&self) -> McpScope {
         self.scope
+    }
+
+    /// Replaces the global scope with a resolved session policy.
+    ///
+    /// `scope` becomes the widest the policy allows, so the registry's early refusal cannot reject a
+    /// call a session override would have permitted; the tool's guard is what narrows it again.
+    pub fn with_access(mut self, access: Arc<McpAccess>) -> Self {
+        self.scope = access.max_scope();
+        self.access = access;
+        self
+    }
+
+    pub fn access(&self) -> &Arc<McpAccess> {
+        &self.access
+    }
+
+    /// The scope for one session, refusing a session the policy hides.
+    pub fn session_scope(&self, session_id: &str) -> Result<McpScope, ToolError> {
+        if !self.access.visible(session_id) {
+            return Err(ToolError::session_hidden(session_id));
+        }
+        Ok(self.access.scope_for(session_id))
+    }
+
+    /// Refuses a hidden session or a tool the session's own scope does not offer.
+    pub fn guard_session(&self, session_id: &str, access: ToolAccess) -> Result<McpScope, ToolError> {
+        let scope = self.session_scope(session_id)?;
+        if !scope_allows(scope, access) {
+            return Err(ToolError::denied("this tool under the session's agent access scope"));
+        }
+        Ok(scope)
     }
 
     /// Who the calls through this context belong to.

@@ -105,6 +105,8 @@ export const ERROR_CATALOG = {
   "MCP-SERVER-DUPLICATE": "errors.mcp.serverDuplicate",
   "MCP-SERVER-CONNECT-FAILED": "errors.mcp.serverConnectFailed",
   "MCP-INVALID-ARGUMENTS": "errors.mcp.invalidArguments",
+  "MCP-TOOL-DISABLED": "errors.mcp.toolDisabled",
+  "MCP-SESSION-HIDDEN": "errors.mcp.sessionHidden",
   "MCP-SERVER-NOT-FOUND": "errors.mcp.serverNotFound",
   "MCP-DUPLICATE-TOOL": "errors.mcp.duplicateTool",
   "MCP-INVALID-TOOL": "errors.mcp.invalidTool",

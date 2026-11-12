@@ -4,7 +4,7 @@
 //! would not mind being read over their shoulder: how the interface looks, and what
 //! language it speaks.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -661,6 +661,37 @@ impl McpScope {
     }
 }
 
+/// Which built-in tools the settings page has switched off.
+///
+/// The tool registry reads this list directly: a name here is not offered and cannot be called.
+/// External servers keep their own `enabled` flag; per-tool switches for them are a later shape.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolPolicy {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub disabled_tools: BTreeSet<String>,
+}
+
+/// Per-session and per-group overrides of the global MCP scope.
+///
+/// The global default stays in [`AppSettings::mcp_scope`], so a file written before this shape
+/// existed keeps meaning what it meant. Visibility is an allowlist that is `None` until the first
+/// hide: the first edit materialises every currently saved session, which is what makes "custom
+/// range" honest rather than an empty list that happens to show everything.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpAccessPolicy {
+    /// `None` means every saved session is visible; `Some` is the exact set that is.
+    #[serde(default)]
+    pub visible_session_ids: Option<BTreeSet<String>>,
+    /// A session's own scope. Highest priority.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub session_scopes: BTreeMap<String, McpScope>,
+    /// A group's scope, applied to every session in it unless the session overrides it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub group_scopes: BTreeMap<String, McpScope>,
+}
+
 /// How long a call waits for a person's answer before it is treated as refused.
 ///
 /// A number rather than "until somebody answers": the window the question is asked in may be put
@@ -1138,6 +1169,12 @@ pub struct AppSettings {
     /// The largest result one call may return, in bytes.
     #[serde(default = "mcp_max_result_bytes_default")]
     pub mcp_max_result_bytes: u64,
+    /// Which built-in tools are switched off.
+    #[serde(default)]
+    pub mcp_tool_policy: McpToolPolicy,
+    /// Per-session and per-group scope and visibility.
+    #[serde(default)]
+    pub mcp_access_policy: McpAccessPolicy,
     /// The assistant's providers, without their keys.
     ///
     /// A list rather than one provider, because the same installation may talk to a hosted service
@@ -1292,6 +1329,8 @@ impl Default for AppSettings {
             mcp_approval_timeout_seconds: mcp_approval_timeout_seconds_default(),
             mcp_audit_retention_days: mcp_audit_retention_days_default(),
             mcp_max_result_bytes: mcp_max_result_bytes_default(),
+            mcp_tool_policy: McpToolPolicy::default(),
+            mcp_access_policy: McpAccessPolicy::default(),
             ai_providers: Vec::new(),
             ai_default_provider_id: None,
             ai_context_enabled: ai_context_enabled_default(),
@@ -1348,6 +1387,8 @@ impl AppSettings {
             && self.mcp_approval_timeout_seconds == mcp_approval_timeout_seconds_default()
             && self.mcp_audit_retention_days == mcp_audit_retention_days_default()
             && self.mcp_max_result_bytes == mcp_max_result_bytes_default()
+            && self.mcp_tool_policy == McpToolPolicy::default()
+            && self.mcp_access_policy == McpAccessPolicy::default()
             && self.ai_providers.is_empty()
             && self.ai_default_provider_id.is_none()
             && self.ai_context_enabled == ai_context_enabled_default()

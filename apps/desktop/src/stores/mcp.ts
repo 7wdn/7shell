@@ -33,6 +33,7 @@ import {
   type McpApprovalRequest,
   type McpAuditEntry,
   MCP_AUDIT_TAIL_LIMIT,
+  type McpCatalog,
   type McpServerConfig,
   type McpServerStatus,
   type McpServerView,
@@ -71,6 +72,17 @@ export const useMcpStore = defineStore("mcp", () => {
   /** Whether the last copy of the client configuration worked, for the button's own line. */
   const copyFailed = ref(false);
   const copying = ref(false);
+  /**
+   * The tool table the host built, or nothing until it has been asked for once.
+   *
+   * The registry is the authority on what an agent may call and on what is switched off, so the
+   * capabilities page draws this answer rather than recomputing it from the settings file. It is
+   * replaced whole on every read: a tool that disappeared from the catalog must not linger.
+   */
+  const catalog = ref<McpCatalog | null>(null);
+  /** Whether the catalog has been read once, so an empty answer can say "none" rather than "reading". */
+  const catalogLoaded = ref(false);
+  const loadingCatalog = ref(false);
 
   /** Whether anything is listening, read from the status rather than from the settings. */
   const enabled = computed(() => status.value?.enabled === true);
@@ -169,6 +181,29 @@ export const useMcpStore = defineStore("mcp", () => {
     } finally {
       serversLoaded.value = true;
       loadingServers.value = false;
+    }
+  }
+
+  /**
+   * Reads the tool table the host builds.
+   *
+   * Replaced rather than merged, like the audit and the server list: the catalog is one answer to
+   * "what may an agent call now", and a row kept from an earlier read would be a tool somebody just
+   * switched off. A failure leaves the last answer on screen so the page keeps drawing something.
+   */
+  async function loadCatalog(): Promise<void> {
+    if (loadingCatalog.value) {
+      return;
+    }
+    loadingCatalog.value = true;
+    failure.value = null;
+    try {
+      catalog.value = await backend.mcp.catalog();
+    } catch (error) {
+      failure.value = asShellError(error, "mcp_catalog");
+    } finally {
+      catalogLoaded.value = true;
+      loadingCatalog.value = false;
     }
   }
 
@@ -432,11 +467,15 @@ export const useMcpStore = defineStore("mcp", () => {
     loadingAudit,
     copyFailed,
     copying,
+    catalog,
+    catalogLoaded,
+    loadingCatalog,
     enabled,
     refresh,
     enable,
     disable,
     loadAudit,
+    loadCatalog,
     loadServers,
     saveServer,
     removeServer,

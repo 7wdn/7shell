@@ -18,6 +18,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   mcpEnable: vi.fn(),
   mcpDisable: vi.fn(),
   mcpClientConfig: vi.fn(),
+  mcpCatalog: vi.fn(),
   mcpAuditTail: vi.fn(),
   mcpApprovalAnswer: vi.fn(),
   onMcpApproval: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 import {
   mcpApprovalAnswer,
   mcpAuditTail,
+  mcpCatalog,
   mcpClientConfig,
   mcpDisable,
   mcpEnable,
@@ -48,10 +50,13 @@ import {
 } from "@/lib/backend/tauri";
 import {
   MCP_AUDIT_STATUS_LABEL_KEYS,
+  MCP_CLIENT_LABEL_KEYS,
   MCP_SCOPE_HINT_KEYS,
   MCP_SCOPE_LABEL_KEYS,
   MCP_SERVER_STATE_LABEL_KEYS,
   MCP_SERVER_TRANSPORT_LABEL_KEYS,
+  MCP_TOOL_CATEGORY_LABEL_KEYS,
+  MCP_TOOL_RISK_LABEL_KEYS,
   RISK_LEVEL_LABEL_KEYS,
 } from "@/lib/mcp/labels";
 import { useMcpStore } from "@/stores/mcp";
@@ -70,6 +75,7 @@ const statusMock = vi.mocked(mcpStatus);
 const enableMock = vi.mocked(mcpEnable);
 const disableMock = vi.mocked(mcpDisable);
 const configMock = vi.mocked(mcpClientConfig);
+const catalogMock = vi.mocked(mcpCatalog);
 const auditMock = vi.mocked(mcpAuditTail);
 const answerMock = vi.mocked(mcpApprovalAnswer);
 const approvalEventMock = vi.mocked(onMcpApproval);
@@ -345,6 +351,36 @@ describe("the agent interface as the window watches it", () => {
     expect(store.copyFailed).toBe(true);
     expect(store.failure).not.toBeNull();
   });
+
+  it("replaces the tool catalog with the host's answer, and keeps it when a read fails", async () => {
+    const store = useMcpStore();
+    catalogMock.mockResolvedValueOnce({
+      tools: [
+        {
+          name: "sshell_sessions_list",
+          title: "List sessions",
+          description: "Lists saved sessions.",
+          access: "read",
+          risk: "read",
+          category: "sessions",
+          enabled: true,
+          source: null,
+        },
+      ],
+      counts: { total: 1, enabled: 1 },
+    });
+
+    await store.loadCatalog();
+    expect(store.catalog?.tools.map((tool) => tool.name)).toEqual(["sshell_sessions_list"]);
+    expect(store.catalogLoaded).toBe(true);
+    expect(store.loadingCatalog).toBe(false);
+
+    // A failed refresh leaves the last answer on screen, like the listener's own status.
+    catalogMock.mockRejectedValueOnce(failed("MCP-CATALOG"));
+    await store.loadCatalog();
+    expect(store.catalog?.tools).toHaveLength(1);
+    expect(store.failure?.code).toBe("MCP-CATALOG");
+  });
 });
 
 describe("the external servers the window lists", () => {
@@ -534,7 +570,7 @@ describe("the words the agent interface draws", () => {
     expect(missing).toEqual([]);
   });
 
-  it("names every tier, state and transport, in every language", () => {
+  it("names every tier, state, transport, category, risk and client, in every language", () => {
     const missing: string[] = [];
     const keys = [
       ...Object.values(MCP_SCOPE_LABEL_KEYS),
@@ -542,6 +578,12 @@ describe("the words the agent interface draws", () => {
       ...Object.values(MCP_AUDIT_STATUS_LABEL_KEYS),
       ...Object.values(MCP_SERVER_STATE_LABEL_KEYS),
       ...Object.values(MCP_SERVER_TRANSPORT_LABEL_KEYS),
+      ...Object.values(MCP_TOOL_CATEGORY_LABEL_KEYS),
+      ...Object.values(MCP_TOOL_RISK_LABEL_KEYS),
+      ...Object.values(MCP_CLIENT_LABEL_KEYS),
+      "mcp.tabs.access",
+      "mcp.tabs.capabilities",
+      "mcp.tabs.permissions",
       "settings.nav.mcp",
     ];
     for (const language of languages) {

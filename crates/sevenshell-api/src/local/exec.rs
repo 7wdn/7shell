@@ -139,6 +139,9 @@ impl Tool for ExecRunTool {
         let input: ExecRunInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         let command = command_of(&input.command)?;
+        // Before the command is graded and before anybody is asked about it: whether this tool may
+        // run at all is the session's own answer, and a refusal here must not cost a prompt.
+        context.guard_session(session_id, ToolAccess::Write)?;
         let timeout_ms = gate::timeout_ms(input.timeout_ms);
 
         let risk = crate::classify_command(&command);
@@ -227,6 +230,12 @@ impl Tool for BatchExecTool {
         let input: BatchExecInput = parse_arguments(arguments)?;
         let session_ids = batch_session_ids(&input.session_ids)?;
         let command = command_of(&input.command)?;
+        // Every named session is checked before any of them is touched: a run that reached nine of
+        // ten hosts because the tenth is hidden would be a partial write nobody asked for, and the
+        // refusal names no host, so it says nothing about a session the caller may not see.
+        for session_id in &session_ids {
+            context.guard_session(session_id, ToolAccess::Write)?;
+        }
         let timeout_ms = gate::timeout_ms(input.timeout_ms);
         let parallel = input.parallel.map_or(0, |parallel| parallel.clamp(1, MAX_PARALLEL));
 

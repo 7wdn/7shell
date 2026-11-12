@@ -63,6 +63,9 @@ impl Tool for K8sGetTool {
         let input: K8sGetInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         let path = api_path(&input.path)?;
+        // Before the cluster connection is opened: a read is gated too, because the session's tier
+        // decides which sessions this caller may reach at all.
+        context.guard_session(session_id, ToolAccess::Read)?;
         let subject = gate::subject(&path);
 
         let response = gate::bounded(context, gate::READ_TIMEOUT, async {

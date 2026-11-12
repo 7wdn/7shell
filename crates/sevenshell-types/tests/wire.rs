@@ -9,7 +9,7 @@
 //! 2. **A wire type can actually be serialized.** One that cannot fails at the last moment, where
 //!    the only thing the interface sees is "something went wrong inside the application".
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use sevenshell_types::{
@@ -20,15 +20,16 @@ use sevenshell_types::{
     ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors,
     DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics,
     HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo,
-    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpScope, McpServerConfig, McpServerState,
-    McpServerStatus, McpServerTransport, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PresentedHostKey,
-    ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure,
-    SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
-    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet,
-    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
-    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
-    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode,
-    ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpScope, McpServerConfig,
+    McpServerState, McpServerStatus, McpServerTransport, McpToolPolicy, MemoryUsage, NetworkCounters, OpenOutcome,
+    OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
+    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
+    SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem,
+    SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow,
+    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
+    SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome,
+    VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -625,6 +626,14 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             mcp_approval_timeout_seconds: 90,
             mcp_audit_retention_days: 14,
             mcp_max_result_bytes: 131_072,
+            mcp_tool_policy: McpToolPolicy {
+                disabled_tools: BTreeSet::from(["sshell_exec_run".to_owned()]),
+            },
+            mcp_access_policy: McpAccessPolicy {
+                visible_session_ids: Some(BTreeSet::from(["s1".to_owned()])),
+                session_scopes: BTreeMap::from([("s1".to_owned(), McpScope::HighRisk)]),
+                group_scopes: BTreeMap::from([("g1".to_owned(), McpScope::ReadOnly)]),
+            },
             ai_providers: vec![AiProviderConfig {
                 id: "local".to_owned(),
                 name: "Ollama".to_owned(),

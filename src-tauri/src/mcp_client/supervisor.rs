@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use sevenshell_api::ToolRegistry;
+use sevenshell_api::{ToolDescriptor, ToolRegistry};
 use sevenshell_mcp_client::{McpClientError, McpClientManager, McpServerSecrets, validate_server};
 use sevenshell_types::{AppSettings, McpServerConfig, McpServerState, McpServerStatus};
 use sevenshell_vault::Vault;
@@ -169,6 +169,15 @@ impl McpClientSupervisor {
     /// One configured server as a row, or nothing when no server has that id.
     pub fn view(&self, settings: &AppSettings, server_id: &str) -> Option<McpServerView> {
         self.server(settings, server_id).map(|config| self.view_of(config))
+    }
+
+    /// Every tool the external servers currently offer.
+    ///
+    /// The registry's own list is filtered by the switched-off set, and the page that draws those
+    /// switches needs both halves — so this reads the manager, unfiltered, and the caller decides
+    /// which entries are switched on.
+    pub fn tools(&self) -> Vec<ToolDescriptor> {
+        self.manager.tools()
     }
 
     /// One entry of the settings file, which is what a command checks before it writes anything.

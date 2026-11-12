@@ -371,8 +371,37 @@ export const DEFAULT_SESSION_REOPEN: SessionReopen = "ask";
  */
 export type McpScope = "readOnly" | "safeWrite" | "highRisk";
 
+/** Built-in tools switched off on the Agent access page. */
+export interface McpToolPolicy {
+  readonly disabledTools: readonly string[];
+}
+
+/** Per-session and per-group scope/visibility overrides. */
+export interface McpAccessPolicy {
+  /** null reads as every saved session, which is what an untouched file means. */
+  readonly visibleSessionIds: readonly string[] | null;
+  readonly sessionScopes: Readonly<Record<string, McpScope>>;
+  readonly groupScopes: Readonly<Record<string, McpScope>>;
+}
+
 /** What an agent may do until somebody widens it. */
 export const DEFAULT_MCP_SCOPE: McpScope = "readOnly";
+
+/** No built-in tool is switched off until somebody says so, which is what a fresh install has. */
+export const DEFAULT_MCP_TOOL_POLICY: McpToolPolicy = { disabledTools: [] };
+
+/**
+ * Every saved session is visible, and nothing has an override of its own.
+ *
+ * `visibleSessionIds: null` is not an empty allowlist: it is "no decision has been made", which is
+ * what the host reads as every session. The first time somebody hides one the list is materialised
+ * from the sessions that exist then, and sessions saved afterwards start hidden.
+ */
+export const DEFAULT_MCP_ACCESS_POLICY: McpAccessPolicy = {
+  visibleSessionIds: null,
+  sessionScopes: {},
+  groupScopes: {},
+};
 
 /**
  * Which API an assistant provider speaks, from `sevenshell_types::AiProviderKind`.
@@ -555,6 +584,10 @@ export interface AppSettings {
   readonly mcpAuditRetentionDays: number;
   /** The largest result one call may return, in bytes. */
   readonly mcpMaxResultBytes: number;
+  /** Built-in tools switched off in Agent access. Absent reads as every tool on. */
+  readonly mcpToolPolicy?: McpToolPolicy;
+  /** Per-session and per-group scope/visibility. Absent reads as the global scope and all visible. */
+  readonly mcpAccessPolicy?: McpAccessPolicy;
   /**
    * External MCP servers whose tools this installation may call.
    *

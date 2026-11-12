@@ -7,9 +7,10 @@
  * puts on the settings table.
  */
 
+import type { McpClientId } from "@/lib/mcp/clients";
 import type { McpScope } from "@/types/app";
 import type { RiskLevel } from "@/types/batch";
-import type { McpAuditStatus, McpServerState, McpServerTransport } from "@/types/mcp";
+import type { McpAuditStatus, McpServerState, McpServerTransport, McpToolCategory, McpToolRisk } from "@/types/mcp";
 
 /** How loudly each risk level is said, keyed by the wire's own spelling. */
 export const RISK_LEVEL_LABEL_KEYS: Record<RiskLevel, string> = {
@@ -58,4 +59,36 @@ export const MCP_SERVER_TRANSPORT_LABEL_KEYS: Record<McpServerTransport, string>
   stdio: "mcp.servers.transport.stdio",
   http: "mcp.servers.transport.http",
   sse: "mcp.servers.transport.sse",
+};
+
+/** The headings the capabilities page groups tools under. */
+export const MCP_TOOL_CATEGORY_LABEL_KEYS: Record<McpToolCategory, string> = {
+  sessions: "mcp.capabilities.category.sessions",
+  exec: "mcp.capabilities.category.exec",
+  files: "mcp.capabilities.category.files",
+  containers: "mcp.capabilities.category.containers",
+  kubernetes: "mcp.capabilities.category.kubernetes",
+  external: "mcp.capabilities.category.external",
+};
+
+/**
+ * How much care a tool needs before it is switched on.
+ *
+ * `commandGraded` is its own word rather than "write": the same tool may read or destroy depending
+ * on the argument it is given, and the tier is decided per call by the policy classifier.
+ */
+export const MCP_TOOL_RISK_LABEL_KEYS: Record<McpToolRisk, string> = {
+  read: "mcp.capabilities.risk.read",
+  write: "mcp.capabilities.risk.write",
+  commandGraded: "mcp.capabilities.risk.commandGraded",
+};
+
+/** The client names on the access tab's configuration strip. */
+export const MCP_CLIENT_LABEL_KEYS: Record<McpClientId, string> = {
+  claudeCode: "mcp.clients.name.claudeCode",
+  cursor: "mcp.clients.name.cursor",
+  vscode: "mcp.clients.name.vscode",
+  windsurf: "mcp.clients.name.windsurf",
+  qoder: "mcp.clients.name.qoder",
+  codex: "mcp.clients.name.codex",
 };

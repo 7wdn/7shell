@@ -32,6 +32,11 @@ pub async fn settings_set(
     // The two the shell itself obeys, which the window cannot apply by being restyled: whether there
     // is an icon, and what closing does.
     crate::apply_shell_settings(window.app_handle(), &settings);
+    // The agent's view of the world, rebuilt from this save: what it may see and which tools are
+    // switched off. Applied before the listener comparison below so a call that races the restart
+    // already sees the new policy — the listener itself reads the snapshot per call, so a change
+    // that does not move the port or the global scope takes effect without one.
+    state.apply_agent_policy(&settings);
 
     // The external servers are a list in this same file, and the settings page is not the only place
     // it can change (the server commands write it too). Compared rather than applied every time: a
