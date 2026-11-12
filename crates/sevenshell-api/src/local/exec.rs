@@ -148,12 +148,12 @@ impl Tool for ExecRunTool {
         let subject = gate::subject(&command);
         let name = saved_session(context.core(), session_id).map(|session| session.name);
 
-        let mut approval = None;
-        let mut acknowledged = false;
-        if risk.needs_approval() {
-            approval = Some(gate::approve_risk(context, EXEC_RUN, &risk, Some((session_id, name)), &subject).await?);
-            acknowledged = true;
-        }
+        // The matrix may raise a Safe command to Ask, so the gate is consulted for every risk, not
+        // only for the classifier's destructive levels. With the default rule this is a no-op for
+        // Safe; a tighter layer turns it into a question.
+        let mut approval =
+            gate::approve_risk(context, EXEC_RUN, &risk, Some((session_id, name)), None, &subject).await?;
+        let acknowledged = approval.is_some();
 
         let request = BatchRequest {
             session_ids: vec![session_id.to_owned()],
@@ -242,14 +242,11 @@ impl Tool for BatchExecTool {
         let risk = crate::classify_command(&command);
         let subject = gate::subject(&command);
 
-        let mut approval = None;
-        let mut acknowledged = false;
-        if risk.needs_approval() {
-            // One question for the whole run: the command is the same on every host, and asking
-            // once per host would be one prompt per row for one decision.
-            approval = Some(gate::approve_risk(context, BATCH_EXEC, &risk, None, &subject).await?);
-            acknowledged = true;
-        }
+        // One question for the whole run: the matrix can raise even a safe command to Ask, and the
+        // question is about the command, not one host. The core re-decides per host as the journal's
+        // stricter layer; this asks before any session is touched.
+        let mut approval = gate::approve_risk(context, BATCH_EXEC, &risk, None, None, &subject).await?;
+        let acknowledged = approval.is_some();
 
         let request = BatchRequest {
             session_ids,

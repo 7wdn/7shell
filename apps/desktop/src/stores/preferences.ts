@@ -17,6 +17,7 @@ import { computed, ref } from "vue";
 import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveLocale } from "@/i18n";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { copyPolicyMatrix } from "@/lib/policy/matrix";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import type { ShortcutActionId } from "@/lib/shortcuts/registry";
 import type { SnippetProvider } from "@/types/sync";
@@ -48,6 +49,7 @@ import {
   DEFAULT_MCP_ACCESS_POLICY,
   DEFAULT_MCP_SCOPE,
   DEFAULT_MCP_TOOL_POLICY,
+  DEFAULT_POLICY_MATRIX,
   AI_SESSION_RETENTION_DAYS_DEFAULT,
   AI_SESSION_RETENTION_DAYS_MAX,
   AI_SESSION_RETENTION_DAYS_MIN,
@@ -72,6 +74,7 @@ import {
   type McpAccessPolicy,
   type McpScope,
   type McpToolPolicy,
+  type PolicyMatrix,
   type ResolvedTheme,
   type SessionLayout,
   type SessionReopen,
@@ -163,6 +166,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   mcpScope: DEFAULT_MCP_SCOPE,
   mcpToolPolicy: DEFAULT_MCP_TOOL_POLICY,
   mcpAccessPolicy: DEFAULT_MCP_ACCESS_POLICY,
+  policyMatrix: DEFAULT_POLICY_MATRIX,
   mcpApprovalTimeoutSeconds: DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
   mcpAuditRetentionDays: DEFAULT_MCP_AUDIT_RETENTION_DAYS,
   mcpMaxResultBytes: DEFAULT_MCP_MAX_RESULT_BYTES,
@@ -485,6 +489,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sessionScopes: {},
     groupScopes: {},
   });
+  /**
+   * The four-layer policy matrix for unattended privileged work.
+   *
+   * Here rather than inside the security page for the reason the two policies above are: the
+   * settings file is written whole, so a save from the appearance page has to carry it or it would
+   * erase every rule somebody wrote. The page edits a copy and presses Apply; nothing here reads it
+   * while it is a draft, because the host applies the matrix when the file is written.
+   */
+  const policyMatrix = ref<PolicyMatrix>(copyPolicyMatrix(DEFAULT_POLICY_MATRIX));
   const mcpApprovalTimeoutSeconds = ref(DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS);
   const mcpAuditRetentionDays = ref(DEFAULT_MCP_AUDIT_RETENTION_DAYS);
   const mcpMaxResultBytes = ref(DEFAULT_MCP_MAX_RESULT_BYTES);
@@ -799,6 +812,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         sessionScopes: { ...settings.mcpAccessPolicy?.sessionScopes },
         groupScopes: { ...settings.mcpAccessPolicy?.groupScopes },
       };
+      // A file written before the matrix existed has none, which reads as the built-in default:
+      // the behaviour every build had before the rules were editable.
+      policyMatrix.value = copyPolicyMatrix(settings.policyMatrix ?? DEFAULT_POLICY_MATRIX);
       mcpApprovalTimeoutSeconds.value = clampMcpApprovalTimeout(
         settings.mcpApprovalTimeoutSeconds ?? DEFAULT_MCP_APPROVAL_TIMEOUT_SECONDS,
       );
@@ -932,6 +948,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
           sessionScopes: { ...mcpAccessPolicy.value.sessionScopes },
           groupScopes: { ...mcpAccessPolicy.value.groupScopes },
         },
+        // The matrix travels the same way and for the same reason: a save from another page that
+        // left it out would put every unattended action back on the built-in default.
+        policyMatrix: copyPolicyMatrix(policyMatrix.value),
         mcpApprovalTimeoutSeconds: mcpApprovalTimeoutSeconds.value,
         mcpAuditRetentionDays: mcpAuditRetentionDays.value,
         mcpMaxResultBytes: mcpMaxResultBytes.value,
@@ -1452,6 +1471,24 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   /**
+   * Keeps the matrix the policy page applied.
+   *
+   * The page has already pressed Apply, so this is the change itself rather than a draft: the value
+   * is copied in and marked due for a write. The copy is deliberate — the page keeps editing its
+   * own draft afterwards, and a shared object would let a keystroke reach the store before Apply.
+   */
+  function setPolicyMatrix(matrix: PolicyMatrix): void {
+    policyMatrix.value = copyPolicyMatrix(matrix);
+    dirty.value = true;
+  }
+
+  /** Puts the matrix back to the built-in default, still waiting for the page's Apply to write it. */
+  function resetPolicyMatrix(): void {
+    policyMatrix.value = copyPolicyMatrix(DEFAULT_POLICY_MATRIX);
+    dirty.value = true;
+  }
+
+  /**
    * A line count inside the range the panel offers.
    *
    * Zero is a real answer — it means "attach nothing" — so it is kept rather than corrected to the
@@ -1765,6 +1802,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "mcpAccessPolicy":
           mcpAccessPolicy.value = { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} };
           break;
+        case "policyMatrix":
+          policyMatrix.value = copyPolicyMatrix(DEFAULT_POLICY_MATRIX);
+          break;
         case "locale":
           localeChosen.value = false;
           locale.value = resolveLocale(typeof navigator === "undefined" ? undefined : navigator.language);
@@ -1857,6 +1897,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     mcpScope,
     mcpToolPolicy,
     mcpAccessPolicy,
+    policyMatrix,
     mcpApprovalTimeoutSeconds,
     mcpAuditRetentionDays,
     mcpMaxResultBytes,
@@ -1919,6 +1960,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setMcpScope,
     setMcpToolPolicy,
     setMcpAccessPolicy,
+    setPolicyMatrix,
+    resetPolicyMatrix,
     setMcpApprovalTimeoutSeconds,
     setMcpAuditRetentionDays,
     setMcpMaxResultBytes,

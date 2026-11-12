@@ -33,7 +33,8 @@ Rules, enforced by `scripts/tests/architecture.test.mjs`:
 
 **Current state:** the crates that exist are `sevenshell-error`, `sevenshell-types`,
 `sevenshell-platform` (where data lives, including the settings file), `sevenshell-vault` (the
-encrypted store), `sevenshell-policy` (what may be run, and how dangerous it is), `sevenshell-ssh`
+encrypted store), `sevenshell-policy` (what may be run, how dangerous it is, and the matrix that decides what to do
+about that danger), `sevenshell-ssh`
 (host key verification, authentication, a terminal channel), `sevenshell-term` (the terminals that
 are not SSH), `sevenshell-ftp` (the far side of FTP and FTPS file browsers), `sevenshell-k8s` (a
 Kubernetes API client: kubeconfig, REST, watches, pod logs, the exec WebSocket and a pinned CONNECT
@@ -499,6 +500,47 @@ hiding a session needs no listener restart.
 
 A destructive command or action still asks a person in every tier. "Full access" is about which
 tools are offered, never about bypassing the gate.
+
+## The policy matrix
+
+The risk classifier answers "how dangerous is this". The matrix answers the second question:
+"what does this installation do about that danger, here". It has four kinds of layer — global,
+group, host or `host:port`, and remote-directory prefix — and resolves all of them for one action,
+with the strictest matching action winning. A layer can tighten, never loosen: a group `Allow`
+cannot undo a global `Ask`, and a `Deny` on `/prod` outvotes every allowing layer beneath it.
+Destructive and catastrophic verdicts are raised to at least a question after resolution, so the
+matrix chooses where and what to ask about, never whether a destructive action gets a person at
+all. The decision names the layer that supplied the winning action (`global`, `group:<id>`,
+`host:<host[:port]>` or `directory:<prefix>`), which is what the trail and the settings page show.
+
+`Core` holds one snapshot of the matrix and the journal it writes to, replaced together whenever
+the settings are applied, and `Core::policy_decision` decides and journals exactly once. The batch
+path builds one target per named host and stops the whole run on any deny — a batch that ran on
+the allowed hosts would be a partial write nobody asked for. Container and Kubernetes actions
+decide against the global rule, because these paths carry no saved session id to resolve a group
+or host layer from; naming a layer the decision never consulted would be worse than saying
+"global". A tool call goes through the same core
+gate: `sevenshell-api` resolves the session's group, host and port from the core's own lookup, adds
+the remote directory when the operation names one, and never lets a tool provide a target that
+disagrees with the session it named. A deny is answered before the approval broker, a connection
+lookup or a socket; an ask is the existing approval window; an allow still leaves a line.
+
+The trail is `<config>/audit/policy-audit.jsonl`, written through the same JSONL mechanics as the
+agent audit: one complete camelCase line per decision, owner-only, rotation at 8 MiB with one
+previous file, a tail read capped at 1 000 lines, and the retention window that already governs
+the agent audit (`mcpAuditRetentionDays`). The subject is scrubbed with the error layer's redactor
+and bounded at 400 characters inside the core, before any journal sees it; a failed write is
+reported and does not change or repeat the decision. The Security settings page edits the matrix
+and lists the trail; the terminal path stays ungated, as it always was.
+
+| Piece | Where |
+|---|---|
+| Matrix types and defaults | `crates/sevenshell-types/src/policy_matrix.rs` |
+| Resolution, targets and audit event | `crates/sevenshell-policy/src/matrix.rs` |
+| Snapshot, decision and journal call | `crates/sevenshell-core/src/policy.rs` |
+| Tool gate | `crates/sevenshell-api/src/local/gate.rs` |
+| Trail file | `src-tauri/src/policy.rs`, `src-tauri/src/jsonl.rs` |
+| Matrix editor and audit panel | `apps/desktop/src/components/settings/PolicyMatrixPanel.vue`, `PolicyAuditPanel.vue` |
 
 ## The assistant
 

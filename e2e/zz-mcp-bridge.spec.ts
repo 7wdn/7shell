@@ -39,7 +39,7 @@ test("the MCP bridge lists and calls the live tool table", async () => {
   const page = context.pages()[0] ?? (await context.waitForEvent("page"));
 
   try {
-    await expect(page.getByLabel("Search sessions")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible({ timeout: 30_000 });
 
     const settings = page.getByRole("region", { name: "Settings" });
     if (!(await settings.isVisible().catch(() => false))) {

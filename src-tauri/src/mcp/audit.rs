@@ -2,8 +2,8 @@
 //!
 //! The registry writes a record for every call — the ones that ran, the ones that failed and the
 //! ones the scope refused — so the file answers "what was asked" and not only "what worked". This
-//! module is the file: a JSONL append, a size-bounded rotation, and a retention rule so a machine
-//! nobody looked at for a year does not carry a year of history.
+//! module is the content; [`crate::jsonl`] is the file: a JSONL append, a size-bounded rotation and
+//! a retention rule so a machine nobody looked at for a year does not carry a year of history.
 //!
 //! Nothing added here is a secret. The subject is a command line or a remote path and the tool
 //! inputs hold no credentials by construction; the record is written exactly as the registry built
@@ -14,32 +14,19 @@
 //! control list of the configuration directory for the same reason the endpoint file does (see
 //! `endpoint`).
 
-use std::fs::OpenOptions;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use sevenshell_api::{AuditRecord, AuditSink};
 use sevenshell_error::ShellError;
+
+use crate::jsonl::JsonlFile;
 
 /// The directory inside the configuration directory that holds the trail.
 pub const AUDIT_DIRECTORY: &str = "audit";
 
 /// The trail's file name.
 pub const AUDIT_FILE_NAME: &str = "mcp-audit.jsonl";
-
-/// How large the trail may grow before it is rotated.
-///
-/// Eight mebibytes is roughly forty thousand lines of the records this interface writes: weeks of
-/// ordinary use, and small enough that reading the tail costs nothing. The rotated file is kept as
-/// `.1` and nothing older: the retention setting decides whether even that one stays.
-pub const MAX_AUDIT_BYTES: u64 = 8 * 1024 * 1024;
-
-/// The most lines a tail read may ask for.
-///
-/// The interface draws a panel, not a log viewer; a request for more than this is a caller that
-/// should be paging, and answering it would put the whole file through IPC.
-pub const MAX_TAIL_LINES: usize = 1_000;
 
 /// Where the trail lives, whether or not it exists yet.
 pub fn default_path() -> Result<PathBuf, ShellError> {
@@ -56,17 +43,13 @@ pub fn path_in(directory: &Path) -> PathBuf {
 /// One audit file, with the two limits this installation set for it.
 #[derive(Debug, Clone)]
 pub struct AuditLog {
-    path: PathBuf,
-    retention_days: u32,
-    max_bytes: u64,
+    file: JsonlFile,
 }
 
 impl AuditLog {
     pub fn new(path: PathBuf, retention_days: u32) -> Self {
         Self {
-            path,
-            retention_days,
-            max_bytes: MAX_AUDIT_BYTES,
+            file: JsonlFile::new(path, retention_days),
         }
     }
 
@@ -74,42 +57,17 @@ impl AuditLog {
     #[cfg(test)]
     fn with_max_bytes(path: PathBuf, retention_days: u32, max_bytes: u64) -> Self {
         Self {
-            path,
-            retention_days,
-            max_bytes,
+            file: JsonlFile::with_max_bytes(path, retention_days, max_bytes),
         }
     }
 
     pub fn path(&self) -> &Path {
-        &self.path
+        self.file.path()
     }
 
     /// Applies the retention rule once, at the start of a run.
-    ///
-    /// Both files are judged by when they were last written. The active one is only dropped when the
-    /// whole file is older than the window — every record in it has expired, and keeping it would be
-    /// keeping a trail this run is about to append next to. A fresh active file is left alone however
-    /// many records it holds: it is the one the next call extends.
     pub fn prune(&self, now: SystemTime) {
-        if let Ok(metadata) = std::fs::metadata(&self.path)
-            && metadata
-                .modified()
-                .is_ok_and(|modified| retention_expired(modified, now, self.retention_days))
-        {
-            match std::fs::remove_file(&self.path) {
-                Ok(()) => log::info!("the agent audit trail was older than its retention window and was dropped"),
-                Err(error) => log::warn!("{} could not be dropped: {error}", self.path.display()),
-            }
-        }
-
-        let rotated = rotated_path(&self.path);
-        if let Ok(metadata) = std::fs::metadata(&rotated)
-            && metadata
-                .modified()
-                .is_ok_and(|modified| retention_expired(modified, now, self.retention_days))
-        {
-            let _ = std::fs::remove_file(&rotated);
-        }
+        self.file.prune(now);
     }
 
     fn append(&self, record: &AuditRecord) {
@@ -122,76 +80,7 @@ impl AuditLog {
     }
 
     fn try_append(&self, record: &AuditRecord) -> Result<(), ShellError> {
-        let mut line = serde_json::to_vec(record)
-            .map_err(|error| ShellError::store_io(format!("an audit record could not be serialized: {error}")))?;
-        line.push(b'\n');
-
-        if let Some(directory) = self.path.parent() {
-            std::fs::create_dir_all(directory)
-                .map_err(|error| ShellError::store_io(format!("cannot create {}: {error}", directory.display())))?;
-        }
-
-        self.rotate_if_needed(line.len() as u64)?;
-
-        let mut options = OpenOptions::new();
-        options.create(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt as _;
-            options.mode(0o600);
-        }
-
-        let mut file = options
-            .open(&self.path)
-            .map_err(|error| ShellError::store_io(format!("cannot open {}: {error}", self.path.display())))?;
-
-        // A file somebody else created — restored from a backup, copied in by hand — keeps its old
-        // mode through an append. Tightened here rather than only at creation, because the rule is
-        // about what is in the file, not about which call made it.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
-        }
-
-        file.write_all(&line)
-            .map_err(|error| ShellError::store_io(format!("cannot write {}: {error}", self.path.display())))?;
-        file.flush()
-            .map_err(|error| ShellError::store_io(format!("cannot flush {}: {error}", self.path.display())))?;
-        Ok(())
-    }
-
-    /// Moves the active file aside when this line would take it over the limit.
-    ///
-    /// One rotated file, replaced rather than numbered: the retention window makes a chain
-    /// pointless, and a directory that grows a file per week is a directory somebody has to clean up
-    /// by hand.
-    fn rotate_if_needed(&self, incoming: u64) -> Result<(), ShellError> {
-        let current = std::fs::metadata(&self.path)
-            .map(|metadata| metadata.len())
-            .unwrap_or(0);
-        if current == 0 || current.saturating_add(incoming) <= self.max_bytes {
-            return Ok(());
-        }
-
-        let rotated = rotated_path(&self.path);
-        match std::fs::remove_file(&rotated) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(ShellError::store_io(format!(
-                    "the previous audit file {} could not be replaced: {error}",
-                    rotated.display()
-                )));
-            }
-        }
-        std::fs::rename(&self.path, &rotated).map_err(|error| {
-            ShellError::store_io(format!(
-                "the audit trail {} could not be rotated: {error}",
-                self.path.display()
-            ))
-        })?;
-        Ok(())
+        self.file.append_record(record)
     }
 }
 
@@ -207,61 +96,16 @@ impl AuditSink for AuditLog {
 /// power cut ends in half a line, and that half line must not hide the ninety-nine whole ones before
 /// it.
 pub fn read_tail(path: &Path, limit: usize) -> Vec<AuditRecord> {
-    let limit = limit.min(MAX_TAIL_LINES);
-    if limit == 0 {
-        return Vec::new();
-    }
-
-    let mut records = read_records(path);
-    // The active file may be shorter than the window somebody asked for, especially on a fresh run
-    // right after a rotation. The rotated file is older, so it goes in front.
-    if records.len() < limit {
-        let mut older = read_records(&rotated_path(path));
-        older.append(&mut records);
-        records = older;
-    }
-
-    let start = records.len().saturating_sub(limit);
-    records[start..].to_vec()
-}
-
-/// Every readable record in one file.
-fn read_records(path: &Path) -> Vec<AuditRecord> {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
-        Err(error) => {
-            log::warn!("{} could not be read: {error}", path.display());
-            return Vec::new();
-        }
-    };
-
-    String::from_utf8_lossy(&bytes)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<AuditRecord>(line).ok())
-        .collect()
-}
-
-fn rotated_path(path: &Path) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(".1");
-    PathBuf::from(name)
-}
-
-/// Whether a file last written at `modified` is outside the retention window at `now`.
-///
-/// A separate function rather than inline arithmetic so the rule can be checked with two timestamps
-/// instead of by waiting a month.
-pub(crate) fn retention_expired(modified: SystemTime, now: SystemTime, days: u32) -> bool {
-    let window = Duration::from_secs(u64::from(days) * 24 * 60 * 60);
-    now.duration_since(modified).is_ok_and(|age| age > window)
+    crate::jsonl::read_tail(path, limit)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jsonl::{retention_expired, rotated_path};
     use sevenshell_api::{AuditStatus, ToolAudit};
     use sevenshell_types::McpScope;
+    use std::time::Duration;
 
     fn now() -> SystemTime {
         SystemTime::now()

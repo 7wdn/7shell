@@ -106,6 +106,9 @@ pub struct Core {
     pub(crate) container_streams: Arc<Mutex<ContainerStreamStops>>,
     pub(crate) next_file: std::sync::atomic::AtomicU64,
     pub(crate) next_transfer: std::sync::atomic::AtomicU64,
+    /// The matrix and the audit trail behind every unattended action. Replaced together, read
+    /// without waiting on a disk because the journal is called after the snapshot is released.
+    pub(crate) policy: std::sync::Mutex<crate::policy::PolicySnapshot>,
     tunnels: Mutex<HashMap<String, TunnelRecord>>,
     /// The opens that are still going, so one of them can be called off.
     ///
@@ -131,6 +134,9 @@ impl Core {
                 container_streams: Arc::new(Mutex::new(HashMap::new())),
                 next_file: std::sync::atomic::AtomicU64::new(1),
                 next_transfer: std::sync::atomic::AtomicU64::new(1),
+                // The default rule until a host replaces it: safe and caution run, the destructive
+                // levels ask, and nothing is journaled because there is no trail yet.
+                policy: std::sync::Mutex::new(crate::policy::PolicySnapshot::default()),
                 tunnels: Mutex::new(HashMap::new()),
                 opens_in_flight: Mutex::new(HashMap::new()),
                 timeout: OPEN_TIMEOUT,

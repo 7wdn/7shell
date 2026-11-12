@@ -202,7 +202,7 @@ test("the assistant refuses and then approves a destructive command", async () =
   // failure of the assistant.
   if (
     !(await page
-      .getByLabel("Search sessions")
+      .getByRole("textbox", { name: "Search sessions" })
       .isVisible()
       .catch(() => false))
   ) {
@@ -328,6 +328,45 @@ test("the assistant refuses and then approves a destructive command", async () =
     // The sentinel is this case's own doing, so it does not leave one behind — including after a
     // failure, which is exactly when a leftover would confuse the next run.
     inLab(`rm -f ${SENTINEL}`);
+    // And the two global things the case had to change: the tier it needed to reach an approval, and
+    // the provider it added. Best-effort on purpose — this runs in a failing case too, and a window
+    // that cannot answer must not replace the failure above with one from the cleanup.
+    await restoreGlobalState(page);
     await browser.close();
   }
 });
+
+/**
+ * Puts the agent tier and the provider list back the way a fresh install has them.
+ *
+ * "Writes you allow" is what lets this case reach the approval at all, and a run that leaves it — or
+ * a provider pointing at somebody's gateway — behind would describe a different application to the
+ * next spec. The same controls the case itself used, in reverse.
+ */
+async function restoreGlobalState(page: Page): Promise<void> {
+  try {
+    const settings = page.getByRole("region", { name: "Settings" });
+    if (!(await settings.isVisible().catch(() => false))) {
+      await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    }
+    await expect(settings).toBeVisible({ timeout: 10_000 });
+
+    await settings.getByRole("button", { name: "Agent access", exact: true }).click();
+    await settings.locator("#mcp-scope").click();
+    await page.getByRole("option", { name: "Read only", exact: true }).click();
+    await settings.getByRole("button", { name: "Save and apply", exact: true }).click();
+    await expect(settings.getByText(/^Saved/)).toBeVisible({ timeout: 20_000 });
+
+    await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+    const provider = settings.locator("li").filter({ hasText: "AI lab gateway" }).first();
+    if ((await provider.count()) > 0) {
+      await provider.getByRole("button", { name: "Remove", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(settings.getByText("AI lab gateway", { exact: false })).toHaveCount(0, { timeout: 15_000 });
+    }
+
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } catch {
+    // The gate may be up, or the window may be gone; the case's own failure is the one to report.
+  }
+}

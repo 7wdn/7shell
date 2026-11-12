@@ -117,6 +117,36 @@ async function waitForCdp(timeoutMs) {
 }
 
 /**
+ * Stops waiting the moment the command behind the window has exited.
+ *
+ * Three minutes is how long a build and a first paint can legitimately take, and it is far too long
+ * to sit in front of a run that is already over: a port the dev server could not take, a compile
+ * error, a missing sidecar — each of those ends the command, and the output that says which one is on
+ * this terminal already. The wait only exists to stop being a wait when nothing can answer any more.
+ */
+async function waitForCdpOrExit(app, timeoutMs) {
+  let onExit;
+  const exited = new Promise((_resolve, reject) => {
+    onExit = (code, signal) => {
+      reject(
+        new Error(
+          `the application exited before its debugging endpoint answered (${code === null ? signal : `exit ${code}`}); ` +
+            `its output above says why. A dev server port (${DEV_PORT}) taken by another process is one reason: ` +
+            "this command only closes what is listening when it starts.",
+        ),
+      );
+    };
+    app.once("exit", onExit);
+  });
+
+  try {
+    return await Promise.race([waitForCdp(timeoutMs), exited]);
+  } finally {
+    app.removeListener("exit", onExit);
+  }
+}
+
+/**
  * Stops the application, its window, and the dev server it was started with.
  *
  * Synchronously, because every caller exits immediately afterwards. The tree rather than the process
@@ -182,6 +212,9 @@ async function main() {
     "utf8",
   );
 
+  // `pnpm dev:tauri` is the launcher the project already owns; it starts the dev server, the
+  // sidecar and the application with the environment above. Watching is left on: an e2e run is not
+  // edited while it runs, and the pnpm route is the one that has always carried the config dir.
   const app = spawn("pnpm", ["dev:tauri"], {
     cwd: REPO_ROOT,
     shell: true,
@@ -213,7 +246,7 @@ async function main() {
   console.log("e2e: starting the application (a window will appear, pointed at the test data)");
   let tests = 1;
   try {
-    const version = await waitForCdp(180_000);
+    const version = await waitForCdpOrExit(app, 180_000);
     console.log(`attached to ${version.Browser ?? "the webview"} at ${CDP_URL}`);
 
     // A name to run one case by, for the loop of writing a case and watching it: setting it is not

@@ -184,15 +184,19 @@ impl Tool for ContainerActionTool {
         let subject = gate::subject(&format!("{} {container_id}", action.as_str()));
         let verdict = sevenshell_policy::container_action(action.as_str());
 
-        let mut approval = None;
-        let mut acknowledged = false;
-        if verdict.needs_approval() {
-            let name = saved_session(context.core(), session_id).map(|session| session.name);
-            approval = Some(
-                gate::approve_risk(context, CONTAINER_ACTION, &verdict, Some((session_id, name)), &subject).await?,
-            );
-            acknowledged = true;
-        }
+        // The matrix can raise a safe start/stop to Ask; consult it for every action. The default
+        // rule answers Allow for safe, so nothing changes unless a layer asked for it.
+        let name = saved_session(context.core(), session_id).map(|session| session.name);
+        let approval = gate::approve_risk(
+            context,
+            CONTAINER_ACTION,
+            &verdict,
+            Some((session_id, name)),
+            None,
+            &subject,
+        )
+        .await?;
+        let acknowledged = approval.is_some();
 
         gate::bounded(context, gate::READ_TIMEOUT, async {
             context

@@ -40,7 +40,7 @@ test("the assistant answers a real gateway", async () => {
     // failure of the gateway.
     if (
       !(await page
-        .getByLabel("Search sessions")
+        .getByRole("textbox", { name: "Search sessions" })
         .isVisible()
         .catch(() => false))
     ) {
@@ -96,7 +96,7 @@ test("the assistant answers a real gateway", async () => {
     // The vault is the store. Reload the webview and the conversation has to come back from it:
     // the session list, the answer and the tool card, not a fresh blank chat.
     await page.reload();
-    await expect(page.getByLabel("Search sessions")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible({ timeout: 30_000 });
     await page.locator("[data-assistant-toggle]").click();
     await page.locator("[data-assistant-sessions-toggle]").click();
     const saved = page.locator("[data-assistant-session-item]").first();
@@ -105,6 +105,31 @@ test("the assistant answers a real gateway", async () => {
     await expect(page.getByText("pong", { exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("sshell_sessions_list", { exact: true })).toBeVisible({ timeout: 30_000 });
   } finally {
+    // The provider is this case's own doing, like the conversation it left in the vault: removing it
+    // keeps the next spec from inheriting a gateway somebody's machine answered on. Best-effort —
+    // this runs in a failing case too, and a window that cannot answer must not hide that failure.
+    await removeProvider(page, "Test gateway");
     await browser.close();
   }
 });
+
+/** Takes a provider the case added back out, through the same page it was added on. */
+async function removeProvider(page: Page, name: string): Promise<void> {
+  try {
+    const settings = page.getByRole("region", { name: "Settings" });
+    if (!(await settings.isVisible().catch(() => false))) {
+      await page.getByRole("banner").getByRole("button", { name: "Settings" }).click();
+    }
+    await expect(settings).toBeVisible({ timeout: 10_000 });
+    await settings.getByRole("button", { name: "Assistant", exact: true }).click();
+    const provider = settings.locator("li").filter({ hasText: name }).first();
+    if ((await provider.count()) > 0) {
+      await provider.getByRole("button", { name: "Remove", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(settings.getByText(name, { exact: false })).toHaveCount(0, { timeout: 15_000 });
+    }
+    await page.getByRole("button", { name: "Close settings" }).click();
+  } catch {
+    // See above: the case's own result is the one that is reported.
+  }
+}

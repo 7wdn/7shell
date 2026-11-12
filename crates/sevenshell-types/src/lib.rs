@@ -15,6 +15,7 @@ mod descriptors;
 mod k8s;
 mod mcp_client;
 mod monitor;
+mod policy_matrix;
 mod risk;
 mod session;
 mod settings;
@@ -69,6 +70,7 @@ pub use monitor::{
     MAX_DISKS, MAX_ENVIRONMENT_ENTRIES, MAX_PAGE_PROCESSES, MAX_PROCESSES, MAX_SOCKETS, MemoryUsage, NetworkCounters,
     ProcessDetail, ProcessPage, ProcessSample, SocketRow,
 };
+pub use policy_matrix::{PolicyAction, PolicyMatrix, PolicyRule};
 pub use risk::{RiskAssessment, RiskLevel, RiskReason};
 pub use session::{
     BackspaceMode, CreatedKey, DesktopSettings, DownloadFolderView, EnterMode, EntryKind, ForwardMode, FtpSettings,

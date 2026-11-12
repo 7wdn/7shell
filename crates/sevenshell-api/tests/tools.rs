@@ -23,9 +23,11 @@ use sevenshell_api::{
     ToolContext, ToolError, ToolOutcome,
 };
 use sevenshell_core::Core;
+use sevenshell_policy::{PolicyAuditEvent, PolicyJournal};
 use sevenshell_types::{
-    AuthMethod, ContainerSettings, DesktopSettings, FtpSettings, KubernetesSettings, LocalSettings, McpScope, Protocol,
-    RiskLevel, SerialSettings, Session, SessionAuth, TelnetSettings, TerminalSettings, WebDavSettings, WslSettings,
+    AuthMethod, ContainerSettings, DesktopSettings, FtpSettings, KubernetesSettings, LocalSettings, McpScope,
+    PolicyAction, PolicyMatrix, PolicyRule, Protocol, RiskLevel, SerialSettings, Session, SessionAuth, TelnetSettings,
+    TerminalSettings, WebDavSettings, WslSettings,
 };
 use sevenshell_vault::Vault;
 use tempfile::{TempDir, tempdir};
@@ -119,16 +121,59 @@ impl ApprovalBroker for ScriptedBroker {
 /// A context around a vault that exists but holds no sessions, with a script, a trail and a cache of
 /// its own.
 fn fixture(scope: McpScope, broker: &Arc<ScriptedBroker>) -> (TempDir, Arc<Vault>, Arc<MemoryAudit>, ToolContext) {
+    fixture_with_policy(
+        scope,
+        broker,
+        PolicyMatrix::default(),
+        &Arc::new(MemoryPolicyJournal::default()),
+    )
+}
+
+/// The same fixture, with a matrix installed on the core before any call is made.
+fn fixture_with_policy(
+    scope: McpScope,
+    broker: &Arc<ScriptedBroker>,
+    matrix: PolicyMatrix,
+    journal: &Arc<MemoryPolicyJournal>,
+) -> (TempDir, Arc<Vault>, Arc<MemoryAudit>, ToolContext) {
     let directory = tempdir().expect("temp dir");
     let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
     vault.create("correct horse battery staple").expect("create");
     let core = Core::new(Arc::clone(&vault)).0;
+    core.set_policy(matrix, Some(Arc::clone(journal) as Arc<dyn PolicyJournal>));
 
     let audit = Arc::new(MemoryAudit::default());
     let context = ToolContext::new(Arc::clone(&core), scope)
         .with_approvals(Arc::clone(broker) as Arc<dyn ApprovalBroker>)
         .with_audit(Arc::clone(&audit) as Arc<dyn AuditSink>);
     (directory, vault, audit, context)
+}
+
+/// Where the core's policy lines go, kept in memory.
+#[derive(Default)]
+struct MemoryPolicyJournal {
+    events: Mutex<Vec<PolicyAuditEvent>>,
+}
+
+impl MemoryPolicyJournal {
+    fn events(&self) -> Vec<PolicyAuditEvent> {
+        self.events.lock().expect("not poisoned").clone()
+    }
+}
+
+impl PolicyJournal for MemoryPolicyJournal {
+    fn record(&self, event: PolicyAuditEvent) {
+        self.events.lock().expect("not poisoned").push(event);
+    }
+}
+
+fn rule(action: PolicyAction) -> PolicyRule {
+    PolicyRule {
+        safe: action,
+        caution: action,
+        destructive: action,
+        catastrophic: action,
+    }
 }
 
 fn call(name: &str, arguments: Value) -> ToolCall {
@@ -503,6 +548,83 @@ async fn a_kubernetes_path_that_is_an_address_is_refused() {
         );
         assert_eq!(error.code(), "MCP-INVALID-ARGUMENTS", "`{path}` was accepted");
     }
+}
+
+// -- The policy matrix --------------------------------------------------
+
+#[tokio::test]
+async fn a_group_rule_that_denies_refuses_the_tool_without_a_question() {
+    let broker = ScriptedBroker::new(&[]);
+    let journal = Arc::new(MemoryPolicyJournal::default());
+    let matrix = PolicyMatrix {
+        groups: [("prod".to_owned(), rule(PolicyAction::Deny))].into(),
+        ..PolicyMatrix::default()
+    };
+    let (_directory, vault, _audit, context) = fixture_with_policy(McpScope::SafeWrite, &broker, matrix, &journal);
+    let mut lab = session("lab", Protocol::Ssh);
+    lab.group_id = Some("prod".to_owned());
+    vault.save_session(lab, None).expect("save");
+
+    let error = error_of(
+        local::default_registry()
+            .call(
+                &context,
+                call(
+                    "sshell_exec_run",
+                    json!({ "sessionId": "lab", "command": "rm -rf /srv/app" }),
+                ),
+            )
+            .await,
+    );
+
+    assert_eq!(error.code(), "POLICY-DENIED");
+    assert!(broker.asked().is_empty(), "a deny is not a question");
+    let events = journal.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].action, "sshell_exec_run");
+    assert_eq!(events[0].decision, PolicyAction::Deny);
+    assert_eq!(events[0].source, "group:prod");
+    assert_eq!(events[0].group_id.as_deref(), Some("prod"));
+    assert_eq!(
+        events[0].host.as_deref(),
+        Some("127.0.0.1"),
+        "the target names the saved session's host, not one the tool supplied"
+    );
+    assert_eq!(events[0].session_id.as_deref(), Some("lab"));
+}
+
+#[tokio::test]
+async fn a_directory_rule_refuses_a_file_write_before_any_channel_is_opened() {
+    let broker = ScriptedBroker::new(&[]);
+    let journal = Arc::new(MemoryPolicyJournal::default());
+    let matrix = PolicyMatrix {
+        directories: [("/etc".to_owned(), rule(PolicyAction::Deny))].into(),
+        ..PolicyMatrix::default()
+    };
+    let (_directory, vault, _audit, context) = fixture_with_policy(McpScope::SafeWrite, &broker, matrix, &journal);
+    // No password and no server: a write that got past the gate would fail with the credential,
+    // so the refusal proves the directory rule was consulted before anything was opened.
+    vault.save_session(session("lab", Protocol::Ssh), None).expect("save");
+
+    let error = error_of(
+        local::default_registry()
+            .call(
+                &context,
+                call(
+                    "sshell_sftp_write_text",
+                    json!({ "sessionId": "lab", "path": "/etc/hosts", "text": "not yet" }),
+                ),
+            )
+            .await,
+    );
+
+    assert_eq!(error.code(), "POLICY-DENIED");
+    assert!(broker.asked().is_empty());
+    let events = journal.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].action, "sshell_sftp_write_text");
+    assert_eq!(events[0].source, "directory:/etc");
+    assert_eq!(events[0].directory.as_deref(), Some("/etc/hosts"));
 }
 
 // -- The cache ----------------------------------------------------------

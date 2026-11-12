@@ -19,6 +19,7 @@ use crate::context::ToolContext;
 use crate::registry::Tool;
 use crate::tool::{ToolAccess, ToolAudit, ToolDescriptor, ToolError, ToolInputSchema, ToolResult, parse_arguments};
 
+use super::cache::saved_session;
 use super::gate;
 use super::session_id;
 
@@ -232,6 +233,28 @@ impl Tool for SftpWriteTextTool {
         let subject = gate::subject(&path);
         let bytes = input.text.len();
 
+        // The verdict is this tool's own: no classifier rule grades "write this file", and inventing
+        // a label key here would need a translation that does not exist. What is recorded is the
+        // level a person would want to see in the trail — the file changed — with no rule claimed.
+        let risk = RiskAssessment {
+            level: RiskLevel::Caution,
+            reasons: Vec::new(),
+        };
+
+        // The matrix comes before the write. Nothing grades a file write destructive, but the
+        // installation may still refuse a directory or ask about it, and the path is the key the
+        // directory layer matches on — which is why this tool passes one and a command does not.
+        let name = saved_session(context.core(), session_id).map(|session| session.name);
+        let approval = gate::approve_risk(
+            context,
+            SFTP_WRITE_TEXT,
+            &risk,
+            Some((session_id, name)),
+            Some(&path),
+            &subject,
+        )
+        .await?;
+
         gate::bounded(context, gate::READ_TIMEOUT, async {
             context
                 .cache()
@@ -241,20 +264,17 @@ impl Tool for SftpWriteTextTool {
         })
         .await?;
 
-        // The verdict is this tool's own: no classifier rule grades "write this file", and inventing
-        // a label key here would need a translation that does not exist. What is recorded is the
-        // level a person would want to see in the trail — the file changed — with no rule claimed.
-        let risk = RiskAssessment {
-            level: RiskLevel::Caution,
-            reasons: Vec::new(),
-        };
+        let mut audit = ToolAudit::for_session(session_id).with_subject(subject).with_risk(risk);
+        if let Some(record) = approval {
+            audit = audit.with_approval(record);
+        }
 
         Ok(ToolResult::new(json!({
             "sessionId": session_id,
             "path": path,
             "bytes": bytes,
         }))
-        .with_audit(ToolAudit::for_session(session_id).with_subject(subject).with_risk(risk)))
+        .with_audit(audit))
     }
 }
 

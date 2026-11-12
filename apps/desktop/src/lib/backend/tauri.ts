@@ -13,7 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import type { AppInfo, AppSettings } from "@/types/app";
+import type { AppInfo, AppSettings, PolicyAuditEvent } from "@/types/app";
 import type {
   AiChatRequest,
   AiChatStarted,
@@ -201,6 +201,16 @@ export function settingsGet(): Promise<AppSettings> {
 
 export function settingsSet(settings: AppSettings): Promise<void> {
   return invoke<void>("settings_set", { settings });
+}
+
+/**
+ * The tail of the policy audit trail: what the matrix decided, oldest first.
+ *
+ * A read with a limit rather than a live feed — the file is the record, and a page that collected
+ * what it happened to see would disagree with it the moment anything ran while it was closed.
+ */
+export function policyAuditTail(limit: number): Promise<PolicyAuditEvent[]> {
+  return invoke<PolicyAuditEvent[]>("policy_audit_tail", { limit });
 }
 
 /** Every font family this machine has, for the two settings that choose one. */

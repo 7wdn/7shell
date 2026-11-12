@@ -22,14 +22,14 @@ use sevenshell_types::{
     HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo,
     KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpScope, McpServerConfig,
     McpServerState, McpServerStatus, McpServerTransport, McpToolPolicy, MemoryUsage, NetworkCounters, OpenOutcome,
-    OpenTunnel, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel,
-    RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary,
-    SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem,
-    SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow,
-    SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection,
-    SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome,
-    VaultArchive, VaultState,
+    OpenTunnel, PolicyAction, PolicyMatrix, PolicyRule, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample,
+    Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session,
+    SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout,
+    SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus,
+    SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
+    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
+    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
+    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -633,6 +633,17 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
                 visible_session_ids: Some(BTreeSet::from(["s1".to_owned()])),
                 session_scopes: BTreeMap::from([("s1".to_owned(), McpScope::HighRisk)]),
                 group_scopes: BTreeMap::from([("g1".to_owned(), McpScope::ReadOnly)]),
+            },
+            policy_matrix: PolicyMatrix {
+                global: PolicyRule {
+                    safe: PolicyAction::Allow,
+                    caution: PolicyAction::Ask,
+                    destructive: PolicyAction::Deny,
+                    catastrophic: PolicyAction::Deny,
+                },
+                groups: BTreeMap::from([("g1".to_owned(), PolicyRule::default())]),
+                hosts: BTreeMap::new(),
+                directories: BTreeMap::new(),
             },
             ai_providers: vec![AiProviderConfig {
                 id: "local".to_owned(),

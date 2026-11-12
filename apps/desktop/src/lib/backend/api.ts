@@ -8,7 +8,7 @@
  */
 
 import { isDesktopRuntime } from "@/lib/runtime";
-import type { AppInfo, AppSettings } from "@/types/app";
+import type { AppInfo, AppSettings, PolicyAuditEvent } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
 import type {
@@ -224,6 +224,18 @@ export const backend = {
     /** Reconnects one server now; the answer is the row with whatever state that attempt reached. */
     refreshServer: (serverId: string): Promise<McpServerView> =>
       forward("mcp_server_refresh", () => desktop.mcpServerRefresh(serverId)),
+  },
+
+  /**
+   * The policy matrix's own trail, as the security page draws it.
+   *
+   * Read-only and named for what it is: the decisions the matrix made about unattended actions.
+   * The answer is the tail of the JSONL file, oldest first, with the operation's name rather than
+   * its command line — a record of the decision, not a second copy of what somebody typed.
+   */
+  policy: {
+    auditTail: (limit: number): Promise<PolicyAuditEvent[]> =>
+      forward("policy_audit_tail", () => desktop.policyAuditTail(limit)),
   },
 
   /**

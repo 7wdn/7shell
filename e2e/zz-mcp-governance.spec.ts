@@ -125,7 +125,7 @@ test("agent access controls the live tool table and the sessions it can reach", 
   const page = context.pages()[0] ?? (await context.waitForEvent("page"));
 
   try {
-    await expect(page.getByLabel("Search sessions")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible({ timeout: 30_000 });
     const name = `governance-${Date.now()}`;
     await saveSession(page, name);
     const settings = await openAgentAccess(page);
@@ -219,7 +219,9 @@ test("agent access controls the live tool table and the sessions it can reach", 
     expect(names).not.toContain("sshell_exec_run");
     expect(answer(disabled, 3)?.error?.data?.code, "a switched-off tool is refused by name").toBe("MCP-TOOL-DISABLED");
 
-    // 4. Restore the page and the listener for whatever runs after this case.
+    // 4. Restore the page and the listener for whatever runs after this case — and to the tier a
+    //    fresh install has, rather than to the one this case happened to be using. A suite that
+    //    left "writes you allow" behind would start its next run from a policy nobody chose.
     await tool.locator("[data-mcp-tool-switch]").click();
     await applyCapabilities(page);
     await page.locator('[data-mcp-tab="permissions"]').click();
@@ -231,7 +233,7 @@ test("agent access controls the live tool table and the sessions it can reach", 
     ) {
       await page.locator("[data-mcp-allow-all]").click();
     }
-    await page.locator('[data-mcp-scope-card="safeWrite"]').click();
+    await page.locator('[data-mcp-scope-card="readOnly"]').click();
     await applyPermissions(page);
 
     const restored = await bridge([

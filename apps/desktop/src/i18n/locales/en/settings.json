@@ -399,6 +399,67 @@
         "title": "Archived vaults",
         "help": "Vaults that were moved aside, listed by name. One can be tried, switched to, or read into the vault that is open.",
         "action": "Manage archived vaults"
+      },
+      "policy": {
+        "title": "Policy matrix",
+        "description": "What unattended work may do without a person: batches, containers, clusters and agent tool calls. Typing in a terminal is not governed by these rules — the person at the keyboard is the decision.",
+        "mostRestrictive": "Every matching layer applies and the strictest action decides (allow < ask < deny). A group, host or directory rule can tighten the global rule and never loosen it.",
+        "normalized": "Allow is raised to Ask for destructive and catastrophic actions: those two always stop for a person, so these rules decide where the question is asked, not whether it is.",
+        "global": {
+          "title": "Global rule"
+        },
+        "actions": {
+          "allow": "Allow",
+          "ask": "Ask",
+          "deny": "Deny"
+        },
+        "sections": {
+          "empty": "No exception yet.",
+          "groups": {
+            "title": "Group exceptions",
+            "hint": "Keyed by the session group's id.",
+            "placeholder": "group id"
+          },
+          "hosts": {
+            "title": "Host exceptions",
+            "hint": "A host name, or host:port for one port only.",
+            "placeholder": "host or host:port"
+          },
+          "directories": {
+            "title": "Directory exceptions",
+            "hint": "A remote path prefix. / matches every path, and matching is on path boundaries only, so /srv does not cover /srv-old.",
+            "placeholder": "/srv/app"
+          }
+        },
+        "key": "Key",
+        "add": "Add a rule",
+        "remove": "Remove this rule",
+        "restore": "Restore defaults",
+        "apply": "Apply the matrix",
+        "applied": "Applied. Unattended actions follow these rules.",
+        "audit": {
+          "title": "Policy audit",
+          "description": "The matrix's most recent decisions, read from the trail on disk. The newest is last.",
+          "refresh": "Refresh",
+          "loading": "Reading the trail…",
+          "empty": "No decision has been recorded yet.",
+          "failed": "The trail could not be read.",
+          "none": "—",
+          "columns": {
+            "at": "Time",
+            "action": "Action",
+            "risk": "Risk",
+            "decision": "Decision",
+            "source": "Layer",
+            "target": "Target"
+          },
+          "fields": {
+            "session": "Session",
+            "group": "Group",
+            "host": "Host",
+            "directory": "Directory"
+          }
+        }
       }
     },
     "commands": {

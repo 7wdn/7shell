@@ -43,6 +43,8 @@ import SettingsField from "@/components/settings/SettingsField.vue";
 import SettingsRow from "@/components/settings/SettingsRow.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import KnownKeys from "@/components/settings/KnownKeys.vue";
+import PolicyAuditPanel from "@/components/settings/PolicyAuditPanel.vue";
+import PolicyMatrixPanel from "@/components/settings/PolicyMatrixPanel.vue";
 import CommandsLibrary from "@/components/settings/CommandsLibrary.vue";
 import McpSettings from "@/components/settings/McpSettings.vue";
 import AiSettings from "@/components/settings/AiSettings.vue";
@@ -1018,6 +1020,9 @@ function translate(key: string, params?: Record<string, string>): string {
                     <h4 class="text-sm font-medium text-muted-foreground">{{ t("settings.security.hosts") }}</h4>
                     <TrustedKeys />
                   </div>
+                  <!-- What unattended privileged work may do, and what it has been doing. -->
+                  <PolicyMatrixPanel />
+                  <PolicyAuditPanel />
                 </div>
 
                 <template v-else>

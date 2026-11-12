@@ -27,6 +27,7 @@ use crate::mcp::McpRuntime;
 use crate::mcp::approval::ApprovalRegistry;
 use crate::mcp::audit::AuditLog;
 use crate::mcp_client::{McpClientSupervisor, TauriServerStatusEvents};
+use crate::policy::PolicyLog;
 use crate::uploads::PendingUploads;
 
 /// A file an operation is in the middle of, waiting for an answer about it.
@@ -339,6 +340,12 @@ pub struct ShellState {
     /// connection cache and the one audit trail. Held here as well because the settings page applies
     /// a new access policy through it without either caller being restarted.
     shared: Arc<SharedAgent>,
+    /// The policy trail every decision is written to.
+    ///
+    /// One per process and held here, not rebuilt per settings save: rotation and append are one
+    /// step, and a second writer created by the next save could rename the file out from under the
+    /// first. The matrix itself lives in the core; this is where its decisions are kept.
+    policy_log: Arc<PolicyLog>,
     /// The loopback listener an MCP bridge calls, and the token this run rotates for it.
     ///
     /// Always present, listening or not: a command that turns it on needs the same object a command
@@ -411,6 +418,15 @@ impl ShellState {
         let vault = Arc::new(Vault::open_at(path));
         let (core, events) = Core::new(Arc::clone(&vault));
         let shared = Arc::new(SharedAgent::new(Arc::clone(&core)));
+        // Built once, here, for the reason the field documents: the writer is a lock as much as a
+        // path, and every settings save hands the same one to the core again.
+        let policy_log = Arc::new(match crate::policy::default_path() {
+            Ok(path) => PolicyLog::new(path),
+            Err(error) => {
+                log::warn!("the policy audit trail has nowhere to live: {error}");
+                PolicyLog::at(None)
+            }
+        });
         let mcp = Arc::new(McpRuntime::new(Arc::clone(&shared)));
         // The settings are applied a moment later by `apply_startup_shell_settings`, which is the
         // one path that hands the manager both its list, its secrets and the result bound. What
@@ -430,6 +446,7 @@ impl ShellState {
                 vault,
                 core,
                 shared,
+                policy_log,
                 mcp,
                 mcp_client,
                 ai,
@@ -472,8 +489,28 @@ impl ShellState {
     /// because a locked vault cannot say which saved session is in which group, so group overrides
     /// are only folded onto sessions once it can. The registry's disabled set is replaced in the
     /// same pass, so the page, the bridge and the assistant agree without a listener restart.
+    ///
+    /// The policy matrix and its journal move in the same pass, for the same reason: a decision made
+    /// by the new rules must not be written under the old retention window, and a decision made by
+    /// the old rules must not be lost because the save had already replaced the journal.
     pub fn apply_agent_policy(&self, settings: &AppSettings) {
         apply_access_policy(&self.shared, &self.vault, settings);
+
+        self.policy_log.configure(settings.mcp_audit_retention_days);
+        let journal: Arc<dyn sevenshell_policy::PolicyJournal> = self.policy_log.clone();
+        self.shared
+            .connections()
+            .core()
+            .set_policy(settings.policy_matrix.clone(), Some(journal));
+    }
+
+    /// The policy trail, for the one command that reads it back.
+    ///
+    /// Held by the shell rather than by the core because it is a file this process owns: the core
+    /// only knows the [`sevenshell_policy::PolicyJournal`] trait, which is what lets a test decide
+    /// with a journal that is not a file at all.
+    pub fn policy_log(&self) -> &Arc<PolicyLog> {
+        &self.policy_log
     }
 
     /// The agent interface's listener and the questions it is waiting on.

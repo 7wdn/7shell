@@ -16,11 +16,12 @@ use std::sync::Arc;
 
 use sevenshell_error::ShellError;
 use sevenshell_k8s::{ApiDialer, BoxedApiStream, DialFuture, Kubeconfig, TunneledCluster};
+use sevenshell_policy::PolicyTarget;
 use sevenshell_session::{ForwardedControl, ForwardedSession};
 use sevenshell_ssh::SshSession;
 use sevenshell_types::{
     K8sExecRequest, K8sLogRequest, K8sRequest, K8sResponse, K8sStreamEnd, K8sStreamLine, K8sWatchEvent,
-    KubeContextInfo, KubeconfigSource, Protocol, SecretInput,
+    KubeContextInfo, KubeconfigSource, PolicyAction, Protocol, RiskLevel, SecretInput,
 };
 use tokio::sync::mpsc::{self, UnboundedSender};
 
@@ -114,12 +115,27 @@ impl Core {
         // The gate comes first, and it comes before the connection is looked up: an unacknowledged
         // delete must be refused with the reason it is refused, not with "no such connection".
         let verdict = sevenshell_policy::kubernetes_request(request.method.as_str(), &request.path);
-        if verdict.needs_approval() && !request.acknowledged {
-            let rule = verdict
-                .reasons
-                .first()
-                .map_or("k8s.write", |reason| reason.rule_id.as_str());
-            return Err(ShellError::policy_approval_required(rule));
+        // A read is not something the matrix has an opinion about — listings and reads stay out of
+        // it — so a `GET` reaches the cluster the way it always did. Everything that changes
+        // something is decided here, before the connection is looked up.
+        if verdict.level != RiskLevel::Safe {
+            // The global rule only: a cluster connection carries no saved session id here, and
+            // naming a group or host layer an audit line never consulted would be worse than
+            // saying "global".
+            let operation = format!("k8s.{}", request.method.as_str().to_ascii_lowercase());
+            let decision =
+                self.policy_decision(&operation, &verdict, PolicyTarget::default(), None, Some(&request.path));
+            match decision.action {
+                PolicyAction::Deny => return Err(ShellError::policy_denied(&operation)),
+                PolicyAction::Ask if !request.acknowledged => {
+                    let rule = verdict
+                        .reasons
+                        .first()
+                        .map_or("k8s.write", |reason| reason.rule_id.as_str());
+                    return Err(ShellError::policy_approval_required(rule));
+                }
+                _ => {}
+            }
         }
 
         self.clusters
@@ -246,16 +262,34 @@ fn host_key_error(decision: HostKeyDecision) -> ShellError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
+    use sevenshell_policy::{PolicyAuditEvent, PolicyJournal};
     use sevenshell_types::{
-        AuthMethod, K8sMethod, KubeconfigSource, KubernetesSettings, Protocol, RiskLevel, Session, SessionAuth,
-        TerminalSettings,
+        AuthMethod, K8sMethod, KubeconfigSource, KubernetesSettings, PolicyAction, PolicyMatrix, PolicyRule, Protocol,
+        RiskLevel, Session, SessionAuth, TerminalSettings,
     };
     use sevenshell_vault::{SessionSecret, Vault};
     use tempfile::{TempDir, tempdir};
 
     use crate::Core;
+
+    #[derive(Default)]
+    struct RecordingJournal {
+        events: Mutex<Vec<PolicyAuditEvent>>,
+    }
+
+    impl RecordingJournal {
+        fn events(&self) -> Vec<PolicyAuditEvent> {
+            self.events.lock().expect("not poisoned").clone()
+        }
+    }
+
+    impl PolicyJournal for RecordingJournal {
+        fn record(&self, event: PolicyAuditEvent) {
+            self.events.lock().expect("not poisoned").push(event);
+        }
+    }
 
     /// A core with a vault that has never been unlocked.
     ///
@@ -361,6 +395,77 @@ users:
       token: not-a-real-token
 "#
         )
+    }
+
+    #[tokio::test]
+    async fn a_denied_request_never_reaches_the_cluster_even_when_acknowledged() {
+        let core = core();
+        let journal = Arc::new(RecordingJournal::default());
+        core.set_policy(
+            PolicyMatrix {
+                global: PolicyRule {
+                    safe: PolicyAction::Deny,
+                    caution: PolicyAction::Deny,
+                    destructive: PolicyAction::Deny,
+                    catastrophic: PolicyAction::Deny,
+                },
+                ..PolicyMatrix::default()
+            },
+            Some(Arc::clone(&journal) as Arc<dyn PolicyJournal>),
+        );
+
+        // Acknowledged on purpose: the acknowledgement answers a question, and a deny is not one.
+        // The connection does not exist either, so a request that got past the gate would say
+        // "not connected" instead of naming the policy.
+        let error = core
+            .k8s_request(
+                "no-such-connection",
+                request(K8sMethod::Delete, "/api/v1/namespaces/prod/pods/web", true),
+            )
+            .await
+            .expect_err("a deny refuses the request");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::PolicyDenied);
+        let events = journal.events();
+        assert_eq!(events.len(), 1, "one request, one line");
+        assert_eq!(events[0].action, "k8s.delete");
+        assert_eq!(events[0].decision, PolicyAction::Deny);
+        assert_eq!(
+            events[0].subject.as_deref(),
+            Some("/api/v1/namespaces/prod/pods/web"),
+            "the line names the path the decision was about"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_read_is_not_something_the_matrix_decides() {
+        let core = core();
+        let journal = Arc::new(RecordingJournal::default());
+        core.set_policy(
+            PolicyMatrix {
+                global: PolicyRule {
+                    safe: PolicyAction::Deny,
+                    caution: PolicyAction::Deny,
+                    destructive: PolicyAction::Deny,
+                    catastrophic: PolicyAction::Deny,
+                },
+                ..PolicyMatrix::default()
+            },
+            Some(Arc::clone(&journal) as Arc<dyn PolicyJournal>),
+        );
+
+        // Reads and listings are deliberately outside the matrix, so a rule about safe actions does
+        // not close cluster browsing. The read gets to the connection lookup and fails there.
+        let error = core
+            .k8s_request(
+                "no-such-connection",
+                request(K8sMethod::Get, "/api/v1/namespaces/default/pods", false),
+            )
+            .await
+            .expect_err("there is no such connection");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::K8sNotConnected);
+        assert!(journal.events().is_empty(), "a read leaves no policy line");
     }
 
     #[tokio::test]

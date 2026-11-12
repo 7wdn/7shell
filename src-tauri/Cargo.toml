@@ -32,6 +32,7 @@ sevenshell-agent = { workspace = true }
 sevenshell-ai = { workspace = true }
 sevenshell-mcp-client = { workspace = true }
 sevenshell-platform = { workspace = true }
+sevenshell-policy = { workspace = true }
 sevenshell-session = { workspace = true }
 sevenshell-term = { workspace = true }
 sevenshell-ssh = { workspace = true }

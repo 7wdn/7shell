@@ -23,6 +23,7 @@ pub mod keys;
 pub mod known_hosts;
 pub mod mcp;
 pub mod monitor;
+pub mod policy;
 pub mod sessions;
 pub mod settings;
 pub mod snippets;

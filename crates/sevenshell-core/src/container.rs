@@ -13,11 +13,12 @@ use std::sync::Arc;
 
 use sevenshell_container::{LineStream, Provider, Runner};
 use sevenshell_error::ShellError;
+use sevenshell_policy::PolicyTarget;
 use sevenshell_session::{ForwardedControl, ForwardedSession};
 use sevenshell_types::{
     ContainerCommitRequest, ContainerCreateRequest, ContainerDetail, ContainerImage, ContainerImageTransfer,
     ContainerRegistryLogin, ContainerRuntime, ContainerRuntimeInfo, ContainerStats, ContainerStreamEnd,
-    ContainerStreamLine, ContainerSummary, ContainerTransport, ImageLayer, Protocol,
+    ContainerStreamLine, ContainerSummary, ContainerTransport, ImageLayer, PolicyAction, Protocol, RiskAssessment,
 };
 use tokio::sync::mpsc::{self, UnboundedSender};
 
@@ -106,13 +107,13 @@ impl Core {
         acknowledged: bool,
     ) -> Result<(), ShellError> {
         let verdict = sevenshell_policy::container_action(action);
-        if verdict.needs_approval() && !acknowledged {
-            let rule = verdict
-                .reasons
-                .first()
-                .map_or("container.unknown", |reason| reason.rule_id.as_str());
-            return Err(ShellError::policy_approval_required(rule));
-        }
+        self.container_gate(
+            &format!("container.{action}"),
+            &verdict,
+            acknowledged,
+            "container.unknown",
+            Some(container_id),
+        )?;
         self.container_provider(connection_id)?
             .action(container_id, action)
             .await
@@ -173,20 +174,20 @@ impl Core {
         image: &str,
         acknowledged: bool,
     ) -> Result<(), ShellError> {
-        require_ack(
-            sevenshell_policy::container_action("image-remove"),
-            "container.remove",
+        let verdict = sevenshell_policy::container_action("image-remove");
+        self.container_gate(
+            "container.image-remove",
+            &verdict,
             acknowledged,
+            "container.remove",
+            Some(image),
         )?;
         self.container_provider(connection_id)?.image_remove(image).await
     }
 
     pub async fn container_image_prune(&self, connection_id: &str, acknowledged: bool) -> Result<(), ShellError> {
-        require_ack(
-            sevenshell_policy::container_action("prune"),
-            "container.remove",
-            acknowledged,
-        )?;
+        let verdict = sevenshell_policy::container_action("prune");
+        self.container_gate("container.prune", &verdict, acknowledged, "container.remove", None)?;
         self.container_provider(connection_id)?.image_prune().await
     }
 
@@ -209,11 +210,8 @@ impl Core {
         request: &ContainerCommitRequest,
         acknowledged: bool,
     ) -> Result<String, ShellError> {
-        require_ack(
-            sevenshell_policy::container_action("commit"),
-            "container.change",
-            acknowledged,
-        )?;
+        let verdict = sevenshell_policy::container_action("commit");
+        self.container_gate("container.commit", &verdict, acknowledged, "container.change", None)?;
         self.container_provider(connection_id)?.image_commit(request).await
     }
 
@@ -348,17 +346,118 @@ fn decision_error(decision: HostKeyDecision) -> ShellError {
     }
 }
 
-fn require_ack(
-    verdict: sevenshell_types::RiskAssessment,
-    fallback: &str,
-    acknowledged: bool,
-) -> Result<(), ShellError> {
-    if verdict.needs_approval() && !acknowledged {
-        let rule = verdict
-            .reasons
-            .first()
-            .map_or(fallback, |reason| reason.rule_id.as_str());
-        return Err(ShellError::policy_approval_required(rule));
+impl Core {
+    /// One container action's policy verdict, made before the runtime is looked up.
+    ///
+    /// The target is the global rule only: a container connection has no saved session id on this
+    /// side, and naming a group or host layer here would be an audit line about a layer that never
+    /// looked at the action. The session's own score is enforced where the session is known — the
+    /// tool layer's gate — not invented here.
+    fn container_gate(
+        &self,
+        operation: &str,
+        verdict: &RiskAssessment,
+        acknowledged: bool,
+        fallback_rule: &str,
+        subject: Option<&str>,
+    ) -> Result<(), ShellError> {
+        let decision = self.policy_decision(operation, verdict, PolicyTarget::default(), None, subject);
+        match decision.action {
+            PolicyAction::Deny => Err(ShellError::policy_denied(operation)),
+            PolicyAction::Ask if !acknowledged => {
+                let rule = verdict
+                    .reasons
+                    .first()
+                    .map_or(fallback_rule, |reason| reason.rule_id.as_str());
+                Err(ShellError::policy_approval_required(rule))
+            }
+            _ => Ok(()),
+        }
     }
-    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use sevenshell_policy::{PolicyAuditEvent, PolicyJournal};
+    use sevenshell_types::{PolicyMatrix, PolicyRule};
+    use sevenshell_vault::Vault;
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordingJournal {
+        events: Mutex<Vec<PolicyAuditEvent>>,
+    }
+
+    impl RecordingJournal {
+        fn events(&self) -> Vec<PolicyAuditEvent> {
+            self.events.lock().expect("not poisoned").clone()
+        }
+    }
+
+    impl PolicyJournal for RecordingJournal {
+        fn record(&self, event: PolicyAuditEvent) {
+            self.events.lock().expect("not poisoned").push(event);
+        }
+    }
+
+    fn deny_everything() -> PolicyRule {
+        PolicyRule {
+            safe: PolicyAction::Deny,
+            caution: PolicyAction::Deny,
+            destructive: PolicyAction::Deny,
+            catastrophic: PolicyAction::Deny,
+        }
+    }
+
+    fn core_with_denial() -> (tempfile::TempDir, Arc<Core>, Arc<RecordingJournal>) {
+        let directory = tempdir().expect("temp dir");
+        let (core, _events) = Core::new(Arc::new(Vault::open_at(directory.path().join("vault.json"))));
+        let journal = Arc::new(RecordingJournal::default());
+        core.set_policy(
+            PolicyMatrix {
+                global: deny_everything(),
+                ..PolicyMatrix::default()
+            },
+            Some(Arc::clone(&journal) as Arc<dyn PolicyJournal>),
+        );
+        (directory, core, journal)
+    }
+
+    #[tokio::test]
+    async fn a_denied_container_action_never_reaches_the_runtime_even_when_acknowledged() {
+        let (_directory, core, journal) = core_with_denial();
+
+        // Acknowledged on purpose: an acknowledgement answers a question, it does not overrule a
+        // deny. And the connection does not exist, so any lookup would say so instead.
+        let error = core
+            .container_action("connection-that-never-existed", "web", "stop", true)
+            .await
+            .expect_err("a deny refuses the action");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::PolicyDenied);
+        let events = journal.events();
+        assert_eq!(events.len(), 1, "one action, one line");
+        assert_eq!(events[0].action, "container.stop");
+        assert_eq!(events[0].decision, PolicyAction::Deny);
+        assert_eq!(events[0].subject.as_deref(), Some("web"));
+    }
+
+    #[tokio::test]
+    async fn deleting_an_image_is_refused_by_the_same_gate() {
+        let (_directory, core, journal) = core_with_denial();
+
+        let error = core
+            .container_image_remove("connection-that-never-existed", "registry.test/app:1", true)
+            .await
+            .expect_err("a deny refuses the removal");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::PolicyDenied);
+        let events = journal.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, "container.image-remove");
+    }
 }

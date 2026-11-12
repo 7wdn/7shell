@@ -9,8 +9,10 @@ mod clipboard;
 mod close;
 mod commands;
 mod dropped;
+mod jsonl;
 mod mcp;
 mod mcp_client;
+mod policy;
 mod reveal;
 mod state;
 mod tray;
@@ -303,6 +305,7 @@ pub fn run() {
             commands::mcp::mcp_disable,
             commands::mcp::mcp_client_config,
             commands::mcp::mcp_audit_tail,
+            commands::policy::policy_audit_tail,
             commands::mcp::mcp_approval_answer,
             commands::mcp::mcp_catalog,
             commands::mcp::mcp_servers_list,
@@ -420,6 +423,13 @@ fn apply_startup_shell_settings(app: &tauri::AppHandle) {
         }
         Err(error) => {
             log::warn!("settings could not be read at startup, so the shell keeps its defaults: {error}");
+            // The defaults are a policy too — safe and caution run, the destructive levels ask — and a
+            // matrix that decides without a trail is exactly what invariant 7 is about. Handing the
+            // core the default matrix *and* the journal is what keeps a broken settings file from
+            // also being a missing audit trail.
+            if let Some(state) = app.try_state::<state::ShellState>() {
+                state.apply_agent_policy(&sevenshell_types::AppSettings::default());
+            }
         }
     }
 }

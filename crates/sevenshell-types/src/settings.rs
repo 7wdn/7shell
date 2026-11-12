@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::{AiProviderConfig, ai_context_enabled_default, ai_context_lines_default};
 use crate::mcp_client::McpServerConfig;
+use crate::policy_matrix::PolicyMatrix;
 use crate::sync::SnippetProvider;
 
 /// How the file browser is laid out.
@@ -1175,6 +1176,9 @@ pub struct AppSettings {
     /// Per-session and per-group scope and visibility.
     #[serde(default)]
     pub mcp_access_policy: McpAccessPolicy,
+    /// The four-layer policy matrix for unattended privileged actions.
+    #[serde(default)]
+    pub policy_matrix: PolicyMatrix,
     /// The assistant's providers, without their keys.
     ///
     /// A list rather than one provider, because the same installation may talk to a hosted service
@@ -1331,6 +1335,7 @@ impl Default for AppSettings {
             mcp_max_result_bytes: mcp_max_result_bytes_default(),
             mcp_tool_policy: McpToolPolicy::default(),
             mcp_access_policy: McpAccessPolicy::default(),
+            policy_matrix: PolicyMatrix::default(),
             ai_providers: Vec::new(),
             ai_default_provider_id: None,
             ai_context_enabled: ai_context_enabled_default(),
@@ -1389,6 +1394,7 @@ impl AppSettings {
             && self.mcp_max_result_bytes == mcp_max_result_bytes_default()
             && self.mcp_tool_policy == McpToolPolicy::default()
             && self.mcp_access_policy == McpAccessPolicy::default()
+            && self.policy_matrix == PolicyMatrix::default()
             && self.ai_providers.is_empty()
             && self.ai_default_provider_id.is_none()
             && self.ai_context_enabled == ai_context_enabled_default()

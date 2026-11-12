@@ -5211,6 +5211,7 @@ dependencies = [
  "sevenshell-error",
  "sevenshell-mcp-client",
  "sevenshell-platform",
+ "sevenshell-policy",
  "sevenshell-session",
  "sevenshell-ssh",
  "sevenshell-sync",

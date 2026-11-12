@@ -399,6 +399,67 @@
         "title": "历史保险库",
         "help": "被改名保留的保险库，按文件名列出。可以试解锁、切换为当前库，或把其中的内容读进已解锁的保险库。",
         "action": "管理历史保险库"
+      },
+      "policy": {
+        "title": "策略矩阵",
+        "description": "无人值守的动作可以做什么：批量执行、容器、集群和 Agent 工具调用。在终端里打的字不受这些规则约束——坐在键盘前的人就是在做决定。",
+        "mostRestrictive": "所有匹配的层都会生效，取其中最严格的一个（允许 < 需要确认 < 拒绝）。分组、主机或目录规则只能加严全局规则，不能放宽。",
+        "normalized": "「有破坏性」和「极高风险」两档即使选了「允许」，也会提升为「需要确认」：这两档永远要经过人，所以这里决定的是在哪里问，而不是问不问。",
+        "global": {
+          "title": "全局规则"
+        },
+        "actions": {
+          "allow": "允许",
+          "ask": "需要确认",
+          "deny": "拒绝"
+        },
+        "sections": {
+          "empty": "还没有例外规则。",
+          "groups": {
+            "title": "分组例外",
+            "hint": "键是会话分组的 id。",
+            "placeholder": "分组 id"
+          },
+          "hosts": {
+            "title": "主机例外",
+            "hint": "主机名，或 host:port 只对那一个端口生效。",
+            "placeholder": "主机或 host:port"
+          },
+          "directories": {
+            "title": "目录例外",
+            "hint": "远程路径前缀。/ 匹配所有路径，且只按路径边界匹配，所以 /srv 不会命中 /srv-old。",
+            "placeholder": "/srv/app"
+          }
+        },
+        "key": "键",
+        "add": "添加规则",
+        "remove": "删除这条规则",
+        "restore": "恢复默认",
+        "apply": "应用矩阵",
+        "applied": "已应用。无人值守的动作会按上面的规则执行。",
+        "audit": {
+          "title": "策略审计",
+          "description": "矩阵最近的判定，从磁盘上的审计记录读取，最新的在最后。",
+          "refresh": "刷新",
+          "loading": "正在读取审计记录…",
+          "empty": "还没有任何判定记录。",
+          "failed": "审计记录读取失败。",
+          "none": "—",
+          "columns": {
+            "at": "时间",
+            "action": "动作",
+            "risk": "风险",
+            "decision": "判定",
+            "source": "来源层",
+            "target": "目标"
+          },
+          "fields": {
+            "session": "会话",
+            "group": "分组",
+            "host": "主机",
+            "directory": "目录"
+          }
+        }
       }
     },
     "commands": {

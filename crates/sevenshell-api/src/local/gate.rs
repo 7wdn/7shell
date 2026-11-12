@@ -4,8 +4,10 @@
 //!
 //! * **How long a call may take.** A read is bounded at thirty seconds and a command by the budget
 //!   the caller asked for; both are wrapped in [`Cancel`] so a call somebody stopped stops.
-//! * **Whether a person has to agree.** A destructive verdict turns into one question on the desktop,
-//!   and a "no" or a silence is a refusal — never a default yes.
+//! * **Whether a person has to agree.** The policy matrix is asked first: a deny refuses the call
+//!   without a question, and a destructive verdict — or a safe or caution one the matrix raises —
+//!   turns into one question on the desktop where a "no" or a silence is a refusal, never a
+//!   default yes.
 //! * **What an audit line is allowed to say.** A command line can carry a password, so it is masked
 //!   and cut before it becomes a subject; output never becomes one at all.
 //! * **How much of an answer is returned.** A stream is 64 KiB, a file's text and a resource body
@@ -20,7 +22,8 @@ use std::future::Future;
 use std::time::Duration;
 
 use sevenshell_error::{MASK, truncate_chars};
-use sevenshell_types::{RiskAssessment, RiskLevel};
+use sevenshell_policy::PolicyDecision;
+use sevenshell_types::{PolicyAction, RiskAssessment, RiskLevel};
 
 use crate::context::{ApprovalDecision, ApprovalRecord, ApprovalRequest, ToolContext};
 use crate::tool::{ToolAudit, ToolError};
@@ -103,18 +106,43 @@ pub(crate) async fn bounded<T>(
     }
 }
 
-/// Asks a person about a destructive verdict, and refuses unless they agree.
+/// Asks the installation's matrix about a verdict, then a person when the matrix asks for one.
 ///
-/// The record comes back so the caller can put the same decision in the audit line a successful call
-/// leaves; a refusal comes back as an error that already carries it, because a refused call is
-/// exactly the one somebody will want to explain later.
+/// The matrix comes first because it is the narrower rule: a `Deny` is final and must not cost
+/// somebody a question they cannot answer usefully, and an `Allow` is the installation saying this
+/// action needs no question at all — which only a safe or caution verdict can be, because the
+/// resolver raises both destructive levels to `Ask` no matter what a layer says.
+///
+/// `directory` is the remote path the action names, when the tool knows one. It is the layer that
+/// makes "nothing under /etc" possible; a tool that does not act on a path passes `None` rather
+/// than inventing one.
+///
+/// Answers `None` when no approval was needed. The record comes back otherwise, so the caller can
+/// put the same decision in the audit line a successful call leaves; a refusal comes back as an
+/// error that already carries it, because a refused call is exactly the one somebody will want to
+/// explain later.
 pub(crate) async fn approve_risk(
     context: &ToolContext,
     tool: &str,
     risk: &RiskAssessment,
     session: Option<(&str, Option<String>)>,
+    directory: Option<&str>,
     subject: &str,
-) -> Result<ApprovalRecord, ToolError> {
+) -> Result<Option<ApprovalRecord>, ToolError> {
+    let decision = policy_decision(context, tool, risk, &session, directory, subject);
+    match decision.action {
+        PolicyAction::Deny => {
+            return Err(ToolError::denied(tool).with_audit(ToolAudit {
+                session_id: session.map(|(session_id, _)| session_id.to_owned()),
+                subject: Some(subject.to_owned()),
+                risk: Some(risk.clone()),
+                approval: None,
+            }));
+        }
+        PolicyAction::Allow => return Ok(None),
+        PolicyAction::Ask => {}
+    }
+
     let request = ApprovalRequest::risk(tool, risk.clone()).with_subject(subject);
     let request = match &session {
         Some((session_id, name)) => request.for_session(*session_id, name.clone()),
@@ -123,7 +151,7 @@ pub(crate) async fn approve_risk(
     let record = context.request_approval(request).await?;
 
     match record.decision {
-        ApprovalDecision::Approved => Ok(record),
+        ApprovalDecision::Approved => Ok(Some(record)),
         ApprovalDecision::Denied | ApprovalDecision::TimedOut => Err(refusal(
             record,
             risk,
@@ -132,6 +160,34 @@ pub(crate) async fn approve_risk(
             "the person at the desktop denied this action",
         )),
     }
+}
+
+/// The matrix's verdict for one tool call, with every layer the call can name.
+///
+/// The session's group, host and port come from the core's own lookup, so a tool cannot pass a
+/// target that disagrees with the session it named. A session that cannot be read contributes no
+/// layer — the tool is about to fail with that session's error, and the global rule still applies.
+fn policy_decision(
+    context: &ToolContext,
+    tool: &str,
+    risk: &RiskAssessment,
+    session: &Option<(&str, Option<String>)>,
+    directory: Option<&str>,
+    subject: &str,
+) -> PolicyDecision {
+    let saved = session
+        .as_ref()
+        .and_then(|(session_id, _)| context.core().session_policy_target(session_id));
+    let mut target = saved.as_ref().map(|saved| saved.as_target()).unwrap_or_default();
+    target.directory = directory;
+
+    context.core().policy_decision(
+        tool,
+        risk,
+        target,
+        session.as_ref().map(|(session_id, _)| *session_id),
+        Some(subject),
+    )
 }
 
 /// Asks a person to trust a host key that has never been seen, and refuses unless they agree.
@@ -288,7 +344,170 @@ pub(crate) fn rows<T>(all: &[T]) -> (&[T], usize, bool) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use sevenshell_core::Core;
+    use sevenshell_policy::{PolicyAuditEvent, PolicyJournal};
+    use sevenshell_types::{McpScope, PolicyMatrix, PolicyRule, RiskReason};
+    use sevenshell_vault::Vault;
+    use tempfile::tempdir;
+
+    use crate::context::ApprovalBroker;
+
     use super::*;
+
+    #[derive(Default)]
+    struct RecordingJournal {
+        events: std::sync::Mutex<Vec<PolicyAuditEvent>>,
+    }
+
+    impl RecordingJournal {
+        fn events(&self) -> Vec<PolicyAuditEvent> {
+            self.events.lock().expect("not poisoned").clone()
+        }
+    }
+
+    impl PolicyJournal for RecordingJournal {
+        fn record(&self, event: PolicyAuditEvent) {
+            self.events.lock().expect("not poisoned").push(event);
+        }
+    }
+
+    /// A broker that would say yes to anything and remembers being asked.
+    #[derive(Default)]
+    struct CountingBroker {
+        asked: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl ApprovalBroker for CountingBroker {
+        async fn request(&self, _request: ApprovalRequest) -> Result<ApprovalDecision, ToolError> {
+            self.asked.fetch_add(1, Ordering::SeqCst);
+            Ok(ApprovalDecision::Approved)
+        }
+    }
+
+    fn rule(action: PolicyAction) -> PolicyRule {
+        PolicyRule {
+            safe: action,
+            caution: action,
+            destructive: action,
+            catastrophic: action,
+        }
+    }
+
+    fn context_with(
+        global: PolicyRule,
+        journal: &Arc<RecordingJournal>,
+    ) -> (tempfile::TempDir, ToolContext, Arc<CountingBroker>) {
+        let directory = tempdir().expect("temp dir");
+        let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
+        let (core, _events) = Core::new(vault);
+        core.set_policy(
+            PolicyMatrix {
+                global,
+                ..PolicyMatrix::default()
+            },
+            Some(Arc::clone(journal) as Arc<dyn PolicyJournal>),
+        );
+
+        let broker = Arc::new(CountingBroker::default());
+        let context =
+            ToolContext::new(core, McpScope::SafeWrite).with_approvals(Arc::clone(&broker) as Arc<dyn ApprovalBroker>);
+        (directory, context, broker)
+    }
+
+    fn destructive() -> RiskAssessment {
+        RiskAssessment {
+            level: RiskLevel::Destructive,
+            reasons: vec![RiskReason::new(
+                "recursive-force-delete",
+                "risk.recursiveForceDelete",
+                RiskLevel::Destructive,
+            )],
+        }
+    }
+
+    #[tokio::test]
+    async fn a_policy_deny_refuses_before_the_approval_broker_is_asked() {
+        let journal = Arc::new(RecordingJournal::default());
+        let (_directory, context, broker) = context_with(rule(PolicyAction::Deny), &journal);
+
+        let error = approve_risk(
+            &context,
+            "sshell_exec_run",
+            &destructive(),
+            None,
+            None,
+            "rm -rf /srv/app",
+        )
+        .await
+        .expect_err("a deny refuses the action");
+
+        assert_eq!(error.code(), "POLICY-DENIED");
+        assert_eq!(broker.asked.load(Ordering::SeqCst), 0, "a deny is not a question");
+        let events = journal.events();
+        assert_eq!(events.len(), 1, "a refused action is still on the trail");
+        assert_eq!(events[0].action, "sshell_exec_run");
+        assert_eq!(events[0].decision, PolicyAction::Deny);
+        assert_eq!(events[0].subject.as_deref(), Some("rm -rf /srv/app"));
+    }
+
+    #[tokio::test]
+    async fn the_default_rule_still_asks_about_a_destructive_verdict() {
+        let journal = Arc::new(RecordingJournal::default());
+        let (_directory, context, broker) = context_with(PolicyRule::default(), &journal);
+
+        let approval = approve_risk(
+            &context,
+            "sshell_exec_run",
+            &destructive(),
+            None,
+            None,
+            "rm -rf /srv/app",
+        )
+        .await
+        .expect("an approved action");
+
+        assert_eq!(
+            approval.map(|approval| approval.decision),
+            Some(ApprovalDecision::Approved),
+            "the record goes back to the caller for its audit line"
+        );
+        assert_eq!(broker.asked.load(Ordering::SeqCst), 1);
+        assert_eq!(journal.events()[0].decision, PolicyAction::Ask);
+    }
+
+    #[tokio::test]
+    async fn an_allowing_matrix_answers_without_asking_or_claiming_an_approval() {
+        let journal = Arc::new(RecordingJournal::default());
+        let (_directory, context, broker) = context_with(PolicyRule::default(), &journal);
+
+        // The write tool's own verdict: caution, because the file changed, but no classifier rule.
+        let risk = RiskAssessment {
+            level: RiskLevel::Caution,
+            reasons: Vec::new(),
+        };
+        let approval = approve_risk(
+            &context,
+            "sshell_sftp_write_text",
+            &risk,
+            None,
+            Some("/srv/app.conf"),
+            "/srv/app.conf",
+        )
+        .await
+        .expect("an allowed action needs no person");
+
+        assert!(approval.is_none(), "no question means no approval to record");
+        assert_eq!(broker.asked.load(Ordering::SeqCst), 0);
+        let events = journal.events();
+        assert_eq!(events.len(), 1, "the decision is journaled all the same");
+        assert_eq!(events[0].decision, PolicyAction::Allow);
+        assert_eq!(events[0].directory.as_deref(), Some("/srv/app.conf"));
+    }
 
     #[test]
     fn an_audit_subject_masks_a_password_glued_to_its_flag() {

@@ -1,12 +1,16 @@
 //! Running one command on many hosts.
 //!
-//! Two rules shape this module, and both are about what a batch must not do:
+//! Three rules shape this module, and each is about what a batch must not do:
 //!
-//! 1. **Connect to every host before running anything.** A host that needs a decision stops the
+//! 1. **The policy is decided before a host is resolved.** Every host contributes the layers its
+//!    saved session names, the strictest answer wins, and a deny anywhere stops the run while it is
+//!    still only a set of decisions. A batch that ran on the hosts that were allowed would be a
+//!    partial write nobody asked for.
+//! 2. **Connect to every host before running anything.** A host that needs a decision stops the
 //!    run while it is still only a set of connections. Otherwise a batch would run the command on
 //!    the first nine hosts, discover the tenth needs an answer, and run the command again on the
 //!    nine after the answer — twice on nine hosts.
-//! 2. **One host's trouble stays that host's.** Unreachable, no stored password, gone from the
+//! 3. **One host's trouble stays that host's.** Unreachable, no stored password, gone from the
 //!    vault: each becomes that host's own answer, and the other hosts still run. The one thing
 //!    that stops the batch is a decision a person has to make.
 
@@ -14,16 +18,23 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use sevenshell_error::ShellError;
-use sevenshell_policy::classify;
+use sevenshell_policy::{PolicyTarget, classify};
 use sevenshell_ssh::SshSession;
 use sevenshell_types::{
-    BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, HostFailure, RiskAssessment, Session,
+    BatchHostOutcome, BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, HostFailure, PolicyAction,
+    RiskAssessment, Session,
 };
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 use crate::Core;
 use crate::sessions::{ConnectionOutcome, HostKeyDecision};
+
+/// The operation an audit line names for a run across hosts.
+///
+/// A dotted operation rather than the tool's name: the core serves the batch workspace as well as
+/// an agent, and the audit line has to say what was done, not which caller did it.
+const BATCH_ACTION: &str = "batch.exec";
 
 /// How many hosts are worked on at once when the request does not say.
 pub const DEFAULT_PARALLEL: u16 = 4;
@@ -96,12 +107,6 @@ impl Core {
     ) -> Result<BatchOutcome, ShellError> {
         let risk = classify(&request.command);
 
-        // The gate, before a host is even resolved: a command dangerous enough to need a person
-        // does not get as far as touching a server until somebody has seen why.
-        if risk.needs_approval() && !request.acknowledged {
-            return Ok(BatchOutcome::ApprovalRequired { risk });
-        }
-
         let hosts: Vec<Host> = request
             .session_ids
             .iter()
@@ -110,6 +115,33 @@ impl Core {
                 session: self.session(session_id),
             })
             .collect();
+
+        // The policy gate, one decision per host and before a socket: what the matrix says about a
+        // host is decided from the saved session, so the answer does not depend on whether the host
+        // is reachable. A deny anywhere stops the whole run — a batch that ran on the hosts that
+        // were allowed would be a partial write nobody asked for.
+        let subject = audit_subject(&risk);
+        let mut strictest = PolicyAction::Allow;
+        for host in &hosts {
+            let decision = self.policy_decision(
+                BATCH_ACTION,
+                &risk,
+                host_target(host),
+                Some(&host.session_id),
+                subject.as_deref(),
+            );
+            strictest = strictest.max(decision.action);
+        }
+
+        if strictest == PolicyAction::Deny {
+            return Err(ShellError::policy_denied(BATCH_ACTION));
+        }
+        // An escalation the matrix made — a safe or caution command an installation asks about —
+        // is a question like any other. A destructive verdict is Ask on its own, which keeps the
+        // old stop for a run that names no host and therefore journaled nothing.
+        if (strictest == PolicyAction::Ask || risk.needs_approval()) && !request.acknowledged {
+            return Ok(BatchOutcome::ApprovalRequired { risk });
+        }
 
         let started = Instant::now();
         let permits = Arc::new(Semaphore::new(clamp_parallel(request.parallel, hosts.len())));
@@ -273,6 +305,42 @@ async fn connect_one(core: &Core, session: Session) -> HostConnection {
     }
 }
 
+/// The layers one host's decision looks at: its group, its host and port, and no directory.
+///
+/// A session that could not be read contributes no layer at all — there is no host to name — so
+/// only the global rule decides about it. That host's own error is still its row; this is only
+/// about whether the run as a whole may go ahead.
+fn host_target(host: &Host) -> PolicyTarget<'_> {
+    match &host.session {
+        Ok(session) => PolicyTarget {
+            group_id: session.group_id.as_deref(),
+            host: Some(session.host.as_str()),
+            port: Some(session.port),
+            directory: None,
+        },
+        Err(_) => PolicyTarget::default(),
+    }
+}
+
+/// What the audit line may say about a batch command.
+///
+/// The rule ids, not the command line: a batch runs below the tool layer, where the command has not
+/// been masked yet, and a command line is the input most likely to carry a password. An id explains
+/// the decision without echoing what was typed. Nothing is invented for a command no rule fired on,
+/// which is why a safe command has no subject at all.
+fn audit_subject(risk: &RiskAssessment) -> Option<String> {
+    if risk.reasons.is_empty() {
+        return None;
+    }
+    Some(
+        risk.reasons
+            .iter()
+            .map(|reason| reason.rule_id.as_str())
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
 fn batch_decision(host: &Host, decision: HostKeyDecision) -> BatchOutcome {
     let host = BatchHostRef {
         session_id: host.session_id.clone(),
@@ -331,11 +399,40 @@ fn millis(duration: Duration) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use sevenshell_types::{AuthMethod, Protocol, RiskLevel, SessionAuth, TerminalSettings};
+    use std::sync::Mutex;
+
+    use sevenshell_policy::{PolicyAuditEvent, PolicyJournal};
+    use sevenshell_types::{AuthMethod, PolicyMatrix, PolicyRule, Protocol, RiskLevel, SessionAuth, TerminalSettings};
     use sevenshell_vault::Vault;
     use tempfile::{TempDir, tempdir};
 
     use super::*;
+
+    #[derive(Default)]
+    struct RecordingJournal {
+        events: Mutex<Vec<PolicyAuditEvent>>,
+    }
+
+    impl RecordingJournal {
+        fn events(&self) -> Vec<PolicyAuditEvent> {
+            self.events.lock().expect("not poisoned").clone()
+        }
+    }
+
+    impl PolicyJournal for RecordingJournal {
+        fn record(&self, event: PolicyAuditEvent) {
+            self.events.lock().expect("not poisoned").push(event);
+        }
+    }
+
+    fn rule(action: PolicyAction) -> PolicyRule {
+        PolicyRule {
+            safe: action,
+            caution: action,
+            destructive: action,
+            catastrophic: action,
+        }
+    }
 
     /// Returns the temp directory as well as the vault: dropping it would take the vault file
     /// with it.
@@ -418,6 +515,125 @@ mod tests {
                 );
             }
             other => panic!("expected a verdict to be shown, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_host_rule_that_denies_stops_the_batch_before_any_connection_and_is_journaled() {
+        let (_directory, vault) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+        let journal = Arc::new(RecordingJournal::default());
+        core.set_policy(
+            PolicyMatrix {
+                hosts: [("127.0.0.1".to_owned(), rule(PolicyAction::Deny))].into(),
+                ..PolicyMatrix::default()
+            },
+            Some(Arc::clone(&journal) as Arc<dyn PolicyJournal>),
+        );
+        let (progress, _receiver) = mpsc::channel(16);
+
+        // The fixture's session has no stored password, so a run that got as far as connecting
+        // would answer with a host row instead of an error. The refusal proves the gate came first.
+        let error = core
+            .run_across(request(&["lab"], "uptime"), progress)
+            .await
+            .expect_err("a denied host stops the whole run");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::PolicyDenied);
+        let events = journal.events();
+        assert_eq!(events.len(), 1, "one decision, one line — and one host");
+        let event = &events[0];
+        assert_eq!(event.action, "batch.exec");
+        assert_eq!(event.decision, PolicyAction::Deny);
+        assert_eq!(event.source, "host:127.0.0.1");
+        assert_eq!(event.host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(event.session_id.as_deref(), Some("lab"));
+    }
+
+    #[tokio::test]
+    async fn a_matrix_can_raise_a_safe_command_to_a_question() {
+        let (_directory, vault) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+        let journal = Arc::new(RecordingJournal::default());
+        core.set_policy(
+            PolicyMatrix {
+                global: rule(PolicyAction::Ask),
+                ..PolicyMatrix::default()
+            },
+            Some(Arc::clone(&journal) as Arc<dyn PolicyJournal>),
+        );
+        let (progress, _receiver) = mpsc::channel(16);
+
+        let outcome = core
+            .run_across(request(&["lab"], "uptime"), progress)
+            .await
+            .expect("a question is not an error");
+
+        match outcome {
+            BatchOutcome::ApprovalRequired { risk } => {
+                assert_eq!(risk.level, RiskLevel::Safe, "the classifier still says harmless");
+            }
+            other => panic!("expected the matrix's question, got {other:?}"),
+        }
+        let events = journal.events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].decision,
+            PolicyAction::Ask,
+            "the matrix, not the classifier, asked"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_acknowledged_run_goes_ahead_after_a_matrix_ask() {
+        let (_directory, vault) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+        core.set_policy(
+            PolicyMatrix {
+                global: rule(PolicyAction::Ask),
+                ..PolicyMatrix::default()
+            },
+            None,
+        );
+        let (progress, _receiver) = mpsc::channel(16);
+
+        let acknowledged = BatchRequest {
+            acknowledged: true,
+            ..request(&["lab"], "uptime")
+        };
+        let outcome = core
+            .run_across(acknowledged, progress)
+            .await
+            .expect("an answered question lets the run go");
+
+        // The fixture has no stored password, so the run got past the gate and reached the host's
+        // own credential check: the row says so, which is what "proceeded" looks like offline.
+        let BatchOutcome::Finished { results, .. } = outcome else {
+            panic!("expected the run to proceed, got {outcome:?}");
+        };
+        assert_eq!(failure(&results[0]).code, "SSH-AUTH-FAILED");
+    }
+
+    #[tokio::test]
+    async fn a_batch_line_never_carries_the_command_it_ran() {
+        let (_directory, vault) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+        let journal = Arc::new(RecordingJournal::default());
+        core.set_policy(
+            PolicyMatrix::default(),
+            Some(Arc::clone(&journal) as Arc<dyn PolicyJournal>),
+        );
+        let (progress, _receiver) = mpsc::channel(16);
+
+        let command = "mysql -phunter2 -e 'select 1'";
+        let _ = core.run_across(request(&["lab"], command), progress).await;
+
+        let events = journal.events();
+        assert!(!events.is_empty(), "every host's verdict is journaled");
+        for event in events {
+            let line = serde_json::to_string(&event).expect("an audit event serializes");
+            assert!(!line.contains("hunter2"), "a command line reached the trail: {line}");
+            assert!(!line.contains("mysql"), "the command itself reached the trail: {line}");
         }
     }
 

@@ -40,6 +40,7 @@ import {
   DEFAULT_HOME_LAYOUT,
   DEFAULT_CUSTOM_COLORS,
   DEFAULT_CUSTOM_COLORS_DARK,
+  DEFAULT_POLICY_MATRIX,
   DEFAULT_TAB_GROUP_MODE,
   DEFAULT_TAB_MAX_WIDTH,
   DEFAULT_TAB_PLACEMENT,
@@ -116,6 +117,7 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     mcpScope: "readOnly",
     mcpToolPolicy: { disabledTools: [] },
     mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
+    policyMatrix: DEFAULT_POLICY_MATRIX,
     mcpApprovalTimeoutSeconds: 120,
     mcpAuditRetentionDays: 30,
     mcpMaxResultBytes: 262_144,
@@ -337,6 +339,7 @@ describe("preferences store", () => {
       mcpScope: "readOnly",
       mcpToolPolicy: { disabledTools: [] },
       mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
+      policyMatrix: DEFAULT_POLICY_MATRIX,
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
@@ -408,6 +411,7 @@ describe("preferences store", () => {
       mcpScope: "readOnly",
       mcpToolPolicy: { disabledTools: [] },
       mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
+      policyMatrix: DEFAULT_POLICY_MATRIX,
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
@@ -460,9 +464,97 @@ describe("preferences store", () => {
     );
   });
 
+  it("reads the policy matrix, falls back when the file names none, and writes it on any save", async () => {
+    const matrix = {
+      global: {
+        safe: "allow" as const,
+        caution: "ask" as const,
+        destructive: "deny" as const,
+        catastrophic: "deny" as const,
+      },
+      groups: {
+        prod: {
+          safe: "allow" as const,
+          caution: "allow" as const,
+          destructive: "ask" as const,
+          catastrophic: "deny" as const,
+        },
+      },
+      hosts: {
+        "web-1:2222": {
+          safe: "deny" as const,
+          caution: "deny" as const,
+          destructive: "deny" as const,
+          catastrophic: "deny" as const,
+        },
+      },
+      directories: {
+        "/srv": {
+          safe: "allow" as const,
+          caution: "allow" as const,
+          destructive: "ask" as const,
+          catastrophic: "ask" as const,
+        },
+      },
+    };
+
+    settingsGetMock.mockResolvedValue(defaults({ policyMatrix: matrix }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.policyMatrix.groups.prod?.destructive).toBe("ask");
+    expect(store.policyMatrix.hosts["web-1:2222"]).toEqual(matrix.hosts["web-1:2222"]);
+
+    // A save from a page that never draws the matrix still carries it: leaving it out would put
+    // every unattended action back on the built-in rules.
+    await store.commit();
+
+    expect(settingsSetMock).toHaveBeenCalledWith(expect.objectContaining({ policyMatrix: matrix }));
+  });
+
+  it("reads an absent matrix as the built-in default, which is the old behaviour", async () => {
+    settingsGetMock.mockResolvedValue(defaults({ policyMatrix: undefined }));
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.policyMatrix).toEqual(DEFAULT_POLICY_MATRIX);
+    expect(store.policyMatrix.global.destructive).toBe("ask");
+    expect(store.policyMatrix.global.catastrophic).toBe("ask");
+
+    await store.commit();
+
+    expect(settingsSetMock).toHaveBeenCalledWith(expect.objectContaining({ policyMatrix: DEFAULT_POLICY_MATRIX }));
+  });
+
+  it("keeps an applied matrix and puts it back to the default on reset", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setPolicyMatrix({
+      global: { safe: "deny", caution: "deny", destructive: "deny", catastrophic: "deny" },
+      groups: {},
+      hosts: {},
+      directories: {},
+    });
+
+    expect(store.dirty).toBe(true);
+    expect(store.policyMatrix.global.safe).toBe("deny");
+    // The default object is not shared: a later edit cannot reach into the constant.
+    expect(store.policyMatrix).not.toBe(DEFAULT_POLICY_MATRIX);
+
+    store.resetPolicyMatrix();
+
+    expect(store.policyMatrix).toEqual(DEFAULT_POLICY_MATRIX);
+    expect(store.dirty).toBe(true);
+  });
+
   it("opens anyway when the settings file cannot be read", async () => {
     settingsGetMock.mockRejectedValue(NEWER_SCHEMA);
-
     const store = usePreferencesStore();
     store.initialize();
     await store.load();
@@ -627,6 +719,7 @@ describe("the terminal palette", () => {
       mcpScope: "readOnly",
       mcpToolPolicy: { disabledTools: [] },
       mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
+      policyMatrix: DEFAULT_POLICY_MATRIX,
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,
@@ -1494,6 +1587,7 @@ describe("restoring the defaults", () => {
       mcpScope: "readOnly",
       mcpToolPolicy: { disabledTools: [] },
       mcpAccessPolicy: { visibleSessionIds: null, sessionScopes: {}, groupScopes: {} },
+      policyMatrix: DEFAULT_POLICY_MATRIX,
       mcpApprovalTimeoutSeconds: 120,
       mcpAuditRetentionDays: 30,
       mcpMaxResultBytes: 262_144,

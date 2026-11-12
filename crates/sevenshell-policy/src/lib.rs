@@ -13,7 +13,21 @@
 
 pub mod command_risk;
 pub mod container_risk;
+pub mod matrix;
 
 pub use command_risk::classify;
 pub use container_risk::{container_action, kubernetes_request};
+pub use matrix::{PolicyAuditEvent, PolicyDecision, PolicySource, PolicyTarget, decide};
 pub use sevenshell_types::{RiskAssessment, RiskLevel, RiskReason};
+
+/// Where a policy decision goes once it has been made.
+///
+/// Infallible on purpose, for the same reason the agent audit sink is: by the time a decision is
+/// recorded the action is already allowed or refused, and a trail that could fail the decision
+/// would be a refusal nobody asked for. The sink logs its own trouble.
+///
+/// Object-safe so a host can hold whatever it writes with — a JSONL file, a test's vector — behind
+/// one `Arc` without a generic parameter spreading through the core.
+pub trait PolicyJournal: Send + Sync {
+    fn record(&self, event: PolicyAuditEvent);
+}

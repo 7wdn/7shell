@@ -5,6 +5,7 @@
  * in both directions, so a rename on one side fails the test suite rather than a release.
  */
 
+import type { RiskAssessment } from "@/types/batch";
 import type { McpServerConfig } from "@/types/mcp";
 import type { SnippetProvider } from "@/types/sync";
 
@@ -376,6 +377,64 @@ export interface McpToolPolicy {
   readonly disabledTools: readonly string[];
 }
 
+/** What one policy layer says about one risk level. */
+export type PolicyAction = "allow" | "ask" | "deny";
+
+/** One rule, by the command classifier's four levels. */
+export interface PolicyRule {
+  readonly safe: PolicyAction;
+  readonly caution: PolicyAction;
+  readonly destructive: PolicyAction;
+  readonly catastrophic: PolicyAction;
+}
+
+/** Global rules plus group, host and directory exceptions. The most restrictive layer wins. */
+export interface PolicyMatrix {
+  readonly global: PolicyRule;
+  readonly groups: Readonly<Record<string, PolicyRule>>;
+  readonly hosts: Readonly<Record<string, PolicyRule>>;
+  readonly directories: Readonly<Record<string, PolicyRule>>;
+}
+
+/**
+ * What every installation does until somebody writes a matrix: safe and caution run, destructive
+ * and catastrophic stop for a person.
+ *
+ * The same answer `PolicyMatrix::default()` gives in Rust. It is repeated here rather than left
+ * absent because the page has to draw a rule even when the file names none, and the two sides
+ * starting from different answers would make a fresh install look like a choice nobody made.
+ */
+export const DEFAULT_POLICY_MATRIX: PolicyMatrix = {
+  global: { safe: "allow", caution: "allow", destructive: "ask", catastrophic: "ask" },
+  groups: {},
+  hosts: {},
+  directories: {},
+};
+
+/**
+ * One policy decision as the audit trail carries it, from `PolicyAuditEvent` in Rust.
+ *
+ * `action` names the operation rather than the command line: the trail is a record of what the
+ * matrix decided, not a second copy of what somebody typed. `risk` is the classifier's verdict, so
+ * a reader can see why the decision was reached; `source` names the layer that supplied the winning
+ * action (`global`, `group:id`, `host:host[:port]`, `directory:path`).
+ */
+export interface PolicyAuditEvent {
+  /** Seconds since the Unix epoch, the same clock the rest of the application records. */
+  readonly at: number;
+  readonly action: string;
+  readonly risk: RiskAssessment;
+  readonly decision: PolicyAction;
+  readonly source: string;
+  /** The operation's redacted description, when the caller supplied one. */
+  readonly subject?: string;
+  readonly sessionId?: string;
+  readonly groupId?: string;
+  readonly host?: string;
+  /** The remote directory the action names, which is the only path an audit line may carry. */
+  readonly directory?: string;
+}
+
 /** Per-session and per-group scope/visibility overrides. */
 export interface McpAccessPolicy {
   /** null reads as every saved session, which is what an untouched file means. */
@@ -588,6 +647,8 @@ export interface AppSettings {
   readonly mcpToolPolicy?: McpToolPolicy;
   /** Per-session and per-group scope/visibility. Absent reads as the global scope and all visible. */
   readonly mcpAccessPolicy?: McpAccessPolicy;
+  /** Four-layer rules for unattended privileged actions. Absent reads as the built-in default. */
+  readonly policyMatrix?: PolicyMatrix;
   /**
    * External MCP servers whose tools this installation may call.
    *

@@ -396,6 +396,10 @@ struct StoredSettings {
     /// for every session and every session visible.
     #[serde(default)]
     mcp_access_policy: sevenshell_types::McpAccessPolicy,
+    /// Absent in a file written before the policy matrix existed, which reads as the behaviour
+    /// every build had: safe and caution run, destructive asks.
+    #[serde(default)]
+    policy_matrix: sevenshell_types::PolicyMatrix,
     /// The assistant's providers. Absent in a file written before there was an assistant, which
     /// reads as "nothing configured" — there is nowhere to send a question yet.
     ///
@@ -481,6 +485,7 @@ impl StoredSettings {
             mcp_max_result_bytes: settings.mcp_max_result_bytes,
             mcp_tool_policy: settings.mcp_tool_policy.clone(),
             mcp_access_policy: settings.mcp_access_policy.clone(),
+            policy_matrix: settings.policy_matrix.clone(),
             ai_providers: settings
                 .ai_providers
                 .iter()
@@ -591,6 +596,7 @@ impl StoredSettings {
             mcp_max_result_bytes: normalize_mcp_max_result_bytes(self.mcp_max_result_bytes),
             mcp_tool_policy: self.mcp_tool_policy.clone(),
             mcp_access_policy: self.mcp_access_policy.clone(),
+            policy_matrix: self.policy_matrix.clone(),
             ai_providers,
             ai_default_provider_id,
             ai_context_enabled: self.ai_context_enabled,
@@ -742,6 +748,7 @@ mod tests {
             mcp_max_result_bytes: mcp_max_result_bytes_default(),
             mcp_tool_policy: Default::default(),
             mcp_access_policy: Default::default(),
+            policy_matrix: Default::default(),
             ai_providers: Vec::new(),
             ai_default_provider_id: None,
             ai_context_enabled: ai_context_enabled_default(),
