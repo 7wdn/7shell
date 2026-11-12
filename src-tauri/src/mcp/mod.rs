@@ -104,7 +104,7 @@ pub fn client_config() -> Result<String, ShellError> {
 
 /// Makes the bridge available in its own directory and answers where it is.
 ///
-/// Release builds copy the seed to the machine-local bridge directory. A debug build returns the
+/// Release builds copy the seed to the per-user home dot directory. A debug build returns the
 /// seed itself unless a test supplied [`sevenshell_platform::BRIDGE_DIR_OVERRIDE`], so running the
 /// development application does not replace the bridge an installed release left for a client.
 ///

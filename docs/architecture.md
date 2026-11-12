@@ -476,7 +476,8 @@ the built-in tools, untouched.
 | Bridge seed build and bundle | `scripts/prepare-mcp-sidecar.mjs`, `src-tauri/tauri.conf.json` (`externalBin`) |
 
 The installer puts a **seed** (`sshell-mcp-seed.exe`) beside the application. At startup the host
-copies it to the machine-local bridge directory (on Windows `%LOCALAPPDATA%\com.sevenshell.app\bin`)
+copies it to the per-user home dot directory (`~/.7shell/bin`; on Windows
+`%USERPROFILE%\.7shell\bin`)
 and the "copy client configuration" button names that copy — never the seed and never the token. An
 application update can therefore replace the seed while an MCP client is running the other copy;
 if the bridge cannot be replaced because it is running, the old one stays and the next launch

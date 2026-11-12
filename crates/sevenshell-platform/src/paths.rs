@@ -36,26 +36,21 @@ pub fn config_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<Stri
 
 /// Where this application keeps the MCP bridge it launches itself.
 ///
-/// A program rather than data, so it belongs in the machine-local data directory rather than the
-/// roaming configuration: a binary must not travel through a roaming profile, and it must not sit
-/// beside the application either. An app update replaces files beside the application; an MCP
-/// client may be running the bridge from its own stable path while that update happens, and a
-/// running executable cannot be overwritten on Windows.
+/// A program rather than data, so it does not sit beside the application: an app update replaces
+/// files there, and an MCP client may be running the bridge from its own stable path while that
+/// update happens. A running executable cannot be overwritten on Windows. The home dot directory is
+/// the same shape the reference implementation uses for its MCP server, and it is per user without
+/// being a roaming profile or a cache directory.
 pub const BRIDGE_DIR_OVERRIDE: &str = "SEVENSHELL_BRIDGE_DIR";
 
 /// Resolves the bridge directory for one platform, with the same testable environment seam as
 /// [`config_dir_for`].
 pub fn bridge_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
-    let base = match target_os {
-        "windows" => PathBuf::from(environment("LOCALAPPDATA")?),
-        "macos" => PathBuf::from(environment("HOME")?)
-            .join("Library")
-            .join("Application Support"),
-        _ => environment("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .or_else(|| environment("HOME").map(|home| PathBuf::from(home).join(".local").join("share")))?,
+    let home = match target_os {
+        "windows" => environment("USERPROFILE")?,
+        _ => environment("HOME")?,
     };
-    Some(base.join(APP_IDENTIFIER).join("bin"))
+    Some(PathBuf::from(home).join(".7shell").join("bin"))
 }
 
 /// The bridge directory of the machine we are running on.
@@ -175,38 +170,23 @@ mod tests {
     }
 
     #[test]
-    fn the_bridge_lives_in_machine_local_data_not_in_roaming_or_beside_the_app() {
-        let windows = environment(&[("LOCALAPPDATA", "C:\\Users\\someone\\AppData\\Local")]);
+    fn the_bridge_lives_in_a_home_dot_directory_not_beside_the_app() {
+        let windows = environment(&[("USERPROFILE", "C:\\Users\\someone")]);
         assert_eq!(
-            bridge_dir_for("windows", &windows).expect("LOCALAPPDATA is set"),
-            PathBuf::from("C:\\Users\\someone\\AppData\\Local")
-                .join(APP_IDENTIFIER)
-                .join("bin")
+            bridge_dir_for("windows", &windows).expect("USERPROFILE is set"),
+            PathBuf::from("C:\\Users\\someone").join(".7shell").join("bin")
         );
 
         let macos = environment(&[("HOME", "/Users/someone")]);
         assert_eq!(
             bridge_dir_for("macos", &macos).expect("HOME is set"),
-            PathBuf::from("/Users/someone/Library/Application Support")
-                .join(APP_IDENTIFIER)
-                .join("bin")
+            PathBuf::from("/Users/someone").join(".7shell").join("bin")
         );
 
-        let linux = environment(&[
-            ("XDG_DATA_HOME", "/home/someone/.local/share-custom"),
-            ("HOME", "/home/someone"),
-        ]);
+        let linux = environment(&[("HOME", "/home/someone")]);
         assert_eq!(
-            bridge_dir_for("linux", &linux).expect("XDG_DATA_HOME is set"),
-            PathBuf::from("/home/someone/.local/share-custom")
-                .join(APP_IDENTIFIER)
-                .join("bin")
-        );
-        assert_eq!(
-            bridge_dir_for("linux", &environment(&[("HOME", "/home/someone")])).expect("HOME is set"),
-            PathBuf::from("/home/someone/.local/share")
-                .join(APP_IDENTIFIER)
-                .join("bin")
+            bridge_dir_for("linux", &linux).expect("HOME is set"),
+            PathBuf::from("/home/someone").join(".7shell").join("bin")
         );
     }
 
