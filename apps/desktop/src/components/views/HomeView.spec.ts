@@ -248,7 +248,7 @@ describe("the two home pages", () => {
     render();
 
     expect(card("Getting started")).toBeTruthy();
-    expect(card("What this build can and cannot do")).toBeTruthy();
+    expect(card("Capabilities")).toBeTruthy();
     expect(host.textContent, "what it does is named in its own words").toContain("File workbench");
     expect(() => card("Quick start"), "no host is named on this page").toThrow();
     expect(host.textContent, "and nothing here counts one either").not.toContain("Sessions saved");

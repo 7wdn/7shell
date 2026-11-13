@@ -7,9 +7,9 @@
     },
     "intro": {
       "badge": "SSH operations client",
-      "headline": "Your hosts, your keys, your history — all on this machine.",
-      "body": "Sessions, credentials and the commands you have run are kept here, encrypted with a passphrase only you hold. No account, no telemetry, and no server unless you name one. Make a session, confirm the host key on the first connection, then work in a terminal or in the file workbench beside it.",
-      "notice": "This page names no host and counts nothing: no session, no host key and no history is shown on it.",
+      "headline": "Your hosts, keys and history stay on this machine.",
+      "body": "Sessions, credentials and command history are stored locally and encrypted with a passphrase only you hold. No account, telemetry or cloud service. Create a session, confirm the host key on the first connection, then work in a terminal or the file workbench.",
+      "notice": "This page does not show host names, saved sessions or history.",
       "settings": "Home page settings"
     },
     "feature": {
@@ -18,16 +18,16 @@
         "body": "Address, authentication, jump hosts and forwards in one saved entry, with groups to keep them apart."
       },
       "terminal": {
-        "title": "Real terminals",
-        "body": "A terminal per session, with its own font and colour scheme — and one command that can be sent to several at once."
+        "title": "Terminals",
+        "body": "A terminal per session with its own font and colour scheme, plus batch commands for several sessions at once."
       },
       "files": {
         "title": "File workbench",
-        "body": "Both directories side by side, drag to move a file, and one packed archive when a whole tree is going over."
+        "body": "Two directories side by side; drag files between them or transfer a whole tree as one archive."
       },
       "monitor": {
         "title": "Host monitor",
-        "body": "Load, memory, disk and processes, sampled over the connection you already have — nothing to install on the host."
+        "body": "Load, memory, disk and processes are sampled over the existing connection; nothing is installed on the host."
       }
     },
     "quick": {
@@ -41,7 +41,7 @@
       "stepSession": "Create a session: address, authentication, and any jump hosts on the way.",
       "stepHostKey": "Confirm the host key on the first connection. A key that has changed stops the connection instead of asking twice.",
       "stepTerminal": "Open a terminal, or the file workbench beside it.",
-      "pending": "Every step above works today. What is still missing is named on the card below, and nothing is named there before it is implemented."
+      "pending": "Some capabilities are not available yet; they are listed below."
     },
     "about": {
       "version": "Version",
@@ -49,10 +49,10 @@
       "descriptorSchema": "Descriptor schema"
     },
     "status": {
-      "title": "What this build can and cannot do",
-      "note": "Read from the descriptors — the same tables Rust compiles. A capability is only claimed once the code behind it exists.",
-      "claimed": "Claimed by a protocol",
-      "unclaimed": "Not claimed yet"
+      "title": "Capabilities",
+      "note": "Implemented in this build.",
+      "claimed": "Available",
+      "unclaimed": "Not yet available"
     }
   }
 }

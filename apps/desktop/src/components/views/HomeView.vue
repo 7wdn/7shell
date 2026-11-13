@@ -360,6 +360,7 @@ function translate(key: string, params?: Record<string, string>): string {
           </li>
         </ol>
         <p
+          v-if="unclaimed.length > 0"
           class="mt-4 rounded-md border border-dashed border-border px-3 py-2 text-xs leading-relaxed text-muted-foreground"
         >
           {{ t("home.start.pending") }}
