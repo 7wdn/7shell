@@ -52,8 +52,6 @@ const assistant = useAssistantStore();
 const { isMac, showControls, isMaximized, isAlwaysOnTop, minimize, toggleMaximize, toggleAlwaysOnTop, close } =
   useWindowControls(() => app.info?.os ?? "");
 
-const version = computed(() => (app.info ? `v${app.info.version}` : ""));
-
 /**
  * One button covers all three modes, cycling in the order the settings page lists them.
  *
@@ -128,12 +126,6 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
   >
     <AppMark :size="17" />
     <span class="text-sm font-medium tracking-tight">7Shell</span>
-    <span
-      v-if="version"
-      class="rounded-sm border border-border px-1.5 py-px font-mono text-[10px] leading-4 text-muted-foreground"
-    >
-      {{ version }}
-    </span>
 
     <!--
       The bar is the window's, and the buttons on it are the vault's.
@@ -141,9 +133,10 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       opens something that is drawn from a vault nobody has opened yet — the session library behind
       the sidebar, the settings page, the batch panel, the transfers of a session that cannot be
       opened — and a control that leads to a locked room is a control that answers with an error.
-      What stays is what belongs to the window rather than to the store: the mark, the version, the
-      drag region and the three window buttons. It is the same rule the gate screen follows, said
-      once more where the controls are.
+      What stays is what belongs to the window rather than to the store: the mark, the drag region
+      and the three window buttons — the version lives on the About page, where somebody looking
+      for it is also looking at the rest of the build's facts. It is the same rule the gate screen
+      follows, said once more where the controls are.
     -->
     <template v-if="vault.unlocked">
       <!--

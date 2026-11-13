@@ -14,6 +14,10 @@ export interface AppInfo {
   readonly name: string;
   readonly version: string;
   readonly os: string;
+  /** The name a support report reads (`Windows`, `macOS`, …); absent in older answers. */
+  readonly osName?: string;
+  /** The platform's product version, when it has one. */
+  readonly osVersion?: string;
   readonly arch: string;
   readonly debugBuild: boolean;
   readonly protocolCount: number;

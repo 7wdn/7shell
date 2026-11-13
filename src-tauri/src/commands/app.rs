@@ -9,7 +9,87 @@ use crate::window_chrome::{reveal_main_window, reveal_on_first_frame};
 /// tables the interface and Rust both derive from `descriptors/`.
 #[tauri::command]
 pub fn app_info() -> Result<AppInfo, ShellError> {
-    Ok(AppInfo::current())
+    let mut info = AppInfo::current();
+    let (os_name, os_version) = support_os();
+    info.os_name = os_name;
+    info.os_version = os_version;
+    Ok(info)
+}
+
+/// The platform name and version a support report needs, when the platform can name them.
+///
+/// The raw identifier (`windows`) is enough for the application's own decisions but not for a bug
+/// report: two machines on the same identifier can be a decade apart. This is asked once, next to
+/// the rest of the startup facts, and a platform or command that will not answer simply leaves the
+/// identifier in place.
+fn support_os() -> (String, Option<String>) {
+    #[cfg(target_os = "windows")]
+    {
+        (
+            "Windows".to_owned(),
+            command_first_line("cmd", &["/C", "ver"]).and_then(|line| version_token(&line)),
+        )
+    }
+    #[cfg(target_os = "macos")]
+    {
+        ("macOS".to_owned(), command_first_line("sw_vers", &["-productVersion"]))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_os()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        (std::env::consts::OS.to_owned(), None)
+    }
+}
+
+/// The longest dotted number in a line: `Microsoft Windows [Version 10.0.26300.9974]` in any
+/// language, because the words around it are translated and the number is not.
+#[cfg(any(target_os = "windows", test))]
+fn version_token(line: &str) -> Option<String> {
+    line.split(|ch: char| !ch.is_ascii_digit() && ch != '.')
+        .filter(|token| {
+            token.contains('.')
+                && token
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        })
+        .max_by_key(|token| token.len())
+        .map(str::to_owned)
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn command_first_line(program: &str, args: &[&str]) -> Option<String> {
+    let mut command = std::process::Command::new(program);
+    command.args(args);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW: asking must not flash a console.
+    }
+    let output = command.output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_owned)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_os() -> (String, Option<String>) {
+    let text = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
+    let value = |key: &str| {
+        text.lines()
+            .find_map(|line| line.strip_prefix(key))
+            .and_then(|rest| rest.strip_prefix('='))
+            .map(|value| value.trim().trim_matches('"').to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let name = value("NAME")
+        .or_else(|| value("PRETTY_NAME"))
+        .unwrap_or_else(|| "Linux".to_owned());
+    (name, value("VERSION_ID"))
 }
 
 /// Shows the window, on the interface's word that it has drawn its first frame.
@@ -51,4 +131,22 @@ pub fn window_quit_guard(state: State<'_, ShellState>, armed: bool) {
 pub fn window_quit(window: WebviewWindow, state: State<'_, ShellState>) {
     state.approve_quit();
     let _ = window.close();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_token;
+
+    #[test]
+    fn the_windows_version_is_the_dotted_number_whatever_the_words_around_it() {
+        assert_eq!(
+            version_token("Microsoft Windows [Version 10.0.26300.9974]").as_deref(),
+            Some("10.0.26300.9974")
+        );
+        assert_eq!(
+            version_token("Microsoft Windows [版本 10.0.26300.9974]").as_deref(),
+            Some("10.0.26300.9974")
+        );
+        assert_eq!(version_token("no version here"), None);
+    }
 }

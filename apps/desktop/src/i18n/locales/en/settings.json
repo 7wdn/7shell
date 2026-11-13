@@ -32,6 +32,20 @@
       "openReleasePage": "Open the download page",
       "openCentre": "Open the update centre"
     },
+    "support": {
+      "title": "Support information",
+      "description": "Attach this to a bug report so the environment is known without a round of questions.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "appVersion": "7Shell version",
+      "runtime": "Runtime",
+      "runtimeDesktop": "Desktop",
+      "operatingSystem": "Operating system",
+      "architecture": "Architecture",
+      "userAgent": "User-Agent",
+      "connectionTypes": "Connection types",
+      "unknown": "Unknown"
+    },
     "nav": {
       "label": "Settings categories",
       "appearance": "Appearance",

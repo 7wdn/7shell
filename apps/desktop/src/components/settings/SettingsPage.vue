@@ -66,6 +66,7 @@ import {
   rowMatches,
   rowsOfCategory,
 } from "@/components/settings/rows";
+import { buildSupportInfoText, type SupportInfoLabels } from "@/lib/support/info";
 import { createDelayedPreview } from "@/lib/settings/delayedPreview";
 import { describeShellError } from "@/i18n/errors";
 import type { SupportedLocale } from "@/i18n";
@@ -834,6 +835,7 @@ async function discardAndClose(): Promise<void> {
  * colour nobody can see the reason for, since the list it came from is gone.
  */
 onBeforeUnmount(() => {
+  clearTimeout(supportCopiedTimer);
   preferences.clearThemePalettePreview();
   preferences.clearFontPreview();
   // The window is showing choices the file has not been told about, and this page is going away: the
@@ -863,6 +865,49 @@ const aboutFacts = computed(() =>
       ]
     : [],
 );
+
+/**
+ * The support block, in the language the window is in.
+ *
+ * The labels are translated; the values are what the build answered about itself, the webview says
+ * about itself and the descriptors say about their connection kinds. Copying is the browser's
+ * clipboard: WebView2 supports writing it, which is the half of the clipboard this application
+ * needs here.
+ */
+const supportCopied = ref(false);
+let supportCopiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+const supportInfoText = computed(() => {
+  if (!app.info) {
+    return "";
+  }
+  const labels: SupportInfoLabels = {
+    appVersion: t("settings.support.appVersion"),
+    runtime: t("settings.support.runtime"),
+    runtimeDesktop: t("settings.support.runtimeDesktop"),
+    operatingSystem: t("settings.support.operatingSystem"),
+    architecture: t("settings.support.architecture"),
+    userAgent: t("settings.support.userAgent"),
+    connectionTypes: t("settings.support.connectionTypes"),
+    unknown: t("settings.support.unknown"),
+  };
+  const userAgent = typeof navigator === "undefined" ? "" : navigator.userAgent;
+  return buildSupportInfoText(app.info, labels, userAgent);
+});
+
+async function copySupportInfo(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(supportInfoText.value);
+    supportCopied.value = true;
+    clearTimeout(supportCopiedTimer);
+    supportCopiedTimer = setTimeout(() => {
+      supportCopied.value = false;
+    }, 1600);
+  } catch {
+    // A webview that refuses the clipboard must not turn a copy button into an error banner: the
+    // block is on screen and selectable, which is the fallback that always works.
+  }
+}
 
 const problem = computed(() => (preferences.problem ? describeShellError(translate, preferences.problem) : null));
 
@@ -1058,6 +1103,31 @@ function translate(key: string, params?: Record<string, string>): string {
                     </div>
                   </dl>
                   <p v-else class="text-xs text-muted-foreground">{{ t("common.status.loading") }}</p>
+
+                  <!--
+                    What a bug report needs: the block is read on screen and copied by the same
+                    button. It is selectable even though the page around it is not, because the
+                    fallback for a clipboard that refuses is a person selecting the lines.
+                  -->
+                  <section v-if="supportInfoText" class="space-y-2 pt-3" data-support-info>
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <h3 class="text-sm font-medium text-muted-foreground">{{ t("settings.support.title") }}</h3>
+                      <button
+                        type="button"
+                        data-support-copy
+                        class="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        @click="copySupportInfo()"
+                      >
+                        {{ supportCopied ? t("settings.support.copied") : t("settings.support.copy") }}
+                      </button>
+                    </div>
+                    <p class="text-xs leading-relaxed text-muted-foreground">{{ t("settings.support.description") }}</p>
+                    <pre
+                      class="m-0 overflow-x-auto rounded-md border border-border bg-muted/20 px-3 py-2.5 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap select-text"
+                      data-support-text
+                      >{{ supportInfoText }}</pre
+                    >
+                  </section>
 
                   <!-- What this build can be replaced by, under what this build is. -->
                   <section class="space-y-2 pt-3">

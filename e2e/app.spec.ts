@@ -1257,6 +1257,17 @@ test("the update page reports what this build is, and the startup check is a wri
     const settings = page.getByRole("region", { name: "Settings" });
     await settings.getByRole("button", { name: "About", exact: true }).click();
 
+    // The block a bug report is made of, and the button that takes it away in one click.
+    const support = settings.locator("[data-support-info]");
+    await expect(support).toBeVisible();
+    const supportText = support.locator("[data-support-text]");
+    await expect(supportText).toContainText("7Shell version:");
+    await expect(supportText).toContainText("Operating system:");
+    await expect(supportText).toContainText("Connection types:");
+    await expect(supportText).toContainText("docker");
+    await support.getByRole("button", { name: "Copy", exact: true }).click();
+    await expect(support.getByRole("button", { name: "Copied", exact: true })).toBeVisible();
+
     // By the time this page is open the startup check has already run, so the button offers to look
     // again rather than to look — which is the label that means "there is an answer on screen", and
     // the one this case is about. Either spelling asks the channel the same way.

@@ -32,6 +32,20 @@
       "openReleasePage": "打开下载页",
       "openCentre": "打开更新中心"
     },
+    "support": {
+      "title": "支持信息",
+      "description": "提交 issue 时附上这段信息，环境问题就不用来回问了。",
+      "copy": "复制",
+      "copied": "已复制",
+      "appVersion": "7Shell 版本",
+      "runtime": "运行环境",
+      "runtimeDesktop": "桌面端",
+      "operatingSystem": "操作系统",
+      "architecture": "系统架构",
+      "userAgent": "User-Agent",
+      "connectionTypes": "连接类型",
+      "unknown": "未知"
+    },
     "nav": {
       "label": "设置分类",
       "appearance": "外观",
