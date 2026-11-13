@@ -116,6 +116,14 @@
       "name": "名称",
       "namePlaceholder": "生产环境 Web 服务器",
       "protocol": "连接类型",
+      "protocolGroups": {
+        "terminal": "远程终端",
+        "local": "本地与设备",
+        "files": "文件服务",
+        "desktop": "远程桌面",
+        "containers": "容器与集群",
+        "other": "其他"
+      },
       "desktop": {
         "note": "远程桌面在 Windows 的远程桌面客户端中打开：剪贴板与本地驱动器由它处理。域账号写成 域\\用户名（例如 CORP\\alice）。已保存的密码会以当前 Windows 用户加密写入临时连接文件；留空则由客户端询问密码。"
       },

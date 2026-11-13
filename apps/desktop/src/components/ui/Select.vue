@@ -55,6 +55,12 @@ export interface SelectOption {
   detail?: string;
   disabled?: boolean;
   /**
+   * A heading this option belongs under. Consecutive options with the same group share one
+   * heading; options without a group stay flat. The caller translates the heading and orders the
+   * options, because only the caller knows which grouping its list means.
+   */
+  group?: string;
+  /**
    * A colour to draw before the label, for a choice that is a colour.
    *
    * A dot rather than a swatch of the label itself: six palettes are told apart at a glance this
@@ -127,6 +133,24 @@ const outer = (value: string): string => (value === NONE ? "" : value);
 
 /** What the trigger says: the chosen option's label, or the prompt when there is no such option. */
 const chosen = computed(() => props.options.find((option) => option.value === props.modelValue));
+
+/** The list with a heading before each run of grouped options. */
+type DisplayEntry = { kind: "group"; label: string } | { kind: "option"; option: SelectOption };
+
+const displayOptions = computed<DisplayEntry[]>(() => {
+  const entries: DisplayEntry[] = [];
+  let current: string | undefined;
+  for (const option of props.options) {
+    if (option.group !== current) {
+      current = option.group;
+      if (current) {
+        entries.push({ kind: "group", label: current });
+      }
+    }
+    entries.push({ kind: "option", option });
+  }
+  return entries;
+});
 
 const compact = computed(() => props.size === "compact");
 
@@ -214,30 +238,41 @@ const scrollButtonClass = "flex cursor-default items-center justify-center py-1 
         </SelectScrollUpButton>
 
         <SelectViewport class="p-1">
-          <SelectItem
-            v-for="option in props.options"
-            :key="option.value"
-            :value="inner(option.value)"
-            :text-value="option.label"
-            :disabled="option.disabled"
-            :class="itemClass"
-            @pointerenter="emit('option-hover', option.value)"
+          <template
+            v-for="(entry, index) in displayOptions"
+            :key="entry.kind === 'group' ? `group-${index}` : entry.option.value"
           >
-            <SelectItemIndicator :class="checkClass">
-              <Check :size="compact ? 11 : 13" />
-            </SelectItemIndicator>
-            <span
-              v-if="option.swatch"
-              class="size-3.5 shrink-0 rounded-full border border-border"
-              :style="{ background: option.swatch }"
-            />
-            <SelectItemText class="min-w-0 flex-1 truncate">
-              {{ option.label }}
-              <span v-if="option.detail" class="font-mono text-[11px] text-muted-foreground">
-                — {{ option.detail }}
-              </span>
-            </SelectItemText>
-          </SelectItem>
+            <div
+              v-if="entry.kind === 'group'"
+              data-select-group
+              class="px-2 pt-2 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase first:pt-1"
+            >
+              {{ entry.label }}
+            </div>
+            <SelectItem
+              v-else
+              :value="inner(entry.option.value)"
+              :text-value="entry.option.label"
+              :disabled="entry.option.disabled"
+              :class="itemClass"
+              @pointerenter="emit('option-hover', entry.option.value)"
+            >
+              <SelectItemIndicator :class="checkClass">
+                <Check :size="compact ? 11 : 13" />
+              </SelectItemIndicator>
+              <span
+                v-if="entry.option.swatch"
+                class="size-3.5 shrink-0 rounded-full border border-border"
+                :style="{ background: entry.option.swatch }"
+              />
+              <SelectItemText class="min-w-0 flex-1 truncate">
+                {{ entry.option.label }}
+                <span v-if="entry.option.detail" class="font-mono text-[11px] text-muted-foreground">
+                  — {{ entry.option.detail }}
+                </span>
+              </SelectItemText>
+            </SelectItem>
+          </template>
         </SelectViewport>
 
         <SelectScrollDownButton :class="scrollButtonClass">

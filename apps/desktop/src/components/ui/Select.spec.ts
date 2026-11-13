@@ -19,6 +19,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
 
+const GROUPED: SelectOption[] = [
+  { value: "ssh", label: "SSH", group: "Remote terminals" },
+  { value: "telnet", label: "Telnet", group: "Remote terminals" },
+  { value: "local", label: "Local", group: "Local & devices" },
+];
+
 const OPTIONS: SelectOption[] = [
   { value: "", label: "No group" },
   { value: "prod", label: "Production" },
@@ -132,6 +138,17 @@ describe("what the control says", () => {
     await settle();
     expect(trigger().getAttribute("aria-label")).toBe("The group this session belongs to");
     expect(trigger().getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("draws one heading per run of grouped options", async () => {
+    mount(GROUPED);
+    await open();
+
+    const headings = [...document.querySelectorAll<HTMLElement>("[data-select-group]")].map((element) =>
+      element.textContent?.trim(),
+    );
+    expect(headings).toEqual(["Remote terminals", "Local & devices"]);
+    expect(options().map((option) => option.textContent?.trim())).toEqual(["SSH", "Telnet", "Local"]);
   });
 });
 

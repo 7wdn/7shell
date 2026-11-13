@@ -85,19 +85,54 @@ const forwardModes = computed<SelectOption[]>(() => [
 const hopToAdd = ref("");
 
 /**
- * The connection kinds the descriptors offer, named in the interface's own words.
+ * The groups the picker draws, in the order somebody meets them: a shell, something local, a file
+ * service, a desktop, then the orchestration targets. A protocol this list does not name still
+ * appears, under "Other" — a picker that silently drops a new descriptor would be worse than an
+ * untidy group.
+ */
+const PROTOCOL_GROUPS: readonly { labelKey: string; protocols: readonly Protocol[] }[] = [
+  { labelKey: "sessions.editor.protocolGroups.terminal", protocols: ["ssh", "telnet", "rawTcp"] },
+  { labelKey: "sessions.editor.protocolGroups.local", protocols: ["local", "wsl", "serial"] },
+  { labelKey: "sessions.editor.protocolGroups.files", protocols: ["webdav", "ftp"] },
+  { labelKey: "sessions.editor.protocolGroups.desktop", protocols: ["rdp"] },
+  { labelKey: "sessions.editor.protocolGroups.containers", protocols: ["container", "kubernetes"] },
+];
+
+/**
+ * The connection kinds the descriptors offer, named in the interface's own words and grouped by
+ * what somebody is trying to reach.
  *
  * Remote desktop is a Windows feature of this build: it hands the session to the system client,
  * and no other platform is offered a substitute.
  */
-const protocolOptions = computed<SelectOption[]>(() =>
-  PROTOCOLS.filter((protocol) => (protocol.id !== "rdp" && protocol.id !== "wsl") || app.info?.os === "windows").map(
-    (protocol) => ({
-      value: protocol.id,
-      label: t(protocol.labelKey),
-    }),
-  ),
-);
+const protocolOptions = computed<SelectOption[]>(() => {
+  const visible = PROTOCOLS.filter(
+    (protocol) => (protocol.id !== "rdp" && protocol.id !== "wsl") || app.info?.os === "windows",
+  );
+  const byId = new Map(visible.map((protocol) => [protocol.id, protocol]));
+  const placed = new Set<string>();
+  const options: SelectOption[] = [];
+
+  for (const group of PROTOCOL_GROUPS) {
+    const heading = t(group.labelKey);
+    for (const id of group.protocols) {
+      const protocol = byId.get(id);
+      if (!protocol) {
+        continue;
+      }
+      options.push({ value: protocol.id, label: t(protocol.labelKey), group: heading });
+      placed.add(id);
+    }
+  }
+
+  const other = t("sessions.editor.protocolGroups.other");
+  for (const protocol of visible) {
+    if (!placed.has(protocol.id)) {
+      options.push({ value: protocol.id, label: t(protocol.labelKey), group: other });
+    }
+  }
+  return options;
+});
 
 /** The two protocols with a display, a mapping and no terminal on this side. */
 const isDesktop = computed(() => editor.protocol === "rdp");

@@ -116,6 +116,14 @@
       "name": "Name",
       "namePlaceholder": "Production web server",
       "protocol": "Connection type",
+      "protocolGroups": {
+        "terminal": "Remote terminals",
+        "local": "Local & devices",
+        "files": "File services",
+        "desktop": "Remote desktop",
+        "containers": "Containers & clusters",
+        "other": "Other"
+      },
       "desktop": {
         "note": "A remote desktop opens in the Windows Remote Desktop client: clipboard and local drives are handled there. A domain account is written DOMAIN\\user (for example CORP\\alice). A stored password is sealed for this Windows user; leave it empty and the client asks."
       },
