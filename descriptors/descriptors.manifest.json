@@ -136,34 +136,6 @@
       "planned": false
     },
     {
-      "key": "desktopView",
-      "order": 150,
-      "group": "desktop",
-      "labelKey": "capability.desktopView.label",
-      "planned": true
-    },
-    {
-      "key": "desktopInput",
-      "order": 160,
-      "group": "desktop",
-      "labelKey": "capability.desktopInput.label",
-      "planned": true
-    },
-    {
-      "key": "desktopResize",
-      "order": 170,
-      "group": "desktop",
-      "labelKey": "capability.desktopResize.label",
-      "planned": true
-    },
-    {
-      "key": "desktopClipboard",
-      "order": 180,
-      "group": "desktop",
-      "labelKey": "capability.desktopClipboard.label",
-      "planned": true
-    },
-    {
       "key": "container",
       "order": 190,
       "group": "container",

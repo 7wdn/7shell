@@ -45,10 +45,6 @@ export type CapabilityKey =
   | "keyMaterial"
   | "platformAgent"
   | "systemClient"
-  | "desktopView"
-  | "desktopInput"
-  | "desktopResize"
-  | "desktopClipboard"
   | "container"
   | "containerImages"
   | "containerLogs"
@@ -245,10 +241,6 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "keyMaterial", group: "auth", labelKey: "capability.keyMaterial.label" },
   { key: "platformAgent", group: "auth", labelKey: "capability.platformAgent.label" },
   { key: "systemClient", group: "desktop", labelKey: "capability.systemClient.label" },
-  { key: "desktopView", group: "desktop", labelKey: "capability.desktopView.label" },
-  { key: "desktopInput", group: "desktop", labelKey: "capability.desktopInput.label" },
-  { key: "desktopResize", group: "desktop", labelKey: "capability.desktopResize.label" },
-  { key: "desktopClipboard", group: "desktop", labelKey: "capability.desktopClipboard.label" },
   { key: "container", group: "container", labelKey: "capability.container.label" },
   { key: "containerImages", group: "container", labelKey: "capability.containerImages.label" },
   { key: "containerLogs", group: "container", labelKey: "capability.containerLogs.label" },

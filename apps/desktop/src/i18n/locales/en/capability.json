@@ -57,18 +57,6 @@
     "systemClient": {
       "label": "Opens in the system remote desktop client"
     },
-    "desktopView": {
-      "label": "Remote desktop view"
-    },
-    "desktopInput": {
-      "label": "Keyboard and mouse"
-    },
-    "desktopResize": {
-      "label": "Desktop resizing"
-    },
-    "desktopClipboard": {
-      "label": "Clipboard redirection"
-    },
     "container": {
       "label": "Containers"
     },

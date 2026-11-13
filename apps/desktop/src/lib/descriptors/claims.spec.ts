@@ -27,26 +27,20 @@ describe("what the descriptors claim", () => {
     expect(isCapabilityClaimed("agentForwarding")).toBe(true);
   });
 
-  it("still leaves the desktop channels this build does not draw unclaimed", () => {
-    // The system client owns the desktop; this process does not carry its frames, input, resize or
-    // clipboard channel. Only systemClient is claimed.
-    for (const capability of ["desktopView", "desktopInput", "desktopResize", "desktopClipboard"] as const) {
-      expect(isCapabilityClaimed(capability), `${capability} stays unclaimed`).toBe(false);
-    }
+  it("describes remote desktop only through the system client", () => {
+    // The embedded engine and its view/input/resize/clipboard capabilities were removed; mstsc is
+    // the whole remote-desktop promise, and the container/cluster work is claimed beside it.
     expect(isCapabilityClaimed("systemClient")).toBe(true);
     expect(isCapabilityClaimed("containerFiles")).toBe(true);
     expect(isCapabilityClaimed("kubernetesTunnel")).toBe(true);
   });
 
-  it("splits the vocabulary in two, without losing or repeating anything", () => {
+  it("leaves nothing in the vocabulary unclaimed", () => {
     const claimed = claimedCapabilities().map((capability) => capability.key);
     const unclaimed = unclaimedCapabilities().map((capability) => capability.key);
 
     expect(claimed.length).toBeGreaterThan(0);
-    expect(unclaimed.length).toBeGreaterThan(0);
+    expect(unclaimed).toEqual([]);
     expect(new Set([...claimed, ...unclaimed]).size).toBe(claimed.length + unclaimed.length);
-    for (const capability of claimed) {
-      expect(unclaimed.includes(capability)).toBe(false);
-    }
   });
 });

@@ -385,17 +385,23 @@ function translate(key: string, params?: Record<string, string>): string {
           </li>
         </ul>
 
-        <p class="mt-3 text-xs text-muted-foreground">{{ t("home.status.unclaimed") }}</p>
-        <ul class="mt-1.5 flex flex-wrap gap-1.5">
-          <li
-            v-for="capability in unclaimed"
-            :key="capability.key"
-            class="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground"
-          >
-            <CircleDashed :size="12" />
-            {{ t(capability.labelKey) }}
-          </li>
-        </ul>
+        <!--
+          Nothing to report is not a gap to draw: the list is the vocabulary nothing claims, and the
+          build has no such entry today. A future planned capability brings the heading back with it.
+        -->
+        <template v-if="unclaimed.length > 0">
+          <p class="mt-3 text-xs text-muted-foreground">{{ t("home.status.unclaimed") }}</p>
+          <ul class="mt-1.5 flex flex-wrap gap-1.5">
+            <li
+              v-for="capability in unclaimed"
+              :key="capability.key"
+              class="flex items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground"
+            >
+              <CircleDashed :size="12" />
+              {{ t(capability.labelKey) }}
+            </li>
+          </ul>
+        </template>
       </section>
 
       <!--

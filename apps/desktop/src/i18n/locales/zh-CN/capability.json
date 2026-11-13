@@ -57,18 +57,6 @@
     "systemClient": {
       "label": "由系统远程桌面客户端打开"
     },
-    "desktopView": {
-      "label": "远程桌面画面"
-    },
-    "desktopInput": {
-      "label": "键盘与鼠标"
-    },
-    "desktopResize": {
-      "label": "桌面尺寸调整"
-    },
-    "desktopClipboard": {
-      "label": "剪贴板重定向"
-    },
     "container": {
       "label": "容器"
     },

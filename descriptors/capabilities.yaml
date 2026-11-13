@@ -113,32 +113,9 @@ capabilities:
     group: desktop
     labelKey: capability.systemClient.label
 
-  - key: desktopView
-    order: 150
-    group: desktop
-    labelKey: capability.desktopView.label
-    # Registered for the in-process engine that this build no longer carries. The vocabulary stays
-    # so a future build can claim it; nothing here pretends the desktop is drawn by this process.
-    planned: true
-
-  - key: desktopInput
-    order: 160
-    group: desktop
-    labelKey: capability.desktopInput.label
-    planned: true
-
-  - key: desktopResize
-    order: 170
-    group: desktop
-    labelKey: capability.desktopResize.label
-    planned: true
-
-  - key: desktopClipboard
-    order: 180
-    group: desktop
-    labelKey: capability.desktopClipboard.label
-    # The system client shares the clipboard; this build does not implement the channel itself.
-    planned: true
+  # The remote desktop is the system client's window, not a canvas this process draws. The four
+  # in-process channels (view, input, resize, clipboard) were removed with the embedded engine in
+  # c981da4; `systemClient` is the whole promise this build makes about a remote desktop.
 
   # -- Containers ---------------------------------------------------------
   # The workbench has panes for all five, and the Docker runtime is covered by live tests; the
