@@ -74,13 +74,9 @@ capabilities:
     order: 80
     group: network
     labelKey: capability.agentForwarding.label
-    # Implemented — the request goes on the session channel and the reverse channel is bridged to
-    # this machine's agent — but not claimed yet. What is missing is proof of the *far side using
-    # it*: `crates/sevenshell-ssh/tests/live_agent_forwarding.rs` runs that end to end and has not
-    # been able to, on the machines this was built on, because neither agent there is one this build
-    # can reach. Run it where an agent is running (the test starts the server side itself), then
-    # drop this flag and claim the capability on the SSH descriptor.
-    planned: true
+    # Claimed once `live_agent_forwarding.rs` ran the far side against this machine's agent: the
+    # request goes on the session channel, and the reverse channel is bridged to the agent the test
+    # starts. The SSH descriptor claims it.
 
   - key: jumpHost
     order: 90
@@ -145,38 +141,33 @@ capabilities:
     planned: true
 
   # -- Containers ---------------------------------------------------------
-  # The vocabulary is registered before the code lands: a capability is claimed by the change that
-  # implements and tests it, and every one below is planned until then.
+  # The workbench has panes for all five, and the Docker runtime is covered by live tests; the
+  # other runtimes use the same command construction, with the environment gap recorded in AGENTS.
 
   - key: container
     order: 190
     group: container
     labelKey: capability.container.label
-    planned: true
 
   - key: containerImages
     order: 200
     group: container
     labelKey: capability.containerImages.label
-    planned: true
 
   - key: containerLogs
     order: 210
     group: container
     labelKey: capability.containerLogs.label
-    planned: true
 
   - key: containerExec
     order: 220
     group: container
     labelKey: capability.containerExec.label
-    planned: true
 
   - key: containerFiles
     order: 230
     group: container
     labelKey: capability.containerFiles.label
-    planned: true
 
   # -- Kubernetes ---------------------------------------------------------
 
@@ -184,30 +175,24 @@ capabilities:
     order: 240
     group: container
     labelKey: capability.kubernetes.label
-    planned: true
 
   - key: kubernetesLogs
     order: 250
     group: container
     labelKey: capability.kubernetesLogs.label
-    planned: true
 
   - key: kubernetesExec
     order: 260
     group: container
     labelKey: capability.kubernetesExec.label
-    planned: true
 
   - key: kubernetesMetrics
     order: 270
     group: container
     labelKey: capability.kubernetesMetrics.label
-    planned: true
 
   - key: kubernetesTunnel
     order: 280
     group: container
     labelKey: capability.kubernetesTunnel.label
-    # Reaching an API server through a saved SSH session. The transport exists; the wiring is
-    # planned.
-    planned: true
+    # Reaching an API server through a saved SSH session, covered by `live_k8s_via_ssh`.

@@ -21,11 +21,21 @@ describe("what the descriptors claim", () => {
     expect(isCapabilityClaimed("recording")).toBe(true);
   });
 
-  it("leaves the one nothing has been shown to do unclaimed", () => {
-    // Agent forwarding is implemented and *still* unclaimed, which is the rule rather than an
-    // oversight: what it promises is the far side using this machine's agent, and that has not been
-    // demonstrated anywhere this was built. The descriptor says what would change that.
-    expect(isCapabilityClaimed("agentForwarding")).toBe(false);
+  it("counts agent forwarding once the far side used this machine's agent", () => {
+    // It stayed unclaimed while the live test could not reach an agent. The test now starts the
+    // agent side itself, and the capability moved with the proof rather than with the code.
+    expect(isCapabilityClaimed("agentForwarding")).toBe(true);
+  });
+
+  it("still leaves the desktop channels this build does not draw unclaimed", () => {
+    // The system client owns the desktop; this process does not carry its frames, input, resize or
+    // clipboard channel. Only systemClient is claimed.
+    for (const capability of ["desktopView", "desktopInput", "desktopResize", "desktopClipboard"] as const) {
+      expect(isCapabilityClaimed(capability), `${capability} stays unclaimed`).toBe(false);
+    }
+    expect(isCapabilityClaimed("systemClient")).toBe(true);
+    expect(isCapabilityClaimed("containerFiles")).toBe(true);
+    expect(isCapabilityClaimed("kubernetesTunnel")).toBe(true);
   });
 
   it("splits the vocabulary in two, without losing or repeating anything", () => {

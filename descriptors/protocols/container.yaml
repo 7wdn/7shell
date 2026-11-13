@@ -5,8 +5,13 @@ rustVariant: Container
 labelKey: protocol.container.label
 # Not a wire protocol: the runtime's own command line is the interface, and the same four commands
 # (docker, podman, nerdctl, wslc) speak it. `transport` names the shape rather than a network
-# service; the capability list stays empty until the operations are implemented and tested.
+# service. The five capabilities are the panes the workbench draws over that command line.
 runtime: native
 transport: cli
 supportLevel: operate
-capabilities: []
+capabilities:
+  - container
+  - containerImages
+  - containerLogs
+  - containerExec
+  - containerFiles

@@ -9,4 +9,9 @@ labelKey: protocol.kubernetes.label
 runtime: native
 transport: http
 supportLevel: operate
-capabilities: []
+capabilities:
+  - kubernetes
+  - kubernetesLogs
+  - kubernetesExec
+  - kubernetesMetrics
+  - kubernetesTunnel

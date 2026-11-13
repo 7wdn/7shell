@@ -21,5 +21,6 @@ capabilities:
   - scp
   - forwarding
   - dynamicForwarding
+  - agentForwarding
   - recording
   - jumpHost

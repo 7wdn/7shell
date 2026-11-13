@@ -98,7 +98,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "tcp",
     supportLevel: "operate",
-    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "scp", "forwarding", "dynamicForwarding", "recording", "jumpHost"],
+    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "scp", "forwarding", "dynamicForwarding", "agentForwarding", "recording", "jumpHost"],
   },
   {
     id: "rdp",
@@ -179,7 +179,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "cli",
     supportLevel: "operate",
-    capabilities: [],
+    capabilities: ["container", "containerImages", "containerLogs", "containerExec", "containerFiles"],
   },
   {
     id: "kubernetes",
@@ -188,7 +188,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "http",
     supportLevel: "operate",
-    capabilities: [],
+    capabilities: ["kubernetes", "kubernetesLogs", "kubernetesExec", "kubernetesMetrics", "kubernetesTunnel"],
   },
 ];
 

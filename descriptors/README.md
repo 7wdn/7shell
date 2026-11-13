@@ -40,8 +40,9 @@ Common fields for every descriptor file:
 `auth-methods/*.yaml` adds: `capabilities`, `platforms` (optional; omitted means every platform).
 
 `capabilities.yaml` is the vocabulary: every capability listed there has a `key`, `order`, `group`
-(`terminal` | `transfer` | `network` | `session` | `auth` | `trust`) and a `labelKey`. A capability used by a
-protocol or an auth method must exist in this catalog — unknown keys fail generation.
+(`terminal` | `transfer` | `network` | `session` | `auth` | `trust` | `desktop` | `container`) and a
+`labelKey`. A capability used by a protocol or an auth method must exist in this catalog — unknown keys fail
+generation.
 
 A capability that nothing claims yet must say so with `planned: true`, and a `planned` capability may not be
 claimed by anything. That keeps the vocabulary from silently drifting away from what the product does: either

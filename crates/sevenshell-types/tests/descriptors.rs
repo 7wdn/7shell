@@ -48,15 +48,48 @@ fn ssh_carries_the_capabilities_we_committed_to() {
     assert!(ssh.supports(Capability::DynamicForwarding));
     assert!(ssh.supports(Capability::Recording));
     assert!(ssh.supports(Capability::JumpHost));
-
-    // What it does not claim yet, and the one of these that is worth reading twice: agent
-    // forwarding *is* implemented — the request goes out and the reverse channel is bridged — and
-    // is deliberately not claimed, because what the capability promises is the far side using this
-    // machine's agent and that has not been demonstrated anywhere this was built. The descriptor
-    // says what would change that.
     assert!(
-        !ssh.supports(Capability::AgentForwarding),
-        "agent forwarding is implemented but not verified end to end, so it stays unclaimed"
+        ssh.supports(Capability::AgentForwarding),
+        "the live agent-forwarding test now runs the far side against this machine's agent"
+    );
+}
+
+#[test]
+fn container_and_cluster_claim_the_capabilities_their_panes_use() {
+    let container = Protocol::Container;
+    for capability in [
+        Capability::Container,
+        Capability::ContainerImages,
+        Capability::ContainerLogs,
+        Capability::ContainerExec,
+        Capability::ContainerFiles,
+    ] {
+        assert!(
+            container.supports(capability),
+            "the container workbench uses {capability:?}"
+        );
+    }
+    assert!(
+        !container.supports(Capability::Shell),
+        "a container runtime has no shell of its own"
+    );
+
+    let kubernetes = Protocol::Kubernetes;
+    for capability in [
+        Capability::Kubernetes,
+        Capability::KubernetesLogs,
+        Capability::KubernetesExec,
+        Capability::KubernetesMetrics,
+        Capability::KubernetesTunnel,
+    ] {
+        assert!(
+            kubernetes.supports(capability),
+            "the cluster workbench uses {capability:?}"
+        );
+    }
+    assert!(
+        !kubernetes.supports(Capability::Shell),
+        "the cluster connection is an API client, not a shell"
     );
 }
 
