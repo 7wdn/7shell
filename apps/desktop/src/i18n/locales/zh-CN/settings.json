@@ -158,6 +158,33 @@
         "confirm": "移除方案"
       }
     },
+    "highlights": {
+      "mode": "命中后的显示方式",
+      "modeBackground": "色块铺底",
+      "modeBackgroundHint": "在词后铺一层淡色，终端本身的文字颜色不变。",
+      "modeText": "改变文字颜色",
+      "modeTextHint": "命中文字直接使用规则颜色，不铺底色。",
+      "rules": "规则（{count}/{limit}）",
+      "add": "新增规则",
+      "addTitle": "新增高亮规则",
+      "editTitle": "修改高亮规则",
+      "hint": "规则会标记终端里所有出现的位置，包括已经显示过的输出。",
+      "pattern": "词或匹配式",
+      "patternPlaceholder": "timeout",
+      "color": "颜色",
+      "regex": "正则表达式",
+      "regexBadge": "正则",
+      "caseSensitive": "区分大小写",
+      "caseBadge": "Aa",
+      "edit": "修改规则",
+      "remove": "移除规则",
+      "empty": "还没有规则。",
+      "save": "保存规则",
+      "tooLong": "匹配式最多 {max} 个字符。",
+      "invalidRegex": "这不是有效的正则表达式。",
+      "removeTitle": "移除高亮规则",
+      "removeMessage": "移除“{pattern}”？由它生成的标记会一起消失。"
+    },
     "files": {
       "tree": "目录树 + 列表",
       "list": "仅列表"
@@ -445,6 +472,11 @@
         "title": "终端配色方案",
         "summary": "为终端选择一套公开方案，或沿用界面的颜色。",
         "help": "方案自带背景、文字和十六个 ANSI 颜色，深色与浅色终端各有一套。配色来源保留为界面色板时，终端始终与窗口一致。"
+      },
+      "terminalHighlights": {
+        "title": "关键词高亮",
+        "summary": "在终端输出里标出指定的词。",
+        "help": "规则作用于所有已打开的终端，包括屏幕上已有的输出。规则可以是普通词或正则表达式；显示方式决定是铺底色还是改文字颜色。"
       },
       "sessionLayout": {
         "title": "打开会话",

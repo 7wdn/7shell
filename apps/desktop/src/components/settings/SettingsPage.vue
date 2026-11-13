@@ -354,7 +354,13 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
     // The scheme slots and the background choice have no rows of their own: they are drawn inside
     // the colour-schemes block, which is one question with four answers. Restoring the terminal
     // category still has to put them back, so the category names them here.
-    fields.push("terminalSchemeDark", "terminalSchemeLight", "terminalSchemeBackground", "terminalSchemeProfiles");
+    fields.push(
+      "terminalSchemeDark",
+      "terminalSchemeLight",
+      "terminalSchemeBackground",
+      "terminalSchemeProfiles",
+      "terminalHighlightMode",
+    );
   }
   if (id === "appearance") {
     fields.push("customColors", "customColorsDark");

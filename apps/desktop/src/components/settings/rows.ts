@@ -217,6 +217,8 @@ export interface SettingsRowDefinition {
     | { readonly kind: "terminal-preview" }
     /** The terminal's colour source and its two scheme slots, drawn together by their own block. */
     | { readonly kind: "terminal-schemes" }
+    /** The words the terminal marks, and how the marks are drawn. */
+    | { readonly kind: "terminal-highlights" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
     | { readonly kind: "choice"; readonly options: readonly SettingsChoiceOption[] }
     | { readonly kind: "cards"; readonly options: readonly SettingsCardOption[] }
@@ -688,6 +690,15 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     summaryKey: "settings.rows.terminalSchemes.summary",
     helpKey: "settings.rows.terminalSchemes.help",
     control: { kind: "terminal-schemes" },
+  },
+  {
+    id: "terminal-highlights",
+    category: "terminal",
+    field: "terminalHighlightRules",
+    titleKey: "settings.rows.terminalHighlights.title",
+    summaryKey: "settings.rows.terminalHighlights.summary",
+    helpKey: "settings.rows.terminalHighlights.help",
+    control: { kind: "terminal-highlights" },
   },
   {
     id: "home-content",

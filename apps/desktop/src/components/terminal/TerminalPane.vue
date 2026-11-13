@@ -29,7 +29,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { type ITheme, Terminal } from "@xterm/xterm";
+import { type IDecoration, type ITheme, Terminal } from "@xterm/xterm";
 import { ChevronDown, ChevronUp, X } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -46,6 +46,7 @@ import { bindingFor } from "@/lib/shortcuts/registry";
 import { registerInputReset, registerTerminalSink } from "@/lib/terminal/bus";
 import { registerTerminalBuffer, tailOfBuffer } from "@/lib/terminal/buffers";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
+import { compileHighlightRules, HIGHLIGHT_DECORATION_LIMIT, highlightMatches } from "@/lib/terminal/highlight";
 import { findTerminalScheme, schemeAnsi, withAlpha } from "@/lib/terminal/schemes";
 import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
 import { useAppStore } from "@/stores/app";
@@ -88,6 +89,101 @@ const activeScheme = computed(() => {
  * xterm. The container passes the numbers down, the stylesheet puts them on `.xterm`, and a change
  * is a refit rather than a second copy of the stylesheet's rule.
  */
+/** The rules as regular expressions, rebuilt when the list in the store changes. */
+const compiledHighlights = computed(() => compileHighlightRules(preferences.terminalHighlightRules));
+
+/** How far back a rule change reaches. Older scrollback keeps the marks it already had. */
+const HIGHLIGHT_RESCAN_LINES = 1000;
+let highlightDecorations: IDecoration[] = [];
+
+function clearHighlights(): void {
+  for (const decoration of highlightDecorations) {
+    decoration.dispose();
+  }
+  highlightDecorations = [];
+}
+
+/**
+ * Marks every line in `[from, to]`, replacing whatever was drawn there before.
+ *
+ * The range is what the chunk just wrote — from the cursor line before it to the cursor line after
+ * it — rather than "everything new in the buffer". A terminal's buffer keeps its rows while
+ * output replaces them, so length alone says nothing about where the text went; the cursor does.
+ * Replacing instead of appending is what keeps a line that was drawn twice from carrying its marks
+ * twice.
+ *
+ * The budget is the whole scrollback, not one line: a rule like `.` would otherwise put a mark on
+ * every character of every line, and the terminal would spend its time drawing them.
+ */
+function applyHighlights(from: number, to: number): void {
+  const instance = terminal;
+  if (!instance) {
+    return;
+  }
+  const compiled = compiledHighlights.value;
+  if (compiled.length === 0) {
+    clearHighlights();
+    return;
+  }
+
+  highlightDecorations = highlightDecorations.filter((decoration) => {
+    const line = decoration.marker.line;
+    if (decoration.isDisposed || line === -1 || (line >= from && line <= to)) {
+      decoration.dispose();
+      return false;
+    }
+    return true;
+  });
+
+  const buffer = instance.buffer.active;
+  const cursorLine = buffer.baseY + buffer.cursorY;
+  const mode = preferences.terminalHighlightMode;
+  const lastLine = Math.min(to, buffer.length - 1);
+
+  for (let lineIndex = Math.max(from, 0); lineIndex <= lastLine; lineIndex += 1) {
+    if (highlightDecorations.length >= HIGHLIGHT_DECORATION_LIMIT) {
+      break;
+    }
+    const text = buffer.getLine(lineIndex)?.translateToString(true) ?? "";
+    if (!text) {
+      continue;
+    }
+    for (const match of highlightMatches(text, compiled)) {
+      if (highlightDecorations.length >= HIGHLIGHT_DECORATION_LIMIT) {
+        break;
+      }
+      const marker = instance.registerMarker(lineIndex - cursorLine);
+      if (!marker) {
+        continue;
+      }
+      const decoration = instance.registerDecoration({
+        marker,
+        x: match.start,
+        width: match.end - match.start,
+        layer: mode === "background" ? "bottom" : "top",
+        backgroundColor: mode === "background" ? withAlpha(match.color, 0.35) : undefined,
+        foregroundColor: mode === "text" ? match.color : undefined,
+      });
+      if (decoration) {
+        highlightDecorations.push(decoration);
+      } else {
+        marker.dispose();
+      }
+    }
+  }
+}
+
+/** Throws the marks away and draws them again over the recent scrollback. */
+function rescanHighlights(): void {
+  clearHighlights();
+  const instance = terminal;
+  if (!instance) {
+    return;
+  }
+  const cursorLine = instance.buffer.active.baseY + instance.buffer.active.cursorY;
+  applyHighlights(Math.max(0, cursorLine - HIGHLIGHT_RESCAN_LINES), cursorLine);
+}
+
 const surfaceStyle = computed<Record<string, string>>(() => {
   const style: Record<string, string> = {
     "--terminal-padding-x": `${preferences.terminalPaddingX}px`,
@@ -673,7 +769,13 @@ onMounted(() => {
   unregisterBuffer = registerTerminalBuffer(props.handle, (lines) => tailOfBuffer(instance.buffer.active, lines));
   unregister = registerTerminalSink(props.handle, (bytes) => {
     completionOutput();
-    instance.write(bytes);
+    // Once xterm has parsed the chunk, the lines it produced are in the buffer. The cursor says
+    // where they landed; the callback is what makes that a range rather than a guess.
+    const startLine = instance.buffer.active.baseY + instance.buffer.active.cursorY;
+    instance.write(bytes, () => {
+      const buffer = instance.buffer.active;
+      applyHighlights(startLine, buffer.baseY + buffer.cursorY);
+    });
   });
   instance.onData((data) => {
     if (!props.interactive) {
@@ -749,6 +851,12 @@ watch(
     });
   },
 );
+
+watch([compiledHighlights, () => preferences.terminalHighlightMode], () => {
+  // The rules changed under a terminal that has output on screen: what is already drawn has to be
+  // redrawn, or the change would only appear on the next line the shell prints.
+  void nextTick(rescanHighlights);
+});
 
 watch(
   () => preferences.terminalFontSize,
@@ -880,6 +988,7 @@ onBeforeUnmount(() => {
   unregisterInputReset?.();
   unregisterBuffer?.();
   osc7?.dispose();
+  clearHighlights();
   terminal?.dispose();
 });
 </script>

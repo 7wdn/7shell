@@ -110,6 +110,8 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     terminalSchemeBackground: "scheme",
     terminalCustomSchemes: [],
     terminalSchemeProfiles: [],
+    terminalHighlightRules: [],
+    terminalHighlightMode: "background",
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -351,6 +353,8 @@ describe("preferences store", () => {
       terminalSchemeBackground: "scheme",
       terminalCustomSchemes: [],
       terminalSchemeProfiles: [],
+      terminalHighlightRules: [],
+      terminalHighlightMode: "background",
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -440,6 +444,8 @@ describe("preferences store", () => {
       terminalSchemeBackground: "scheme",
       terminalCustomSchemes: [],
       terminalSchemeProfiles: [],
+      terminalHighlightRules: [],
+      terminalHighlightMode: "background",
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -765,6 +771,8 @@ describe("the terminal palette", () => {
       terminalSchemeBackground: "scheme",
       terminalCustomSchemes: [],
       terminalSchemeProfiles: [],
+      terminalHighlightRules: [],
+      terminalHighlightMode: "background",
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -1320,6 +1328,43 @@ describe("the colour theme", () => {
     expect(store.terminalSchemeProfiles).toEqual([]);
   });
 
+  it("saves a highlight rule, changes it in place and removes it", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    const rule = {
+      id: "timeout",
+      pattern: "timeout",
+      color: "#f59e0b",
+      isRegex: false,
+      caseSensitive: false,
+    };
+    expect(store.saveTerminalHighlightRule(rule)).toBe(true);
+    expect(store.terminalHighlightRules).toHaveLength(1);
+
+    expect(store.saveTerminalHighlightRule({ ...rule, color: "#ff0000" })).toBe(true);
+    expect(store.terminalHighlightRules[0]?.color, "the same id is the same rule").toBe("#ff0000");
+
+    expect(store.saveTerminalHighlightRule({ ...rule, id: "blank", pattern: "   " })).toBe(false);
+
+    store.setTerminalHighlightMode("text");
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        terminalHighlightMode: "text",
+        terminalHighlightRules: [expect.objectContaining({ id: "timeout", color: "#ff0000" })],
+      }),
+    );
+
+    store.removeTerminalHighlightRule("timeout");
+    expect(store.terminalHighlightRules).toEqual([]);
+
+    await store.reset(["terminalHighlightRules", "terminalHighlightMode"]);
+    expect(store.terminalHighlightRules).toEqual([]);
+    expect(store.terminalHighlightMode).toBe("background");
+  });
+
   it("remembers the two the shell's own window obeys", async () => {
     const store = usePreferencesStore();
     store.initialize();
@@ -1864,6 +1909,8 @@ describe("restoring the defaults", () => {
       terminalSchemeBackground: "scheme",
       terminalCustomSchemes: [],
       terminalSchemeProfiles: [],
+      terminalHighlightRules: [],
+      terminalHighlightMode: "background",
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

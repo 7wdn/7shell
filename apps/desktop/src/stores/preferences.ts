@@ -67,7 +67,9 @@ import {
   DEFAULT_TERMINAL_PADDING_Y,
   DEFAULT_TERMINAL_SCHEME_BACKGROUND,
   DEFAULT_TERMINAL_SCHEME_SOURCE,
+  DEFAULT_TERMINAL_HIGHLIGHT_MODE,
   TERMINAL_CUSTOM_SCHEME_LIMIT,
+  TERMINAL_HIGHLIGHT_RULE_LIMIT,
   TERMINAL_SCHEME_PROFILE_LIMIT,
   TERMINAL_FONT_WEIGHT_MAX,
   TERMINAL_FONT_WEIGHT_MIN,
@@ -105,6 +107,8 @@ import {
   type TerminalCursorInactiveStyle,
   type TerminalCursorStyle,
   type TerminalCustomScheme,
+  type TerminalHighlightMode,
+  type TerminalHighlightRule,
   type TerminalSchemeBackground,
   type TerminalSchemeProfile,
   type TerminalSchemeSource,
@@ -182,6 +186,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   terminalSchemeBackground: DEFAULT_TERMINAL_SCHEME_BACKGROUND,
   terminalCustomSchemes: [],
   terminalSchemeProfiles: [],
+  terminalHighlightRules: [],
+  terminalHighlightMode: DEFAULT_TERMINAL_HIGHLIGHT_MODE,
   customColors: DEFAULT_CUSTOM_COLORS,
   customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
@@ -658,6 +664,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const terminalCustomSchemes = ref<readonly TerminalCustomScheme[]>([]);
   /** Saved answers to "which terminal colours", each one applied as a single choice. */
   const terminalSchemeProfiles = ref<readonly TerminalSchemeProfile[]>([]);
+  /** The words and patterns the terminal marks, and how the marks are drawn. */
+  const terminalHighlightRules = ref<readonly TerminalHighlightRule[]>([]);
+  const terminalHighlightMode = ref<TerminalHighlightMode>(DEFAULT_TERMINAL_HIGHLIGHT_MODE);
 
   /** The same for the terminal, which is a choice of its own. */
   const wornTerminalFont = computed(() =>
@@ -883,6 +892,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       terminalSchemeBackground.value = settings.terminalSchemeBackground ?? DEFAULT_TERMINAL_SCHEME_BACKGROUND;
       terminalCustomSchemes.value = settings.terminalCustomSchemes ?? [];
       terminalSchemeProfiles.value = settings.terminalSchemeProfiles ?? [];
+      terminalHighlightRules.value = settings.terminalHighlightRules ?? [];
+      terminalHighlightMode.value = settings.terminalHighlightMode ?? DEFAULT_TERMINAL_HIGHLIGHT_MODE;
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
       customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
@@ -1031,6 +1042,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         terminalSchemeBackground: terminalSchemeBackground.value,
         terminalCustomSchemes: [...terminalCustomSchemes.value],
         terminalSchemeProfiles: [...terminalSchemeProfiles.value],
+        terminalHighlightRules: [...terminalHighlightRules.value],
+        terminalHighlightMode: terminalHighlightMode.value,
         customColors: customColors.value,
         customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
@@ -1441,6 +1454,36 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   function removeTerminalSchemeProfile(id: string): void {
     terminalSchemeProfiles.value = terminalSchemeProfiles.value.filter((profile) => profile.id !== id);
+    dirty.value = true;
+  }
+
+  function setTerminalHighlightMode(mode: TerminalHighlightMode): void {
+    terminalHighlightMode.value = mode;
+    dirty.value = true;
+  }
+
+  /** Adds a rule, or replaces the one with the same id; the editor uses both. */
+  function saveTerminalHighlightRule(rule: TerminalHighlightRule): boolean {
+    const pattern = rule.pattern.trim();
+    if (!pattern) {
+      return false;
+    }
+    const next = { ...rule, pattern };
+    const existing = terminalHighlightRules.value.findIndex((entry) => entry.id === rule.id);
+    if (existing >= 0) {
+      terminalHighlightRules.value = terminalHighlightRules.value.map((entry) => (entry.id === rule.id ? next : entry));
+    } else {
+      if (terminalHighlightRules.value.length >= TERMINAL_HIGHLIGHT_RULE_LIMIT) {
+        return false;
+      }
+      terminalHighlightRules.value = [...terminalHighlightRules.value, next];
+    }
+    dirty.value = true;
+    return true;
+  }
+
+  function removeTerminalHighlightRule(id: string): void {
+    terminalHighlightRules.value = terminalHighlightRules.value.filter((rule) => rule.id !== id);
     dirty.value = true;
   }
 
@@ -2121,6 +2164,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalSchemeProfiles":
           terminalSchemeProfiles.value = [];
           break;
+        case "terminalHighlightRules":
+          terminalHighlightRules.value = [];
+          break;
+        case "terminalHighlightMode":
+          terminalHighlightMode.value = DEFAULT_TERMINAL_HIGHLIGHT_MODE;
+          break;
         case "customColors":
           customColors.value = { ...DEFAULT_CUSTOM_COLORS };
           break;
@@ -2243,6 +2292,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalSchemeBackground,
     terminalCustomSchemes,
     terminalSchemeProfiles,
+    terminalHighlightRules,
+    terminalHighlightMode,
     wornUiFont,
     wornTerminalFont,
     customColors,
@@ -2343,6 +2394,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     saveTerminalSchemeProfile,
     removeTerminalSchemeProfile,
     matchesTerminalSchemeProfile,
+    setTerminalHighlightMode,
+    saveTerminalHighlightRule,
+    removeTerminalHighlightRule,
     previewFont,
     clearFontPreview,
     setCustomColor,

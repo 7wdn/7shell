@@ -124,6 +124,7 @@ async function writtenSettings(): Promise<{
   terminalSchemeDark?: string;
   terminalCustomSchemes?: { id?: string; name?: string }[];
   terminalSchemeProfiles?: { id?: string; name?: string }[];
+  terminalHighlightRules?: { pattern?: string }[];
   customColorsDark?: { primary?: string };
   keybindings?: Record<string, string>;
   commandCompletion?: boolean;
@@ -148,6 +149,7 @@ async function writtenSettings(): Promise<{
     terminalSchemeDark?: string;
     terminalCustomSchemes?: { id?: string; name?: string }[];
     terminalSchemeProfiles?: { id?: string; name?: string }[];
+    terminalHighlightRules?: { pattern?: string }[];
     customColorsDark?: { primary?: string };
     keybindings?: Record<string, string>;
     filesTreeWidth?: number;
@@ -731,12 +733,37 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
       .poll(async () => (await writtenSettings()).terminalSchemeSource, { message: "and gives the palette back" })
       .toBe("host");
 
+    // A highlight rule written in settings marks the line the shell prints. The rule is set up
+    // before the marker is typed, so what is asserted is the pane's own decoration rather than the
+    // settings page saying it saved something.
+    await settingsButton(page).click();
+    const settingsRegion = page.getByRole("region", { name: "Settings" });
+    await settingsRegion.getByRole("button", { name: "SSH terminal", exact: true }).click();
+    await settingsRegion.getByRole("button", { name: "Add rule", exact: true }).click();
+    const ruleDialog = page.getByRole("dialog");
+    await ruleDialog.getByLabel("Word or pattern").fill("seven-shell-highlight");
+    await ruleDialog.getByRole("button", { name: "Save rule", exact: true }).click();
+    await settingsRegion.getByRole("button", { name: "Apply and close", exact: true }).click();
+
     // The marker is computed by the shell, not typed literally: seeing `seven-shell-42` proves the
     // line was executed, where the typed text alone would only prove keystrokes reached the screen.
     await page.getByRole("textbox", { name: "Terminal input" }).click();
-    await page.keyboard.type("echo seven-shell-$((6*7))");
+    await page.keyboard.type("echo seven-shell-highlight-$((6*7))");
     await page.keyboard.press("Enter");
-    await expect(screen).toContainText("seven-shell-42", { timeout: 20_000 });
+    await expect(screen).toContainText("seven-shell-highlight-42", { timeout: 20_000 });
+    await expect(
+      page.locator(".xterm-decoration").filter({ visible: true }).first(),
+      "the rule put a mark on the line it matched",
+    ).toBeVisible({ timeout: 10_000 });
+
+    // And the rule is taken back out, so the next case meets a terminal with nothing marked.
+    await settingsButton(page).click();
+    const cleanupSettings = page.getByRole("region", { name: "Settings" });
+    await cleanupSettings.getByRole("button", { name: "SSH terminal", exact: true }).click();
+    await cleanupSettings.getByRole("button", { name: "Remove rule", exact: true }).click();
+    const cleanupRuleDialog = page.getByRole("dialog");
+    await cleanupRuleDialog.getByRole("button", { name: "Remove rule", exact: true }).click();
+    await cleanupSettings.getByRole("button", { name: "Apply and close", exact: true }).click();
   } finally {
     await close();
   }
@@ -1516,6 +1543,30 @@ test("a setting can be found by name, and a category can be put back to its defa
     await applySettings(page);
     await expect
       .poll(async () => (await writtenSettings()).terminalCustomSchemes ?? [], {
+        message: "and removing it takes it out again",
+      })
+      .toEqual([]);
+
+    // A highlight rule is written through its own dialog, and the list in the settings file is what
+    // the terminal reads on every new line.
+    await settings.getByRole("button", { name: "Add rule", exact: true }).click();
+    const highlightDialog = page.getByRole("dialog");
+    await highlightDialog.getByLabel("Word or pattern").fill("timeout");
+    await highlightDialog.getByRole("button", { name: "Save rule", exact: true }).click();
+    await expect(highlightDialog).toBeHidden();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalHighlightRules?.[0]?.pattern, {
+        message: "the rule reached the file",
+      })
+      .toBe("timeout");
+
+    await settings.getByRole("button", { name: "Remove rule", exact: true }).click();
+    const highlightRemoveDialog = page.getByRole("dialog");
+    await highlightRemoveDialog.getByRole("button", { name: "Remove rule", exact: true }).click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalHighlightRules ?? [], {
         message: "and removing it takes it out again",
       })
       .toEqual([]);

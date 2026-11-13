@@ -30,8 +30,9 @@ use sevenshell_types::{
     SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
     SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
     TabMaxWidth, TabPlacement, TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme,
-    TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette,
-    TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    TerminalHighlightMode, TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile,
+    TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress,
+    UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -643,6 +644,14 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
                 scheme_light: Some("solarized-light".to_owned()),
                 scheme_background: TerminalSchemeBackground::Scheme,
             }],
+            terminal_highlight_rules: vec![TerminalHighlightRule {
+                id: "timeout".to_owned(),
+                pattern: "timeout".to_owned(),
+                color: "#f59e0b".to_owned(),
+                is_regex: false,
+                case_sensitive: false,
+            }],
+            terminal_highlight_mode: TerminalHighlightMode::Text,
             custom_colors: Some(CustomColors::light_default()),
             custom_colors_dark: Some(CustomColors::dark_default()),
             locale: Some("zh-CN".to_owned()),
@@ -732,6 +741,11 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         settings["terminalSchemeProfiles"][0]["schemeDark"],
         serde_json::json!("dracula")
     );
+    assert_eq!(
+        settings["terminalHighlightRules"][0]["isRegex"],
+        serde_json::json!(false)
+    );
+    assert_eq!(settings["terminalHighlightMode"], serde_json::json!("text"));
     // An external server travels as configuration only: the transport is the lower-case word the
     // page matches, and the timeout is the camelCase name the row reads.
     let external = &settings["mcpClientServers"][0];

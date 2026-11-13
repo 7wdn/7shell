@@ -21,6 +21,7 @@ import { FONT_LABEL_KEYS, type SettingsChoiceIcon, type SettingsRowDefinition } 
 import FontSelect from "@/components/ui/FontSelect.vue";
 import { cn } from "@/lib/utils";
 import BackgroundSettings from "@/components/settings/BackgroundSettings.vue";
+import TerminalHighlightSettings from "@/components/settings/TerminalHighlightSettings.vue";
 import TerminalPreview from "@/components/settings/TerminalPreview.vue";
 import TerminalSchemeSettings from "@/components/settings/TerminalSchemeSettings.vue";
 import Select from "@/components/ui/Select.vue";
@@ -154,6 +155,7 @@ const options = computed(() =>
   <BackgroundSettings v-if="props.row.control.kind === 'background'" />
   <TerminalPreview v-else-if="props.row.control.kind === 'terminal-preview'" />
   <TerminalSchemeSettings v-else-if="props.row.control.kind === 'terminal-schemes'" />
+  <TerminalHighlightSettings v-else-if="props.row.control.kind === 'terminal-highlights'" />
   <div v-else-if="props.row.control.kind === 'slider'" class="min-w-0 space-y-1.5">
     <div class="flex items-center justify-end gap-2">
       <span class="font-mono text-xs text-muted-foreground tabular-nums"

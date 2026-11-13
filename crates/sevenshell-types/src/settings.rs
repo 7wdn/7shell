@@ -1095,6 +1095,65 @@ pub struct TerminalSchemeProfile {
 /// How many of somebody's own scheme choices this build keeps.
 pub const TERMINAL_SCHEME_PROFILE_LIMIT: usize = 30;
 
+/// One word or pattern the terminal marks wherever it appears.
+///
+/// The pattern is kept as written rather than compiled here: it is a JavaScript regular expression
+/// when `is_regex` says so, and this side has no business compiling one. What this side can check is
+/// the shape — a pattern with something in it, and a colour it can draw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalHighlightRule {
+    pub id: String,
+    pub pattern: String,
+    /// `#rrggbb`.
+    pub color: String,
+    pub is_regex: bool,
+    pub case_sensitive: bool,
+}
+
+impl TerminalHighlightRule {
+    pub fn is_drawable(&self) -> bool {
+        let pattern = self.pattern.trim();
+        !self.id.trim().is_empty()
+            && !pattern.is_empty()
+            && pattern.chars().count() <= TERMINAL_HIGHLIGHT_PATTERN_MAX_CHARS
+            && is_hex_colour(&self.color)
+    }
+}
+
+/// How a highlight is drawn: a wash behind the match, or the match's own text colour.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalHighlightMode {
+    /// A tinted block behind the match, which keeps the terminal's own text colour intact.
+    #[default]
+    Background,
+    /// The match's glyphs in the rule's colour, with no block behind them.
+    Text,
+}
+
+impl TerminalHighlightMode {
+    pub const ALL: &'static [TerminalHighlightMode] = &[TerminalHighlightMode::Background, TerminalHighlightMode::Text];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Background => "background",
+            Self::Text => "text",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|mode| mode.as_str() == id)
+    }
+}
+
+/// How many rules this build keeps, and how long one may be.
+///
+/// The same bound the terminal it was modelled on uses: a list longer than this is a list nobody
+/// reads, and every rule is scanned against every new line.
+pub const TERMINAL_HIGHLIGHT_RULE_LIMIT: usize = 30;
+pub const TERMINAL_HIGHLIGHT_PATTERN_MAX_CHARS: usize = 200;
+
 /// The ends of the terminal's typography and cursor settings, and the values a fresh install has.
 ///
 /// Bounded rather than free for the reason the font size is: each is chosen by looking at the preview
@@ -1466,6 +1525,12 @@ pub struct AppSettings {
     /// Saved answers to "which terminal colours", applied as one choice.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub terminal_scheme_profiles: Vec<TerminalSchemeProfile>,
+    /// Words and patterns the terminal marks wherever they appear.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_highlight_rules: Vec<TerminalHighlightRule>,
+    /// How those marks are drawn: behind the match, or as the match's own colour.
+    #[serde(default)]
+    pub terminal_highlight_mode: TerminalHighlightMode,
     /// The five colours the `custom` palette is drawn from, for the light theme. Absent means
     /// nobody has picked any, and the ones a fresh install starts from apply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1712,6 +1777,8 @@ impl Default for AppSettings {
             terminal_scheme_background: TerminalSchemeBackground::default(),
             terminal_custom_schemes: Vec::new(),
             terminal_scheme_profiles: Vec::new(),
+            terminal_highlight_rules: Vec::new(),
+            terminal_highlight_mode: TerminalHighlightMode::default(),
             custom_colors: None,
             custom_colors_dark: None,
             locale: None,
@@ -1778,6 +1845,8 @@ impl AppSettings {
             && self.terminal_scheme_background == TerminalSchemeBackground::Scheme
             && self.terminal_custom_schemes.is_empty()
             && self.terminal_scheme_profiles.is_empty()
+            && self.terminal_highlight_rules.is_empty()
+            && self.terminal_highlight_mode == TerminalHighlightMode::Background
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
@@ -1875,6 +1944,31 @@ mod tests {
             UI_SCALE_PERCENTS.contains(&ui_scale_default()),
             "a default the interface cannot show or take back is one nobody could leave"
         );
+    }
+
+    #[test]
+    fn a_highlight_rule_needs_a_pattern_and_a_colour_this_build_can_draw() {
+        let mut rule = TerminalHighlightRule {
+            id: "timeout".to_owned(),
+            pattern: "timeout".to_owned(),
+            color: "#f59e0b".to_owned(),
+            is_regex: false,
+            case_sensitive: false,
+        };
+        assert!(rule.is_drawable());
+
+        rule.pattern = "   ".to_owned();
+        assert!(!rule.is_drawable(), "a rule with nothing to find is not a rule");
+
+        rule.pattern = "x".repeat(TERMINAL_HIGHLIGHT_PATTERN_MAX_CHARS + 1);
+        assert!(
+            !rule.is_drawable(),
+            "a pattern past the limit is one nobody can read back"
+        );
+
+        rule.pattern = "timeout".to_owned();
+        rule.color = "amber".to_owned();
+        assert!(!rule.is_drawable(), "a colour this build cannot read is not a colour");
     }
 
     #[test]

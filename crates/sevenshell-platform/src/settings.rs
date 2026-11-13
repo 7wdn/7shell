@@ -21,21 +21,22 @@ use sevenshell_types::{
     AiProviderConfig, AiProviderKind, AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX,
     BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FilesLayout, HomeLayout, McpScope,
     McpServerConfig, McpServerTransport, SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT,
-    TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalSchemeBackground,
-    TerminalSchemeProfile, TerminalSchemeSource, ThemeMode, ThemePalette, ai_context_enabled_default,
-    ai_context_lines_default, ai_max_output_tokens_default, ai_session_retention_days_default, background_blur_default,
-    background_transparency_default, command_completion_on, is_valid_mcp_server_id,
-    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default,
-    mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
-    normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
-    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_bold_font_weight,
-    normalize_terminal_font_size, normalize_terminal_font_weight, normalize_terminal_letter_spacing,
-    normalize_terminal_line_height, normalize_terminal_min_contrast, normalize_terminal_padding, normalize_ui_scale,
-    sidebar_on, sync_auto_upload_minutes_default, terminal_bold_bright_on, terminal_bold_font_weight_default,
-    terminal_cursor_blink_on, terminal_font_size_default, terminal_font_weight_default,
-    terminal_letter_spacing_default, terminal_line_height_default, terminal_min_contrast_default,
-    terminal_padding_x_default, terminal_padding_y_default, tray_icon_on, ui_scale_default, update_check_on,
+    TERMINAL_HIGHLIGHT_RULE_LIMIT, TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
+    TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
+    TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, ThemeMode,
+    ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
+    ai_session_retention_days_default, background_blur_default, background_transparency_default, command_completion_on,
+    is_valid_mcp_server_id, mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default,
+    mcp_max_result_bytes_default, mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on,
+    normalize_ai_context_lines, normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds,
+    normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes,
+    normalize_terminal_bold_font_weight, normalize_terminal_font_size, normalize_terminal_font_weight,
+    normalize_terminal_letter_spacing, normalize_terminal_line_height, normalize_terminal_min_contrast,
+    normalize_terminal_padding, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
+    terminal_bold_bright_on, terminal_bold_font_weight_default, terminal_cursor_blink_on, terminal_font_size_default,
+    terminal_font_weight_default, terminal_letter_spacing_default, terminal_line_height_default,
+    terminal_min_contrast_default, terminal_padding_x_default, terminal_padding_y_default, tray_icon_on,
+    ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -445,6 +446,12 @@ struct StoredSettings {
     terminal_custom_schemes: Vec<TerminalCustomScheme>,
     #[serde(default)]
     terminal_scheme_profiles: Vec<StoredTerminalSchemeProfile>,
+    /// The whole rule is plain data, so the stored type is the wire type; a rule this build cannot
+    /// draw is dropped below rather than making the file unreadable.
+    #[serde(default)]
+    terminal_highlight_rules: Vec<TerminalHighlightRule>,
+    #[serde(default)]
+    terminal_highlight_mode: String,
     /// Absent in a file written before the interface could be coloured by hand, which reads as
     /// "nobody has picked any" — the defaults a fresh install starts from.
     #[serde(default)]
@@ -594,6 +601,8 @@ impl StoredSettings {
                 .iter()
                 .map(StoredTerminalSchemeProfile::from_settings)
                 .collect(),
+            terminal_highlight_rules: settings.terminal_highlight_rules.clone(),
+            terminal_highlight_mode: settings.terminal_highlight_mode.as_str().to_owned(),
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
@@ -745,6 +754,17 @@ impl StoredSettings {
                     .take(TERMINAL_SCHEME_PROFILE_LIMIT)
                     .collect()
             },
+            terminal_highlight_rules: {
+                let mut seen = std::collections::BTreeSet::new();
+                self.terminal_highlight_rules
+                    .iter()
+                    .filter(|rule| rule.is_drawable())
+                    .filter(|rule| seen.insert(rule.id.trim().to_owned()))
+                    .take(TERMINAL_HIGHLIGHT_RULE_LIMIT)
+                    .cloned()
+                    .collect()
+            },
+            terminal_highlight_mode: TerminalHighlightMode::from_id(&self.terminal_highlight_mode).unwrap_or_default(),
             // A hand-coloured set that cannot be drawn is dropped whole rather than per colour: half
             // of somebody's palette with defaults filled in for the rest is a window nobody asked
             // for, and there is nothing in it they could recognise to fix.
@@ -926,6 +946,8 @@ mod tests {
             terminal_scheme_background: TerminalSchemeBackground::default(),
             terminal_custom_schemes: Vec::new(),
             terminal_scheme_profiles: Vec::new(),
+            terminal_highlight_rules: Vec::new(),
+            terminal_highlight_mode: TerminalHighlightMode::default(),
             custom_colors: None,
             custom_colors_dark: None,
             locale: locale.map(str::to_owned),
@@ -1461,6 +1483,14 @@ mod tests {
                 scheme_light: Some("solarized-light".to_owned()),
                 scheme_background: TerminalSchemeBackground::Scheme,
             }],
+            terminal_highlight_rules: vec![TerminalHighlightRule {
+                id: "timeout".to_owned(),
+                pattern: "timeout".to_owned(),
+                color: "#f59e0b".to_owned(),
+                is_regex: false,
+                case_sensitive: false,
+            }],
+            terminal_highlight_mode: TerminalHighlightMode::Text,
             ..AppSettings::default()
         };
         save_to(&path, &written).expect("save");

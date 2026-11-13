@@ -340,6 +340,24 @@ export interface TerminalSchemeProfile {
 /** How many saved scheme choices this build keeps. */
 export const TERMINAL_SCHEME_PROFILE_LIMIT = 30;
 
+/** One word or pattern the terminal marks, from `sevenshell_types::TerminalHighlightRule`. */
+export interface TerminalHighlightRule {
+  readonly id: string;
+  readonly pattern: string;
+  /** `#rrggbb`. */
+  readonly color: string;
+  readonly isRegex: boolean;
+  readonly caseSensitive: boolean;
+}
+
+/** How a highlight is drawn, from `sevenshell_types::TerminalHighlightMode`. */
+export type TerminalHighlightMode = "background" | "text";
+
+export const TERMINAL_HIGHLIGHT_RULE_LIMIT = 30;
+export const TERMINAL_HIGHLIGHT_PATTERN_MAX = 200;
+export const DEFAULT_TERMINAL_HIGHLIGHT_COLOR = "#f59e0b";
+export const DEFAULT_TERMINAL_HIGHLIGHT_MODE: TerminalHighlightMode = "background";
+
 /** What a chosen scheme replaces, from `sevenshell_types::TerminalSchemeBackground`. */
 export type TerminalSchemeBackground = "scheme" | "host";
 export const DEFAULT_TERMINAL_SCHEME_BACKGROUND: TerminalSchemeBackground = "scheme";
@@ -695,6 +713,10 @@ export interface AppSettings {
   readonly terminalCustomSchemes?: readonly TerminalCustomScheme[];
   /** Saved scheme choices, applied as one answer. */
   readonly terminalSchemeProfiles?: readonly TerminalSchemeProfile[];
+  /** Words and patterns the terminal marks wherever they appear. */
+  readonly terminalHighlightRules?: readonly TerminalHighlightRule[];
+  /** How those marks are drawn. */
+  readonly terminalHighlightMode: TerminalHighlightMode;
   /** What a `custom` palette is drawn from. Absent means nobody has picked any yet. */
   readonly customColors?: CustomColors;
   /** The same for the dark theme, which has a set of its own. */

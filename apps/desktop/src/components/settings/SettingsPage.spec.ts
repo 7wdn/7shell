@@ -77,6 +77,8 @@ function defaults(overrides: Record<string, unknown> = {}): Record<string, unkno
     terminalSchemeBackground: "scheme",
     terminalCustomSchemes: [],
     terminalSchemeProfiles: [],
+    terminalHighlightRules: [],
+    terminalHighlightMode: "background",
     showTrayIcon: true,
     quitOnClose: false,
     backgroundImage: { displayMode: "fill", transparency: 15, blur: 4 },

@@ -158,6 +158,33 @@
         "confirm": "Remove scheme"
       }
     },
+    "highlights": {
+      "mode": "How a match is drawn",
+      "modeBackground": "Behind the match",
+      "modeBackgroundHint": "A tint behind the word; the terminal's own text colour stays.",
+      "modeText": "As the text colour",
+      "modeTextHint": "The match itself takes the rule's colour, with no block.",
+      "rules": "Rules ({count}/{limit})",
+      "add": "Add rule",
+      "addTitle": "Add a highlight rule",
+      "editTitle": "Change the highlight rule",
+      "hint": "A rule marks every occurrence in the terminal, including output already on screen.",
+      "pattern": "Word or pattern",
+      "patternPlaceholder": "timeout",
+      "color": "Colour",
+      "regex": "Regular expression",
+      "regexBadge": "Regex",
+      "caseSensitive": "Match case",
+      "caseBadge": "Aa",
+      "edit": "Change rule",
+      "remove": "Remove rule",
+      "empty": "No rules yet.",
+      "save": "Save rule",
+      "tooLong": "A pattern may be at most {max} characters.",
+      "invalidRegex": "That is not a valid regular expression.",
+      "removeTitle": "Remove highlight rule",
+      "removeMessage": "Remove “{pattern}”? The marks it made disappear with it."
+    },
     "files": {
       "tree": "Tree and list",
       "list": "List only"
@@ -445,6 +472,11 @@
         "title": "Terminal colour schemes",
         "summary": "A published scheme for the terminal, or the colours of the interface.",
         "help": "A scheme brings its own background, text and sixteen ANSI colours, one for each half of the terminal's light/dark setting. Leaving the source on the interface palette keeps the pane matching the window."
+      },
+      "terminalHighlights": {
+        "title": "Keyword highlights",
+        "summary": "Mark words in terminal output wherever they appear.",
+        "help": "Rules apply to every open terminal, including output already on screen. A rule can be a plain word or a regular expression; the display mode decides whether the mark is a tint behind the word or the word's own colour."
       },
       "sessionLayout": {
         "title": "Opening a session",
