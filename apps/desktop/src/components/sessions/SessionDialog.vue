@@ -56,6 +56,7 @@ import type {
   Session,
   ForwardMode,
 } from "@/types/session";
+import type { ContainerRuntime } from "@/types/container";
 import { AUTH_METHODS, PROTOCOLS, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
 
 const props = defineProps<{ open: boolean; session: Session | null }>();
@@ -99,6 +100,20 @@ const PROTOCOL_GROUPS: readonly { labelKey: string; protocols: readonly Protocol
 ];
 
 /**
+ * The engines behind the container protocol, each a kind of its own in the picker.
+ *
+ * "The Docker connections" is a question somebody — and an agent reading the session list — asks
+ * by name, and a list that answers only "container" cannot answer it. The saved session keeps
+ * `protocol: container` plus its runtime; the picker is where the runtime becomes the kind.
+ */
+const CONTAINER_RUNTIMES: readonly { runtime: ContainerRuntime; labelKey: string; windowsOnly?: boolean }[] = [
+  { runtime: "docker", labelKey: "sessions.editor.container.runtimeDocker" },
+  { runtime: "podman", labelKey: "sessions.editor.container.runtimePodman" },
+  { runtime: "nerdctl", labelKey: "sessions.editor.container.runtimeNerdctl" },
+  { runtime: "wslc", labelKey: "sessions.editor.container.runtimeWslc", windowsOnly: true },
+];
+
+/**
  * The connection kinds the descriptors offer, named in the interface's own words and grouped by
  * what somebody is trying to reach.
  *
@@ -116,6 +131,22 @@ const protocolOptions = computed<SelectOption[]>(() => {
   for (const group of PROTOCOL_GROUPS) {
     const heading = t(group.labelKey);
     for (const id of group.protocols) {
+      if (id === "container") {
+        for (const engine of CONTAINER_RUNTIMES) {
+          // WSLC drives Windows containers. A session imported from a Windows machine stays
+          // visible here, because what has to be changed is the runtime, not a blank picker.
+          if (engine.windowsOnly && app.info?.os !== "windows" && editor.containerRuntime !== engine.runtime) {
+            continue;
+          }
+          options.push({
+            value: `container:${engine.runtime}`,
+            label: t(engine.labelKey),
+            group: heading,
+          });
+        }
+        placed.add(id);
+        continue;
+      }
       const protocol = byId.get(id);
       if (!protocol) {
         continue;
@@ -133,6 +164,21 @@ const protocolOptions = computed<SelectOption[]>(() => {
   }
   return options;
 });
+
+/** What the picker shows: the protocol, or the engine when the protocol is the container one. */
+const protocolChoice = computed(() =>
+  editor.protocol === "container" ? `container:${editor.containerRuntime}` : editor.protocol,
+);
+
+/** Choosing an engine chooses the container protocol and the runtime in one step. */
+function chooseProtocol(value: string): void {
+  if (value.startsWith("container:")) {
+    editor.setProtocol("container");
+    editor.containerRuntime = value.slice("container:".length) as ContainerRuntime;
+    return;
+  }
+  editor.setProtocol(value as Protocol);
+}
 
 /** The two protocols with a display, a mapping and no terminal on this side. */
 const isDesktop = computed(() => editor.protocol === "rdp");
@@ -453,10 +499,10 @@ async function forgetKey(): Promise<void> {
             <label class="block text-xs font-medium" for="session-protocol">{{ t("sessions.editor.protocol") }}</label>
             <Select
               id="session-protocol"
-              :model-value="editor.protocol"
+              :model-value="protocolChoice"
               class="mt-1"
               :options="protocolOptions"
-              @update:model-value="editor.setProtocol($event as Protocol)"
+              @update:model-value="chooseProtocol"
             />
             <p v-if="isDesktop" class="mt-1 text-[11px] text-muted-foreground">
               {{ t("sessions.editor.desktop.note") }}

@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use sevenshell_core::OPEN_TIMEOUT;
 use sevenshell_error::ShellError;
-use sevenshell_types::{OpenOutcome, Protocol};
+use sevenshell_types::{ContainerRuntime, OpenOutcome, Protocol};
 
 use crate::context::{ApprovalRecord, ToolContext};
 use crate::registry::Tool;
@@ -65,6 +65,11 @@ struct SavedSession {
     #[serde(skip_serializing_if = "Option::is_none")]
     group_id: Option<String>,
     protocol: Protocol,
+    /// Which engine a container session speaks to. A session whose protocol is `container` is
+    /// otherwise indistinguishable from the next one, and "the Docker connections" is a question
+    /// this list has to be able to answer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    container_runtime: Option<ContainerRuntime>,
     host: String,
     port: u16,
     user: String,
@@ -80,10 +85,11 @@ impl Tool for SessionsListTool {
             name: NAME.to_owned(),
             title: "List sessions".to_owned(),
             description: "Lists the sessions this installation knows about. `saved` answers with \
-                          the saved connections — identifier, name, protocol, address and user — and \
-                          `open` answers with the identifiers of the saved sessions that have a \
-                          terminal running right now. No password, no key and no terminal handle is \
-                          in the answer."
+                          the saved connections — identifier, name, protocol, address and user; a \
+                          container session also names its engine in `containerRuntime` (`docker`, \
+                          `podman`, `nerdctl` or `wslc`), and `open` answers with the identifiers of \
+                          the saved sessions that have a terminal running right now. No password, no \
+                          key and no terminal handle is in the answer."
                 .to_owned(),
             input_schema: ToolInputSchema::object(
                 json!({
@@ -116,6 +122,8 @@ impl Tool for SessionsListTool {
                     .into_iter()
                     .filter(|session| context.access().visible(&session.id))
                     .map(|session| SavedSession {
+                        container_runtime: (session.protocol == Protocol::Container)
+                            .then_some(session.container.runtime),
                         id: session.id,
                         name: session.name,
                         group_id: session.group_id,

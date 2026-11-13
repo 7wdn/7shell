@@ -25,9 +25,9 @@ use sevenshell_api::{
 use sevenshell_core::Core;
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AgentOrigin, AuthMethod, ContainerSettings, DesktopSettings, FtpSettings, KubernetesSettings, LocalSettings,
-    McpScope, Protocol, RiskAssessment, RiskLevel, RiskReason, SerialSettings, Session, SessionAuth, TelnetSettings,
-    TerminalSettings, WebDavSettings, WslSettings,
+    AgentOrigin, AuthMethod, ContainerRuntime, ContainerSettings, DesktopSettings, FtpSettings, KubernetesSettings,
+    LocalSettings, McpScope, Protocol, RiskAssessment, RiskLevel, RiskReason, SerialSettings, Session, SessionAuth,
+    TelnetSettings, TerminalSettings, WebDavSettings, WslSettings,
 };
 use sevenshell_vault::Vault;
 use tempfile::{TempDir, tempdir};
@@ -379,6 +379,47 @@ async fn listing_saved_sessions_answers_without_a_secret_or_a_handle() {
         "the answer names things an agent has no business with"
     );
     assert!(!printed.contains("keyRef"), "a vault key reference reached an agent");
+}
+
+#[tokio::test]
+async fn a_container_session_names_its_engine_and_other_protocols_do_not() {
+    let (_directory, vault, context) = unlocked_context(McpScope::ReadOnly);
+    let mut boxes = sample_session("boxes", "The boxes");
+    boxes.protocol = Protocol::Container;
+    boxes.container = ContainerSettings {
+        runtime: ContainerRuntime::Podman,
+        ..ContainerSettings::default()
+    };
+    vault.save_session(boxes, None).expect("save the container session");
+    vault
+        .save_session(sample_session("lab", "The lab"), None)
+        .expect("save the SSH session");
+
+    let outcome = local::default_registry()
+        .call(&context, call("sshell_sessions_list", json!({ "kind": "saved" })))
+        .await;
+
+    let ToolOutcome::Succeeded { result } = outcome else {
+        panic!("saved sessions should be listable: {outcome:?}");
+    };
+    let rows = result.value["sessions"].as_array().expect("an array of rows");
+    let container = rows
+        .iter()
+        .find(|row| row["id"] == json!("boxes"))
+        .expect("the container session is listed");
+    assert_eq!(
+        container["containerRuntime"],
+        json!("podman"),
+        "an agent asked for the Podman connections has to be able to tell them apart"
+    );
+    let ssh = rows
+        .iter()
+        .find(|row| row["id"] == json!("lab"))
+        .expect("the SSH session is listed");
+    assert!(
+        ssh.get("containerRuntime").is_none(),
+        "a runtime on an SSH row would be an invented fact: {ssh}"
+    );
 }
 
 #[tokio::test]

@@ -189,6 +189,9 @@ function parts(session: Session): readonly string[] {
     `${session.user}@${session.host}:${session.port}`,
     String(session.port),
     session.protocol,
+    // "docker" as a word, because the protocol every container session shares is not the engine
+    // somebody is looking for.
+    ...(session.protocol === "container" ? [session.container?.runtime ?? "docker"] : []),
   ];
 }
 

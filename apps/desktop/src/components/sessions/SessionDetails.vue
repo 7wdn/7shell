@@ -25,8 +25,17 @@ import { useI18n } from "vue-i18n";
 
 import { sessionEndpoint } from "@/lib/menu/sessions";
 import { groupPath } from "@/lib/sessions/groups";
+import type { ContainerRuntime } from "@/types/container";
 import type { Session, SessionGroup } from "@/types/session";
 import { authMethodById, protocolById } from "@/types/generated/protocols";
+
+/** The engine is the kind a container session is known by, here as in the picker. */
+const CONTAINER_RUNTIME_LABELS: Record<ContainerRuntime, string> = {
+  docker: "sessions.editor.container.runtimeDocker",
+  podman: "sessions.editor.container.runtimePodman",
+  nerdctl: "sessions.editor.container.runtimeNerdctl",
+  wslc: "sessions.editor.container.runtimeWslc",
+};
 
 const props = defineProps<{
   readonly session: Session;
@@ -43,6 +52,10 @@ const authLabel = computed(() => {
 });
 
 const protocolLabel = computed(() => {
+  if (props.session.protocol === "container") {
+    const runtime = props.session.container?.runtime ?? "docker";
+    return t(CONTAINER_RUNTIME_LABELS[runtime]);
+  }
   const protocol = protocolById(props.session.protocol);
   return protocol ? t(protocol.labelKey) : props.session.protocol;
 });

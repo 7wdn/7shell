@@ -13,30 +13,13 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
-import { useAppStore } from "@/stores/app";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
-import type { ContainerRuntime, ContainerTransport } from "@/types/container";
+import type { ContainerTransport } from "@/types/container";
 
 const props = defineProps<{ submitted: boolean }>();
 
 const { t } = useI18n();
-const app = useAppStore();
 const editor = useSessionEditorStore();
-
-/** WSLC drives Windows containers; no other platform has them. Same gate the protocol list uses. */
-const runtimeOptions = computed<SelectOption[]>(() => {
-  const options: SelectOption[] = [
-    { value: "docker", label: t("sessions.editor.container.runtimeDocker") },
-    { value: "podman", label: t("sessions.editor.container.runtimePodman") },
-    { value: "nerdctl", label: t("sessions.editor.container.runtimeNerdctl") },
-  ];
-  // A session imported from a Windows machine may already say WSLC. It stays visible where the
-  // runtime cannot be chosen, because what has to be changed is the runtime, not a blank picker.
-  if (app.info?.os === "windows" || editor.containerRuntime === "wslc") {
-    options.push({ value: "wslc", label: t("sessions.editor.container.runtimeWslc") });
-  }
-  return options;
-});
 
 /** Where the engine runs: on this machine, or on the far side of a saved SSH session. */
 const transports: readonly { value: ContainerTransport; labelKey: string }[] = [
@@ -70,32 +53,18 @@ const sshSessionProblem = computed(() =>
   <section>
     <h3 class="text-xs font-medium">{{ t("sessions.editor.container.title") }}</h3>
 
-    <div class="mt-2 grid gap-3 sm:grid-cols-2">
-      <div>
-        <label class="block text-xs font-medium" for="session-container-runtime">{{
-          t("sessions.editor.container.runtime")
-        }}</label>
-        <Select
-          id="session-container-runtime"
-          :model-value="editor.containerRuntime"
-          class="mt-1"
-          :options="runtimeOptions"
-          @update:model-value="editor.containerRuntime = $event as ContainerRuntime"
-        />
-      </div>
-      <div v-if="editor.containerRuntime === 'nerdctl'">
-        <label class="block text-xs font-medium" for="session-container-namespace">{{
-          t("sessions.editor.container.namespace")
-        }}</label>
-        <input
-          id="session-container-namespace"
-          v-model="editor.containerNamespace"
-          type="text"
-          class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
-          :placeholder="t('sessions.editor.container.namespacePlaceholder')"
-        />
-        <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.container.namespaceHint") }}</p>
-      </div>
+    <div v-if="editor.containerRuntime === 'nerdctl'" class="mt-2">
+      <label class="block text-xs font-medium" for="session-container-namespace">{{
+        t("sessions.editor.container.namespace")
+      }}</label>
+      <input
+        id="session-container-namespace"
+        v-model="editor.containerNamespace"
+        type="text"
+        class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+        :placeholder="t('sessions.editor.container.namespacePlaceholder')"
+      />
+      <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.container.namespaceHint") }}</p>
     </div>
 
     <div class="mt-3">

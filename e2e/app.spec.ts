@@ -5318,10 +5318,46 @@ async function saveContainerSession(page: Page, name: string): Promise<void> {
   await sidebar(page).getByRole("button", { name: "New session" }).click();
   const editor = page.getByRole("dialog");
   await editor.getByPlaceholder("Production web server").fill(name);
-  await chooseOption(page, editor.locator("#session-protocol"), "Container engine");
+  await chooseOption(page, editor.locator("#session-protocol"), "Docker");
   await editor.getByRole("button", { name: "Save" }).click();
   await expect(editor).toHaveCount(0);
 }
+
+/**
+ * The engine is the kind, not a hidden field: the same distinction the session list hands an agent.
+ *
+ * Choosing nerdctl is the cheapest way to see the runtime actually arrived — its namespace field
+ * exists only for that engine — and switching to Podman is what shows the choice is a choice.
+ */
+test("the container engines are connection kinds of their own", async () => {
+  const { page, close } = await openApp();
+  try {
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    const trigger = editor.locator("#session-protocol");
+    await trigger.click();
+    const list = page.getByRole("listbox");
+    await expect(list.locator("[data-select-group]", { hasText: "Containers & clusters" })).toBeVisible();
+    const engines = ["Docker", "Podman", "nerdctl (containerd)"];
+    if (process.platform === "win32") {
+      engines.push("WSLC (Windows containers)");
+    }
+    for (const engine of engines) {
+      await expect(list.getByRole("option", { name: engine, exact: true })).toBeVisible();
+    }
+    await expect(list.getByRole("option", { name: "Container engine", exact: true })).toHaveCount(0);
+
+    await list.getByRole("option", { name: "nerdctl (containerd)", exact: true }).click();
+    await expect(editor.locator("#session-container-namespace")).toBeVisible();
+    await expect(trigger).toContainText("nerdctl");
+
+    await chooseOption(page, trigger, "Podman");
+    await expect(editor.locator("#session-container-namespace")).toHaveCount(0);
+    await expect(trigger).toContainText("Podman");
+  } finally {
+    await close();
+  }
+});
 
 test("a container session opens the local engine and draws its images", async () => {
   let docker = true;

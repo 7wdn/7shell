@@ -95,6 +95,18 @@ describe("matching a session by what identifies it", () => {
     expect(matchesQuery(web, "WEB")).toBe(true);
   });
 
+  it("finds a container session by the engine it speaks to", () => {
+    const boxes = session("session-4", "boxes", {
+      protocol: "container",
+      host: "",
+      port: 0,
+      user: "",
+      container: { runtime: "podman", transport: "local" },
+    });
+    expect(matchesQuery(boxes, "podman")).toBe(true);
+    expect(matchesQuery(boxes, "docker"), "an engine it does not use is not a match").toBe(false);
+  });
+
   it("keeps everything when there is no query at all", () => {
     expect(matchesQuery(web, "")).toBe(true);
     expect(matchesQuery(web, "   ")).toBe(true);

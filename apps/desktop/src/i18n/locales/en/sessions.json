@@ -200,7 +200,6 @@
       },
       "container": {
         "title": "Container engine",
-        "runtime": "Runtime",
         "runtimeDocker": "Docker",
         "runtimePodman": "Podman",
         "runtimeNerdctl": "nerdctl (containerd)",

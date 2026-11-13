@@ -200,7 +200,6 @@
       },
       "container": {
         "title": "容器引擎",
-        "runtime": "运行时",
         "runtimeDocker": "Docker",
         "runtimePodman": "Podman",
         "runtimeNerdctl": "nerdctl（containerd）",
