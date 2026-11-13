@@ -174,7 +174,7 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-          CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-aarch64' && '1' || '' }}
+          CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-aarch64' && '1' || 'default' }}
           RUSTFLAGS: ${{ matrix.platform == 'linux-aarch64' && '-C link-arg=-fuse-ld=lld' || '' }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
