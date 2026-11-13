@@ -121,6 +121,38 @@ test("a macOS build publishes the application archive under its own target", asy
   assert.equal(keys["darwin-aarch64"].signature, "mac-signature");
 });
 
+test("an ARM64 Windows build publishes under its own platform key", async () => {
+  const root = await bundle();
+  await writeArtifact(path.join(root, "nsis"), "7Shell_0.1.0_arm64-setup.exe", "arm64-signature");
+
+  const entry = await platformEntries({
+    bundleDir: root,
+    platform: "windows-aarch64",
+    tag: TAG,
+    repository: "7wdn/7shell",
+  });
+  const keys = manifestKeys(entry);
+
+  assert.deepEqual(Object.keys(keys).sort(), ["windows-aarch64", "windows-aarch64-nsis"]);
+  assert.equal(keys["windows-aarch64"].signature, "arm64-signature");
+});
+
+test("an ARM64 Linux build publishes under its own platform key", async () => {
+  const root = await bundle();
+  await writeArtifact(path.join(root, "appimage"), "7Shell_0.1.0_aarch64.AppImage", "arm64-linux-signature");
+
+  const entry = await platformEntries({
+    bundleDir: root,
+    platform: "linux-aarch64",
+    tag: TAG,
+    repository: "7wdn/7shell",
+  });
+  const keys = manifestKeys(entry);
+
+  assert.deepEqual(Object.keys(keys).sort(), ["linux-aarch64", "linux-aarch64-appimage"]);
+  assert.equal(keys["linux-aarch64"].signature, "arm64-linux-signature");
+});
+
 test("the merged manifest names the release, its notes and every platform built for it", async () => {
   const releases = await mkdtemp(path.join(tmpdir(), "updater-releases-"));
   await writeFile(

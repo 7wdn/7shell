@@ -102,7 +102,7 @@
 
 安装包发布在 [GitHub Releases](https://github.com/7wdn/7shell/releases)。
 
-- **Windows** — `.exe`（NSIS）或 `.msi`，按用户安装，不需要管理员权限。
+- **Windows** — `.exe`（NSIS）或 `.msi`；`-portable.zip` 把保险库和设置放在可执行文件旁的 `data` 目录；`-offline-setup.exe` 自带 WebView2 运行时。
 - **macOS** — Apple 芯片或 Intel 的 `.dmg`。
 - **Linux** — `.AppImage`、`.deb` 或 `.rpm`。
 

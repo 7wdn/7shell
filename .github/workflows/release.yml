@@ -40,8 +40,8 @@ env:
 jobs:
   verify:
     name: The tag, the version and the notes agree
-    # Promoting builds nothing: it is a decision about a release that already exists, and running four
-    # builds to make it would be four builds whose artefacts nobody would look at again.
+    # Promoting builds nothing: it is a decision about a release that already exists, and running six
+    # builds to make it would be six builds whose artefacts nobody would look at again.
     if: ${{ !inputs.promote }}
     runs-on: ubuntu-latest
     steps:
@@ -71,7 +71,7 @@ jobs:
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
         # A release with an empty body is a release nobody can decide about, and the moment to find
-        # out is now rather than after four builds have run.
+        # out is now rather than after six builds have run.
         run: node scripts/release-notes.mjs "$TAG" --check
 
   build:
@@ -85,10 +85,17 @@ jobs:
       matrix:
         include:
           - name: Windows (x86_64)
-            os: windows-latest
+            os: windows-2022
             platform: windows-x86_64
-            target: ""
-            rust_targets: ""
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+            arch: x64
+          - name: Windows (ARM64)
+            os: windows-2022
+            platform: windows-aarch64
+            target: aarch64-pc-windows-msvc
+            rust_targets: aarch64-pc-windows-msvc
+            arch: arm64
           - name: macOS (Apple silicon)
             os: macos-latest
             platform: darwin-aarch64
@@ -102,8 +109,13 @@ jobs:
           - name: Linux (x86_64)
             os: ubuntu-22.04
             platform: linux-x86_64
-            target: ""
-            rust_targets: ""
+            target: x86_64-unknown-linux-gnu
+            rust_targets: x86_64-unknown-linux-gnu
+          - name: Linux (ARM64)
+            os: ubuntu-22.04-arm
+            platform: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+            rust_targets: aarch64-unknown-linux-gnu
     env:
       # Job-wide because two steps ask the same question — "is this a signed build?" — and a variable
       # set inside one step is invisible to the next, which is how a release ends up publishing
@@ -131,11 +143,23 @@ jobs:
 
       # WebKit, GTK, and the tooling the RPM bundle is made with.
       - name: Install Linux build dependencies
-        if: matrix.os == 'ubuntu-22.04'
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-            librsvg2-dev patchelf rpm libudev-dev
+            librsvg2-dev patchelf rpm libudev-dev lld
+
+      # The hosted ARM runner has less headroom than the x64 one; the release build and the final
+      # link are the two places that notice. The swap file pages the peak to disk instead of letting
+      # the runner lose its agent.
+      - name: Add swap on the ARM runner
+        if: matrix.platform == 'linux-aarch64'
+        run: |
+          sudo fallocate -l 8G /mnt/swapfile || sudo dd if=/dev/zero of=/mnt/swapfile bs=1M count=8192
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
 
       - run: pnpm install --frozen-lockfile
 
@@ -150,6 +174,8 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
+          CARGO_BUILD_JOBS: ${{ matrix.platform == 'linux-aarch64' && '1' || '' }}
+          RUSTFLAGS: ${{ matrix.platform == 'linux-aarch64' && '-C link-arg=-fuse-ld=lld' || '' }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -217,7 +243,7 @@ jobs:
             -exec cp {} release-artifacts/ \;
 
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            # Named per platform: the four builds' outputs are downloaded into one directory at the
+            # Named per platform: the six builds' outputs are downloaded into one directory at the
             # end, and a file every job calls the same thing would leave the last platform standing.
             node scripts/update-manifest.mjs platform \
               --bundle target \
@@ -226,6 +252,86 @@ jobs:
               --repository "${{ github.repository }}" \
               --out "release-artifacts/updater-${{ matrix.platform }}.json"
           fi
+
+          ls -l release-artifacts
+
+      # The two Windows formats Tauri does not make itself: a copy that runs without an installer,
+      # and an installer that carries the WebView2 runtime for machines without it. Both are made
+      # from the binary the same leg just built, not rebuilt from another checkout.
+      - name: Package the Windows portable build and offline installer
+        if: startsWith(matrix.platform, 'windows')
+        shell: pwsh
+        run: |
+          $target = "${{ matrix.target }}"
+          $arch = "${{ matrix.arch }}"
+          $version = (Get-Content version.json -Raw | ConvertFrom-Json).app
+
+          # The normal NSIS installer has already been copied into release-artifacts. This second
+          # bundle run replaces the file in the target tree with one that embeds WebView2, so the
+          # new file is copied out under a name that says which one it is.
+          $bundleDir = "target/$target/release/bundle/nsis"
+          $before = @{}
+          if (Test-Path $bundleDir) {
+            Get-ChildItem $bundleDir -Filter "*.exe" | ForEach-Object { $before[$_.FullName] = $_.LastWriteTimeUtc }
+          }
+
+          pnpm tauri bundle --bundles nsis --target $target --config src-tauri/tauri.webview2-offline.conf.json
+
+          $offline = Get-ChildItem $bundleDir -Filter "*.exe" |
+            Where-Object { !$before.ContainsKey($_.FullName) -or $_.LastWriteTimeUtc -gt $before[$_.FullName] } |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          if (!$offline) {
+            throw "Missing WebView2 offline installer in $bundleDir"
+          }
+          Copy-Item $offline.FullName (Join-Path "release-artifacts" "7Shell_${version}_${arch}-offline-setup.exe") -Force
+
+          $portableDir = Join-Path "portable" "7Shell_${version}_${arch}"
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          $binary = "target/$target/release/7Shell.exe"
+          if (!(Test-Path $binary)) {
+            # The crate's own binary name; the installer renames it to the product name.
+            $binary = "target/$target/release/sevenshell-desktop.exe"
+          }
+          if (!(Test-Path $binary)) {
+            throw "Missing Windows executable for $target"
+          }
+          Copy-Item $binary (Join-Path $portableDir "7Shell.exe") -Force
+          Copy-Item "LICENSE" (Join-Path $portableDir "LICENSE") -Force
+          Copy-Item "README.md" (Join-Path $portableDir "README.md") -Force
+          Copy-Item "README.zh-CN.md" (Join-Path $portableDir "README.zh-CN.md") -Force
+
+          $seed = "target/$target/release/sshell-mcp-seed.exe"
+          if (!(Test-Path $seed)) {
+            $seed = "src-tauri/binaries/sshell-mcp-seed-$target.exe"
+          }
+          if (!(Test-Path $seed)) {
+            throw "Missing MCP bridge seed for $target"
+          }
+          Copy-Item $seed (Join-Path $portableDir "sshell-mcp-seed.exe") -Force
+
+          # The marker is what moves the vault, settings and bridge into the copy's own data folder.
+          Set-Content -Path (Join-Path $portableDir "portable.7shell") -Value "" -NoNewline
+          Set-Content -Path (Join-Path $portableDir "README-portable.txt") -Encoding utf8NoBOM -Value @(
+            "7Shell portable build",
+            "",
+            "Run 7Shell.exe. The vault, settings and MCP bridge are kept in the data folder beside it.",
+            "The Microsoft Edge WebView2 runtime is required and is present on Windows 10 and later.",
+            "",
+            "便携版：运行 7Shell.exe。保险库、设置和 MCP 桥接文件保存在旁边的 data 目录。"
+          )
+
+          $zip = Join-Path "release-artifacts" "7Shell_${version}_${arch}-portable.zip"
+          Compress-Archive -Path (Join-Path $portableDir "*") -DestinationPath $zip -Force
+
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            # An explicit empty password keeps the signer from asking a question no runner can answer.
+            if ([string]::IsNullOrEmpty($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) {
+              pnpm tauri signer sign "--password=" $zip
+            } else {
+              pnpm tauri signer sign $zip
+            }
+          }
 
           ls -l release-artifacts
 
@@ -274,6 +380,7 @@ jobs:
           {
             ls artifacts/*.msi artifacts/*.exe artifacts/*.dmg artifacts/*.AppImage artifacts/*.deb artifacts/*.rpm 2>/dev/null || true
             ls artifacts/*.app.tar.gz artifacts/*.AppImage.tar.gz 2>/dev/null || true
+            ls artifacts/*-portable.zip artifacts/*-portable.zip.sig 2>/dev/null || true
           } | sort -u > release-assets.txt
           while read -r file; do cp "$file" release/; done < release-assets.txt
           ls -l release
@@ -345,7 +452,7 @@ jobs:
             echo ""
             echo "### Installing"
             echo ""
-            echo "- **Windows:** run the \`.exe\` or \`.msi\`. The installer is not code-signed yet, so Windows warns before running it."
+            echo "- **Windows:** run the \`.exe\` or \`.msi\`. The installer is not code-signed yet, so Windows warns before running it. The \`-offline-setup.exe\` carries the WebView2 runtime; the \`-portable.zip\` keeps its vault and settings in a \`data\` folder beside the executable."
             echo "- **macOS:** open the \`.dmg\` and drag the application across. The build is not notarized yet, so Gatekeeper warns."
             echo "- **Linux:** the AppImage runs after \`chmod +x\`; the \`.deb\` and \`.rpm\` install with the system's package manager."
             echo ""

@@ -7,7 +7,7 @@
 //! `target_os` is a parameter rather than `std::env::consts::OS` so that the rules for all
 //! three platforms can be tested from any one of them.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The application identifier. Kept in step with `src-tauri/tauri.conf.json` by
 /// `scripts/tests/architecture.test.mjs`'s sibling check in the interface tests.
@@ -15,6 +15,27 @@ pub const APP_IDENTIFIER: &str = "com.sevenshell.app";
 
 /// The settings file name inside the configuration directory.
 pub const SETTINGS_FILE_NAME: &str = "settings.json";
+
+/// The file that turns a copy of the application into a portable installation.
+///
+/// It sits beside the executable, and its presence is the whole switch: a copy made by unpacking
+/// the portable archive keeps its vault, settings and bridge in `data` beside the executable,
+/// while an installed copy is unaffected. The environment override still wins, so tests and
+/// development can move the directory without touching the disk layout.
+pub const PORTABLE_MARKER: &str = "portable.7shell";
+
+/// Where a portable copy keeps its data, or `None` when this executable is not one.
+pub fn portable_data_dir_for(executable: &Path) -> Option<PathBuf> {
+    let directory = executable.parent()?;
+    directory
+        .join(PORTABLE_MARKER)
+        .is_file()
+        .then(|| directory.join("data"))
+}
+
+fn portable_data_dir() -> Option<PathBuf> {
+    portable_data_dir_for(&std::env::current_exe().ok()?)
+}
 
 /// Resolves the configuration directory for one platform, reading the environment through
 /// the supplied lookup so tests can describe a machine they are not running on.
@@ -40,7 +61,8 @@ pub fn config_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<Stri
 /// files there, and an MCP client may be running the bridge from its own stable path while that
 /// update happens. A running executable cannot be overwritten on Windows. The home dot directory is
 /// the same shape the reference implementation uses for its MCP server, and it is per user without
-/// being a roaming profile or a cache directory.
+/// being a roaming profile or a cache directory. A portable copy keeps the bridge under its own
+/// `data` folder, because it has no per-user location it may assume.
 pub const BRIDGE_DIR_OVERRIDE: &str = "SEVENSHELL_BRIDGE_DIR";
 
 /// Resolves the bridge directory for one platform, with the same testable environment seam as
@@ -61,6 +83,9 @@ pub fn bridge_dir() -> Option<PathBuf> {
             return Some(directory);
         }
     }
+    if let Some(directory) = portable_data_dir() {
+        return Some(directory.join("bridge"));
+    }
     bridge_dir_for(std::env::consts::OS, &|key| std::env::var(key).ok())
 }
 
@@ -79,6 +104,9 @@ pub fn config_dir() -> Option<PathBuf> {
         if !directory.as_os_str().is_empty() {
             return Some(directory);
         }
+    }
+    if let Some(directory) = portable_data_dir() {
+        return Some(directory);
     }
 
     config_dir_for(std::env::consts::OS, &|key| std::env::var(key).ok())
@@ -187,6 +215,22 @@ mod tests {
         assert_eq!(
             bridge_dir_for("linux", &linux).expect("HOME is set"),
             PathBuf::from("/home/someone").join(".7shell").join("bin")
+        );
+    }
+
+    #[test]
+    fn a_portable_marker_keeps_data_beside_the_executable() {
+        let root = tempfile::tempdir().expect("a temporary directory");
+        let executable = root.path().join("7Shell.exe");
+        std::fs::write(&executable, b"").expect("an executable placeholder");
+
+        assert_eq!(portable_data_dir_for(&executable), None);
+
+        std::fs::write(root.path().join(PORTABLE_MARKER), b"").expect("a portable marker");
+        assert_eq!(
+            portable_data_dir_for(&executable),
+            Some(root.path().join("data")),
+            "the marker moves the vault, settings and bridge into the copy's own folder",
         );
     }
 

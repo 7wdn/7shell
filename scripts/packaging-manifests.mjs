@@ -56,10 +56,22 @@ function require_(value, what) {
  *
  * The NSIS installer is the one both Scoop and Winget are given: it is a per-user install with a
  * silent switch, which is what both of them need, while the MSI is the one administrators deploy.
+ * A release now also carries an offline installer and an ARM64 build; neither is the file those
+ * manifests describe, so the offline and portable names are skipped and x64 is preferred.
  */
 export function windowsInstaller(assets) {
+  const installers = assets.filter((asset) => asset.name.endsWith(".exe") && !/(offline|portable)/i.test(asset.name));
+  const packages = assets.filter((asset) => asset.name.endsWith(".msi"));
+  const x64 = /(x64|x86_64|amd64)/i;
+  const arm = /(arm64|aarch64)/i;
+
   return require_(
-    assets.find((asset) => asset.name.endsWith(".exe")) ?? assets.find((asset) => asset.name.endsWith(".msi")),
+    installers.find((asset) => x64.test(asset.name)) ??
+      installers.find((asset) => !arm.test(asset.name)) ??
+      installers[0] ??
+      packages.find((asset) => x64.test(asset.name)) ??
+      packages.find((asset) => !arm.test(asset.name)) ??
+      packages[0],
     "a Windows installer (.exe or .msi)",
   );
 }

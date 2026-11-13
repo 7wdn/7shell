@@ -19,6 +19,7 @@ import {
   homebrewCask,
   macOSImages,
   scoopManifest,
+  windowsInstaller,
   writeManifests,
 } from "../packaging-manifests.mjs";
 
@@ -42,6 +43,19 @@ function assets() {
     file("7Shell_0.1.0-rc.1_amd64.deb", "ff".repeat(32)),
   ];
 }
+
+test("the package managers are given the normal x64 installer, not an offline or ARM64 build", () => {
+  const file = (name) => ({ name, bytes: 1, sha256: "aa".repeat(32), url: `https://example.invalid/${name}` });
+  const installer = windowsInstaller([
+    file("7Shell_0.1.0_arm64-offline-setup.exe"),
+    file("7Shell_0.1.0_arm64-setup.exe"),
+    file("7Shell_0.1.0_x64-offline-setup.exe"),
+    file("7Shell_0.1.0_x64-setup.exe"),
+    file("7Shell_0.1.0_x64_en-US.msi"),
+  ]);
+
+  assert.equal(installer.name, "7Shell_0.1.0_x64-setup.exe");
+});
 
 test("a candidate version is installable by Scoop and Homebrew, and not by Winget", async () => {
   const output = await mkdtemp(path.join(tmpdir(), "packaging-"));

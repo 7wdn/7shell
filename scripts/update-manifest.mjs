@@ -30,7 +30,14 @@ import { fileURLToPath } from "node:url";
  * `darwin` rather than `macos` is not a typo here — it is the string the plugin compares, and a
  * manifest that said `macos-aarch64` would be a manifest nothing ever matches.
  */
-export const PLATFORMS = ["windows-x86_64", "darwin-aarch64", "darwin-x86_64", "linux-x86_64"];
+export const PLATFORMS = [
+  "windows-x86_64",
+  "windows-aarch64",
+  "darwin-aarch64",
+  "darwin-x86_64",
+  "linux-x86_64",
+  "linux-aarch64",
+];
 
 /**
  * How a bundler's output is told apart, by the end of its file name.
@@ -180,7 +187,7 @@ export async function mergeManifest({ releasesDir, version, tag, notes, date }) 
     try {
       entry = JSON.parse(source);
     } catch (error) {
-      // Named, because the bare parse error says nothing about which of four platform files was
+      // Named, because the bare parse error says nothing about which of six platform files was
       // truncated — and a truncated one is what a cancelled build or an empty copy leaves behind.
       throw new ManifestError(`${file} is not JSON: ${error.message}`);
     }

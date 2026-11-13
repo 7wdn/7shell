@@ -44,8 +44,9 @@ update channel follows the promotion — installed builds are never offered a ca
 1. Tag `v<version>` on the commit that bumped the version, and push the tag. That is the whole
    trigger: `.github/workflows/release.yml` refuses to build when the tag, `version.json` and the
    changelog disagree, so the three cannot drift apart unnoticed.
-2. Four builds run in parallel — Windows (MSI and NSIS), macOS on Apple silicon, macOS on Intel,
-   Linux (AppImage, deb, rpm) — each on the runner for the platform it produces.
+2. Six builds run in parallel — Windows x64 and ARM64 (MSI and NSIS), macOS on Apple silicon and
+   Intel, Linux x64 and ARM64 (AppImage, deb, rpm) — each on the runner for the platform it
+   produces. The two Windows legs also make a portable ZIP and a WebView2-offline NSIS installer.
 3. The release job hashes every installer, writes the update manifest, writes the package manager
    manifests, and attaches everything to a **draft** release. Nothing is on the releases page while
    that is happening, so nobody opens a release that is still being filled.
