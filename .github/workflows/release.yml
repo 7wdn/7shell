@@ -133,10 +133,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          # Only the platform being built: installing both macOS targets would build the application
-          # for a machine that is not this one.
-          targets: ${{ matrix.rust_targets }}
+
+      # The repository's rust-toolchain.toml selects the toolchain Cargo actually runs, and the
+      # action's `targets` input installs into the channel it just set as default instead. Ask the
+      # pinned toolchain for the target, from inside the repository, so the two cannot drift.
+      - name: Add the release target to the pinned toolchain
+        shell: bash
+        run: rustup target add "${{ matrix.rust_targets }}"
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-${{ matrix.platform }}
