@@ -24,24 +24,38 @@
 
 import type { HostSystem } from "@/types/system";
 
-/** The marks this build ships, named after the files in `assets/os`. */
+/**
+ * The marks this build ships, named after the files in `assets/os`.
+ *
+ * Most are systems a host named. The rest are connection kinds a row can carry instead: a Docker
+ * host is still an Ubuntu machine underneath, but the row is about the connection somebody saved,
+ * and the engine or shell is the more useful answer to "which of these is it".
+ */
 export type SystemMark =
   | "alma"
   | "alpine"
   | "arch"
   | "centos"
+  | "cmd"
   | "debian"
   | "deepin"
+  | "docker"
   | "fedora"
   | "freebsd"
+  | "git-bash"
+  | "kubernetes"
   | "linux"
   | "macos"
   | "mint"
+  | "nerdctl"
   | "opensuse"
+  | "podman"
+  | "powershell"
   | "redhat"
   | "rocky"
   | "ubuntu"
-  | "windows";
+  | "windows"
+  | "wsl";
 
 /**
  * The distributions this build draws, keyed by the id they publish in `/etc/os-release`.

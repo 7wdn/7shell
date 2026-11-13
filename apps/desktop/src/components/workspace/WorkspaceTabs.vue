@@ -54,7 +54,9 @@ import KubernetesPane from "@/components/k8s/KubernetesPane.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
+import SystemIcon from "@/components/ui/SystemIcon.vue";
 import TerminalSchemeMenu from "@/components/workspace/TerminalSchemeMenu.vue";
+import { connectionMark } from "@/lib/sessions/marks";
 import { protocolSupports } from "@/types/generated/protocols";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
@@ -71,6 +73,7 @@ import { sessionTabTitle } from "@/lib/sessions/reopen";
 import { MIN_PANE_PX } from "@/lib/workspace/split";
 import { TAB_MAX_WIDTH_PX } from "@/types/app";
 import { cn } from "@/lib/utils";
+import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import {
   type TerminalTab,
@@ -83,6 +86,7 @@ import {
 const { t } = useI18n();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
+const app = useAppStore();
 const { openMenu } = useContextMenu();
 
 /**
@@ -222,6 +226,18 @@ function translateStatus(tab: TerminalTab): string | null {
     return null;
   }
   return tab.reason ? t("terminal.tab.endedReason", { reason: tab.reason }) : t("terminal.tab.endedNoReason");
+}
+
+/** The connection kind's own mark, for the tabs whose row is about a kind rather than a host. */
+function tabMark(tab: WorkspaceTab) {
+  const session = sessionOf(tab);
+  return session ? connectionMark(session, app.info?.os) : null;
+}
+
+/** The host's own mark, once a terminal has asked what the machine is. */
+function tabSystem(tab: WorkspaceTab) {
+  const session = sessionOf(tab);
+  return session ? terminals.systemOf(session) : null;
 }
 
 /** What a tab says in the strip: which session, or which page. */
@@ -573,7 +589,13 @@ function tabStyle(): Record<string, string> | undefined {
             @click="terminals.activate(entry.tab.id)"
           >
             <span v-if="dotClass(entry.tab)" class="size-1.5 shrink-0 rounded-full" :class="dotClass(entry.tab)"></span>
-            <Terminal v-if="entry.tab.kind === 'terminal'" :size="12" class="shrink-0" />
+            <SystemIcon v-if="tabMark(entry.tab)" :system="null" :mark="tabMark(entry.tab)" :size="14" />
+            <SystemIcon
+              v-else-if="entry.tab.kind === 'terminal' && tabSystem(entry.tab)"
+              :system="tabSystem(entry.tab)"
+              :size="14"
+            />
+            <Terminal v-else-if="entry.tab.kind === 'terminal'" :size="12" class="shrink-0" />
             <Folder v-else-if="entry.tab.kind === 'files'" :size="12" class="shrink-0" />
             <Settings v-else-if="entry.tab.kind === 'settings'" :size="12" class="shrink-0" />
             <ListChecks v-else-if="entry.tab.kind === 'batch'" :size="12" class="shrink-0" />

@@ -101,6 +101,11 @@ describe("the mark a host gets", () => {
     for (const file of AVAILABLE_MARKS) {
       expect(systemMarkup(file), `${file}.svg is loaded`).toContain("<svg");
     }
+
+    // The connection kinds are marks a row asks for by name rather than a system the host names.
+    for (const mark of ["docker", "kubernetes", "powershell", "podman", "nerdctl", "wsl", "cmd", "git-bash"] as const) {
+      expect(systemMarkup(mark), `${mark} has no file in assets/os`).toContain("<svg");
+    }
   });
 });
 

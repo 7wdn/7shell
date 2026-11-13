@@ -75,6 +75,7 @@ import { useToast } from "@/composables/useToast";
 import { useTreeDrag } from "@/composables/useTreeDrag";
 import { describeShellError } from "@/i18n/errors";
 import { isTextEntry } from "@/lib/menu/editable";
+import { connectionMark } from "@/lib/sessions/marks";
 import { systemLabel, systemMark } from "@/lib/system/icons";
 import { groupMenu, sessionEndpoint, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
@@ -85,6 +86,7 @@ import { regexIsInvalid } from "@/lib/sessions/filter";
 import { drawOrder, groupPath, hasSibling } from "@/lib/sessions/groups";
 import { importReceipt } from "@/lib/sessions/receipt";
 import { rowTarget } from "@/lib/sessions/tree";
+import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
@@ -94,6 +96,7 @@ import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
 import { AUTH_METHODS } from "@/types/generated/protocols";
 
 const { t } = useI18n();
+const app = useAppStore();
 const library = useSessionsStore();
 const preferences = usePreferencesStore();
 const editor = useSessionEditorStore();
@@ -1404,12 +1407,17 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                       @click="terminals.goTo(row.session)"
                     >
                       <!--
-                        A remote desktop is a Windows desktop by definition in this build, so its
-                        row carries the Windows mark without a probe. Every other row keeps the mark
-                        of the machine once its host has said which machine it is, and the plain
-                        terminal until then — a row is a saved session first and a host second.
+                        A connection kind that has a mark of its own draws it first: a Docker session
+                        on an Ubuntu host is still about Docker, and a local PowerShell session is
+                        about the shell. The rest keep the mark of the machine once the host has
+                        said which machine it is, and the plain terminal until then — a row is a
+                        saved session first and a host second.
                       -->
-                      <SystemIcon v-if="row.session.protocol === 'rdp'" :system="null" mark="windows" />
+                      <SystemIcon
+                        v-if="connectionMark(row.session, app.info?.os)"
+                        :system="null"
+                        :mark="connectionMark(row.session, app.info?.os)"
+                      />
                       <SystemIcon
                         v-else-if="hasMark(row.session)"
                         :system="terminals.systemOf(row.session)"

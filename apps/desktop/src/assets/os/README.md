@@ -37,6 +37,17 @@ come from library 140078 — the same solid-geometry treatment the rest of the s
 `linux.svg` is the generic mark: a host that answers `uname -s` with Linux but whose distribution is
 not in this table draws as plain Linux, not as a distribution it might not be.
 
+The connection-kind marks (`docker`, `kubernetes`, `podman`, `nerdctl`, `powershell`, `cmd`,
+`git-bash`, `wsl`) are chosen by `lib/sessions/marks.ts` rather than by a host probe. A WSL row
+uses the mark of the distribution Windows registered it under when that name is recognisable, and
+`wsl.svg` when it is not. WSLC still has no mark and deliberately falls back rather than borrowing
+Docker's.
+
+Their view boxes are square and centred, with the glyph at about 92% of the box, so a mark that
+does not fill its download's rectangle still sits beside the others at the same optical size.
+`nerdctl.svg` is the exception in content rather than frame: the published logo is a wide wordmark
+that is unreadable at sixteen pixels, so the file carries the square `d` element of that wordmark.
+
 ## Before shipping
 
 iconfont carries a per-icon licence on its own pages and this build does not read it. Bundling these
