@@ -5,7 +5,7 @@
     "close": "Put the assistant away",
     "empty": {
       "title": "Nothing asked yet.",
-      "body": "A question can carry the last lines of the terminal on screen, and the assistant can use this application's tools when it needs to look at the host itself."
+      "body": "A question can carry the last lines of the terminal; the assistant can use this application's tools when it needs to look at the host."
     },
     "setup": {
       "noProvider": {
@@ -197,7 +197,7 @@
       },
       "sessions": {
         "title": "Conversation history",
-        "description": "Conversations are stored in the vault on this machine. They are not part of the settings sync, and nothing about them leaves the machine unless it is sent with a question.",
+        "description": "Conversations are stored in the vault on this machine. They are not part of settings sync and do not leave the machine.",
         "retentionDays": "Keep conversations for",
         "retentionDaysHint": "How many days a conversation is kept before the oldest are pruned. Between 1 and 365; 30 by default.",
         "unitDays": "days"

@@ -5,7 +5,7 @@
     },
     "disconnected": {
       "title": "未连接",
-      "hint": "通过 {name} 已打开的终端读取。打开终端后自动开始。"
+      "hint": "打开 {name} 的终端后开始读取。"
     },
     "system": {
       "title": "系统信息",

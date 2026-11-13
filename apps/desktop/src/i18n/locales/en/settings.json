@@ -34,7 +34,7 @@
     },
     "support": {
       "title": "Support information",
-      "description": "Attach this to a bug report so the environment is known without a round of questions.",
+      "description": "Attach this to a bug report to identify the environment.",
       "copy": "Copy",
       "copied": "Copied",
       "appVersion": "7Shell version",
@@ -330,12 +330,12 @@
       "themeMode": {
         "title": "Interface theme",
         "summary": "Follow the system, or keep to one of the two palettes.",
-        "help": "Following the system keeps changing with it while the application is open. A theme chosen outright is written down at once, so a restart opens the way it was left."
+        "help": "Following the system keeps changing with it; choosing light or dark saves the choice at once and keeps it after a restart."
       },
       "terminalTheme": {
         "title": "Terminal colours",
         "summary": "The palette the terminal itself draws in.",
-        "help": "A dark terminal in a light interface is a common choice, so the two are decided separately. Either way the sixteen ANSI colours come from the same palette, tuned to be readable on its own background."
+        "help": "The terminal theme is independent of the interface: a light window can have a dark terminal. The sixteen ANSI colours do not change with it."
       },
       "language": {
         "title": "Language",
@@ -354,17 +354,17 @@
       },
       "homeContent": {
         "title": "Home content",
-        "summary": "Which of the two pages is drawn with nothing open.",
+        "summary": "Which page is shown when nothing is open.",
         "help": "The introduction explains the first connection. The workspace overview shows saved sessions, recent hosts and common actions."
       },
       "appLayout": {
         "title": "Interface layout",
-        "summary": "How much of the window is the thing being looked at.",
+        "summary": "How the panels and tabs are arranged.",
         "help": "Separated gives each area its own frame. Classic joins the tabs into one bar and uses less space."
       },
       "tabPlacement": {
         "title": "Tab bar position",
-        "summary": "Side tab bars scroll vertically; multi-row wrapping applies only above or below content.",
+        "summary": "Where the tab bar sits: top, bottom, left or right.",
         "help": "Where the tab bar sits. Horizontal uses vertical space; vertical uses width and shows more names."
       },
       "tabGroupMode": {
@@ -379,7 +379,7 @@
       },
       "tabMaxWidth": {
         "title": "Maximum tab width",
-        "summary": "Limit the maximum width of horizontal tabs, truncating long titles with ellipsis. Hover to view the full title.",
+        "summary": "Maximum width of a horizontal tab; long titles are truncated and shown in full on hover.",
         "help": "Maximum width of a horizontal tab. Longer names are truncated and shown in full on hover. Vertical tabs use the column width."
       },
       "background": {
@@ -394,8 +394,8 @@
       },
       "quitOnClose": {
         "title": "Quit when closing window",
-        "summary": "When enabled, clicking the close button exits 7Shell completely instead of hiding it to the tray.",
-        "help": "When off, closing hides the window and keeps sessions running (requires the tray icon). When on, closing quits. Unsaved work is confirmed first."
+        "summary": "When on, the close button quits 7Shell instead of hiding it to the tray.",
+        "help": "Off: closing hides the window and keeps sessions running (the tray icon is required). On: closing quits. Unsaved work is confirmed first."
       },
       "tabLayout": {
         "title": "Tab bar overflow",
@@ -405,7 +405,7 @@
       "cornerStyle": {
         "title": "Corner style",
         "summary": "How round the corners of everything are.",
-        "help": "Corner style applies to the whole window. The buttons above preview each option."
+        "help": "Corner style applies to the whole window. Each option's button previews its own radius."
       },
       "uiFont": {
         "title": "Interface font",
@@ -424,7 +424,7 @@
       },
       "terminalFontSize": {
         "title": "Text size",
-        "summary": "How large the terminal draws its text, in pixels.",
+        "summary": "The terminal's text size, in pixels.",
         "help": "Terminal font size in pixels. Open terminals redraw and reflow immediately."
       },
       "terminalFontWeight": {
@@ -460,7 +460,7 @@
       "terminalCursorStyle": {
         "title": "Cursor shape",
         "summary": "The shape that marks where typing goes.",
-        "help": "Block, bar or underline. Shown while the terminal has the keyboard; the shape it takes without focus is a setting of its own."
+        "help": "The cursor shape while the terminal has focus; the unfocused shape is set separately."
       },
       "terminalCursorBlink": {
         "title": "Blinking cursor",
@@ -485,12 +485,12 @@
       "terminalSchemes": {
         "title": "Terminal colour schemes",
         "summary": "A published scheme for the terminal, or the colours of the interface.",
-        "help": "A scheme brings its own background, text and sixteen ANSI colours, one for each half of the terminal's light/dark setting. Leaving the source on the interface palette keeps the pane matching the window."
+        "help": "A scheme brings its own background, text and sixteen ANSI colours, one for each terminal theme. Following the interface palette keeps the pane matching the window."
       },
       "terminalHighlights": {
         "title": "Keyword highlights",
         "summary": "Mark words in terminal output wherever they appear.",
-        "help": "Rules apply to every open terminal, including output already on screen. A rule can be a plain word or a regular expression; the display mode decides whether the mark is a tint behind the word or the word's own colour."
+        "help": "Rules apply to every open terminal, including output already on screen. A rule is a word or a regular expression; the display mode chooses a tint or the text colour."
       },
       "sessionLayout": {
         "title": "Opening a session",
@@ -499,8 +499,8 @@
       },
       "sessionReopen": {
         "title": "A session that is already open",
-        "summary": "What the session list's menu does with one: ask, open another tab, or go to the tab that is there.",
-        "help": "Applies to Open terminal in the menu. Remember my choice stores the answer here; clicking a session row is unchanged."
+        "summary": "What Open terminal in the session list does when the session is already open: ask, open another tab, or go to it.",
+        "help": "Applies to Open terminal in the menu only. Remember my choice saves the answer here; clicking a session row is unchanged."
       },
       "monitor": {
         "title": "Host monitor",
@@ -510,7 +510,7 @@
       "filesLayout": {
         "title": "File browser",
         "summary": "A tree beside the list, or the list alone.",
-        "help": "The tree opens the branches leading to the current directory, so the two panes never disagree about where that is."
+        "help": "The tree opens to the current directory, so both panes always show the same place."
       },
       "packed": {
         "title": "Packed transfer",
@@ -572,7 +572,7 @@
       },
       "archives": {
         "title": "Archived vaults",
-        "help": "Vaults that were moved aside, listed by name. One can be tried, switched to, or read into the vault that is open.",
+        "help": "Vaults that were moved aside, listed by name. Unlock one, switch to it, or read it into the open vault.",
         "action": "Manage archived vaults"
       },
       "policy": {
@@ -638,7 +638,7 @@
       }
     },
     "commands": {
-      "hint": "The lines that have been kept, and the short text that brings each one up in the command line. This is the same library the panel under a terminal edits.",
+      "hint": "Saved commands and the short text that brings each one up. The same library the panel under a terminal edits.",
       "add": "Add a command",
       "edit": "Edit",
       "none": "No trigger",

@@ -23,7 +23,7 @@
     "noServer": "Set an address first.",
     "nothingOnServer": "The server has no backup there yet.",
     "snippetTitle": "Snippet sync",
-    "snippetDescription": "Keep the same backup in a private gist or snippet. The first upload creates one, and its id is written down here so the next upload goes to the same place.",
+    "snippetDescription": "Keep the backup in a private gist or snippet. The first upload creates one; later uploads go to the same place.",
     "snippetProvider": "Service",
     "snippetGithub": "GitHub Gist",
     "snippetGitee": "Gitee Snippets",

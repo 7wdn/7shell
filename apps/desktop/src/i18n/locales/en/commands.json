@@ -10,7 +10,7 @@
     "trigger": {
       "label": "Type to bring it up",
       "placeholder": "e.g. res",
-      "hint": "Three letters are quicker than the whole name: typing this in the command line offers the line, and typing all of it puts it first."
+      "hint": "Type these three letters in the command line to find this command; the full name puts it first."
     },
     "save": "Save",
     "remove": "Delete",

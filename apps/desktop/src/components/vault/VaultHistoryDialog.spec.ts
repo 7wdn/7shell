@@ -190,7 +190,7 @@ describe("the archived vaults dialog", () => {
     archivesMock.mockResolvedValue([]);
     await mount("locked");
 
-    expect(dialog().textContent).toContain("No archived vaults on this device yet");
+    expect(dialog().textContent).toContain("No archived vaults yet");
   });
 
   it("answers a wrong password in the row that asked, and switches nothing", async () => {
@@ -337,7 +337,7 @@ describe("the archived vaults dialog", () => {
 
     expect(second.textContent).toContain("Switch to this vault?");
     expect(second.textContent, "and says both halves of what it costs").toContain("no data is lost");
-    expect(second.textContent).toContain("the password that archive was written with");
+    expect(second.textContent).toContain("Use that archive's original password");
     expect(activateMock, "the consequence is read before anything happens").not.toHaveBeenCalled();
 
     // The state the store asks for afterwards: the file in place is the one that arrived, and nobody

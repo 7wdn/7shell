@@ -8,14 +8,14 @@
     "intro": {
       "badge": "SSH operations client",
       "headline": "Your hosts, keys and history stay on this machine.",
-      "body": "Sessions, credentials and command history are stored locally and encrypted with a passphrase only you hold. No account, no usage data collection, no cloud service. Create a session, confirm the host key on the first connection, then work in a terminal or the file workbench.",
+      "body": "Sessions, credentials and command history stay on this machine, encrypted with a passphrase only you hold. No account, no cloud service, no usage data. Create a session, confirm the host key, and start working.",
       "notice": "No host names, saved sessions or history are shown.",
       "settings": "Home page settings"
     },
     "feature": {
       "sessions": {
         "title": "Session library",
-        "body": "Address, authentication, jump hosts and forwards in one saved entry, with groups to keep them apart."
+        "body": "Address, authentication, jump hosts and forwards in one saved entry, organised with groups."
       },
       "terminal": {
         "title": "Terminals",

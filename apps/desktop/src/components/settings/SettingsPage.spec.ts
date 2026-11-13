@@ -210,7 +210,7 @@ describe("the settings page", () => {
       grid.textContent?.includes("Tab bar position"),
     );
     expect(row?.className, "four to a row where this page has room for four").toContain("@4xl:grid-cols-4");
-    expect(row?.textContent, "with the line under the control").toContain("Side tab bars scroll vertically");
+    expect(row?.textContent, "with the line under the control").toContain("Where the tab bar sits");
   });
 
   it("keeps the keys and hosts this device holds selectable, inside a page that is not", async () => {

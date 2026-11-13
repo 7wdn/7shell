@@ -23,7 +23,7 @@
     "noServer": "先填一个地址。",
     "nothingOnServer": "服务器上还没有备份。",
     "snippetTitle": "代码片段同步",
-    "snippetDescription": "把同一份备份放进私有的代码片段里。首次上传会自动创建，并把它的 id 记在这里，之后每次都写同一个。",
+    "snippetDescription": "把备份存进私有代码片段。首次上传自动创建，之后写入同一个片段。",
     "snippetProvider": "平台",
     "snippetGithub": "GitHub Gist",
     "snippetGitee": "Gitee 代码片段",

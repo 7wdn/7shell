@@ -7,13 +7,13 @@
     "copied": "Copied",
     "idle": {
       "title": "No connection",
-      "hint": "Open a terminal and this panel reports what the host on the other end is doing."
+      "hint": "Open a terminal to start monitoring."
     },
     "waiting": "Taking the first sample…",
     "sample": {
       "roundTrip": "Round trip",
       "milliseconds": "{value} ms",
-      "hint": "How long one sample takes: the network, plus the commands that read the host.",
+      "hint": "How long one sample takes: the network plus reading the host.",
       "at": "Sampled at {time}"
     },
     "system": {

@@ -30,15 +30,15 @@
     "reset": {
       "link": "Forgot the password? Archive and reset",
       "title": "Archive the current vault?",
-      "message": "The vault file on this device is renamed and kept — nothing is deleted — and a new vault is created in its place.",
+      "message": "The current vault is renamed and kept — nothing is deleted — and a new vault takes its place.",
       "confirm": "Archive it"
     },
     "history": {
       "link": "Switch or manage archived vaults",
       "title": "Archived vaults",
-      "description": "Archived vaults were found on this device. One can be made the live vault and unlocked again, or its credentials can be merged into the current vault once that one is open.",
+      "description": "Archived vaults were found on this device. Make one the live vault, or merge its credentials into the current vault.",
       "loading": "Looking for archived vaults…",
-      "empty": "No archived vaults on this device yet. A vault that cannot be opened is kept here once it has been moved aside.",
+      "empty": "No archived vaults yet. A vault that cannot be opened is kept here.",
       "openFolder": "Open the folder",
       "close": "Close",
       "unknownTime": "unknown time",
@@ -56,7 +56,7 @@
       "activate": "Make it the live vault",
       "activateNeedsLock": "Lock the vault you are in before switching to another one.",
       "activateTitle": "Switch to this vault?",
-      "activateMessage": "The current vault is renamed and kept as an archive, and the selected file takes its place as the live vault — no data is lost. Unlocking afterwards needs the password that archive was written with.",
+      "activateMessage": "The current vault is renamed and kept as an archive, and the selected file becomes the live vault — no data is lost. Use that archive's original password to unlock it.",
       "activateConfirm": "Confirm the switch",
       "activated": "{name} is the live vault now. Unlock it with its own password."
     }

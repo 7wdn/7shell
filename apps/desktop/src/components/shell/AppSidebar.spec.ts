@@ -893,7 +893,7 @@ describe("changing a group", () => {
     // The question is a dialog of its own, over the list rather than in the heading — nothing has
     // happened yet, and the row the question is about is still drawn where it was.
     expect(confirmDialog().textContent).toContain("Delete the group “Work”?");
-    expect(confirmDialog().textContent).toContain("move out of every group");
+    expect(confirmDialog().textContent).toContain("move out of the group");
     expect(heading("Work")).not.toBeNull();
 
     dialogButton("Delete group")?.click();

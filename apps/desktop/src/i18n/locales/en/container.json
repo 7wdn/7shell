@@ -78,7 +78,7 @@
     },
     "confirm": {
       "stop": "Stop the container “{name}”?",
-      "stopMessage": "Its processes end now. The container stays on the list, stopped, and can be started again.",
+      "stopMessage": "Its processes end now. The container stays in the list, stopped, and can be started again.",
       "restart": "Restart the container “{name}”?",
       "restartMessage": "Its processes end and start again from the same image and configuration.",
       "remove": "Remove the container “{name}”?",

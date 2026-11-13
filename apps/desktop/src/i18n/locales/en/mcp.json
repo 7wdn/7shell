@@ -9,7 +9,7 @@
     },
     "switch": {
       "label": "Allow agent access",
-      "help": "Off by default. When enabled, SevenShell listens on a loopback port and writes an owner-only endpoint file for the bridge. Disabling closes the port and deletes the file."
+      "help": "Off by default. Enabling listens on a loopback port and writes an owner-only endpoint file for the bridge; disabling stops the listener and deletes the file."
     },
     "status": {
       "heading": "Listener",
@@ -23,7 +23,7 @@
       "pendingCount": "{count}",
       "pendingNone": "None",
       "auditPath": "Audit log",
-      "countNote": "The count and the port come from the listener, not from the settings file — what is written down and what is running are two answers."
+      "countNote": "The port and pending count come from the running listener, not the settings file."
     },
     "clients": {
       "title": "Client configuration",
@@ -56,7 +56,7 @@
       "failed": "The settings could not be written.",
       "source": "from {source}",
       "serverOff": "Server off",
-      "externalHint": "External tools can be switched off here too. One whose server is disabled on the Access tab stays off until that server is enabled; its row says so.",
+      "externalHint": "External tools can be switched off here too. A tool whose server is disabled on the Access tab stays off until that server is enabled.",
       "category": {
         "sessions": "Sessions",
         "exec": "Commands",
@@ -84,7 +84,7 @@
         "asksValue": "Destructive commands, and container or cluster changes"
       },
       "sessionsTitle": "Sessions and groups",
-      "sessionsDescription": "Unticking a session hides it from agents. A group setting covers its sessions; the dropdown sets this row's tier, and the line beside it shows the tier in force.",
+      "sessionsDescription": "Unticking hides the session from agents. A group setting covers its sessions; the dropdown sets this row's tier, and the text beside it shows the tier in force.",
       "search": "Search sessions",
       "onlyOverrides": "Only exceptions",
       "inherit": "Inherit",
@@ -96,7 +96,7 @@
         "global": "from the default"
       },
       "hidden": "Hidden",
-      "allowlistHint": "A session has been hidden, so only the sessions ticked below are visible. Sessions saved later start hidden until you tick them.",
+      "allowlistHint": "Only the sessions ticked below are visible. Sessions saved later start hidden until you tick them.",
       "allowAll": "Show every session",
       "groupCount": "{count} sessions",
       "noSessions": "No saved sessions yet.",
@@ -109,14 +109,14 @@
     "fields": {
       "heading": "Settings",
       "port": "Port",
-      "portHint": "Zero lets the system choose a free port, which is what a fresh install does. The bridge learns the number from the endpoint file, so a fixed port is only needed if something else expects one.",
+      "portHint": "Zero lets the system choose a free port, as a fresh install does. The bridge reads the port from the endpoint file; set one only if something expects a fixed port.",
       "scope": "What an agent may do",
       "approvalTimeout": "Approval timeout",
       "approvalTimeoutHint": "How long a call waits for your answer before it is refused. A question nobody answers must not hold an agent's connection open for ever.",
       "retentionDays": "Audit retention",
       "retentionDaysHint": "How many days the audit file is kept. Each call is one line; nothing is pruned before this.",
       "maxResult": "Result limit",
-      "maxResultHint": "The most one call may return, so a huge directory listing or a long log cannot push everything else out of an agent's context. Longer results are truncated and marked.",
+      "maxResultHint": "The most one call may return; longer results are truncated and marked.",
       "save": "Save and apply",
       "saved": "Saved. The listener will start with these settings.",
       "savedRestarted": "Saved. The listener restarted with these settings.",
@@ -177,7 +177,7 @@
       },
       "secrets": {
         "title": "Secrets",
-        "description": "The environment a stdio server is started with, and the headers an HTTP or SSE server sends. They are kept in the vault under this server's identifier and are never read back.",
+        "description": "The environment for a stdio server, or the headers an HTTP/SSE server sends. They are kept in the vault and never read back into the interface.",
         "state": {
           "saved": "Secrets saved",
           "missing": "No secrets saved",
