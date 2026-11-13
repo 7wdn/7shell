@@ -6,7 +6,7 @@
       "version": "Version",
       "platform": "Platform",
       "protocols": "Protocols declared",
-      "descriptorSchema": "Descriptor schema"
+      "descriptorSchema": "Protocol schema"
     },
     "section": {
       "backend": "Backend",

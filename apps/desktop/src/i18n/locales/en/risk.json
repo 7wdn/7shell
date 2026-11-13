@@ -32,14 +32,14 @@
       "change": "Changes a container",
       "stop": "Stops a running container",
       "remove": "Removes a container or an image",
-      "unknown": "A container action this build does not recognise"
+      "unknown": "A container action this version does not recognise"
     },
     "k8s": {
       "write": "Changes a cluster object",
       "delete": "Deletes a cluster object",
       "namespaceDelete": "Deletes a namespace and everything in it",
       "evict": "Evicts a pod from its node",
-      "unknown": "A cluster request this build does not recognise"
+      "unknown": "A cluster request this version does not recognise"
     }
   }
 }

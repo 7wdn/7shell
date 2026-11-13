@@ -16,11 +16,11 @@
       "installing": "Installing — the application restarts when it is done.",
       "notInstalled": "This is a development build, not an installed application: there is no installed copy for an update to replace.",
       "autoLabel": "Check for updates at startup",
-      "autoHelp": "The only request this build makes on its own. It sends the request and nothing about you, your machine or what you are working on — and pressing the button above does the same thing whenever you would rather ask by hand.",
+      "autoHelp": "Checks for updates when SevenShell starts. The request contains no personal data. You can also check manually.",
       "centre": "Update centre",
       "centreHelp": "The release channel: what is published, and what can be done about it.",
       "availableBadge": "An update is available",
-      "publishedOver": "Version {version} is published; this build is {current}.",
+      "publishedOver": "The published version is {version}; the installed version is {current}.",
       "newest": "This is the newest release ({version}).",
       "ready": "Version {version} has been downloaded. Restart to update.",
       "download": "Download",
@@ -54,7 +54,7 @@
     "applyAndClose": "Apply and close",
     "leaving": {
       "title": "Close the settings?",
-      "message": "Choices made since the last time they were written down are not in the file yet. They can be written on the way out, dropped, or left alone — leaving the page alone keeps them on screen, where they already are.",
+      "message": "Some changes have not been saved yet. Save them, discard them, or stay on this page.",
       "write": "Write them and close",
       "drop": "Drop them"
     },
@@ -98,17 +98,17 @@
       "simplifiedChinese": "简体中文"
     },
     "words": {
-      "hint": "The words the command line offers after a command. What this build ships is in every installation; this page is where the tools it has never heard of are added.",
-      "builtinHint": "Rows marked built-in come from this build, and they are read-only. To describe one differently, add a row with the same command and word: the command line takes the added one.",
+      "hint": "Words suggested after a command. Built-in words ship with every installation; add tools this version does not know here.",
+      "builtinHint": "Built-in rows are read-only. Add a row with the same command and word to override one.",
       "add": "Add a word",
       "editTitle": "Edit the word",
       "addTitle": "Add a word",
       "restoreTitle": "Delete every added word?",
-      "restoreMessage": "Every added word is deleted. What this build ships is untouched. This cannot be undone.",
+      "restoreMessage": "All custom words are deleted; built-in words are untouched. This cannot be undone.",
       "commandPlaceholder": "e.g. kubectl",
       "wordPlaceholder": "e.g. apply",
       "notePlaceholder": "What it means",
-      "noteHint": "Shown beside the word instead of the description this build ships.",
+      "noteHint": "Shown beside the word instead of the built-in description.",
       "spaceInvalid": "A command and a word are one word each: the command line is split on spaces before anything is looked up.",
       "saveFailed": "The word could not be written.",
       "source": {
@@ -235,102 +235,102 @@
       "colorTheme": {
         "title": "Colour theme",
         "summary": "The colour the interface is made of, in either of the two themes.",
-        "help": "A colour theme is not a third theme: light and dark are what the interface theme decides, and any of these can be worn with either. It moves the page, the borders and the accent together onto one hue, so the window reads as one piece rather than as a grey page with a coloured button on it."
+        "help": "Overrides the accent and terminal colours; light and dark mode stay independent."
       },
       "uiScale": {
         "title": "Interface scale",
         "summary": "Draws the whole interface larger, inside the same window.",
-        "help": "The window keeps its size and everything in it grows: text, borders, and the terminal's own grid of characters. It is meant for a display dense enough to make the default size hard to read, where the operating system's own scaling does not reach a window that is already open."
+        "help": "Scales text, borders and the terminal grid without changing the window size."
       },
       "homeContent": {
         "title": "Home content",
         "summary": "Which of the two pages is drawn with nothing open.",
-        "help": "The home page is the surface with nothing open on it, and there are two of them because they answer different questions. The introduction is for somebody who has not connected anything yet: what this build is, what it can do, and the three steps of a first connection. The workspace overview is for somebody who has: what the library holds, the hosts they were just on, and the actions that start something. Which one is drawn is remembered."
+        "help": "The introduction explains the first connection. The workspace overview shows saved sessions, recent hosts and common actions."
       },
       "appLayout": {
         "title": "Interface layout",
         "summary": "How much of the window is the thing being looked at.",
-        "help": "Two shapes for the chrome around the panels. The separated one keeps the tabs as blocks of their own and gives every header room around what it says, so the parts of the window are read one at a time. The classic one joins the tabs into a single bar and tightens the headers, which hands a row or two back to the panel — the same information, in less of the window."
+        "help": "Separated gives each area its own frame. Classic joins the tabs into one bar and uses less space."
       },
       "tabPlacement": {
         "title": "Tab bar position",
         "summary": "Side tab bars scroll vertically; multi-row wrapping applies only above or below content.",
-        "help": "Which edge of the window the bar is drawn against. Across the window it costs height, which is what a terminal has least of; down one side it costs width and pays for it with a column of names instead of a row of tabs. The bar at the bottom or on the right is the same bar, drawn after the panes rather than before them."
+        "help": "Where the tab bar sits. Horizontal uses vertical space; vertical uses width and shows more names."
       },
       "tabGroupMode": {
         "title": "Group by",
         "summary": "Grouping affects only the displayed order.",
-        "help": "What the tabs are cut into runs by. One run per session, under the session's name: a terminal, a file browser and a host's pages opened from one session are one piece of work, and the grouping says so without changing anything about the tabs themselves. The settings page and the batch panel belong to no session and are drawn after every run."
+        "help": "Group tabs by session, or keep one continuous row. Settings and batch tabs stay after all groups."
       },
       "tabSortMode": {
         "title": "Sort by",
         "summary": "Sorting affects only the displayed order; dragging is available in manual order.",
-        "help": "The order the tabs are drawn in. The manual order is the one the tabs were opened in until somebody drags one, and it is the only order a drag can write to — dragging under a sort would move a tab into a list that is not the one on screen. The other two orders are read off the tabs rather than written into them: by when each was opened, and by its name in the interface's own language."
+        "help": "Manual order can be changed by dragging. Opening order and name order are read-only and follow the tabs."
       },
       "tabMaxWidth": {
         "title": "Maximum tab width",
         "summary": "Limit the maximum width of horizontal tabs, truncating long titles with ellipsis. Hover to view the full title.",
-        "help": "How wide a horizontal tab may be drawn. A step is a look rather than a measurement: the same window at the same size draws the same bar, and a name longer than the step is truncated with the whole of it on hover. Bars down one side are not affected — there, every tab is the width of the column."
+        "help": "Maximum width of a horizontal tab. Longer names are truncated and shown in full on hover. Vertical tabs use the column width."
       },
       "background": {
         "title": "Background image",
         "summary": "Set an image behind the whole app. Cards and dialogs stay opaque for readability.",
-        "help": "The picture is copied into this installation's own directory when it is chosen, so moving or deleting the original does not empty the window's background. The window's own surfaces turn translucent by the transparency below — the panels and the frame, not the cards and dialogs on top of them, which stay opaque so that their text can be read whatever is behind them."
+        "help": "The image is copied into the app's data folder. Transparency applies to panels and the window frame, not to cards or dialogs."
       },
       "showTrayIcon": {
         "title": "Show tray/menu bar icon",
         "summary": "When disabled, no icon is shown, but closing the window still hides 7Shell in the background as before.",
-        "help": "Whether the shell keeps an icon in the system tray. It is the way back to a window that has put itself away: closing the window hides it rather than ending the application, and this icon is how it comes back. Turning it off is a choice about the icon alone — the window still goes away when it is closed, and with nothing to come back from, a close then ends the application instead."
+        "help": "Keep a tray icon. When enabled, closing the window hides it and the tray icon brings it back. When disabled, closing quits the app."
       },
       "quitOnClose": {
         "title": "Quit when closing window",
         "summary": "When enabled, clicking the close button exits 7Shell completely instead of hiding it to the tray.",
-        "help": "Off, closing the window puts it away and leaves everything running: the sessions stay connected and the next click on the tray icon brings the window back where it was. On, closing it ends the application, which is what a window's close button does in most programs — and what this build did before it had a tray. Either way, closing asks first when there is unsaved work in the window."
+        "help": "When off, closing hides the window and keeps sessions running (requires the tray icon). When on, closing quits. Unsaved work is confirmed first."
       },
       "tabLayout": {
         "title": "Tab bar overflow",
         "summary": "What the tabs do when they no longer fit in one row.",
-        "help": "One row that scrolls sideways, or rows that wrap until every tab is on screen. Wrapping keeps everything in sight — no tab is ever off the edge with no sign that it is there — and pays for it in height, which comes out of the panel underneath. Scrolling keeps the panel's height and puts the tabs past the edge, where the bar can be scrolled and the wheel works over it."
+        "help": "One scrolling row, or wrapped rows that show every tab. Wrapping uses more height; scrolling keeps the panel height."
       },
       "cornerStyle": {
         "title": "Corner style",
         "summary": "How round the corners of everything are.",
-        "help": "One setting for the whole window rather than a radius per panel: a corner belongs to the way this build draws, and a panel that rounded its own would be the one thing that did not change when the corners were squared. The buttons above are drawn with the corner each one stands for."
+        "help": "Corner style applies to the whole window. The buttons above preview each option."
       },
       "uiFont": {
         "title": "Interface font",
         "summary": "The family the rest of the window is drawn in.",
-        "help": "What is kept is the whole stack rather than one name: whatever follows the chosen family is what the interface falls back to when that family is not installed — on another machine, or after a font is renamed. The terminal's font is a choice of its own, beside this one."
+        "help": "Uses a font stack: if the first family is unavailable, the next one is used. Terminal font is set separately."
       },
       "terminalFont": {
         "title": "Terminal font",
         "summary": "The family the terminal's text is drawn in.",
-        "help": "A terminal is read in a fixed-width face, so the list offers the ones people bring with them before this machine's own. Choosing one takes effect at once, in the terminals that are already open: the grid a terminal is made of is as wide as the face it is drawn in, so a new font is a new grid."
+        "help": "Fixed-width fonts are listed first. Changes apply to open terminals immediately."
       },
       "terminalPreview": {
         "title": "Live preview",
-        "summary": "The terminal, as the settings on this page make it.",
-        "help": "A terminal drawn with the face, the size and the colours this page is about, so that a choice can be seen rather than imagined. The two surfaces and the sixteen colours come from the palette the terminal is wearing, and the lines are there to be compared against each other: a face whose digits and letters look alike, or a colour that cannot be read on its own background, shows up here rather than in a shell."
+        "summary": "A live preview of the terminal settings.",
+        "help": "A live preview of the terminal font, size and palette selected below."
       },
       "terminalFontSize": {
         "title": "Text size",
         "summary": "How large the terminal draws its text, in pixels.",
-        "help": "Measured in pixels rather than as a share of the interface scale, because a terminal is read in columns and lines: the size trades how many of them fit against how easy they are to read, and that trade is nobody's business but the person at the window. A terminal that is already open is redrawn at the new size at once, and the columns it reports are the ones that fit now."
+        "help": "Terminal font size in pixels. Open terminals redraw and reflow immediately."
       },
       "sessionLayout": {
         "title": "Opening a session",
         "summary": "A terminal on its own, or with the files under it.",
-        "help": "The split opens the files for the same host under the terminal, in one tab, and follows the shell's directory — a cd in the terminal takes the panel with it. Either way it can be closed or opened per tab, on the strip under the terminal."
+        "help": "Shows the file browser under the terminal and follows directory changes. Can be toggled per tab."
       },
       "sessionReopen": {
         "title": "A session that is already open",
         "summary": "What the session list's menu does with one: ask, open another tab, or go to the tab that is there.",
-        "help": "It applies to the menu's own “Open terminal”, and “Remember my choice” in the question it asks writes the answer here. Clicking a session row is not affected: it goes to the tab that is open, opens no second one, and asks nothing."
+        "help": "Applies to Open terminal in the menu. Remember my choice stores the answer here; clicking a session row is unchanged."
       },
       "monitor": {
         "title": "Host monitor",
         "summary": "A panel beside the workspace: load, memory, network and file systems.",
-        "help": "The monitor sits to the right of the workspace and reports the host of the terminal on screen: load, memory, network and file systems. It samples about every two seconds, by running a group of read-only commands over the connection that is already open — and it samples nothing at all while it is hidden."
+        "help": "Shows load, memory, network and disks for the host of the current terminal, sampled every two seconds over its connection. Hidden means no sampling."
       },
       "filesLayout": {
         "title": "File browser",
@@ -340,12 +340,12 @@
       "packed": {
         "title": "Packed transfer",
         "summary": "Move a folder as one archive, made and opened on the way.",
-        "help": "A download of a folder is packed on the far side and opened into the destination folder; an upload is packed here and opened on the far side. Either way what arrives is the files themselves — the archive is made, sent and thrown away. The packing is done by the host's own tar, so a host without one cannot transfer a folder at all. A single file is copied as it always was."
+        "help": "Folders are packed on one side and unpacked on the other. Single files are transferred directly. Packing requires tar on the host."
       },
       "commandCompletion": {
         "title": "Command completion",
         "summary": "Offer what this application knows while a command is being typed.",
-        "help": "The line under a terminal draws a list beside itself: the commands this build has a word about, saved lines, recent history, and — after a command — the words it is usually followed by, or the paths the host itself has. A row is taken in two ways: Tab takes the first one, and the arrow keys walk to one. Once a row is pointed at, Enter puts it **into the line** — a command name is usually not the whole line yet — and a second Enter runs it; with nothing pointed at, Enter runs exactly what was typed. Escape puts the list away for that line, and Alt+/ brings it back."
+        "help": "Suggests commands, saved lines, history and paths as you type. Tab or the arrow keys select a suggestion; Enter inserts it, and Enter again runs the line. With nothing selected, Enter runs the line as typed. Escape closes the list; Alt+/ reopens it."
       }
     },
     "terminalPreview": {
@@ -378,7 +378,7 @@
       "vault": "Vault",
       "password": {
         "title": "Master password",
-        "help": "The password that opens the vault. Changing it re-encrypts the file, and the current one is asked for again even though the vault is open — an unlocked window is not by itself permission to change what opens it.",
+        "help": "Changes the vault password and re-encrypts the file. The current password is required even while the vault is unlocked.",
         "current": "Current password",
         "next": "New password",
         "nextPlaceholder": "At least 8 characters",
@@ -476,7 +476,7 @@
       "saveFailed": "The library could not be written.",
       "prefixInvalid": "A trigger is one word, so it cannot contain a space.",
       "restoreTitle": "Restore the shipped commands?",
-      "restoreMessage": "Everything in the library is deleted — added commands and groups along with it — and the lines this build ships are written again. This cannot be undone.",
+      "restoreMessage": "The library is cleared, including added commands and groups, and the built-in lines are restored. This cannot be undone.",
       "columns": {
         "name": "Name",
         "trigger": "Trigger",

@@ -112,7 +112,7 @@
     "editor": {
       "titleNew": "新建会话",
       "titleEdit": "编辑会话",
-      "description": "目标机器的位置、登录用户，以及此版本支持的认证方式。",
+      "description": "目标机器的位置、登录用户与认证方式。",
       "name": "名称",
       "namePlaceholder": "生产环境 Web 服务器",
       "protocol": "连接类型",

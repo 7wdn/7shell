@@ -138,7 +138,7 @@
       "retryable": "Asking again may work."
     },
     "settings": {
-      "description": "Where the assistant's questions go. The keys are kept in the vault, never in the settings file, and this window never reads one back.",
+      "description": "Where the assistant sends questions. Provider keys are stored in the vault, not in the settings file.",
       "providers": {
         "title": "Providers",
         "description": "One entry per service. The active one is where a new question goes.",

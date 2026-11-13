@@ -84,7 +84,7 @@
     "replace": "覆盖 id 相同的项",
     "replaceHint": "不勾：id 已存在的项作为副本导入；勾上：用文件里的版本覆盖它。",
     "autoUpload": "定时上传备份",
-    "autoUploadHint": "只在窗口开着时运行，而且从不下载：一份未经询问就把本机库覆盖掉的副本，是这功能能给的最坏的意外。",
+    "autoUploadHint": "仅在窗口打开时运行，且只上传；恢复需要手动操作。",
     "autoUploadEvery": "每",
     "autoUploadMinutes": "分钟"
   }

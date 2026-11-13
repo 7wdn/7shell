@@ -112,7 +112,7 @@
     "editor": {
       "titleNew": "New session",
       "titleEdit": "Edit session",
-      "description": "Where the machine is, who to log in as, and how this build authenticates.",
+      "description": "Where the machine is, who to log in as, and how to authenticate.",
       "name": "Name",
       "namePlaceholder": "Production web server",
       "protocol": "Connection type",

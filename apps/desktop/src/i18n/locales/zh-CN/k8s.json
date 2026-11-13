@@ -121,7 +121,7 @@
     },
     "detail": {
       "cluster": "集群",
-      "redacted": "这个对象是 Secret，因此这里不显示它的值。它持有的键名已列在上方。",
+      "redacted": "Secret 的值已隐藏，键名列在上方。",
       "tabs": {
         "detail": "详情",
         "yaml": "YAML"

@@ -5,7 +5,7 @@
     },
     "disconnected": {
       "title": "Not connected",
-      "hint": "This page reads through the terminal {name} has open. Open one and it starts by itself."
+      "hint": "Reads through {name}'s open terminal. Open a terminal to start."
     },
     "system": {
       "title": "System info",

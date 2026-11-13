@@ -41,9 +41,9 @@
     },
     "store": {
       "io": "Application state could not be written.",
-      "schemaNewer": "This data was written by a newer version (format {found}; this build understands up to {supported}).",
+      "schemaNewer": "This data was written by a newer version (format {found}; this version understands up to {supported}).",
       "backgroundUnsupported": "A picture of this kind cannot be used as the background ({extension}). Choose a PNG, JPEG, WebP, BMP or GIF.",
-      "backgroundTooLarge": "That picture is {megabytes} MB, and the most this build copies is {limit} MB."
+      "backgroundTooLarge": "That picture is {megabytes} MB, and the most this version copies is {limit} MB."
     },
     "session": {
       "openCancelled": "The connection attempt was called off.",
@@ -84,7 +84,7 @@
       "operationFailed": "The FTP operation failed."
     },
     "scp": {
-      "unavailable": "This server cannot be browsed over SCP: it has no SCP command or no shell listing this build can read.",
+      "unavailable": "This server cannot be browsed over SCP: it has no SCP command or no shell listing this version can read.",
       "transferFailed": "The transfer of {path} over SCP failed.",
       "operationFailed": "The SCP operation on {path} failed.",
       "exists": "Something with that name is already there: {path}."
@@ -121,7 +121,7 @@
       "sessionHidden": "The session {session} is not visible under the current agent access rules.",
       "serverNotFound": "No external MCP server is configured with that id.",
       "duplicateTool": "The external server {server} offers two tools named {tool}.",
-      "invalidTool": "The external server {server} offers a tool this build cannot serve ({tool}).",
+      "invalidTool": "The external server {server} offers a tool this version cannot serve ({tool}).",
       "externalFailed": "The tool {tool} on {server} failed.",
       "externalTimeout": "The tool {tool} on {server} did not answer within {seconds} seconds.",
       "cancelled": "The external MCP call was cancelled."
@@ -139,7 +139,7 @@
     "app": {
       "notReady": "The application is still starting up.",
       "noTransport": "{operation} needs the desktop application.",
-      "unsupported": "{what} is not implemented in this build yet.",
+      "unsupported": "{what} is not implemented in this version yet.",
       "internal": "Something went wrong inside the application."
     }
   }

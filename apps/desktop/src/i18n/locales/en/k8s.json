@@ -121,7 +121,7 @@
     },
     "detail": {
       "cluster": "cluster",
-      "redacted": "This object is a secret, so its values are hidden here. The keys it holds are listed above.",
+      "redacted": "Secret values are hidden. The keys are listed above.",
       "tabs": {
         "detail": "Detail",
         "yaml": "YAML"

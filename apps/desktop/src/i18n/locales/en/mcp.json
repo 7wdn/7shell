@@ -1,7 +1,7 @@
 {
   "mcp": {
     "title": "Agent access (MCP)",
-    "description": "A loopback control service an MCP bridge may call, so an agent can look at your sessions and, if you allow it, change them. It listens on 127.0.0.1 only, and every call presents a token that this window never sees.",
+    "description": "Lets MCP clients and the in-app assistant read your saved sessions and, with permission, act on them. The listener is loopback-only and uses a per-run token.",
     "tabs": {
       "access": "Access",
       "capabilities": "Capabilities",
@@ -9,7 +9,7 @@
     },
     "switch": {
       "label": "Allow agent access",
-      "help": "Off unless you turn it on. While it is on, this machine opens one port on the loopback interface and writes the token a bridge needs to a file only your account can read. Turning it off closes the port and deletes that file."
+      "help": "Off by default. When enabled, SevenShell listens on a loopback port and writes an owner-only endpoint file for the bridge. Disabling closes the port and deletes the file."
     },
     "status": {
       "heading": "Listener",
@@ -27,7 +27,7 @@
     },
     "clients": {
       "title": "Client configuration",
-      "description": "Pick the client you connect with. Each snippet starts the bridge that ships beside this application and points it at the endpoint file; it carries no token — the bridge reads the secret from that file itself.",
+      "description": "Choose your MCP client. The generated configuration starts the bundled bridge and points it at the endpoint file; it contains no token.",
       "where": "Goes in",
       "copy": "Copy snippet",
       "copied": "Copied to the clipboard.",
@@ -44,7 +44,7 @@
     },
     "capabilities": {
       "title": "Tools an agent may call",
-      "description": "Switch off what an agent must not call. The bridge, the assistant in this window and every external client read the same list, and a tool that is off is refused rather than only left out of the list.",
+      "description": "Turn off tools that agents may not call. The bridge, the in-app assistant and external clients share this list; a disabled tool is refused, not just hidden.",
       "search": "Search tools",
       "onlyEnabled": "Only enabled",
       "refresh": "Refresh",
@@ -73,7 +73,7 @@
     },
     "permissions": {
       "title": "Default and exceptions",
-      "description": "Choose the default tier, then write exceptions for groups or sessions. A session's own setting wins over its group, and a group wins over the default; anything without an exception follows the default.",
+      "description": "Set the default access tier, then add exceptions for groups or sessions. A session overrides its group; a group overrides the default.",
       "defaultTitle": "Default tier",
       "defaultHint": "Applies to every saved session that has no setting of its own. Visibility and exceptions are set row by row below.",
       "table": {
@@ -84,7 +84,7 @@
         "asksValue": "Destructive commands, and container or cluster changes"
       },
       "sessionsTitle": "Sessions and groups",
-      "sessionsDescription": "Unticking a session hides it from agents completely. A group's tick covers every session under it; the dropdown sets the row's own tier, and the line beside it says which tier is in force and why.",
+      "sessionsDescription": "Unticking a session hides it from agents. A group setting covers its sessions; the dropdown sets this row's tier, and the line beside it shows the tier in force.",
       "search": "Search sessions",
       "onlyOverrides": "Only exceptions",
       "inherit": "Inherit",
@@ -127,7 +127,7 @@
     },
     "servers": {
       "title": "External servers",
-      "description": "MCP servers this installation calls beside its own tools. Their tools appear to the assistant and over MCP under a name built from the server's identifier and the tool's own; one a server marks read-only may be listed, and every other one is approved on each call.",
+      "description": "External MCP servers whose tools appear beside the built-in ones. Tools marked read-only can be listed; every other call requires approval.",
       "add": "Add server",
       "empty": "No external servers are configured.",
       "loading": "Reading the servers…",
@@ -209,7 +209,7 @@
       "title": "Recent activity",
       "open": "View MCP call records",
       "description": "The tail of this machine's audit file: who called what, how it ended, and how long it took. Nothing here holds a credential or the text a call read.",
-      "empty": "No agent has called this build yet.",
+      "empty": "No agent has connected yet.",
       "loading": "Reading the audit log…",
       "refresh": "Refresh",
       "columns": {

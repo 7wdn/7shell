@@ -6,7 +6,7 @@
       "version": "版本",
       "platform": "平台",
       "protocols": "已声明协议",
-      "descriptorSchema": "描述符版本"
+      "descriptorSchema": "协议格式版本"
     },
     "section": {
       "backend": "后端",
