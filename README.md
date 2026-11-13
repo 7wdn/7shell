@@ -1,158 +1,178 @@
-# 7Shell
+<div align="center">
+  <img src="art/icon.png" alt="7Shell" width="128" height="128" />
+  <h1>7Shell</h1>
+  <p>An open-source SSH and operations client for Windows, macOS and Linux<br>SSH, SFTP, Docker, Kubernetes, host monitoring and batch commands</p>
+  <p><a href="https://github.com/7wdn/7shell">GitHub</a> &nbsp;|&nbsp; <a href="docs/">Documentation</a> &nbsp;|&nbsp; <a href="https://github.com/7wdn/7shell/releases">Releases</a></p>
+</div>
 
-**An open-source SSH and operations console for Windows, macOS and Linux.**
+<div align="center">
+  English &nbsp;|&nbsp; <a href="README.zh-CN.md">简体中文</a>
+  <br><br>
+  <a href="https://github.com/7wdn/7shell/releases"><img src="https://img.shields.io/github/v/release/7wdn/7shell?include_prereleases&amp;style=flat-square" alt="Release" /></a>
+  <a href="https://github.com/7wdn/7shell"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platforms" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License" /></a>
+</div>
 
-*Read this in [Chinese](README.zh-CN.md).*
+## Contents
 
-![A terminal over a real host, the file workbench beneath it, and the host monitor beside it](docs/public/screenshots/workspace.png)
+- [Features](#features)
+- [Connections](#connections)
+- [Screenshots](#screenshots)
+- [Install](#install)
+- [Getting started](#getting-started)
+- [Tech stack](#tech-stack)
+- [Build from source](#build-from-source)
+- [Project layout](#project-layout)
+- [Documentation](#documentation)
+- [Security](#security)
+- [Contributing](#contributing)
+- [License](#license)
 
-> **Installer note:** the builds are not code-signed and the macOS one is not notarized, so both
-> systems warn before running an installer.
+## Features
 
-## What it is
+### Terminals
 
-A desktop client for the machines you administer: save a host once, connect over SSH, work in a
-terminal or in the file workbench beside it, watch what the host is doing, and send one command to
-several machines at once. Credentials live in an encrypted vault on your machine, and a server's host
-key is verified *before* any credential is sent to it.
+- **Remote terminals** — SSH with a password, a private key, keyboard-interactive authentication or the system key agent; Telnet, raw TCP and serial.
+- **Local terminals** — PowerShell, Command Prompt, Git Bash, the Unix login shell and WSL on Windows.
+- **Terminal workspace** — tabs, search, links, keep-alive, reconnect and asciicast v2 recording.
+- **Appearance** — 190 built-in colour schemes; adjustable font family, size, line height, letter spacing and cursor; keyword highlighting with 22 default rules (ERROR, WARN, IP addresses and others) that can be edited.
+- **Jump hosts and forwarding** — routes through other saved sessions, local port forwards (`-L`) and a SOCKS5 proxy (`-D`).
 
-One Rust binary with a Tauri shell around it. No JRE, no Python, no bundled browser runtime.
+### Files
 
-## What works today
+- **SFTP workbench** — two panes, create, rename, delete, edit text in place, upload and download.
+- **Transfers** — queue, pause, resume and outlive the tab; on SSH a whole directory can be sent as one archive.
+- **Other file servers** — WebDAV and FTP/FTPS folders in the same workbench; a server without SFTP falls back to SCP.
+- **ZMODEM** — `rz` and `sz` inside the terminal, using the system file dialogs.
 
-This is the same list the interface shows on its first screen, and both are generated from the
-descriptors the code is built against: a capability is claimed by the change that implements and tests
-it, never in advance.
+### Containers and clusters
 
-| Area | State |
-|---|---|
-| Encrypted vault: Argon2id + XChaCha20-Poly1305, atomic writes, one unlock failure for a wrong password and for a changed file | Working, with tests |
-| Sessions and groups, saved in the vault; import and export with an optional passphrase | Working |
-| Host key verification: trust a new key, stop on a changed one, review and revoke what is trusted | Working, tested against a real sshd |
-| Authentication: password, private key (with passphrase), keyboard-interactive, and the system key agent | Working, tested against a real sshd |
-| Terminals: several tabs, resize, keep-alive, reconnect, search, links, and a palette per session | Working |
-| Telnet consoles: RFC 854 subset, window reporting, and the Enter/Backspace the device expects | Working, with an in-process test |
-| Raw TCP consoles: a plain socket with no negotiation, sent and shown byte for byte | Working, with an in-process test |
-| Serial consoles: device, baud rate, data bits, parity, stop bits and flow control | Working; line settings are tested, a physical device is not |
-| Local shells: PowerShell, Command Prompt, Git Bash and the Unix login shell, in a real pseudo terminal | Working, tested on Windows and Unix |
-| WSL: an installed distribution started through `wsl.exe` | Windows only; tested on a machine with WSL |
-| Remote desktops (RDP): a Windows desktop handed to the system Remote Desktop client, with its clipboard, local drives, resolution and full-screen choice | Windows only; the client carries the session |
-| Jump hosts: a route through other saved sessions, every hop verified as if it were the destination | Working, tested against a real sshd |
-| Port forwarding: a local port reaching the far side (`-L`), and a local SOCKS5 port (`-D`) | Working, tested against a real sshd |
-| The file workbench: two directories side by side, create, rename, delete, edit text, upload, download | Working, tested against a real sshd |
-| WebDAV folders: a saved HTTP folder in the same workbench, with its own transfers and text editor | Working, with an in-process WebDAV server |
-| FTP / FTPS folders: a saved FTP account, or explicit TLS before the login, in the same workbench | Working, with an in-process FTP server |
-| SCP fallback: a server with no SFTP subsystem, browsed through its shell and SCP | Working, live-tested against a server with SFTP switched off |
-| ZMODEM: `rz` and `sz` inside a terminal, with the system file picker and save dialog | Working, with protocol tests; a real `rz`/`sz` was not run because the lab has no lrzsz |
-| Containers: Docker, Podman, nerdctl and WSLC — containers, images, logs, stats, an exec terminal, file browsing and image-archive import, on this machine or through a saved SSH session | Working; Docker live-tested locally and over SSH, including files and archive loading; the other three runtimes have argument/parser tests only |
-| Kubernetes: kubeconfig contexts, resource lists and watches, pod logs, an exec terminal, pod file browsing, metrics-server usage, editable YAML, CRDs and reaching the API server through an SSH session | Working; live-tested against a real k3s cluster, directly and through the SSH lab |
-| Transfers: queued and listed, pausable and resumable, packed as one archive for a whole tree, outliving the tab they started in | Working, tested against a real sshd and a 50,000-file directory; packed archives are SSH-only |
-| Host monitor: load, memory, disks, processes and sockets, sampled over the connection you already have | Working |
-| Batch execution: one command, several hosts, a per-host result, and a risk verdict before it runs | Working, tested against a real sshd |
-| Command library: saved commands with `#1`–`#5` slots, history, completion, sent to one terminal or all of them | Working |
-| Session recording: each session's output as an asciicast v2 file | Working, tested against a real sshd |
-| Sync: sessions and commands to a WebDAV server you name, or as a snippet on GitHub, Gitee or GitLab | Working, tested against a real server |
-| The update channel: a signed manifest, an install that restarts into the new version, an off switch | Working; see below for what has not been exercised yet |
+- **Containers** — Docker, Podman, nerdctl and WSLC: containers, images, logs, stats, an exec terminal, files and image archive import, on this machine or through an SSH session.
+- **Kubernetes** — kubeconfig contexts, resource lists and watches, pod logs, exec, pod files, metrics and YAML editing, directly or through an SSH session.
 
-**Not implemented:** remote forwarding (the third kind — refused rather than half-done), agent
-forwarding (implemented, deliberately unclaimed until a real far side has been proved to use it),
-Pageant, and reaching a host *through* a SOCKS5 or HTTP proxy. Container and pod file transfers are
-streamed, but a single archive transfer has no progress bar or cancel button, and an image archive
-load has no progress either. Secrets in
-Kubernetes are read-only. Remote desktops are a
-Windows-only feature of this build: the session is handed to the system Remote Desktop client, so
-macOS and Linux do not offer one. A WebDAV or FTP folder cannot be downloaded as one packed archive; its files are
-fetched one at a time. An FTP server also has no server-side copy, so the file menu offers move but
-not copy. The command line and agent interfaces and the plugin platform are 1.x work: the
-architecture keeps room for them, and no code for them exists yet.
+### Operations
 
-**Verification notes:** FTP/FTPS and ZMODEM are covered by in-process/protocol tests, but a real
-FTPS certificate chain and a real `rz`/`sz` session were not run on this machine: the Docker registry
-refuses FTP images, and the SSH lab has no `lrzsz`. Container support was live-tested against Docker
-Desktop locally and through the SSH lab's `docker:dind`; Podman, nerdctl and WSLC have no live
-runtime on this machine, so they are covered by argument and parser fixtures. Kubernetes was
-live-tested against a one-node k3s (`deploy/lab/kubernetes`), directly and through the SSH lab; the
-YAML editor and CRD drill-down are covered by unit/component tests but not by a live cluster write.
-Container files and image-archive loading were live-tested against Docker Desktop and the SSH lab;
-the archive case includes a gzip archive, and a 40 MiB tree is streamed both ways. Pod files were
-live-tested against the k3s lab and are covered by the window e2e.
+- **Host monitor** — load, CPU, memory, swap, disks, processes, network and sockets, sampled over the connection that is already open; nothing to install on the server.
+- **Batch execution** — one command to several hosts, a result per host and a risk verdict before it runs.
+- **Command library** — saved commands with `#1`–`#5` slots, history and completion, sent to one terminal or all of them.
+- **Interface** — system, dark or light theme; English and Simplified Chinese.
+- **Sync** — sessions and commands to a WebDAV server, or to a snippet on GitHub, Gitee or GitLab.
+- **RDP** — Windows desktops through the system Remote Desktop client.
 
-## Installing
+### Assistant and MCP
 
-Release builds come from [GitHub Releases](https://github.com/7wdn/7shell/releases):
+- **Assistant** — Anthropic, OpenAI-compatible endpoints and local models.
+- **MCP server** — external MCP clients can call the same tools on saved sessions; credentials stay in the application.
+- **Approval and audit** — tool calls are checked against the risk rules and written to an audit log, and an approval prompt appears when a call needs one.
 
-| Platform | Files |
-|---|---|
-| Windows | `.exe` (NSIS) and `.msi` — per-user install, no administrator needed |
-| macOS | `.dmg` for Apple silicon and for Intel |
-| Linux | `.AppImage`, `.deb`, `.rpm` |
+## Connections
 
-Because this is a prerelease, expect a warning: Windows SmartScreen and macOS Gatekeeper both object
-to software nobody has signed. Linux has no equivalent gate, which is not the same thing as being
-verified.
+| Category | Connection | Notes |
+| --- | --- | --- |
+| Terminal | SSH | Password, private key, keyboard-interactive or the system key agent |
+| Terminal | Telnet | RFC 854 subset, with window reporting and the Enter/Backspace a device expects |
+| Terminal | Raw TCP | Plain socket, no negotiation |
+| Terminal | Serial | Port, baud rate, data bits, parity, stop bits and flow control |
+| Terminal | Local shell | PowerShell, Command Prompt, Git Bash, Unix login shell |
+| Terminal | WSL | Installed distributions, Windows only |
+| Files | SFTP | Browse, edit, upload and download |
+| Files | SCP | Fallback when the server has no SFTP subsystem |
+| Files | FTP / FTPS | Plain FTP, or TLS before the login |
+| Files | WebDAV | HTTP folders in the same workbench |
+| Files | ZMODEM | `rz` and `sz` inside a terminal |
+| Containers | Docker | Containers, images, logs, stats, exec, files |
+| Containers | Podman | Podman engine, same workspace |
+| Containers | nerdctl | containerd, with namespace selection |
+| Containers | WSLC | Windows containers, Windows only |
+| Cluster | Kubernetes | Contexts, resources, logs, exec, files, metrics, YAML |
+| Remote desktop | RDP | Windows only, through the system client |
 
-Package manager manifests for Winget, Scoop and Homebrew are attached to each release; they are not
-in the registries yet — [packaging/README.md](packaging/README.md) says what each submission takes.
+## Screenshots
 
-### Building it
+<p align="center">
+  <img src="docs/public/screenshots/workspace.png" alt="SSH terminal, file workbench and host monitor" width="46%" />
+  <img src="docs/public/screenshots/containers.png" alt="Containers, images and logs" width="46%" />
+</p>
+<p align="center">
+  <img src="docs/public/screenshots/terminal-schemes.png" alt="Terminal colour schemes" width="46%" />
+  <img src="docs/public/screenshots/host-key-prompt.png" alt="Host key confirmation on the first connection" width="46%" />
+</p>
 
-Rust (pinned by `rust-toolchain.toml`), Node 22 or newer, pnpm 11, and on Windows the MSVC toolchain
-with WebView2 (present on Windows 10 and later). On Linux, the WebKit and GTK development packages,
-which the CI workflow lists in full.
+## Install
+
+Installers are published on [GitHub Releases](https://github.com/7wdn/7shell/releases).
+
+- **Windows** — `.exe` (NSIS) or `.msi`. Per-user install, no administrator rights.
+- **macOS** — `.dmg` for Apple silicon or Intel.
+- **Linux** — `.AppImage`, `.deb` or `.rpm`.
+
+The builds are not code-signed and the macOS app is not notarized. Windows SmartScreen and macOS Gatekeeper will warn about an unsigned build, and macOS may refuse the first launch. Check the SHA-256 in the release notes against the file you downloaded. Winget, Scoop and Homebrew manifests are attached to each release but are not in the package registries yet.
+
+## Getting started
+
+1. Create the vault on first launch. The passphrase is not stored and cannot be recovered.
+2. Add a session: address, authentication method and, if needed, jump hosts.
+3. Confirm the host key on the first connection. A changed key stops the connection instead of asking again.
+4. Open a terminal. The file workbench below it and the host monitor beside it use the same session.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Desktop shell | Tauri 2 |
+| Core | Rust (russh, portable-pty) |
+| Interface | Vue 3, Pinia, Tailwind CSS |
+| Terminal | xterm.js |
+| Assistant | Anthropic Messages, OpenAI-compatible, local models |
+
+## Build from source
+
+- Rust, pinned by `rust-toolchain.toml`; `rustup` installs it on the first build.
+- Node 22.13 or newer, and pnpm 11.
+- Windows: the MSVC toolchain and WebView2.
+- Linux: the WebKitGTK and GTK development packages.
 
 ```bash
+git clone https://github.com/7wdn/7shell.git
+cd 7shell
 pnpm install
-pnpm dev:tauri        # the desktop application
-pnpm dev              # the interface alone, in a browser, without a backend
-pnpm check            # every gate: descriptors, translations, versions, origin, tests, Rust
-pnpm app:e2e          # drive the real window (Windows; the terminal cases need the lab)
+pnpm dev:tauri   # the desktop application
+pnpm check       # every gate
 ```
 
-## Security, plainly
+[CONTRIBUTING.md](CONTRIBUTING.md) has the full setup and test commands.
 
-- **Credentials are encrypted at rest.** The vault is a file on your machine, opened with a passphrase
-  that is never stored, and no wire type in the application can carry a password or a key.
-- **A host key is verified before anything is sent.** An unknown key is a question with the
-  fingerprint in it; a key that *changed* stops the connection rather than asking twice.
-- **The interface never sees a path.** Files are chosen through native dialogs in Rust and handed to
-  the interface as opaque tokens, so a compromised webview cannot read your disk.
-- **One request goes out on its own**: the update check, which asks GitHub for a signed manifest and
-  sends nothing about you. It has an off switch under Settings → About, and turning it off leaves
-  everything else working. Sync is opt-in: it happens only with the server you name.
-- **The security model is written down.** [docs/security-model.md](docs/security-model.md) names each
-  invariant with the test that holds it up, and states plainly which parts are not built yet.
+## Project layout
 
-### The update channel
-
-An installed build asks a fixed URL for a signed manifest, verifies the signature against the public
-key compiled into it, and installs what the manifest names — then restarts. The manifest is written by
-the release workflow from the files that release built, and the workflow refuses to write one for an
-archive nobody signed ([docs/release-process.md](docs/release-process.md)). Only a release somebody has
-**promoted** is offered this way: a candidate stays a download for people who go looking for it.
-
-It has **not delivered an update yet**: that needs two versions, and there has been one. Until then,
-treat "an update is available" as a feature to try rather than a channel to depend on.
-
-## Working on it
-
-| Command | What it does |
-|---|---|
-| `pnpm check` | Every gate in one command: descriptors, i18n, versions, provenance, guard tests, formatting, lint, types, unit tests, the docs build, and the Rust gates |
-| `pnpm app:e2e` | Drives the real window over the DevTools protocol (Windows) |
-| `pnpm screenshots` | Re-takes the pictures in this file and on the docs site, from the real window |
-| `pnpm docs:dev` | The documentation site, live |
-| `make lab-up`, `make lab-verify` | A real sshd in a container, and the live tests that need one |
-
-The crates are ranked, and a crate may only depend on lower ranks: `sevenshell-error` and
-`sevenshell-types` at the bottom, then `platform`, `vault`, `policy`, `ssh`, `session`, `sftp`, and
-`core` on top — with `src-tauri` as the only place that knows Tauri exists. A new crate has to be
-given a rank in `scripts/tests/architecture.test.mjs` before it can be added at all.
+```text
+crates/          Rust crates: SSH, SFTP, containers, Kubernetes, policy, AI, MCP
+src-tauri/       Tauri host: commands, windows, native dialogs
+apps/desktop/    Vue 3 interface
+descriptors/     Capability descriptors that generate wire types and manifests
+docs/            Documentation and screenshots
+```
 
 ## Documentation
 
-[docs/](docs/) holds the architecture, the security model, the descriptor pipeline, the interface
-conventions and the release process — and it is also the source of the documentation site built and
-published from `main`.
+- [Install](docs/guide/install.md)
+- [Getting started](docs/guide/getting-started.md)
+- [Security model](docs/security-model.md)
+- [Architecture](docs/architecture.md)
+- [FAQ](docs/guide/faq.md) and [troubleshooting](docs/guide/troubleshooting.md)
+
+## Security
+
+- Credentials are stored in a local vault encrypted with Argon2id and XChaCha20-Poly1305. The passphrase is never saved.
+- A host key is read over a probe that sends nothing, compared with the trusted keys on this device, and only then used for authentication. An unknown key is shown for confirmation; a changed key stops the connection.
+- The interface never receives a local path. Files are picked in native dialogs in Rust and passed on as opaque tokens.
+- Tool calls from the assistant and from MCP clients go through the risk rules and the audit log, with an approval prompt when a call needs one. Typing in a terminal is not gated.
+- The update check is the only request the application makes on its own, and it can be turned off. Sync only connects to the server you configure.
+
+The [security model](docs/security-model.md) lists each invariant and whether a test holds it.
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers the toolchain and the gates a change has to pass. Report vulnerabilities through [SECURITY.md](SECURITY.md), not a public issue.
 
 ## License
 

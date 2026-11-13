@@ -1,137 +1,179 @@
-# 7Shell
+<div align="center">
+  <img src="art/icon.png" alt="7Shell" width="128" height="128" />
+  <h1>7Shell</h1>
+  <p>开源的 SSH 运维客户端，支持 Windows、macOS 与 Linux<br>SSH、SFTP、Docker、Kubernetes、主机监控与批量执行</p>
+  <p><a href="https://github.com/7wdn/7shell">GitHub</a> &nbsp;|&nbsp; <a href="docs/">文档</a> &nbsp;|&nbsp; <a href="https://github.com/7wdn/7shell/releases">下载</a></p>
+</div>
 
-**面向 Windows、macOS 与 Linux 的开源 SSH 与运维控制台。**
+<div align="center">
+  <a href="README.md">English</a> &nbsp;|&nbsp; 简体中文
+  <br><br>
+  <a href="https://github.com/7wdn/7shell/releases"><img src="https://img.shields.io/github/v/release/7wdn/7shell?include_prereleases&amp;style=flat-square" alt="Release" /></a>
+  <a href="https://github.com/7wdn/7shell"><img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square" alt="Platforms" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License" /></a>
+</div>
 
-*[English](README.md)*
+## 目录
 
-![真实主机上的终端、它下方的文件工作台，以及旁边的主机监控](docs/public/screenshots/workspace.png)
+- [功能特性](#功能特性)
+- [支持的连接](#支持的连接)
+- [界面截图](#界面截图)
+- [下载安装](#下载安装)
+- [使用流程](#使用流程)
+- [技术栈](#技术栈)
+- [从源码构建](#从源码构建)
+- [项目结构](#项目结构)
+- [文档](#文档)
+- [安全设计](#安全设计)
+- [参与贡献](#参与贡献)
+- [开源协议](#开源协议)
 
-> **安装包说明：**目前构建没有代码签名，macOS 版本也没有公证，因此两个系统在运行安装包时都会给出警告。
+## 功能特性
 
-## 这是什么
+### 终端
 
-一个用来管理你所负责的机器的桌面客户端：把一个主机保存下来，通过 SSH 连上去，在终端里工作、
-或者用它旁边的文件工作台，看看主机正在做什么，把一条命令同时发给多台机器。凭据存在你本机的加密保险库里，
-而服务器的主机键会在**任何内容被发送之前**先校验。
+- **远程终端** — SSH（密码、私钥、键盘交互、系统密钥代理）、Telnet、原始 TCP、串口。
+- **本地终端** — PowerShell、命令提示符、Git Bash、Unix 登录 Shell，以及 Windows 上的 WSL。
+- **终端功能** — 多标签、搜索、链接、保活、断线重连、asciicast v2 会话录制。
+- **外观** — 内置 190 款终端配色；字体、字号、行高、字距、光标样式可调；关键词高亮自带 22 条规则（ERROR、WARN、IP 地址等），可以增删。
+- **跳板与转发** — 通过其他已保存会话连接；本地端口转发（`-L`）与 SOCKS5 代理（`-D`）。
 
-单个 Rust 二进制，外面套一层 Tauri 外壳。不需要 JRE、不需要 Python，也不需要内置浏览器运行时。
+### 文件
 
-## 目前已经能用的部分
+- **SFTP 工作台** — 双栏浏览，新建、改名、删除、直接编辑文本，上传和下载。
+- **传输队列** — 暂停、续传，关闭标签后继续；SSH 下整个目录可以打成一个归档。
+- **其他文件服务** — WebDAV、FTP/FTPS 目录开在同一个工作台里；没有 SFTP 的服务器降级到 SCP。
+- **ZMODEM** — 终端里的 `rz`、`sz`，使用系统的文件选择和保存对话框。
 
-这份清单和界面首屏上显示的是同一份，两者都由代码所依据的描述符生成：一项能力是"实现并测试它的那次改动"
-声明出来的，从来不会提前声明。
+### 容器与集群
 
-| 部分 | 状态 |
-|---|---|
-| 加密保险库：Argon2id + XChaCha20-Poly1305、原子写入、密码错误与文件被改动给出同一种解锁失败 | 可用，有测试 |
-| 会话与分组，保存在保险库里；导入导出，可选用口令加密 | 可用 |
-| 主机键校验：信任新键、遇到变更的键硬停、查看并撤销已信任的键 | 可用，在真实 sshd 上验证过 |
-| 认证：密码、私钥（支持口令短语）、键盘交互，以及系统密钥代理 | 可用，在真实 sshd 上验证过 |
-| 终端：多标签、随窗口调整尺寸、保活、断线重连、搜索、链接，以及每个会话自己的配色 | 可用 |
-| 远程桌面（RDP）：把 Windows 桌面交给系统远程桌面客户端打开，剪贴板、本地驱动器、分辨率与全屏由会话设置决定 | 仅 Windows；会话由系统客户端承载 |
-| 跳板机：经由其他已保存会话的链路，每一跳都按目标主机一样校验 | 可用，在真实 sshd 上验证过 |
-| 端口转发：本机端口通到远端（`-L`），以及本机的 SOCKS5 端口（`-D`） | 可用，在真实 sshd 上验证过 |
-| 文件工作台：两侧目录并排、新建、改名、删除、编辑文本、上传、下载 | 可用，在真实 sshd 上验证过 |
-| WebDAV 目录：把 HTTP 服务器上的目录开进同一个文件工作台，有自己的传输与文本编辑 | 可用，在进程内 WebDAV 服务器上验证过 |
-| FTP / FTPS 目录：保存的 FTP 账号，或登录前先建立 TLS 的显式 FTPS，在同一个文件工作台里 | 可用，在进程内 FTP 服务器上验证过 |
-| SCP 降级：没有 SFTP 子系统的服务器，用 shell 列表 + SCP 传输浏览 | 可用，在关闭 SFTP 的服务器上跑过 live |
-| ZMODEM：终端里的 `rz`/`sz`，使用系统文件选择与保存对话框 | 可用，有协议测试；实验场没有 lrzsz，未跑真实 `rz`/`sz` |
-| 容器：Docker、Podman、nerdctl、WSLC 的容器、镜像、日志、统计、exec 终端、文件浏览与镜像归档导入，可走本机或已保存的 SSH 会话 | 可用；Docker 在本机与 SSH 实验场都跑过 live（含文件与归档），另外三种只有参数与解析 fixture |
-| Kubernetes：kubeconfig 上下文、资源列表与 watch、Pod 日志、exec 终端、Pod 文件浏览、metrics-server 用量、YAML 编辑、CRD 与经 SSH 会话访问 API server | 可用；在真实 k3s 集群上跑过直连与经 SSH 实验场的 live |
-| 传输：排队并列成清单、可暂停与续传、整棵目录可打包成一个归档、在发起它的标签页关闭后继续 | 可用，在真实 sshd 与五万条目录上验证过；打包归档仅限 SSH |
-| 主机监控：负载、内存、磁盘、进程与连接，全部走你已有的那条连接采样 | 可用 |
-| 批量执行：一条命令、多台主机、逐主机结果，运行前给出风险判定 | 可用，在真实 sshd 上验证过 |
-| 命令库：带 `#1`–`#5` 槽位的已保存命令、历史、补全，可发给单个终端或全部终端 | 可用 |
-| 会话录制：把会话输出录成 asciicast v2 文件 | 可用，在真实 sshd 上验证过 |
-| 同步：会话与命令同步到你指定的 WebDAV 服务器，或存成 GitHub / Gitee / GitLab 上的片段 | 可用，在真实服务器上验证过 |
-| 更新通道：签名清单、安装后重启进新版本、可关闭的开机检查 | 可用；其中尚未被真正跑通的部分见下 |
+- **容器** — Docker、Podman、nerdctl、WSLC：容器、镜像、日志、统计、exec 终端、文件和镜像归档导入；可以走本机，也可以走 SSH 会话。
+- **Kubernetes** — kubeconfig 上下文、资源列表与 watch、Pod 日志、exec、Pod 文件、指标和 YAML 编辑；直连或经 SSH 会话。
 
-**尚未实现：** 远程转发（三种转发里的第三种——直接拒绝，而不是做一半）、代理转发（已实现，
-但在真实远端被证明用得上之前刻意不声明）、Pageant，以及**经由** SOCKS5 或 HTTP 代理连接主机。
-经 SSH 隧道的 Kubernetes 连接支持 REST、watch、指标、Pod 日志与 exec。容器与 Pod 文件传输已经流式化，
-但单个归档任务还没有进度条/取消，镜像归档导入也没有进度。Kubernetes Secret 只读。远程桌面是本版本的
-Windows-only 功能：会话交给系统远程桌面客户端，macOS/Linux 不提供入口。
-WebDAV 或 FTP 目录不能整目录打包下载，只能逐个文件下载。FTP 服务器也没有服务端复制，
-所以文件菜单只提供移动而不提供复制。命令行与 agent 接口、插件平台属于 1.x：
-架构为它们留了位置，但目前没有任何代码。
+### 运维
 
-**验证说明：** FTP/FTPS 与 ZMODEM 由进程内/协议测试覆盖，但本机没有跑过真实 FTPS 证书链和真实
-`rz`/`sz`：Docker registry 拒绝 FTP 镜像，SSH 实验场也没有 `lrzsz`。容器已在本机 Docker Desktop
-和实验场的 `docker:dind` 上跑过 live；Podman、nerdctl、WSLC 在这台机器上没有真实运行时，只有参数
-与解析 fixture。Kubernetes 在单节点 k3s（`deploy/lab/kubernetes`）上跑过 live，包含直连与经 SSH
-实验场两条路径；YAML 编辑与 CRD 钻取由单元/组件测试覆盖，没有在真实集群上写回。容器的文件浏览与镜像归档在 Docker Desktop 和 SSH 实验场上跑过 live；归档覆盖 gzip，40 MiB 目录可双向流式
-传输。Pod 文件浏览在 k3s 实验场上跑过 live，并有真实窗口 e2e。
+- **主机监控** — 负载、CPU、内存、交换区、磁盘、进程、网络和连接，走已经打开的连接采样，服务器端不用安装任何东西。
+- **批量执行** — 一条命令发给多台主机，每台一份结果，运行前给出风险判定。
+- **命令库** — 带 `#1`–`#5` 槽位的已保存命令、历史与补全，可以发给一个终端，也可以发给全部终端。
+- **界面** — 跟随系统、深色或浅色主题；支持中文和英文。
+- **同步** — 会话和命令同步到 WebDAV 服务器，或存成 GitHub、Gitee、GitLab 上的片段。
+- **RDP** — Windows 桌面，交给系统远程桌面客户端打开。
 
-## 安装
+### 助手与 MCP
 
-发布版本来自 [GitHub Releases](https://github.com/7wdn/7shell/releases)：
+- **助手** — 支持 Anthropic、OpenAI 兼容接口和本地模型。
+- **MCP 服务端** — 外部 MCP 客户端可以在已保存的连接上调用同一套工具，凭据不出应用。
+- **审批与审计** — 工具调用经过风险规则，需要时弹出审批，并写入审计日志。
 
-| 平台 | 文件 |
-|---|---|
-| Windows | `.exe`（NSIS）与 `.msi`——按用户安装，不需要管理员权限 |
-| macOS | Apple 芯片与 Intel 各一个 `.dmg` |
-| Linux | `.AppImage`、`.deb`、`.rpm` |
+## 支持的连接
 
-因为是预发布版本，请预期一次警告：Windows SmartScreen 和 macOS Gatekeeper 都会拦住没人签名的软件。
-Linux 没有对应的关卡，但这不等于它经过验证。
+| 类别 | 连接 | 说明 |
+| --- | --- | --- |
+| 终端 | SSH | 密码、私钥、键盘交互或系统密钥代理 |
+| 终端 | Telnet | RFC 854 子集，包含嵌入式设备需要的 Enter 与 Backspace |
+| 终端 | 原始 TCP | 纯 socket，逐字节收发 |
+| 终端 | 串口 | 端口、波特率、数据位、校验位、停止位与流控 |
+| 终端 | 本地 Shell | PowerShell、命令提示符、Git Bash、Unix 登录 Shell |
+| 终端 | WSL | 已安装的发行版，仅 Windows |
+| 文件 | SFTP | 浏览、编辑、上传和下载 |
+| 文件 | SCP | 服务器没有 SFTP 子系统时降级使用 |
+| 文件 | FTP / FTPS | 普通 FTP，或登录前建立 TLS |
+| 文件 | WebDAV | HTTP 目录，在同一个工作台里 |
+| 文件 | ZMODEM | 终端里的 `rz` 和 `sz` |
+| 容器 | Docker | 容器、镜像、日志、统计、exec、文件 |
+| 容器 | Podman | Podman 引擎，同样的工作区 |
+| 容器 | nerdctl | containerd，可选 namespace |
+| 容器 | WSLC | Windows 容器，仅 Windows |
+| 集群 | Kubernetes | 上下文、资源、日志、exec、文件、指标、YAML |
+| 远程桌面 | RDP | 仅 Windows，交给系统客户端 |
 
-Winget、Scoop 与 Homebrew 的清单随每个发布版本一起附上；它们还没有进入各自的仓库——
-[packaging/README.md](packaging/README.md) 说明了各自的提交需要什么。
+## 界面截图
 
-### 从源码构建
+<p align="center">
+  <img src="docs/public/screenshots/workspace.png" alt="SSH 终端、文件工作台和主机监控" width="46%" />
+  <img src="docs/public/screenshots/containers.png" alt="容器、镜像和日志" width="46%" />
+</p>
+<p align="center">
+  <img src="docs/public/screenshots/terminal-schemes.png" alt="终端配色方案" width="46%" />
+  <img src="docs/public/screenshots/host-key-prompt.png" alt="首次连接时确认主机键" width="46%" />
+</p>
 
-需要 Rust（版本由 `rust-toolchain.toml` 固定）、Node 22 或更新、pnpm 11；Windows 上还需要 MSVC 工具链
-与 WebView2（Windows 10 及以后自带）。Linux 上需要 WebKit 与 GTK 的开发包，CI 工作流里列了完整清单。
+## 下载安装
+
+安装包发布在 [GitHub Releases](https://github.com/7wdn/7shell/releases)。
+
+- **Windows** — `.exe`（NSIS）或 `.msi`，按用户安装，不需要管理员权限。
+- **macOS** — Apple 芯片或 Intel 的 `.dmg`。
+- **Linux** — `.AppImage`、`.deb` 或 `.rpm`。
+
+安装包没有代码签名，macOS 版本也没有公证。Windows SmartScreen 和 macOS Gatekeeper 会提示未签名的应用，macOS 还可能拒绝第一次启动。运行前请核对发布说明里的 SHA-256。每个版本都附带 Winget、Scoop 和 Homebrew 清单，但目前还没有提交进各自的仓库。
+
+## 使用流程
+
+1. 首次启动时创建保险库。口令不会被保存，丢失后无法找回。
+2. 新建连接，填写地址、认证方式，需要时加上跳板机。
+3. 第一次连接时确认主机键。主机键发生变化会直接中断连接，不会再次询问。
+4. 打开终端。下方的文件工作台和右侧的主机监控使用同一个会话。
+
+## 技术栈
+
+| 层级 | 技术 |
+| --- | --- |
+| 桌面外壳 | Tauri 2 |
+| 内核 | Rust（russh、portable-pty） |
+| 界面 | Vue 3、Pinia、Tailwind CSS |
+| 终端 | xterm.js |
+| 助手 | Anthropic Messages、OpenAI 兼容、本地模型 |
+
+## 从源码构建
+
+- Rust，版本由 `rust-toolchain.toml` 固定，`rustup` 会在第一次构建时安装。
+- Node 22.13 或更新，以及 pnpm 11。
+- Windows：MSVC 工具链和 WebView2。
+- Linux：WebKitGTK 与 GTK 开发包。
 
 ```bash
+git clone https://github.com/7wdn/7shell.git
+cd 7shell
 pnpm install
-pnpm dev:tauri        # 桌面应用
-pnpm dev              # 只跑界面，在浏览器里，没有后端
-pnpm check            # 全部门禁：描述符、文案、版本、溯源、测试、Rust
-pnpm app:e2e          # 驱动真实窗口（Windows；终端相关的用例需要实验场）
+pnpm dev:tauri   # 桌面应用
+pnpm check       # 全部门禁
 ```
 
-## 关于安全，直说
+完整的开发环境和测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-- **凭据在磁盘上是加密的。** 保险库就是你机器上的一个文件，用从不被保存的口令打开；应用自己的数据结构与
-  线上类型里都没有能放密码或密钥的字段。
-- **主机键先校验、后认证。** 未知的键是一个带着指纹的问题；**发生变化**的键会直接中断连接，而不是再问一次。
-- **界面永远接触不到本地路径。** 文件由 Rust 侧的原生对话框选择，交给界面的只是一个不透明令牌，
-  因此即使 webview 被攻破也读不到你的磁盘。
-- **只有一个请求会自己发出去**：更新检查，它向 GitHub 要一份签名清单，不发送任何关于你的信息。
-  它在"设置 → 关于"里有开关，关掉之后其他一切照常。同步是主动开启的：只与你指定的服务器通信。
-- **安全模型是写下来的。** [docs/security-model.md](docs/security-model.md) 逐条列出不变量与守住它的
-  测试，并如实标注尚未实现的部分。
+## 项目结构
 
-### 更新通道
-
-已安装的版本会向一个固定地址索取签名清单，用编译进程序里的公钥验证签名，安装清单所指的版本，然后重启。
-清单由发布工作流从该次发布真正构建出来的文件生成；对于没有任何人签过名的归档，工作流拒绝写清单
-（见 [docs/release-process.md](docs/release-process.md)）。只有被**提升（promote）**过的发布才会这样提供给已安装的版本；
-候选版本只留给主动去找它的人。
-
-它**还没有真正送出过一次更新**：那需要两个版本，而目前只有一个。在那一刻到来之前，
-请把"有新版本可用"当成一个可以试的功能，而不是一条可以依赖的通道。
-
-## 参与开发
-
-| 命令 | 作用 |
-|---|---|
-| `pnpm check` | 一条命令跑完所有门禁：描述符、i18n、版本、溯源、守卫测试、格式、lint、类型、单测、文档站构建，以及 Rust 侧的检查 |
-| `pnpm app:e2e` | 通过 DevTools 协议驱动真实窗口（Windows） |
-| `pnpm screenshots` | 从真实窗口重新拍本文件和文档站上的截图 |
-| `pnpm docs:dev` | 本地起文档站 |
-| `make lab-up`、`make lab-verify` | 容器里的真实 sshd，以及需要它的 live 测试 |
-
-crate 是有秩的，只能依赖秩更低的 crate：最下面是 `sevenshell-error` 与 `sevenshell-types`，然后是
-`platform`、`vault`、`policy`、`ssh`、`session`、`sftp`，最上面是 `core`——只有 `src-tauri` 知道 Tauri 存在。
-新增 crate 必须先在 `scripts/tests/architecture.test.mjs` 里排位，否则根本加不进来。
+```text
+crates/          Rust 内核：SSH、SFTP、容器、Kubernetes、策略、AI、MCP
+src-tauri/       Tauri 宿主：命令注册、窗口、原生对话框
+apps/desktop/    Vue 3 界面
+descriptors/     能力描述符，生成通信类型与 manifest
+docs/            文档与截图
+```
 
 ## 文档
 
-[docs/](docs/) 里是架构、安全模型、描述符管线、界面约定与发布流程——它同时也是文档站的源目录，
-文档站由 `main` 构建并发布。
+- [安装](docs/guide/install.md)
+- [快速开始](docs/guide/getting-started.md)
+- [安全模型](docs/security-model.md)
+- [架构](docs/architecture.md)
+- [常见问题](docs/guide/faq.md)与[故障排查](docs/guide/troubleshooting.md)
 
-## 许可
+## 安全设计
+
+- 凭据保存在本机保险库里，用 Argon2id 和 XChaCha20-Poly1305 加密，口令不保存。
+- 先用不发送任何内容的探测读取主机键，与本机已信任的键比对，通过后才用于认证。未知的键需要确认，发生变化的键会中断连接。
+- 界面拿不到本地路径。文件在 Rust 侧的原生对话框里选择，交给界面的只是不透明令牌。
+- 助手和 MCP 客户端的工具调用要经过风险规则和审计日志，需要时弹出审批。终端里的输入不拦截。
+- 更新检查是应用唯一会自己发出的请求，可以关闭。同步只连接你配置的服务器。
+
+每条安全不变量和对应的测试见[安全模型](docs/security-model.md)。
+
+## 参与贡献
+
+欢迎提交 Issue 和 Pull Request。[CONTRIBUTING.md](CONTRIBUTING.md) 里是开发环境、测试命令和改动要遵守的规则。漏洞请按 [SECURITY.md](SECURITY.md) 报告，不要开公开的 Issue。
+
+## 开源协议
 
 Apache-2.0，见 [LICENSE](LICENSE)。
