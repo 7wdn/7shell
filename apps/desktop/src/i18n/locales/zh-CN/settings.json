@@ -87,7 +87,76 @@
     "terminal": {
       "light": "始终浅色",
       "dark": "始终深色",
-      "follow": "跟随界面"
+      "follow": "跟随界面",
+      "weight100": "纤细 (100)",
+      "weight200": "特细 (200)",
+      "weight300": "细体 (300)",
+      "weight400": "常规 (400)",
+      "weight500": "中等 (500)",
+      "weight600": "半粗 (600)",
+      "weight700": "粗体 (700)",
+      "weight800": "特粗 (800)",
+      "weight900": "黑体 (900)",
+      "cursorBlock": "块状",
+      "cursorBar": "竖线",
+      "cursorUnderline": "下划线",
+      "inactiveOutline": "空心",
+      "inactiveNone": "隐藏"
+    },
+    "schemes": {
+      "followPalette": "跟随界面色板",
+      "source": "终端配色来源",
+      "sourceHost": "界面色板",
+      "sourceHostHint": "终端沿用窗口当前的配色。",
+      "sourceCustom": "配色方案",
+      "sourceCustomHint": "终端使用一套独立的公开配色方案。",
+      "darkSlot": "深色终端的方案",
+      "lightSlot": "浅色终端的方案",
+      "description": {
+        "dark": "终端处于深色时使用的方案。",
+        "light": "终端处于浅色时使用的方案。"
+      },
+      "search": "搜索配色方案",
+      "tone": "方案明暗",
+      "toneAll": "全部",
+      "toneDark": "深色",
+      "toneLight": "浅色",
+      "empty": "没有匹配的方案",
+      "background": "方案替换哪些内容",
+      "backgroundScheme": "整套外观",
+      "backgroundHost": "仅 ANSI 颜色",
+      "backgroundHint": "整套外观会连同背景与文字一起替换；仅 ANSI 颜色则保留窗口配色，只改变 ls、git 和编辑器输出用到的十六色。",
+      "close": "关闭",
+      "saved": "已保存的配色",
+      "savePlaceholder": "给这套配色起个名字…",
+      "save": "保存当前",
+      "use": "使用",
+      "worn": "使用中",
+      "presets": {
+        "interface": "界面色板",
+        "highContrast": "高对比"
+      },
+      "profileRemove": {
+        "title": "移除已保存的配色",
+        "action": "移除已保存的配色",
+        "message": "移除“{name}”？终端仍保持当前颜色，只删除这条保存记录。",
+        "confirm": "移除已保存的配色"
+      },
+      "imported": "已导入方案（{count}/{limit}）",
+      "import": {
+        "title": "导入配色方案",
+        "hint": "粘贴 Xresources 配置、Windows Terminal 的 JSON 方案、iTerm2 的 .itermcolors 文件，或任何包含十六个颜色的 JSON 方案。",
+        "placeholder": "粘贴配色方案…",
+        "action": "导入",
+        "empty": "这段内容不是包含十六个颜色的配色方案。",
+        "none": "还没有导入方案。"
+      },
+      "remove": {
+        "title": "移除方案",
+        "action": "移除方案",
+        "message": "移除“{name}”？正在使用它的终端会回退到界面色板。",
+        "confirm": "移除方案"
+      }
     },
     "files": {
       "tree": "目录树 + 列表",
@@ -310,13 +379,73 @@
       "terminalPreview": {
         "title": "实时预览",
         "summary": "终端设置的实时预览。",
-        "help": "使用下方所选字体、字号与配色实时预览终端。"
-},
+        "help": "随下方设置实时预览终端的字体、间距与配色。"
+      },
       "terminalFontSize": {
         "title": "字号",
         "summary": "终端把文字画多大，单位是像素。",
         "help": "终端字号的像素值；已打开的终端会立即重绘并重新计算列数。"
-},
+      },
+      "terminalFontWeight": {
+        "title": "文字粗细",
+        "summary": "终端正文的字重。",
+        "help": "终端自身文字使用的字重；粗体使用单独的粗细设置。"
+      },
+      "terminalBoldFontWeight": {
+        "title": "粗体粗细",
+        "summary": "粗体文字的粗细。",
+        "help": "有些配色方案里粗体与常规几乎一样；加粗字重或使用亮色 ANSI，才能让强调看得出来。"
+      },
+      "terminalLineHeight": {
+        "title": "行高",
+        "summary": "行间距，按字号的倍数计算。",
+        "help": "数值越大每行越宽松，越小则同一面板能放下更多行；改动后终端会重新排版。"
+      },
+      "terminalLetterSpacing": {
+        "title": "字间距",
+        "summary": "字符之间额外的像素数。",
+        "help": "0 表示沿用字体本身的间距；负值收紧，正值拉开。改动后终端会重新测量列数。"
+      },
+      "terminalPaddingX": {
+        "title": "水平内边距",
+        "summary": "文字与面板左右边缘的距离。",
+        "help": "让整行输出不贴住边框；改动后终端会重新测量列数。"
+      },
+      "terminalPaddingY": {
+        "title": "垂直内边距",
+        "summary": "文字上下的留白。",
+        "help": "一段输出与面板边缘之间的呼吸空间。"
+      },
+      "terminalCursorStyle": {
+        "title": "光标形状",
+        "summary": "标记输入位置的光标形状。",
+        "help": "可选块状、竖线或下划线。这里设置终端获得键盘时的形状；失焦时的形状另有设置。"
+      },
+      "terminalCursorBlink": {
+        "title": "光标闪烁",
+        "summary": "光标是否闪烁。",
+        "help": "录制屏幕或投影时，不闪的光标更容易跟住；视线离开再回来时，闪烁的光标更容易找到。"
+      },
+      "terminalCursorInactive": {
+        "title": "失焦光标",
+        "summary": "窗口没有键盘焦点时光标的样子。",
+        "help": "空心只保留位置标记，不假装正在接受输入；隐藏则完全不画。"
+      },
+      "terminalBoldBright": {
+        "title": "粗体使用亮色",
+        "summary": "粗体文字使用 ANSI 调色板的亮色部分。",
+        "help": "默认开启。关闭后粗体与常规只剩字重差别，适合粗体与常规颜色几乎相同的配色方案。"
+      },
+      "terminalMinContrast": {
+        "title": "最小对比度",
+        "summary": "终端在调整文字颜色前接受的最低对比度。",
+        "help": "1 表示完全按配色方案绘制；数值越高越偏向可读性，4.5 是常用的阅读基线。"
+      },
+      "terminalSchemes": {
+        "title": "终端配色方案",
+        "summary": "为终端选择一套公开方案，或沿用界面的颜色。",
+        "help": "方案自带背景、文字和十六个 ANSI 颜色，深色与浅色终端各有一套。配色来源保留为界面色板时，终端始终与窗口一致。"
+      },
       "sessionLayout": {
         "title": "打开会话",
         "summary": "只开终端，还是连同下方的文件面板一起。",

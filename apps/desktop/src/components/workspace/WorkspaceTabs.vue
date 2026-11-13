@@ -54,6 +54,7 @@ import KubernetesPane from "@/components/k8s/KubernetesPane.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
+import TerminalSchemeMenu from "@/components/workspace/TerminalSchemeMenu.vue";
 import { protocolSupports } from "@/types/generated/protocols";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
@@ -646,6 +647,7 @@ function tabStyle(): Record<string, string> | undefined {
           <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
             {{ sessionEndpoint(tab.session, t) }}
           </span>
+          <TerminalSchemeMenu />
           <button
             v-if="protocolSupports(tab.session.protocol, 'sftp')"
             type="button"

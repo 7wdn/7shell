@@ -889,6 +889,307 @@ pub fn normalize_terminal_font_size(size: u8) -> u8 {
     size.clamp(TERMINAL_FONT_SIZE_MIN, TERMINAL_FONT_SIZE_MAX)
 }
 
+/// How the terminal draws the cursor that marks where typing goes.
+///
+/// Three shapes rather than a free string because they are the three a terminal actually draws, and
+/// the setting is chosen by looking at the preview: a fourth word would be a word the renderer has
+/// nothing to do with.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalCursorStyle {
+    /// A solid rectangle over the cell. What a terminal has always drawn, so it is the default.
+    #[default]
+    Block,
+    /// A thin vertical line at the cell's left edge.
+    Bar,
+    /// A line under the cell.
+    Underline,
+}
+
+impl TerminalCursorStyle {
+    pub const ALL: &'static [TerminalCursorStyle] = &[
+        TerminalCursorStyle::Block,
+        TerminalCursorStyle::Bar,
+        TerminalCursorStyle::Underline,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+            Self::Bar => "bar",
+            Self::Underline => "underline",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|style| style.as_str() == id)
+    }
+}
+
+/// How the terminal draws the cursor while the window is not focused.
+///
+/// The same shapes as the focused cursor plus two answers of its own: outlined, which keeps the cell
+/// marked without pretending it is taking input, and hidden. A cursor that stayed solid in a window
+/// somebody is not typing into is a cursor that lies about where the keyboard is going.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalCursorInactiveStyle {
+    /// The shape of the cursor as an outline: what this build has always drawn.
+    #[default]
+    Outline,
+    Block,
+    Bar,
+    Underline,
+    None,
+}
+
+impl TerminalCursorInactiveStyle {
+    pub const ALL: &'static [TerminalCursorInactiveStyle] = &[
+        TerminalCursorInactiveStyle::Outline,
+        TerminalCursorInactiveStyle::Block,
+        TerminalCursorInactiveStyle::Bar,
+        TerminalCursorInactiveStyle::Underline,
+        TerminalCursorInactiveStyle::None,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Outline => "outline",
+            Self::Block => "block",
+            Self::Bar => "bar",
+            Self::Underline => "underline",
+            Self::None => "none",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|style| style.as_str() == id)
+    }
+}
+
+/// Where the terminal's colours come from.
+///
+/// Two answers rather than a per-colour override: either the pane is dressed by the interface
+/// palette like every other surface, or the person has chosen a published scheme for each half of
+/// the theme and the pane wears that instead. A scheme is stored by id, and an id this build does
+/// not ship reads as the first answer — the palette is always there to fall back to.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalSchemeSource {
+    /// The interface palette, which is what this build has always done.
+    #[default]
+    Host,
+    /// The schemes named by [`AppSettings::terminal_scheme_dark`] and `_light`.
+    Custom,
+}
+
+impl TerminalSchemeSource {
+    pub const ALL: &'static [TerminalSchemeSource] = &[TerminalSchemeSource::Host, TerminalSchemeSource::Custom];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Host => "host",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|source| source.as_str() == id)
+    }
+}
+
+/// What a chosen scheme replaces in the terminal.
+///
+/// `Scheme` is the whole look — its background, its text and its sixteen colours. `Host` keeps the
+/// pane's background and text from the interface palette and takes only the sixteen colours from
+/// the scheme, which is the answer for somebody who wants `ls` and `git diff` to follow their
+/// scheme while the pane still blends into the window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TerminalSchemeBackground {
+    /// The scheme's own background and foreground, so the pane looks like the scheme.
+    #[default]
+    Scheme,
+    /// The interface palette's background and foreground, with the scheme's ANSI colours only.
+    Host,
+}
+
+impl TerminalSchemeBackground {
+    pub const ALL: &'static [TerminalSchemeBackground] =
+        &[TerminalSchemeBackground::Scheme, TerminalSchemeBackground::Host];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Scheme => "scheme",
+            Self::Host => "host",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|background| background.as_str() == id)
+    }
+}
+
+/// A colour scheme somebody brought with them, in the form the catalogue uses.
+///
+/// The same shape as a shipped scheme: four surfaces and sixteen colours. The id is assigned when
+/// the scheme is imported and is what the two slots name, so a scheme keeps its identity even when
+/// its name is changed later.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalCustomScheme {
+    pub id: String,
+    pub name: String,
+    pub foreground: String,
+    pub background: String,
+    pub cursor: String,
+    /// ANSI SGR 0–15, each `#rrggbb`.
+    pub colors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_background: Option<String>,
+}
+
+impl TerminalCustomScheme {
+    /// Whether every colour is one this build can draw and every name one it can show.
+    ///
+    /// A scheme that is half a scheme is dropped whole rather than padded: the padded half would
+    /// be this build guessing what somebody's background is, and the wrong guess is a terminal
+    /// nobody can read.
+    pub fn is_drawable(&self) -> bool {
+        !self.id.trim().is_empty()
+            && !self.name.trim().is_empty()
+            && is_hex_colour(&self.foreground)
+            && is_hex_colour(&self.background)
+            && is_hex_colour(&self.cursor)
+            && self.colors.len() == 16
+            && self.colors.iter().all(|colour| is_hex_colour(colour))
+            && self.selection_background.as_deref().is_none_or(is_hex_colour)
+    }
+}
+
+/// How many imported schemes this build keeps.
+///
+/// A bound rather than a free list because the settings file is read whole on every start and a
+/// file somebody dropped a thousand schemes into is a file that makes the window slower to open.
+pub const TERMINAL_CUSTOM_SCHEME_LIMIT: usize = 60;
+
+/// A named answer to "which terminal colours", kept so it can be worn again in one click.
+///
+/// A profile is the scheme side of the terminal's appearance and nothing else: which of the two
+/// terminals it is dressed for, where its colours come from, and the two slots. Typography stays
+/// where it is because a scheme says what a terminal looks like, not how large its text is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSchemeProfile {
+    pub id: String,
+    pub name: String,
+    pub terminal_theme: ThemeMode,
+    pub scheme_source: TerminalSchemeSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheme_dark: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheme_light: Option<String>,
+    pub scheme_background: TerminalSchemeBackground,
+}
+
+/// How many of somebody's own scheme choices this build keeps.
+pub const TERMINAL_SCHEME_PROFILE_LIMIT: usize = 30;
+
+/// The ends of the terminal's typography and cursor settings, and the values a fresh install has.
+///
+/// Bounded rather than free for the reason the font size is: each is chosen by looking at the preview
+/// beside it, and a file naming something outside the range is read at the nearest end rather than
+/// drawn as a terminal nobody can use. The two floating-point ones are kept as decimals rather than
+/// scaled integers because they are read back into `xterm` as numbers, and a settings file that says
+/// `1.15` is a settings file somebody can understand.
+pub const TERMINAL_FONT_WEIGHT_MIN: u16 = 100;
+pub const TERMINAL_FONT_WEIGHT_MAX: u16 = 900;
+pub const TERMINAL_LINE_HEIGHT_MIN: f64 = 1.0;
+pub const TERMINAL_LINE_HEIGHT_MAX: f64 = 3.0;
+pub const TERMINAL_LETTER_SPACING_MIN: i16 = -5;
+pub const TERMINAL_LETTER_SPACING_MAX: i16 = 10;
+pub const TERMINAL_PADDING_MIN: u16 = 0;
+pub const TERMINAL_PADDING_MAX: u16 = 32;
+pub const TERMINAL_MIN_CONTRAST_MIN: f64 = 1.0;
+pub const TERMINAL_MIN_CONTRAST_MAX: f64 = 21.0;
+
+pub fn terminal_font_weight_default() -> u16 {
+    400
+}
+
+pub fn terminal_bold_font_weight_default() -> u16 {
+    700
+}
+
+pub fn terminal_line_height_default() -> f64 {
+    1.0
+}
+
+pub fn terminal_letter_spacing_default() -> i16 {
+    0
+}
+
+/// The padding this build drew a terminal with before either side could be chosen.
+pub fn terminal_padding_x_default() -> u16 {
+    12
+}
+
+pub fn terminal_padding_y_default() -> u16 {
+    10
+}
+
+/// Whether the cursor blinks, which it does until somebody says otherwise.
+pub fn terminal_cursor_blink_on() -> bool {
+    true
+}
+
+/// Whether bold text uses the bright half of the ANSI palette, which it does by default.
+pub fn terminal_bold_bright_on() -> bool {
+    true
+}
+
+/// The smallest contrast ratio the terminal will accept, which is "do not adjust anything".
+pub fn terminal_min_contrast_default() -> f64 {
+    1.0
+}
+
+/// Keeps a font weight on the hundreds the interface offers, and inside 100–900.
+///
+/// Rounding rather than refusing: a hand-edited 450 is a weight this renderer can draw, and the
+/// nearest offered weight is the one the menu can show. Outside the range reads as the nearest end.
+pub fn normalize_terminal_font_weight(weight: u16) -> u16 {
+    let rounded = ((f64::from(weight) / 100.0).round() as u16) * 100;
+    rounded.clamp(TERMINAL_FONT_WEIGHT_MIN, TERMINAL_FONT_WEIGHT_MAX)
+}
+
+pub fn normalize_terminal_bold_font_weight(weight: u16) -> u16 {
+    normalize_terminal_font_weight(weight)
+}
+
+/// Keeps a line height inside the range its slider offers, to two decimal places.
+pub fn normalize_terminal_line_height(height: f64) -> f64 {
+    if !height.is_finite() {
+        return terminal_line_height_default();
+    }
+    (height.clamp(TERMINAL_LINE_HEIGHT_MIN, TERMINAL_LINE_HEIGHT_MAX) * 100.0).round() / 100.0
+}
+
+pub fn normalize_terminal_letter_spacing(spacing: i16) -> i16 {
+    spacing.clamp(TERMINAL_LETTER_SPACING_MIN, TERMINAL_LETTER_SPACING_MAX)
+}
+
+pub fn normalize_terminal_padding(padding: u16) -> u16 {
+    padding.clamp(TERMINAL_PADDING_MIN, TERMINAL_PADDING_MAX)
+}
+
+/// Keeps a contrast ratio inside the range its slider offers, to one decimal place.
+pub fn normalize_terminal_min_contrast(ratio: f64) -> f64 {
+    if !ratio.is_finite() {
+        return terminal_min_contrast_default();
+    }
+    (ratio.clamp(TERMINAL_MIN_CONTRAST_MIN, TERMINAL_MIN_CONTRAST_MAX) * 10.0).round() / 10.0
+}
+
 /// The interface scales this build offers, in percent of its own size.
 ///
 /// A closed list rather than a free number, because the setting is a choice made by looking at the
@@ -902,7 +1203,7 @@ pub const UI_SCALE_PERCENTS: &[u32] = &[75, 90, 100, 110, 125, 150, 175, 200];
 /// Both fields are optional in effect: absent means "not chosen yet", which is different
 /// from "chosen to be the default". The interface follows the system until someone says
 /// otherwise, so a fresh install needs no first-run dialog.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -1086,6 +1387,85 @@ pub struct AppSettings {
     /// shell prompt rarely wants it in the file listing beside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_font: Option<String>,
+    /// How heavy the terminal's text is, on the 100–900 scale.
+    ///
+    /// Absent in a file written before the terminal had a typography of its own, which reads as the
+    /// weight this build has always drawn — regular.
+    #[serde(default = "terminal_font_weight_default")]
+    pub terminal_font_weight: u16,
+    /// How heavy bold text is. Separate from the regular weight because the two answer different
+    /// questions: one is how the shell reads, the other is how it marks something as important.
+    #[serde(default = "terminal_bold_font_weight_default")]
+    pub terminal_bold_font_weight: u16,
+    /// The distance between lines, as a multiple of the font's own height.
+    ///
+    /// Stored as the multiplier `xterm` reads rather than as a number of pixels, because the same
+    /// multiplier is what keeps the spacing right when the font size changes.
+    #[serde(default = "terminal_line_height_default")]
+    pub terminal_line_height: f64,
+    /// Extra pixels between characters. Negative pulls them together; zero leaves the font alone.
+    #[serde(default = "terminal_letter_spacing_default")]
+    pub terminal_letter_spacing: i16,
+    /// The room between the terminal's text and the panel's edges, in pixels.
+    ///
+    /// Two numbers rather than one because the two directions are read differently: horizontal room
+    /// keeps a full-width line off the frame, vertical room is the breathing space above and below a
+    /// block of output.
+    #[serde(default = "terminal_padding_x_default")]
+    pub terminal_padding_x: u16,
+    #[serde(default = "terminal_padding_y_default")]
+    pub terminal_padding_y: u16,
+    /// The shape of the cursor while the terminal has the keyboard.
+    #[serde(default)]
+    pub terminal_cursor_style: TerminalCursorStyle,
+    /// Whether the cursor blinks.
+    #[serde(default = "terminal_cursor_blink_on")]
+    pub terminal_cursor_blink: bool,
+    /// The shape of the cursor while the window does not have the keyboard.
+    #[serde(default)]
+    pub terminal_cursor_inactive_style: TerminalCursorInactiveStyle,
+    /// Whether bold text uses the bright half of the sixteen ANSI colours.
+    ///
+    /// On by default, as it has always been. Some palettes draw bold and regular nearly alike, and
+    /// turning this off leaves weight as the only difference.
+    #[serde(default = "terminal_bold_bright_on")]
+    pub terminal_bold_bright: bool,
+    /// The smallest contrast ratio the terminal accepts before it nudges the foreground colour.
+    ///
+    /// One is "do not adjust anything", which is the default: a scheme is drawn as it was designed.
+    /// Raising it trades an exact scheme for readability at the far end of a long session.
+    #[serde(default = "terminal_min_contrast_default")]
+    pub terminal_min_contrast: f64,
+    /// Whether the terminal wears the interface palette or a published scheme.
+    ///
+    /// Absent in a file written before schemes existed, which reads as the palette — the pane this
+    /// build has always drawn.
+    #[serde(default)]
+    pub terminal_scheme_source: TerminalSchemeSource,
+    /// The scheme worn while the terminal is dark. Absent means the palette.
+    ///
+    /// An id rather than a copy of the colours: the catalogue is the build's, and a file that
+    /// carried a copy would be a file with a second opinion about what a scheme looks like.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme_dark: Option<String>,
+    /// The same for the light half. Two ids rather than one because a scheme is designed for one
+    /// background, and a dark scheme worn on a light terminal is the one combination nobody drew.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_scheme_light: Option<String>,
+    /// What a chosen scheme replaces. Absent means the whole look, which is what choosing a scheme
+    /// is normally for.
+    #[serde(default)]
+    pub terminal_scheme_background: TerminalSchemeBackground,
+    /// The schemes somebody imported, which the catalogue above does not ship.
+    ///
+    /// A list rather than a folder of files: a scheme is a handful of colours, and the settings file
+    /// is where this installation's own choices already live. The build reads the shipped catalogue
+    /// first, so an imported scheme may shadow nothing; its id is its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_custom_schemes: Vec<TerminalCustomScheme>,
+    /// Saved answers to "which terminal colours", applied as one choice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terminal_scheme_profiles: Vec<TerminalSchemeProfile>,
     /// The five colours the `custom` palette is drawn from, for the light theme. Absent means
     /// nobody has picked any, and the ones a fresh install starts from apply.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1315,6 +1695,23 @@ impl Default for AppSettings {
             ui_font: None,
             terminal_font: None,
             terminal_font_size: terminal_font_size_default(),
+            terminal_font_weight: terminal_font_weight_default(),
+            terminal_bold_font_weight: terminal_bold_font_weight_default(),
+            terminal_line_height: terminal_line_height_default(),
+            terminal_letter_spacing: terminal_letter_spacing_default(),
+            terminal_padding_x: terminal_padding_x_default(),
+            terminal_padding_y: terminal_padding_y_default(),
+            terminal_cursor_style: TerminalCursorStyle::default(),
+            terminal_cursor_blink: terminal_cursor_blink_on(),
+            terminal_cursor_inactive_style: TerminalCursorInactiveStyle::default(),
+            terminal_bold_bright: terminal_bold_bright_on(),
+            terminal_min_contrast: terminal_min_contrast_default(),
+            terminal_scheme_source: TerminalSchemeSource::default(),
+            terminal_scheme_dark: None,
+            terminal_scheme_light: None,
+            terminal_scheme_background: TerminalSchemeBackground::default(),
+            terminal_custom_schemes: Vec::new(),
+            terminal_scheme_profiles: Vec::new(),
             custom_colors: None,
             custom_colors_dark: None,
             locale: None,
@@ -1364,6 +1761,23 @@ impl AppSettings {
             && self.ui_font.is_none()
             && self.terminal_font.is_none()
             && self.terminal_font_size == terminal_font_size_default()
+            && self.terminal_font_weight == terminal_font_weight_default()
+            && self.terminal_bold_font_weight == terminal_bold_font_weight_default()
+            && self.terminal_line_height == terminal_line_height_default()
+            && self.terminal_letter_spacing == terminal_letter_spacing_default()
+            && self.terminal_padding_x == terminal_padding_x_default()
+            && self.terminal_padding_y == terminal_padding_y_default()
+            && self.terminal_cursor_style == TerminalCursorStyle::default()
+            && self.terminal_cursor_blink == terminal_cursor_blink_on()
+            && self.terminal_cursor_inactive_style == TerminalCursorInactiveStyle::default()
+            && self.terminal_bold_bright == terminal_bold_bright_on()
+            && self.terminal_min_contrast == terminal_min_contrast_default()
+            && self.terminal_scheme_source == TerminalSchemeSource::Host
+            && self.terminal_scheme_dark.is_none()
+            && self.terminal_scheme_light.is_none()
+            && self.terminal_scheme_background == TerminalSchemeBackground::Scheme
+            && self.terminal_custom_schemes.is_empty()
+            && self.terminal_scheme_profiles.is_empty()
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
             && self.session_layout == SessionLayout::Split
@@ -1421,10 +1835,73 @@ mod tests {
     }
 
     #[test]
+    fn a_terminal_weight_reads_at_the_nearest_hundred_inside_its_range() {
+        assert_eq!(normalize_terminal_font_weight(450), 500);
+        assert_eq!(normalize_terminal_font_weight(0), TERMINAL_FONT_WEIGHT_MIN);
+        assert_eq!(normalize_terminal_font_weight(2_000), TERMINAL_FONT_WEIGHT_MAX);
+        // Bold is the same scale, so a file naming one weight for both still makes sense.
+        assert_eq!(normalize_terminal_bold_font_weight(760), 800);
+    }
+
+    #[test]
+    fn terminal_metrics_are_kept_on_their_sliders() {
+        assert_eq!(normalize_terminal_line_height(1.156), 1.16);
+        assert_eq!(normalize_terminal_line_height(0.2), TERMINAL_LINE_HEIGHT_MIN);
+        assert_eq!(normalize_terminal_line_height(9.0), TERMINAL_LINE_HEIGHT_MAX);
+        assert_eq!(normalize_terminal_letter_spacing(-40), TERMINAL_LETTER_SPACING_MIN);
+        assert_eq!(normalize_terminal_letter_spacing(40), TERMINAL_LETTER_SPACING_MAX);
+        assert_eq!(normalize_terminal_padding(64), TERMINAL_PADDING_MAX);
+        assert_eq!(normalize_terminal_min_contrast(4.44), 4.4);
+        assert_eq!(normalize_terminal_min_contrast(0.1), TERMINAL_MIN_CONTRAST_MIN);
+        assert_eq!(normalize_terminal_min_contrast(99.0), TERMINAL_MIN_CONTRAST_MAX);
+    }
+
+    #[test]
+    fn a_metric_that_is_not_a_number_reads_as_the_default() {
+        assert_eq!(normalize_terminal_line_height(f64::NAN), terminal_line_height_default());
+        assert_eq!(
+            normalize_terminal_line_height(f64::INFINITY),
+            terminal_line_height_default()
+        );
+        assert_eq!(
+            normalize_terminal_min_contrast(f64::NAN),
+            terminal_min_contrast_default()
+        );
+    }
+
+    #[test]
     fn the_default_scale_is_one_the_menu_offers() {
         assert!(
             UI_SCALE_PERCENTS.contains(&ui_scale_default()),
             "a default the interface cannot show or take back is one nobody could leave"
+        );
+    }
+
+    #[test]
+    fn an_imported_scheme_that_is_half_a_scheme_is_refused() {
+        let mut scheme = TerminalCustomScheme {
+            id: "imported".to_owned(),
+            name: "Imported".to_owned(),
+            foreground: "#ffffff".to_owned(),
+            background: "#000000".to_owned(),
+            cursor: "#ffffff".to_owned(),
+            colors: (0..16).map(|_| "#123456".to_owned()).collect(),
+            selection_background: None,
+        };
+        assert!(scheme.is_drawable());
+
+        scheme.colors.pop();
+        assert!(!scheme.is_drawable(), "fifteen colours is a scheme half drawn");
+
+        scheme.colors.push("#123456".to_owned());
+        scheme.background = "black".to_owned();
+        assert!(!scheme.is_drawable(), "a colour this build cannot read is not a colour");
+
+        scheme.background = "#000000".to_owned();
+        scheme.name.clear();
+        assert!(
+            !scheme.is_drawable(),
+            "a scheme nobody can name is not one the list can offer"
         );
     }
 

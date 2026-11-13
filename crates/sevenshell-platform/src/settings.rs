@@ -20,16 +20,22 @@ use sevenshell_error::ShellError;
 use sevenshell_types::{
     AiProviderConfig, AiProviderKind, AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX,
     BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FilesLayout, HomeLayout, McpScope,
-    McpServerConfig, McpServerTransport, SessionLayout, SessionReopen, SnippetProvider, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette, ai_context_enabled_default,
+    McpServerConfig, McpServerTransport, SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT,
+    TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalSchemeBackground,
+    TerminalSchemeProfile, TerminalSchemeSource, ThemeMode, ThemePalette, ai_context_enabled_default,
     ai_context_lines_default, ai_max_output_tokens_default, ai_session_retention_days_default, background_blur_default,
     background_transparency_default, command_completion_on, is_valid_mcp_server_id,
     mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default,
     mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
     normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
-    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_font_size,
-    normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default, terminal_font_size_default, tray_icon_on,
-    ui_scale_default, update_check_on,
+    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_bold_font_weight,
+    normalize_terminal_font_size, normalize_terminal_font_weight, normalize_terminal_letter_spacing,
+    normalize_terminal_line_height, normalize_terminal_min_contrast, normalize_terminal_padding, normalize_ui_scale,
+    sidebar_on, sync_auto_upload_minutes_default, terminal_bold_bright_on, terminal_bold_font_weight_default,
+    terminal_cursor_blink_on, terminal_font_size_default, terminal_font_weight_default,
+    terminal_letter_spacing_default, terminal_line_height_default, terminal_min_contrast_default,
+    terminal_padding_x_default, terminal_padding_y_default, tray_icon_on, ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -206,6 +212,69 @@ impl StoredMcpServerConfig {
     }
 }
 
+/// One saved answer to "which terminal colours", as the file holds it.
+///
+/// The three enums are strings for the reason every other stored enum is: a profile written by a
+/// build with another theme or scheme source in it must not make the whole settings file unreadable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredTerminalSchemeProfile {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    terminal_theme: String,
+    #[serde(default)]
+    scheme_source: String,
+    #[serde(default)]
+    scheme_dark: Option<String>,
+    #[serde(default)]
+    scheme_light: Option<String>,
+    #[serde(default)]
+    scheme_background: String,
+}
+
+impl StoredTerminalSchemeProfile {
+    fn from_settings(profile: &TerminalSchemeProfile) -> Self {
+        Self {
+            id: profile.id.clone(),
+            name: profile.name.clone(),
+            terminal_theme: profile.terminal_theme.as_str().to_owned(),
+            scheme_source: profile.scheme_source.as_str().to_owned(),
+            scheme_dark: profile.scheme_dark.clone(),
+            scheme_light: profile.scheme_light.clone(),
+            scheme_background: profile.scheme_background.as_str().to_owned(),
+        }
+    }
+
+    /// One profile this build can offer, or nothing when it has no name to show.
+    fn to_settings(&self) -> Option<TerminalSchemeProfile> {
+        let id = self.id.trim();
+        let name = self.name.trim();
+        if id.is_empty() || name.is_empty() {
+            return None;
+        }
+        Some(TerminalSchemeProfile {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
+            scheme_source: TerminalSchemeSource::from_id(&self.scheme_source).unwrap_or_default(),
+            scheme_dark: self
+                .scheme_dark
+                .as_deref()
+                .filter(|id| !id.trim().is_empty())
+                .map(str::to_owned),
+            scheme_light: self
+                .scheme_light
+                .as_deref()
+                .filter(|id| !id.trim().is_empty())
+                .map(str::to_owned),
+            scheme_background: TerminalSchemeBackground::from_id(&self.scheme_background).unwrap_or_default(),
+        })
+    }
+}
+
 /// Bumped only when the stored layout changes in a way older builds cannot read.
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
 
@@ -335,6 +404,47 @@ struct StoredSettings {
     /// a hand-edited file asking for a two-point terminal reads as the default.
     #[serde(default = "terminal_font_size_default")]
     terminal_font_size: u8,
+    /// The terminal's typography and cursor, absent in a file written before either could be chosen.
+    /// Every default is the value this build drew with before the choice existed, so an older file
+    /// opens onto exactly the terminal it was written with.
+    #[serde(default = "terminal_font_weight_default")]
+    terminal_font_weight: u16,
+    #[serde(default = "terminal_bold_font_weight_default")]
+    terminal_bold_font_weight: u16,
+    #[serde(default = "terminal_line_height_default")]
+    terminal_line_height: f64,
+    #[serde(default = "terminal_letter_spacing_default")]
+    terminal_letter_spacing: i16,
+    #[serde(default = "terminal_padding_x_default")]
+    terminal_padding_x: u16,
+    #[serde(default = "terminal_padding_y_default")]
+    terminal_padding_y: u16,
+    /// Stored as the word the menu shows, for the reason the theme is: a build that does not know a
+    /// shape falls back rather than refusing to open the file.
+    #[serde(default)]
+    terminal_cursor_style: String,
+    #[serde(default = "terminal_cursor_blink_on")]
+    terminal_cursor_blink: bool,
+    #[serde(default)]
+    terminal_cursor_inactive_style: String,
+    #[serde(default = "terminal_bold_bright_on")]
+    terminal_bold_bright: bool,
+    #[serde(default = "terminal_min_contrast_default")]
+    terminal_min_contrast: f64,
+    /// Which palette the pane wears, and the scheme ids for the two halves. Absent in a file written
+    /// before schemes existed, which reads as the interface palette with no scheme chosen.
+    #[serde(default)]
+    terminal_scheme_source: String,
+    #[serde(default)]
+    terminal_scheme_dark: Option<String>,
+    #[serde(default)]
+    terminal_scheme_light: Option<String>,
+    #[serde(default)]
+    terminal_scheme_background: String,
+    #[serde(default)]
+    terminal_custom_schemes: Vec<TerminalCustomScheme>,
+    #[serde(default)]
+    terminal_scheme_profiles: Vec<StoredTerminalSchemeProfile>,
     /// Absent in a file written before the interface could be coloured by hand, which reads as
     /// "nobody has picked any" — the defaults a fresh install starts from.
     #[serde(default)]
@@ -463,6 +573,27 @@ impl StoredSettings {
             ui_font: settings.ui_font.clone(),
             terminal_font: settings.terminal_font.clone(),
             terminal_font_size: settings.terminal_font_size,
+            terminal_font_weight: settings.terminal_font_weight,
+            terminal_bold_font_weight: settings.terminal_bold_font_weight,
+            terminal_line_height: settings.terminal_line_height,
+            terminal_letter_spacing: settings.terminal_letter_spacing,
+            terminal_padding_x: settings.terminal_padding_x,
+            terminal_padding_y: settings.terminal_padding_y,
+            terminal_cursor_style: settings.terminal_cursor_style.as_str().to_owned(),
+            terminal_cursor_blink: settings.terminal_cursor_blink,
+            terminal_cursor_inactive_style: settings.terminal_cursor_inactive_style.as_str().to_owned(),
+            terminal_bold_bright: settings.terminal_bold_bright,
+            terminal_min_contrast: settings.terminal_min_contrast,
+            terminal_scheme_source: settings.terminal_scheme_source.as_str().to_owned(),
+            terminal_scheme_dark: settings.terminal_scheme_dark.clone(),
+            terminal_scheme_light: settings.terminal_scheme_light.clone(),
+            terminal_scheme_background: settings.terminal_scheme_background.as_str().to_owned(),
+            terminal_custom_schemes: settings.terminal_custom_schemes.clone(),
+            terminal_scheme_profiles: settings
+                .terminal_scheme_profiles
+                .iter()
+                .map(StoredTerminalSchemeProfile::from_settings)
+                .collect(),
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
@@ -569,6 +700,51 @@ impl StoredSettings {
             ui_font: self.ui_font.filter(|font| !font.trim().is_empty()),
             terminal_font: self.terminal_font.filter(|font| !font.trim().is_empty()),
             terminal_font_size: normalize_terminal_font_size(self.terminal_font_size),
+            // Read through the same ends the page offers, so a hand-edited file cannot draw a terminal
+            // whose sliders no longer describe it.
+            terminal_font_weight: normalize_terminal_font_weight(self.terminal_font_weight),
+            terminal_bold_font_weight: normalize_terminal_bold_font_weight(self.terminal_bold_font_weight),
+            terminal_line_height: normalize_terminal_line_height(self.terminal_line_height),
+            terminal_letter_spacing: normalize_terminal_letter_spacing(self.terminal_letter_spacing),
+            terminal_padding_x: normalize_terminal_padding(self.terminal_padding_x),
+            terminal_padding_y: normalize_terminal_padding(self.terminal_padding_y),
+            // A shape this build does not know reads as the one it has always drawn, never as a
+            // refusal to open the file — the same rule the theme and the palettes follow.
+            terminal_cursor_style: TerminalCursorStyle::from_id(&self.terminal_cursor_style).unwrap_or_default(),
+            terminal_cursor_blink: self.terminal_cursor_blink,
+            terminal_cursor_inactive_style: TerminalCursorInactiveStyle::from_id(&self.terminal_cursor_inactive_style)
+                .unwrap_or_default(),
+            terminal_bold_bright: self.terminal_bold_bright,
+            terminal_min_contrast: normalize_terminal_min_contrast(self.terminal_min_contrast),
+            // A source this build does not know reads as the palette, which is the answer that is
+            // always available. A blank scheme id is no scheme at all.
+            terminal_scheme_source: TerminalSchemeSource::from_id(&self.terminal_scheme_source).unwrap_or_default(),
+            terminal_scheme_dark: self.terminal_scheme_dark.filter(|id| !id.trim().is_empty()),
+            terminal_scheme_light: self.terminal_scheme_light.filter(|id| !id.trim().is_empty()),
+            terminal_scheme_background: TerminalSchemeBackground::from_id(&self.terminal_scheme_background)
+                .unwrap_or_default(),
+            // An imported scheme that cannot be drawn is dropped whole, and the first one with an id
+            // wins: the id is what a slot names, so two entries sharing one would make the colour a
+            // terminal wears depend on file order.
+            terminal_custom_schemes: {
+                let mut seen = std::collections::BTreeSet::new();
+                self.terminal_custom_schemes
+                    .iter()
+                    .filter(|scheme| scheme.is_drawable())
+                    .filter(|scheme| seen.insert(scheme.id.trim().to_owned()))
+                    .take(TERMINAL_CUSTOM_SCHEME_LIMIT)
+                    .cloned()
+                    .collect()
+            },
+            terminal_scheme_profiles: {
+                let mut seen = std::collections::BTreeSet::new();
+                self.terminal_scheme_profiles
+                    .iter()
+                    .filter_map(StoredTerminalSchemeProfile::to_settings)
+                    .filter(|profile| seen.insert(profile.id.clone()))
+                    .take(TERMINAL_SCHEME_PROFILE_LIMIT)
+                    .collect()
+            },
             // A hand-coloured set that cannot be drawn is dropped whole rather than per colour: half
             // of somebody's palette with defaults filled in for the rest is a window nobody asked
             // for, and there is nothing in it they could recognise to fix.
@@ -692,6 +868,11 @@ pub(crate) fn write_atomically(path: &Path, contents: &[u8]) -> Result<(), Shell
 mod tests {
     use tempfile::tempdir;
 
+    use sevenshell_types::{
+        TERMINAL_FONT_WEIGHT_MAX, TERMINAL_FONT_WEIGHT_MIN, TERMINAL_LETTER_SPACING_MIN, TERMINAL_LINE_HEIGHT_MIN,
+        TERMINAL_MIN_CONTRAST_MAX, TERMINAL_PADDING_MAX,
+    };
+
     use super::*;
 
     fn settings(theme_mode: ThemeMode, terminal_theme: ThemeMode, locale: Option<&str>) -> AppSettings {
@@ -728,6 +909,23 @@ mod tests {
             ui_font: None,
             terminal_font: None,
             terminal_font_size: terminal_font_size_default(),
+            terminal_font_weight: terminal_font_weight_default(),
+            terminal_bold_font_weight: terminal_bold_font_weight_default(),
+            terminal_line_height: terminal_line_height_default(),
+            terminal_letter_spacing: terminal_letter_spacing_default(),
+            terminal_padding_x: terminal_padding_x_default(),
+            terminal_padding_y: terminal_padding_y_default(),
+            terminal_cursor_style: TerminalCursorStyle::default(),
+            terminal_cursor_blink: terminal_cursor_blink_on(),
+            terminal_cursor_inactive_style: TerminalCursorInactiveStyle::default(),
+            terminal_bold_bright: terminal_bold_bright_on(),
+            terminal_min_contrast: terminal_min_contrast_default(),
+            terminal_scheme_source: TerminalSchemeSource::default(),
+            terminal_scheme_dark: None,
+            terminal_scheme_light: None,
+            terminal_scheme_background: TerminalSchemeBackground::default(),
+            terminal_custom_schemes: Vec::new(),
+            terminal_scheme_profiles: Vec::new(),
             custom_colors: None,
             custom_colors_dark: None,
             locale: locale.map(str::to_owned),
@@ -1223,6 +1421,79 @@ mod tests {
 
         // Nothing is left over from writing.
         assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn the_terminal_appearance_survives_a_round_trip_and_reads_at_its_ends() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        let written = AppSettings {
+            terminal_font_weight: 500,
+            terminal_bold_font_weight: 900,
+            terminal_line_height: 1.35,
+            terminal_letter_spacing: 2,
+            terminal_padding_x: 18,
+            terminal_padding_y: 14,
+            terminal_cursor_style: TerminalCursorStyle::Bar,
+            terminal_cursor_blink: false,
+            terminal_cursor_inactive_style: TerminalCursorInactiveStyle::None,
+            terminal_bold_bright: false,
+            terminal_min_contrast: 4.5,
+            terminal_scheme_source: TerminalSchemeSource::Custom,
+            terminal_scheme_dark: Some("dracula".to_owned()),
+            terminal_scheme_light: Some("solarized-light".to_owned()),
+            terminal_scheme_background: TerminalSchemeBackground::Host,
+            terminal_custom_schemes: vec![TerminalCustomScheme {
+                id: "imported".to_owned(),
+                name: "Imported".to_owned(),
+                foreground: "#ffffff".to_owned(),
+                background: "#101010".to_owned(),
+                cursor: "#ffffff".to_owned(),
+                colors: (0..16).map(|index| format!("#00000{index:x}")).collect(),
+                selection_background: Some("#333333".to_owned()),
+            }],
+            terminal_scheme_profiles: vec![TerminalSchemeProfile {
+                id: "mine".to_owned(),
+                name: "Mine".to_owned(),
+                terminal_theme: ThemeMode::Dark,
+                scheme_source: TerminalSchemeSource::Custom,
+                scheme_dark: Some("dracula".to_owned()),
+                scheme_light: Some("solarized-light".to_owned()),
+                scheme_background: TerminalSchemeBackground::Scheme,
+            }],
+            ..AppSettings::default()
+        };
+        save_to(&path, &written).expect("save");
+        assert_eq!(load_from(&path).expect("load"), written);
+
+        // A hand-edited file asking for values outside the page reads at the nearest end, and a
+        // cursor shape this build does not know reads as the one it has always drawn.
+        std::fs::write(
+            &path,
+            r#"{"schemaVersion":1,"terminalFontWeight":2300,"terminalBoldFontWeight":0,
+                "terminalLineHeight":0.2,"terminalLetterSpacing":-99,"terminalPaddingX":90,
+                "terminalPaddingY":40,"terminalCursorStyle":"diamond","terminalCursorInactiveStyle":"sparkle",
+                "terminalMinContrast":99,"terminalSchemeSource":"rainbow","terminalSchemeDark":"",
+                "terminalSchemeLight":"  ","terminalSchemeBackground":"glass"}"#,
+        )
+        .expect("write");
+        let loaded = load_from(&path).expect("a hand-edited file is not a hard failure");
+        assert_eq!(loaded.terminal_font_weight, TERMINAL_FONT_WEIGHT_MAX);
+        assert_eq!(loaded.terminal_bold_font_weight, TERMINAL_FONT_WEIGHT_MIN);
+        assert_eq!(loaded.terminal_line_height, TERMINAL_LINE_HEIGHT_MIN);
+        assert_eq!(loaded.terminal_letter_spacing, TERMINAL_LETTER_SPACING_MIN);
+        assert_eq!(loaded.terminal_padding_x, TERMINAL_PADDING_MAX);
+        assert_eq!(loaded.terminal_padding_y, TERMINAL_PADDING_MAX);
+        assert_eq!(loaded.terminal_cursor_style, TerminalCursorStyle::default());
+        assert_eq!(
+            loaded.terminal_cursor_inactive_style,
+            TerminalCursorInactiveStyle::default()
+        );
+        assert_eq!(loaded.terminal_min_contrast, TERMINAL_MIN_CONTRAST_MAX);
+        assert_eq!(loaded.terminal_scheme_source, TerminalSchemeSource::default());
+        assert_eq!(loaded.terminal_scheme_dark, None);
+        assert_eq!(loaded.terminal_scheme_light, None);
+        assert_eq!(loaded.terminal_scheme_background, TerminalSchemeBackground::default());
     }
 
     #[test]

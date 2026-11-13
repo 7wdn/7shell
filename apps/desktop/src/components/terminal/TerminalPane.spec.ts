@@ -14,7 +14,12 @@ import { createApp, defineComponent, h, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { i18n } from "@/i18n";
-import { DEFAULT_TERMINAL_FONT } from "@/types/app";
+import {
+  DEFAULT_TERMINAL_CURSOR_STYLE,
+  DEFAULT_TERMINAL_FONT,
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+} from "@/types/app";
 
 /** What xterm handed the pane, so a test can type into it the way xterm would. */
 let onData: ((data: string) => void) | undefined;
@@ -684,6 +689,88 @@ describe("the font the pane draws in", () => {
     await nextTick();
     await nextTick();
     expect(terminal?.options.fontFamily, "and lets go of it again").toBe(DEFAULT_TERMINAL_FONT);
+  });
+
+  it("opens with the typography and cursor settings, and follows them afterwards", async () => {
+    const preferences = usePreferencesStore();
+    preferences.initialize();
+    await withPanelUnderTerminal();
+    await mountPane();
+
+    const terminal = builtTerminals.at(-1);
+    expect(terminal?.options.fontWeight, "built with the weight the store carries").toBe(DEFAULT_TERMINAL_FONT_WEIGHT);
+    expect(terminal?.options.lineHeight, "and the line height").toBe(DEFAULT_TERMINAL_LINE_HEIGHT);
+    expect(terminal?.options.cursorStyle, "and the cursor shape").toBe(DEFAULT_TERMINAL_CURSOR_STYLE);
+
+    preferences.setTerminalFontWeight(600);
+    preferences.setTerminalLineHeight(1.4);
+    preferences.setTerminalCursorStyle("bar");
+    await nextTick();
+    await nextTick();
+
+    expect(terminal?.options.fontWeight, "a pane that is already open follows").toBe(600);
+    expect(terminal?.options.lineHeight, "including the metrics that change the grid").toBe(1.4);
+    expect(terminal?.options.cursorStyle, "and the cursor it draws").toBe("bar");
+  });
+});
+
+describe("the colour scheme the pane wears", () => {
+  it("takes the chosen scheme's sixteen colours and its surfaces", async () => {
+    const preferences = usePreferencesStore();
+    preferences.initialize();
+    await withPanelUnderTerminal();
+    await mountPane();
+
+    preferences.setTerminalTheme("dark");
+    preferences.setTerminalSchemeSource("custom");
+    preferences.setTerminalSchemeDark("dracula");
+    await nextTick();
+    await nextTick();
+
+    const theme = builtTerminals.at(-1)?.options.theme as Record<string, string>;
+    expect(theme.background, "the scheme's own background").toBe("#1e1f29");
+    expect(theme.foreground, "and its text").toBe("#f8f8f2");
+    expect(theme.red, "the ANSI colours are the scheme's").toBe("#ff5555");
+    expect(theme.brightBlack, "both halves of them").toBe("#555555");
+  });
+
+  it("keeps the palette's surfaces when the scheme replaces only the ANSI colours", async () => {
+    const preferences = usePreferencesStore();
+    preferences.initialize();
+    await withPanelUnderTerminal();
+    await mountPane();
+
+    preferences.setTerminalTheme("dark");
+    preferences.setTerminalSchemeSource("custom");
+    preferences.setTerminalSchemeDark("dracula");
+    preferences.setTerminalSchemeBackground("host");
+    await nextTick();
+    await nextTick();
+
+    const theme = builtTerminals.at(-1)?.options.theme as Record<string, string>;
+    expect(theme.background, "the pane keeps the palette's background").not.toBe("#282a36");
+    expect(theme.foreground, "and the palette's text").not.toBe("#f8f8f2");
+    expect(theme.red, "while the colours still speak the scheme").toBe("#ff5555");
+  });
+
+  it("falls back to the palette when the source says so", async () => {
+    const preferences = usePreferencesStore();
+    preferences.initialize();
+    await withPanelUnderTerminal();
+    await mountPane();
+
+    preferences.setTerminalTheme("dark");
+    preferences.setTerminalSchemeSource("custom");
+    preferences.setTerminalSchemeDark("dracula");
+    await nextTick();
+    await nextTick();
+
+    preferences.setTerminalSchemeSource("host");
+    await nextTick();
+    await nextTick();
+
+    const theme = builtTerminals.at(-1)?.options.theme as Record<string, string>;
+    expect(theme.red, "no scheme means no scheme colours").not.toBe("#ff5555");
   });
 });
 

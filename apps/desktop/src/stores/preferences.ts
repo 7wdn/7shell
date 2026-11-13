@@ -18,6 +18,7 @@ import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveL
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { copyPolicyMatrix } from "@/lib/policy/matrix";
+import { importedSchemeId } from "@/lib/terminal/importScheme";
 import { deriveCustomColors } from "@/lib/settings/customColors";
 import type { ShortcutActionId } from "@/lib/shortcuts/registry";
 import type { SnippetProvider } from "@/types/sync";
@@ -53,8 +54,31 @@ import {
   AI_SESSION_RETENTION_DAYS_DEFAULT,
   AI_SESSION_RETENTION_DAYS_MAX,
   AI_SESSION_RETENTION_DAYS_MIN,
+  DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+  DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+  DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_FONT_SIZE,
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_LETTER_SPACING,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+  DEFAULT_TERMINAL_MIN_CONTRAST,
+  DEFAULT_TERMINAL_PADDING_X,
+  DEFAULT_TERMINAL_PADDING_Y,
+  DEFAULT_TERMINAL_SCHEME_BACKGROUND,
+  DEFAULT_TERMINAL_SCHEME_SOURCE,
+  TERMINAL_CUSTOM_SCHEME_LIMIT,
+  TERMINAL_SCHEME_PROFILE_LIMIT,
+  TERMINAL_FONT_WEIGHT_MAX,
+  TERMINAL_FONT_WEIGHT_MIN,
+  TERMINAL_LETTER_SPACING_MAX,
+  TERMINAL_LETTER_SPACING_MIN,
+  TERMINAL_LINE_HEIGHT_MAX,
+  TERMINAL_LINE_HEIGHT_MIN,
+  TERMINAL_MIN_CONTRAST_MAX,
+  TERMINAL_MIN_CONTRAST_MIN,
+  TERMINAL_PADDING_MAX,
+  TERMINAL_PADDING_MIN,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
   type AiProviderConfig,
@@ -78,6 +102,12 @@ import {
   type ResolvedTheme,
   type SessionLayout,
   type SessionReopen,
+  type TerminalCursorInactiveStyle,
+  type TerminalCursorStyle,
+  type TerminalCustomScheme,
+  type TerminalSchemeBackground,
+  type TerminalSchemeProfile,
+  type TerminalSchemeSource,
   type ThemeMode,
   type ThemePalette,
 } from "@/types/app";
@@ -135,6 +165,23 @@ const FRESH: Omit<AppSettings, "locale"> = {
   uiFont: undefined,
   terminalFont: undefined,
   terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+  terminalFontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+  terminalBoldFontWeight: DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+  terminalLineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+  terminalLetterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+  terminalPaddingX: DEFAULT_TERMINAL_PADDING_X,
+  terminalPaddingY: DEFAULT_TERMINAL_PADDING_Y,
+  terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+  terminalCursorBlink: true,
+  terminalCursorInactiveStyle: DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+  terminalBoldBright: true,
+  terminalMinContrast: DEFAULT_TERMINAL_MIN_CONTRAST,
+  terminalSchemeSource: DEFAULT_TERMINAL_SCHEME_SOURCE,
+  terminalSchemeDark: undefined,
+  terminalSchemeLight: undefined,
+  terminalSchemeBackground: DEFAULT_TERMINAL_SCHEME_BACKGROUND,
+  terminalCustomSchemes: [],
+  terminalSchemeProfiles: [],
   customColors: DEFAULT_CUSTOM_COLORS,
   customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
@@ -579,6 +626,39 @@ export const usePreferencesStore = defineStore("preferences", () => {
    */
   const terminalFontSize = ref(DEFAULT_TERMINAL_FONT_SIZE);
 
+  /**
+   * The terminal's typography and cursor.
+   *
+   * The same kind of choice as the font and size above, and kept in the same place: the pane reads
+   * the store, because a terminal is a canvas with options rather than a document with tokens.
+   */
+  const terminalFontWeight = ref(DEFAULT_TERMINAL_FONT_WEIGHT);
+  const terminalBoldFontWeight = ref(DEFAULT_TERMINAL_BOLD_FONT_WEIGHT);
+  const terminalLineHeight = ref(DEFAULT_TERMINAL_LINE_HEIGHT);
+  const terminalLetterSpacing = ref(DEFAULT_TERMINAL_LETTER_SPACING);
+  const terminalPaddingX = ref(DEFAULT_TERMINAL_PADDING_X);
+  const terminalPaddingY = ref(DEFAULT_TERMINAL_PADDING_Y);
+  const terminalCursorStyle = ref<TerminalCursorStyle>(DEFAULT_TERMINAL_CURSOR_STYLE);
+  const terminalCursorBlink = ref(true);
+  const terminalCursorInactiveStyle = ref<TerminalCursorInactiveStyle>(DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE);
+  const terminalBoldBright = ref(true);
+  const terminalMinContrast = ref(DEFAULT_TERMINAL_MIN_CONTRAST);
+  /**
+   * Where the terminal's colours come from, and the two schemes it wears.
+   *
+   * Null is a real answer — "follow the interface palette" — and is the one a fresh install has.
+   * The catalogue is the build's, so an id this build does not ship also reads as no scheme, which
+   * is why the pane asks the catalogue rather than trusting the file.
+   */
+  const terminalSchemeSource = ref<TerminalSchemeSource>(DEFAULT_TERMINAL_SCHEME_SOURCE);
+  const terminalSchemeDark = ref<string | null>(null);
+  const terminalSchemeLight = ref<string | null>(null);
+  const terminalSchemeBackground = ref<TerminalSchemeBackground>(DEFAULT_TERMINAL_SCHEME_BACKGROUND);
+  /** Schemes somebody imported; the shipped catalogue is not copied into this list. */
+  const terminalCustomSchemes = ref<readonly TerminalCustomScheme[]>([]);
+  /** Saved answers to "which terminal colours", each one applied as a single choice. */
+  const terminalSchemeProfiles = ref<readonly TerminalSchemeProfile[]>([]);
+
   /** The same for the terminal, which is a choice of its own. */
   const wornTerminalFont = computed(() =>
     previewedFont.value?.field === "terminalFont"
@@ -770,6 +850,39 @@ export const usePreferencesStore = defineStore("preferences", () => {
       uiFont.value = settings.uiFont ?? null;
       terminalFont.value = settings.terminalFont ?? null;
       terminalFontSize.value = settings.terminalFontSize;
+      // A file written before these existed has none of them; every default is what this build drew
+      // with before the choice existed, so the terminal opens unchanged.
+      terminalFontWeight.value = clampFontWeight(settings.terminalFontWeight ?? DEFAULT_TERMINAL_FONT_WEIGHT);
+      terminalBoldFontWeight.value = clampFontWeight(
+        settings.terminalBoldFontWeight ?? DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+      );
+      terminalLineHeight.value = clampLineHeight(settings.terminalLineHeight ?? DEFAULT_TERMINAL_LINE_HEIGHT);
+      terminalLetterSpacing.value = clampLetterSpacing(
+        settings.terminalLetterSpacing ?? DEFAULT_TERMINAL_LETTER_SPACING,
+      );
+      terminalPaddingX.value = clampPadding(
+        settings.terminalPaddingX ?? DEFAULT_TERMINAL_PADDING_X,
+        DEFAULT_TERMINAL_PADDING_X,
+      );
+      terminalPaddingY.value = clampPadding(
+        settings.terminalPaddingY ?? DEFAULT_TERMINAL_PADDING_Y,
+        DEFAULT_TERMINAL_PADDING_Y,
+      );
+      terminalCursorStyle.value = settings.terminalCursorStyle ?? DEFAULT_TERMINAL_CURSOR_STYLE;
+      terminalCursorBlink.value = settings.terminalCursorBlink ?? true;
+      terminalCursorInactiveStyle.value =
+        settings.terminalCursorInactiveStyle ?? DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE;
+      terminalBoldBright.value = settings.terminalBoldBright ?? true;
+      terminalMinContrast.value = clampMinContrast(settings.terminalMinContrast ?? DEFAULT_TERMINAL_MIN_CONTRAST);
+      // An id this build no longer ships is kept in the file rather than erased here: the pane reads
+      // the catalogue, finds nothing and falls back to the palette, and a build that ships it again
+      // finds the choice where it was left.
+      terminalSchemeSource.value = settings.terminalSchemeSource ?? DEFAULT_TERMINAL_SCHEME_SOURCE;
+      terminalSchemeDark.value = settings.terminalSchemeDark ?? null;
+      terminalSchemeLight.value = settings.terminalSchemeLight ?? null;
+      terminalSchemeBackground.value = settings.terminalSchemeBackground ?? DEFAULT_TERMINAL_SCHEME_BACKGROUND;
+      terminalCustomSchemes.value = settings.terminalCustomSchemes ?? [];
+      terminalSchemeProfiles.value = settings.terminalSchemeProfiles ?? [];
       customColors.value = settings.customColors ?? { ...DEFAULT_CUSTOM_COLORS };
       customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
@@ -901,6 +1014,23 @@ export const usePreferencesStore = defineStore("preferences", () => {
         uiFont: uiFont.value ?? undefined,
         terminalFont: terminalFont.value ?? undefined,
         terminalFontSize: terminalFontSize.value,
+        terminalFontWeight: clampFontWeight(terminalFontWeight.value),
+        terminalBoldFontWeight: clampFontWeight(terminalBoldFontWeight.value),
+        terminalLineHeight: clampLineHeight(terminalLineHeight.value),
+        terminalLetterSpacing: clampLetterSpacing(terminalLetterSpacing.value),
+        terminalPaddingX: clampPadding(terminalPaddingX.value, DEFAULT_TERMINAL_PADDING_X),
+        terminalPaddingY: clampPadding(terminalPaddingY.value, DEFAULT_TERMINAL_PADDING_Y),
+        terminalCursorStyle: terminalCursorStyle.value,
+        terminalCursorBlink: terminalCursorBlink.value,
+        terminalCursorInactiveStyle: terminalCursorInactiveStyle.value,
+        terminalBoldBright: terminalBoldBright.value,
+        terminalMinContrast: clampMinContrast(terminalMinContrast.value),
+        terminalSchemeSource: terminalSchemeSource.value,
+        terminalSchemeDark: terminalSchemeDark.value ?? undefined,
+        terminalSchemeLight: terminalSchemeLight.value ?? undefined,
+        terminalSchemeBackground: terminalSchemeBackground.value,
+        terminalCustomSchemes: [...terminalCustomSchemes.value],
+        terminalSchemeProfiles: [...terminalSchemeProfiles.value],
         customColors: customColors.value,
         customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
@@ -1169,6 +1299,162 @@ export const usePreferencesStore = defineStore("preferences", () => {
     dirty.value = true;
   }
 
+  function setTerminalFontWeight(weight: number): void {
+    terminalFontWeight.value = clampFontWeight(weight);
+    dirty.value = true;
+  }
+
+  function setTerminalBoldFontWeight(weight: number): void {
+    terminalBoldFontWeight.value = clampFontWeight(weight);
+    dirty.value = true;
+  }
+
+  function setTerminalLineHeight(height: number): void {
+    terminalLineHeight.value = clampLineHeight(height);
+    dirty.value = true;
+  }
+
+  function setTerminalLetterSpacing(spacing: number): void {
+    terminalLetterSpacing.value = clampLetterSpacing(spacing);
+    dirty.value = true;
+  }
+
+  function setTerminalPaddingX(padding: number): void {
+    terminalPaddingX.value = clampPadding(padding, DEFAULT_TERMINAL_PADDING_X);
+    dirty.value = true;
+  }
+
+  function setTerminalPaddingY(padding: number): void {
+    terminalPaddingY.value = clampPadding(padding, DEFAULT_TERMINAL_PADDING_Y);
+    dirty.value = true;
+  }
+
+  function setTerminalCursorStyle(style: TerminalCursorStyle): void {
+    terminalCursorStyle.value = style;
+    dirty.value = true;
+  }
+
+  function setTerminalCursorBlink(blink: boolean): void {
+    terminalCursorBlink.value = blink;
+    dirty.value = true;
+  }
+
+  function setTerminalCursorInactiveStyle(style: TerminalCursorInactiveStyle): void {
+    terminalCursorInactiveStyle.value = style;
+    dirty.value = true;
+  }
+
+  function setTerminalBoldBright(bright: boolean): void {
+    terminalBoldBright.value = bright;
+    dirty.value = true;
+  }
+
+  function setTerminalMinContrast(ratio: number): void {
+    terminalMinContrast.value = clampMinContrast(ratio);
+    dirty.value = true;
+  }
+
+  function setTerminalSchemeSource(source: TerminalSchemeSource): void {
+    terminalSchemeSource.value = source;
+    dirty.value = true;
+  }
+
+  function setTerminalSchemeDark(id: string | null): void {
+    terminalSchemeDark.value = id;
+    dirty.value = true;
+  }
+
+  function setTerminalSchemeLight(id: string | null): void {
+    terminalSchemeLight.value = id;
+    dirty.value = true;
+  }
+
+  function setTerminalSchemeBackground(background: TerminalSchemeBackground): void {
+    terminalSchemeBackground.value = background;
+    dirty.value = true;
+  }
+
+  /**
+   * Adds imported schemes, keeping the list bounded and each id unique.
+   *
+   * The caller has already checked the ids against the shipped catalogue; this is the second half
+   * of the same rule, because the settings file is read by hand too. A scheme past the limit is not
+   * an error that stops the import — it is one that was not kept, and the count the page shows is
+   * the honest answer.
+   */
+  function addTerminalSchemes(schemes: readonly TerminalCustomScheme[]): void {
+    const next = [...terminalCustomSchemes.value];
+    const ids = new Set(next.map((scheme) => scheme.id));
+    for (const scheme of schemes) {
+      if (next.length >= TERMINAL_CUSTOM_SCHEME_LIMIT) {
+        break;
+      }
+      if (ids.has(scheme.id)) {
+        continue;
+      }
+      ids.add(scheme.id);
+      next.push(scheme);
+    }
+    terminalCustomSchemes.value = next;
+    dirty.value = true;
+  }
+
+  function removeTerminalScheme(id: string): void {
+    terminalCustomSchemes.value = terminalCustomSchemes.value.filter((scheme) => scheme.id !== id);
+    dirty.value = true;
+  }
+
+  /** Wears a saved answer: the terminal's mode, the colour source, the two slots and the range. */
+  function applyTerminalSchemeProfile(profile: TerminalSchemeProfile): void {
+    terminalTheme.value = profile.terminalTheme;
+    terminalSchemeSource.value = profile.schemeSource;
+    terminalSchemeDark.value = profile.schemeDark ?? null;
+    terminalSchemeLight.value = profile.schemeLight ?? null;
+    terminalSchemeBackground.value = profile.schemeBackground;
+    dirty.value = true;
+  }
+
+  /**
+   * Saves what the terminal is wearing now as a named answer.
+   *
+   * The ids the caller passes are the ones already taken — the presets and the saved list — so a
+   * profile called "Dracula" cannot end up indistinguishable from the preset beside it.
+   */
+  function saveTerminalSchemeProfile(name: string, takenIds: readonly string[]): boolean {
+    const trimmed = name.trim();
+    if (!trimmed || terminalSchemeProfiles.value.length >= TERMINAL_SCHEME_PROFILE_LIMIT) {
+      return false;
+    }
+    const profile: TerminalSchemeProfile = {
+      id: importedSchemeId(trimmed, new Set([...takenIds, ...terminalSchemeProfiles.value.map((entry) => entry.id)])),
+      name: trimmed,
+      terminalTheme: terminalTheme.value,
+      schemeSource: terminalSchemeSource.value,
+      schemeDark: terminalSchemeDark.value ?? undefined,
+      schemeLight: terminalSchemeLight.value ?? undefined,
+      schemeBackground: terminalSchemeBackground.value,
+    };
+    terminalSchemeProfiles.value = [...terminalSchemeProfiles.value, profile];
+    dirty.value = true;
+    return true;
+  }
+
+  function removeTerminalSchemeProfile(id: string): void {
+    terminalSchemeProfiles.value = terminalSchemeProfiles.value.filter((profile) => profile.id !== id);
+    dirty.value = true;
+  }
+
+  /** Whether the terminal is wearing exactly this profile, which is what the list's "worn" mark says. */
+  function matchesTerminalSchemeProfile(profile: TerminalSchemeProfile): boolean {
+    return (
+      terminalTheme.value === profile.terminalTheme &&
+      terminalSchemeSource.value === profile.schemeSource &&
+      (terminalSchemeDark.value ?? undefined) === profile.schemeDark &&
+      (terminalSchemeLight.value ?? undefined) === profile.schemeLight &&
+      terminalSchemeBackground.value === profile.schemeBackground
+    );
+  }
+
   /** The same for the terminal, whose choice is its own. */
   async function setTerminalFont(stack: string): Promise<void> {
     terminalFont.value = stack;
@@ -1388,6 +1674,39 @@ export const usePreferencesStore = defineStore("preferences", () => {
     }
     syncSnippetIds.value = ids;
     dirty.value = true;
+  }
+
+  /**
+   * The terminal's typography and cursor, each kept inside the range its own control offers.
+   *
+   * The same rule the font size follows: a settings file edited by hand is still read here, and a
+   * value no slider can show is one the pane would otherwise apply without the engine's menu being
+   * able to take it back. Weights round to the hundreds the select lists, and the two decimals are
+   * rounded to the precision their sliders draw.
+   */
+  function clampFontWeight(weight: number): number {
+    const rounded = Number.isFinite(weight) ? Math.round(weight / 100) * 100 : DEFAULT_TERMINAL_FONT_WEIGHT;
+    return Math.min(Math.max(rounded, TERMINAL_FONT_WEIGHT_MIN), TERMINAL_FONT_WEIGHT_MAX);
+  }
+
+  function clampLineHeight(height: number): number {
+    const rounded = Number.isFinite(height) ? Math.round(height * 100) / 100 : DEFAULT_TERMINAL_LINE_HEIGHT;
+    return Math.min(Math.max(rounded, TERMINAL_LINE_HEIGHT_MIN), TERMINAL_LINE_HEIGHT_MAX);
+  }
+
+  function clampLetterSpacing(spacing: number): number {
+    const rounded = Number.isFinite(spacing) ? Math.round(spacing) : DEFAULT_TERMINAL_LETTER_SPACING;
+    return Math.min(Math.max(rounded, TERMINAL_LETTER_SPACING_MIN), TERMINAL_LETTER_SPACING_MAX);
+  }
+
+  function clampPadding(padding: number, fallback: number): number {
+    const rounded = Number.isFinite(padding) ? Math.round(padding) : fallback;
+    return Math.min(Math.max(rounded, TERMINAL_PADDING_MIN), TERMINAL_PADDING_MAX);
+  }
+
+  function clampMinContrast(ratio: number): number {
+    const rounded = Number.isFinite(ratio) ? Math.round(ratio * 10) / 10 : DEFAULT_TERMINAL_MIN_CONTRAST;
+    return Math.min(Math.max(rounded, TERMINAL_MIN_CONTRAST_MIN), TERMINAL_MIN_CONTRAST_MAX);
   }
 
   /** An interval inside the range the field offers, for the same reason a font size is clamped. */
@@ -1751,6 +2070,57 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalFontSize":
           terminalFontSize.value = DEFAULT_TERMINAL_FONT_SIZE;
           break;
+        case "terminalFontWeight":
+          terminalFontWeight.value = DEFAULT_TERMINAL_FONT_WEIGHT;
+          break;
+        case "terminalBoldFontWeight":
+          terminalBoldFontWeight.value = DEFAULT_TERMINAL_BOLD_FONT_WEIGHT;
+          break;
+        case "terminalLineHeight":
+          terminalLineHeight.value = DEFAULT_TERMINAL_LINE_HEIGHT;
+          break;
+        case "terminalLetterSpacing":
+          terminalLetterSpacing.value = DEFAULT_TERMINAL_LETTER_SPACING;
+          break;
+        case "terminalPaddingX":
+          terminalPaddingX.value = DEFAULT_TERMINAL_PADDING_X;
+          break;
+        case "terminalPaddingY":
+          terminalPaddingY.value = DEFAULT_TERMINAL_PADDING_Y;
+          break;
+        case "terminalCursorStyle":
+          terminalCursorStyle.value = DEFAULT_TERMINAL_CURSOR_STYLE;
+          break;
+        case "terminalCursorBlink":
+          terminalCursorBlink.value = true;
+          break;
+        case "terminalCursorInactiveStyle":
+          terminalCursorInactiveStyle.value = DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE;
+          break;
+        case "terminalBoldBright":
+          terminalBoldBright.value = true;
+          break;
+        case "terminalMinContrast":
+          terminalMinContrast.value = DEFAULT_TERMINAL_MIN_CONTRAST;
+          break;
+        case "terminalSchemeSource":
+          terminalSchemeSource.value = DEFAULT_TERMINAL_SCHEME_SOURCE;
+          break;
+        case "terminalSchemeDark":
+          terminalSchemeDark.value = null;
+          break;
+        case "terminalSchemeLight":
+          terminalSchemeLight.value = null;
+          break;
+        case "terminalSchemeBackground":
+          terminalSchemeBackground.value = DEFAULT_TERMINAL_SCHEME_BACKGROUND;
+          break;
+        case "terminalCustomSchemes":
+          terminalCustomSchemes.value = [];
+          break;
+        case "terminalSchemeProfiles":
+          terminalSchemeProfiles.value = [];
+          break;
         case "customColors":
           customColors.value = { ...DEFAULT_CUSTOM_COLORS };
           break;
@@ -1856,6 +2226,23 @@ export const usePreferencesStore = defineStore("preferences", () => {
     uiFont,
     terminalFont,
     terminalFontSize,
+    terminalFontWeight,
+    terminalBoldFontWeight,
+    terminalLineHeight,
+    terminalLetterSpacing,
+    terminalPaddingX,
+    terminalPaddingY,
+    terminalCursorStyle,
+    terminalCursorBlink,
+    terminalCursorInactiveStyle,
+    terminalBoldBright,
+    terminalMinContrast,
+    terminalSchemeSource,
+    terminalSchemeDark,
+    terminalSchemeLight,
+    terminalSchemeBackground,
+    terminalCustomSchemes,
+    terminalSchemeProfiles,
     wornUiFont,
     wornTerminalFont,
     customColors,
@@ -1935,6 +2322,27 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setUiFont,
     setTerminalFont,
     setTerminalFontSize,
+    setTerminalFontWeight,
+    setTerminalBoldFontWeight,
+    setTerminalLineHeight,
+    setTerminalLetterSpacing,
+    setTerminalPaddingX,
+    setTerminalPaddingY,
+    setTerminalCursorStyle,
+    setTerminalCursorBlink,
+    setTerminalCursorInactiveStyle,
+    setTerminalBoldBright,
+    setTerminalMinContrast,
+    setTerminalSchemeSource,
+    setTerminalSchemeDark,
+    setTerminalSchemeLight,
+    setTerminalSchemeBackground,
+    addTerminalSchemes,
+    removeTerminalScheme,
+    applyTerminalSchemeProfile,
+    saveTerminalSchemeProfile,
+    removeTerminalSchemeProfile,
+    matchesTerminalSchemeProfile,
     previewFont,
     clearFontPreview,
     setCustomColor,

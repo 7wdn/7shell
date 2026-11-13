@@ -33,6 +33,13 @@
   --success: oklch(0.62 0.16 152);
   --warning: oklch(0.72 0.15 82);
   /*
+   * The third status colour. Success and warning said what they meant; this one is for what a
+   * connection is doing rather than how it ended — a state that is neither good news nor a problem.
+   * It is deliberately outside the palettes for the reason the two above are: a colour that says
+   * "in progress" cannot change hue with somebody's wallpaper.
+   */
+  --info: oklch(0.55 0.17 255);
+  /*
    * The kinds of row the command line's completion draws, one colour each. Colour is the only thing
    * telling the lists apart inside one menu — what we ship, the shell's own words, a command's
    * subcommands, its flags, an argument value, what somebody saved, what they have already run — so
@@ -46,6 +53,14 @@
   --completion-option: oklch(0.62 0.16 30);
   --completion-argument: oklch(0.58 0.08 220);
   --ring: oklch(0.709 0 0);
+  /*
+   * What stands between the window and a dialog. A dark scrim in the light theme; in the dark one it
+   * is the window's own colour, because a black scrim over a dark window reads as the dialog having
+   * opened in a hole rather than as everything behind it having stepped back. The dark value names
+   * `--background` rather than a colour, so it follows whichever palette is worn — and because custom
+   * properties are substituted where they are used, a palette block below still gets the last word.
+   */
+  --overlay: oklch(0 0 0 / 0.4);
 
   /*
    * The terminal's own four surfaces, for the palette that dresses no pane of its own — this one,
@@ -138,6 +153,7 @@
   --destructive-foreground: oklch(0.97 0.01 25);
   --success: oklch(0.75 0.16 150);
   --warning: oklch(0.8 0.15 85);
+  --info: oklch(0.75 0.12 250);
   --completion-command: oklch(0.75 0.16 150);
   --completion-builtin: oklch(0.8 0.15 85);
   --completion-saved: oklch(0.72 0.16 300);
@@ -146,6 +162,7 @@
   --completion-option: oklch(0.76 0.15 35);
   --completion-argument: oklch(0.72 0.09 220);
   --ring: oklch(0.6208 0.0075 277.1);
+  --overlay: color-mix(in oklch, var(--background) 70%, transparent);
 }
 
 /*
@@ -738,6 +755,8 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-overlay: var(--overlay);
   --color-completion-command: var(--completion-command);
   --color-completion-builtin: var(--completion-builtin);
   --color-completion-saved: var(--completion-saved);

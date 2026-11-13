@@ -45,8 +45,17 @@ import {
   DEFAULT_TAB_MAX_WIDTH,
   DEFAULT_TAB_PLACEMENT,
   DEFAULT_TAB_SORT_MODE,
+  DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+  DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+  DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT,
   DEFAULT_TERMINAL_FONT_SIZE,
+  DEFAULT_TERMINAL_FONT_WEIGHT,
+  DEFAULT_TERMINAL_LETTER_SPACING,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+  DEFAULT_TERMINAL_MIN_CONTRAST,
+  DEFAULT_TERMINAL_PADDING_X,
+  DEFAULT_TERMINAL_PADDING_Y,
   DEFAULT_UI_FONT,
   DEFAULT_UI_SCALE,
   type AppSettings,
@@ -84,6 +93,23 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     updateCheckOnStartup: true,
     backgroundImage: DEFAULT_BACKGROUND_IMAGE,
     terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+    terminalFontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+    terminalBoldFontWeight: DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+    terminalLineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+    terminalLetterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+    terminalPaddingX: DEFAULT_TERMINAL_PADDING_X,
+    terminalPaddingY: DEFAULT_TERMINAL_PADDING_Y,
+    terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+    terminalCursorBlink: true,
+    terminalCursorInactiveStyle: DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+    terminalBoldBright: true,
+    terminalMinContrast: DEFAULT_TERMINAL_MIN_CONTRAST,
+    terminalSchemeSource: "host",
+    terminalSchemeDark: undefined,
+    terminalSchemeLight: undefined,
+    terminalSchemeBackground: "scheme",
+    terminalCustomSchemes: [],
+    terminalSchemeProfiles: [],
     uiFont: undefined,
     terminalFont: undefined,
     customColors: DEFAULT_CUSTOM_COLORS,
@@ -308,6 +334,23 @@ describe("preferences store", () => {
       updateCheckOnStartup: true,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+      terminalFontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+      terminalBoldFontWeight: DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+      terminalLineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+      terminalLetterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+      terminalPaddingX: DEFAULT_TERMINAL_PADDING_X,
+      terminalPaddingY: DEFAULT_TERMINAL_PADDING_Y,
+      terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+      terminalCursorBlink: true,
+      terminalCursorInactiveStyle: DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+      terminalBoldBright: true,
+      terminalMinContrast: DEFAULT_TERMINAL_MIN_CONTRAST,
+      terminalSchemeSource: "host",
+      terminalSchemeDark: undefined,
+      terminalSchemeLight: undefined,
+      terminalSchemeBackground: "scheme",
+      terminalCustomSchemes: [],
+      terminalSchemeProfiles: [],
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -380,6 +423,23 @@ describe("preferences store", () => {
       updateCheckOnStartup: true,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+      terminalFontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+      terminalBoldFontWeight: DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+      terminalLineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+      terminalLetterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+      terminalPaddingX: DEFAULT_TERMINAL_PADDING_X,
+      terminalPaddingY: DEFAULT_TERMINAL_PADDING_Y,
+      terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+      terminalCursorBlink: true,
+      terminalCursorInactiveStyle: DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+      terminalBoldBright: true,
+      terminalMinContrast: DEFAULT_TERMINAL_MIN_CONTRAST,
+      terminalSchemeSource: "host",
+      terminalSchemeDark: undefined,
+      terminalSchemeLight: undefined,
+      terminalSchemeBackground: "scheme",
+      terminalCustomSchemes: [],
+      terminalSchemeProfiles: [],
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -688,6 +748,23 @@ describe("the terminal palette", () => {
       updateCheckOnStartup: true,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+      terminalFontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+      terminalBoldFontWeight: DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+      terminalLineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+      terminalLetterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+      terminalPaddingX: DEFAULT_TERMINAL_PADDING_X,
+      terminalPaddingY: DEFAULT_TERMINAL_PADDING_Y,
+      terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+      terminalCursorBlink: true,
+      terminalCursorInactiveStyle: DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+      terminalBoldBright: true,
+      terminalMinContrast: DEFAULT_TERMINAL_MIN_CONTRAST,
+      terminalSchemeSource: "host",
+      terminalSchemeDark: undefined,
+      terminalSchemeLight: undefined,
+      terminalSchemeBackground: "scheme",
+      terminalCustomSchemes: [],
+      terminalSchemeProfiles: [],
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,
@@ -1027,6 +1104,220 @@ describe("the colour theme", () => {
 
     await store.reset(["terminalFontSize"]);
     expect(store.terminalFontSize).toBe(DEFAULT_TERMINAL_FONT_SIZE);
+  });
+
+  it("keeps the terminal's typography and cursor inside their own ends", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // A fresh install gets the terminal this build has always drawn: regular text, a solid cursor,
+    // and the padding the stylesheet used before either number could be chosen.
+    expect([
+      store.terminalFontWeight,
+      store.terminalBoldFontWeight,
+      store.terminalLineHeight,
+      store.terminalLetterSpacing,
+      store.terminalPaddingX,
+      store.terminalPaddingY,
+      store.terminalCursorStyle,
+      store.terminalCursorBlink,
+      store.terminalCursorInactiveStyle,
+      store.terminalBoldBright,
+      store.terminalMinContrast,
+    ]).toEqual([400, 700, 1, 0, 12, 10, "block", true, "outline", true, 1]);
+
+    store.setTerminalFontWeight(450);
+    store.setTerminalBoldFontWeight(2_000);
+    store.setTerminalLineHeight(9);
+    store.setTerminalLetterSpacing(-40);
+    store.setTerminalPaddingX(90);
+    store.setTerminalPaddingY(-1);
+    store.setTerminalMinContrast(99);
+
+    expect([
+      store.terminalFontWeight,
+      store.terminalBoldFontWeight,
+      store.terminalLineHeight,
+      store.terminalLetterSpacing,
+      store.terminalPaddingX,
+      store.terminalPaddingY,
+      store.terminalMinContrast,
+    ]).toEqual([500, 900, 3, -5, 32, 0, 21]);
+
+    store.setTerminalFontWeight(600);
+    store.setTerminalLineHeight(1.4);
+    store.setTerminalLetterSpacing(1);
+    store.setTerminalPaddingX(18);
+    store.setTerminalPaddingY(14);
+    store.setTerminalCursorStyle("bar");
+    store.setTerminalCursorBlink(false);
+    store.setTerminalCursorInactiveStyle("none");
+    store.setTerminalBoldBright(false);
+    store.setTerminalMinContrast(4.5);
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        terminalFontWeight: 600,
+        terminalLineHeight: 1.4,
+        terminalLetterSpacing: 1,
+        terminalPaddingX: 18,
+        terminalPaddingY: 14,
+        terminalCursorStyle: "bar",
+        terminalCursorBlink: false,
+        terminalCursorInactiveStyle: "none",
+        terminalBoldBright: false,
+        terminalMinContrast: 4.5,
+      }),
+    );
+
+    await store.reset([
+      "terminalFontWeight",
+      "terminalBoldFontWeight",
+      "terminalLineHeight",
+      "terminalLetterSpacing",
+      "terminalPaddingX",
+      "terminalPaddingY",
+      "terminalCursorStyle",
+      "terminalCursorBlink",
+      "terminalCursorInactiveStyle",
+      "terminalBoldBright",
+      "terminalMinContrast",
+    ]);
+    expect(store.terminalFontWeight).toBe(DEFAULT_TERMINAL_FONT_WEIGHT);
+    expect(store.terminalCursorStyle).toBe(DEFAULT_TERMINAL_CURSOR_STYLE);
+  });
+
+  it("remembers the terminal's colour source and its two scheme slots", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    // A fresh install follows the interface palette, which is what every build drew before schemes
+    // existed; both slots are empty because there is nothing to wear.
+    expect([
+      store.terminalSchemeSource,
+      store.terminalSchemeDark,
+      store.terminalSchemeLight,
+      store.terminalSchemeBackground,
+    ]).toEqual(["host", null, null, "scheme"]);
+
+    store.setTerminalSchemeSource("custom");
+    store.setTerminalSchemeDark("dracula");
+    store.setTerminalSchemeLight("solarized-light");
+    store.setTerminalSchemeBackground("host");
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        terminalSchemeSource: "custom",
+        terminalSchemeDark: "dracula",
+        terminalSchemeLight: "solarized-light",
+        terminalSchemeBackground: "host",
+      }),
+    );
+
+    await store.reset([
+      "terminalSchemeSource",
+      "terminalSchemeDark",
+      "terminalSchemeLight",
+      "terminalSchemeBackground",
+    ]);
+    expect([
+      store.terminalSchemeSource,
+      store.terminalSchemeDark,
+      store.terminalSchemeLight,
+      store.terminalSchemeBackground,
+    ]).toEqual(["host", null, null, "scheme"]);
+  });
+
+  it("keeps imported schemes unique, bounded and removable", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    const scheme = (id: string, name: string) => ({
+      id,
+      name,
+      foreground: "#ffffff",
+      background: "#101010",
+      cursor: "#ffffff",
+      colors: Array.from({ length: 16 }, () => "#123456"),
+    });
+
+    store.addTerminalSchemes([scheme("imported", "Imported"), scheme("imported", "Duplicate")]);
+    expect(
+      store.terminalCustomSchemes.map((entry) => entry.name),
+      "an id is only kept once",
+    ).toEqual(["Imported"]);
+
+    store.addTerminalSchemes([scheme("second", "Second")]);
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        terminalCustomSchemes: expect.arrayContaining([expect.objectContaining({ id: "imported" })]),
+      }),
+    );
+
+    store.removeTerminalScheme("imported");
+    expect(store.terminalCustomSchemes.map((entry) => entry.id)).toEqual(["second"]);
+
+    await store.reset(["terminalCustomSchemes"]);
+    expect(store.terminalCustomSchemes).toEqual([]);
+  });
+
+  it("saves the terminal's colour answer and wears it again in one step", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    store.setTerminalTheme("dark");
+    store.setTerminalSchemeSource("custom");
+    store.setTerminalSchemeDark("dracula");
+    store.setTerminalSchemeLight("solarized-light");
+    store.setTerminalSchemeBackground("host");
+
+    expect(store.saveTerminalSchemeProfile("Mine", ["preset-dracula"])).toBe(true);
+    const saved = store.terminalSchemeProfiles[0]!;
+    expect(saved).toMatchObject({
+      name: "Mine",
+      terminalTheme: "dark",
+      schemeSource: "custom",
+      schemeDark: "dracula",
+      schemeLight: "solarized-light",
+      schemeBackground: "host",
+    });
+    expect(store.saveTerminalSchemeProfile("   ", [])).toBe(false);
+
+    // Something else is worn; the saved answer puts the whole colour decision back at once.
+    store.setTerminalTheme("light");
+    store.setTerminalSchemeSource("host");
+    store.setTerminalSchemeDark(null);
+    expect(store.matchesTerminalSchemeProfile(saved)).toBe(false);
+
+    store.applyTerminalSchemeProfile(saved);
+    expect([
+      store.terminalTheme,
+      store.terminalSchemeSource,
+      store.terminalSchemeDark,
+      store.terminalSchemeLight,
+      store.terminalSchemeBackground,
+    ]).toEqual(["dark", "custom", "dracula", "solarized-light", "host"]);
+    expect(store.matchesTerminalSchemeProfile(saved)).toBe(true);
+
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        terminalSchemeProfiles: expect.arrayContaining([expect.objectContaining({ id: saved.id })]),
+      }),
+    );
+
+    store.removeTerminalSchemeProfile(saved.id);
+    expect(store.terminalSchemeProfiles).toEqual([]);
+
+    await store.reset(["terminalSchemeProfiles"]);
+    expect(store.terminalSchemeProfiles).toEqual([]);
   });
 
   it("remembers the two the shell's own window obeys", async () => {
@@ -1556,6 +1847,23 @@ describe("restoring the defaults", () => {
       updateCheckOnStartup: true,
       backgroundImage: DEFAULT_BACKGROUND_IMAGE,
       terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
+      terminalFontWeight: DEFAULT_TERMINAL_FONT_WEIGHT,
+      terminalBoldFontWeight: DEFAULT_TERMINAL_BOLD_FONT_WEIGHT,
+      terminalLineHeight: DEFAULT_TERMINAL_LINE_HEIGHT,
+      terminalLetterSpacing: DEFAULT_TERMINAL_LETTER_SPACING,
+      terminalPaddingX: DEFAULT_TERMINAL_PADDING_X,
+      terminalPaddingY: DEFAULT_TERMINAL_PADDING_Y,
+      terminalCursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+      terminalCursorBlink: true,
+      terminalCursorInactiveStyle: DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE,
+      terminalBoldBright: true,
+      terminalMinContrast: DEFAULT_TERMINAL_MIN_CONTRAST,
+      terminalSchemeSource: "host",
+      terminalSchemeDark: undefined,
+      terminalSchemeLight: undefined,
+      terminalSchemeBackground: "scheme",
+      terminalCustomSchemes: [],
+      terminalSchemeProfiles: [],
       uiFont: undefined,
       terminalFont: undefined,
       customColors: DEFAULT_CUSTOM_COLORS,

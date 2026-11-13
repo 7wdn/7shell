@@ -29,8 +29,9 @@ use sevenshell_types::{
     SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider,
     SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
     SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
-    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    TabMaxWidth, TabPlacement, TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme,
+    TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette,
+    TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -609,6 +610,39 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             ignored_update_version: Some("0.9.9".to_owned()),
             terminal_font: Some("'Fira Code', monospace".to_owned()),
             terminal_font_size: 16,
+            terminal_font_weight: 500,
+            terminal_bold_font_weight: 800,
+            terminal_line_height: 1.25,
+            terminal_letter_spacing: 1,
+            terminal_padding_x: 14,
+            terminal_padding_y: 9,
+            terminal_cursor_style: TerminalCursorStyle::Bar,
+            terminal_cursor_blink: false,
+            terminal_cursor_inactive_style: TerminalCursorInactiveStyle::None,
+            terminal_bold_bright: false,
+            terminal_min_contrast: 4.5,
+            terminal_scheme_source: TerminalSchemeSource::Custom,
+            terminal_scheme_dark: Some("dracula".to_owned()),
+            terminal_scheme_light: Some("solarized-light".to_owned()),
+            terminal_scheme_background: TerminalSchemeBackground::Host,
+            terminal_custom_schemes: vec![TerminalCustomScheme {
+                id: "imported".to_owned(),
+                name: "Imported".to_owned(),
+                foreground: "#ffffff".to_owned(),
+                background: "#000000".to_owned(),
+                cursor: "#ffffff".to_owned(),
+                colors: (0..16).map(|_| "#123456".to_owned()).collect(),
+                selection_background: Some("#654321".to_owned()),
+            }],
+            terminal_scheme_profiles: vec![TerminalSchemeProfile {
+                id: "mine".to_owned(),
+                name: "Mine".to_owned(),
+                terminal_theme: ThemeMode::Dark,
+                scheme_source: TerminalSchemeSource::Custom,
+                scheme_dark: Some("dracula".to_owned()),
+                scheme_light: Some("solarized-light".to_owned()),
+                scheme_background: TerminalSchemeBackground::Scheme,
+            }],
             custom_colors: Some(CustomColors::light_default()),
             custom_colors_dark: Some(CustomColors::dark_default()),
             locale: Some("zh-CN".to_owned()),
@@ -675,6 +709,28 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         settings["aiSessionRetentionDays"],
         serde_json::json!(45),
         "the retention is a page field like the two above it, and the window reads this name"
+    );
+    // The terminal's typography travels under the names the page reads, and the two cursor shapes
+    // are the lower-case words the menu matches.
+    assert_eq!(settings["terminalLineHeight"], serde_json::json!(1.25));
+    assert_eq!(settings["terminalCursorStyle"], serde_json::json!("bar"));
+    assert_eq!(settings["terminalCursorInactiveStyle"], serde_json::json!("none"));
+    assert_eq!(settings["terminalFontWeight"], serde_json::json!(500));
+    assert_eq!(settings["terminalSchemeSource"], serde_json::json!("custom"));
+    assert_eq!(settings["terminalSchemeDark"], serde_json::json!("dracula"));
+    assert_eq!(settings["terminalSchemeBackground"], serde_json::json!("host"));
+    assert_eq!(
+        settings["terminalCustomSchemes"][0]["selectionBackground"],
+        serde_json::json!("#654321"),
+        "an imported scheme carries its surfaces under the names the catalogue uses"
+    );
+    assert_eq!(
+        settings["terminalSchemeProfiles"][0]["terminalTheme"],
+        serde_json::json!("dark")
+    );
+    assert_eq!(
+        settings["terminalSchemeProfiles"][0]["schemeDark"],
+        serde_json::json!("dracula")
     );
     // An external server travels as configuration only: the transport is the lower-case word the
     // page matches, and the timeout is the camelCase name the row reads.

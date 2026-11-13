@@ -118,6 +118,12 @@ async function writtenSettings(): Promise<{
   customColors?: { primary?: string };
   backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
   terminalFontSize?: number;
+  terminalFontWeight?: number;
+  terminalCursorBlink?: boolean;
+  terminalSchemeSource?: string;
+  terminalSchemeDark?: string;
+  terminalCustomSchemes?: { id?: string; name?: string }[];
+  terminalSchemeProfiles?: { id?: string; name?: string }[];
   customColorsDark?: { primary?: string };
   keybindings?: Record<string, string>;
   commandCompletion?: boolean;
@@ -136,6 +142,12 @@ async function writtenSettings(): Promise<{
     customColors?: { primary?: string };
     backgroundImage?: { fileName?: string; displayMode?: string; transparency?: number; blur?: number };
     terminalFontSize?: number;
+    terminalFontWeight?: number;
+    terminalCursorBlink?: boolean;
+    terminalSchemeSource?: string;
+    terminalSchemeDark?: string;
+    terminalCustomSchemes?: { id?: string; name?: string }[];
+    terminalSchemeProfiles?: { id?: string; name?: string }[];
     customColorsDark?: { primary?: string };
     keybindings?: Record<string, string>;
     filesTreeWidth?: number;
@@ -691,6 +703,33 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
     await commandsButton.click();
     await expect(commandsButton).toHaveAttribute("aria-pressed", "false");
     await expect(savedCommands).toHaveCount(0);
+
+    // The colour scheme is one click from the terminal it dresses, and the choice is written down
+    // at once — no settings page, no Apply. What the menu offers is the half of the catalogue the
+    // terminal is actually in, so the case asks which theme is on screen before naming one.
+    const schemeButton = strip.getByRole("button", { name: "Terminal colour scheme" });
+    await schemeButton.click();
+    const darkTerminal = (await page.locator("html").getAttribute("data-theme")) === "dark";
+    const wanted = darkTerminal ? "Dracula" : "3024 Day";
+    const wantedId = darkTerminal ? "dracula" : "3024-day";
+    await page.getByRole("listbox").getByRole("option", { name: wanted, exact: true }).click();
+
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeSource, { message: "the quick switch took" })
+      .toBe("custom");
+    await expect
+      .poll(
+        async () =>
+          darkTerminal ? (await writtenSettings()).terminalSchemeDark : (await writtenSettings()).terminalSchemeLight,
+        { message: "and reached the slot for the terminal that is on screen" },
+      )
+      .toBe(wantedId);
+
+    await schemeButton.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Follow the interface palette", exact: true }).click();
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeSource, { message: "and gives the palette back" })
+      .toBe("host");
 
     // The marker is computed by the shell, not typed literally: seeing `seven-shell-42` proves the
     // line was executed, where the typed text alone would only prove keystrokes reached the screen.
@@ -1333,6 +1372,159 @@ test("a setting can be found by name, and a category can be put back to its defa
     await expect
       .poll(async () => (await writtenSettings()).terminalFont ?? "")
       .toBe("'JetBrains Mono', 'Fira Code', monospace");
+
+    // The terminal's typography and cursor are written by the same Apply as the rest. Two of the
+    // new controls are exercised here — a weight from the list and a switch — because what this case
+    // is for is the path from a control to the file, not the engine's own drawing, which the pane's
+    // spec reads off the options it is handed.
+    const weight = settings.getByRole("combobox", { name: "Text weight", exact: true });
+    await weight.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Semibold (600)" }).click();
+    const blink = settings.getByRole("switch", { name: "Blinking cursor" });
+    await blink.click();
+    await applySettings(page);
+
+    await expect
+      .poll(async () => (await writtenSettings()).terminalFontWeight, { message: "the weight reached the file" })
+      .toBe(600);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalCursorBlink, { message: "and so did the switch" })
+      .toBe(false);
+
+    // Put back, so the rest of the run meets the terminal it expects.
+    await weight.click();
+    await page.getByRole("listbox").getByRole("option", { name: "Regular (400)" }).click();
+    await blink.click();
+    await applySettings(page);
+
+    // A colour scheme is chosen through a dialog with a search box, because nearly two hundred
+    // names are not a dropdown. The terminal is made dark first so the dark slot is the one in
+    // force; what the pane draws with is read off the preview, which uses the same colours.
+    await settings.getByRole("radio", { name: "Always dark", exact: true }).click();
+    await settings.getByRole("radio", { name: "Colour schemes" }).click();
+    const darkSlot = settings.getByRole("button", { name: "Scheme for dark terminals", exact: true });
+    await darkSlot.click();
+    const schemeDialog = page.getByRole("dialog");
+    await expect(schemeDialog).toBeVisible();
+    await schemeDialog.getByRole("searchbox", { name: "Search schemes" }).fill("dracula");
+    await schemeDialog.getByRole("option", { name: "Dracula", exact: true }).click();
+    await expect(schemeDialog).toBeHidden();
+
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeSource, {
+        message: "the source reached the file",
+      })
+      .toBe("custom");
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeDark, {
+        message: "and the scheme is remembered by id",
+      })
+      .toBe("dracula");
+
+    // The preview is the terminal the settings above make: its background is the scheme's own.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const preview = document.querySelector("[data-terminal-preview]");
+            return preview ? getComputedStyle(preview).backgroundColor : "";
+          }),
+        { message: "the scheme's background is what the preview is drawn on" },
+      )
+      .toBe("rgb(30, 31, 41)");
+
+    // The whole colour answer is saved under a name and can be taken again as one choice. The
+    // preset list is the same shape, which is why the two are drawn together.
+    await settings.getByRole("textbox", { name: "Name this scheme…" }).fill("E2E Theme");
+    await settings.getByRole("button", { name: "Save current", exact: true }).click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeProfiles?.[0]?.name, {
+        message: "the saved answer reached the file",
+      })
+      .toBe("E2E Theme");
+
+    // Taking the interface-palette preset puts the source back without touching the saved answer.
+    await settings.getByRole("button", { name: "Interface palette", exact: true }).click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeSource, {
+        message: "the preset is worn at once",
+      })
+      .toBe("host");
+
+    await settings.getByRole("button", { name: "Remove saved scheme", exact: true }).click();
+    const profileDialog = page.getByRole("dialog");
+    await profileDialog.getByRole("button", { name: "Remove saved scheme", exact: true }).click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeProfiles ?? [], {
+        message: "and the saved answer can be removed again",
+      })
+      .toEqual([]);
+
+    // Back to the scheme list, which is where an import appears.
+    await settings.getByRole("radio", { name: "Colour schemes" }).click();
+    await applySettings(page);
+
+    // A scheme somebody has is pasted in, not copied into the build. The dialog parses it, the list
+    // shows it beside the shipped ones, and the settings file keeps it; removing it is the same
+    // path in reverse, confirmation and all.
+    const importedKeys = [
+      "black",
+      "red",
+      "green",
+      "yellow",
+      "blue",
+      "magenta",
+      "cyan",
+      "white",
+      "brightBlack",
+      "brightRed",
+      "brightGreen",
+      "brightYellow",
+      "brightBlue",
+      "brightMagenta",
+      "brightCyan",
+      "brightWhite",
+    ];
+    const importedScheme = JSON.stringify({
+      name: "E2E Imported",
+      foreground: "#ffffff",
+      background: "#101010",
+      cursorColor: "#ffffff",
+      ...Object.fromEntries(importedKeys.map((key) => [key, "#112233"])),
+    });
+    await settings.getByRole("button", { name: "Import", exact: true }).click();
+    const importDialog = page.getByRole("dialog");
+    await importDialog.getByRole("textbox", { name: "Paste a colour scheme…" }).fill(importedScheme);
+    await importDialog.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(importDialog).toBeHidden();
+    await expect(settings.getByText("E2E Imported", { exact: true })).toBeVisible();
+
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalCustomSchemes?.[0]?.name, {
+        message: "the imported scheme reached the file",
+      })
+      .toBe("E2E Imported");
+
+    await settings.getByRole("button", { name: "Remove scheme", exact: true }).click();
+    const removeDialog = page.getByRole("dialog");
+    await removeDialog.getByRole("button", { name: "Remove scheme", exact: true }).click();
+    await applySettings(page);
+    await expect
+      .poll(async () => (await writtenSettings()).terminalCustomSchemes ?? [], {
+        message: "and removing it takes it out again",
+      })
+      .toEqual([]);
+
+    // Put the terminal back on the interface palette, and the interface theme back on its own
+    // setting, so the cases after this one meet the page they expect.
+    await settings.getByRole("radio", { name: "Interface palette" }).click();
+    await settings.getByRole("radio", { name: "Follow the interface", exact: true }).click();
+    await applySettings(page);
 
     // The machine's own names, in the language this machine is in. An installation in Chinese has
     // 微软雅黑, 黑体 and 楷体, and the names come from the platform rather than from the font files —

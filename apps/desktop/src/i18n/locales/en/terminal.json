@@ -24,6 +24,11 @@
       "opening": "Opening the file panel…",
       "retry": "Try again"
     },
+    "scheme": {
+      "title": "Terminal colour scheme",
+      "label": "Colour",
+      "search": "Search schemes"
+    },
     "search": {
       "placeholder": "Find in terminal",
       "label": "Find in terminal",

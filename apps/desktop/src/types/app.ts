@@ -273,6 +273,78 @@ export const TERMINAL_FONT_SIZE_MAX = 24;
 export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 
 /**
+ * The terminal's typography and cursor, from `sevenshell_types`.
+ *
+ * Every default is the value this build drew with before the choice existed, so a settings file
+ * written by an older build opens onto exactly the terminal it was written with. The two floating
+ * point ranges are the multipliers and ratios `xterm` reads, not scaled integers.
+ */
+export const TERMINAL_FONT_WEIGHT_MIN = 100;
+export const TERMINAL_FONT_WEIGHT_MAX = 900;
+export const TERMINAL_FONT_WEIGHTS: readonly number[] = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+export const DEFAULT_TERMINAL_FONT_WEIGHT = 400;
+export const DEFAULT_TERMINAL_BOLD_FONT_WEIGHT = 700;
+export const TERMINAL_LINE_HEIGHT_MIN = 1;
+export const TERMINAL_LINE_HEIGHT_MAX = 3;
+export const DEFAULT_TERMINAL_LINE_HEIGHT = 1;
+export const TERMINAL_LETTER_SPACING_MIN = -5;
+export const TERMINAL_LETTER_SPACING_MAX = 10;
+export const DEFAULT_TERMINAL_LETTER_SPACING = 0;
+export const TERMINAL_PADDING_MIN = 0;
+export const TERMINAL_PADDING_MAX = 32;
+export const DEFAULT_TERMINAL_PADDING_X = 12;
+export const DEFAULT_TERMINAL_PADDING_Y = 10;
+export const TERMINAL_MIN_CONTRAST_MIN = 1;
+export const TERMINAL_MIN_CONTRAST_MAX = 21;
+export const DEFAULT_TERMINAL_MIN_CONTRAST = 1;
+
+/** The shape of the terminal's cursor, from `sevenshell_types::TerminalCursorStyle`. */
+export type TerminalCursorStyle = "block" | "bar" | "underline";
+
+/** The shape it takes while the window is not focused, from `TerminalCursorInactiveStyle`. */
+export type TerminalCursorInactiveStyle = "outline" | "block" | "bar" | "underline" | "none";
+
+export const DEFAULT_TERMINAL_CURSOR_STYLE: TerminalCursorStyle = "block";
+export const DEFAULT_TERMINAL_CURSOR_INACTIVE_STYLE: TerminalCursorInactiveStyle = "outline";
+
+/** Where the terminal's colours come from, from `sevenshell_types::TerminalSchemeSource`. */
+export type TerminalSchemeSource = "host" | "custom";
+export const DEFAULT_TERMINAL_SCHEME_SOURCE: TerminalSchemeSource = "host";
+
+/** A colour scheme somebody imported, from `sevenshell_types::TerminalCustomScheme`. */
+export interface TerminalCustomScheme {
+  readonly id: string;
+  readonly name: string;
+  readonly foreground: string;
+  readonly background: string;
+  readonly cursor: string;
+  /** ANSI SGR 0–15, each `#rrggbb`. */
+  readonly colors: readonly string[];
+  readonly selectionBackground?: string;
+}
+
+/** How many imported schemes this build keeps, from `sevenshell_types`. */
+export const TERMINAL_CUSTOM_SCHEME_LIMIT = 60;
+
+/** A saved answer to "which terminal colours", from `sevenshell_types::TerminalSchemeProfile`. */
+export interface TerminalSchemeProfile {
+  readonly id: string;
+  readonly name: string;
+  readonly terminalTheme: ThemeMode;
+  readonly schemeSource: TerminalSchemeSource;
+  readonly schemeDark?: string;
+  readonly schemeLight?: string;
+  readonly schemeBackground: TerminalSchemeBackground;
+}
+
+/** How many saved scheme choices this build keeps. */
+export const TERMINAL_SCHEME_PROFILE_LIMIT = 30;
+
+/** What a chosen scheme replaces, from `sevenshell_types::TerminalSchemeBackground`. */
+export type TerminalSchemeBackground = "scheme" | "host";
+export const DEFAULT_TERMINAL_SCHEME_BACKGROUND: TerminalSchemeBackground = "scheme";
+
+/**
  * How often a timed upload may run, in minutes, and what a fresh install uses.
  *
  * From `sevenshell_types`, where the floor and the ceiling are reasoned about: a minute is the
@@ -593,6 +665,36 @@ export interface AppSettings {
   readonly terminalFontSize: number;
   /** The stack the terminal draws in, which is a choice of its own. */
   readonly terminalFont?: string;
+  /** How heavy the terminal's text is, on the 100–900 scale. */
+  readonly terminalFontWeight: number;
+  /** How heavy bold text is in the terminal. */
+  readonly terminalBoldFontWeight: number;
+  /** The distance between lines, as a multiple of the font's own height. */
+  readonly terminalLineHeight: number;
+  /** Extra pixels between characters; negative pulls them together. */
+  readonly terminalLetterSpacing: number;
+  /** The room between the terminal's text and the panel's edges, in pixels. */
+  readonly terminalPaddingX: number;
+  readonly terminalPaddingY: number;
+  readonly terminalCursorStyle: TerminalCursorStyle;
+  readonly terminalCursorBlink: boolean;
+  readonly terminalCursorInactiveStyle: TerminalCursorInactiveStyle;
+  /** Whether bold text uses the bright half of the sixteen ANSI colours. */
+  readonly terminalBoldBright: boolean;
+  /** The smallest contrast ratio the terminal accepts before it nudges the foreground. */
+  readonly terminalMinContrast: number;
+  /** Whether the terminal wears the interface palette or a published scheme. */
+  readonly terminalSchemeSource: TerminalSchemeSource;
+  /** The scheme worn while the terminal is dark; absent means the palette. */
+  readonly terminalSchemeDark?: string;
+  /** The scheme worn while the terminal is light. */
+  readonly terminalSchemeLight?: string;
+  /** What a chosen scheme replaces: its own surfaces, or the palette's with only the ANSI colours. */
+  readonly terminalSchemeBackground: TerminalSchemeBackground;
+  /** The schemes somebody imported, which the shipped catalogue does not include. */
+  readonly terminalCustomSchemes?: readonly TerminalCustomScheme[];
+  /** Saved scheme choices, applied as one answer. */
+  readonly terminalSchemeProfiles?: readonly TerminalSchemeProfile[];
   /** What a `custom` palette is drawn from. Absent means nobody has picked any yet. */
   readonly customColors?: CustomColors;
   /** The same for the dark theme, which has a set of its own. */

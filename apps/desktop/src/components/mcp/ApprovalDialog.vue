@@ -189,7 +189,7 @@ const SECONDARY = "rounded-md border border-border px-3 py-1.5 text-xs transitio
 <template>
   <DialogRoot :open="open">
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
+      <DialogOverlay class="fixed inset-0 z-50 bg-overlay" />
       <!--
         A click past the dialog is a refusal, not a dismissal: the question has to be answered for the
         call to go anywhere, and "clicked outside" is the answer that lets nothing happen.

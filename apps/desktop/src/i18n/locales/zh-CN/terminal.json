@@ -24,6 +24,11 @@
       "opening": "正在打开文件面板…",
       "retry": "重试"
     },
+    "scheme": {
+      "title": "终端配色方案",
+      "label": "配色",
+      "search": "搜索配色方案"
+    },
     "search": {
       "placeholder": "在终端中查找",
       "label": "在终端中查找",

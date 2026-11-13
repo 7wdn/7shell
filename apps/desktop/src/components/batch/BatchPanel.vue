@@ -39,7 +39,7 @@ const hosts = computed(() => library.sessions.filter((session) => session.protoc
 
 const LEVEL_STYLES: Record<RiskLevel, string> = {
   safe: "border-border bg-background text-muted-foreground",
-  caution: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  caution: "border-warning/40 bg-warning/10 text-warning",
   destructive: "border-destructive/40 bg-destructive/10 text-destructive",
   catastrophic: "border-destructive bg-destructive/15 text-destructive",
 };

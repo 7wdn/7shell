@@ -18,6 +18,14 @@ import {
   DEFAULT_UI_FONT,
   FONT_PRESETS,
   SYSTEM_UI_FONT,
+  TERMINAL_LETTER_SPACING_MAX,
+  TERMINAL_LETTER_SPACING_MIN,
+  TERMINAL_LINE_HEIGHT_MAX,
+  TERMINAL_LINE_HEIGHT_MIN,
+  TERMINAL_MIN_CONTRAST_MAX,
+  TERMINAL_MIN_CONTRAST_MIN,
+  TERMINAL_PADDING_MAX,
+  TERMINAL_PADDING_MIN,
   UI_SCALE_PERCENTS,
   type CustomColors,
   type SettingsCategoryId,
@@ -207,6 +215,8 @@ export interface SettingsRowDefinition {
       }
     /** The live preview a page is drawn around: the terminal, as the rest of the page will make it. */
     | { readonly kind: "terminal-preview" }
+    /** The terminal's colour source and its two scheme slots, drawn together by their own block. */
+    | { readonly kind: "terminal-schemes" }
     | { readonly kind: "select"; readonly options: readonly SettingsSelectOption[] }
     | { readonly kind: "choice"; readonly options: readonly SettingsChoiceOption[] }
     | { readonly kind: "cards"; readonly options: readonly SettingsCardOption[] }
@@ -378,6 +388,177 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     grid: "wide",
     control: { kind: "slider", min: 10, max: 24, step: 1, unit: "px" },
   },
+  /*
+   * The terminal's typography and cursor.
+   *
+   * Fields rather than cards, because each is a word and a control and the preview above them is
+   * what the page is drawn around: eleven cards explaining themselves would bury the picture they
+   * explain. The summary is still in the table, which is what the search reads.
+   */
+  {
+    id: "terminal-font-weight",
+    category: "terminal",
+    field: "terminalFontWeight",
+    titleKey: "settings.rows.terminalFontWeight.title",
+    summaryKey: "settings.rows.terminalFontWeight.summary",
+    helpKey: "settings.rows.terminalFontWeight.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: [
+        { value: "100", labelKey: "settings.terminal.weight100" },
+        { value: "200", labelKey: "settings.terminal.weight200" },
+        { value: "300", labelKey: "settings.terminal.weight300" },
+        { value: "400", labelKey: "settings.terminal.weight400" },
+        { value: "500", labelKey: "settings.terminal.weight500" },
+        { value: "600", labelKey: "settings.terminal.weight600" },
+        { value: "700", labelKey: "settings.terminal.weight700" },
+        { value: "800", labelKey: "settings.terminal.weight800" },
+        { value: "900", labelKey: "settings.terminal.weight900" },
+      ],
+    },
+  },
+  {
+    id: "terminal-bold-font-weight",
+    category: "terminal",
+    field: "terminalBoldFontWeight",
+    titleKey: "settings.rows.terminalBoldFontWeight.title",
+    summaryKey: "settings.rows.terminalBoldFontWeight.summary",
+    helpKey: "settings.rows.terminalBoldFontWeight.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: [
+        { value: "100", labelKey: "settings.terminal.weight100" },
+        { value: "200", labelKey: "settings.terminal.weight200" },
+        { value: "300", labelKey: "settings.terminal.weight300" },
+        { value: "400", labelKey: "settings.terminal.weight400" },
+        { value: "500", labelKey: "settings.terminal.weight500" },
+        { value: "600", labelKey: "settings.terminal.weight600" },
+        { value: "700", labelKey: "settings.terminal.weight700" },
+        { value: "800", labelKey: "settings.terminal.weight800" },
+        { value: "900", labelKey: "settings.terminal.weight900" },
+      ],
+    },
+  },
+  {
+    id: "terminal-line-height",
+    category: "terminal",
+    field: "terminalLineHeight",
+    titleKey: "settings.rows.terminalLineHeight.title",
+    summaryKey: "settings.rows.terminalLineHeight.summary",
+    helpKey: "settings.rows.terminalLineHeight.help",
+    presentation: "field",
+    control: { kind: "slider", min: TERMINAL_LINE_HEIGHT_MIN, max: TERMINAL_LINE_HEIGHT_MAX, step: 0.05 },
+  },
+  {
+    id: "terminal-letter-spacing",
+    category: "terminal",
+    field: "terminalLetterSpacing",
+    titleKey: "settings.rows.terminalLetterSpacing.title",
+    summaryKey: "settings.rows.terminalLetterSpacing.summary",
+    helpKey: "settings.rows.terminalLetterSpacing.help",
+    presentation: "field",
+    control: {
+      kind: "slider",
+      min: TERMINAL_LETTER_SPACING_MIN,
+      max: TERMINAL_LETTER_SPACING_MAX,
+      step: 1,
+      unit: "px",
+    },
+  },
+  {
+    id: "terminal-padding-x",
+    category: "terminal",
+    field: "terminalPaddingX",
+    titleKey: "settings.rows.terminalPaddingX.title",
+    summaryKey: "settings.rows.terminalPaddingX.summary",
+    helpKey: "settings.rows.terminalPaddingX.help",
+    presentation: "field",
+    control: { kind: "slider", min: TERMINAL_PADDING_MIN, max: TERMINAL_PADDING_MAX, step: 1, unit: "px" },
+  },
+  {
+    id: "terminal-padding-y",
+    category: "terminal",
+    field: "terminalPaddingY",
+    titleKey: "settings.rows.terminalPaddingY.title",
+    summaryKey: "settings.rows.terminalPaddingY.summary",
+    helpKey: "settings.rows.terminalPaddingY.help",
+    presentation: "field",
+    control: { kind: "slider", min: TERMINAL_PADDING_MIN, max: TERMINAL_PADDING_MAX, step: 1, unit: "px" },
+  },
+  {
+    id: "terminal-cursor-style",
+    category: "terminal",
+    field: "terminalCursorStyle",
+    titleKey: "settings.rows.terminalCursorStyle.title",
+    summaryKey: "settings.rows.terminalCursorStyle.summary",
+    helpKey: "settings.rows.terminalCursorStyle.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: [
+        { value: "block", labelKey: "settings.terminal.cursorBlock" },
+        { value: "bar", labelKey: "settings.terminal.cursorBar" },
+        { value: "underline", labelKey: "settings.terminal.cursorUnderline" },
+      ],
+    },
+  },
+  {
+    id: "terminal-cursor-blink",
+    category: "terminal",
+    field: "terminalCursorBlink",
+    titleKey: "settings.rows.terminalCursorBlink.title",
+    summaryKey: "settings.rows.terminalCursorBlink.summary",
+    helpKey: "settings.rows.terminalCursorBlink.help",
+    presentation: "field",
+    control: { kind: "switch" },
+  },
+  {
+    id: "terminal-cursor-inactive",
+    category: "terminal",
+    field: "terminalCursorInactiveStyle",
+    titleKey: "settings.rows.terminalCursorInactive.title",
+    summaryKey: "settings.rows.terminalCursorInactive.summary",
+    helpKey: "settings.rows.terminalCursorInactive.help",
+    presentation: "field",
+    control: {
+      kind: "select",
+      options: [
+        { value: "outline", labelKey: "settings.terminal.inactiveOutline" },
+        { value: "block", labelKey: "settings.terminal.cursorBlock" },
+        { value: "bar", labelKey: "settings.terminal.cursorBar" },
+        { value: "underline", labelKey: "settings.terminal.cursorUnderline" },
+        { value: "none", labelKey: "settings.terminal.inactiveNone" },
+      ],
+    },
+  },
+  {
+    id: "terminal-bold-bright",
+    category: "terminal",
+    field: "terminalBoldBright",
+    titleKey: "settings.rows.terminalBoldBright.title",
+    summaryKey: "settings.rows.terminalBoldBright.summary",
+    helpKey: "settings.rows.terminalBoldBright.help",
+    presentation: "field",
+    control: { kind: "switch" },
+  },
+  {
+    id: "terminal-min-contrast",
+    category: "terminal",
+    field: "terminalMinContrast",
+    titleKey: "settings.rows.terminalMinContrast.title",
+    summaryKey: "settings.rows.terminalMinContrast.summary",
+    helpKey: "settings.rows.terminalMinContrast.help",
+    presentation: "field",
+    control: {
+      kind: "slider",
+      min: TERMINAL_MIN_CONTRAST_MIN,
+      max: TERMINAL_MIN_CONTRAST_MAX,
+      step: 0.5,
+      unit: ":1",
+    },
+  },
   {
     id: "language",
     category: "appearance",
@@ -498,6 +679,15 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         { value: "system", labelKey: "settings.terminal.follow", icon: "sun-moon" },
       ],
     },
+  },
+  {
+    id: "terminal-schemes",
+    category: "terminal",
+    field: "terminalSchemeSource",
+    titleKey: "settings.rows.terminalSchemes.title",
+    summaryKey: "settings.rows.terminalSchemes.summary",
+    helpKey: "settings.rows.terminalSchemes.help",
+    control: { kind: "terminal-schemes" },
   },
   {
     id: "home-content",

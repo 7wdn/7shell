@@ -61,7 +61,7 @@ const expandable = computed(() => hasOutput.value || described.value !== null);
         <LoaderCircle v-if="row.status === 'running'" :size="13" class="animate-spin text-muted-foreground" />
         <MinusCircle v-else-if="row.status === 'pending'" :size="13" class="text-muted-foreground/50" />
         <CircleAlert v-else-if="failed" :size="13" class="text-destructive" />
-        <Check v-else :size="13" class="text-emerald-500" />
+        <Check v-else :size="13" class="text-success" />
       </span>
 
       <button

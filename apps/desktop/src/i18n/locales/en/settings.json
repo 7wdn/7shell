@@ -87,7 +87,76 @@
     "terminal": {
       "light": "Always light",
       "dark": "Always dark",
-      "follow": "Follow the interface"
+      "follow": "Follow the interface",
+      "weight100": "Thin (100)",
+      "weight200": "Extra light (200)",
+      "weight300": "Light (300)",
+      "weight400": "Regular (400)",
+      "weight500": "Medium (500)",
+      "weight600": "Semibold (600)",
+      "weight700": "Bold (700)",
+      "weight800": "Extra bold (800)",
+      "weight900": "Black (900)",
+      "cursorBlock": "Block",
+      "cursorBar": "Bar",
+      "cursorUnderline": "Underline",
+      "inactiveOutline": "Outline",
+      "inactiveNone": "Hidden"
+    },
+    "schemes": {
+      "followPalette": "Follow the interface palette",
+      "source": "Terminal colour source",
+      "sourceHost": "Interface palette",
+      "sourceHostHint": "The pane is dressed by the colours the window is wearing.",
+      "sourceCustom": "Colour schemes",
+      "sourceCustomHint": "The pane wears a published scheme of its own.",
+      "darkSlot": "Scheme for dark terminals",
+      "lightSlot": "Scheme for light terminals",
+      "description": {
+        "dark": "The scheme the terminal wears while it is dark.",
+        "light": "The scheme the terminal wears while it is light."
+      },
+      "search": "Search schemes",
+      "tone": "Scheme tone",
+      "toneAll": "All",
+      "toneDark": "Dark",
+      "toneLight": "Light",
+      "empty": "No scheme matches",
+      "background": "What the scheme replaces",
+      "backgroundScheme": "The whole look",
+      "backgroundHost": "Only the ANSI colours",
+      "backgroundHint": "The whole look replaces the background and text as well. Only the ANSI colours keeps the pane matching the window and changes what ls, git and editors print.",
+      "close": "Close",
+      "saved": "Saved schemes",
+      "savePlaceholder": "Name this scheme…",
+      "save": "Save current",
+      "use": "Use",
+      "worn": "In use",
+      "presets": {
+        "interface": "Interface palette",
+        "highContrast": "High contrast"
+      },
+      "profileRemove": {
+        "title": "Remove saved scheme",
+        "action": "Remove saved scheme",
+        "message": "Remove “{name}”? The terminal keeps the colours it is wearing; only the saved answer is deleted.",
+        "confirm": "Remove saved scheme"
+      },
+      "imported": "Imported schemes ({count}/{limit})",
+      "import": {
+        "title": "Import colour schemes",
+        "hint": "Paste an Xresources block, a Windows Terminal JSON scheme, an iTerm2 .itermcolors file, or any JSON scheme with sixteen colours.",
+        "placeholder": "Paste a colour scheme…",
+        "action": "Import",
+        "empty": "That text is not a colour scheme with sixteen colours.",
+        "none": "None imported yet."
+      },
+      "remove": {
+        "title": "Remove scheme",
+        "action": "Remove scheme",
+        "message": "Remove “{name}”? Terminals wearing it fall back to the interface palette.",
+        "confirm": "Remove scheme"
+      }
     },
     "files": {
       "tree": "Tree and list",
@@ -310,12 +379,72 @@
       "terminalPreview": {
         "title": "Live preview",
         "summary": "A live preview of the terminal settings.",
-        "help": "A live preview of the terminal font, size and palette selected below."
+        "help": "A live preview of the terminal's font, spacing and palette as the settings below change."
       },
       "terminalFontSize": {
         "title": "Text size",
         "summary": "How large the terminal draws its text, in pixels.",
         "help": "Terminal font size in pixels. Open terminals redraw and reflow immediately."
+      },
+      "terminalFontWeight": {
+        "title": "Text weight",
+        "summary": "How heavy the terminal's regular text is.",
+        "help": "The weight the shell's own text is drawn at. Bold text uses its own weight, set separately."
+      },
+      "terminalBoldFontWeight": {
+        "title": "Bold weight",
+        "summary": "How heavy bold text is.",
+        "help": "Some palettes draw bold and regular nearly alike. A heavier bold, or bright ANSI colours, is what keeps emphasis visible."
+      },
+      "terminalLineHeight": {
+        "title": "Line height",
+        "summary": "The distance between lines, as a multiple of the font's height.",
+        "help": "Higher values give a line more room; lower values fit more lines in the same panel. The terminal reflows as it changes."
+      },
+      "terminalLetterSpacing": {
+        "title": "Letter spacing",
+        "summary": "Extra pixels between characters.",
+        "help": "Zero leaves the font's own spacing. Negative values pull characters together; positive values space them out. The grid is measured again as it changes."
+      },
+      "terminalPaddingX": {
+        "title": "Horizontal padding",
+        "summary": "The room between the text and the panel's left and right edges.",
+        "help": "Keeps a full-width line off the frame. The column count is measured again when this changes."
+      },
+      "terminalPaddingY": {
+        "title": "Vertical padding",
+        "summary": "The room above and below the text.",
+        "help": "Breathing space between a block of output and the panel's edges."
+      },
+      "terminalCursorStyle": {
+        "title": "Cursor shape",
+        "summary": "The shape that marks where typing goes.",
+        "help": "Block, bar or underline. Shown while the terminal has the keyboard; the shape it takes without focus is a setting of its own."
+      },
+      "terminalCursorBlink": {
+        "title": "Blinking cursor",
+        "summary": "Whether the cursor blinks.",
+        "help": "A steady cursor is easier to follow in a recording or on a projector; a blinking one is easier to find after looking away."
+      },
+      "terminalCursorInactive": {
+        "title": "Unfocused cursor",
+        "summary": "What the cursor looks like while the window does not have the keyboard.",
+        "help": "Outline keeps the cell marked without pretending it is taking input. Hidden removes it entirely."
+      },
+      "terminalBoldBright": {
+        "title": "Bright bold text",
+        "summary": "Draw bold text in the bright half of the ANSI palette.",
+        "help": "On by default. Turning it off leaves weight as the only difference between bold and regular, which helps in palettes where the two colours are nearly the same."
+      },
+      "terminalMinContrast": {
+        "title": "Minimum contrast",
+        "summary": "The lowest contrast ratio the terminal accepts before it adjusts the text colour.",
+        "help": "One leaves the palette exactly as designed. Higher values trade an exact scheme for readability; 4.5 is the usual reading baseline."
+      },
+      "terminalSchemes": {
+        "title": "Terminal colour schemes",
+        "summary": "A published scheme for the terminal, or the colours of the interface.",
+        "help": "A scheme brings its own background, text and sixteen ANSI colours, one for each half of the terminal's light/dark setting. Leaving the source on the interface palette keeps the pane matching the window."
       },
       "sessionLayout": {
         "title": "Opening a session",

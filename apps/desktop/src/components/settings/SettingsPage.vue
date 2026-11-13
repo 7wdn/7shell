@@ -94,6 +94,9 @@ import {
   type FilesLayout,
   type SessionLayout,
   type SessionReopen,
+  type TerminalCursorInactiveStyle,
+  type TerminalCursorStyle,
+  type TerminalSchemeSource,
   type ThemeMode,
   type ThemePalette,
 } from "@/types/app";
@@ -347,6 +350,12 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
   if (id === "workspace") {
     fields.push("terminalPanelHeight", "sidebarWidth", "filesTreeWidth", "sidebarOpen");
   }
+  if (id === "terminal") {
+    // The scheme slots and the background choice have no rows of their own: they are drawn inside
+    // the colour-schemes block, which is one question with four answers. Restoring the terminal
+    // category still has to put them back, so the category names them here.
+    fields.push("terminalSchemeDark", "terminalSchemeLight", "terminalSchemeBackground", "terminalSchemeProfiles");
+  }
   if (id === "appearance") {
     fields.push("customColors", "customColorsDark");
   }
@@ -411,6 +420,30 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       // scale is: the value the settings file holds is a number, and the slider is the only thing here
       // that reads it as text.
       return String(preferences.terminalFontSize);
+    case "terminalFontWeight":
+      return String(preferences.terminalFontWeight);
+    case "terminalBoldFontWeight":
+      return String(preferences.terminalBoldFontWeight);
+    case "terminalLineHeight":
+      return String(preferences.terminalLineHeight);
+    case "terminalLetterSpacing":
+      return String(preferences.terminalLetterSpacing);
+    case "terminalPaddingX":
+      return String(preferences.terminalPaddingX);
+    case "terminalPaddingY":
+      return String(preferences.terminalPaddingY);
+    case "terminalCursorStyle":
+      return preferences.terminalCursorStyle;
+    case "terminalCursorBlink":
+      return preferences.terminalCursorBlink;
+    case "terminalCursorInactiveStyle":
+      return preferences.terminalCursorInactiveStyle;
+    case "terminalBoldBright":
+      return preferences.terminalBoldBright;
+    case "terminalMinContrast":
+      return String(preferences.terminalMinContrast);
+    case "terminalSchemeSource":
+      return preferences.terminalSchemeSource;
     case "showTrayIcon":
       return preferences.showTrayIcon;
     case "quitOnClose":
@@ -525,6 +558,42 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "terminalFontSize":
       preferences.setTerminalFontSize(Number(value));
+      return;
+    case "terminalFontWeight":
+      preferences.setTerminalFontWeight(Number(value));
+      return;
+    case "terminalBoldFontWeight":
+      preferences.setTerminalBoldFontWeight(Number(value));
+      return;
+    case "terminalLineHeight":
+      preferences.setTerminalLineHeight(Number(value));
+      return;
+    case "terminalLetterSpacing":
+      preferences.setTerminalLetterSpacing(Number(value));
+      return;
+    case "terminalPaddingX":
+      preferences.setTerminalPaddingX(Number(value));
+      return;
+    case "terminalPaddingY":
+      preferences.setTerminalPaddingY(Number(value));
+      return;
+    case "terminalCursorStyle":
+      preferences.setTerminalCursorStyle(value as TerminalCursorStyle);
+      return;
+    case "terminalCursorBlink":
+      preferences.setTerminalCursorBlink(value === true);
+      return;
+    case "terminalCursorInactiveStyle":
+      preferences.setTerminalCursorInactiveStyle(value as TerminalCursorInactiveStyle);
+      return;
+    case "terminalBoldBright":
+      preferences.setTerminalBoldBright(value === true);
+      return;
+    case "terminalMinContrast":
+      preferences.setTerminalMinContrast(Number(value));
+      return;
+    case "terminalSchemeSource":
+      preferences.setTerminalSchemeSource(value as TerminalSchemeSource);
       return;
     case "showTrayIcon":
       preferences.setShowTrayIcon(value === true);

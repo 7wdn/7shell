@@ -46,6 +46,7 @@ import { bindingFor } from "@/lib/shortcuts/registry";
 import { registerInputReset, registerTerminalSink } from "@/lib/terminal/bus";
 import { registerTerminalBuffer, tailOfBuffer } from "@/lib/terminal/buffers";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
+import { findTerminalScheme, schemeAnsi, withAlpha } from "@/lib/terminal/schemes";
 import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -61,6 +62,45 @@ const preferences = usePreferencesStore();
 const paletteClass = computed(() =>
   preferences.resolvedTerminalTheme === "dark" ? "terminal-dark" : "terminal-light",
 );
+
+/**
+ * The scheme this pane wears, if any.
+ *
+ * The slot is chosen by the terminal's own light/dark setting rather than the window's: the two are
+ * decided apart, and a dark terminal beside a light window is still a dark terminal. An id this
+ * build does not ship resolves to nothing, which is what makes the pane fall back to the palette
+ * instead of drawing a scheme that is not there.
+ */
+const activeScheme = computed(() => {
+  if (preferences.terminalSchemeSource !== "custom") {
+    return undefined;
+  }
+  const id =
+    preferences.resolvedTerminalTheme === "dark" ? preferences.terminalSchemeDark : preferences.terminalSchemeLight;
+  return findTerminalScheme(id, preferences.terminalCustomSchemes);
+});
+
+/**
+ * The room between the text and the panel's edges.
+ *
+ * Two custom properties rather than an inline `padding`: the padding has to sit on the element
+ * xterm draws into — FitAddon subtracts it when it measures the grid — and that element belongs to
+ * xterm. The container passes the numbers down, the stylesheet puts them on `.xterm`, and a change
+ * is a refit rather than a second copy of the stylesheet's rule.
+ */
+const surfaceStyle = computed<Record<string, string>>(() => {
+  const style: Record<string, string> = {
+    "--terminal-padding-x": `${preferences.terminalPaddingX}px`,
+    "--terminal-padding-y": `${preferences.terminalPaddingY}px`,
+  };
+  // The padding ring around xterm is painted from the token the pane carries, not from the canvas
+  // inside it. A scheme that replaces the background has to reach this token too, or the pane gets
+  // a frame in the palette's colour around a scheme-coloured terminal.
+  if (activeScheme.value && preferences.terminalSchemeBackground === "scheme") {
+    style["--terminal-background"] = activeScheme.value.background;
+  }
+  return style;
+});
 
 /**
  * Find-in-terminal state.
@@ -208,7 +248,8 @@ const TERMINAL_TOKENS = [
   ["brightWhite", "--terminal-bright-white"],
 ] as const;
 
-function terminalTheme(): ITheme {
+/** The theme the stylesheet describes: the palette's four surfaces and the fixed sixteen colours. */
+function paletteTerminalTheme(): ITheme {
   const theme: Record<string, string | undefined> = {};
 
   for (const [name, customProperty] of TERMINAL_TOKENS) {
@@ -218,6 +259,47 @@ function terminalTheme(): ITheme {
   }
 
   return theme as ITheme;
+}
+
+/**
+ * What the terminal actually draws with.
+ *
+ * A chosen scheme replaces the sixteen colours in every case. Which surfaces come with them is the
+ * background setting's answer: the whole look, or only the colours with the palette's own
+ * background and text — for somebody who wants `ls` and `git diff` to follow the scheme while the
+ * pane still blends into the window.
+ */
+function terminalTheme(): ITheme {
+  const base = paletteTerminalTheme();
+  const scheme = activeScheme.value;
+  if (!scheme) {
+    return base;
+  }
+
+  const themed: Record<string, string | undefined> = {
+    background: scheme.background,
+    foreground: scheme.foreground,
+    cursor: scheme.cursor,
+    cursorAccent: scheme.background,
+    // The schemes in the catalogue do not carry a selection colour of their own. A quarter of the
+    // foreground is readable on both halves of the catalogue: it is dark on a light scheme and
+    // light on a dark one, which is the only guarantee a selection layer needs.
+    selectionBackground: withAlpha(scheme.foreground, 0.3),
+    ...schemeAnsi(scheme),
+  };
+
+  if (preferences.terminalSchemeBackground === "host") {
+    return {
+      ...themed,
+      background: base.background,
+      foreground: base.foreground,
+      cursor: base.foreground,
+      cursorAccent: base.background,
+      selectionBackground: base.selectionBackground,
+    } as ITheme;
+  }
+
+  return themed as ITheme;
 }
 
 function applySize(): void {
@@ -532,9 +614,17 @@ onMounted(() => {
   }
 
   const instance = new Terminal({
-    cursorBlink: true,
+    cursorBlink: preferences.terminalCursorBlink,
+    cursorStyle: preferences.terminalCursorStyle,
+    cursorInactiveStyle: preferences.terminalCursorInactiveStyle,
+    drawBoldTextInBrightColors: preferences.terminalBoldBright,
     fontFamily: preferences.wornTerminalFont,
     fontSize: preferences.terminalFontSize,
+    fontWeight: preferences.terminalFontWeight,
+    fontWeightBold: preferences.terminalBoldFontWeight,
+    letterSpacing: preferences.terminalLetterSpacing,
+    lineHeight: preferences.terminalLineHeight,
+    minimumContrastRatio: preferences.terminalMinContrast,
     scrollback: 5000,
     theme: terminalTheme(),
     // The menu that opens on a right-click works on the selection somebody made before opening it,
@@ -639,10 +729,19 @@ onMounted(() => {
 });
 
 watch(
-  () => preferences.resolvedTerminalTheme,
+  () => [
+    preferences.resolvedTerminalTheme,
+    preferences.terminalSchemeSource,
+    preferences.terminalSchemeDark,
+    preferences.terminalSchemeLight,
+    preferences.terminalSchemeBackground,
+    preferences.terminalCustomSchemes,
+  ],
   () => {
     // The palette lives in the stylesheet, so the tokens have to be read again after the class
-    // has changed — which is why this waits a tick instead of reading them straight away.
+    // has changed — which is why this waits a tick instead of reading them straight away. A scheme
+    // is read from the catalogue rather than from the stylesheet, but it is applied through the
+    // same door, so both changes end up here.
     void nextTick(() => {
       if (terminal) {
         terminal.options.theme = terminalTheme();
@@ -678,6 +777,62 @@ watch(
         applySize();
       }
     });
+  },
+);
+
+watch(
+  () => [
+    preferences.terminalFontWeight,
+    preferences.terminalBoldFontWeight,
+    preferences.terminalLineHeight,
+    preferences.terminalLetterSpacing,
+  ],
+  () => {
+    // All four change the size of a cell, so the grid is measured again rather than merely repainted.
+    void nextTick(() => {
+      if (!terminal) {
+        return;
+      }
+      terminal.options.fontWeight = preferences.terminalFontWeight;
+      terminal.options.fontWeightBold = preferences.terminalBoldFontWeight;
+      terminal.options.lineHeight = preferences.terminalLineHeight;
+      terminal.options.letterSpacing = preferences.terminalLetterSpacing;
+      applySize();
+    });
+  },
+);
+
+watch(
+  () => [preferences.terminalPaddingX, preferences.terminalPaddingY],
+  () => {
+    // Padding is part of the box FitAddon subtracts, so a new number is a new number of columns.
+    void nextTick(() => {
+      if (terminal) {
+        applySize();
+      }
+    });
+  },
+);
+
+watch(
+  () => [
+    preferences.terminalCursorStyle,
+    preferences.terminalCursorBlink,
+    preferences.terminalCursorInactiveStyle,
+    preferences.terminalBoldBright,
+    preferences.terminalMinContrast,
+  ],
+  () => {
+    if (!terminal) {
+      return;
+    }
+    // None of these changes a cell's size: the cursor is drawn over it, and the contrast adjustment
+    // only moves a colour. A repaint is the whole of the work.
+    terminal.options.cursorStyle = preferences.terminalCursorStyle;
+    terminal.options.cursorBlink = preferences.terminalCursorBlink;
+    terminal.options.cursorInactiveStyle = preferences.terminalCursorInactiveStyle;
+    terminal.options.drawBoldTextInBrightColors = preferences.terminalBoldBright;
+    terminal.options.minimumContrastRatio = preferences.terminalMinContrast;
   },
 );
 
@@ -741,6 +896,7 @@ onBeforeUnmount(() => {
       ref="container"
       class="terminal-surface h-full overflow-hidden bg-[var(--terminal-background)]"
       :class="paletteClass"
+      :style="surfaceStyle"
       @contextmenu.capture="onContextMenu"
       @pointerdown="onSurfacePointerDown"
     ></div>
@@ -875,7 +1031,7 @@ onBeforeUnmount(() => {
  *    up as a black frame around a light terminal.
  */
 .terminal-surface :deep(.xterm) {
-  padding: 10px 12px;
+  padding: var(--terminal-padding-y, 10px) var(--terminal-padding-x, 12px);
 }
 
 .terminal-surface :deep(.xterm),
