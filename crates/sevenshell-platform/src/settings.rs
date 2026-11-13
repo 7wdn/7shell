@@ -26,17 +26,17 @@ use sevenshell_types::{
     TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, ThemeMode,
     ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
     ai_session_retention_days_default, background_blur_default, background_transparency_default, command_completion_on,
-    is_valid_mcp_server_id, mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default,
-    mcp_max_result_bytes_default, mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on,
-    normalize_ai_context_lines, normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds,
-    normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes,
-    normalize_terminal_bold_font_weight, normalize_terminal_font_size, normalize_terminal_font_weight,
-    normalize_terminal_letter_spacing, normalize_terminal_line_height, normalize_terminal_min_contrast,
-    normalize_terminal_padding, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
-    terminal_bold_bright_on, terminal_bold_font_weight_default, terminal_cursor_blink_on, terminal_font_size_default,
-    terminal_font_weight_default, terminal_letter_spacing_default, terminal_line_height_default,
-    terminal_min_contrast_default, terminal_padding_x_default, terminal_padding_y_default, tray_icon_on,
-    ui_scale_default, update_check_on,
+    default_terminal_highlight_rules, is_valid_mcp_server_id, mcp_approval_timeout_seconds_default,
+    mcp_audit_retention_days_default, mcp_max_result_bytes_default, mcp_server_enabled_default,
+    mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
+    normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
+    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_bold_font_weight,
+    normalize_terminal_font_size, normalize_terminal_font_weight, normalize_terminal_letter_spacing,
+    normalize_terminal_line_height, normalize_terminal_min_contrast, normalize_terminal_padding, normalize_ui_scale,
+    sidebar_on, sync_auto_upload_minutes_default, terminal_bold_bright_on, terminal_bold_font_weight_default,
+    terminal_cursor_blink_on, terminal_font_size_default, terminal_font_weight_default,
+    terminal_letter_spacing_default, terminal_line_height_default, terminal_min_contrast_default,
+    terminal_padding_x_default, terminal_padding_y_default, tray_icon_on, ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -452,6 +452,11 @@ struct StoredSettings {
     terminal_highlight_rules: Vec<TerminalHighlightRule>,
     #[serde(default)]
     terminal_highlight_mode: String,
+    /// Whether the default rules have already been offered. A file written before the rules
+    /// existed has none, which is the one time they are seeded; a file that says they were seeded
+    /// and carries no rules means somebody removed them, and they stay removed.
+    #[serde(default)]
+    terminal_highlight_seeded: bool,
     /// Absent in a file written before the interface could be coloured by hand, which reads as
     /// "nobody has picked any" — the defaults a fresh install starts from.
     #[serde(default)]
@@ -603,6 +608,7 @@ impl StoredSettings {
                 .collect(),
             terminal_highlight_rules: settings.terminal_highlight_rules.clone(),
             terminal_highlight_mode: settings.terminal_highlight_mode.as_str().to_owned(),
+            terminal_highlight_seeded: true,
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
@@ -756,13 +762,21 @@ impl StoredSettings {
             },
             terminal_highlight_rules: {
                 let mut seen = std::collections::BTreeSet::new();
-                self.terminal_highlight_rules
+                let rules: Vec<_> = self
+                    .terminal_highlight_rules
                     .iter()
                     .filter(|rule| rule.is_drawable())
                     .filter(|rule| seen.insert(rule.id.trim().to_owned()))
                     .take(TERMINAL_HIGHLIGHT_RULE_LIMIT)
                     .cloned()
-                    .collect()
+                    .collect();
+                // A file written before the rules existed has neither a seed mark nor a list.
+                // A file that says the seed happened and is empty means they were removed.
+                if !self.terminal_highlight_seeded && rules.is_empty() {
+                    default_terminal_highlight_rules()
+                } else {
+                    rules
+                }
             },
             terminal_highlight_mode: TerminalHighlightMode::from_id(&self.terminal_highlight_mode).unwrap_or_default(),
             // A hand-coloured set that cannot be drawn is dropped whole rather than per colour: half
@@ -1524,6 +1538,40 @@ mod tests {
         assert_eq!(loaded.terminal_scheme_dark, None);
         assert_eq!(loaded.terminal_scheme_light, None);
         assert_eq!(loaded.terminal_scheme_background, TerminalSchemeBackground::default());
+    }
+
+    #[test]
+    fn the_first_file_without_rules_gets_the_seeded_set_once() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(&path, r#"{"schemaVersion":1}"#).expect("write");
+
+        let seeded = load_from(&path).expect("a file from before the rules existed still opens");
+        let defaults = default_terminal_highlight_rules();
+        assert_eq!(seeded.terminal_highlight_rules, defaults);
+
+        // A list the person emptied is theirs: the seed mark is written with the save, and a
+        // later load must not bring the defaults back.
+        let mut emptied = seeded;
+        emptied.terminal_highlight_rules.clear();
+        save_to(&path, &emptied).expect("save");
+        assert!(load_from(&path).expect("load").terminal_highlight_rules.is_empty());
+    }
+
+    #[test]
+    fn a_file_with_its_own_rules_is_not_reseeded() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r##"{"schemaVersion":1,"terminalHighlightRules":[{"id":"mine","pattern":"mine","color":"#123456",
+                "isRegex":false,"caseSensitive":false}]}"##,
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("load");
+        assert_eq!(loaded.terminal_highlight_rules.len(), 1);
+        assert_eq!(loaded.terminal_highlight_rules[0].pattern, "mine");
     }
 
     #[test]

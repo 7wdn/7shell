@@ -53,4 +53,24 @@ describe("the terminal's highlight rules", () => {
     const compiled = compileHighlightRules([rule("timeout", { color: "#ff0000" })]);
     expect(highlightMatches("timeout", compiled)[0]).toMatchObject({ color: "#ff0000", ruleId: "timeout" });
   });
+
+  it("lets the longer phrase keep the characters it matched", () => {
+    const compiled = compileHighlightRules([
+      rule("denied", { color: "#f59e0b" }),
+      rule("Permission denied", { color: "#ef4444" }),
+    ]);
+    const hits = highlightMatches("Permission denied", compiled);
+    expect(hits).toHaveLength(1);
+    expect(hits[0], "the phrase is red, not painted amber inside").toMatchObject({
+      color: "#ef4444",
+      start: 0,
+      end: 17,
+    });
+  });
+
+  it("keeps an earlier match when a later rule would overlap it", () => {
+    const compiled = compileHighlightRules([rule("abc", { color: "#111111" }), rule("bcd", { color: "#222222" })]);
+    const hits = highlightMatches("abcd", compiled);
+    expect(hits.map((hit) => [hit.start, hit.end, hit.color])).toEqual([[0, 3, "#111111"]]);
+  });
 });

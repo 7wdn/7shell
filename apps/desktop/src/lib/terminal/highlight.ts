@@ -32,42 +32,63 @@ function escapeRegExp(value: string): string {
 export function compileHighlightRules(rules: readonly TerminalHighlightRule[]): readonly CompiledHighlightRule[] {
   const compiled: CompiledHighlightRule[] = [];
   for (const rule of rules) {
-    if (!rule.pattern.trim()) {
+    const pattern = rule.pattern.trim();
+    if (!pattern) {
       continue;
     }
-    const source = rule.isRegex ? rule.pattern : escapeRegExp(rule.pattern);
+    const source = rule.isRegex ? pattern : escapeRegExp(pattern);
     try {
       compiled.push({
         rule,
-        regex: new RegExp(source, `g${rule.caseSensitive ? "" : "i"}u`),
+        regex: new RegExp(source, `g${rule.caseSensitive ? "" : "i"}`),
       });
     } catch {
       // A pattern that is not a regular expression is a rule this line cannot apply. The editor
       // says so where it is written; here the rest of the list still works.
     }
   }
-  return compiled;
+  // The longest pattern is tried first, so "Permission denied" (red) wins over "denied" (amber)
+  // inside the same phrase instead of being painted over by it.
+  return compiled.sort((a, b) => b.rule.pattern.trim().length - a.rule.pattern.trim().length);
 }
 
-/** Every match of every compiled rule in one line, in the order the rules were written. */
+/**
+ * Every match of every compiled rule in one line.
+ *
+ * Rules are tried longest-first and an earlier match keeps its characters: a later rule whose hit
+ * overlaps one already taken is skipped. The line is bounded so a pattern like `.` cannot turn the
+ * terminal into a drawing exercise. Zero-width hits advance the expression by one and are not
+ * drawn — a mark on nothing is a mark nobody can see anyway.
+ */
 export function highlightMatches(
   line: string,
   compiled: readonly CompiledHighlightRule[],
   perLine = HIGHLIGHT_MATCHES_PER_LINE,
 ): readonly HighlightMatch[] {
+  if (!line || compiled.length === 0 || perLine <= 0) {
+    return [];
+  }
+  const taken: [start: number, end: number][] = [];
   const matches: HighlightMatch[] = [];
   for (const { rule, regex } of compiled) {
-    for (const match of line.matchAll(regex)) {
-      const start = match.index ?? 0;
-      const end = start + match[0].length;
-      if (end <= start) {
+    regex.lastIndex = 0;
+    let hit: RegExpExecArray | null;
+    while ((hit = regex.exec(line)) !== null) {
+      if (hit[0].length === 0) {
+        regex.lastIndex += 1;
         continue;
       }
-      matches.push({ start, end, color: rule.color, ruleId: rule.id });
-      if (matches.length >= perLine) {
-        return matches;
+      const start = hit.index;
+      const end = start + hit[0].length;
+      const overlaps = taken.some(([takenStart, takenEnd]) => start < takenEnd && end > takenStart);
+      if (!overlaps) {
+        taken.push([start, end]);
+        matches.push({ start, end, color: rule.color, ruleId: rule.id });
+        if (matches.length >= perLine) {
+          return matches.sort((a, b) => a.start - b.start);
+        }
       }
     }
   }
-  return matches;
+  return matches.sort((a, b) => a.start - b.start);
 }

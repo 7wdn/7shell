@@ -684,9 +684,14 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
     await editor.getByRole("button", { name: "Save" }).click();
     await expect(editor).toHaveCount(0);
 
+    // The row carries the shell's own mark (PowerShell, Command Prompt or Git Bash on this
+    // machine), not the generic terminal it had before any of these marks existed.
+    await expect(sessionRow(page, name).locator(".os-mark svg")).toBeVisible();
+
     await sessionRow(page, name).click();
     const screen = page.locator(".xterm-rows").filter({ visible: true }).first();
     await expect(screen).toBeAttached({ timeout: 30_000 });
+    await expect(page.locator("[data-workspace-tabs] .os-mark svg").first()).toBeVisible();
 
     // This transport has no SFTP channel, so the split that opens files beside an SSH terminal
     // must not ask for one here: the failure used to be drawn as an unsupported-feature card under
@@ -760,10 +765,121 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
     await settingsButton(page).click();
     const cleanupSettings = page.getByRole("region", { name: "Settings" });
     await cleanupSettings.getByRole("button", { name: "SSH terminal", exact: true }).click();
-    await cleanupSettings.getByRole("button", { name: "Remove rule", exact: true }).click();
+    await cleanupSettings
+      .locator("li")
+      .filter({ hasText: "seven-shell-highlight" })
+      .getByRole("button", { name: "Remove rule", exact: true })
+      .click();
     const cleanupRuleDialog = page.getByRole("dialog");
     await cleanupRuleDialog.getByRole("button", { name: "Remove rule", exact: true }).click();
     await cleanupSettings.getByRole("button", { name: "Apply and close", exact: true }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A scheme chosen for the half of the theme on screen reaches a terminal that is already open.
+ *
+ * The preview and the pane are two different consumers; this walks the real one — settings, then
+ * the computed background of the terminal that was open while the choice was made.
+ */
+test("a colour scheme reaches a terminal that is already open", async () => {
+  const { page, close } = await openApp();
+  try {
+    const name = `scheme-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.locator("#session-protocol").click();
+    await page.getByRole("listbox").getByRole("option", { name: "Local terminal" }).click();
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+    await sessionRow(page, name).click();
+    const screen = page.locator(".xterm-screen").filter({ visible: true }).first();
+    await expect(screen).toBeAttached({ timeout: 30_000 });
+
+    await settingsButton(page).click();
+    const settings = page.getByRole("region", { name: "Settings" });
+    await settings.getByRole("button", { name: "SSH terminal", exact: true }).click();
+    await settings.getByRole("radio", { name: "Colour schemes" }).click();
+    const lightTerminal = (await page.locator("html").getAttribute("data-theme")) === "light";
+    const slot = settings.getByRole("button", {
+      name: lightTerminal ? "Scheme for light terminals" : "Scheme for dark terminals",
+      exact: true,
+    });
+    await slot.click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("searchbox", { name: "Search schemes" }).fill("Argonaut");
+    await dialog.getByRole("option", { name: "Argonaut", exact: true }).click();
+    await settings.getByRole("button", { name: "Apply and close", exact: true }).click();
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const element = [...document.querySelectorAll(".xterm-screen")].find(
+              (candidate) => (candidate as HTMLElement).offsetParent !== null,
+            );
+            return element ? getComputedStyle(element).backgroundColor : "";
+          }),
+        { message: "the open terminal wears the scheme's background" },
+      )
+      .toBe("rgb(14, 16, 25)");
+
+    // And back to the interface palette, without leaving the next case a custom source.
+    const strip = page.locator("[data-terminal-strip]").filter({ visible: true }).first();
+    await strip.getByRole("button", { name: "Terminal colour scheme" }).click();
+    await page.getByRole("listbox").getByRole("option", { name: "Follow the interface palette", exact: true }).click();
+    await expect
+      .poll(async () => (await writtenSettings()).terminalSchemeSource, { message: "the palette is back" })
+      .toBe("host");
+
+    const row = sessionRow(page, name);
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Delete session" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Delete session", exact: true }).click();
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A connection kind that has a mark of its own draws it on the saved row.
+ *
+ * No runtime or cluster is contacted: what this case is about is the row, which is drawn from the
+ * session alone. Both rows are removed again so the rest of the run meets the list it expects.
+ */
+test("a Docker and a Kubernetes session carry their kind's mark", async () => {
+  const { page, close } = await openApp();
+  try {
+    const stamp = Date.now() % 100000;
+    const docker = `docker-${stamp}`;
+    const cluster = `cluster-${stamp}`;
+
+    const saveKind = async (name: string, kind: string) => {
+      await sidebar(page).getByRole("button", { name: "New session" }).click();
+      const editor = page.getByRole("dialog");
+      await editor.getByPlaceholder("Production web server").fill(name);
+      await editor.locator("#session-protocol").click();
+      await page.getByRole("listbox").getByRole("option", { name: kind, exact: true }).click();
+      await editor.getByRole("button", { name: "Save" }).click();
+      await expect(editor).toHaveCount(0);
+      await expect(sessionRow(page, name).locator(".os-mark svg"), `${kind} row has a mark`).toBeVisible();
+    };
+
+    await saveKind(docker, "Docker");
+    await saveKind(cluster, "Kubernetes");
+
+    const remove = async (name: string) => {
+      const row = sessionRow(page, name);
+      await row.click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Delete session" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Delete session", exact: true }).click();
+      await expect(row).toHaveCount(0);
+    };
+    await remove(docker);
+    await remove(cluster);
   } finally {
     await close();
   }
@@ -1556,20 +1672,26 @@ test("a setting can be found by name, and a category can be put back to its defa
     await expect(highlightDialog).toBeHidden();
     await applySettings(page);
     await expect
-      .poll(async () => (await writtenSettings()).terminalHighlightRules?.[0]?.pattern, {
-        message: "the rule reached the file",
-      })
-      .toBe("timeout");
+      .poll(
+        async () => ((await writtenSettings()).terminalHighlightRules ?? []).some((rule) => rule.pattern === "timeout"),
+        { message: "the rule reached the file" },
+      )
+      .toBe(true);
 
-    await settings.getByRole("button", { name: "Remove rule", exact: true }).click();
+    await settings
+      .locator("li")
+      .filter({ hasText: "timeout" })
+      .getByRole("button", { name: "Remove rule", exact: true })
+      .click();
     const highlightRemoveDialog = page.getByRole("dialog");
     await highlightRemoveDialog.getByRole("button", { name: "Remove rule", exact: true }).click();
     await applySettings(page);
     await expect
-      .poll(async () => (await writtenSettings()).terminalHighlightRules ?? [], {
-        message: "and removing it takes it out again",
-      })
-      .toEqual([]);
+      .poll(
+        async () => ((await writtenSettings()).terminalHighlightRules ?? []).some((rule) => rule.pattern === "timeout"),
+        { message: "and removing it takes it out again" },
+      )
+      .toBe(false);
 
     // Put the terminal back on the interface palette, and the interface theme back on its own
     // setting, so the cases after this one meet the page they expect.

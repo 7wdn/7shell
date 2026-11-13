@@ -1154,6 +1154,93 @@ impl TerminalHighlightMode {
 pub const TERMINAL_HIGHLIGHT_RULE_LIMIT: usize = 30;
 pub const TERMINAL_HIGHLIGHT_PATTERN_MAX_CHARS: usize = 200;
 
+/// The rules a fresh install starts with.
+///
+/// Long phrases first, because the overlapping match is the one that gets drawn: `Permission
+/// denied` must win over `denied`, and `No such file or directory` over `denied`'s neighbours.
+/// The colours follow severity rather than the palette: a person reading a wall of output looks for
+/// red before reading the words.
+pub fn default_terminal_highlight_rules() -> Vec<TerminalHighlightRule> {
+    let rule = |id: &str, pattern: &str, color: &str, case_sensitive: bool, is_regex: bool| TerminalHighlightRule {
+        id: id.to_owned(),
+        pattern: pattern.to_owned(),
+        color: color.to_owned(),
+        is_regex,
+        case_sensitive,
+    };
+    vec![
+        // Red: hard errors.
+        rule("default-error", "ERROR", "#ef4444", false, false),
+        rule("default-fatal", "FATAL", "#ef4444", false, false),
+        rule(
+            "default-permission-denied",
+            "Permission denied",
+            "#ef4444",
+            false,
+            false,
+        ),
+        rule(
+            "default-no-such-file",
+            "No such file or directory",
+            "#ef4444",
+            false,
+            false,
+        ),
+        rule(
+            "default-command-not-found",
+            "command not found",
+            "#ef4444",
+            false,
+            false,
+        ),
+        rule(
+            "default-connection-refused",
+            "Connection refused",
+            "#ef4444",
+            false,
+            false,
+        ),
+        rule(
+            "default-no-space-left",
+            "No space left on device",
+            "#ef4444",
+            false,
+            false,
+        ),
+        rule("default-failed-to", "Failed to", "#ef4444", false, false),
+        rule("default-cannot", "cannot", "#ef4444", false, false),
+        rule("default-exception", "Exception", "#ef4444", false, false),
+        rule(
+            "default-traceback",
+            "Traceback (most recent call last)",
+            "#ef4444",
+            false,
+            false,
+        ),
+        // Amber: a command failed or access was restricted.
+        rule("default-fail", "FAIL", "#f59e0b", false, false),
+        rule("default-denied", "denied", "#f59e0b", false, false),
+        rule("default-timed-out", "timed out", "#f59e0b", false, false),
+        // Yellow: warnings.
+        rule("default-warn", "WARN", "#facc15", false, false),
+        rule("default-deprecated", "deprecated", "#facc15", false, false),
+        // Green: success and health.
+        rule("default-success", "SUCCESS", "#22c55e", false, false),
+        rule("default-active-running", "active (running)", "#22c55e", false, false),
+        rule("default-done", "done", "#22c55e", false, false),
+        rule("default-check", "✓", "#22c55e", false, false),
+        rule("default-passed", "PASSED", "#22c55e", true, false),
+        // Blue: extractable information.
+        rule(
+            "default-ipv4",
+            r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b",
+            "#3b82f6",
+            false,
+            true,
+        ),
+    ]
+}
+
 /// The ends of the terminal's typography and cursor settings, and the values a fresh install has.
 ///
 /// Bounded rather than free for the reason the font size is: each is chosen by looking at the preview
@@ -1777,7 +1864,7 @@ impl Default for AppSettings {
             terminal_scheme_background: TerminalSchemeBackground::default(),
             terminal_custom_schemes: Vec::new(),
             terminal_scheme_profiles: Vec::new(),
-            terminal_highlight_rules: Vec::new(),
+            terminal_highlight_rules: default_terminal_highlight_rules(),
             terminal_highlight_mode: TerminalHighlightMode::default(),
             custom_colors: None,
             custom_colors_dark: None,
@@ -1845,7 +1932,8 @@ impl AppSettings {
             && self.terminal_scheme_background == TerminalSchemeBackground::Scheme
             && self.terminal_custom_schemes.is_empty()
             && self.terminal_scheme_profiles.is_empty()
-            && self.terminal_highlight_rules.is_empty()
+            // The highlight rules a fresh install seeds are not a choice anybody made; they are
+            // the starting point, and they do not stop the system theme and language applying.
             && self.terminal_highlight_mode == TerminalHighlightMode::Background
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
@@ -1944,6 +2032,32 @@ mod tests {
             UI_SCALE_PERCENTS.contains(&ui_scale_default()),
             "a default the interface cannot show or take back is one nobody could leave"
         );
+    }
+
+    #[test]
+    fn the_default_highlight_rules_are_a_complete_drawable_set() {
+        let rules = default_terminal_highlight_rules();
+        assert_eq!(
+            rules.len(),
+            22,
+            "the seeded set is the one the terminal was designed around"
+        );
+        assert!(rules.iter().all(TerminalHighlightRule::is_drawable));
+        assert_eq!(
+            rules
+                .iter()
+                .map(|rule| rule.id.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            rules.len(),
+            "two seeded rules sharing an id would make which one survives depend on file order"
+        );
+        let not_found = rules
+            .iter()
+            .find(|rule| rule.pattern == "command not found")
+            .expect("the phrase the terminal output actually prints");
+        assert_eq!(not_found.color, "#ef4444");
+        assert!(!not_found.is_regex);
     }
 
     #[test]
