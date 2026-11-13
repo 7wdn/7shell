@@ -4,7 +4,7 @@ members = ["src-tauri", "crates/*"]
 exclude = ["vendor"]
 
 [workspace.package]
-version = "0.1.3"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
@@ -149,24 +149,24 @@ tauri-plugin-updater = "2"
 # sets of live sessions against the same servers.
 tauri-plugin-single-instance = "2"
 
-sevenshell-error = { version = "0.1.3", path = "crates/sevenshell-error" }
-sevenshell-platform = { version = "0.1.3", path = "crates/sevenshell-platform" }
-sevenshell-policy = { version = "0.1.3", path = "crates/sevenshell-policy" }
-sevenshell-vault = { version = "0.1.3", path = "crates/sevenshell-vault" }
-sevenshell-core = { version = "0.1.3", path = "crates/sevenshell-core" }
-sevenshell-api = { version = "0.1.3", path = "crates/sevenshell-api" }
-sevenshell-mcp-client = { version = "0.1.3", path = "crates/sevenshell-mcp-client" }
-sevenshell-ai = { version = "0.1.3", path = "crates/sevenshell-ai" }
-sevenshell-agent = { version = "0.1.3", path = "crates/sevenshell-agent" }
-sevenshell-ssh = { version = "0.1.3", path = "crates/sevenshell-ssh" }
-sevenshell-term = { version = "0.1.3", path = "crates/sevenshell-term" }
-sevenshell-sync = { version = "0.1.3", path = "crates/sevenshell-sync" }
-sevenshell-ftp = { version = "0.1.3", path = "crates/sevenshell-ftp" }
-sevenshell-session = { version = "0.1.3", path = "crates/sevenshell-session" }
-sevenshell-sftp = { version = "0.1.3", path = "crates/sevenshell-sftp" }
-sevenshell-container = { version = "0.1.3", path = "crates/sevenshell-container" }
-sevenshell-k8s = { version = "0.1.3", path = "crates/sevenshell-k8s" }
-sevenshell-types = { version = "0.1.3", path = "crates/sevenshell-types" }
+sevenshell-error = { version = "0.1.0", path = "crates/sevenshell-error" }
+sevenshell-platform = { version = "0.1.0", path = "crates/sevenshell-platform" }
+sevenshell-policy = { version = "0.1.0", path = "crates/sevenshell-policy" }
+sevenshell-vault = { version = "0.1.0", path = "crates/sevenshell-vault" }
+sevenshell-core = { version = "0.1.0", path = "crates/sevenshell-core" }
+sevenshell-api = { version = "0.1.0", path = "crates/sevenshell-api" }
+sevenshell-mcp-client = { version = "0.1.0", path = "crates/sevenshell-mcp-client" }
+sevenshell-ai = { version = "0.1.0", path = "crates/sevenshell-ai" }
+sevenshell-agent = { version = "0.1.0", path = "crates/sevenshell-agent" }
+sevenshell-ssh = { version = "0.1.0", path = "crates/sevenshell-ssh" }
+sevenshell-term = { version = "0.1.0", path = "crates/sevenshell-term" }
+sevenshell-sync = { version = "0.1.0", path = "crates/sevenshell-sync" }
+sevenshell-ftp = { version = "0.1.0", path = "crates/sevenshell-ftp" }
+sevenshell-session = { version = "0.1.0", path = "crates/sevenshell-session" }
+sevenshell-sftp = { version = "0.1.0", path = "crates/sevenshell-sftp" }
+sevenshell-container = { version = "0.1.0", path = "crates/sevenshell-container" }
+sevenshell-k8s = { version = "0.1.0", path = "crates/sevenshell-k8s" }
+sevenshell-types = { version = "0.1.0", path = "crates/sevenshell-types" }
 
 [profile.dev]
 # Line tables for everything in dev, this workspace's own crates included. What is actually read
