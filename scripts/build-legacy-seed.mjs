@@ -38,7 +38,18 @@ const out = path.resolve(value("out") ?? path.join(ROOT, "legacy-seed", `sshell-
 const build = spawnSync(
   "cargo",
   ["zigbuild", "--release", "-p", "sevenshell-mcp", "--target", `${triple}.2.28`, "--features", "vendored-tls"],
-  { cwd: ROOT, stdio: "inherit", env: process.env },
+  {
+    cwd: ROOT,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      // The build host's libudev is built against a newer glibc than the .2.28 target, and the
+      // linker treats the shared library's own version references as undefined ones. This flag
+      // skips that check; the binary's own floor is still asserted below, and the target supplies
+      // its own libudev at run time.
+      RUSTFLAGS: `${process.env.RUSTFLAGS ?? ""} -C link-arg=-Wl,--allow-shlib-undefined`.trim(),
+    },
+  },
 );
 if (build.error?.code === "ENOENT") {
   console.error("cargo zigbuild is not installed: install Zig and `cargo install cargo-zigbuild`");
