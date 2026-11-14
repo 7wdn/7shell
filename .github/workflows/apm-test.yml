@@ -10,6 +10,11 @@ on:
         description: "Release tag whose arm64 deb is wrapped"
         required: false
         default: "v0.1.0"
+  # Temporary: this workflow is not on the default branch yet, so a dispatch cannot find it. A push
+  # on the compatibility branch runs the test; remove this trigger when that branch is merged.
+  push:
+    branches:
+      - feat/uos-apm-compat
 
 permissions:
   contents: read
@@ -53,7 +58,8 @@ jobs:
 
       - name: Download the release arm64 deb
         env:
-          TAG: ${{ inputs.release_tag }}
+          # A push run has no dispatch inputs; the default release is the one with an arm64 deb.
+          TAG: ${{ inputs.release_tag || 'v0.1.0' }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
