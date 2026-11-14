@@ -1,0 +1,130 @@
+name: APM test package
+
+# Packages a release's arm64 deb into an APM package without building the desktop again. It exists
+# so a UOS 20 / Kylin V10 arm64 machine can test the compatibility layer before a tag runs the full
+# release lane (which builds the deb itself and does the same conversion in `release.yml`).
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag whose arm64 deb is wrapped"
+        required: false
+        default: "v0.1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  arm64:
+    name: Package the arm64 APM build
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install the bridge build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config perl make
+
+      - name: Install Zig
+        run: |
+          curl --fail --location --retry 3 --retry-all-errors --silent --show-error \
+            -o /tmp/zig.tar.xz \
+            "https://ziglang.org/download/0.17.1/zig-aarch64-linux-0.17.1.tar.xz"
+          sudo tar -xf /tmp/zig.tar.xz -C /opt
+          sudo ln -sf "/opt/zig-aarch64-linux-0.17.1/zig" /usr/local/bin/zig
+          zig version
+
+      - name: Install cargo-zigbuild
+        run: |
+          python3 -m pip install cargo-zigbuild
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The bridge runs on the host, not in the compatibility environment: static OpenSSL and a
+      # glibc 2.28 floor are what make it startable on UOS 20 and Kylin V10.
+      - name: Build the glibc 2.28 bridge
+        run: node scripts/build-legacy-seed.mjs --arch arm64 --out legacy-seed/sshell-mcp
+
+      - name: Download the release arm64 deb
+        env:
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          curl --http1.1 --fail --location --retry 3 --retry-all-errors --silent --show-error \
+            -o source.deb \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/7Shell_${version}_arm64.deb"
+          dpkg-deb -f source.deb Package Version Architecture
+
+      # The first release predates the tray dependency now declared in tauri.conf.json. The
+      # packaging script refuses a package without it, so add it here rather than weakening that
+      # guard; a later release already carries the line and is left untouched.
+      - name: Ensure the tray dependency is declared
+        run: |
+          set -euo pipefail
+          dpkg-deb -R source.deb deb-root
+          if ! grep -q 'libayatana-appindicator3-1' deb-root/DEBIAN/control; then
+            sed -i 's/^Depends: /Depends: libayatana-appindicator3-1, /' deb-root/DEBIAN/control
+          fi
+          dpkg-deb --root-owner-group -b deb-root source.deb
+          dpkg-deb -f source.deb Depends
+
+      - name: Install APM and its base environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          APM_VERSION: 1.3.4.2
+          BASE_VERSION: 12.9.9
+          BASE_SHA256: 5bedcfb0b28b019a9142be780ffe12945b7104ecb317af68e7a7b8be37c94dd3
+        run: |
+          set -euo pipefail
+          # The store's CDN occasionally closes a TLS connection mid-transfer; resume rather than
+          # starting the 460 MB base again, and let the pinned hash prove the whole file arrived.
+          fetch() {
+            url=$1
+            output=$2
+            for attempt in 1 2 3 4 5; do
+              if curl --http1.1 --fail --location --retry 3 --retry-all-errors --silent --show-error \
+                --connect-timeout 30 --continue-at - --output "$output" "$url"; then
+                return 0
+              fi
+              echo "download attempt ${attempt} failed; resuming" >&2
+              sleep 3
+            done
+            return 1
+          }
+          fetch \
+            "https://gitee.com/amber-ce/amber-pm/releases/download/${APM_VERSION}/apm_${APM_VERSION}_arm64.deb" \
+            /tmp/apm.deb
+          sudo apt-get install -y /tmp/apm.deb
+          fetch \
+            "https://d.spark-app.store/arm64-apm/depends/base-bookworm/amber-pm-bookworm_${BASE_VERSION}_arm64.deb" \
+            /tmp/base.deb
+          echo "${BASE_SHA256}  /tmp/base.deb" | sha256sum --check
+          sudo apt-get install -y /tmp/base.deb
+          if [ ! -e /dev/fuse ]; then
+            echo "the runner has no /dev/fuse; amber-pm-convert cannot mount its overlay" >&2
+            exit 1
+          fi
+          bwrap --version
+
+      - name: Convert the deb to an APM package
+        run: |
+          set -euo pipefail
+          version=$(dpkg-deb -f source.deb Version)
+          sudo env "PATH=$PATH" node scripts/package-apm.mjs \
+            --deb "$(realpath source.deb)" \
+            --seed "$(realpath legacy-seed/sshell-mcp)" \
+            --version "$version" \
+            --out "$(realpath -m dist-apm)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apm-arm64-test
+          path: dist-apm
+          if-no-files-found: error

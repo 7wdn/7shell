@@ -15,6 +15,12 @@ path = "src/lib.rs"
 name = "sshell-mcp"
 path = "src/main.rs"
 
+[features]
+# The UOS/Kylin compatibility package starts this bridge on the host, whose OpenSSL can be older
+# than the one the desktop bundles. `vendored` compiles OpenSSL into the binary, so the seed only
+# needs the host's glibc; the ordinary Linux seed keeps using the system's own TLS stack.
+vendored-tls = ["dep:native-tls", "native-tls/vendored"]
+
 [dependencies]
 sevenshell-api = { workspace = true }
 # The same configuration directory the desktop writes the endpoint into. Resolving it a second way
@@ -22,6 +28,8 @@ sevenshell-api = { workspace = true }
 sevenshell-platform = { workspace = true }
 async-trait = { workspace = true }
 reqwest = { workspace = true }
+# Optional so the dependency exists only for `vendored-tls`; the crate never names it directly.
+native-tls = { version = "0.2", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-std"] }

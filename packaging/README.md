@@ -27,6 +27,14 @@ in a review by somebody else, on infrastructure this project does not own, with 
 maintainer holds. What *is* automated is the part that can be wrong silently — the version, the URL
 and the hash — and `scripts/tests/packagingManifests.test.mjs` is where that is checked.
 
+## APM (UOS 20 / Kylin V10)
+
+The release workflow produces a `-apm.deb` asset for Debian 10 baselines (glibc 2.28, WebKitGTK
+4.0), where the native package cannot run. It wraps the ordinary deb in an
+[APM](https://gitee.com/amber-ce/amber-pm) environment based on Debian 12 and ships a bridge seed
+built for the host's glibc. See [apm/README.md](apm/README.md) for the pinned versions, the build
+steps and what the package validates.
+
 ## Flatpak is not here yet
 
 Flatpak is the one the plan lists that this does not generate, and the reason is that it is a

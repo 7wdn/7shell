@@ -11,7 +11,12 @@ Builds are published at [github.com/7wdn/7shell/releases](https://github.com/7wd
 |---|---|---|
 | Windows 10 and later | `.msi` (WiX) and `.exe` (NSIS) | The WebView2 runtime, present on Windows 10 and later |
 | macOS | `.dmg` | Nothing beyond macOS itself |
-| Linux | `.AppImage`, `.deb`, `.rpm` | The executable bit for the AppImage (`chmod +x`); a package manager for the other two |
+| Linux, glibc 2.35 or newer (Ubuntu 22.04+, Debian 12+) | `.AppImage`, `.deb`, `.rpm` | The executable bit for the AppImage (`chmod +x`); a package manager and WebKitGTK 4.1 for the other two |
+| Linux, glibc 2.28 (UOS 20, Kylin V10) | `-apm.deb` | APM and its Debian 12 base environment, see [below](#uos-20-and-kylin-v10) |
+
+The Linux desktop is built against WebKitGTK 4.1, which Debian 10 and the distributions derived
+from it do not carry. A native build therefore needs glibc 2.35 or newer; the compatibility package
+below is what runs on the older baseline.
 
 The **current release, `0.1.0`, is published as a prerelease**. That is a real download — it is what
 the project has built and tested — but it is not what a stable release will be: it says so on its own
@@ -41,6 +46,46 @@ What each system does about it:
 
 Do not turn SmartScreen or Gatekeeper off for this. Check the checksum, or build from source and
 compare what you run with what the tag contains.
+
+### UOS 20 and Kylin V10
+
+UOS 20 and Kylin V10 are Debian 10 baselines: glibc 2.28, WebKitGTK 4.0 and OpenSSL 1.1, while the
+desktop is built against WebKitGTK 4.1 and glibc 2.35. Installing the ordinary `.deb` there fails
+on its WebKit dependency, and the AppImage stops at the loader with `GLIBC_2.34 not found`. The
+`-apm.deb` asset is built for exactly these systems: it runs the same application inside
+[APM](https://gitee.com/amber-ce/amber-pm)'s Debian 12 environment, so the system's own WebKit,
+OpenSSL and glibc are not used by the window.
+
+1. Install APM and its Debian 12 base environment (`amber-pm-bookworm`). On a machine with the
+   Spark Store, `sudo aptss install apm`; otherwise install the `apm` package from
+   [AmberPM's releases](https://gitee.com/amber-ce/amber-pm/releases/). The APM store installs the
+   base together with an application; when installing the downloaded `.deb` by hand, install the
+   base first (it is the one dependency the package has, and the APM index provides it — the
+   pinned version and its checksum are in
+   [packaging/apm/README.md](https://github.com/7wdn/7shell/blob/main/packaging/apm/README.md)).
+2. Install the compatibility package:
+
+   ```bash
+   sudo apt install ./7Shell_<version>_<arch>-apm.deb
+   ```
+
+   If APM reports that `amber-pm-bookworm` is not installable, the base is missing; install it from
+   the APM index first, then repeat this command.
+3. Start 7Shell from the desktop menu as usual. The entry starts it through `apm run`, inside the
+   compatibility environment.
+
+What changes compared with a native install:
+
+- **Files.** Your home directory is shared with the host. Other host paths appear under `/host`
+  (for example `/host/etc/ssh`); the container's own root is `/`.
+- **Updates.** APM packages update through APM or the store. The in-app update check belongs to the
+  AppImage channel and cannot replace an APM package, so it is not the update path here.
+- **MCP bridge.** The package carries a bridge built for glibc 2.28 and with OpenSSL linked in, so
+  an MCP client running on the host starts it exactly as it does on a native install, and it
+  reaches the desktop's loopback endpoint.
+- **Old graphics stacks.** If the window stays blank on a machine whose Mesa cannot use the
+  DMABUF renderer, start it once with `WEBKIT_DISABLE_DMABUF_RENDERER=1`; if there is no GPU
+  acceleration at all, add `LIBGL_ALWAYS_SOFTWARE=1`.
 
 ## Build from source
 
