@@ -82,6 +82,7 @@ jobs:
           dpkg-deb -f source.deb Depends
 
       - name: Install APM and its base environment
+        timeout-minutes: 40
         env:
           DEBIAN_FRONTEND: noninteractive
           APM_VERSION: 1.3.4.2
@@ -89,14 +90,16 @@ jobs:
           BASE_SHA256: 5bedcfb0b28b019a9142be780ffe12945b7104ecb317af68e7a7b8be37c94dd3
         run: |
           set -euo pipefail
-          # The store's CDN occasionally closes a TLS connection mid-transfer; resume rather than
-          # starting the 460 MB base again, and let the pinned hash prove the whole file arrived.
+          # The store's CDN closes single connections mid-transfer and throttles them besides.
+          # Eight range requests, each resuming its own chunk and bounded by --max-time, are what
+          # make a 460 MB base fit in a job. The pinned hash still decides whether the assembled
+          # file is the whole package.
           fetch() {
             url=$1
             output=$2
             for attempt in 1 2 3 4 5; do
               if curl --http1.1 --fail --location --retry 3 --retry-all-errors --silent --show-error \
-                --connect-timeout 30 --continue-at - --output "$output" "$url"; then
+                --connect-timeout 30 --max-time 600 --continue-at - --output "$output" "$url"; then
                 return 0
               fi
               echo "download attempt ${attempt} failed; resuming" >&2
@@ -108,9 +111,47 @@ jobs:
             "https://gitee.com/amber-ce/amber-pm/releases/download/${APM_VERSION}/apm_${APM_VERSION}_arm64.deb" \
             /tmp/apm.deb
           sudo apt-get install -y /tmp/apm.deb
-          fetch \
-            "https://d.spark-app.store/arm64-apm/depends/base-bookworm/amber-pm-bookworm_${BASE_VERSION}_arm64.deb" \
-            /tmp/base.deb
+
+          base_url="https://d.spark-app.store/arm64-apm/depends/base-bookworm/amber-pm-bookworm_${BASE_VERSION}_arm64.deb"
+          total=$(curl --http1.1 --location --silent --show-error --head "$base_url" |
+            awk 'tolower($1) == "content-length:" { print $2 }' | tr -d '\r')
+          test -n "$total"
+          test "$total" -gt 0
+          chunks=8
+          chunk=$(((total + chunks - 1) / chunks))
+          rm -rf /tmp/base-chunks
+          mkdir -p /tmp/base-chunks
+          for i in $(seq 0 $((chunks - 1))); do
+            start=$((i * chunk))
+            end=$((start + chunk - 1))
+            if [ "$end" -ge "$total" ]; then end=$((total - 1)); fi
+            (
+              file=/tmp/base-chunks/$i
+              expected=$((end - start + 1))
+              for attempt in $(seq 1 30); do
+                have=$(stat -c%s "$file" 2>/dev/null || echo 0)
+                if [ "$have" -gt "$expected" ]; then rm -f "$file"; have=0; fi
+                if [ "$have" -eq "$expected" ]; then exit 0; fi
+                curl --http1.1 --fail --silent --show-error --connect-timeout 30 --max-time 900 \
+                  -r "$((start + have))-$end" "$base_url" >> "$file" || sleep 2
+              done
+              exit 1
+            ) &
+          done
+          wait
+          for i in $(seq 0 $((chunks - 1))); do
+            start=$((i * chunk))
+            end=$((start + chunk - 1))
+            if [ "$end" -ge "$total" ]; then end=$((total - 1)); fi
+            expected=$((end - start + 1))
+            have=$(stat -c%s "/tmp/base-chunks/$i" 2>/dev/null || echo 0)
+            if [ "$have" -ne "$expected" ]; then
+              echo "base chunk $i is $have bytes, expected $expected" >&2
+              exit 1
+            fi
+          done
+          cat /tmp/base-chunks/* > /tmp/base.deb
+          ls -l /tmp/base.deb
           echo "${BASE_SHA256}  /tmp/base.deb" | sha256sum --check
           sudo apt-get install -y /tmp/base.deb
           if [ ! -e /dev/fuse ]; then
