@@ -22,10 +22,12 @@
  */
 import { Check, ChevronRight, Copy, KeyRound, LoaderCircle, Pencil, Plus, RefreshCw, Trash2 } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
+import { isDesktopRuntime } from "@/lib/runtime";
 import { useI18n } from "vue-i18n";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select from "@/components/ui/Select.vue";
+import { backend } from "@/lib/backend/api";
 import Switch from "@/components/ui/Switch.vue";
 import SettingsHelp from "@/components/settings/SettingsHelp.vue";
 import {
@@ -76,6 +78,8 @@ const preferences = usePreferencesStore();
 
 /** What the last save did, said under the button. */
 const notice = ref<"" | "saved" | "savedRestarted" | "restartRequired">("");
+const oauthStarting = ref<string | null>(null);
+const oauthProblem = ref<string | null>(null);
 /** What the last copy did, said under its button. */
 const copyNotice = ref<"" | "copied" | "failed">("");
 /** Whether the audit tail is on screen; it is read from the file when it is first opened. */
@@ -456,6 +460,20 @@ async function toggleServer(view: McpServerView, enabled: boolean): Promise<void
 async function refreshServer(view: McpServerView): Promise<void> {
   serverNotice.value = "";
   await mcp.refreshServer(view.config.id);
+}
+
+async function beginOAuth(view: McpServerView): Promise<void> {
+  oauthProblem.value = null;
+  oauthStarting.value = view.config.id;
+  try {
+    const url = await backend.mcp.oauthBegin(view.config.id);
+    // The authorization server is a third party; it must not get a handle on this window.
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch {
+    oauthProblem.value = view.config.id;
+  } finally {
+    oauthStarting.value = null;
+  }
 }
 
 async function confirmRemoveServer(): Promise<void> {
@@ -847,6 +865,18 @@ onMounted(() => {
               {{ t("mcp.servers.refresh") }}
             </button>
             <button
+              v-if="!isDesktopRuntime() && view.config.transport !== 'stdio'"
+              type="button"
+              data-mcp-server-oauth
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+              :disabled="mcp.busyServer !== null || oauthStarting !== null"
+              @click="beginOAuth(view)"
+            >
+              <LoaderCircle v-if="oauthStarting === view.config.id" :size="10" class="animate-spin" />
+              <KeyRound v-else :size="10" />
+              {{ t("mcp.servers.oauth") }}
+            </button>
+            <button
               type="button"
               data-mcp-server-edit
               class="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-[11px] transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
@@ -877,6 +907,9 @@ onMounted(() => {
               {{ t("mcp.servers.remove") }}
             </button>
           </div>
+          <p v-if="oauthProblem === view.config.id" class="mt-0.5 text-[11px] text-destructive">
+            {{ t("mcp.servers.oauthFailed") }}
+          </p>
           <p class="mt-0.5 text-[11px]" :class="secretsStateClass(view)">{{ secretsStateLabel(view) }}</p>
 
           <!-- What the server is reached with. Write-only: saving replaces the whole set. -->

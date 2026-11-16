@@ -247,6 +247,15 @@ export const backend = {
     /** Reconnects one server now; the answer is the row with whatever state that attempt reached. */
     refreshServer: (serverId: string): Promise<McpServerView> =>
       forward("mcp_server_refresh", () => desktop.mcpServerRefresh(serverId)),
+    /** Starts the browser authorization flow for one HTTP/SSE server and answers its URL. */
+    oauthBegin: (serverId: string): Promise<string> =>
+      forward("mcp_oauth_begin", async () => {
+        if (isDesktopRuntime()) {
+          throw new Error("OAuth is only available in the browser host");
+        }
+        const answer = await webInvoke<{ url: string }>("mcp_oauth_begin", { serverId });
+        return answer.url;
+      }),
 
     /**
      * The resources and prompts ready servers offer, and the two reads behind the picker.
@@ -1116,6 +1125,8 @@ export const backend = {
      */
     onMcpServerStatus: (listener: (payload: McpServerStatus) => void): Promise<Unlisten> =>
       subscribe(desktop.onMcpServerStatus, listener),
+    /** A server gained or lost material the status event does not carry (an OAuth token). */
+    onMcpServersChanged: (listener: () => void): Promise<Unlisten> => desktop.onMcpServersChanged(listener),
     /**
      * One assistant run, in the pieces it arrives in.
      *

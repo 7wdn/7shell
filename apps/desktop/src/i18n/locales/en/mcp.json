@@ -144,6 +144,8 @@
       },
       "toolCount": "{count} tools",
       "refresh": "Reconnect",
+      "oauth": "OAuth sign-in",
+      "oauthFailed": "Could not start OAuth. Check the server URL and its authorization server.",
       "edit": "Edit",
       "remove": "Remove",
       "removeTitle": "Remove external server",

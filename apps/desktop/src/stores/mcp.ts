@@ -414,10 +414,11 @@ export const useMcpStore = defineStore("mcp", () => {
     let stopApproval: Unlisten | null = null;
     let stopStatus: Unlisten | null = null;
     let stopServer: Unlisten | null = null;
+    let stopServersChanged: Unlisten | null = null;
 
     void (async () => {
       try {
-        const [approval, listener, server] = await Promise.all([
+        const [approval, listener, server, serversChanged] = await Promise.all([
           backend.events.onMcpApproval((request) => {
             // A new question replaces the one on screen: the listener asks one at a time, and the
             // older question's deadline is the listener's to enforce.
@@ -428,16 +429,21 @@ export const useMcpStore = defineStore("mcp", () => {
             status.value = next;
           }),
           backend.events.onMcpServerStatus(applyServerStatus),
+          backend.events.onMcpServersChanged(() => {
+            void loadServers();
+          }),
         ]);
         if (stopped) {
           approval();
           listener();
           server();
+          serversChanged();
           return;
         }
         stopApproval = approval;
         stopStatus = listener;
         stopServer = server;
+        stopServersChanged = serversChanged;
       } catch (error) {
         failure.value = asShellError(error, "mcp_listen");
       }
@@ -450,6 +456,7 @@ export const useMcpStore = defineStore("mcp", () => {
       stopApproval?.();
       stopStatus?.();
       stopServer?.();
+      stopServersChanged?.();
     };
   }
 

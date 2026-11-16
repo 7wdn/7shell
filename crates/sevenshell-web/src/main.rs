@@ -114,6 +114,31 @@ struct TokenQuery {
 }
 
 #[derive(Deserialize)]
+struct OAuthCallbackQuery {
+    state: Option<String>,
+    code: Option<String>,
+}
+
+/// The loopback landing page of the OAuth authorization. The state is the CSRF check; the page
+/// itself says nothing, because the app's server row is where the outcome appears.
+async fn oauth_callback(State(state): State<Arc<WebState>>, Query(query): Query<OAuthCallbackQuery>) -> Response {
+    let (Some(oauth_state), Some(code)) = (query.state, query.code) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    match state.mcp.complete_oauth(&oauth_state, &code).await {
+        Ok(()) => (
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            "<script>window.close()</script>",
+        )
+            .into_response(),
+        Err(error) => {
+            log::warn!("the OAuth callback could not be completed: {error}");
+            StatusCode::BAD_REQUEST.into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct InvokeRequest {
     cmd: String,
     #[serde(default)]
@@ -1530,6 +1555,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         core.clone(),
         event_sender.clone(),
         tools.clone(),
+        port,
     )?);
     mcp.restore().await;
 
@@ -1548,6 +1574,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = Router::new()
         .route("/invoke", post(invoke))
         .route("/events", get(events))
+        .route("/oauth/callback", get(oauth_callback))
         .route(
             "/upload",
             post(upload).layer(DefaultBodyLimit::max(8 * 1024 * 1024 * 1024)),

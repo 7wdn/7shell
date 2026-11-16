@@ -144,6 +144,8 @@
       },
       "toolCount": "{count} 个工具",
       "refresh": "重新连接",
+      "oauth": "OAuth 授权",
+      "oauthFailed": "无法开始 OAuth 授权，请检查服务器地址与授权服务器。",
       "edit": "编辑",
       "remove": "删除",
       "removeTitle": "删除外部服务器",

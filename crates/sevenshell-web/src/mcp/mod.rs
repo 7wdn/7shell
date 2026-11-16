@@ -9,7 +9,7 @@ use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sevenshell_api::{EndpointFile, ToolAccess};
 use sevenshell_core::Core;
@@ -23,7 +23,56 @@ use tokio::sync::{Mutex as AsyncMutex, broadcast, oneshot};
 pub mod audit;
 pub mod auth;
 pub mod endpoint;
+pub mod oauth;
 pub mod server;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoredSecrets {
+    #[serde(default)]
+    pub(crate) env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) oauth: Option<StoredOAuth>,
+}
+
+impl StoredSecrets {
+    fn is_empty(&self) -> bool {
+        self.env.is_empty() && self.headers.is_empty() && self.oauth.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoredOAuth {
+    pub(crate) access_token: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) refresh_token: Option<String>,
+    pub(crate) expires_at: u64,
+    pub(crate) token_endpoint: String,
+    pub(crate) client_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) resource: Option<String>,
+}
+
+pub(crate) fn load_stored(vault: &Vault, server_id: &str) -> StoredSecrets {
+    vault
+        .mcp_server_secrets(server_id)
+        .ok()
+        .flatten()
+        .and_then(|secret| serde_json::from_str(secret.expose()).ok())
+        .unwrap_or_default()
+}
+
+pub(crate) fn save_stored(vault: &Vault, server_id: &str, stored: &StoredSecrets) -> Result<(), ShellError> {
+    let rendered = if stored.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(stored).map_err(|error| ShellError::app_internal(error.to_string()))?)
+    };
+    vault.set_mcp_server_secrets(server_id, rendered)
+}
 
 pub struct McpRuntime {
     vault: Arc<Vault>,
@@ -32,6 +81,8 @@ pub struct McpRuntime {
     tools: Arc<crate::agent::ToolRuntime>,
     listener: AsyncMutex<Option<Running>>,
     calls: Arc<server::CallRegistry>,
+    web_port: u16,
+    oauth_pending: AsyncMutex<std::collections::HashMap<String, oauth::PendingOAuth>>,
 }
 
 struct Running {
@@ -57,6 +108,7 @@ impl McpRuntime {
         _core: Arc<Core>,
         events: broadcast::Sender<String>,
         tools: Arc<crate::agent::ToolRuntime>,
+        web_port: u16,
     ) -> Result<Self, ShellError> {
         let servers = sevenshell_platform::load()
             .map(|settings| settings.mcp_client_servers)
@@ -66,6 +118,7 @@ impl McpRuntime {
         apply_secrets(&vault, &manager, &manager.configured());
         tools.add_source(manager.clone().source());
         spawn_health(manager.clone(), events.clone());
+        oauth::spawn_refresh(vault.clone(), manager.clone(), events.clone());
         Ok(Self {
             vault,
             events,
@@ -73,6 +126,8 @@ impl McpRuntime {
             tools,
             listener: AsyncMutex::new(None),
             calls: Arc::new(server::CallRegistry::new()),
+            web_port,
+            oauth_pending: AsyncMutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -88,10 +143,10 @@ impl McpRuntime {
             .manager
             .status_of(id)
             .unwrap_or_else(|| McpServerStatus::new(id, McpServerState::Connecting));
-        let has_secrets = match self.vault.mcp_server_secrets(id) {
-            Ok(Some(_)) => Some(true),
-            Ok(None) => Some(false),
-            Err(_) => None,
+        let has_secrets = if self.vault.mcp_server_secrets(id).is_ok() {
+            Some(!load_stored(&self.vault, id).is_empty())
+        } else {
+            None
         };
         Some(ServerView {
             config,
@@ -244,6 +299,7 @@ impl McpRuntime {
             "mcp_server_save" => Some(self.save(args).await),
             "mcp_server_remove" => Some(self.remove(args)),
             "mcp_server_secrets_set" => Some(self.set_secrets(args).await),
+            "mcp_oauth_begin" => Some(self.oauth_begin(args).await),
             "mcp_server_refresh" => Some(self.refresh(args).await),
             "mcp_content_catalog" => Some(to_value(self.manager.content_catalog())),
             "mcp_resource_read" => Some(self.read_resource(args).await),
@@ -292,18 +348,55 @@ impl McpRuntime {
         let server_id: String = from_args(args, "serverId")?;
         let env: BTreeMap<String, String> = from_args(args, "env")?;
         let headers: BTreeMap<String, String> = from_args(args, "headers")?;
-        let secrets = McpServerSecrets { env, headers };
-        let rendered = if secrets.is_empty() {
-            None
-        } else {
-            Some(serde_json::to_string(&secrets).map_err(|e| ShellError::app_internal(e.to_string()))?)
+        let current = load_stored(&self.vault, &server_id);
+        let stored = StoredSecrets {
+            env,
+            headers,
+            oauth: current.oauth,
         };
-        self.vault.set_mcp_server_secrets(&server_id, rendered)?;
+        save_stored(&self.vault, &server_id, &stored)?;
         apply_secrets(&self.vault, &self.manager, &self.manager.configured());
         if let Ok(status) = self.manager.refresh(&server_id).await {
             self.emit_status(&status);
         }
         to_value(self.view(&server_id))
+    }
+
+    async fn oauth_begin(&self, args: &Value) -> Result<Value, ShellError> {
+        let server_id: String = from_args(args, "serverId")?;
+        let config = self
+            .manager
+            .configured()
+            .into_iter()
+            .find(|server| server.id == server_id)
+            .ok_or_else(|| ShellError::app_internal("that server is not configured"))?;
+        let (url, state, pending) = oauth::begin(&self.vault, &config, self.web_port).await?;
+        self.oauth_pending.lock().await.insert(state, pending);
+        Ok(json!({ "url": url }))
+    }
+
+    /// Finishes the browser flow. Called by the loopback callback route, after which the server is
+    /// reopened with the token that was just stored.
+    pub async fn complete_oauth(&self, state: &str, code: &str) -> Result<(), ShellError> {
+        let pending = self
+            .oauth_pending
+            .lock()
+            .await
+            .remove(state)
+            .ok_or_else(|| ShellError::app_internal("that OAuth request is no longer waiting"))?;
+        if pending.expired() {
+            return Err(ShellError::app_internal("that OAuth request has expired; start again"));
+        }
+        let server_id = oauth::complete(&self.vault, &self.manager, pending, code).await?;
+        if let Ok(status) = self.manager.refresh(&server_id).await {
+            self.emit_status(&status);
+        }
+        // The status event says what the server does, not what the vault now holds; the settings
+        // row needs the second fact too, so this asks it to re-read the whole row.
+        let _ = self
+            .events
+            .send(json!({ "event": "mcp:servers_changed", "payload": { "serverId": server_id } }).to_string());
+        Ok(())
     }
 
     async fn refresh(&self, args: &Value) -> Result<Value, ShellError> {
@@ -407,8 +500,19 @@ impl McpRuntime {
 fn apply_secrets(vault: &Vault, manager: &McpClientManager, servers: &[McpServerConfig]) {
     let mut secrets = BTreeMap::new();
     for server in servers {
-        if let Ok(Some(secret)) = vault.mcp_server_secrets(&server.id) {
-            secrets.insert(server.id.clone(), McpServerSecrets::from_vault_value(secret.expose()));
+        let stored = load_stored(vault, &server.id);
+        let mut headers = stored.headers;
+        if let Some(oauth) = &stored.oauth {
+            headers.insert("authorization".to_owned(), format!("Bearer {}", oauth.access_token));
+        }
+        if !stored.env.is_empty() || !headers.is_empty() {
+            secrets.insert(
+                server.id.clone(),
+                McpServerSecrets {
+                    env: stored.env,
+                    headers,
+                },
+            );
         }
     }
     manager.set_secrets(secrets);

@@ -372,6 +372,11 @@ export async function onMcpServerStatus(listener: (payload: McpServerStatus) => 
   return listen<McpServerStatus>("mcp:server_status", (event) => listener(event.payload));
 }
 
+/** Calls `listener` after something changed outside a status field, such as a stored OAuth token. */
+export async function onMcpServersChanged(listener: () => void): Promise<Unlisten> {
+  return listen<unknown>("mcp:servers_changed", () => listener());
+}
+
 // -- The assistant -----------------------------------------------------------
 //
 // Providers are configured in the settings file and their keys live in the vault, so nothing here

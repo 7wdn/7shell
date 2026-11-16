@@ -20,6 +20,8 @@ sevenshell-agent = { workspace = true }
 sevenshell-api = { workspace = true }
 sevenshell-mcp-client = { workspace = true }
 getrandom = { workspace = true }
+reqwest = { workspace = true }
+sha2 = "0.10"
 async-trait = { workspace = true }
 log = { workspace = true }
 futures-util = { workspace = true }

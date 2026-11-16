@@ -29,6 +29,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   mcpServerSecretsSet: vi.fn(),
   mcpServerRefresh: vi.fn(),
   onMcpServerStatus: vi.fn(),
+  onMcpServersChanged: vi.fn(),
 }));
 
 import {
@@ -45,6 +46,7 @@ import {
   mcpServersList,
   mcpStatus,
   onMcpApproval,
+  onMcpServersChanged,
   onMcpServerStatus,
   onMcpStatus,
 } from "@/lib/backend/tauri";
@@ -86,6 +88,7 @@ const serverRemoveMock = vi.mocked(mcpServerRemove);
 const serverSecretsMock = vi.mocked(mcpServerSecretsSet);
 const serverRefreshMock = vi.mocked(mcpServerRefresh);
 const serverStatusEventMock = vi.mocked(onMcpServerStatus);
+const serversChangedEventMock = vi.mocked(onMcpServersChanged);
 
 const LOCALES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../i18n/locales");
 
@@ -303,15 +306,18 @@ describe("the agent interface as the window watches it", () => {
     const stopApproval = vi.fn();
     const stopStatus = vi.fn();
     const stopServer = vi.fn();
+    const stopServersChanged = vi.fn();
     approvalEventMock.mockResolvedValue(stopApproval);
     statusEventMock.mockResolvedValue(stopStatus);
     serverStatusEventMock.mockResolvedValue(stopServer);
+    serversChangedEventMock.mockResolvedValue(stopServersChanged);
 
     const stop = store.initialize();
     await vi.waitFor(() => {
       expect(approvalEventMock).toHaveBeenCalled();
       expect(statusEventMock).toHaveBeenCalled();
       expect(serverStatusEventMock).toHaveBeenCalled();
+      expect(serversChangedEventMock).toHaveBeenCalled();
     });
     // One more turn, so the store has been handed every unsubscribe function before they are used.
     await Promise.resolve();
@@ -320,6 +326,7 @@ describe("the agent interface as the window watches it", () => {
     expect(stopApproval).toHaveBeenCalled();
     expect(stopStatus).toHaveBeenCalled();
     expect(stopServer).toHaveBeenCalled();
+    expect(stopServersChanged).toHaveBeenCalled();
   });
 
   it("copies the client configuration instead of keeping it on screen", async () => {
