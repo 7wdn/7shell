@@ -21,7 +21,7 @@ use crate::{Core, TransferRecord};
 use sevenshell_container::{
     ByteStream, CommandFuture, CommandTransport, ContainerFiles, InputStream, StreamState, payload_size, script_of,
 };
-use sevenshell_error::ShellError;
+use sevenshell_error::{ShellError, Subsystem};
 use sevenshell_ftp::{FtpConnectionOptions, FtpEntry, FtpSession};
 use sevenshell_k8s::{K8sManager, RunOutput, RunSession};
 use sevenshell_sftp::{SftpSession, TransferProgress};
@@ -243,13 +243,13 @@ impl FileSession {
     async fn read_text(&self, path: &str) -> Result<String, ShellError> {
         match &self.backend {
             FileBackend::Sftp { sftp, .. } => sftp.read_text(path).await,
-            FileBackend::WebDav(dav) => String::from_utf8(dav.read(path).await?)
-                .map_err(|_| ShellError::webdav_transfer_failed(path, "the file is not UTF-8 text")),
+            FileBackend::WebDav(dav) => {
+                String::from_utf8(dav.read(path).await?).map_err(|_| ShellError::file_not_text(Subsystem::Net, path))
+            }
             FileBackend::Ftp(ftp) => {
                 let mut writer = VecWriter::default();
                 ftp.lock().await.download(path, &mut writer).await?;
-                String::from_utf8(writer.bytes)
-                    .map_err(|_| ShellError::ftp_operation_failed("the file is not UTF-8 text"))
+                String::from_utf8(writer.bytes).map_err(|_| ShellError::file_not_text(Subsystem::Net, path))
             }
             FileBackend::Scp { connection } => scp_read_text(connection, path).await,
             FileBackend::Container(container) => container.read_text(path).await,
@@ -2196,9 +2196,10 @@ async fn scp_read_text(connection: &SshSession, path: &str) -> Result<String, Sh
         .exec_capture(&command, SHELL_TIMEOUT, SHELL_TEXT_LIMIT)
         .await?;
     if captured.truncated {
-        return Err(ShellError::scp_operation_failed(
+        return Err(ShellError::file_too_large(
+            Subsystem::Ssh,
             path,
-            "the file is larger than the editor will read over SCP",
+            SHELL_TEXT_LIMIT as u64,
         ));
     }
     if captured.exit_code != Some(0) {

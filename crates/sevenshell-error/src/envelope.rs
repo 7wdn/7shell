@@ -431,6 +431,32 @@ impl ShellError {
             .with_detail(detail)
     }
 
+    // -- The text editor's refusals ----------------------------------------
+
+    /// The file exists, but its bytes are not text this build can show.
+    ///
+    /// One code for every transport that can open the editor — SFTP, WebDAV, FTP, SCP, a container
+    /// — because the sentence is about the file, not about how its bytes arrived; the origin still
+    /// names the transport it was.
+    pub fn file_not_text(subsystem: Subsystem, remote_path: &str) -> Self {
+        Self::new(ErrorCode::FileNotText, Origin::new(subsystem))
+            .with_param("path", remote_path)
+            .with_outcome(OperationOutcome::Rejected)
+    }
+
+    /// The file is larger than the editor will read.
+    ///
+    /// The message names the limit and not the file's own size: SCP learns only that its capture
+    /// was cut off and never sees a size, and one sentence that is true on every transport beats
+    /// one that has a hole in it on two of them.
+    pub fn file_too_large(subsystem: Subsystem, remote_path: &str, limit: u64) -> Self {
+        let limit_megabytes = limit.div_ceil(1024 * 1024).max(1);
+        Self::new(ErrorCode::FileTooLarge, Origin::new(subsystem))
+            .with_param("path", remote_path)
+            .with_param("limit", limit_megabytes.to_string())
+            .with_outcome(OperationOutcome::Rejected)
+    }
+
     // -- Local file grants -------------------------------------------------
 
     pub fn fs_grant_unknown() -> Self {
@@ -920,6 +946,25 @@ mod tests {
         let detail = error.detail().unwrap_or_default();
         assert!(!detail.contains("hunter2"), "detail leaked a secret: {detail}");
         assert!(detail.contains(MASK));
+    }
+
+    #[test]
+    fn the_editor_refusal_names_its_transport_and_the_limit_in_whole_megabytes() {
+        let error = ShellError::file_too_large(Subsystem::Sftp, "/srv/big.log", 4 * 1024 * 1024);
+        assert_eq!(error.code(), ErrorCode::FileTooLarge);
+        assert_eq!(error.origin().subsystem(), Subsystem::Sftp);
+        assert_eq!(
+            error.message_params().get("path").map(String::as_str),
+            Some("/srv/big.log")
+        );
+        assert_eq!(error.message_params().get("limit").map(String::as_str), Some("4"));
+
+        let fractional = ShellError::file_too_large(Subsystem::Container, "/x.log", 1536 * 1024);
+        assert_eq!(
+            fractional.message_params().get("limit").map(String::as_str),
+            Some("2"),
+            "a ceiling of one and a half megabytes is stated as two, never as one"
+        );
     }
 
     #[test]

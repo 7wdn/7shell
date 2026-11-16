@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use sevenshell_error::ShellError;
+use sevenshell_error::{ShellError, Subsystem};
 use sevenshell_types::{ContainerRuntime, EntryKind, SftpEntry, SftpListing};
 
 use crate::Provider;
@@ -283,14 +283,14 @@ impl ContainerFiles {
             ));
         }
         if header.size > MAX_TEXT_BYTES as u64 {
-            return Err(ShellError::container_command_failed(
-                "the file read",
-                format!("{path} is larger than the editor's {MAX_TEXT_BYTES}-byte limit"),
+            return Err(ShellError::file_too_large(
+                Subsystem::Container,
+                &path,
+                MAX_TEXT_BYTES as u64,
             ));
         }
         let data = archive.read_bytes(header.size).await?;
-        String::from_utf8(data)
-            .map_err(|_| ShellError::container_command_failed("the file read", format!("{path} is not UTF-8 text")))
+        String::from_utf8(data).map_err(|_| ShellError::file_not_text(Subsystem::Container, &path))
     }
 
     /// Replaces a file's content, creating the folders above it when they are missing: saving into
@@ -2202,8 +2202,11 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         });
         let transport = FakeTransport::streaming(archive);
         let error = files(&transport).read_text("/etc/x.bin").await.unwrap_err();
-        assert_eq!(error.code(), ErrorCode::ContainerCommandFailed);
-        assert!(error.detail().unwrap_or_default().contains("UTF-8"));
+        assert_eq!(
+            error.code(),
+            ErrorCode::FileNotText,
+            "a binary file is not a runtime command failure, and saying so was the bug"
+        );
     }
 
     #[tokio::test]
@@ -2215,7 +2218,12 @@ prw-r--r--    1 root     root             0 Nov 10 09:15 pipe\r\n\
         });
         let transport = FakeTransport::streaming(archive);
         let error = files(&transport).read_text("/etc/big.txt").await.unwrap_err();
-        assert!(error.detail().unwrap_or_default().contains("limit"));
+        assert_eq!(error.code(), ErrorCode::FileTooLarge);
+        assert_eq!(
+            error.message_params().get("limit").map(String::as_str),
+            Some("1"),
+            "the message names the editor's ceiling, which is what the person can act on"
+        );
     }
 
     #[tokio::test]

@@ -34,6 +34,10 @@
       "transferFailed": "The transfer of {path} failed.",
       "operationFailed": "The operation on {path} failed."
     },
+    "file": {
+      "notText": "{path} is not a text file, so the editor cannot show it.",
+      "tooLarge": "{path} is above the {limit} MB the text editor can open. Download it and use a local tool."
+    },
     "fs": {
       "grantUnknown": "That file was not chosen through the file dialog, so it cannot be read.",
       "grantExpired": "Access to that file ended when the vault was locked.",

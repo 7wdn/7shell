@@ -139,6 +139,21 @@ export function familyOf(extension: string): TypeFamily | null {
   return FAMILIES[extension] ?? null;
 }
 
+/**
+ * The families a text editor has no business opening by a double-click.
+ *
+ * A name is a guess about bytes, so this only decides what the double-click *tries*: an explicit
+ * "Edit" on the same row still opens the editor, and the backend's own read is what refuses a file
+ * whose content is not text whatever its name says.
+ */
+const BINARY_FAMILIES = new Set<TypeFamily>(["archive", "image", "audio", "video", "document"]);
+
+export function hasBinaryFamily(name: string): boolean {
+  const extension = extensionOf(name);
+  const family = extension === null ? null : familyOf(extension);
+  return family !== null && BINARY_FAMILIES.has(family);
+}
+
 /** The directory a path sits in, or null when there is none to go up to. */
 export function parentPath(path: string): string | null {
   const trimmed = path.replace(/\/+$/, "");

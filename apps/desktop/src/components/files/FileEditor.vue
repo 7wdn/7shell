@@ -14,6 +14,10 @@
  * — the Cancel button, Escape, a click on the overlay — because the way out is not what loses the
  * work; the unsaved buffer is. Escape in particular used to close the editor outright, which made
  * the key that people press to back out of a dialog the one that threw their edits away.
+ *
+ * Nothing can be written until the read succeeded. A failed read leaves an empty buffer, and an
+ * empty buffer saved over the file would be a truncation wearing the name of an edit — the one way
+ * this dialog could destroy a file it was only asked to show.
  */
 import { LoaderCircle, Save } from "@lucide/vue";
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
@@ -41,6 +45,8 @@ const text = ref("");
 /** What was read, or last written: the buffer is "dirty" when it no longer matches this. */
 const original = ref("");
 const loading = ref(false);
+/** Whether the last read succeeded, which is what a save has to have behind it. */
+const loaded = ref(false);
 const saving = ref(false);
 const failure = ref<ShellError | null>(null);
 /** Whether the question about unsaved changes is on screen. */
@@ -76,9 +82,11 @@ watch(
     failure.value = null;
     asking.value = false;
     loading.value = true;
+    loaded.value = false;
     try {
       text.value = await backend.files.readText(props.handle, props.path);
       original.value = text.value;
+      loaded.value = true;
     } catch (error) {
       failure.value = asShellError(error, "files_read_text");
     } finally {
@@ -90,6 +98,9 @@ watch(
 
 /** True when the file was written, so a close that waited on it knows whether it may go. */
 async function save(): Promise<boolean> {
+  if (!loaded.value) {
+    return false;
+  }
   saving.value = true;
   failure.value = null;
   try {
@@ -154,6 +165,7 @@ async function saveAndClose(): Promise<void> {
             <textarea
               v-model="text"
               spellcheck="false"
+              :readonly="!loaded"
               class="h-[50vh] w-full resize-none rounded-md border border-border bg-background px-3 py-2 font-mono text-xs focus:outline-none"
               :aria-label="t('files.editor.description')"
             ></textarea>
@@ -189,7 +201,7 @@ async function saveAndClose(): Promise<void> {
             <button
               type="submit"
               class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="saving || loading"
+              :disabled="saving || loading || !loaded"
             >
               <Save :size="12" />
               {{ t("files.editor.save") }}

@@ -109,6 +109,7 @@
       "description": "Remote text file",
       "note": "A plain text editor: no syntax highlighting yet.",
       "loading": "Reading the file…",
+      "binaryNotOpen": "“{name}” does not open in the text editor. Download it and use a local tool instead.",
       "save": "Save",
       "unsavedTitle": "Unsaved changes",
       "unsavedMessage": "Save “{name}” before closing? “Discard changes” throws away what was typed.",

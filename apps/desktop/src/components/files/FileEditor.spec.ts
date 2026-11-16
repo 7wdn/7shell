@@ -132,6 +132,26 @@ describe("opening and saving", () => {
   });
 });
 
+describe("a file that could not be read", () => {
+  /**
+   * The buffer after a failed read is empty, and the save button used to be live. One click would
+   * have written that empty buffer over the remote file — the editor destroying the very file it
+   * had just said it could not show.
+   */
+  it("offers no way to write the empty buffer back over the file", async () => {
+    readText.mockRejectedValueOnce(new Error("the file is not text"));
+    await render();
+
+    expect(editor().textContent).toContain("APP-INTERNAL");
+    expect(field().readOnly, "there is nothing to type into").toBe(true);
+    expect(buttonNamed(editor(), "Save").disabled, "an unread file must not be savable").toBe(true);
+
+    buttonNamed(editor(), "Save").click();
+    await settle();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+});
+
 describe("closing with nothing to lose", () => {
   it("closes without a question when nothing was typed", async () => {
     await render();

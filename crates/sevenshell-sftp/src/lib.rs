@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use russh_sftp::client::SftpSession as Channel;
 use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
-use sevenshell_error::ShellError;
+use sevenshell_error::{ShellError, Subsystem};
 use sevenshell_types::{EntryKind, SftpEntry, SftpListing};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::OnceCell;
@@ -404,10 +404,7 @@ impl SftpSession {
         if let Some(size) = attributes.size
             && size > MAX_EDIT_BYTES
         {
-            return Err(ShellError::sftp_transfer_failed(
-                path,
-                format!("the file is {size} bytes, larger than the editor will open"),
-            ));
+            return Err(ShellError::file_too_large(Subsystem::Sftp, path, MAX_EDIT_BYTES));
         }
 
         let bytes = self
@@ -416,8 +413,7 @@ impl SftpSession {
             .await
             .map_err(|error| failure(&error, path))?;
 
-        String::from_utf8(bytes)
-            .map_err(|_| ShellError::sftp_transfer_failed(path, "the file is not text this build can show"))
+        String::from_utf8(bytes).map_err(|_| ShellError::file_not_text(Subsystem::Sftp, path))
     }
 
     /// Writes text to a file, creating it or replacing what was there.

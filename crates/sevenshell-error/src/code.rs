@@ -83,6 +83,12 @@ error_catalog! {
     #[doc = "A file operation the far side runs itself (copy, move, chmod) failed."]
     SftpOperationFailed => "SFTP-OPERATION-FAILED", "errors.sftp.operationFailed";
 
+    // -- The text editor's refusals ----------------------------------------
+    #[doc = "The bytes are not text this build can show."]
+    FileNotText => "FILE-NOT-TEXT", "errors.file.notText";
+    #[doc = "The file is larger than the editor will open."]
+    FileTooLarge => "FILE-TOO-LARGE", "errors.file.tooLarge";
+
     // -- Local file grants -------------------------------------------------
     #[doc = "The file token is not known to this process."]
     FsGrantUnknown => "FS-GRANT-UNKNOWN", "errors.fs.grantUnknown";

@@ -109,6 +109,7 @@
       "description": "远程文本文件",
       "note": "纯文本编辑器：暂不支持语法高亮。",
       "loading": "正在读取文件…",
+      "binaryNotOpen": "“{name}” 不能用文本编辑器打开。如需查看，请下载后用本地工具打开。",
       "save": "保存",
       "unsavedTitle": "有未保存的改动",
       "unsavedMessage": "关闭前保存“{name}”吗？选“放弃改动”会丢掉刚输入的内容。",

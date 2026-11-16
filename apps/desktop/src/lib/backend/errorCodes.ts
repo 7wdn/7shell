@@ -35,6 +35,9 @@ export const ERROR_CATALOG = {
   "SFTP-ARCHIVE-FAILED": "errors.sftp.archiveFailed",
   "SFTP-TRANSFER-FAILED": "errors.sftp.transferFailed",
   "SFTP-OPERATION-FAILED": "errors.sftp.operationFailed",
+  // The text editor's own refusals
+  "FILE-NOT-TEXT": "errors.file.notText",
+  "FILE-TOO-LARGE": "errors.file.tooLarge",
   // Local file grants
   "FS-GRANT-UNKNOWN": "errors.fs.grantUnknown",
   "FS-GRANT-EXPIRED": "errors.fs.grantExpired",

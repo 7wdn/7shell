@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { ancestorsOf, extensionOf, familyOf, formatMode } from "@/lib/files/format";
+import { ancestorsOf, extensionOf, familyOf, formatMode, hasBinaryFamily } from "@/lib/files/format";
 
 describe("ancestorsOf", () => {
   it("lists every directory that has to be open for a path to be visible", () => {
@@ -71,6 +71,21 @@ describe("familyOf", () => {
     expect(familyOf("rpm")).toBeNull();
     expect(familyOf("deb")).toBeNull();
     expect(familyOf("part")).toBeNull();
+  });
+});
+
+describe("hasBinaryFamily", () => {
+  it("recognises the names a text editor should not try to open", () => {
+    expect(hasBinaryFamily("go1.22.6.linux-amd64.tar.gz")).toBe(true);
+    expect(hasBinaryFamily("screenshot.png")).toBe(true);
+    expect(hasBinaryFamily("release.pdf")).toBe(true);
+  });
+
+  it("lets text and unknown types through, because a name is only a guess", () => {
+    expect(hasBinaryFamily("notes.txt")).toBe(false);
+    expect(hasBinaryFamily("server.log")).toBe(false);
+    expect(hasBinaryFamily("Makefile")).toBe(false);
+    expect(hasBinaryFamily("service.rpm")).toBe(false);
   });
 });
 

@@ -28,6 +28,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import FileBrowser from "@/components/files/FileBrowser.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
+import { useToast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
 import { filesCreateFile, filesDownload, filesList, filesRename, settingsSet } from "@/lib/backend/tauri";
 import { ShellError } from "@/lib/backend/errors";
@@ -507,6 +508,25 @@ describe("selecting rows", () => {
 
     await vi.waitFor(() => expect(vi.mocked(filesList)).toHaveBeenCalledWith(HANDLE, "/home/user/logs"));
     expect(host.querySelector('input[aria-label="New name"]')).toBeNull();
+  });
+
+  it("keeps a tarball out of the editor and points at the way that works", async () => {
+    const tarball: SftpEntry = {
+      name: "go1.22.6.linux-amd64.tar.gz",
+      path: "/home/user/go1.22.6.linux-amd64.tar.gz",
+      kind: "file",
+      size: 68_165_224,
+    };
+    await render([tarball]);
+
+    await clickName(0, 1);
+    await clickName(0, 2);
+    rows()[0]?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await nextTick();
+
+    expect(document.querySelector('[role="dialog"]'), "a tarball is not read into a text area").toBeNull();
+    expect(useToast().message.value).toContain("go1.22.6.linux-amd64.tar.gz");
+    expect(useToast().action.value?.label, "the download is one click away").toBe("Download");
   });
 
   it("does not pair clicks that are too far apart", async () => {

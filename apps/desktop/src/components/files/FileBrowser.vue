@@ -60,6 +60,7 @@ import {
   formatMode,
   formatModified,
   formatSize,
+  hasBinaryFamily,
   joinPath,
   parentPath,
 } from "@/lib/files/format";
@@ -645,16 +646,27 @@ function enter(entry: SftpEntry): void {
  * Opening one entry: a directory is walked into, a file is read in the editor.
  *
  * The listing has no way to show a file, so "opening" one means the editor — which is also what a
- * person means by double-clicking a text file in a file manager.
+ * person means by double-clicking a text file in a file manager. A file whose name says it holds
+ * an archive, a picture, a recording or a document is the exception: opening it into a text area
+ * was a round trip that could only end in "not text", so the row says why and points at the way
+ * that works. The menu's Edit still tries, and the backend is what really decides.
  */
 function open(entry: SftpEntry): void {
   if (entry.kind === "directory") {
     go(entry.path);
     return;
   }
-  if (isReadable(entry)) {
-    editing.value = entry;
+  if (!isReadable(entry)) {
+    return;
   }
+  if (hasBinaryFamily(entry.name)) {
+    toast(t("files.editor.binaryNotOpen", { name: entry.name }), "refusal", {
+      label: t("files.action.download"),
+      onClick: () => download([entry], false),
+    });
+    return;
+  }
+  editing.value = entry;
 }
 
 function go(path: string): void {

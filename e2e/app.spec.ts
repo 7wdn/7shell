@@ -5991,3 +5991,106 @@ test("a running container's files open in the workbench and a folder can be made
     }
   }
 });
+
+/**
+ * A double-click on a file the editor cannot show.
+ *
+ * The tarball used to be read as text: the editor opened on an empty area and said the *transfer*
+ * failed, which pointed at the network for something the editor itself had refused. What a real
+ * window can show that a mock cannot is the whole path: the name decides before any round trip, the
+ * row says why, and the download that does work is one click away.
+ */
+test("a tarball is answered with a sentence and a download, not a text area", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `ss-e2e-${Date.now() % 100000}`;
+    const name = `tarball-${stamp}`;
+    const tarball = `archive-${stamp}.tar.gz`;
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    await sessionRow(page, name).click();
+    await expect(question.or(filesToggle).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(filesToggle).toBeVisible({ timeout: 30_000 });
+
+    // A directory of this case's own, so the rows under test are the only rows in the window: the
+    // lab account's home has collected files from every earlier run, and the listing draws a window
+    // of it rather than all of it.
+    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    await expect(pathBar).toBeVisible({ timeout: 60_000 });
+    const home = (await pathBar.inputValue()).replace(/\/+$/, "");
+    const workspace = `${home}/tarballs-${stamp}`;
+    const big = `big-${stamp}.tar.gz`;
+
+    // The files are made by the shell the session already opened — the same account the file panel
+    // browses — and the echo is what proves the commands ran before the panel is asked to look.
+    const screen = page.locator(".xterm-rows").filter({ visible: true }).first();
+    await page.getByRole("textbox", { name: "Terminal input" }).click();
+    await page.keyboard.type(
+      `mkdir -p ${workspace} && touch ${workspace}/${tarball} && ` +
+        `dd if=/dev/zero of=${workspace}/${big} bs=1M count=5 2>/dev/null && echo made-${stamp}`,
+    );
+    await page.keyboard.press("Enter");
+    await expect(screen).toContainText(`made-${stamp}`, { timeout: 30_000 });
+
+    // The path field is the panel's own navigation, and a typed path is re-read on the way in.
+    await pathBar.fill(workspace);
+    await pathBar.press("Enter");
+
+    const row = page.getByRole("option").filter({ hasText: tarball });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.locator("[data-file-name]").dblclick();
+
+    // No editor at all — and a sentence about the file rather than about a transfer of it, with the
+    // download the row really does support one click away.
+    const notice = page.getByRole("alert").filter({ hasText: tarball });
+    await expect(notice).toContainText("does not open in the text editor");
+    await expect(notice.getByRole("button", { name: "Download", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // The menu's explicit Edit still tries, and the editor then says the thing that is true: the
+    // file is above the ceiling, not that its transfer failed. Nothing can be written back —
+    // the empty buffer over a file this size would be a truncation, not an edit.
+    //
+    // The gesture is retried as a whole: the menu dismisses itself when the listing scrolls, and the
+    // read that brought this directory in can still be settling the scroll when the row is clicked.
+    const bigRow = page.getByRole("option").filter({ hasText: big });
+    await expect(bigRow).toBeVisible({ timeout: 30_000 });
+    const editEntry = page.getByRole("menuitem", { name: "Edit", exact: true });
+    await expect(async () => {
+      await bigRow.click({ timeout: 3_000 });
+      await bigRow.click({ button: "right", timeout: 3_000 });
+      await expect(editEntry).toBeVisible({ timeout: 3_000 });
+      await editEntry.click({ timeout: 3_000 });
+    }).toPass({ timeout: 30_000 });
+
+    const editorDialog = page.getByRole("dialog");
+    await expect(editorDialog).toContainText("FILE-TOO-LARGE");
+    await expect(editorDialog).toContainText("4 MB");
+    await expect(editorDialog.locator("textarea")).toHaveAttribute("readonly", "");
+    await expect(editorDialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await editorDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(editorDialog).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
