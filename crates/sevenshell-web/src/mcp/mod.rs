@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -65,10 +65,7 @@ impl McpRuntime {
             Arc::new(McpClientManager::from_servers(servers.clone()).unwrap_or_else(|_| McpClientManager::new()));
         apply_secrets(&vault, &manager, &manager.configured());
         tools.add_source(manager.clone().source());
-        let refresh = manager.clone();
-        tokio::spawn(async move {
-            refresh.refresh_all().await;
-        });
+        spawn_health(manager.clone(), events.clone());
         Ok(Self {
             vault,
             events,
@@ -425,4 +422,96 @@ fn from_args<T: serde::de::DeserializeOwned>(args: &Value, key: &str) -> Result<
 fn to_value<T: Serialize>(value: T) -> Result<Value, ShellError> {
     serde_json::to_value(value)
         .map_err(|error| ShellError::app_internal(format!("an answer could not be built: {error}")))
+}
+
+const PING_INTERVAL: Duration = Duration::from_secs(60);
+
+fn retry_delay(failures: u32) -> Duration {
+    let exponent = failures.saturating_sub(1).min(5);
+    Duration::from_secs((1u64 << exponent).min(30))
+}
+
+#[derive(Default)]
+struct Health {
+    failures: u32,
+    retry_at: Option<Instant>,
+    last_ping: Option<Instant>,
+}
+
+/// The one health loop for the external servers: an initial pass, then a failed server is retried
+/// on a 1s→30s backoff and a ready one is pinged every minute. The manager already refreshes a
+/// server whose tool list changed; this loop is what notices a server that went away.
+fn spawn_health(manager: Arc<McpClientManager>, events: broadcast::Sender<String>) {
+    tokio::spawn(async move {
+        let mut book: BTreeMap<String, Health> = BTreeMap::new();
+        let _ = manager.refresh_all().await;
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let now = Instant::now();
+            let mut work: Vec<(String, bool)> = Vec::new();
+            for status in manager.statuses() {
+                let health = book.entry(status.server_id.clone()).or_default();
+                match status.state {
+                    McpServerState::Disabled => *health = Health::default(),
+                    McpServerState::Failed => {
+                        if health.retry_at.is_none_or(|retry_at| now >= retry_at) {
+                            work.push((status.server_id.clone(), false));
+                            health.retry_at = Some(now + retry_delay(health.failures.max(1)));
+                        }
+                    }
+                    McpServerState::Ready => {
+                        if health
+                            .last_ping
+                            .is_none_or(|last_ping| now.duration_since(last_ping) >= PING_INTERVAL)
+                        {
+                            work.push((status.server_id.clone(), true));
+                            health.last_ping = Some(now);
+                        }
+                    }
+                    McpServerState::Connecting => {}
+                }
+            }
+
+            for (server_id, ping) in work {
+                let alive = if ping {
+                    manager.ping(&server_id).await.is_ok()
+                } else {
+                    manager.refresh(&server_id).await.is_ok()
+                };
+                let health = book.entry(server_id.clone()).or_default();
+                if alive {
+                    health.failures = 0;
+                    health.retry_at = None;
+                    if ping {
+                        health.last_ping = Some(Instant::now());
+                    }
+                } else {
+                    health.failures = health.failures.saturating_add(1);
+                    health.retry_at = Some(Instant::now() + retry_delay(health.failures));
+                    health.last_ping = None;
+                    log::info!(
+                        "the external server `{server_id}` did not answer; retrying in {}s",
+                        retry_delay(health.failures).as_secs()
+                    );
+                }
+                if let Some(status) = manager.status_of(&server_id) {
+                    let _ = events.send(json!({ "event": "mcp:server_status", "payload": status }).to_string());
+                }
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_servers_back_off_and_stop_growing_at_thirty_seconds() {
+        assert_eq!(retry_delay(1), Duration::from_secs(1));
+        assert_eq!(retry_delay(2), Duration::from_secs(2));
+        assert_eq!(retry_delay(3), Duration::from_secs(4));
+        assert_eq!(retry_delay(6), Duration::from_secs(30));
+        assert_eq!(retry_delay(50), Duration::from_secs(30));
+    }
 }

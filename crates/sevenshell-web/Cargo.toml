@@ -34,3 +34,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 tower-http = { version = "0.6", features = ["fs", "compression-gzip", "trace", "set-header"] }
+[dev-dependencies]
+tempfile = "3"

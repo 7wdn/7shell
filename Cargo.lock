@@ -5544,6 +5544,7 @@ dependencies = [
  "sevenshell-sync",
  "sevenshell-types",
  "sevenshell-vault",
+ "tempfile",
  "tokio",
  "tokio-util",
  "tower-http",

@@ -5,6 +5,7 @@
 //! building a second copy. The registry comes from `sevenshell-api`, so the tools, their schemas,
 //! scope checks and audit lines are the same ones the desktop host uses.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -14,7 +15,7 @@ use sevenshell_api::{
 };
 use sevenshell_core::Core;
 use sevenshell_error::ShellError;
-use sevenshell_types::{AgentOrigin, McpScope};
+use sevenshell_types::{AgentOrigin, AppSettings, McpScope, Session, SessionGroup};
 use sevenshell_vault::Vault;
 use tokio::sync::broadcast;
 
@@ -28,11 +29,11 @@ pub struct ToolRuntime {
     presenter: Arc<EventPresenter>,
     audit: Arc<AuditLog>,
     core: Arc<Core>,
+    vault: Arc<Vault>,
 }
 
 impl ToolRuntime {
     pub fn new(vault: Arc<Vault>, core: Arc<Core>, events: broadcast::Sender<String>) -> Result<Self, ShellError> {
-        let _ = vault;
         let registry = Arc::new(default_registry());
         let cache = Arc::new(ConnectionCache::new(core.clone()));
         let settings = sevenshell_platform::load().ok();
@@ -54,15 +55,19 @@ impl ToolRuntime {
             presenter: Arc::new(EventPresenter::new(events)),
             audit,
             core,
+            vault,
         })
     }
 
-    /// The settings that shape a context are read here, so a page that changed them takes effect on
-    /// the next call without a restart.
-    fn settings_scope() -> McpScope {
-        sevenshell_platform::load()
-            .map(|settings| settings.mcp_scope)
-            .unwrap_or_default()
+    /// Folds the settings' group and session overrides onto the saved sessions, reading the vault
+    /// each time so a page that hides a session takes effect on the next call.
+    fn access(&self) -> McpAccess {
+        let Ok(settings) = sevenshell_platform::load() else {
+            return McpAccess::open(McpScope::ReadOnly);
+        };
+        let sessions = self.vault.sessions().ok();
+        let groups = self.vault.groups().ok();
+        resolve_access(&settings, sessions.as_deref(), groups.as_deref())
     }
 
     fn timeout_seconds() -> u64 {
@@ -74,9 +79,8 @@ impl ToolRuntime {
     }
 
     fn context_with(&self, origin: AgentOrigin, broker: WindowBroker) -> ToolContext {
-        let scope = Self::settings_scope();
-        let access = Arc::new(McpAccess::open(scope));
-        ToolContext::new(self.core.clone(), scope)
+        let access = Arc::new(self.access());
+        ToolContext::new(self.core.clone(), access.max_scope())
             .with_approvals(Arc::new(broker))
             .with_audit(self.audit.clone())
             .with_cache(self.cache.clone())
@@ -137,4 +141,55 @@ impl ToolRuntime {
     pub fn add_source(&self, source: Arc<dyn ToolSource>) {
         self.registry.add_source(source);
     }
+}
+
+fn resolve_access(settings: &AppSettings, sessions: Option<&[Session]>, groups: Option<&[SessionGroup]>) -> McpAccess {
+    let policy = &settings.mcp_access_policy;
+    let mut session_scopes = BTreeMap::new();
+
+    if let Some(sessions) = sessions {
+        let parents: BTreeMap<&str, Option<&str>> = groups
+            .unwrap_or_default()
+            .iter()
+            .map(|group| (group.id.as_str(), group.parent_id.as_deref()))
+            .collect();
+        for session in sessions {
+            let Some(group_id) = session.group_id.as_deref() else {
+                continue;
+            };
+            if let Some(scope) = inherited_group_scope(group_id, &policy.group_scopes, &parents) {
+                session_scopes.insert(session.id.clone(), scope);
+            }
+        }
+    }
+
+    for (id, scope) in &policy.session_scopes {
+        session_scopes.insert(id.clone(), *scope);
+    }
+
+    McpAccess {
+        default_scope: settings.mcp_scope,
+        visible_sessions: policy.visible_session_ids.clone(),
+        session_scopes,
+    }
+}
+
+fn inherited_group_scope(
+    group_id: &str,
+    scopes: &BTreeMap<String, McpScope>,
+    parents: &BTreeMap<&str, Option<&str>>,
+) -> Option<McpScope> {
+    let mut current = Some(group_id);
+    let mut seen = BTreeSet::new();
+    while let Some(id) = current {
+        if !seen.insert(id) {
+            log::warn!("the session group tree contains a cycle at `{id}`; the walk stops there");
+            return None;
+        }
+        if let Some(scope) = scopes.get(id) {
+            return Some(*scope);
+        }
+        current = parents.get(id).copied().flatten();
+    }
+    None
 }

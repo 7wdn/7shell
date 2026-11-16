@@ -24,8 +24,13 @@ use sevenshell_types::{AgentOrigin, AiContextSummary, AiSessionDetail, AiSession
 use sevenshell_vault::Vault;
 use tokio::sync::{Mutex, broadcast};
 
+mod context;
+
 const SESSION_VERSION: u32 = 1;
 const MAX_MESSAGES: usize = 200;
+const MAX_SESSION_BYTES: usize = 512 * 1024;
+const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
+const MAX_SESSIONS: usize = 50;
 const NAME_MAX_CHARS: usize = 60;
 
 pub struct AiRuntime {
@@ -100,11 +105,23 @@ impl StoredSession {
             .map_err(|error| ShellError::app_internal(format!("a conversation could not be written: {error}")))
     }
 
-    fn trim(&mut self) {
-        if self.messages.len() > MAX_MESSAGES {
-            let drop = self.messages.len() - MAX_MESSAGES;
-            self.messages.drain(..drop);
+    fn size_bytes(&self) -> usize {
+        self.document().map(|document| document.len()).unwrap_or(usize::MAX)
+    }
+
+    fn trim_to_limits(&mut self) -> Result<(), ShellError> {
+        while self.messages.len() > MAX_MESSAGES || self.size_bytes() > MAX_SESSION_BYTES {
+            if self.messages.len() <= 1 {
+                break;
+            }
+            let cut = oldest_exchange_end(&self.messages);
+            self.messages.drain(..cut.max(1));
+            prune_outcomes(self);
         }
+        if self.size_bytes() > MAX_SESSION_BYTES {
+            return Err(catalog_error(ErrorCode::AiSessionTooLarge));
+        }
+        Ok(())
     }
 }
 
@@ -288,14 +305,8 @@ impl AiRuntime {
             })()),
             "ai_chat_reset" => Some(Ok(Value::Null)),
             "ai_sessions_list" => Some((|| {
-                let sessions = self.vault.ai_sessions()?;
-                let mut rows: Vec<AiSessionSummary> = sessions
-                    .values()
-                    .filter_map(|document| serde_json::from_str::<StoredSession>(document).ok())
-                    .map(|session| session.summary())
-                    .collect();
-                rows.sort_by_key(|left| std::cmp::Reverse(left.updated_at));
-                to_value(rows)
+                let settings = sevenshell_platform::load()?;
+                to_value(list_stored(&self.vault, &settings, now())?)
             })()),
             "ai_session_get" => Some((|| {
                 let session_id: String = arg(args, "sessionId")?;
@@ -311,9 +322,12 @@ impl AiRuntime {
                 let session_id: String = arg(args, "sessionId")?;
                 let name: String = arg(args, "name")?;
                 let mut session = self.load_session(&session_id)?;
-                session.name = name.trim().chars().take(NAME_MAX_CHARS).collect();
+                let cleaned = clean_name(&name);
+                if !cleaned.is_empty() {
+                    session.name = cleaned;
+                }
                 session.updated_at = now();
-                self.save_session(&session)?;
+                save_stored(&self.vault, &mut session)?;
                 self.emit(
                     "ai:session_saved",
                     json!({ "sessionId": session.id, "updatedAt": session.updated_at }),
@@ -472,10 +486,124 @@ impl AiRuntime {
         serde_json::from_str(&document)
             .map_err(|error| ShellError::app_internal(format!("that conversation cannot be read: {error}")))
     }
+}
 
-    fn save_session(&self, session: &StoredSession) -> Result<(), ShellError> {
-        self.vault.save_ai_session(&session.id, Some(session.document()?))
+fn starts_exchange(message: &ChatMessage) -> bool {
+    message.role == Role::User
+        && message
+            .blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Text { .. }))
+}
+
+fn oldest_exchange_end(messages: &[ChatMessage]) -> usize {
+    let mut seen = 0;
+    for (index, message) in messages.iter().enumerate() {
+        if starts_exchange(message) {
+            seen += 1;
+            if seen == 2 {
+                return index;
+            }
+        }
     }
+    messages.len().saturating_sub(1).max(1)
+}
+
+fn prune_outcomes(session: &mut StoredSession) {
+    let mut referenced = std::collections::BTreeSet::new();
+    for message in &session.messages {
+        for block in &message.blocks {
+            if let ContentBlock::ToolUse { id, .. } = block {
+                referenced.insert(id.as_str());
+            }
+        }
+    }
+    session
+        .outcomes
+        .retain(|call_id, _| referenced.contains(call_id.as_str()));
+}
+
+fn clean_name(text: &str) -> String {
+    sevenshell_error::scrub(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(NAME_MAX_CHARS)
+        .collect()
+}
+
+fn save_stored(vault: &Vault, session: &mut StoredSession) -> Result<(), ShellError> {
+    session.trim_to_limits()?;
+    let document = session.document()?;
+    if document.len() > MAX_SESSION_BYTES {
+        return Err(catalog_error(ErrorCode::AiSessionTooLarge));
+    }
+    make_room(vault, &session.id, document.len())?;
+    vault.save_ai_session(&session.id, Some(document))
+}
+
+fn make_room(vault: &Vault, id: &str, size: usize) -> Result<(), ShellError> {
+    let stored = vault.ai_sessions()?;
+    let mut others: Vec<(String, u64, usize)> = stored
+        .iter()
+        .filter(|(other, _)| other.as_str() != id)
+        .map(|(other, document)| {
+            let updated_at = serde_json::from_str::<StoredSession>(document)
+                .map(|session| session.updated_at)
+                .unwrap_or(0);
+            (other.clone(), updated_at, document.len())
+        })
+        .collect();
+
+    if size > MAX_TOTAL_BYTES {
+        return Err(catalog_error(ErrorCode::AiSessionTooLarge));
+    }
+
+    let mut count = others.len() + 1;
+    let mut total = others.iter().map(|(_, _, length)| length).sum::<usize>() + size;
+    if count <= MAX_SESSIONS && total <= MAX_TOTAL_BYTES {
+        return Ok(());
+    }
+
+    others.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    for (other, _, length) in others {
+        if count <= MAX_SESSIONS && total <= MAX_TOTAL_BYTES {
+            break;
+        }
+        vault.delete_ai_session(&other)?;
+        count -= 1;
+        total -= length;
+    }
+    Ok(())
+}
+
+fn list_stored(vault: &Vault, settings: &AppSettings, now: u64) -> Result<Vec<AiSessionSummary>, ShellError> {
+    let stored = vault.ai_sessions()?;
+    let retention_days = settings.ai_session_retention_days.clamp(1, 365) as u64;
+    let oldest = now.saturating_sub(retention_days * 86_400);
+
+    let mut rows = Vec::with_capacity(stored.len());
+    for (id, document) in stored {
+        let Ok(session) = serde_json::from_str::<StoredSession>(&document) else {
+            continue;
+        };
+        if session.updated_at < oldest {
+            if let Err(error) = vault.delete_ai_session(&id) {
+                log::warn!("an assistant conversation older than the retention stayed: {error}");
+            }
+            continue;
+        }
+        rows.push(session.summary());
+    }
+    rows.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    Ok(rows)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -515,27 +643,12 @@ async fn run_chat(
     };
 
     if session.name.is_empty() {
-        session.name = text.trim().chars().take(NAME_MAX_CHARS).collect();
+        session.name = clean_name(&text);
     }
     session.messages.push(ChatMessage::user(text));
     session.updated_at = now();
 
-    let mut system =
-        String::from("You are 7Shell's SSH operations assistant. Answer concisely and never invent command output.");
-    if let Some(terminal) = context.terminal_text.as_deref().filter(|value| !value.is_empty()) {
-        system.push_str("\n\nThe user is looking at this terminal output:\n");
-        system.push_str(terminal);
-    }
-    for resource in &context.resources {
-        system.push_str(&format!(
-            "\n\n<resource server=\"{}\" uri=\"{}\" name=\"{}\" type=\"{}\">\n{}\n</resource>",
-            resource.server,
-            resource.uri,
-            resource.name,
-            resource.mime_type.as_deref().unwrap_or("text/plain"),
-            resource.text
-        ));
-    }
+    let system = context::system_prompt(&config, Some(&context));
 
     let tool_specs: Vec<ToolSpec> = tools
         .descriptors()
@@ -792,15 +905,13 @@ async fn run_chat(
     }
 
     if !failed {
-        session.trim();
         session.updated_at = now();
-        if let Ok(document) = session.document()
-            && vault.save_ai_session(&session.id, Some(document)).is_ok()
-        {
-            emit(
+        match save_stored(&vault, &mut session) {
+            Ok(()) => emit(
                 "ai:session_saved",
                 json!({ "sessionId": session.id, "updatedAt": session.updated_at }),
-            );
+            ),
+            Err(error) => log::warn!("an assistant conversation could not be stored: {error}"),
         }
 
         let usage = saw_usage.then(|| {
@@ -932,4 +1043,79 @@ fn deterministic_summary(older: &[ChatMessage]) -> String {
         }
     }
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(role: Role, text: &str) -> ChatMessage {
+        ChatMessage {
+            role,
+            blocks: vec![ContentBlock::Text { text: text.to_owned() }],
+        }
+    }
+
+    #[test]
+    fn trimming_cuts_whole_exchanges_and_keeps_the_newest() {
+        let mut session = StoredSession::new(1_700_000_000);
+        for index in 0..105 {
+            session.messages.push(message(Role::User, &format!("question {index}")));
+            session
+                .messages
+                .push(message(Role::Assistant, &format!("answer {index}")));
+        }
+        session.trim_to_limits().expect("a short conversation fits");
+        assert!(session.messages.len() <= MAX_MESSAGES);
+        assert!(
+            starts_exchange(&session.messages[0]),
+            "a trimmed transcript must begin at an exchange, not inside one"
+        );
+        assert!(
+            session
+                .messages
+                .last()
+                .is_some_and(|message| message_text(message).contains("answer 104")),
+            "the newest exchange survives"
+        );
+    }
+
+    #[test]
+    fn a_conversation_name_is_scrubbed_and_one_line() {
+        let name = clean_name("why\npassword=hunter2  is this");
+        assert!(!name.contains('\n'));
+        assert!(
+            !name.contains("hunter2"),
+            "a pasted credential must not become a list label"
+        );
+    }
+
+    #[test]
+    fn retention_deletes_conversations_older_than_the_setting() {
+        let directory = tempfile::tempdir().expect("a temp directory");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("a vault");
+        let now = 1_700_000_000u64;
+
+        let mut old = StoredSession::new(now - 31 * 86_400);
+        old.name = "old".to_owned();
+        vault
+            .save_ai_session(&old.id, Some(old.document().expect("document")))
+            .expect("store old");
+        let mut fresh = StoredSession::new(now - 2 * 86_400);
+        fresh.name = "fresh".to_owned();
+        vault
+            .save_ai_session(&fresh.id, Some(fresh.document().expect("document")))
+            .expect("store fresh");
+
+        let settings = AppSettings {
+            ai_session_retention_days: 30,
+            ..AppSettings::default()
+        };
+        let rows = list_stored(&vault, &settings, now).expect("list");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, fresh.id);
+        assert!(vault.ai_session(&old.id).expect("read").is_none());
+    }
 }
