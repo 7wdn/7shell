@@ -9,7 +9,9 @@
 import { noTransportError } from "./errors";
 
 type Unlisten = () => void;
-type Listener = (payload: unknown) => void;
+/** The shape the desktop event API hands a listener; wrappers read `event.payload`. */
+type WebEvent = { event: string; id: number; payload: unknown };
+type Listener = (event: WebEvent) => void;
 
 const token = typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("token") ?? "");
 
@@ -65,7 +67,7 @@ function connect(): void {
       return;
     }
     for (const listener of listeners.get(event.event) ?? []) {
-      listener(event.payload);
+      listener({ event: event.event, id: 0, payload: event.payload });
     }
   });
   socket.addEventListener("close", () => {
@@ -80,7 +82,10 @@ function connect(): void {
   socket.addEventListener("error", () => socket?.close());
 }
 
-export function webListen<T>(event: string, listener: (payload: T) => void): Promise<Unlisten> {
+export function webListen<T>(
+  event: string,
+  listener: (event: { event: string; id: number; payload: T }) => void,
+): Promise<Unlisten> {
   let group = listeners.get(event);
   if (!group) {
     group = new Set();
