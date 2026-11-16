@@ -11,7 +11,7 @@ import test from "node:test";
 import { REPO_ROOT } from "../lib/descriptors.mjs";
 
 const SOURCE_ROOT = path.join(REPO_ROOT, "apps", "desktop", "src");
-const TRANSPORT_MODULE = "lib/backend/tauri.ts";
+const TRANSPORT_MODULE = "lib/backend/ipc.ts";
 const FORBIDDEN = "@tauri-apps/api";
 
 function sourceFiles(directory) {

@@ -8,10 +8,7 @@
  * transport-specific calls.
  */
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview, getCurrentWindow, invoke, listen } from "./ipc";
 
 import type { AppInfo, AppSettings, PolicyAuditEvent } from "@/types/app";
 import type {

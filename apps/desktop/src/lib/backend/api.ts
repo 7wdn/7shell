@@ -117,14 +117,11 @@ import type {
   SyncUploadReceipt,
 } from "@/types/sync";
 
-import { ShellError, normalizeShellError, noTransportError } from "./errors";
+import { ShellError, normalizeShellError } from "./errors";
 import * as desktop from "./tauri";
 import type { DragPayload, DropPayload, PendingFiles, Unlisten } from "./tauri";
 
 async function forward<T>(operation: string, run: () => Promise<T>): Promise<T> {
-  if (!isDesktopRuntime()) {
-    throw noTransportError(operation);
-  }
   try {
     return await run();
   } catch (error) {
@@ -133,16 +130,13 @@ async function forward<T>(operation: string, run: () => Promise<T>): Promise<T> 
 }
 
 /**
- * Subscriptions behave the same way in a browser as in the shell: there is simply never anything
- * to hear, and unsubscribing is still safe to call.
+ * Subscriptions are the same call in either host: the desktop's event channel and the browser
+ * service's WebSocket both answer with an unsubscribe function.
  */
 function subscribe<T>(
   register: (listener: (payload: T) => void) => Promise<Unlisten>,
   listener: (payload: T) => void,
 ): Promise<Unlisten> {
-  if (!isDesktopRuntime()) {
-    return Promise.resolve(() => {});
-  }
   return register(listener);
 }
 

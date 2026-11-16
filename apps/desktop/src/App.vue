@@ -24,6 +24,7 @@ import { RotateCw } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import { isDesktopRuntime } from "@/lib/runtime";
 import MonitorPanel from "@/components/monitor/MonitorPanel.vue";
 import AssistantPanel from "@/components/assistant/AssistantPanel.vue";
 import ApprovalDialog from "@/components/mcp/ApprovalDialog.vue";
@@ -398,6 +399,11 @@ function refuseDocumentSelection(event: Event): void {
  */
 async function reportFirstFrame(): Promise<void> {
   await nextTick();
+  if (!isDesktopRuntime()) {
+    // A browser has no window to reveal, and rAF can be suspended in a background tab; the rest of
+    // the startup must not wait for a frame nobody will paint.
+    return;
+  }
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
