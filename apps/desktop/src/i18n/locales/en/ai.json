@@ -57,6 +57,10 @@
       "emptyTab": "Nothing of this kind is offered right now.",
       "tabResources": "Resources",
       "tabPrompts": "Prompts",
+      "template": {
+        "title": "URI templates",
+        "generate": "Create resource"
+      },
       "resource": {
         "read": "Read",
         "preview": "What the server returned",

@@ -874,7 +874,7 @@ async fn run_chat(
                     (false, Some(code), content)
                 }
             };
-            let (preview, truncated) = preview_text(&content, 2_000);
+            let (preview, truncated) = preview_text(&content, 4_000);
             session.outcomes.insert(
                 call_id.clone(),
                 AiToolOutcome {
@@ -934,14 +934,21 @@ async fn run_chat(
 }
 
 fn preview_text(text: &str, limit: usize) -> (String, bool) {
-    let mut preview = String::new();
-    for (index, character) in text.chars().enumerate() {
-        if index >= limit {
-            return (preview, true);
-        }
-        preview.push(character);
+    let characters: Vec<char> = text.chars().collect();
+    if characters.len() <= limit {
+        return (text.to_owned(), false);
     }
-    (preview, false)
+    let head = limit * 3 / 4;
+    let tail = limit - head;
+    let omitted = characters.len() - head - tail;
+    let mut preview: String = characters[..head].iter().collect();
+    preview.push_str(&format!(
+        "
+… [{omitted} characters omitted] …
+"
+    ));
+    preview.extend(characters[characters.len() - tail..].iter());
+    (preview, true)
 }
 
 const COMPACT_TRIGGER_CHARS: usize = 24_000;
@@ -1078,6 +1085,21 @@ mod tests {
                 .is_some_and(|message| message_text(message).contains("answer 104")),
             "the newest exchange survives"
         );
+    }
+
+    #[test]
+    fn a_tool_preview_keeps_both_ends_and_counts_what_it_dropped() {
+        let (short, truncated) = preview_text("short", 100);
+        assert_eq!(short, "short");
+        assert!(!truncated);
+
+        let text = format!("{}{}{}", "a".repeat(50), "middle", "z".repeat(50));
+        let (preview, truncated) = preview_text(&text, 40);
+        assert!(truncated);
+        assert!(preview.starts_with("aaaaaaaa"));
+        assert!(preview.ends_with("zzzzzzzz"));
+        assert!(preview.contains("characters omitted"));
+        assert!(preview.chars().count() < text.chars().count());
     }
 
     #[test]

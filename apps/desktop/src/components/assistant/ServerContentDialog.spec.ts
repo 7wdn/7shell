@@ -42,6 +42,7 @@ const CATALOG: McpServerContent[] = [
   {
     serverId: "files",
     name: "Files",
+    templates: [],
     resources: [
       {
         uri: "file:///welcome.txt",

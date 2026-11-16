@@ -303,6 +303,15 @@ pub fn resources_reply(listings: &[Value]) -> Value {
     json!({ "resources": listings })
 }
 
+/// One `resources/templates/list` entry.
+pub fn template_listing(uri_template: &str, name: &str) -> Value {
+    json!({ "uriTemplate": uri_template, "name": name, "mimeType": "text/plain" })
+}
+
+pub fn templates_reply(listings: &[Value]) -> Value {
+    json!({ "resourceTemplates": listings })
+}
+
 /// One `prompts/list` entry, with the argument names a test cares about.
 pub fn prompt_listing(name: &str, arguments: &[&str]) -> Value {
     let arguments: Vec<Value> = arguments

@@ -57,6 +57,10 @@
       "emptyTab": "当前没有这类内容。",
       "tabResources": "资源",
       "tabPrompts": "提示词",
+      "template": {
+        "title": "URI 模板",
+        "generate": "生成资源"
+      },
       "resource": {
         "read": "读取",
         "preview": "服务器返回的内容",

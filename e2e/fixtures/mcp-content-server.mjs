@@ -51,6 +51,12 @@ function method(name, params) {
       return { tools: [] };
     case "resources/list":
       return { resources: [resource()] };
+    case "resources/templates/list":
+      return {
+        resourceTemplates: [
+          { uriTemplate: "file:///{name}", name: "welcome-by-name", description: "A resource chosen by name.", mimeType: "text/plain" },
+        ],
+      };
     case "resources/read": {
       if (params?.uri !== RESOURCE_URI) {
         throw new InvalidParams(`no resource at ${String(params?.uri)}`);

@@ -273,6 +273,23 @@ pub struct McpPrompt {
     pub arguments: Vec<McpPromptArgument>,
 }
 
+/// One parameterised resource a server offers.
+///
+/// `uriTemplate` is the server's own RFC 6570 template; this build does not render it, it only
+/// shows it and lets a person fill the variables before asking for the resulting URI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResourceTemplate {
+    pub uri_template: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
 /// One server's resources and prompts, as the picker draws them.
 ///
 /// The catalogue is per server rather than one flat list because both names are only unique inside
@@ -285,6 +302,8 @@ pub struct McpServerContent {
     pub name: String,
     #[serde(default)]
     pub resources: Vec<McpResource>,
+    #[serde(default)]
+    pub templates: Vec<McpResourceTemplate>,
     #[serde(default)]
     pub prompts: Vec<McpPrompt>,
 }

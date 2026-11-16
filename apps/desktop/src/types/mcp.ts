@@ -136,10 +136,20 @@ export interface McpPrompt {
 }
 
 /** One server's resources and prompts, from `sevenshell_types::McpServerContent`. */
+/** One parameterised resource a server offers, from `sevenshell_types::McpResourceTemplate`. */
+export interface McpResourceTemplate {
+  readonly uriTemplate: string;
+  readonly name: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly mimeType?: string;
+}
+
 export interface McpServerContent {
   readonly serverId: string;
   readonly name: string;
   readonly resources: readonly McpResource[];
+  readonly templates: readonly McpResourceTemplate[];
   readonly prompts: readonly McpPrompt[];
 }
 

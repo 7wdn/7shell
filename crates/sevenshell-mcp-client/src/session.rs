@@ -31,7 +31,7 @@ use serde_json::{Value, json};
 use sevenshell_api::ToolDescriptor;
 use sevenshell_types::{
     McpPrompt, McpPromptArgument, McpPromptMessage, McpPromptRole, McpPromptText, McpResource, McpResourceContent,
-    McpResourceRead, McpServerConfig, McpServerContent, McpServerState, McpServerStatus,
+    McpResourceRead, McpResourceTemplate, McpServerConfig, McpServerContent, McpServerState, McpServerStatus,
 };
 use tokio::time::timeout;
 
@@ -89,6 +89,7 @@ pub struct McpSession {
     protocol_version: String,
     tools: Arc<RwLock<Vec<ToolDescriptor>>>,
     resources: Arc<RwLock<Vec<McpResource>>>,
+    templates: Arc<RwLock<Vec<McpResourceTemplate>>>,
     prompts: Arc<RwLock<Vec<McpPrompt>>>,
     /// Whether the handshake was told this server has resources at all.
     ///
@@ -142,6 +143,20 @@ impl McpSession {
         } else {
             Vec::new()
         };
+        let templates = if handshake.offers_resources {
+            match fetch_templates(&server, transport.as_ref()).await {
+                Ok(templates) => templates,
+                Err(error) => {
+                    log::debug!(
+                        "the resource template list of `{}` is not available: {error}",
+                        server.id
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
         let prompts = if handshake.offers_prompts {
             match fetch_prompts(&server, transport.as_ref()).await {
                 Ok(prompts) => prompts,
@@ -156,6 +171,7 @@ impl McpSession {
 
         let tools = Arc::new(RwLock::new(tools));
         let resources = Arc::new(RwLock::new(resources));
+        let templates = Arc::new(RwLock::new(templates));
         let prompts = Arc::new(RwLock::new(prompts));
         start_notification_refresh(
             &server,
@@ -163,6 +179,7 @@ impl McpSession {
             Caches {
                 tools: Arc::clone(&tools),
                 resources: Arc::clone(&resources),
+                templates: Arc::clone(&templates),
                 prompts: Arc::clone(&prompts),
             },
             handshake.offers_resources,
@@ -176,6 +193,7 @@ impl McpSession {
             protocol_version: handshake.version,
             tools,
             resources,
+            templates,
             prompts,
             offers_resources: handshake.offers_resources,
             offers_prompts: handshake.offers_prompts,
@@ -206,6 +224,7 @@ impl McpSession {
             server_id: self.server.id.clone(),
             name: self.server.display_name().to_owned(),
             resources: read_lock(&self.resources).clone(),
+            templates: read_lock(&self.templates).clone(),
             prompts: read_lock(&self.prompts).clone(),
         }
     }
@@ -574,6 +593,77 @@ async fn fetch_resources(
     })
 }
 
+/// Reads every page of `resources/templates/list`.
+///
+/// A server that does not implement the method (or answers with no list) simply offers no
+/// templates; the caller swallows the error, because templates are an addition to resources rather
+/// than the reason a session exists.
+async fn fetch_templates(
+    server: &McpServerConfig,
+    transport: &dyn McpTransport,
+) -> Result<Vec<McpResourceTemplate>, McpClientError> {
+    let mut templates: Vec<McpResourceTemplate> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut cursor: Option<String> = None;
+
+    for _ in 0..MAX_CONTENT_PAGES {
+        let params = cursor.as_ref().map(|cursor| json!({ "cursor": cursor }));
+        let result = timeout(LIST_TIMEOUT, transport.request("resources/templates/list", params))
+            .await
+            .map_err(|_| McpClientError::Timeout {
+                server: server.id.clone(),
+                seconds: LIST_TIMEOUT.as_secs(),
+            })??;
+
+        let Some(listings) = result.get("resourceTemplates").and_then(Value::as_array) else {
+            return Ok(templates);
+        };
+        for listing in listings {
+            let Some(uri_template) = listing
+                .get("uriTemplate")
+                .and_then(Value::as_str)
+                .filter(|template| !template.is_empty())
+            else {
+                log::warn!("the server `{}` listed a resource template with no URI", server.id);
+                continue;
+            };
+            if !seen.insert(uri_template.to_owned()) {
+                log::warn!(
+                    "the server `{}` listed the resource template `{uri_template}` twice",
+                    server.id
+                );
+                continue;
+            }
+            templates.push(McpResourceTemplate {
+                uri_template: uri_template.to_owned(),
+                name: listing
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or(uri_template)
+                    .to_owned(),
+                title: text_field(listing, "title"),
+                description: text_field(listing, "description"),
+                mime_type: text_field(listing, "mimeType"),
+            });
+        }
+
+        match result
+            .get("nextCursor")
+            .and_then(Value::as_str)
+            .filter(|cursor| !cursor.is_empty())
+        {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => return Ok(templates),
+        }
+    }
+
+    Err(McpClientError::Failed {
+        server: server.id.clone(),
+        message: format!("the server's resource template list did not end within {MAX_CONTENT_PAGES} pages"),
+    })
+}
+
 /// Reads every page of `prompts/list`, keeping the first entry of any name offered twice.
 async fn fetch_prompts(
     server: &McpServerConfig,
@@ -668,6 +758,7 @@ fn prompt_argument(argument: &Value) -> Option<McpPromptArgument> {
 struct Caches {
     tools: Arc<RwLock<Vec<ToolDescriptor>>>,
     resources: Arc<RwLock<Vec<McpResource>>>,
+    templates: Arc<RwLock<Vec<McpResourceTemplate>>>,
     prompts: Arc<RwLock<Vec<McpPrompt>>>,
 }
 
@@ -713,6 +804,9 @@ fn start_notification_refresh(
                     match fetch_resources(&server, transport.as_ref()).await {
                         Ok(refreshed) => *write_lock(&caches.resources) = refreshed,
                         Err(error) => log::warn!("the resource list of `{}` could not be read: {error}", server.id),
+                    }
+                    if let Ok(refreshed) = fetch_templates(&server, transport.as_ref()).await {
+                        *write_lock(&caches.templates) = refreshed;
                     }
                 }
                 "notifications/prompts/list_changed" if offers_prompts => {
@@ -993,8 +1087,8 @@ mod tests {
 
     use crate::testing::{
         FakeTransport, initialize_reply, initialize_reply_offering, initialize_reply_without_tools, prompt_listing,
-        prompt_message, prompt_reply, prompts_reply, resource_listing, resources_reply, text_resource_read,
-        text_result, tool_listing, tools_reply,
+        prompt_message, prompt_reply, prompts_reply, resource_listing, resources_reply, template_listing,
+        templates_reply, text_resource_read, text_result, tool_listing, tools_reply,
     };
 
     fn server() -> McpServerConfig {
@@ -1507,6 +1601,33 @@ mod tests {
             fake.calls("tools/list").is_empty(),
             "a capability the server did not advertise is not requested"
         );
+    }
+
+    #[tokio::test]
+    async fn resource_templates_are_listed_beside_resources() {
+        let fake = Arc::new(
+            FakeTransport::new()
+                .on(
+                    "initialize",
+                    initialize_reply_offering(LATEST_PROTOCOL_VERSION, &["resources"]),
+                )
+                .on(
+                    "resources/list",
+                    resources_reply(&[resource_listing("file:///welcome.txt", "welcome")]),
+                )
+                .on(
+                    "resources/templates/list",
+                    templates_reply(&[template_listing("file:///{path}", "file")]),
+                ),
+        );
+        let session = McpSession::open(server(), Box::new(Arc::clone(&fake)))
+            .await
+            .expect("a session");
+
+        let content = session.content();
+        assert_eq!(content.templates.len(), 1);
+        assert_eq!(content.templates[0].uri_template, "file:///{path}");
+        assert_eq!(content.templates[0].name, "file");
     }
 
     #[tokio::test]

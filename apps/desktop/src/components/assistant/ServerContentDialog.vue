@@ -29,7 +29,14 @@ import { type DescribedError, describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { asShellError } from "@/lib/backend/errors";
 import { useAssistantStore } from "@/stores/assistant";
-import type { McpPrompt, McpPromptText, McpResource, McpResourceRead, McpServerContent } from "@/types/mcp";
+import type {
+  McpPrompt,
+  McpPromptText,
+  McpResource,
+  McpResourceRead,
+  McpResourceTemplate,
+  McpServerContent,
+} from "@/types/mcp";
 
 const props = defineProps<{ open: boolean }>();
 
@@ -73,6 +80,10 @@ interface PromptState {
 
 const reads = ref<Record<string, ReadState>>({});
 const promptStates = ref<Record<string, PromptState>>({});
+/** Template variable values, keyed by server and template URI. */
+const templateStates = ref<Record<string, { values: Record<string, string> }>>({});
+/** Resources built from templates, per server. They join the ordinary read/attach rows. */
+const composedResources = ref<Record<string, McpResource[]>>({});
 /** The store refused one more attachment: said once, under the button that tried. */
 const attachFull = ref(false);
 
@@ -84,10 +95,97 @@ function promptKey(serverId: string, name: string): string {
   return `${serverId}:${name}`;
 }
 
+function templateKey(serverId: string, template: McpResourceTemplate): string {
+  return `${serverId}\n${template.uriTemplate}`;
+}
+
+/** The variable names inside an RFC 6570 template, operators and modifiers removed. */
+function templateVariables(template: McpResourceTemplate): string[] {
+  const names: string[] = [];
+  for (const match of template.uriTemplate.matchAll(/\{([^}]+)\}/g)) {
+    for (const part of (match[1] ?? "").replace(/^[+#./;?&]/, "").split(",")) {
+      const name = part.replace(/^\*/, "").split(":")[0]?.trim() ?? "";
+      if (name !== "" && !names.includes(name)) {
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+function templateState(server: McpServerContent, template: McpResourceTemplate): { values: Record<string, string> } {
+  return templateStates.value[templateKey(server.serverId, template)] ?? { values: {} };
+}
+
+function setTemplateValue(server: McpServerContent, template: McpResourceTemplate, name: string, event: Event): void {
+  const key = templateKey(server.serverId, template);
+  const state = templateState(server, template);
+  templateStates.value = {
+    ...templateStates.value,
+    [key]: { values: { ...state.values, [name]: (event.target as HTMLInputElement).value } },
+  };
+}
+
+function templateReady(server: McpServerContent, template: McpResourceTemplate): boolean {
+  const values = templateState(server, template).values;
+  return templateVariables(template).every((name) => (values[name] ?? "").trim() !== "");
+}
+
+/** A small, deliberately simple expansion: enough for the path and query templates servers commonly use. */
+function templateUri(server: McpServerContent, template: McpResourceTemplate): string {
+  const values = templateState(server, template).values;
+  return template.uriTemplate.replace(/\{([^}]+)\}/g, (_whole, expression: string) => {
+    const operator = /^[+#./;?&]/.test(expression) ? expression[0] : "";
+    const parts = expression
+      .slice(operator === "" ? 0 : 1)
+      .split(",")
+      .map((part) => part.replace(/^\*/, "").split(":")[0] ?? "");
+    const encoded = parts.map((name) => encodeURIComponent(values[name] ?? ""));
+    if (operator === "?" || operator === "&") {
+      const pairs = parts
+        .map((name, index) => ((values[name] ?? "") === "" ? "" : `${name}=${encoded[index]}`))
+        .filter((pair) => pair !== "");
+      return pairs.length === 0 ? "" : `${operator}${pairs.join("&")}`;
+    }
+    if (operator === "#") {
+      return encoded[0] === "" ? "" : `#${encoded[0]}`;
+    }
+    return encoded.join("/");
+  });
+}
+
+function visibleResources(server: McpServerContent): readonly McpResource[] {
+  return [...server.resources, ...(composedResources.value[server.serverId] ?? [])];
+}
+
+function composeTemplate(server: McpServerContent, template: McpResourceTemplate): void {
+  if (!templateReady(server, template)) {
+    return;
+  }
+  const uri = templateUri(server, template);
+  if (uri === "" || uri.includes("{")) {
+    return;
+  }
+  if (visibleResources(server).some((resource) => resource.uri === uri)) {
+    return;
+  }
+  const resource: McpResource = {
+    uri,
+    name: template.name,
+    title: template.title,
+    description: template.description,
+    mimeType: template.mimeType,
+  };
+  composedResources.value = {
+    ...composedResources.value,
+    [server.serverId]: [...(composedResources.value[server.serverId] ?? []), resource],
+  };
+}
+
 /** The servers with something to offer in the half on screen. A capability nobody declared is absent. */
 const groups = computed(() =>
   tab.value === "resources"
-    ? catalog.value.filter((server) => server.resources.length > 0)
+    ? catalog.value.filter((server) => visibleResources(server).length > 0 || server.templates.length > 0)
     : catalog.value.filter((server) => server.prompts.length > 0),
 );
 
@@ -130,6 +228,8 @@ watch(
     tab.value = "resources";
     reads.value = {};
     promptStates.value = {};
+    templateStates.value = {};
+    composedResources.value = {};
     catalog.value = [];
     loaded.value = false;
     attachFull.value = false;
@@ -385,7 +485,7 @@ function insertPrompt(server: McpServerContent, prompt: McpPrompt): void {
               </h4>
 
               <div
-                v-for="resource in server.resources"
+                v-for="resource in visibleResources(server)"
                 :key="resource.uri"
                 :data-mcp-resource="resource.uri"
                 :data-mcp-resource-server="server.serverId"
@@ -489,6 +589,45 @@ function insertPrompt(server: McpServerContent, prompt: McpPrompt): void {
                       }}
                     </p>
                   </template>
+                </div>
+              </div>
+
+              <div v-if="server.templates.length > 0" class="space-y-1.5 pt-1">
+                <p class="text-[10px] font-medium text-muted-foreground">{{ t("ai.content.template.title") }}</p>
+                <div
+                  v-for="template in server.templates"
+                  :key="template.uriTemplate"
+                  :data-mcp-template="`${server.serverId}:${template.uriTemplate}`"
+                  class="space-y-1.5 rounded-md border border-border bg-background/40 px-2.5 py-1.5"
+                >
+                  <p class="truncate text-[11px]">{{ template.title ?? template.name }}</p>
+                  <p class="font-mono text-[10px] break-all text-muted-foreground">{{ template.uriTemplate }}</p>
+                  <p v-if="template.description" class="text-[10px] leading-relaxed text-muted-foreground">
+                    {{ template.description }}
+                  </p>
+                  <div class="flex flex-wrap gap-1.5">
+                    <label
+                      v-for="name in templateVariables(template)"
+                      :key="name"
+                      class="flex min-w-0 flex-1 items-center gap-1 text-[10px] text-muted-foreground"
+                    >
+                      <span class="shrink-0 font-mono">{{ name }}</span>
+                      <input
+                        :value="templateState(server, template).values[name] ?? ''"
+                        class="min-w-0 flex-1 rounded-sm border border-border bg-background px-1.5 py-0.5 text-[11px] text-foreground focus:border-primary focus:outline-none"
+                        @input="setTemplateValue(server, template, name, $event)"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    data-mcp-template-generate
+                    class="rounded-md border border-border px-2 py-0.5 text-[10px] transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
+                    :disabled="!templateReady(server, template)"
+                    @click="composeTemplate(server, template)"
+                  >
+                    {{ t("ai.content.template.generate") }}
+                  </button>
                 </div>
               </div>
             </section>
