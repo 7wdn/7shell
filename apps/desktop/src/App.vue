@@ -94,6 +94,7 @@ let stopFollowingSystem: (() => void) | undefined;
 let stopTerminalEvents: (() => void) | undefined;
 let stopDragEvents: (() => void) | undefined;
 let stopDropEvents: (() => void) | undefined;
+let stopBrowserDrag: (() => void) | undefined;
 let stopPaste: (() => void) | undefined;
 let stopContextMenu: (() => void) | undefined;
 let stopStraySelection: (() => void) | undefined;
@@ -279,6 +280,39 @@ async function dropped(payload: { pending?: { token: string }; error?: unknown }
   }
 }
 
+/** A browser drop carries files, not a token; both routes end at the same directory. */
+function browserDropHasFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+function onBrowserDragOver(event: DragEvent): void {
+  if (!browserDropHasFiles(event)) {
+    return;
+  }
+  event.preventDefault();
+  dragging.value = true;
+}
+
+function onBrowserDragLeave(event: DragEvent): void {
+  if (event.relatedTarget === null) {
+    dragging.value = false;
+  }
+}
+
+function onBrowserDrop(event: DragEvent): void {
+  if (!browserDropHasFiles(event)) {
+    return;
+  }
+  event.preventDefault();
+  dragging.value = false;
+  const target = dropTarget.value;
+  const chosen = Array.from(event.dataTransfer?.files ?? []);
+  if (!target || chosen.length === 0) {
+    return;
+  }
+  void files.uploadBrowserFiles(target.handle, target.path, chosen, preferences.packedTransfer);
+}
+
 /**
  * The keys that work anywhere in the window, read from the table rather than spelled out here.
  *
@@ -440,6 +474,16 @@ onMounted(async () => {
     dragging.value = payload.hovering;
   });
   stopDropEvents = await backend.events.onFilesDropped((payload) => void dropped(payload));
+  if (!isDesktopRuntime()) {
+    window.addEventListener("dragover", onBrowserDragOver);
+    window.addEventListener("dragleave", onBrowserDragLeave);
+    window.addEventListener("drop", onBrowserDrop);
+    stopBrowserDrag = () => {
+      window.removeEventListener("dragover", onBrowserDragOver);
+      window.removeEventListener("dragleave", onBrowserDragLeave);
+      window.removeEventListener("drop", onBrowserDrop);
+    };
+  }
   window.addEventListener("keydown", onGlobalKey);
   stopPaste = () => window.removeEventListener("keydown", onGlobalKey);
   window.addEventListener("contextmenu", suppressDefaultMenu, { capture: true });
@@ -478,6 +522,7 @@ onBeforeUnmount(() => {
   stopTerminalEvents?.();
   stopDragEvents?.();
   stopDropEvents?.();
+  stopBrowserDrag?.();
   stopPaste?.();
   stopContextMenu?.();
   stopStraySelection?.();

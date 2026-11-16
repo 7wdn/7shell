@@ -28,6 +28,7 @@ import { ref } from "vue";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { parentPath } from "@/lib/files/format";
+import { isDesktopRuntime } from "@/lib/runtime";
 import { resolveDirectory } from "@/lib/terminal/follow";
 import type {
   DownloadFolderView,
@@ -337,6 +338,12 @@ export const useFilesStore = defineStore("files", () => {
     }
 
     try {
+      if (!isDesktopRuntime()) {
+        // A page cannot read a file list off the clipboard; the picker is the honest fallback.
+        const outcome = await backend.files.uploadBrowser(handle, directory, packed);
+        await absorbUpload(outcome);
+        return outcome.kind === "cancelled" ? { kind: "empty" } : { kind: "ok" };
+      }
       const pending = await backend.files.clipboardFiles();
       if (pending === null) {
         return { kind: "empty" };
@@ -345,6 +352,20 @@ export const useFilesStore = defineStore("files", () => {
       return { kind: "ok" };
     } catch (error) {
       return { kind: "failed", failure: asShellError(error, "dropped_upload") };
+    }
+  }
+
+  /** Files dropped from the desktop onto the page: staged and sent like a picked batch. */
+  async function uploadBrowserFiles(
+    handle: string,
+    directory: string,
+    files: readonly File[],
+    packed: boolean,
+  ): Promise<void> {
+    try {
+      await absorbUpload(await backend.files.uploadFilesBrowser(handle, directory, files, packed));
+    } catch (error) {
+      reportFailure(handle, error);
     }
   }
 
@@ -470,6 +491,10 @@ export const useFilesStore = defineStore("files", () => {
   ): Promise<void> {
     transferFailure.value = null;
     try {
+      if (!isDesktopRuntime()) {
+        await backend.files.downloadBrowser(handle, paths, packed);
+        return;
+      }
       const ids = await backend.files.download(handle, paths, title, suggestedName, packed);
       if (ids.length > 0) {
         // The backend inserted the records before it answered, so the rows are there to read.
@@ -484,6 +509,10 @@ export const useFilesStore = defineStore("files", () => {
   async function upload(handle: string, directory: string, title: string, packed: boolean): Promise<void> {
     transferFailure.value = null;
     try {
+      if (!isDesktopRuntime()) {
+        await absorbUpload(await backend.files.uploadBrowser(handle, directory, packed));
+        return;
+      }
       await absorbUpload(await backend.files.upload(handle, directory, title, packed));
     } catch (error) {
       transferFailure.value = asShellError(error, "files_upload");
@@ -943,6 +972,7 @@ export const useFilesStore = defineStore("files", () => {
     directories,
     uploadDropped,
     uploadFromClipboard,
+    uploadBrowserFiles,
     answerUpload,
     reportFailure,
     navigate,

@@ -9,9 +9,22 @@ publish.workspace = true
 
 [dependencies]
 sevenshell-core = { workspace = true }
+sevenshell-policy = { workspace = true }
 sevenshell-error = { workspace = true }
 sevenshell-platform = { workspace = true }
 sevenshell-session = { workspace = true }
+sevenshell-ssh = { workspace = true }
+sevenshell-sync = { workspace = true }
+sevenshell-ai = { workspace = true }
+sevenshell-agent = { workspace = true }
+sevenshell-api = { workspace = true }
+sevenshell-mcp-client = { workspace = true }
+getrandom = { workspace = true }
+async-trait = { workspace = true }
+log = { workspace = true }
+futures-util = { workspace = true }
+percent-encoding = { workspace = true }
+tokio-util = { version = "0.7", features = ["io"] }
 sevenshell-types = { workspace = true }
 sevenshell-vault = { workspace = true }
 base64 = { workspace = true }
@@ -20,4 +33,4 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-tower-http = { version = "0.6", features = ["fs", "compression-gzip", "trace"] }
+tower-http = { version = "0.6", features = ["fs", "compression-gzip", "trace", "set-header"] }

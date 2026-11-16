@@ -13,6 +13,11 @@ type Listener = (payload: unknown) => void;
 
 const token = typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("token") ?? "");
 
+/** The token the launcher put in the page URL, for the file endpoints the browser opens directly. */
+export function webTokenValue(): string {
+  return token;
+}
+
 export async function webInvoke<T>(cmd: string, args: unknown = {}): Promise<T> {
   let response: Response;
   try {

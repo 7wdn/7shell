@@ -118,8 +118,10 @@ import type {
 } from "@/types/sync";
 
 import { ShellError, normalizeShellError } from "./errors";
+import { pickBrowserFiles, saveBrowserFile, saveBrowserText, stageBrowserFile } from "./browser-files";
 import * as desktop from "./tauri";
 import type { DragPayload, DropPayload, PendingFiles, Unlisten } from "./tauri";
+import { webInvoke } from "./web";
 
 async function forward<T>(operation: string, run: () => Promise<T>): Promise<T> {
   try {
@@ -127,6 +129,30 @@ async function forward<T>(operation: string, run: () => Promise<T>): Promise<T> 
   } catch (error) {
     throw normalizeShellError(error, operation);
   }
+}
+
+/**
+ * A session export whose passphrase is still being asked for.
+ *
+ * The desktop keeps the chosen file in Rust between the two calls; a browser has the text already,
+ * so the page holds it instead and sends it again with the answer.
+ */
+let pendingSessionImport: { contents: string; fileName: string } | null = null;
+
+/** The same, for a backup file whose passphrase is still being asked for. */
+let pendingBackupInspect: { contents: string; fileName: string } | null = null;
+
+async function uploadStagedFiles(
+  handle: string,
+  directory: string,
+  files: readonly File[],
+  packed: boolean,
+): Promise<UploadOutcome> {
+  const tokens: string[] = [];
+  for (const file of files) {
+    tokens.push((await stageBrowserFile(file)).token);
+  }
+  return webInvoke<UploadOutcome>("files_upload_staged", { handle, directory, tokens, packed });
 }
 
 /**
@@ -435,7 +461,12 @@ export const backend = {
     uploadDropped: (handle: string, directory: string, token: string, packed: boolean): Promise<UploadOutcome> =>
       forward("dropped_upload", () => desktop.droppedUpload(handle, directory, token, packed)),
     /** Refused with `APP-UNSUPPORTED` where the platform cannot read a file list from it; null means no files. */
-    clipboardFiles: (): Promise<PendingFiles | null> => forward("clipboard_files", () => desktop.clipboardFiles()),
+    clipboardFiles: (): Promise<PendingFiles | null> => {
+      if (!isDesktopRuntime()) {
+        return Promise.resolve(null);
+      }
+      return forward("clipboard_files", () => desktop.clipboardFiles());
+    },
     /**
      * Asks where to put it, in Rust. An empty answer means a dialog was dismissed.
      *
@@ -460,6 +491,42 @@ export const backend = {
     /** The answer to that question: send them anyway, send only what is missing, or send nothing. */
     uploadAnswer: (token: string, answer: UploadAnswer): Promise<UploadOutcome> =>
       forward("files_upload_answer", () => desktop.filesUploadAnswer(token, answer)),
+    /**
+     * The browser's two file doors: a picker in the page, a staged copy on the local service, and
+     * the same command the desktop uses once the bytes have somewhere to live.
+     */
+    uploadBrowser: (handle: string, directory: string, packed: boolean): Promise<UploadOutcome> =>
+      forward("files_upload_staged", async () => {
+        const picked = await pickBrowserFiles(packed);
+        if (picked.length === 0) {
+          return { kind: "cancelled" } as UploadOutcome;
+        }
+        return uploadStagedFiles(handle, directory, picked, packed);
+      }),
+    /** A drop already handed the page its files; no picker is involved. */
+    uploadFilesBrowser: (
+      handle: string,
+      directory: string,
+      files: readonly File[],
+      packed: boolean,
+    ): Promise<UploadOutcome> =>
+      forward("files_upload_staged", async () => {
+        if (files.length === 0) {
+          return { kind: "cancelled" } as UploadOutcome;
+        }
+        return uploadStagedFiles(handle, directory, files, packed);
+      }),
+    downloadBrowser: (handle: string, paths: readonly string[], packed: boolean): Promise<void> =>
+      forward("files_download_browser", async () => {
+        const answer = await webInvoke<{ files: { token: string; name: string }[] }>("files_download_browser", {
+          handle,
+          paths: [...paths],
+          packed,
+        });
+        for (const file of answer.files) {
+          saveBrowserFile(file.token, file.name);
+        }
+      }),
   },
 
   transfers: {
@@ -524,14 +591,56 @@ export const backend = {
      * the passphrase that decides whether they travel at all.
      */
     export: (title: string, fileName: string, passphrase: string | null): Promise<SessionExportSummary | undefined> =>
-      forward("sessions_export", () => desktop.sessionsExport(title, fileName, passphrase)),
+      forward("sessions_export", () => {
+        if (isDesktopRuntime()) {
+          return desktop.sessionsExport(title, fileName, passphrase);
+        }
+        return (async () => {
+          const answer = await webInvoke<{ summary: SessionExportSummary; contents: string }>(
+            "sessions_export_browser",
+            { fileName, passphrase },
+          );
+          saveBrowserText(answer.summary.fileName, answer.contents);
+          return answer.summary;
+        })();
+      }),
 
     /**
      * Adds what a chosen file holds. `undefined` means the dialog was dismissed; a sealed file
      * answers that it needs a passphrase instead, and the second call carries it.
      */
     import: (title: string, passphrase: string | null): Promise<SessionImportOutcome | undefined> =>
-      forward("sessions_import", () => desktop.sessionsImport(title, passphrase)),
+      forward("sessions_import", () => {
+        if (isDesktopRuntime()) {
+          return desktop.sessionsImport(title, passphrase);
+        }
+        return (async () => {
+          if (passphrase !== null && pendingSessionImport) {
+            const pending = pendingSessionImport;
+            const outcome = await webInvoke<SessionImportOutcome>("sessions_import_browser", {
+              contents: pending.contents,
+              fileName: pending.fileName,
+              passphrase,
+            });
+            if (outcome.kind !== "needsPassphrase") {
+              pendingSessionImport = null;
+            }
+            return outcome;
+          }
+          const [file] = await pickBrowserFiles(false);
+          if (!file) {
+            return undefined;
+          }
+          const contents = await file.text();
+          const outcome = await webInvoke<SessionImportOutcome>("sessions_import_browser", {
+            contents,
+            fileName: file.name,
+            passphrase,
+          });
+          pendingSessionImport = outcome.kind === "needsPassphrase" ? { contents, fileName: file.name } : null;
+          return outcome;
+        })();
+      }),
 
     groups: {
       list: (): Promise<SessionGroup[]> => forward("groups_list", () => desktop.groupsList()),
@@ -554,15 +663,69 @@ export const backend = {
       selection: SyncSelection,
       passphrase: string | null,
     ): Promise<SyncReceipt | undefined> =>
-      forward("sync_backup_export", () => desktop.syncBackupExport(title, fileName, selection, passphrase)),
+      forward("sync_backup_export", async () => {
+        if (!isDesktopRuntime()) {
+          const answer = await webInvoke<{ receipt: SyncReceipt; contents: string }>("sync_backup_export_browser", {
+            fileName,
+            selection,
+            passphrase,
+          });
+          saveBrowserText(answer.receipt.fileName, answer.contents);
+          return answer.receipt;
+        }
+        return desktop.syncBackupExport(title, fileName, selection, passphrase);
+      }),
 
     /** Reads a backup the user picks and says what is inside it. `undefined` means dismissed. */
     inspect: (title: string, passphrase: string | null): Promise<SyncInspectOutcome | undefined> =>
-      forward("sync_backup_inspect", () => desktop.syncBackupInspect(title, passphrase)),
+      forward("sync_backup_inspect", async () => {
+        if (!isDesktopRuntime()) {
+          if (passphrase !== null && pendingBackupInspect) {
+            const pending = pendingBackupInspect;
+            const outcome = await webInvoke<SyncInspectOutcome>("sync_backup_inspect_browser", {
+              contents: pending.contents,
+              fileName: pending.fileName,
+              passphrase,
+            });
+            if (outcome.kind !== "needsPassphrase") {
+              pendingBackupInspect = null;
+            }
+            return outcome;
+          }
+          const [file] = await pickBrowserFiles(false);
+          if (!file) {
+            return undefined;
+          }
+          const contents = await file.text();
+          const outcome = await webInvoke<SyncInspectOutcome>("sync_backup_inspect_browser", {
+            contents,
+            fileName: file.name,
+            passphrase,
+          });
+          pendingBackupInspect = outcome.kind === "needsPassphrase" ? { contents, fileName: file.name } : null;
+          return outcome;
+        }
+        return desktop.syncBackupInspect(title, passphrase);
+      }),
 
     /** Applies the backup that was read, in the shell. */
     restore: (replace: boolean, passphrase: string | null): Promise<SyncApplySummary> =>
-      forward("sync_backup_restore", () => desktop.syncBackupRestore(replace, passphrase)),
+      forward("sync_backup_restore", async () => {
+        if (!isDesktopRuntime()) {
+          const pending = pendingBackupInspect;
+          if (!pending) {
+            throw new Error("there is no backup waiting to be applied; read one first");
+          }
+          const summary = await webInvoke<SyncApplySummary>("sync_backup_restore_browser", {
+            contents: pending.contents,
+            passphrase,
+            replace,
+          });
+          pendingBackupInspect = null;
+          return summary;
+        }
+        return desktop.syncBackupRestore(replace, passphrase);
+      }),
 
     /**
      * The server: what is kept for it, and the four things done with one.
@@ -609,7 +772,22 @@ export const backend = {
     list: (): Promise<KeyInfo[]> => forward("keys_list", () => desktop.keysList()),
     /** Opens a native dialog in Rust; resolves to `undefined` when the person dismissed it. */
     import: (title: string, passphrase?: string): Promise<KeyInfo | undefined> =>
-      forward("key_import", () => desktop.keyImport(title, passphrase)),
+      forward("key_import", () => {
+        if (isDesktopRuntime()) {
+          return desktop.keyImport(title, passphrase);
+        }
+        return (async () => {
+          const [file] = await pickBrowserFiles(false);
+          if (!file) {
+            return undefined;
+          }
+          return webInvoke<KeyInfo>("key_import_text", {
+            displayName: file.name,
+            contents: await file.text(),
+            passphrase: passphrase ?? null,
+          });
+        })();
+      }),
     /** Makes one instead of asking for a file, and answers with the line to put on a server. */
     generate: (algorithm: KeyAlgorithm, comment: string, passphrase: string | null): Promise<CreatedKey> =>
       forward("key_generate", () => desktop.keyGenerate(algorithm, comment, passphrase)),
@@ -666,7 +844,20 @@ export const backend = {
       forward("container_image_tag", () => desktop.containerImageTag(connectionId, image, tag)),
     /** Opens a native dialog in Rust; the path never crosses. `null` means the dialog was dismissed. */
     imageLoad: (connectionId: string, title: string): Promise<string | null> =>
-      forward("container_image_load", () => desktop.containerImageLoad(connectionId, title)),
+      forward("container_image_load", async () => {
+        if (!isDesktopRuntime()) {
+          const [file] = await pickBrowserFiles(false);
+          if (!file) {
+            return null;
+          }
+          const staged = await stageBrowserFile(file);
+          return webInvoke<string | null>("container_image_load_staged", {
+            connectionId,
+            token: staged.token,
+          });
+        }
+        return desktop.containerImageLoad(connectionId, title);
+      }),
     imageCommit: (connectionId: string, request: ContainerCommitRequest, acknowledged: boolean): Promise<string> =>
       forward("container_image_commit", () => desktop.containerImageCommit(connectionId, request, acknowledged)),
     registryLogin: (connectionId: string, request: ContainerRegistryLogin): Promise<void> =>
@@ -768,7 +959,17 @@ export const backend = {
    */
   clipboard: {
     /** Empty when the clipboard holds no text. `APP-UNSUPPORTED` where the platform cannot read one. */
-    text: (): Promise<string> => forward("clipboard_text", () => desktop.clipboardText()),
+    text: (): Promise<string> =>
+      forward("clipboard_text", async () => {
+        if (!isDesktopRuntime()) {
+          try {
+            return await navigator.clipboard.readText();
+          } catch {
+            return "";
+          }
+        }
+        return desktop.clipboardText();
+      }),
   },
 
   /**
@@ -793,7 +994,19 @@ export const backend = {
    */
   background: {
     choose: (title: string): Promise<string | null> =>
-      forward("background_image_choose", () => desktop.backgroundImageChoose(title)),
+      forward("background_image_choose", () => {
+        if (isDesktopRuntime()) {
+          return desktop.backgroundImageChoose(title);
+        }
+        return (async () => {
+          const [file] = await pickBrowserFiles(false);
+          if (!file) {
+            return null;
+          }
+          const staged = await stageBrowserFile(file);
+          return webInvoke<string>("background_image_choose_staged", { token: staged.token });
+        })();
+      }),
     read: (): Promise<string> => forward("background_image_read", () => desktop.backgroundImageRead()),
     clear: (): Promise<void> => forward("background_image_clear", () => desktop.backgroundImageClear()),
   },
