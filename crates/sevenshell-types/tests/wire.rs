@@ -18,21 +18,21 @@ use sevenshell_types::{
     BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult,
     CompletionWord, ContainerDetail, ContainerMount, ContainerPort, ContainerRuntime, ContainerSettings,
     ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors,
-    DiskUsage, DownloadFolderView, EnvironmentEntry, FilesLayout, ForwardMode, HomeLayout, HostFailure, HostMetrics,
-    HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry, KubeContextInfo,
-    KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpPrompt, McpPromptArgument,
-    McpPromptMessage, McpPromptRole, McpPromptText, McpResource, McpResourceContent, McpResourceRead, McpScope,
-    McpServerConfig, McpServerContent, McpServerState, McpServerStatus, McpServerTransport, McpToolPolicy, MemoryUsage,
-    NetworkCounters, OpenOutcome, OpenTunnel, PolicyAction, PolicyMatrix, PolicyRule, PresentedHostKey, ProcessDetail,
-    ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport,
-    SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary,
-    SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider,
-    SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome,
-    SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout,
-    TabMaxWidth, TabPlacement, TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme,
-    TerminalHighlightMode, TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile,
-    TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress,
-    UploadAnswer, UploadOutcome, VaultArchive, VaultState,
+    DiskUsage, DownloadFolderView, EnvironmentEntry, FileBookmark, FilesLayout, ForwardMode, HomeLayout, HostFailure,
+    HostMetrics, HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry,
+    KubeContextInfo, KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpPrompt,
+    McpPromptArgument, McpPromptMessage, McpPromptRole, McpPromptText, McpResource, McpResourceContent,
+    McpResourceRead, McpScope, McpServerConfig, McpServerContent, McpServerState, McpServerStatus, McpServerTransport,
+    McpToolPolicy, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PolicyAction, PolicyMatrix, PolicyRule,
+    PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment, RiskLevel, RiskReason,
+    SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth, SessionExportSummary, SessionGroup,
+    SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen, SftpPasteItem, SftpPasteOutcome, Snippet,
+    SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt, SocketRow, SyncApplySummary, SyncCatalog,
+    SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt, SyncSelection, SyncServiceStatus,
+    SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, TerminalCursorInactiveStyle,
+    TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode, TerminalHighlightRule, TerminalSchemeBackground,
+    TerminalSchemeProfile, TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
+    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -582,6 +582,11 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             terminal_panel_height: Some(320),
             sidebar_width: Some(300),
             files_tree_width: Some(224),
+            file_bookmarks: vec![FileBookmark {
+                id: "bm-logs".to_owned(),
+                label: "nginx logs".to_owned(),
+                path: "/var/log/nginx".to_owned(),
+            }],
             commands_library_width: Some(256),
             sidebar_open: false,
             monitor_enabled: true,
@@ -718,6 +723,15 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         settings["aiSessionRetentionDays"],
         serde_json::json!(45),
         "the retention is a page field like the two above it, and the window reads this name"
+    );
+    assert_eq!(
+        settings["fileBookmarks"][0]["label"],
+        serde_json::json!("nginx logs"),
+        "the bookmark list travels under the name the popover reads"
+    );
+    assert_eq!(
+        settings["fileBookmarks"][0]["path"],
+        serde_json::json!("/var/log/nginx")
     );
     // The terminal's typography travels under the names the page reads, and the two cursor shapes
     // are the lower-case words the menu matches.

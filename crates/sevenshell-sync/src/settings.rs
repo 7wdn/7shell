@@ -20,8 +20,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use sevenshell_types::{
-    AppLayout, AppSettings, CornerStyle, CustomColors, FilesLayout, HomeLayout, SessionLayout, SessionReopen,
-    TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette,
+    AppLayout, AppSettings, CornerStyle, CustomColors, FileBookmark, FilesLayout, HomeLayout, SessionLayout,
+    SessionReopen, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode, ThemeMode, ThemePalette,
 };
 
 /// How many settings travel when nothing optional is set. Pinned by a test against the field list
@@ -52,6 +52,10 @@ pub struct PortableSettings {
     pub tab_group_mode: TabGroupMode,
     pub tab_sort_mode: TabSortMode,
     pub tab_max_width: TabMaxWidth,
+    /// The file browser's quick jumps. They describe the servers somebody works with rather than
+    /// this installation's screen, so they travel with the rest of the setup.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_bookmarks: Vec<FileBookmark>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_colors: Option<CustomColors>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -83,6 +87,7 @@ impl PortableSettings {
             tab_group_mode: settings.tab_group_mode,
             tab_sort_mode: settings.tab_sort_mode,
             tab_max_width: settings.tab_max_width,
+            file_bookmarks: settings.file_bookmarks.clone(),
             custom_colors: settings.custom_colors.clone(),
             custom_colors_dark: settings.custom_colors_dark.clone(),
             locale: settings.locale.clone(),
@@ -115,6 +120,7 @@ impl PortableSettings {
         settings.tab_group_mode = self.tab_group_mode;
         settings.tab_sort_mode = self.tab_sort_mode;
         settings.tab_max_width = self.tab_max_width;
+        settings.file_bookmarks = self.file_bookmarks.clone();
         settings.custom_colors = self.custom_colors.clone();
         settings.custom_colors_dark = self.custom_colors_dark.clone();
         settings.locale = self.locale.clone();
@@ -123,6 +129,7 @@ impl PortableSettings {
     /// How many values this carries, which is what a catalog reads out.
     pub fn count(&self) -> u32 {
         REQUIRED_SETTINGS
+            + u32::from(!self.file_bookmarks.is_empty())
             + u32::from(self.custom_colors.is_some())
             + u32::from(self.custom_colors_dark.is_some())
             + u32::from(self.locale.is_some())
@@ -139,6 +146,7 @@ mod tests {
         // finds out until somebody counts them by hand.
         let settings = PortableSettings::of(&AppSettings::default());
         let counted = REQUIRED_SETTINGS
+            + u32::from(!settings.file_bookmarks.is_empty())
             + u32::from(settings.custom_colors.is_some())
             + u32::from(settings.custom_colors_dark.is_some())
             + u32::from(settings.locale.is_some());
@@ -185,6 +193,11 @@ mod tests {
             theme_palette: ThemePalette::Sage,
             tab_placement: TabPlacement::Left,
             locale: Some("zh-CN".to_owned()),
+            file_bookmarks: vec![FileBookmark {
+                id: "bm-logs".to_owned(),
+                label: "logs".to_owned(),
+                path: "/var/log".to_owned(),
+            }],
             ..AppSettings::default()
         };
 
@@ -194,5 +207,6 @@ mod tests {
         assert_eq!(destination.theme_palette, ThemePalette::Sage);
         assert_eq!(destination.tab_placement, TabPlacement::Left);
         assert_eq!(destination.locale.as_deref(), Some("zh-CN"));
+        assert_eq!(destination.file_bookmarks, settings.file_bookmarks);
     }
 }

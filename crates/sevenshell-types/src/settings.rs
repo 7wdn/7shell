@@ -1344,6 +1344,30 @@ pub fn normalize_terminal_min_contrast(ratio: f64) -> f64 {
 /// these is honoured; anything else reads as the default.
 pub const UI_SCALE_PERCENTS: &[u32] = &[75, 90, 100, 110, 125, 150, 175, 200];
 
+/// How many directory bookmarks one installation may keep.
+///
+/// The list is shown in a popover rather than a page, so the cap is what keeps it scrollable at a
+/// glance. It is enforced where bookmarks are made, not where the file is read: a hand-edited file
+/// past the cap still opens, with the first entries kept.
+pub const FILE_BOOKMARK_LIMIT: usize = 20;
+pub const FILE_BOOKMARK_LABEL_MAX: usize = 64;
+/// Paths are not checked for existence — a bookmark may point at a mount that is not there today —
+/// so the length bound is the only sanity rule.
+pub const FILE_BOOKMARK_PATH_MAX: usize = 1024;
+
+/// A named remote directory the file browser can jump to.
+///
+/// Global rather than per-connection: these are the places a person returns to, and the same
+/// `/var/log` is usually the same place on every server somebody runs. A path that does not exist
+/// on the server on screen is answered by that server's own listing, not refused here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileBookmark {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+}
+
 /// Everything the settings file holds.
 ///
 /// Both fields are optional in effect: absent means "not chosen yet", which is different
@@ -1400,6 +1424,12 @@ pub struct AppSettings {
     /// about where the line is would be a line that moved when a tab was switched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_tree_width: Option<u32>,
+    /// Named remote directories the file browser offers as quick jumps.
+    ///
+    /// Absent in a file written before there were bookmarks, which reads as none. The list is one
+    /// for every connection: a bookmark is a place somebody goes back to, not a property of a server.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_bookmarks: Vec<FileBookmark>,
     /// How wide the command panel's list of groups and saved commands is, in pixels.
     ///
     /// The other panel split down the middle, and the same kind of wish as the one above.
@@ -1824,6 +1854,7 @@ impl Default for AppSettings {
             terminal_panel_height: None,
             sidebar_width: None,
             files_tree_width: None,
+            file_bookmarks: Vec::new(),
             commands_library_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
@@ -1942,6 +1973,7 @@ impl AppSettings {
             && self.terminal_panel_height.is_none()
             && self.sidebar_width.is_none()
             && self.files_tree_width.is_none()
+            && self.file_bookmarks.is_empty()
             && self.commands_library_width.is_none()
             && self.sidebar_open
             && self.monitor_enabled

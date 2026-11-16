@@ -442,6 +442,19 @@ export const DEFAULT_CORNER_STYLE: CornerStyle = "large";
 /** How the file browser is laid out, from `sevenshell_types::FilesLayout`. */
 export type FilesLayout = "tree" | "list";
 
+/**
+ * A named remote directory the file browser offers as a quick jump, from
+ * `sevenshell_types::FileBookmark`.
+ *
+ * The list is global rather than per-connection: a bookmark is a place somebody goes back to, and
+ * the same `/var/log` is usually the same place on every server they run.
+ */
+export interface FileBookmark {
+  readonly id: string;
+  readonly label: string;
+  readonly path: string;
+}
+
 /** How a session opens, from `sevenshell_types::SessionLayout`. */
 export type SessionLayout = "terminal" | "split";
 
@@ -618,6 +631,8 @@ export interface AppSettings {
   readonly sidebarWidth?: number;
   /** How wide the file panel's directory tree is, in pixels. Absent means nobody has moved it. */
   readonly filesTreeWidth?: number;
+  /** The file browser's quick jumps. Absent means none have been made. */
+  readonly fileBookmarks?: readonly FileBookmark[];
   /** How wide the command panel's library is, in pixels. Absent means nobody has moved it. */
   readonly commandsLibraryWidth?: number;
   /** Whether the session sidebar is on screen. On unless somebody puts it away. */

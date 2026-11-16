@@ -19,10 +19,11 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
     AiProviderConfig, AiProviderKind, AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX,
-    BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FilesLayout, HomeLayout, McpScope,
-    McpServerConfig, McpServerTransport, SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT,
-    TERMINAL_HIGHLIGHT_RULE_LIMIT, TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
-    TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
+    BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FILE_BOOKMARK_LABEL_MAX, FILE_BOOKMARK_LIMIT,
+    FILE_BOOKMARK_PATH_MAX, FileBookmark, FilesLayout, HomeLayout, McpScope, McpServerConfig, McpServerTransport,
+    SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT, TERMINAL_HIGHLIGHT_RULE_LIMIT,
+    TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
+    TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
     TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, ThemeMode,
     ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
     ai_session_retention_days_default, background_blur_default, background_transparency_default, command_completion_on,
@@ -522,6 +523,11 @@ struct StoredSettings {
     /// every build had: safe and caution run, destructive asks.
     #[serde(default)]
     policy_matrix: sevenshell_types::PolicyMatrix,
+    /// The named remote directories the file browser offers as quick jumps. Absent in a file written
+    /// before there were bookmarks, which reads as none; normalised on the way back in so a
+    /// hand-edited entry cannot draw a blank row or a list the popover cannot scroll through.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    file_bookmarks: Vec<FileBookmark>,
     /// The assistant's providers. Absent in a file written before there was an assistant, which
     /// reads as "nothing configured" — there is nowhere to send a question yet.
     ///
@@ -632,6 +638,7 @@ impl StoredSettings {
             mcp_tool_policy: settings.mcp_tool_policy.clone(),
             mcp_access_policy: settings.mcp_access_policy.clone(),
             policy_matrix: settings.policy_matrix.clone(),
+            file_bookmarks: settings.file_bookmarks.clone(),
             ai_providers: settings
                 .ai_providers
                 .iter()
@@ -678,6 +685,38 @@ impl StoredSettings {
             .iter()
             .filter_map(StoredMcpServerConfig::to_settings)
             .filter(|server| seen_servers.insert(server.id.clone()))
+            .collect();
+
+        // An entry the popover cannot draw is dropped rather than repaired: one with no name or no
+        // path is a row that goes nowhere, and two sharing a name read as a duplicate of itself.
+        // The first of each id and each name wins, so a hand-edited file cannot make which entry a
+        // click reaches depend on file order.
+        let mut seen_bookmark_ids = std::collections::BTreeSet::new();
+        let mut seen_bookmark_labels = std::collections::BTreeSet::new();
+        let file_bookmarks: Vec<FileBookmark> = self
+            .file_bookmarks
+            .iter()
+            .filter_map(|bookmark| {
+                let id = bookmark.id.trim();
+                let label = bookmark.label.trim();
+                let path = bookmark.path.trim();
+                if id.is_empty()
+                    || label.is_empty()
+                    || path.is_empty()
+                    || label.chars().count() > FILE_BOOKMARK_LABEL_MAX
+                    || path.chars().count() > FILE_BOOKMARK_PATH_MAX
+                    || !seen_bookmark_ids.insert(id.to_owned())
+                    || !seen_bookmark_labels.insert(label.to_lowercase())
+                {
+                    return None;
+                }
+                Some(FileBookmark {
+                    id: id.to_owned(),
+                    label: label.to_owned(),
+                    path: path.to_owned(),
+                })
+            })
+            .take(FILE_BOOKMARK_LIMIT)
             .collect();
 
         AppSettings {
@@ -807,6 +846,7 @@ impl StoredSettings {
             mcp_tool_policy: self.mcp_tool_policy.clone(),
             mcp_access_policy: self.mcp_access_policy.clone(),
             policy_matrix: self.policy_matrix.clone(),
+            file_bookmarks,
             ai_providers,
             ai_default_provider_id,
             ai_context_enabled: self.ai_context_enabled,
@@ -919,6 +959,7 @@ mod tests {
             terminal_panel_height: None,
             sidebar_width: None,
             files_tree_width: None,
+            file_bookmarks: Vec::new(),
             commands_library_width: None,
             sidebar_open: sidebar_on(),
             monitor_enabled: monitor_on(),
@@ -1406,6 +1447,20 @@ mod tests {
             // Not the defaults, so the round trip proves that the two widths a divider was left at
             // come back rather than the file forgetting half of what it was given.
             files_tree_width: Some(300),
+            // A pair of quick jumps, so the round trip proves the list survives rather than the
+            // popover opening empty after a restart.
+            file_bookmarks: vec![
+                FileBookmark {
+                    id: "bm-logs".to_owned(),
+                    label: "nginx logs".to_owned(),
+                    path: "/var/log/nginx".to_owned(),
+                },
+                FileBookmark {
+                    id: "bm-conf".to_owned(),
+                    label: "nginx conf".to_owned(),
+                    path: "/etc/nginx".to_owned(),
+                },
+            ],
             commands_library_width: Some(200),
             // Off, so the round trip proves a choice survives rather than the default coming back.
             monitor_enabled: false,
@@ -1457,6 +1512,50 @@ mod tests {
 
         // Nothing is left over from writing.
         assert!(!path.with_extension("json.tmp").exists());
+    }
+
+    #[test]
+    fn bookmarks_a_hand_edited_file_cannot_draw_are_dropped() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("settings.json");
+        let mut bookmarks = vec![
+            serde_json::json!({ "id": "a", "label": "  ", "path": "/tmp" }),
+            serde_json::json!({ "id": "b", "label": "logs", "path": "/var/log" }),
+            // The same name in another case: the popover's rule is one bookmark per name.
+            serde_json::json!({ "id": "c", "label": "Logs", "path": "/var/log/nginx" }),
+            serde_json::json!({ "id": "d", "label": "l".repeat(FILE_BOOKMARK_LABEL_MAX + 1), "path": "/x" }),
+            // The same id as the first valid entry: the first one wins, so a click always reaches
+            // the same path.
+            serde_json::json!({ "id": "b", "label": "other", "path": "/y" }),
+            serde_json::json!({ "id": "e", "label": "  home  ", "path": "  /home  " }),
+        ];
+        for index in 0..(FILE_BOOKMARK_LIMIT + 4) {
+            bookmarks.push(serde_json::json!({
+                "id": format!("f{index}"),
+                "label": format!("folder {index}"),
+                "path": format!("/srv/{index}"),
+            }));
+        }
+        std::fs::write(
+            &path,
+            serde_json::json!({ "schemaVersion": 1, "fileBookmarks": bookmarks }).to_string(),
+        )
+        .expect("write");
+
+        let loaded = load_from(&path).expect("read");
+
+        assert_eq!(loaded.file_bookmarks.len(), FILE_BOOKMARK_LIMIT);
+        assert_eq!(loaded.file_bookmarks[0].label, "logs");
+        assert_eq!(loaded.file_bookmarks[1].label, "home");
+        assert_eq!(loaded.file_bookmarks[1].path, "/home", "the values are trimmed");
+        assert!(
+            loaded.file_bookmarks.iter().all(|bookmark| bookmark.label != "Logs"),
+            "a name already taken in another case is dropped rather than drawing twice"
+        );
+        assert!(
+            !loaded.file_bookmarks.iter().any(|bookmark| bookmark.path == "/y"),
+            "an entry reusing an id is dropped rather than shadowing the first"
+        );
     }
 
     #[test]

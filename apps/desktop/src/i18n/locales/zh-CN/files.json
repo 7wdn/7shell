@@ -76,6 +76,34 @@
       "itemsMessage": "删除选中的这 {count} 项？此操作无法撤销。"
     },
     "cancel": "取消",
+    "bookmark": {
+      "title": "书签",
+      "add": "收藏当前目录",
+      "addTitle": "添加书签",
+      "editTitle": "编辑书签",
+      "dialogHint": "列表里显示的名称，以及要跳转到的目录。",
+      "name": "名称",
+      "path": "路径",
+      "save": "保存",
+      "jump": "跳转到此目录",
+      "copy": "复制路径",
+      "edit": "编辑书签",
+      "remove": "删除书签",
+      "empty": "暂无书签。",
+      "added": "已收藏“{label}”",
+      "updated": "已更新“{label}”",
+      "removed": "已删除“{label}”",
+      "copied": "路径已复制",
+      "copyFailed": "无法复制路径。",
+      "error": {
+        "labelEmpty": "请填写书签名称。",
+        "labelTooLong": "名称最多 {limit} 个字符。",
+        "pathEmpty": "请填写书签路径。",
+        "pathTooLong": "路径最多 {limit} 个字符。",
+        "limitReached": "最多支持 {limit} 个书签。",
+        "labelDuplicate": "已存在同名书签。"
+      }
+    },
     "editor": {
       "title": "编辑 {name}",
       "description": "远程文本文件",

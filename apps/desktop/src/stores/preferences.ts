@@ -17,6 +17,15 @@ import { computed, ref } from "vue";
 import { DEFAULT_LOCALE, type SupportedLocale, i18n, isSupportedLocale, resolveLocale } from "@/i18n";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import {
+  type FileBookmarkError,
+  type FileBookmarkInput,
+  addFileBookmark as addBookmarkToList,
+  removeFileBookmark as removeBookmarkFromList,
+  sanitizeFileBookmarks,
+  updateFileBookmark as updateBookmarkInList,
+  validateFileBookmark,
+} from "@/lib/files/bookmarks";
 import { copyPolicyMatrix } from "@/lib/policy/matrix";
 import { importedSchemeId } from "@/lib/terminal/importScheme";
 import { deriveCustomColors } from "@/lib/settings/customColors";
@@ -96,6 +105,7 @@ import {
   type CornerStyle,
   type HomeLayout,
   type CustomColors,
+  type FileBookmark,
   type FilesLayout,
   type McpAccessPolicy,
   type McpScope,
@@ -370,6 +380,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * switched.
    */
   const filesTreeWidth = ref<number | null>(null);
+  /**
+   * The named remote directories the file browser offers as quick jumps.
+   *
+   * One list for every connection, written down here rather than beside a session: a bookmark is a
+   * place somebody goes back to, and the same `/var/log` is usually the same place on every server
+   * they run. A path the server on screen does not have is answered by that server's listing.
+   */
+  const fileBookmarks = ref<readonly FileBookmark[]>([]);
   /** The same for the command panel's library, which is the other panel split down the middle. */
   const commandsLibraryWidth = ref<number | null>(null);
   /**
@@ -903,6 +921,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       sidebarWidth.value = settings.sidebarWidth ?? null;
       filesTreeWidth.value = settings.filesTreeWidth ?? null;
+      // A file written before bookmarks existed has none, and one written by hand may hold rows the
+      // popover cannot draw; the sanitizer keeps the list to what a row can say.
+      fileBookmarks.value = sanitizeFileBookmarks(settings.fileBookmarks);
       commandsLibraryWidth.value = settings.commandsLibraryWidth ?? null;
       sidebarOpen.value = settings.sidebarOpen;
       monitorEnabled.value = settings.monitorEnabled;
@@ -1053,6 +1074,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         sidebarWidth: sidebarWidth.value ?? undefined,
         filesTreeWidth: filesTreeWidth.value ?? undefined,
+        fileBookmarks: fileBookmarks.value,
         commandsLibraryWidth: commandsLibraryWidth.value ?? undefined,
         sidebarOpen: sidebarOpen.value,
         monitorEnabled: monitorEnabled.value,
@@ -2014,6 +2036,37 @@ export const usePreferencesStore = defineStore("preferences", () => {
     await commit();
   }
 
+  /**
+   * Adds a directory bookmark and writes the list down at once.
+   *
+   * Written immediately rather than left for a page's Save button: the popover is not the settings
+   * page, and there is no later moment at which the list would be committed. `null` means the entry
+   * is in; an error code means the draft broke a rule and nothing was written.
+   */
+  async function addFileBookmark(input: FileBookmarkInput): Promise<FileBookmarkError | null> {
+    const failure = validateFileBookmark(input, fileBookmarks.value);
+    if (failure) return failure;
+    fileBookmarks.value = addBookmarkToList(fileBookmarks.value, input, crypto.randomUUID());
+    await commit();
+    return null;
+  }
+
+  /** Rewrites one bookmark's two values. An id that is gone is a no-op rather than an error. */
+  async function updateFileBookmark(id: string, input: FileBookmarkInput): Promise<FileBookmarkError | null> {
+    if (!fileBookmarks.value.some((bookmark) => bookmark.id === id)) return null;
+    const failure = validateFileBookmark(input, fileBookmarks.value, { id });
+    if (failure) return failure;
+    fileBookmarks.value = updateBookmarkInList(fileBookmarks.value, id, input);
+    await commit();
+    return null;
+  }
+
+  /** Removes one bookmark, and writes the list down. */
+  async function removeFileBookmark(id: string): Promise<void> {
+    fileBookmarks.value = removeBookmarkFromList(fileBookmarks.value, id);
+    await commit();
+  }
+
   function setCommandsLibraryWidth(width: number): void {
     commandsLibraryWidth.value = Math.round(width);
   }
@@ -2305,6 +2358,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalPanelHeight,
     sidebarWidth,
     filesTreeWidth,
+    fileBookmarks,
+    addFileBookmark,
+    updateFileBookmark,
+    removeFileBookmark,
     commandsLibraryWidth,
     sidebarOpen,
     monitorEnabled,

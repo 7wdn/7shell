@@ -365,6 +365,7 @@ describe("preferences store", () => {
       sessionReopen: "ask",
       sidebarWidth: undefined,
       filesTreeWidth: undefined,
+      fileBookmarks: [],
       commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: true,
@@ -456,6 +457,7 @@ describe("preferences store", () => {
       sessionReopen: "ask",
       sidebarWidth: undefined,
       filesTreeWidth: undefined,
+      fileBookmarks: [],
       commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: true,
@@ -783,6 +785,7 @@ describe("the terminal palette", () => {
       sessionReopen: "ask",
       sidebarWidth: undefined,
       filesTreeWidth: undefined,
+      fileBookmarks: [],
       commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: true,
@@ -827,6 +830,77 @@ describe("the terminal palette", () => {
     await store.load();
 
     expect(store.resolvedTerminalTheme).toBe("dark");
+  });
+});
+
+describe("the file browser's quick jumps", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    stubSystemTheme(true);
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+    systemThemeMock.mockReset().mockResolvedValue(null);
+    onSystemThemeChangedMock.mockReset().mockResolvedValue(() => {});
+    windowThemeApplyMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("adds a named jump and writes the whole list at once", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(await store.addFileBookmark({ label: "  logs  ", path: "  /var/log  " })).toBeNull();
+
+    expect(store.fileBookmarks).toEqual([{ id: expect.any(String), label: "logs", path: "/var/log" }]);
+    // The popover is not the settings page: its change has to be written by the same call.
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ fileBookmarks: store.fileBookmarks }));
+  });
+
+  it("refuses a draft that breaks a rule, and writes nothing", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await store.addFileBookmark({ label: "logs", path: "/var/log" });
+    settingsSetMock.mockClear();
+
+    expect(await store.addFileBookmark({ label: "LOGS", path: "/srv" })).toBe("labelDuplicate");
+    expect(store.fileBookmarks).toHaveLength(1);
+    expect(settingsSetMock).not.toHaveBeenCalled();
+  });
+
+  it("renames and removes an entry, keeping the list sorted", async () => {
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+    await store.addFileBookmark({ label: "logs", path: "/var/log" });
+    await store.addFileBookmark({ label: "nginx conf", path: "/etc/nginx" });
+    const logs = store.fileBookmarks.find((bookmark) => bookmark.label === "logs");
+    expect(logs).toBeDefined();
+
+    expect(await store.updateFileBookmark(logs!.id, { label: "zzz logs", path: "/var/log" })).toBeNull();
+    expect(store.fileBookmarks.map((bookmark) => bookmark.label)).toEqual(["nginx conf", "zzz logs"]);
+
+    await store.removeFileBookmark(logs!.id);
+    expect(store.fileBookmarks.map((bookmark) => bookmark.label)).toEqual(["nginx conf"]);
+    expect(settingsSetMock).toHaveBeenLastCalledWith(expect.objectContaining({ fileBookmarks: store.fileBookmarks }));
+  });
+
+  it("loads a stored list and drops rows the popover cannot draw", async () => {
+    settingsGetMock.mockResolvedValue(
+      defaults({
+        fileBookmarks: [
+          { id: "a", label: "logs", path: "/var/log" },
+          { id: "b", label: "LOGS", path: "/srv" },
+          { id: "c", label: " ", path: "/tmp" },
+        ],
+      }),
+    );
+
+    const store = usePreferencesStore();
+    store.initialize();
+    await store.load();
+
+    expect(store.fileBookmarks).toEqual([{ id: "a", label: "logs", path: "/var/log" }]);
   });
 });
 
@@ -1921,6 +1995,7 @@ describe("restoring the defaults", () => {
       sessionReopen: "ask",
       sidebarWidth: undefined,
       filesTreeWidth: undefined,
+      fileBookmarks: [],
       commandsLibraryWidth: undefined,
       sidebarOpen: true,
       monitorEnabled: false,

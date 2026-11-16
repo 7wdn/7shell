@@ -129,6 +129,7 @@ async function writtenSettings(): Promise<{
   keybindings?: Record<string, string>;
   commandCompletion?: boolean;
   filesTreeWidth?: number;
+  fileBookmarks?: { id?: string; label?: string; path?: string }[];
   commandsLibraryWidth?: number;
   updateCheckOnStartup?: boolean;
 }> {
@@ -153,6 +154,7 @@ async function writtenSettings(): Promise<{
     customColorsDark?: { primary?: string };
     keybindings?: Record<string, string>;
     filesTreeWidth?: number;
+    fileBookmarks?: { id?: string; label?: string; path?: string }[];
     commandsLibraryWidth?: number;
     updateCheckOnStartup?: boolean;
   };
@@ -3470,6 +3472,129 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // that are open, so a case that leaves a connected terminal behind changes what the cases after
     // it are describing. The sidebar's own case asserts what the active-only switch does when none
     // is open, and it was passing only because this one used to be skipped when the lab ran.
+    await page.getByRole("button", { name: "Close terminal" }).click();
+    await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+/**
+ * A directory bookmarked from the file panel is one click away, and the entry survives every way of
+ * changing it.
+ *
+ * Through the real window because three things only happen here: the popover teleports out of the
+ * panel, the jump asks the server for the listing rather than moving a string, and the list is
+ * written to the settings file the next start-up reads. The case ends by removing what it made —
+ * the bookmark list is global, so a leftover entry would be the next run's starting state.
+ */
+test("a bookmarked directory is one click away in the file panel", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const stamp = `bookmark-${Date.now() % 100000}`;
+    const name = `files-${stamp}`;
+
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    // The first connection to this host asks about its key, and which arrives first — the question
+    // or the panel — is a race with the network.
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const files = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
+    await sessionRow(page, name).click();
+    await expect(question.or(files).first()).toBeVisible({ timeout: 30_000 });
+    if (await question.isVisible()) {
+      await question.click();
+    }
+
+    await expect(files).toBeVisible({ timeout: 30_000 });
+    await files.click();
+    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    if (!(await pathBar.isVisible())) {
+      await files.click();
+    }
+    await expect(pathBar).toBeVisible({ timeout: 30_000 });
+
+    // A directory in the middle of the tree, so where the bookmark lands is visible in the path bar.
+    await pathBar.fill("/var/log");
+    await pathBar.press("Enter");
+    await expect(pathBar).toHaveValue("/var/log", { timeout: 20_000 });
+
+    const menuTrigger = page.locator("[data-bookmark-menu]").filter({ visible: true });
+    const menu = page.locator("[data-file-bookmarks]").filter({ visible: true });
+
+    // Bookmarked under a name this run owns, so another run's list cannot be mistaken for this one.
+    await menuTrigger.click();
+    await menu.locator("[data-bookmark-add]").click();
+    const dialog = page.locator("[data-bookmark-dialog]");
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Name", { exact: true }).fill(stamp);
+    // The path is the one on screen, which is the point of the add button.
+    await expect(dialog.getByLabel("Path", { exact: true })).toHaveValue("/var/log");
+    await dialog.locator("[data-bookmark-save]").click();
+    await expect(dialog).toHaveCount(0);
+
+    // Written down, not only on screen: this is the file the next start-up reads.
+    await expect
+      .poll(async () => (await writtenSettings()).fileBookmarks?.find((entry) => entry.label === stamp)?.path)
+      .toBe("/var/log");
+
+    // Somewhere else, then back through the bookmark rather than through the path field.
+    await pathBar.fill("/tmp");
+    await pathBar.press("Enter");
+    await expect(pathBar).toHaveValue("/tmp", { timeout: 20_000 });
+
+    await menuTrigger.click();
+    await menu
+      .locator("[data-bookmark-row]")
+      .filter({ hasText: stamp })
+      .locator('[data-bookmark-action="jump"]')
+      .click();
+    await expect(pathBar).toHaveValue("/var/log", { timeout: 20_000 });
+
+    // Renamed in place; the name is what the list is read by.
+    await menuTrigger.click();
+    await menu
+      .locator("[data-bookmark-row]")
+      .filter({ hasText: stamp })
+      .locator('[data-bookmark-action="edit"]')
+      .click();
+    const rename = page.locator("[data-bookmark-dialog]");
+    await rename.getByLabel("Name", { exact: true }).fill(`${stamp}-renamed`);
+    await rename.locator("[data-bookmark-save]").click();
+    await expect(rename).toHaveCount(0);
+    await expect
+      .poll(
+        async () => (await writtenSettings()).fileBookmarks?.find((entry) => entry.label === `${stamp}-renamed`)?.path,
+      )
+      .toBe("/var/log");
+
+    // Removed, and the file agrees — the list this case leaves behind is the one it found.
+    await menuTrigger.click();
+    await menu
+      .locator("[data-bookmark-row]")
+      .filter({ hasText: `${stamp}-renamed` })
+      .locator('[data-bookmark-action="remove"]')
+      .click();
+    await expect
+      .poll(
+        async () => (await writtenSettings()).fileBookmarks?.some((entry) => entry.label.startsWith(stamp)) ?? false,
+      )
+      .toBe(false);
+
     await page.getByRole("button", { name: "Close terminal" }).click();
     await expect(page.getByRole("button", { name: "Close terminal" })).toHaveCount(0);
   } finally {

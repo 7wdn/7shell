@@ -41,6 +41,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import DirectoryTree from "@/components/files/DirectoryTree.vue";
+import FileBookmarksMenu from "@/components/files/FileBookmarksMenu.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import FilePermissionsDialog from "@/components/files/FilePermissionsDialog.vue";
 import FilePropertiesDialog from "@/components/files/FilePropertiesDialog.vue";
@@ -1267,6 +1268,8 @@ function openAreaMenu(event: MouseEvent): void {
         </nav>
 
         <LoaderCircle v-if="browser.loading" :size="12" class="shrink-0 animate-spin text-muted-foreground" />
+
+        <FileBookmarksMenu :path="browser.path" @jump="go" />
 
         <button
           type="button"

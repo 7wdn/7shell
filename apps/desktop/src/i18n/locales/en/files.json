@@ -76,6 +76,34 @@
       "itemsMessage": "Delete these {count} items? This cannot be undone."
     },
     "cancel": "Cancel",
+    "bookmark": {
+      "title": "Bookmarks",
+      "add": "Bookmark this directory",
+      "addTitle": "Add bookmark",
+      "editTitle": "Edit bookmark",
+      "dialogHint": "The name the list shows, and the directory it jumps to.",
+      "name": "Name",
+      "path": "Path",
+      "save": "Save",
+      "jump": "Go to this directory",
+      "copy": "Copy path",
+      "edit": "Edit bookmark",
+      "remove": "Remove bookmark",
+      "empty": "No bookmarks yet.",
+      "added": "Bookmarked “{label}”",
+      "updated": "Updated “{label}”",
+      "removed": "Removed “{label}”",
+      "copied": "Path copied",
+      "copyFailed": "The path could not be copied.",
+      "error": {
+        "labelEmpty": "Give the bookmark a name.",
+        "labelTooLong": "Names are limited to {limit} characters.",
+        "pathEmpty": "Give the bookmark a path.",
+        "pathTooLong": "Paths are limited to {limit} characters.",
+        "limitReached": "At most {limit} bookmarks are supported.",
+        "labelDuplicate": "A bookmark with this name already exists."
+      }
+    },
     "editor": {
       "title": "Edit {name}",
       "description": "Remote text file",
