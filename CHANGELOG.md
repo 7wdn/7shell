@@ -4,6 +4,91 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-17
+
+The browser-host release. The interface now runs in a normal browser from a loopback host, so
+machines without the newer WebKit — older or locked-down Linux, including UOS and Kylin — can use
+the application without a desktop shell. Terminals, files and tab handling were reworked around
+how people actually use them: one shared command history, tabs that survive a dropped connection,
+and a file panel whose header is a single compact strip.
+
+### Added
+
+#### Browser host
+
+- A loopback-only host (`sevenshell-web`) that serves the built interface and answers the same
+  command names over HTTP and a WebSocket. One transport layer, `ipc.ts`, selects the backend, so
+  the interface is the same code in both hosts.
+- The vault, sessions and groups, known hosts, keys, SSH terminals with host-key decisions, SFTP
+  browsing and text editing, transfers, settings and application facts all work in the browser.
+- The host monitor, batch execution, the command library, container and Kubernetes workspaces,
+  sync, key management, SFTP upload and download, drag-and-drop upload, and container and pod file
+  browsers are part of the browser surface as well.
+- The assistant and external MCP servers are available in the browser: the same tool registry,
+  approval prompts and audit log as the desktop, an MCP listener and stdio bridge, OAuth sign-in
+  for external servers with token refresh and reconnect, resources, prompts and resource
+  templates, per-session agent policy, bounded context, and the same run limits (turns, one tool
+  per turn, result truncation).
+- Terminal, assistant and MCP events are delivered in the desktop's envelope, so every listener
+  behaves identically in both hosts.
+- Downloads started in the browser appear in the transfer panel with progress, and Stop cancels
+  them. ZMODEM sends and receives through the browser's own file doors.
+
+#### Files
+
+- The address bar is one row: breadcrumbs navigate, and the empty part of the bar or `Ctrl+L`
+  turns it into a field for typing a path. Enter or Go travels; Escape or leaving the field returns
+  to the breadcrumbs without navigating.
+- The panel header is a compact icon strip: refresh the directory, go up, new file, new folder,
+  download (only once something is selected), upload, and upload from the clipboard.
+- Directory bookmarks: named remote directories kept in the settings file and reachable in one
+  click from the path bar's menu.
+- The panel follows a `cd` typed at the keyboard, accepted from completion, sent from the command
+  bar, or sent from the command library.
+- A file browser opens a connection of its own when the terminal's connection has no room for
+  another channel, instead of failing when the server reaches its per-connection limit.
+- Opening a binary or oversized file as text reports the editor's answer rather than a failed
+  transfer.
+
+#### Terminals and tabs
+
+- The tab menu offers duplicating a tab, reconnecting it, reconnecting every closed terminal,
+  disconnecting while keeping the tab, closing it, closing the others, closing left, closing right
+  and closing all.
+- Reconnecting revives the tab in place: the same id, position and title, the same scrollback, and
+  the new session writes below what the old one left on screen.
+- Command history is shared by every terminal window. Lines run at a prompt are recorded — except
+  at password, one-time-code and confirmation prompts — deduplicated, persisted, and offered back
+  from the command bar. The history list closes when a click lands anywhere else.
+- The host monitor mounts only where a sample can ride an SSH connection, and comes back by itself
+  when a monitorable session is on screen again. Switching it off still means switched off.
+- An SSH channel failure names the channel rather than a session, which is what made a full
+  connection read as an unopenable terminal.
+
+#### Containers and clusters
+
+- A container page keeps only the namespace picker a runtime supports, and a cluster page keeps
+  its endpoint and connection state. The session's name and kind live in the tab, not in a second
+  heading inside the page.
+
+### Fixed
+
+- Browser-host events reached listeners without the desktop envelope, which left terminals blank
+  and assistant deltas undefined.
+- An external MCP server reconnects after its OAuth token is refreshed.
+- A disconnected terminal tab keeps its last screen and its state; it no longer shows the
+  open-failure card underneath, and reconnecting no longer replaces the tab with a new one.
+
+### Notes
+
+- The installers are still not code-signed and the macOS build is not notarized; Windows
+  SmartScreen and macOS Gatekeeper will warn. Check the SHA-256 in the release notes.
+- The browser host is a separate binary (`sevenshell-web`) and is not part of the desktop
+  installers; it is built and packaged on its own. The Windows, macOS and Linux desktop
+  installers are unchanged in shape.
+- Signed update archives and `latest.json` are attached when the release signing key is
+  configured. This is the first release that can seed the update channel once it is promoted.
+
 ## [0.1.0] - 2026-11-13
 
 The first public release: a desktop SSH and operations client for Windows, macOS and Linux.
