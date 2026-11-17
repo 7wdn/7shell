@@ -1,8 +1,8 @@
 //! The assistant runtime for the browser host: providers, stored conversations and streaming chat.
 //!
-//! This is the plain-chat half of the desktop runtime: it speaks the same provider adapters, keeps
-//! conversations in the same vault document and emits the same `ai:*` events, without the tool loop
-//! (which needs the MCP registry and is wired separately).
+//! It speaks the same provider adapters, keeps conversations in the same vault document and emits
+//! the same `ai:*` events. The tool loop runs through the same registry and approval broker as the
+//! MCP listener, so an assistant call and an agent call meet the same gates.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -13,6 +13,10 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use sevenshell_agent::{
+    AI_MAX_RESULT_BYTES_DEFAULT, AI_MAX_TURNS_DEFAULT, AI_TOOL_SKIPPED_CODE, AI_TOOL_SKIPPED_CONTENT,
+    AI_TRUNCATION_MARKER,
+};
 use sevenshell_ai::{
     AiProviderConfig, AiProviderView, ChatMessage, ContentBlock, Provider, ProviderRequest, Role, StreamEvent,
     ToolSpec, Usage, build_provider,
@@ -32,6 +36,7 @@ const MAX_SESSION_BYTES: usize = 512 * 1024;
 const MAX_TOTAL_BYTES: usize = 4 * 1024 * 1024;
 const MAX_SESSIONS: usize = 50;
 const NAME_MAX_CHARS: usize = 60;
+const TOOL_RESULT_BYTES: usize = AI_MAX_RESULT_BYTES_DEFAULT as usize;
 
 pub struct AiRuntime {
     vault: Arc<Vault>,
@@ -660,7 +665,6 @@ async fn run_chat(
         })
         .collect();
     let tool_context = tools.context_for_run(AgentOrigin::Ai, &run_id);
-    const MAX_TURNS: u32 = 8;
     let mut turns = 0u32;
     let mut usage_total = Usage::default();
     let mut saw_usage = false;
@@ -672,7 +676,7 @@ async fn run_chat(
             stop = "cancelled";
             break;
         }
-        if turns >= MAX_TURNS {
+        if turns >= AI_MAX_TURNS_DEFAULT {
             stop = "maxTurns";
             break;
         }
@@ -710,7 +714,7 @@ async fn run_chat(
             request_system.push_str(&summary.content);
         }
 
-        let history: Vec<ChatMessage> = session.messages.iter().rev().take(40).rev().cloned().collect();
+        let history: Vec<ChatMessage> = session.messages.clone();
         let request = ProviderRequest {
             model: config.model.clone(),
             system: Some(request_system),
@@ -847,7 +851,10 @@ async fn run_chat(
             break;
         }
 
-        for (call_id, tool, input) in tool_uses {
+        let mut calls = tool_uses.into_iter();
+        let first = calls.next();
+        let rest: Vec<_> = calls.collect();
+        if let Some((call_id, tool, input)) = first {
             let started = Instant::now();
             let outcome = tools
                 .call(
@@ -875,6 +882,7 @@ async fn run_chat(
                 }
             };
             let (preview, truncated) = preview_text(&content, 4_000);
+            let content = cap_tool_result(content);
             session.outcomes.insert(
                 call_id.clone(),
                 AiToolOutcome {
@@ -899,6 +907,37 @@ async fn run_chat(
                     "preview": preview,
                     "truncated": truncated,
                     "durationMs": duration_ms,
+                }),
+            );
+        }
+
+        for (call_id, tool, _) in rest {
+            let content = AI_TOOL_SKIPPED_CONTENT.to_owned();
+            let code = AI_TOOL_SKIPPED_CODE.to_owned();
+            session.outcomes.insert(
+                call_id.clone(),
+                AiToolOutcome {
+                    call_id: call_id.clone(),
+                    ok: false,
+                    code: Some(code.clone()),
+                    truncated: false,
+                    duration_ms: 0,
+                },
+            );
+            session
+                .messages
+                .push(ChatMessage::tool_result(call_id.clone(), content.clone(), true));
+            emit(
+                "ai:tool_result",
+                json!({
+                    "runId": run_id,
+                    "callId": call_id,
+                    "tool": tool,
+                    "ok": false,
+                    "code": code,
+                    "preview": content,
+                    "truncated": false,
+                    "durationMs": 0,
                 }),
             );
         }
@@ -933,6 +972,20 @@ async fn run_chat(
     }
 }
 
+fn cap_tool_result(content: String) -> String {
+    if content.len() <= TOOL_RESULT_BYTES {
+        return content;
+    }
+    let mut end = TOOL_RESULT_BYTES.saturating_sub(AI_TRUNCATION_MARKER.len());
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut capped = content;
+    capped.truncate(end);
+    capped.push_str(AI_TRUNCATION_MARKER);
+    capped
+}
+
 fn preview_text(text: &str, limit: usize) -> (String, bool) {
     let characters: Vec<char> = text.chars().collect();
     if characters.len() <= limit {
@@ -951,8 +1004,8 @@ fn preview_text(text: &str, limit: usize) -> (String, bool) {
     (preview, true)
 }
 
-const COMPACT_TRIGGER_CHARS: usize = 24_000;
-const COMPACT_KEEP_MESSAGES: usize = 12;
+const COMPACT_TRIGGER_CHARS: usize = 24_576;
+const COMPACT_KEEP_CHARS: usize = 12_288;
 
 fn message_text(message: &ChatMessage) -> String {
     message
@@ -968,9 +1021,6 @@ fn message_text(message: &ChatMessage) -> String {
 }
 
 fn compaction_split(messages: &[ChatMessage]) -> Option<usize> {
-    if messages.len() <= COMPACT_KEEP_MESSAGES {
-        return None;
-    }
     let chars: usize = messages
         .iter()
         .map(|message| message_text(message).chars().count())
@@ -978,20 +1028,31 @@ fn compaction_split(messages: &[ChatMessage]) -> Option<usize> {
     if chars < COMPACT_TRIGGER_CHARS {
         return None;
     }
-    let mut split = messages.len().saturating_sub(COMPACT_KEEP_MESSAGES);
+
+    // The tail is kept whole by size, then moved back to an exchange boundary: a request may not
+    // start halfway through a tool call, and the person's question is where an exchange begins.
+    let mut split = messages.len();
+    let mut kept = 0usize;
     while split > 0 {
-        let message = &messages[split];
-        if message.role == Role::User
-            && message
-                .blocks
-                .iter()
-                .any(|block| matches!(block, ContentBlock::Text { .. }))
-        {
+        let cost = message_text(&messages[split - 1]).chars().count();
+        if kept > 0 && kept + cost > COMPACT_KEEP_CHARS {
             break;
         }
+        kept += cost;
+        split -= 1;
+    }
+    while split > 0 && !starts_an_exchange(&messages[split]) {
         split -= 1;
     }
     (split > 0).then_some(split)
+}
+
+fn starts_an_exchange(message: &ChatMessage) -> bool {
+    message.role == Role::User
+        && message
+            .blocks
+            .iter()
+            .any(|block| matches!(block, ContentBlock::Text { .. }))
 }
 
 async fn summarize(provider: &Arc<dyn Provider>, config: &AiProviderConfig, older: &[ChatMessage]) -> Option<String> {
@@ -1061,6 +1122,42 @@ mod tests {
             role,
             blocks: vec![ContentBlock::Text { text: text.to_owned() }],
         }
+    }
+
+    #[test]
+    fn a_long_tool_result_is_cut_on_a_character_boundary() {
+        let content = "好".repeat(TOOL_RESULT_BYTES);
+        let capped = cap_tool_result(content);
+        assert!(capped.len() <= TOOL_RESULT_BYTES + AI_TRUNCATION_MARKER.len());
+        assert!(capped.ends_with(AI_TRUNCATION_MARKER));
+        assert!(capped.is_char_boundary(capped.len() - AI_TRUNCATION_MARKER.len()));
+    }
+
+    #[test]
+    fn compaction_keeps_a_bounded_tail_that_starts_with_a_question() {
+        let mut messages = Vec::new();
+        for index in 0..20 {
+            messages.push(message(Role::User, &format!("question {index} {}", "q".repeat(1000))));
+            messages.push(message(
+                Role::Assistant,
+                &format!("answer {index} {}", "a".repeat(1000)),
+            ));
+        }
+        let split = compaction_split(&messages).expect("a long conversation is compacted");
+        assert!(split > 0);
+        assert_eq!(messages[split].role, Role::User, "a kept tail starts at a question");
+        let kept: usize = messages[split..]
+            .iter()
+            .map(|message| message_text(message).chars().count())
+            .sum();
+        assert!(kept <= COMPACT_KEEP_CHARS, "the kept tail stays within the budget");
+        assert!(
+            messages[..split].iter().any(|message| message.role == Role::User),
+            "the older half has something to summarize"
+        );
+
+        let short = vec![message(Role::User, "hello"), message(Role::Assistant, "hi")];
+        assert!(compaction_split(&short).is_none());
     }
 
     #[test]
