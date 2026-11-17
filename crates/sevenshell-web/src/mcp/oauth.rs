@@ -398,7 +398,7 @@ pub fn spawn_refresh(vault: Arc<Vault>, manager: Arc<McpClientManager>, events: 
         loop {
             tokio::time::sleep(Duration::from_secs(30)).await;
             let servers = manager.configured();
-            let mut refreshed = false;
+            let mut refreshed: Vec<String> = Vec::new();
             for server in &servers {
                 let stored = load_stored(&vault, &server.id);
                 let Some(oauth) = stored.oauth.as_ref() else {
@@ -408,15 +408,19 @@ pub fn spawn_refresh(vault: Arc<Vault>, manager: Arc<McpClientManager>, events: 
                     continue;
                 }
                 match refresh(&vault, &server.id).await {
-                    Ok(true) => refreshed = true,
+                    Ok(true) => refreshed.push(server.id.clone()),
                     Ok(false) => {}
                     Err(error) => log::warn!("the OAuth token for `{}` could not be renewed: {error}", server.id),
                 }
             }
-            if refreshed {
+            if !refreshed.is_empty() {
                 apply_secrets(&vault, &manager, &manager.configured());
-                for status in manager.statuses() {
-                    let _ = events.send(json!({ "event": "mcp:server_status", "payload": status }).to_string());
+                // An open HTTP session still carries the header it was opened with, so a renewed
+                // token only takes effect after the session is replaced.
+                for server_id in refreshed {
+                    if let Ok(status) = manager.refresh(&server_id).await {
+                        let _ = events.send(json!({ "event": "mcp:server_status", "payload": status }).to_string());
+                    }
                 }
             }
         }
