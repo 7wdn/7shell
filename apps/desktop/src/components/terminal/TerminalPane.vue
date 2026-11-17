@@ -785,16 +785,9 @@ onMounted(() => {
 
   terminal = instance;
   fitAddon = fit;
-  unregisterInputReset = registerInputReset(props.handle, () => {
-    // A line written from outside the keyboard replaces whatever was being typed: both readers of
-    // that line — the completion's and the `cd` follower's — are wrong from here on until reset.
-    resetCompletion();
-    typed.reset();
-  });
-  // The assistant panel reads the terminal on screen through this: what it previews is what it
-  // sends, and only the pane can read the buffer it is drawing.
-  unregisterBuffer = registerTerminalBuffer(props.handle, (lines) => tailOfBuffer(instance.buffer.active, lines));
-  unregister = registerTerminalSink(props.handle, (bytes) => {
+
+  /** Bytes for this screen, whichever connection is behind it: the screen outlives one shell. */
+  const sink = (bytes: Uint8Array): void => {
     completionOutput();
     // Once xterm has parsed the chunk, the lines it produced are in the buffer. The cursor says
     // where they landed; the callback is what makes that a range rather than a guess.
@@ -803,7 +796,44 @@ onMounted(() => {
       const buffer = instance.buffer.active;
       applyHighlights(startLine, buffer.baseY + buffer.cursorY);
     });
-  });
+  };
+
+  /** Both trackers of the line somebody is typing belong to one shell at a time. */
+  const resetReaders = (): void => {
+    // A line written from outside the keyboard replaces whatever was being typed: both readers of
+    // that line — the completion's and the `cd` follower's — are wrong from here on until reset.
+    resetCompletion();
+    typed.reset();
+  };
+
+  const readBuffer = (lines: number): string => tailOfBuffer(instance.buffer.active, lines);
+
+  unregisterInputReset = registerInputReset(props.handle, resetReaders);
+  // The assistant panel reads the terminal on screen through this: what it previews is what it
+  // sends, and only the pane can read the buffer it is drawing.
+  unregisterBuffer = registerTerminalBuffer(props.handle, readBuffer);
+  unregister = registerTerminalSink(props.handle, sink);
+
+  // A revived tab keeps this screen and changes what is behind it: the same xterm instance, the
+  // registrations moved to the new handle. Rebuilding the pane instead would throw the scrollback
+  // away with the connection, which is the one thing the person who just reconnected still wants.
+  watch(
+    () => props.handle,
+    (next) => {
+      // The new shell starts printing where the old one stopped; a break keeps the two apart so
+      // the greeting of one is not drawn over the prompt of the other.
+      instance.write("\r\n");
+      unregister?.();
+      unregister = registerTerminalSink(next, sink);
+      unregisterInputReset?.();
+      unregisterInputReset = registerInputReset(next, resetReaders);
+      unregisterBuffer?.();
+      unregisterBuffer = registerTerminalBuffer(next, readBuffer);
+      // Nothing the old shell had on its line belongs to the new one.
+      typed.reset();
+      resetCompletion();
+    },
+  );
   instance.onData((data) => {
     if (!props.interactive) {
       return;

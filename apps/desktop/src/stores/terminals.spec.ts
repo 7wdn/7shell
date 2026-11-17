@@ -1477,7 +1477,7 @@ describe("opening a session that is already open", () => {
     expect(store.tabs.filter((entry) => entry.kind === "terminal" && entry.status === "open")).toHaveLength(1);
   });
 
-  it("opens another tab whenever it is asked to open, which is what a reconnect does", async () => {
+  it("opens another tab whenever it is asked to open, which is what duplicating a tab does", async () => {
     sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
     const store = useTerminalsStore();
     open();
@@ -1486,5 +1486,59 @@ describe("opening a session that is already open", () => {
     await store.open(session);
 
     expect(store.tabs).toHaveLength(2);
+  });
+
+  it("disconnects a terminal without taking its tab away", async () => {
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    const id = tab.id;
+
+    await store.disconnect(id);
+
+    expect(store.tabs, "the tab is still there").toHaveLength(1);
+    expect(terminalTabOrFail(store).id).toBe(id);
+    expect(tab.status).toBe("ended");
+    expect(tab.disconnected, "so the footer says this side dropped it").toBe(true);
+    expect(tab.handle, "and the pane keeps drawing the last screen").toBe("handle-1");
+    expect(terminalCloseMock).toHaveBeenCalledWith("handle-1");
+  });
+
+  it("reconnects into the tab that was disconnected rather than opening a new one", async () => {
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+    const id = tab.id;
+
+    await store.disconnect(id);
+    await store.reconnect(id);
+
+    expect(store.tabs, "no tab was added or removed").toHaveLength(1);
+    expect(store.tabs[0]?.id, "the same tab, in the same place").toBe(id);
+    expect(tab.status).toBe("open");
+    expect(tab.handle, "drawing the new connection").toBe("handle-2");
+    expect(tab.disconnected, "and no longer saying it was dropped").toBe(false);
+  });
+
+  it("closes the tabs drawn to the left of the one it was asked about", async () => {
+    const other: Session = { ...session, id: "session-2", name: "db" };
+    sessionOpenMock
+      .mockResolvedValueOnce(opened())
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-2" })
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-3" });
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.open(other);
+    await store.open(session);
+
+    const drawn = store.tabs.map((entry) => entry.id);
+    await store.closeToTheLeft(drawn[2] as string, drawn);
+
+    expect(store.tabs.map((entry) => entry.id)).toEqual([drawn[2]]);
   });
 });

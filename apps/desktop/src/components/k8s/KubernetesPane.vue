@@ -12,7 +12,7 @@
  * The overview is the exception: it is a set of readings rather than a subscription, so it is polled
  * every thirty seconds and only while this tab is the one on screen.
  */
-import { LoaderCircle, RefreshCw, ShipWheel } from "@lucide/vue";
+import { LoaderCircle, RefreshCw } from "@lucide/vue";
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -584,17 +584,10 @@ async function retry(): Promise<void> {
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col">
+    <!-- The tab already names the session and its kind; what is left is the endpoint and its state. -->
     <header class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-[var(--panel-header-y)]">
-      <ShipWheel :size="15" class="shrink-0 text-muted-foreground" />
-      <h2 class="shrink-0 text-sm font-medium">{{ props.tab.session.name }}</h2>
-      <span class="truncate font-mono text-[11px] text-muted-foreground">
+      <span class="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
         {{ props.tab.session.kubernetes?.context || t("k8s.endpointDefault") }}
-      </span>
-      <span
-        v-if="connection?.version"
-        class="rounded-sm border border-border px-1 font-mono text-[11px] text-muted-foreground"
-      >
-        {{ connection.version }}
       </span>
 
       <span class="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">

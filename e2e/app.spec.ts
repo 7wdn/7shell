@@ -5908,7 +5908,9 @@ test("a container session opens the local engine and draws its images", async ()
 
     const rail = page.getByRole("navigation", { name: "Container workspace" });
     await expect(rail).toBeVisible();
-    await expect(page.getByRole("heading", { name: "e2e-docker" })).toBeVisible();
+    // The session's identity lives in the tab strip, which is what the workspace page no longer
+    // repeats in a heading of its own.
+    await expect(page.locator("[data-workspace-tabs] [data-tab]").filter({ hasText: "e2e-docker" })).toBeVisible();
 
     await rail.getByRole("button", { name: /^Images/ }).click();
     await expect(page.getByPlaceholder("Filter by repository, tag or ID")).toBeVisible();

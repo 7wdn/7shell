@@ -196,8 +196,18 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
     {
       title: MENU_TITLES.tab,
       entries: tabMenu(
-        { kind: "terminal", status: "open", hasHandle: true, index: 0, total: 2 },
-        { close: nothing, closeOthers: nothing, closeToTheRight: nothing, reconnect: nothing },
+        { kind: "terminal", status: "open", hasHandle: true, index: 0, total: 2, reconnectable: 0 },
+        {
+          duplicate: nothing,
+          close: nothing,
+          closeOthers: nothing,
+          closeToTheLeft: nothing,
+          closeToTheRight: nothing,
+          closeAll: nothing,
+          reconnect: nothing,
+          reconnectAll: nothing,
+          disconnect: nothing,
+        },
       ),
     },
     {

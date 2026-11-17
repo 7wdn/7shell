@@ -10,7 +10,7 @@
  * and the question here is not how xterm reads a key press — it is what this pane does with what it
  * read.
  */
-import { createApp, defineComponent, h, nextTick } from "vue";
+import { createApp, defineComponent, h, nextTick, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { i18n } from "@/i18n";
@@ -31,6 +31,8 @@ let oscHandlers: Map<number, (data: string) => boolean>;
 let selection = "";
 /** Every terminal the pane built, so a test can look at what it was handed and when. */
 const builtTerminals: { options: Record<string, unknown> }[] = [];
+/** The handle the mounted pane is drawing, so a test can revive the tab under it. */
+const handleRef = ref("handle-1");
 /** What the mocked screen holds, row by row: the pane reads the cursor's row and the one above. */
 const SCREEN_ROWS: string[] = [];
 let pasted: string[] = [];
@@ -186,7 +188,7 @@ import {
   tunnelsOpen,
 } from "@/lib/backend/tauri";
 import { copyText } from "@/lib/menu/clipboard";
-import { resetTerminalInput } from "@/lib/terminal/bus";
+import { registerTerminalSink, resetTerminalInput } from "@/lib/terminal/bus";
 import type { MenuAction } from "@/lib/menu/types";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -198,6 +200,8 @@ const sessionOpenMock = vi.mocked(sessionOpen);
 const filesOpenMock = vi.mocked(filesOpen);
 /** The history write, watched rather than mocked away: what was run is the claim. */
 const commandRememberMock = vi.mocked(commandRemember);
+/** The bus registration, so a case can see which handle the screen is drawing. */
+const registerSinkMock = vi.mocked(registerTerminalSink);
 const filesListMock = vi.mocked(filesList);
 const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const transfersOpenMock = vi.mocked(transfersOpen);
@@ -252,7 +256,7 @@ let pane: HTMLElement | undefined;
 /** Mounts one pane for the open terminal, which is what registers the handlers under test. */
 async function mountPane(interactive = true): Promise<void> {
   const host = defineComponent({
-    setup: () => () => h(TerminalPane, { handle: "handle-1", active: true, interactive }),
+    setup: () => () => h(TerminalPane, { handle: handleRef.value, active: true, interactive }),
   });
   // The real translations rather than stubs: the pane now draws a find bar whose labels are keys,
   // and a pane mounted without them throws before any of these tests get to look at it.
@@ -311,6 +315,8 @@ beforeEach(async () => {
   transfersOpenMock.mockReset().mockResolvedValue([]);
   clipboardTextMock.mockReset().mockResolvedValue("");
   commandRememberMock.mockReset().mockResolvedValue(undefined);
+  registerSinkMock.mockClear();
+  handleRef.value = "handle-1";
   SCREEN_ROWS.length = 0;
 
   await withPanelUnderTerminal();
@@ -377,6 +383,18 @@ describe("a terminal carrying a file panel", () => {
     await nextTick();
 
     expect(commandRememberMock).not.toHaveBeenCalled();
+  });
+
+  it("moves the screen to the new connection when the tab is revived", async () => {
+    // A reconnect replaces what is behind the screen, not the screen: the same xterm instance goes
+    // on drawing, which is what keeps the scrollback somebody just reconnected to see.
+    const drawing = onData;
+
+    handleRef.value = "handle-2";
+    await nextTick();
+
+    expect(onData, "the same terminal instance is still drawing").toBe(drawing);
+    expect(registerSinkMock).toHaveBeenCalledWith("handle-2", expect.any(Function));
   });
 
   it("forgets a half-typed line when a command was written into the shell from outside", async () => {

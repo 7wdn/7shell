@@ -204,14 +204,20 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
         hasHandle: hasHandle(tab),
         index,
         total: drawnIds.value.length,
+        reconnectable: reconnectable.value,
       },
       {
+        duplicate: () => void terminals.duplicate(tab.id),
         close: () => void terminals.closeTab(tab.id),
         closeOthers: () => void terminals.closeOthers(tab.id),
-        // The drawn order, because that is what "to the right" means to somebody looking at the bar:
-        // under a sort or a grouping the array order and the drawn one are not the same list.
+        // The drawn order, because that is what "to the right" and "to the left" mean to somebody
+        // looking at the bar: under a sort or a grouping the array order is not the drawn one.
+        closeToTheLeft: () => void terminals.closeToTheLeft(tab.id, drawnIds.value),
         closeToTheRight: () => void terminals.closeToTheRight(tab.id, drawnIds.value),
+        closeAll: () => void terminals.closeAll(),
         reconnect: () => void terminals.reconnect(tab.id),
+        reconnectAll: () => void terminals.reconnectAll(),
+        disconnect: () => void terminals.disconnect(tab.id),
       },
     ),
   );
@@ -222,7 +228,8 @@ function translate(key: string, params?: Record<string, string>): string {
 }
 
 function translateStatus(tab: TerminalTab): string | null {
-  if (tab.status !== "ended") {
+  // A connection the person dropped asked the server nothing, so there is no server answer to show.
+  if (tab.status !== "ended" || tab.disconnected) {
     return null;
   }
   return tab.reason ? t("terminal.tab.endedReason", { reason: tab.reason }) : t("terminal.tab.endedNoReason");
@@ -411,6 +418,12 @@ const strip = computed<StripEntry[]>(() => {
 
 /** The ids in the order they are drawn, which is what the bar's own menu counts to the right. */
 const drawnIds = computed(() => strip.value.flatMap((entry) => (entry.kind === "tab" ? [entry.id] : [])));
+
+/** How many terminal tabs are not open, which is what "connect all" would reconnect. */
+const reconnectable = computed(
+  () =>
+    terminals.tabs.filter((entry): entry is TerminalTab => entry.kind === "terminal" && entry.status !== "open").length,
+);
 
 /**
  * How wide a horizontal tab may be drawn, or nothing where the name sets the width.
@@ -637,7 +650,7 @@ function tabStyle(): Record<string, string> | undefined {
         -->
         <TerminalPane
           v-if="tab.handle"
-          :key="`${tab.id}:${tab.handle}`"
+          :key="tab.id"
           :handle="tab.handle"
           :active="tab.id === terminals.activeTabId"
           :interactive="tab.status === 'open'"
@@ -646,16 +659,21 @@ function tabStyle(): Record<string, string> | undefined {
         />
 
         <!--
+          A tab that never got a handle has no screen to draw: the open itself failed, and this is
+          its place to say so. It is the exception, not the state of a terminal that ended — one
+          that ended keeps its handle and keeps drawing what it last showed.
+        -->
+        <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+          <CircleAlert :size="18" class="text-destructive" />
+          <p class="text-xs text-muted-foreground">{{ t("terminal.tab.failedTitle") }}</p>
+        </div>
+
+        <!--
           The command bar, directly under the terminal and above its strip: a line typed here goes
           into the shell above it, which is what having it next to the prompt is about. It is drawn
           only while the terminal is open — a bar that could not deliver would be a lie.
         -->
         <CommandInputBar v-if="tab.status === 'open'" />
-
-        <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-          <CircleAlert :size="18" class="text-destructive" />
-          <p class="text-xs text-muted-foreground">{{ t("terminal.tab.failedTitle") }}</p>
-        </div>
 
         <!--
           The terminal's own strip: where it is, and the way into the file panel. It stays when the
@@ -719,7 +737,9 @@ function tabStyle(): Record<string, string> | undefined {
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="min-w-0">
-              <p v-if="tab.status === 'ended'" class="text-xs">{{ t("terminal.tab.ended") }}</p>
+              <p v-if="tab.status === 'ended'" class="text-xs">
+                {{ tab.disconnected ? t("terminal.tab.disconnected") : t("terminal.tab.ended") }}
+              </p>
               <p v-if="translateStatus(tab)" class="text-[11px] text-muted-foreground">{{ translateStatus(tab) }}</p>
               <p v-if="tab.failure" class="text-xs">{{ describeShellError(translate, tab.failure).message }}</p>
               <p v-if="tab.failure" class="font-mono text-[10px] text-muted-foreground">

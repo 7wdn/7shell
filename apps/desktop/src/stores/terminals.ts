@@ -117,7 +117,8 @@ export type FilesTabStatus = "open" | "failed";
  * at most one, and the terminal tab it hangs under is the only thing that says which.
  */
 export type OpenTarget =
-  | { readonly to: "terminal" }
+  // A terminal open with a tab id is that tab being revived rather than a new tab being added.
+  | { readonly to: "terminal"; readonly tabId?: string }
   | { readonly to: "files" }
   | { readonly to: "panel"; readonly tabId: string }
   // A batch is not about the session that raised the decision: it is about the request, which the
@@ -149,6 +150,13 @@ export interface TerminalTab {
   status: TerminalTabStatus;
   /** What the server said when the terminal ended, when it said anything. */
   reason?: string;
+  /**
+   * Set when the person dropped the connection themselves.
+   *
+   * The tab stays, and offers Reconnect: this is what tells it apart from a connection the far
+   * side ended, where the footer has the server's own words to show.
+   */
+  disconnected?: boolean;
   /** The envelope of the last failure this tab is responsible for showing. */
   failure: ShellError | null;
   /** The file panel below this terminal, or null when it is not shown. */
@@ -1165,6 +1173,15 @@ export const useTerminalsStore = defineStore("terminals", () => {
       }
       return;
     }
+    if (target.tabId !== undefined) {
+      // A tab being revived, not a new one: the decision's answer goes back into the tab that
+      // raised it, which is where the person is still looking.
+      const tab = terminalTab(target.tabId);
+      if (tab) {
+        await revive(tab);
+      }
+      return;
+    }
     await open(session);
   }
 
@@ -1189,6 +1206,15 @@ export const useTerminalsStore = defineStore("terminals", () => {
       const tab = terminalTab(target.tabId);
       if (tab) {
         tab.panel = { handle: null, status: "failed", failure };
+      }
+      return;
+    }
+    if (target.tabId !== undefined) {
+      // A revive that failed before the connection existed says so in the tab it was reviving.
+      const tab = terminalTab(target.tabId);
+      if (tab) {
+        tab.status = "failed";
+        tab.failure = failure;
       }
       return;
     }
@@ -1532,18 +1558,146 @@ export const useTerminalsStore = defineStore("terminals", () => {
     ) {
       return;
     }
-    const { session } = tab;
     if (tab.kind === "files") {
       forget(id);
-      await openFiles(session);
+      await openFiles(tab.session);
       return;
     }
 
-    // The button only appears on a terminal that is not open, so there is nothing here to close
-    // through the backend: the panel's browser is told to stop and the tab goes regardless.
+    await revive(tab);
+  }
+
+  /**
+   * Reconnects a terminal tab in place: same id, same place in the strip, same title.
+   *
+   * What a reconnect replaces is what the tab draws, not the tab itself. The old connection's
+   * leftovers go first — the panel's browser rides on it, and the shell's last directory belongs to
+   * a handle that is gone — and the tab goes on showing its last screen until the new connection is
+   * up: a tab that flashed "could not open" at the moment somebody asked it to reconnect would be
+   * saying the wrong thing about the wrong moment.
+   */
+  async function revive(tab: TerminalTab): Promise<void> {
+    const { session } = tab;
+    // Only a tab that is not open has anything to revive, and one attempt at a time: a second
+    // connection would be one nobody asked for.
+    if (tab.status === "open" || connectingSessionIds.value.includes(session.id)) {
+      return;
+    }
     releasePanel(tab);
-    forget(id);
-    await open(session);
+    if (tab.handle !== null) {
+      dropShellPath(tab.handle);
+    }
+
+    connectingSessionIds.value.push(session.id);
+    try {
+      const outcome = await backend.terminal.open(session.id);
+      if (outcome.kind === "opened") {
+        rememberTunnels(outcome.tunnels);
+        rememberTunnelFailures(outcome.tunnelFailures);
+        // A connection that died before the outcome arrived is shown as ended, with what it said.
+        const ended = endedTerminal(outcome.handle);
+        tab.handle = outcome.handle;
+        tab.status = ended ? "ended" : "open";
+        tab.reason = ended?.reason;
+        tab.failure = null;
+        tab.disconnected = false;
+        void describeHost(session, outcome.handle);
+        // The shape is the settings' answer, as it was for the first open: split means the panel is
+        // part of what this session looks like.
+        if (
+          tab.status === "open" &&
+          preferences.sessionLayout === "split" &&
+          protocolSupports(session.protocol, "sftp")
+        ) {
+          await openPanel(tab);
+        }
+        return;
+      }
+
+      // A decision cancels this attempt as it cancels an open. The tab stays where it is, and
+      // answering the question asks for it again — into the same tab.
+      raiseDecision(session, { to: "terminal", tabId: tab.id }, outcome);
+    } catch (error) {
+      tab.status = "failed";
+      tab.failure = asShellError(error, "session_open");
+    } finally {
+      connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
+    }
+  }
+
+  /**
+   * Opens another tab on the same session, which is one more connection to the same machine.
+   *
+   * The duplicate goes through the same door the first open did: a session whose layout is split
+   * gets its panel, a host key already trusted is not asked about again, and the tab carries the
+   * number that tells the copies apart.
+   */
+  async function duplicate(id: string): Promise<void> {
+    const tab = terminalTab(id);
+    if (tab === undefined) {
+      return;
+    }
+    await open(tab.session);
+  }
+
+  /**
+   * Reconnects every terminal that is not open, one at a time.
+   *
+   * One at a time for the reason every close here is: each attempt is a connection with its own
+   * question to ask — a host key, a password — and its own tab to put the answer in, and ten of
+   * them interleaved would be ten dialogs fighting for the same moment.
+   */
+  async function reconnectAll(): Promise<void> {
+    const closed = tabs.value.filter(
+      (entry): entry is TerminalTab => entry.kind === "terminal" && entry.status !== "open",
+    );
+    for (const tab of closed) {
+      await reconnect(tab.id);
+    }
+  }
+
+  /**
+   * Drops the connection a terminal is using, and keeps its tab.
+   *
+   * A close takes the tab away; this leaves the place where the shell was, which is what the
+   * Reconnect button on the tab is for. The file panel goes with the connection — its channel rides
+   * on it — and the tab stops naming the handle before the close is awaited, so the ending that
+   * comes back is this side's own and cannot overwrite it with "the server closed the connection".
+   */
+  async function disconnect(id: string): Promise<void> {
+    const tab = terminalTab(id);
+    if (tab === undefined || tab.status !== "open" || tab.handle === null) {
+      return;
+    }
+    const handle = tab.handle;
+    if (!(await closePanel(tab))) {
+      return;
+    }
+    // The tab keeps its handle: that is what lets the pane go on drawing the last screen, which is
+    // what somebody who just disconnected is looking at. Nothing can be written into it — writes go
+    // to open tabs only — and a revive replaces it with the new connection's.
+    tab.status = "ended";
+    tab.reason = undefined;
+    tab.disconnected = true;
+    tab.failure = null;
+    try {
+      await backend.terminal.close(handle);
+    } catch (error) {
+      tab.failure = asShellError(error, "terminal_close");
+    }
+    await refreshTunnels();
+  }
+
+  /**
+   * Closes every tab, one at a time and under the same rules a single close follows.
+   *
+   * Iterating the array the loop started with is safe for the reason `closeOthers` gives: closing a
+   * tab assigns a new array rather than removing from this one.
+   */
+  async function closeAll(): Promise<void> {
+    for (const tab of tabs.value) {
+      await closeTab(tab.id);
+    }
   }
 
   /**
@@ -1584,6 +1738,17 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
+  /** Closes every tab the bar draws to the left of this one, for the reason the right-hand one gives. */
+  async function closeToTheLeft(id: string, drawn: readonly string[]): Promise<void> {
+    const index = drawn.indexOf(id);
+    if (index < 0) {
+      return;
+    }
+    for (const other of drawn.slice(0, index)) {
+      await closeTab(other);
+    }
+  }
+
   /**
    * Moves a tab to where another one is, which is what a drag in the bar does.
    *
@@ -1609,12 +1774,19 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tabs.value.splice(from < to ? to - 1 : to, 0, moved);
   }
 
+  /** Forgets what a shell said about where it was: the handle dies with the connection it belonged to. */
+  function dropShellPath(handle: string): void {
+    if (handle in shellPaths.value) {
+      const next = { ...shellPaths.value };
+      delete next[handle];
+      shellPaths.value = next;
+    }
+  }
+
   function forget(id: string): void {
     const closing = tabs.value.find((entry) => entry.id === id);
-    if (closing?.kind === "terminal" && closing.handle !== null && closing.handle in shellPaths.value) {
-      const next = { ...shellPaths.value };
-      delete next[closing.handle];
-      shellPaths.value = next;
+    if (closing?.kind === "terminal" && closing.handle !== null) {
+      dropShellPath(closing.handle);
     }
     tabs.value = tabs.value.filter((entry) => entry.id !== id);
     openedOrder.value = openedOrder.value.filter((entry) => entry !== id);
@@ -1703,10 +1875,15 @@ export const useTerminalsStore = defineStore("terminals", () => {
     closeTab,
     closeSessions,
     closeOthers,
+    closeToTheLeft,
     closeToTheRight,
     moveTab,
     openedOrder,
     reconnect,
+    reconnectAll,
+    duplicate,
+    disconnect,
+    closeAll,
     activate,
     send,
     resize,

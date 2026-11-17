@@ -1,15 +1,16 @@
 /**
  * What can be done to a tab in the workspace strip.
  *
- * Closing the others and closing the ones to the right are the two things a strip of tabs is always
- * missing, and both are offered as words rather than as a modifier key: this strip has no place to
- * print a shortcut, and a menu that is only reachable with the mouse should not need one.
+ * A terminal's menu is about its connection as much as about its tab: a duplicate is one more
+ * connection to the same machine, reconnecting is the same thing again, and disconnecting leaves the
+ * tab where it is so the place can be reconnected. A browser and the pages have no connection of
+ * their own, so those entries are not offered there at all rather than offered disabled.
  *
- * Reconnecting is offered only where the interface offers it elsewhere. A browser that already has a
- * handle is not a failed browser — it is an open one — and opening it again would be a second browser
- * on one session, which is the thing the panel's own retry button is careful not to do.
+ * Closing the others, closing the ones to the right and closing everything are words rather than
+ * modifier keys: this strip has no place to print a shortcut, and a menu that is only reachable with
+ * the mouse should not need one.
  */
-import { PanelRightClose, RotateCw, SquareX, X } from "@lucide/vue";
+import { CircleX, Copy, PanelLeftClose, PanelRightClose, Plug, Power, RotateCw, SquareX, X } from "@lucide/vue";
 
 import type { MenuEntry } from "./types";
 
@@ -23,13 +24,20 @@ export interface TabMenuState {
   /** Where it sits in the strip, and how many there are — what "the others" and "the right" mean. */
   readonly index: number;
   readonly total: number;
+  /** How many terminal tabs in the strip are not open, which is what "connect all" would reach. */
+  readonly reconnectable: number;
 }
 
 export interface TabMenuActions {
+  readonly duplicate: () => void;
   readonly close: () => void;
   readonly closeOthers: () => void;
+  readonly closeToTheLeft: () => void;
   readonly closeToTheRight: () => void;
+  readonly closeAll: () => void;
   readonly reconnect: () => void;
+  readonly reconnectAll: () => void;
+  readonly disconnect: () => void;
 }
 
 /** Whether this tab is one the interface would offer a retry for. */
@@ -40,12 +48,15 @@ export function canReconnect(state: TabMenuState): boolean {
   if (state.kind === "files") {
     return !state.hasHandle;
   }
+  if (state.kind === "container" || state.kind === "kubernetes") {
+    return false;
+  }
   return state.status !== "open";
 }
 
 export function tabMenu(state: TabMenuState, actions: TabMenuActions): MenuEntry[] {
   const others = state.total - 1;
-  return [
+  const closing: MenuEntry[] = [
     { kind: "action", id: "close", labelKey: "common.action.close", icon: X, run: () => actions.close() },
     {
       kind: "action",
@@ -57,20 +68,82 @@ export function tabMenu(state: TabMenuState, actions: TabMenuActions): MenuEntry
     },
     {
       kind: "action",
+      id: "close-left",
+      labelKey: "menu.closeLeft",
+      icon: PanelLeftClose,
+      disabled: state.index === 0,
+      run: () => actions.closeToTheLeft(),
+    },
+    {
+      kind: "action",
       id: "close-right",
       labelKey: "menu.closeRight",
       icon: PanelRightClose,
       disabled: state.index >= others,
       run: () => actions.closeToTheRight(),
     },
-    { kind: "separator", id: "sep-reconnect" },
     {
       kind: "action",
-      id: "reconnect",
-      labelKey: "menu.reconnect",
-      icon: RotateCw,
-      disabled: !canReconnect(state),
-      run: () => actions.reconnect(),
+      id: "close-all",
+      labelKey: "menu.closeAll",
+      icon: CircleX,
+      run: () => actions.closeAll(),
     },
   ];
+
+  if (state.kind === "terminal") {
+    return [
+      {
+        kind: "action",
+        id: "duplicate",
+        labelKey: "menu.duplicateTab",
+        icon: Copy,
+        run: () => actions.duplicate(),
+      },
+      { kind: "separator", id: "sep-connection" },
+      {
+        kind: "action",
+        id: "reconnect",
+        labelKey: "menu.reconnect",
+        icon: RotateCw,
+        disabled: !canReconnect(state),
+        run: () => actions.reconnect(),
+      },
+      {
+        kind: "action",
+        id: "reconnect-all",
+        labelKey: "menu.connectAll",
+        icon: Plug,
+        disabled: state.reconnectable === 0,
+        run: () => actions.reconnectAll(),
+      },
+      {
+        kind: "action",
+        id: "disconnect",
+        labelKey: "menu.disconnect",
+        icon: Power,
+        disabled: state.status !== "open",
+        run: () => actions.disconnect(),
+      },
+      { kind: "separator", id: "sep-close" },
+      ...closing,
+    ];
+  }
+
+  if (state.kind === "files") {
+    return [
+      {
+        kind: "action",
+        id: "reconnect",
+        labelKey: "menu.reconnect",
+        icon: RotateCw,
+        disabled: !canReconnect(state),
+        run: () => actions.reconnect(),
+      },
+      { kind: "separator", id: "sep-close" },
+      ...closing,
+    ];
+  }
+
+  return closing;
 }

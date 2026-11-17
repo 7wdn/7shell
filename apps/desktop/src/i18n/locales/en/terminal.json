@@ -4,6 +4,7 @@
       "close": "Close terminal",
       "reconnect": "Reconnect",
       "ended": "This terminal has ended.",
+      "disconnected": "Disconnected.",
       "endedReason": "The server said: {reason}",
       "endedNoReason": "The connection ended without a reason.",
       "failedTitle": "This terminal could not be opened."

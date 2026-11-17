@@ -119,35 +119,24 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="relative flex min-h-0 flex-1 flex-col">
-    <header class="flex shrink-0 items-center gap-2 border-b border-border px-3 py-[var(--panel-header-y)]">
-      <Boxes :size="13" class="shrink-0 text-muted-foreground" />
-      <h2 class="min-w-0 truncate text-xs font-medium" :title="props.tab.session.name">
-        {{ props.tab.session.name }}
-      </h2>
-      <span class="shrink-0 rounded-sm border border-border px-1 font-mono text-[10px] text-muted-foreground">
-        {{ runtime }}
-      </span>
-
-      <LoaderCircle
-        v-if="session?.loading || session?.refreshing"
-        :size="12"
-        class="shrink-0 animate-spin text-muted-foreground"
-        :title="t('container.loading')"
+    <!--
+      The tab already names the session and its kind, so the strip carries only what the page alone
+      can offer: a runtime with namespaces has the picker, and one without them has nothing and gets
+      no strip at all.
+    -->
+    <header
+      v-if="supportsNamespace(runtime) && session?.connectionId"
+      class="flex shrink-0 items-center justify-end gap-2 border-b border-border px-3 py-[var(--panel-header-y)]"
+    >
+      <span class="shrink-0 text-[10px] text-muted-foreground">{{ t("container.namespace") }}</span>
+      <Select
+        :model-value="session.namespace"
+        :options="namespaceOptions"
+        size="compact"
+        class="w-32"
+        :aria-label="t('container.namespace')"
+        @update:model-value="chooseNamespace"
       />
-
-      <div class="min-w-0 flex-1"></div>
-
-      <template v-if="supportsNamespace(runtime) && session?.connectionId">
-        <span class="shrink-0 text-[10px] text-muted-foreground">{{ t("container.namespace") }}</span>
-        <Select
-          :model-value="session.namespace"
-          :options="namespaceOptions"
-          size="compact"
-          class="w-32"
-          :aria-label="t('container.namespace')"
-          @update:model-value="chooseNamespace"
-        />
-      </template>
     </header>
 
     <!-- The connection as it is being made, and as it failed to be made. -->
