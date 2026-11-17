@@ -344,9 +344,18 @@ jobs:
           path: release-artifacts
           if-no-files-found: error
 
+  # The browser edition's package, built in the Debian 10 image a glibc 2.28 system needs and
+  # attached like every other artifact. It runs beside the desktop legs rather than in their
+  # matrix: the toolchain is the whole point of the package, and the runners cannot build it.
+  web:
+    name: Browser package
+    uses: ./.github/workflows/web-package.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+
   release:
     name: Publish the release
-    needs: build
+    needs: [build, web]
     runs-on: ubuntu-latest
     permissions:
       # The release, its assets and the update channel's own release are all written with the token
@@ -384,6 +393,7 @@ jobs:
             ls artifacts/*.msi artifacts/*.exe artifacts/*.dmg artifacts/*.AppImage artifacts/*.deb artifacts/*.rpm 2>/dev/null || true
             ls artifacts/*.app.tar.gz artifacts/*.AppImage.tar.gz 2>/dev/null || true
             ls artifacts/*-portable.zip artifacts/*-portable.zip.sig 2>/dev/null || true
+            ls artifacts/*-web.tar.gz 2>/dev/null || true
           } | sort -u > release-assets.txt
           while read -r file; do cp "$file" release/; done < release-assets.txt
           ls -l release

@@ -1,0 +1,109 @@
+name: Web package
+
+# Builds the browser edition's portable Linux package for one tag, and leaves it as an artifact the
+# caller attaches. It is not a separate release trigger: the tag-triggered release calls this, so a
+# release carries the browser package by itself. The backfill workflow calls it for tags that were
+# published before that was true.
+#
+# It is a job of its own rather than a leg of the desktop matrix because it needs a Debian 10
+# toolchain — the package exists for systems whose glibc stops at 2.28 — and the desktop runners
+# build against their own current systems.
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag to build (for example v0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Browser package (Linux x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      # The packaging tools come from the branch this workflow runs on, not from the tag: a fix to
+      # them must not require re-tagging a release that is already published. The application
+      # source stays the tag's — that is what the package is built from.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          path: .web-tools
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The interface as Vite built it, then the same files with the colours rewritten for browsers
+      # without CSS Color 4. The rewrite happens on a copy: the desktop build keeps its wide-gamut
+      # values, and only this package carries the fallbacks.
+      - name: Prepare the legacy interface
+        run: |
+          set -euo pipefail
+          WORK="$GITHUB_WORKSPACE/.scratch/web-build"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          cp -a apps/desktop/dist "$WORK/legacy-dist"
+          shopt -s nullglob
+          css_files=("$WORK"/legacy-dist/assets/*.css)
+          if [ ${#css_files[@]} -eq 0 ]; then
+            echo "::error::the interface build produced no CSS to convert"
+            exit 1
+          fi
+          for css in "${css_files[@]}"; do
+            node .web-tools/scripts/web-build/legacy-css.cjs "$css" "$css.legacy"
+            mv "$css.legacy" "$css"
+          done
+
+      - name: Build the Debian 10 image
+        run: docker build -t 7shell-web-build:debian10 .web-tools/scripts/web-build
+
+      - name: Build the browser host and the bridge
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            -e CARGO_TARGET_DIR=/src/.scratch/web-build/target \
+            7shell-web-build:debian10 \
+            cargo build --release --locked -p sevenshell-web -p sevenshell-mcp
+
+      - name: Assemble the package
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            -e SRC=/src \
+            -e WEB_BUILD=/src/.scratch/web-build \
+            -e VERSION="$VERSION" \
+            7shell-web-build:debian10 \
+            bash /src/.web-tools/scripts/web-build/assemble.sh | tee "$RUNNER_TEMP/assemble.log"
+
+          TAR="$GITHUB_WORKSPACE/.scratch/web-build/7Shell_${VERSION}_amd64-web.tar.gz"
+          test -f "$TAR"
+          sha256sum "$TAR" | tee -a "$GITHUB_STEP_SUMMARY"
+          {
+            echo ""
+            echo "\`7Shell_${VERSION}_amd64-web.tar.gz\` was built against the glibc 2.28 baseline:"
+            echo '```'
+            grep -E 'GLIBC|bundled libraries' -A 20 "$RUNNER_TEMP/assemble.log" | head -n 30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-linux-x86_64
+          path: .scratch/web-build/*-web.tar.gz
+          if-no-files-found: error
