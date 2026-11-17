@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 use crate::archive;
-use crate::sessions::{ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
+use crate::sessions::{Carrier, ConnectionOutcome, HostKeyDecision, TransferAttempt, TransferRun};
 use crate::{Core, TransferRecord};
 use sevenshell_container::{
     ByteStream, CommandFuture, CommandTransport, ContainerFiles, InputStream, StreamState, payload_size, script_of,
@@ -305,6 +305,13 @@ const SCP_TIMEOUT: Duration = Duration::from_secs(600);
 /// How much text the editor will read out of one file over a shell.
 const SHELL_TEXT_LIMIT: usize = 16 * 1024 * 1024;
 
+/// How many file browsers may keep a channel on one connection shared with a terminal.
+///
+/// OpenSSH's default `MaxSessions` is ten session channels per connection. The terminal itself
+/// uses one, and its monitor opens one briefly for every sample, so a browser that would be the
+/// fifth on that connection opens a connection of its own instead.
+const MAX_SHARED_FILE_SESSIONS: usize = 4;
+
 /// The local end of one transfer, for the two things only this side can do with it.
 ///
 /// A named struct rather than a tuple because the second half is not obvious: whether the transfer
@@ -336,9 +343,11 @@ struct TransferFacts {
 impl Core {
     /// Opens a file browser for a session, or reports which host key decision comes first.
     ///
-    /// The channel rides on a connection of its own unless a terminal for the same session is
-    /// already open, in which case that one is reused: one connection can carry both, and opening
-    /// a second is a second authentication the server did not need to see.
+    /// The channel rides on a terminal's connection when one has room for it — one connection can
+    /// carry both, and opening a second is a second authentication the server did not need to see.
+    /// That reuse is bounded and spread — see [`MAX_SHARED_FILE_SESSIONS`] — because one connection
+    /// does not carry an unlimited number of channels, and the terminal sharing it still needs its
+    /// own. When no terminal connection has room, the browser gets a connection of its own.
     pub async fn open_files(&self, session_id: &str) -> Result<SftpOutcome, ShellError> {
         let session = self.session(session_id)?;
         if session.protocol == Protocol::WebDav {
@@ -348,12 +357,29 @@ impl Core {
             return self.open_ftp_files(&session).await;
         }
 
-        let connection = match self.open_carrier(&session).await? {
-            ConnectionOutcome::Ready(connection) => connection,
+        let carrier = match self.open_file_carrier(&session).await? {
+            ConnectionOutcome::Ready(carrier) => carrier,
             ConnectionOutcome::Decision(decision) => return Ok(into_files_outcome(*decision)),
         };
+        let shared = carrier.shared;
+        let mut connection = carrier.connection;
 
         let stream = match connection.open_subsystem_stream("sftp").await {
+            Ok(stream) => Ok(stream),
+            // A server with a smaller `MaxSessions` than this budget assumes can still refuse the
+            // channel. One retry on a connection of this browser's own is enough: a file browser
+            // is not worth failing when a second connection would serve it.
+            Err(_) if shared => match self.open_fresh_carrier(&session).await? {
+                ConnectionOutcome::Ready(carrier) => {
+                    connection = carrier.connection;
+                    connection.open_subsystem_stream("sftp").await
+                }
+                ConnectionOutcome::Decision(decision) => return Ok(into_files_outcome(*decision)),
+            },
+            Err(sftp_error) => Err(sftp_error),
+        };
+
+        let stream = match stream {
             Ok(stream) => stream,
             Err(sftp_error) => {
                 // A server old enough to have no SFTP subsystem is the case this fallback exists
@@ -405,6 +431,50 @@ impl Core {
             listing,
             packed: true,
         })
+    }
+
+    /// The carrier a file browser should ride: a terminal's connection with room for one more
+    /// channel, or a connection of this browser's own.
+    ///
+    /// A session can have several terminals — one per tab — and each has a connection of its own.
+    /// Picking the first one with room spreads the browsers across them rather than stacking every
+    /// SFTP channel on the oldest connection, which is where the server's per-connection channel
+    /// limit would be reached first.
+    async fn open_file_carrier(&self, session: &Session) -> Result<ConnectionOutcome, ShellError> {
+        for open in self.registry.open_sessions().await {
+            if open.session_id != session.id {
+                continue;
+            }
+            let Ok(connection) = self.registry.session_of(&open.handle).await else {
+                continue;
+            };
+            if self.file_channels_on(&connection).await < MAX_SHARED_FILE_SESSIONS {
+                return Ok(ConnectionOutcome::Ready(Carrier {
+                    connection,
+                    shared: true,
+                }));
+            }
+        }
+
+        self.open_fresh_carrier(session).await
+    }
+
+    /// The file browsers already holding a channel on this connection.
+    ///
+    /// Only SFTP browsers hold a channel for their whole life; a shell-backed browser runs one
+    /// command per operation, so it never takes up room between them.
+    async fn file_channels_on(&self, connection: &Arc<SshSession>) -> usize {
+        self.files
+            .lock()
+            .await
+            .values()
+            .filter(|session| match &session.backend {
+                FileBackend::Sftp { connection: held, .. } => Arc::ptr_eq(held, connection),
+                FileBackend::WebDav(_) | FileBackend::Ftp(_) | FileBackend::Scp { .. } | FileBackend::Container(_) => {
+                    false
+                }
+            })
+            .count()
     }
 
     /// Opens a WebDAV folder as a file browser.

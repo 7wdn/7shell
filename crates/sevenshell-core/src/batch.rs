@@ -309,7 +309,7 @@ impl Core {
 /// Connects to one host without a terminal, or reports what stands in the way.
 async fn connect_one(core: &Core, session: Session) -> HostConnection {
     match core.open_carrier(&session).await {
-        Ok(ConnectionOutcome::Ready(connection)) => HostConnection::Ready(connection),
+        Ok(ConnectionOutcome::Ready(carrier)) => HostConnection::Ready(carrier.connection),
         Ok(ConnectionOutcome::Decision(decision)) => HostConnection::Decision(decision),
         Err(error) => HostConnection::Failed(error),
     }

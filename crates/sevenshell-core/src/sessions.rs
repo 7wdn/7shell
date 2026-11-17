@@ -687,9 +687,20 @@ impl Core {
             .map(|open| open.handle);
 
         if let Some(handle) = existing {
-            return Ok(ConnectionOutcome::Ready(self.registry.session_of(&handle).await?));
+            return Ok(ConnectionOutcome::Ready(Carrier {
+                connection: self.registry.session_of(&handle).await?,
+                shared: true,
+            }));
         }
 
+        self.open_fresh_carrier(session).await
+    }
+
+    /// A carrier connection of this session's own, which no terminal shares.
+    ///
+    /// Used when the terminal's connection is the wrong place for a new channel: one SSH
+    /// connection carries only so many, and the terminal still needs room for its monitor.
+    pub(crate) async fn open_fresh_carrier(&self, session: &Session) -> Result<ConnectionOutcome, ShellError> {
         let credential = self.credential(session)?;
         let target = Target {
             host: session.host.clone(),
@@ -746,9 +757,10 @@ impl Core {
         };
 
         let (output, _unused) = mpsc::channel(1);
-        Ok(ConnectionOutcome::Ready(Arc::new(
-            SshSession::open(request, output).await?,
-        )))
+        Ok(ConnectionOutcome::Ready(Carrier {
+            connection: Arc::new(SshSession::open(request, output).await?),
+            shared: false,
+        }))
     }
 
     /// Where this session's recording goes, when it is being recorded.
@@ -840,10 +852,20 @@ pub(crate) enum RouteOutcome {
     Decision(Box<HostKeyDecision>),
 }
 
+/// A connection that carries something other than a terminal, and whether a terminal shares it.
+///
+/// `shared` matters because one SSH connection has a channel budget: OpenSSH's default
+/// `MaxSessions` is ten, and a terminal's connection is also where its monitor runs its one-shot
+/// commands. A caller that wants to keep a channel open for a while checks this before taking one.
+pub(crate) struct Carrier {
+    pub connection: Arc<SshSession>,
+    pub shared: bool,
+}
+
 /// Either a connection that carries something other than a terminal, or the decision that stands
 /// in the way of opening one.
 pub(crate) enum ConnectionOutcome {
-    Ready(Arc<SshSession>),
+    Ready(Carrier),
     Decision(Box<HostKeyDecision>),
 }
 

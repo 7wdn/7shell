@@ -13,7 +13,7 @@
       "authFailed": "{host}:{port} 拒绝了这个凭据。",
       "unreachable": "无法连接到 {host}:{port}。",
       "timeout": "{host}:{port} 在 {seconds} 秒内没有响应。",
-      "channelFailed": "无法在 {host}:{port} 上打开会话。",
+      "channelFailed": "无法在 {host}:{port} 上打开或使用 SSH 通道。",
       "keyInvalid": "无法读取该密钥。如果它带口令，口令也需要检查。",
       "keyUnsupported": "当前版本无法使用这种类型的密钥。"
     },

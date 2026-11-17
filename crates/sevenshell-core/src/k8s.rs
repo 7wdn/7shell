@@ -92,7 +92,7 @@ impl Core {
             ));
         }
         let connection = match self.open_carrier(&transport).await? {
-            ConnectionOutcome::Ready(connection) => connection,
+            ConnectionOutcome::Ready(carrier) => carrier.connection,
             // The cluster workspace has no host-key prompt of its own, so the decision is refused
             // with the host's identity — the same answer the container workspace gives. Opening
             // that SSH session once is how the decision is made, and every later cluster

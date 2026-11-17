@@ -13,7 +13,7 @@
       "authFailed": "The server at {host}:{port} rejected these credentials.",
       "unreachable": "Could not reach {host}:{port}.",
       "timeout": "{host}:{port} did not respond within {seconds} seconds.",
-      "channelFailed": "A session on {host}:{port} could not be opened.",
+      "channelFailed": "An SSH channel on {host}:{port} could not be opened or used.",
       "keyInvalid": "The key could not be read. If it has a passphrase, check that too.",
       "keyUnsupported": "This build cannot use that kind of key."
     },

@@ -52,7 +52,7 @@ impl Core {
                     ));
                 }
                 match self.open_carrier(&transport).await? {
-                    ConnectionOutcome::Ready(session) => Runner::Ssh(session),
+                    ConnectionOutcome::Ready(carrier) => Runner::Ssh(carrier.connection),
                     // A container workspace has no host-key prompt of its own. Refusing with the
                     // host's identity is honest: opening that SSH session once is how the decision
                     // is made, and every later container connection reuses the trust.
