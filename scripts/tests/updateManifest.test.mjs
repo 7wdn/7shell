@@ -105,6 +105,35 @@ test("an archive whose name this build cannot place stops the release", async ()
   );
 });
 
+test("the signed Linux packages the updater does not install are left out, not refused", async () => {
+  const root = await bundle();
+  await writeArtifact(path.join(root, "appimage"), "7Shell_0.2.0_amd64.AppImage", "appimage-signature");
+  // Tauri signs the .deb and .rpm beside the AppImage; an update replaces the AppImage.
+  await writeArtifact(path.join(root, "deb"), "7Shell_0.2.0_amd64.deb", "deb-signature");
+  await writeArtifact(path.join(root, "rpm"), "7Shell-0.2.0-1.x86_64.rpm", "rpm-signature");
+
+  const entry = await platformEntries({
+    bundleDir: root,
+    platform: "linux-x86_64",
+    tag: TAG,
+    repository: "7wdn/7shell",
+  });
+  const keys = manifestKeys(entry);
+
+  assert.deepEqual(Object.keys(keys).sort(), ["linux-x86_64", "linux-x86_64-appimage"]);
+  assert.equal(keys["linux-x86_64"].signature, "appimage-signature");
+});
+
+test("a Linux build with nothing but those packages signed has no update to publish", async () => {
+  const root = await bundle();
+  await writeArtifact(path.join(root, "deb"), "7Shell_0.2.0_amd64.deb", "deb-signature");
+
+  await assert.rejects(
+    () => platformEntries({ bundleDir: root, platform: "linux-x86_64", tag: TAG, repository: "7wdn/7shell" }),
+    /only bundles the updater does not install/,
+  );
+});
+
 test("a macOS build publishes the application archive under its own target", async () => {
   const root = await bundle();
   await writeArtifact(path.join(root, "macos"), "7Shell.app.tar.gz", "mac-signature");

@@ -62,6 +62,17 @@ const INSTALLERS = [
 ];
 
 /**
+ * Signed bundles the updater does not install.
+ *
+ * Tauri signs the Linux `.deb` and `.rpm` beside the AppImage, and neither of them is something an
+ * update replaces: the AppImage updates itself. They are skipped by name rather than by "anything
+ * signed that we do not know", because an unknown signed archive is still a mistake worth stopping
+ * for — a new updater artifact this script has not learned about would otherwise drop out of the
+ * manifest without a word.
+ */
+const NOT_AN_UPDATE = [".deb", ".rpm"];
+
+/**
  * Which installer the plain platform key points at when a platform has more than one.
  *
  * The plugin looks for `{os}-{arch}-{installer}` first and falls back to `{os}-{arch}`, and the
@@ -123,6 +134,9 @@ export async function platformEntries({ bundleDir, platform, tag, repository }) 
     const artifact = signature.slice(0, -".sig".length);
     const installer = classify(artifact);
     if (!installer) {
+      if (NOT_AN_UPDATE.some((suffix) => artifact.endsWith(suffix))) {
+        continue;
+      }
       throw new ManifestError(
         `${artifact} has a signature but a name this script cannot place among ${INSTALLERS.map((i) => i.suffix).join(", ")}`,
       );
@@ -136,6 +150,10 @@ export async function platformEntries({ bundleDir, platform, tag, repository }) 
       signature: (await readFile(path.join(bundleDir, artifact + ".sig"), "utf8")).trim(),
       url: `https://github.com/${repository}/releases/download/${tag}/${path.basename(artifact)}`,
     });
+  }
+
+  if (entries.length === 0) {
+    throw new ManifestError(`${bundleDir} holds no signed update archive, only bundles the updater does not install`);
   }
 
   // One platform, one build: two archives of the same kind would mean the job built the same thing
