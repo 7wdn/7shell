@@ -349,6 +349,8 @@ jobs:
   # matrix: the toolchain is the whole point of the package, and the runners cannot build it.
   web:
     name: Browser package
+    # A promotion builds nothing; it only relabels a release that already exists.
+    if: ${{ !inputs.promote }}
     uses: ./.github/workflows/web-package.yml
     with:
       tag: ${{ inputs.tag || github.ref_name }}
@@ -530,6 +532,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # `gh` infers the repository from git, and this job reads and writes releases: without this
+      # the very first command stops with "not a git repository".
+      - uses: actions/checkout@v4
+
       - name: Promote it, and point the update channel at it
         env:
           GH_TOKEN: ${{ github.token }}
