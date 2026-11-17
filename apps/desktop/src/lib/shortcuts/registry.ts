@@ -18,6 +18,7 @@ export type ShortcutActionId =
   | "global.toggleTransfers"
   | "global.toggleAssistant"
   | "terminal.find"
+  | "files.focusPath"
   | "commands.completionAccept"
   | "commands.completionTrigger";
 
@@ -64,6 +65,14 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     scope: "terminal",
     labelKey: "settings.shortcuts.actions.terminalFind",
     defaultBinding: "Mod+F",
+  },
+  // What a file manager and a browser both use for their address bar. It is scoped to the panel,
+  // so the shell on the far side keeps Ctrl+L for clearing its screen.
+  {
+    id: "files.focusPath",
+    scope: "files",
+    labelKey: "settings.shortcuts.actions.focusPath",
+    defaultBinding: "Mod+L",
   },
   {
     id: "commands.completionAccept",

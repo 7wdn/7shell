@@ -25,6 +25,7 @@ import {
   FolderPlus,
   HardDrive,
   LoaderCircle,
+  Pencil,
   Upload,
   X,
 } from "@lucide/vue";
@@ -82,6 +83,7 @@ import {
 } from "@/lib/files/selection";
 import { fileAreaMenu, fileEntryMenu } from "@/lib/menu/files";
 import { MENU_TITLES } from "@/lib/menu/titles";
+import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { formatShortcutDisplay } from "@/lib/shortcuts/display";
 import { bindingFor } from "@/lib/shortcuts/registry";
 import { cn } from "@/lib/utils";
@@ -300,6 +302,52 @@ let lastRowClick: { path: string; at: number } | null = null;
 /** How long the two clicks of a slow double-click may be apart. */
 const SLOW_CLICK_WINDOW_MS = 2_000;
 const typedPath = ref("");
+/** Whether the address bar is a field being typed in rather than the breadcrumbs. */
+const editingPath = ref(false);
+const pathField = ref<HTMLInputElement | null>(null);
+
+/** Turns the address bar into a field holding the path the panel is showing, selected for replacing. */
+function startPathEdit(): void {
+  typedPath.value = browser.value?.path ?? "";
+  editingPath.value = true;
+  void nextTick(() => {
+    pathField.value?.focus();
+    pathField.value?.select();
+  });
+}
+
+/** Puts the breadcrumbs back. Nothing was navigated, so nothing about the panel changes. */
+function cancelPathEdit(): void {
+  editingPath.value = false;
+}
+
+/** Leaving the field for anywhere but the address bar's own buttons is a cancel. */
+function onPathFocusOut(event: FocusEvent): void {
+  const next = event.relatedTarget as Node | null;
+  if (next !== null && (event.currentTarget as HTMLElement).contains(next)) {
+    return;
+  }
+  cancelPathEdit();
+}
+
+/**
+ * `Ctrl+L`, from anywhere in the panel, is the keyboard's way into the same edit.
+ *
+ * The same binding a file manager or a browser uses for its address bar; the shortcut is declared
+ * in the registry so the settings page lists it and a conflict is visible there.
+ */
+function onBrowserKey(event: KeyboardEvent): void {
+  if (!matchesShortcut(event, bindingFor("files.focusPath", preferences.keybindings), app.platform)) {
+    return;
+  }
+  event.preventDefault();
+  if (editingPath.value) {
+    pathField.value?.focus();
+    pathField.value?.select();
+    return;
+  }
+  startPathEdit();
+}
 /** Which kind of thing is being named, and nothing while no prompt is open. */
 const creating = ref<"folder" | "file" | null>(null);
 const newName = ref("");
@@ -606,7 +654,9 @@ watch(
     // somebody types into it. A read is a round trip, so the answer to the *previous* navigation can
     // land after the next path has been typed — and putting the old one back under somebody's hands,
     // mid-word, is what this is about.
-    if (typedPath.value === shownPath) {
+    // Not while the address bar is being typed in: the shell can move the panel under it (a `cd`
+    // in the terminal it follows), and the path arriving is not what the person is editing.
+    if (typedPath.value === shownPath && !editingPath.value) {
       typedPath.value = answered;
     }
     shownPath = answered;
@@ -941,9 +991,11 @@ function submitTypedPath(): void {
   if (path === "") {
     return;
   }
-  // What was typed counts as what the field is showing again: the answer that comes back is the
-  // panel's to read out, and the field goes on showing where the panel went.
+  // What was typed counts as what the field was showing: the answer that comes back belongs to the
+  // breadcrumbs. The bar leaves its edit state before the round trip, so the crumbs show the old
+  // directory for a moment rather than a field nobody can see any more.
   shownPath = path;
+  editingPath.value = false;
   go(path);
 }
 
@@ -1247,7 +1299,7 @@ function openAreaMenu(event: MouseEvent): void {
 </script>
 
 <template>
-  <div v-if="browser" class="flex min-h-0 flex-1 flex-col">
+  <div v-if="browser" class="flex min-h-0 flex-1 flex-col" @keydown="onBrowserKey">
     <header class="shrink-0 border-b border-border px-3 py-[var(--panel-header-y)]">
       <div class="flex items-center gap-1.5">
         <button
@@ -1261,7 +1313,41 @@ function openAreaMenu(event: MouseEvent): void {
           <ArrowUp :size="13" />
         </button>
 
-        <nav class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" :aria-label="t('files.path')">
+        <!--
+          One bar, two states. The breadcrumbs are the path a person reads and clicks; the field is
+          the same path when they want to write one. The empty part of the bar and the pencil are
+          the ways in, and Ctrl+L is the keyboard's.
+        -->
+        <form
+          v-if="editingPath"
+          class="flex min-w-0 flex-1 items-center gap-1.5"
+          @submit.prevent="submitTypedPath()"
+          @focusout="onPathFocusOut"
+        >
+          <input
+            ref="pathField"
+            v-model="typedPath"
+            type="text"
+            spellcheck="false"
+            class="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-0.5 font-mono text-[11px] focus:outline-none"
+            :aria-label="t('files.path')"
+            :placeholder="t('files.path')"
+            @keydown.esc.prevent.stop="cancelPathEdit()"
+          />
+          <button
+            type="submit"
+            class="shrink-0 rounded-md border border-border px-2.5 py-1 text-[11px] transition-colors hover:bg-accent"
+          >
+            {{ t("files.go") }}
+          </button>
+        </form>
+
+        <nav
+          v-else
+          class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+          :aria-label="t('files.path')"
+          @click.self="startPathEdit()"
+        >
           <template v-for="(crumb, index) in crumbs" :key="crumb.path">
             <ChevronRight v-if="index > 0" :size="11" class="shrink-0 text-muted-foreground" />
             <button
@@ -1278,6 +1364,17 @@ function openAreaMenu(event: MouseEvent): void {
             </button>
           </template>
         </nav>
+
+        <button
+          v-if="!editingPath"
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('files.pathEdit')"
+          :aria-label="t('files.pathEdit')"
+          @click="startPathEdit()"
+        >
+          <Pencil :size="12" />
+        </button>
 
         <LoaderCircle v-if="browser.loading" :size="12" class="shrink-0 animate-spin text-muted-foreground" />
 
@@ -1310,23 +1407,6 @@ function openAreaMenu(event: MouseEvent): void {
           {{ t("files.paste.label") }}
         </button>
       </div>
-
-      <form class="mt-1.5 flex gap-1.5" @submit.prevent="submitTypedPath()">
-        <input
-          v-model="typedPath"
-          type="text"
-          spellcheck="false"
-          class="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-[11px] focus:outline-none"
-          :aria-label="t('files.path')"
-          :placeholder="t('files.path')"
-        />
-        <button
-          type="submit"
-          class="shrink-0 rounded-md border border-border px-2.5 py-1 text-[11px] transition-colors hover:bg-accent"
-        >
-          {{ t("files.go") }}
-        </button>
-      </form>
 
       <div
         v-if="problem"

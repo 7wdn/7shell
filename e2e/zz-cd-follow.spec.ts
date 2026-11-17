@@ -25,7 +25,15 @@ function makeFixture(): boolean {
   try {
     execFileSync(
       "docker",
-      ["exec", "-u", "root", LAB_CONTAINER, "sh", "-lc", "mkdir -p /data/test && touch /data/test/a.txt && chmod -R 755 /data"],
+      [
+        "exec",
+        "-u",
+        "root",
+        LAB_CONTAINER,
+        "sh",
+        "-lc",
+        "mkdir -p /data/test && touch /data/test/a.txt && chmod -R 755 /data",
+      ],
       { stdio: "ignore" },
     );
     return true;
@@ -90,31 +98,30 @@ test("the panel follows a cd into a subdirectory, not only into a top-level one"
       await question.click();
     }
 
-    // The split layout opens the file half under the terminal; the path bar is its address.
+    // The split layout opens the file half under the terminal; its breadcrumbs are the address.
     const fileToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
     await expect(fileToggle).toBeVisible({ timeout: 30_000 });
     // The split layout opens the files half on its own. It takes a round trip to open, so it is
     // waited for before the toggle is touched: clicking a panel that is already opening closes it,
-    // and the path bar then never appears at all.
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
-    await expect(pathBar)
+    // and the bar then never appears at all.
+    const crumbs = page.getByRole("navigation", { name: "Path" }).filter({ visible: true });
+    await expect(crumbs)
       .toBeVisible({ timeout: 20_000 })
       .catch(async () => {
         await fileToggle.click();
-        await expect(pathBar).toBeVisible({ timeout: 30_000 });
+        await expect(crumbs).toBeVisible({ timeout: 30_000 });
       });
-    await expect(pathBar).not.toHaveValue("", { timeout: 30_000 });
 
     const screen = page.locator(".xterm-screen").filter({ visible: true }).first();
     await screen.click();
 
     await page.keyboard.type("cd /data");
     await page.keyboard.press("Enter");
-    await expect(pathBar).toHaveValue("/data", { timeout: 20_000 });
+    await expect(crumbs.getByRole("button", { name: "data", exact: true })).toBeVisible({ timeout: 20_000 });
 
     await page.keyboard.type("cd /data/test");
     await page.keyboard.press("Enter");
-    await expect(pathBar).toHaveValue("/data/test", { timeout: 20_000 });
+    await expect(crumbs.getByRole("button", { name: "test", exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText("a.txt").first()).toBeVisible({ timeout: 20_000 });
 
     // The bar above the panel writes straight into the pty, so this `cd` never passes through the
@@ -122,7 +129,14 @@ test("the panel follows a cd into a subdirectory, not only into a top-level one"
     const bar = page.getByRole("combobox", { name: "Command input" }).filter({ visible: true });
     await bar.fill("cd /etc");
     await page.getByRole("button", { name: "Send to this session" }).click();
-    await expect(pathBar).toHaveValue("/etc", { timeout: 20_000 });
+    await expect(crumbs.getByRole("button", { name: "etc", exact: true })).toBeVisible({ timeout: 20_000 });
+
+    // The one bar is also the field: the pencil opens it, and Enter takes what was typed.
+    await page.getByRole("button", { name: "Edit the path" }).filter({ visible: true }).click();
+    const field = page.getByPlaceholder("Path").filter({ visible: true });
+    await field.fill("/data/test");
+    await field.press("Enter");
+    await expect(crumbs.getByRole("button", { name: "test", exact: true })).toBeVisible({ timeout: 20_000 });
   } finally {
     // One window outlives every case: the terminal opened here is closed, and the window is
     // reloaded, so the case after this one does not start on this one's connection.

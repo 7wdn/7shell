@@ -212,6 +212,39 @@ function sessionRow(page: Page, name: string): Locator {
 }
 
 /**
+ * The address bar of the file panel on screen, in its reading state.
+ *
+ * One bar, two states: breadcrumbs that navigate, and a field that writes. The bar is also the
+ * marker for "the files half of the panel is the half on screen", which is why several cases wait
+ * for it rather than for a row.
+ */
+function breadcrumbs(page: Page): Locator {
+  return page.getByRole("navigation", { name: "Path" }).filter({ visible: true });
+}
+
+/** Types a path the way a person does: the pencil opens the bar, Enter takes the field. */
+async function typePath(page: Page, path: string): Promise<void> {
+  await page.getByRole("button", { name: "Edit the path" }).filter({ visible: true }).click();
+  const field = page.getByPlaceholder("Path").filter({ visible: true });
+  await field.fill(path);
+  await field.press("Enter");
+}
+
+/**
+ * The directory the panel on screen is showing, read out of the one bar.
+ *
+ * Opening the field is how the bar can be read exactly; Escape puts the breadcrumbs back, so a
+ * caller polling this does not leave the bar in its typing state.
+ */
+async function shownPath(page: Page): Promise<string> {
+  await page.getByRole("button", { name: "Edit the path" }).filter({ visible: true }).click();
+  const field = page.getByPlaceholder("Path").filter({ visible: true });
+  const value = await field.inputValue();
+  await field.press("Escape");
+  return value;
+}
+
+/**
  * The same title, rooted at the document rather than at the sidebar.
  *
  * For `filter({ has })`, which re-roots its inner locator against each candidate element: a
@@ -3195,17 +3228,15 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // be showing.
     const fileToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
     await fileToggle.click();
-    // The path field of the panel that is *on screen*. Every tab with a file panel keeps one in the
-    // document — that is what lets a panel still be there when its tab comes back — so the placeholder
-    // alone matches one per open session, and the first of them belongs to whichever tab was built
-    // first rather than to the one somebody is looking at.
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
-    if (!(await pathBar.isVisible())) {
+    // The address bar of the panel that is *on screen*. Every tab with a file panel keeps one in the
+    // document — that is what lets a panel still be there when its tab comes back — so a visible
+    // locator is what names the one somebody is looking at.
+    const crumbs = breadcrumbs(page);
+    if (!(await crumbs.isVisible())) {
       await fileToggle.click();
     }
-    await expect(pathBar).toBeVisible({ timeout: 30_000 });
-    await pathBar.fill("/tmp");
-    await pathBar.press("Enter");
+    await expect(crumbs).toBeVisible({ timeout: 30_000 });
+    await typePath(page, "/tmp");
     await expect(page.getByText(`${stamp}-done`).first()).toBeVisible({ timeout: 30_000 });
 
     // And switching halves, which is where the two buttons have to disagree: the browser stays open
@@ -3221,7 +3252,7 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await expect(fileToggle).toHaveAttribute("aria-pressed", "true");
     await expect(commandsToggle).toHaveAttribute("aria-pressed", "false");
     // The same browser, back in front: nothing was opened a second time on the same session.
-    await expect(pathBar).toBeVisible();
+    await expect(crumbs).toBeVisible();
 
     await mkdir(ARTIFACTS, { recursive: true });
     await page.screenshot({ path: path.join(ARTIFACTS, "commands-sent.png"), fullPage: false });
@@ -3229,8 +3260,7 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     // What the pinned headings are for, on a directory long enough to scroll: a row passing under
     // the strip has to be hidden by it, not read through it. /etc rather than /tmp because a
     // directory that fits on the panel cannot say anything about a pinned row.
-    await pathBar.fill("/etc");
-    await pathBar.press("Enter");
+    await typePath(page, "/etc");
     const listing = page.getByRole("listbox", { name: "Files", exact: true });
     await expect(listing.getByRole("option").first()).toBeVisible({ timeout: 30_000 });
     const reached = await listing.evaluate((element) => {
@@ -3268,10 +3298,8 @@ test("a saved command reaches the shell and the file it makes appears", async ()
 
     // And the shell ran that one too: back to the listing, refreshed by navigating away and in.
     await page.getByRole("button", { name: "History" }).click();
-    await pathBar.fill("/");
-    await pathBar.press("Enter");
-    await pathBar.fill("/tmp");
-    await pathBar.press("Enter");
+    await typePath(page, "/");
+    await typePath(page, "/tmp");
     await expect(page.getByText(`${stamp}-typed`).first()).toBeVisible({ timeout: 30_000 });
 
     // The toolbar over a selection, and the button that hands one to the shell without a clipboard
@@ -3340,10 +3368,8 @@ test("a saved command reaches the shell and the file it makes appears", async ()
     await page.keyboard.press("Enter");
 
     // And the shell ran what was pasted: the same listing, one file richer.
-    await pathBar.fill("/");
-    await pathBar.press("Enter");
-    await pathBar.fill("/tmp");
-    await pathBar.press("Enter");
+    await typePath(page, "/");
+    await typePath(page, "/tmp");
     await expect(page.getByText(`${stamp}-pasted`).first()).toBeVisible({ timeout: 30_000 });
 
     // Newest first, so the two files this case just made are in the part of the listing that is
@@ -3522,16 +3548,15 @@ test("a bookmarked directory is one click away in the file panel", async () => {
 
     await expect(files).toBeVisible({ timeout: 30_000 });
     await files.click();
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
-    if (!(await pathBar.isVisible())) {
+    const crumbs = breadcrumbs(page);
+    if (!(await crumbs.isVisible())) {
       await files.click();
     }
-    await expect(pathBar).toBeVisible({ timeout: 30_000 });
+    await expect(crumbs).toBeVisible({ timeout: 30_000 });
 
-    // A directory in the middle of the tree, so where the bookmark lands is visible in the path bar.
-    await pathBar.fill("/var/log");
-    await pathBar.press("Enter");
-    await expect(pathBar).toHaveValue("/var/log", { timeout: 20_000 });
+    // A directory in the middle of the tree, so where the bookmark lands is visible in the bar.
+    await typePath(page, "/var/log");
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/var/log");
 
     const menuTrigger = page.locator("[data-bookmark-menu]").filter({ visible: true });
     const menu = page.locator("[data-file-bookmarks]").filter({ visible: true });
@@ -3552,10 +3577,9 @@ test("a bookmarked directory is one click away in the file panel", async () => {
       .poll(async () => (await writtenSettings()).fileBookmarks?.find((entry) => entry.label === stamp)?.path)
       .toBe("/var/log");
 
-    // Somewhere else, then back through the bookmark rather than through the path field.
-    await pathBar.fill("/tmp");
-    await pathBar.press("Enter");
-    await expect(pathBar).toHaveValue("/tmp", { timeout: 20_000 });
+    // Somewhere else, then back through the bookmark rather than through the bar.
+    await typePath(page, "/tmp");
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/tmp");
 
     await menuTrigger.click();
     await menu
@@ -3563,7 +3587,7 @@ test("a bookmarked directory is one click away in the file panel", async () => {
       .filter({ hasText: stamp })
       .locator('[data-bookmark-action="jump"]')
       .click();
-    await expect(pathBar).toHaveValue("/var/log", { timeout: 20_000 });
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/var/log");
 
     // Renamed in place; the name is what the list is read by.
     await menuTrigger.click();
@@ -5347,22 +5371,22 @@ test("a panel split down the middle can be resized, and the width is written dow
     // The panel on screen rather than the first panel in the document: see the note on the same
     // locator in the command-bar case above. This case is the last in the file, which is also why it
     // was the one that noticed — by then several tabs have panels.
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
+    const crumbs = breadcrumbs(page);
     const filesToggle = page.getByRole("main").getByRole("button", { name: "Files", exact: true });
     await sessionRow(page, name).click();
 
     // What to wait for, said as visibility rather than as existence.
     //
-    // The panel's own path field is in the document before the panel is on screen — it is drawn the
+    // The panel's own address bar is in the document before the panel is on screen — it is drawn the
     // moment the tab has a browser behind it, which is after the connection and after the handshake —
     // so a locator that takes the first *match* can pick an element that is there and hidden and then
     // wait for it forever. The three things that can be true instead are waited for by what is visible:
     // the question about the host key, the panel already open, or the toggle that opens it.
     await expect
-      .poll(
-        async () => (await question.isVisible()) || (await pathBar.isVisible()) || (await filesToggle.isVisible()),
-        { timeout: 60_000, message: "the connection either asks about the key, or has a panel to show" },
-      )
+      .poll(async () => (await question.isVisible()) || (await crumbs.isVisible()) || (await filesToggle.isVisible()), {
+        timeout: 60_000,
+        message: "the connection either asks about the key, or has a panel to show",
+      })
       .toBe(true);
 
     if (await question.isVisible()) {
@@ -5371,11 +5395,11 @@ test("a panel split down the middle can be resized, and the width is written dow
     // The panel opens by itself for a session whose layout says split; when it is not there — this
     // case runs after forty others, and the window remembers what each tab was left showing — the
     // control that opens it is the one in the strip above it.
-    if (!(await pathBar.isVisible())) {
+    if (!(await crumbs.isVisible())) {
       await filesToggle.click();
     }
     // The file panel is on screen for this session, and the tree is the half on the left of it.
-    await expect(pathBar).toBeVisible({ timeout: 30_000 });
+    await expect(crumbs).toBeVisible({ timeout: 30_000 });
 
     // The line, and the pane it sizes — whatever is on its left, which is how both panels are
     // measured here without the test naming a tag either panel is free to change.
@@ -5594,15 +5618,15 @@ test("a new folder is asked for in a dialog, and renamed where its name is writt
     // A session opens in the split layout by default, so its file panel is already coming up.
     // Waiting first is what keeps this from toggling a panel that is still opening; the button's
     // own pressed state covers the slower case, where the panel exists but has not finished.
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
-    const openedByLayout = await pathBar
+    const crumbs = breadcrumbs(page);
+    const openedByLayout = await crumbs
       .waitFor({ state: "visible", timeout: 5_000 })
       .then(() => true)
       .catch(() => false);
     if (!openedByLayout && (await filesToggle.getAttribute("aria-pressed")) !== "true") {
       await filesToggle.click();
     }
-    await expect(pathBar).toBeVisible({ timeout: 60_000 });
+    await expect(crumbs).toBeVisible({ timeout: 60_000 });
 
     // The dialog, with the keyboard already in the field: a prompt that has to be clicked into is
     // the strip this case was written to replace.
@@ -5679,15 +5703,15 @@ test("a copy pastes into another folder, and properties change its mode", async 
       await question.click();
     }
     await expect(filesToggle).toBeVisible({ timeout: 30_000 });
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
-    const openedByLayout = await pathBar
+    const crumbs = breadcrumbs(page);
+    const openedByLayout = await crumbs
       .waitFor({ state: "visible", timeout: 5_000 })
       .then(() => true)
       .catch(() => false);
     if (!openedByLayout && (await filesToggle.getAttribute("aria-pressed")) !== "true") {
       await filesToggle.click();
     }
-    await expect(pathBar).toBeVisible({ timeout: 60_000 });
+    await expect(crumbs).toBeVisible({ timeout: 60_000 });
 
     const createFolder = async (folder: string): Promise<Locator> => {
       await page.getByRole("button", { name: "New folder", exact: true }).click({ timeout: 5_000 });
@@ -5705,7 +5729,7 @@ test("a copy pastes into another folder, and properties change its mode", async 
     // point at.
     await createFolder(destination);
     const sourceRow = await createFolder(source);
-    const homePath = (await pathBar.inputValue()).replace(/\/$/, "");
+    const homePath = (await shownPath(page)).replace(/\/$/, "");
 
     // The menu dismisses itself when the listing scrolls, and creating a folder just scrolled it to
     // the new row. The gesture is retried as a whole rather than half-done twice.
@@ -5718,9 +5742,8 @@ test("a copy pastes into another folder, and properties change its mode", async 
     }).toPass({ timeout: 30_000 });
 
     // The destination row is in the virtual listing, but not necessarily drawn after the scroll the
-    // copy gesture caused. The path bar is the way in that does not depend on where a row is drawn.
-    await pathBar.fill(`${homePath}/${destination}`);
-    await pathBar.press("Enter");
+    // copy gesture caused. The bar is the way in that does not depend on where a row is drawn.
+    await typePath(page, `${homePath}/${destination}`);
     await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: destination })).toBeVisible(
       {
         timeout: 30_000,
@@ -6035,9 +6058,8 @@ test("a tarball is answered with a sentence and a download, not a text area", as
     // A directory of this case's own, so the rows under test are the only rows in the window: the
     // lab account's home has collected files from every earlier run, and the listing draws a window
     // of it rather than all of it.
-    const pathBar = page.getByPlaceholder("Path").filter({ visible: true });
-    await expect(pathBar).toBeVisible({ timeout: 60_000 });
-    const home = (await pathBar.inputValue()).replace(/\/+$/, "");
+    await expect(breadcrumbs(page)).toBeVisible({ timeout: 60_000 });
+    const home = (await shownPath(page)).replace(/\/+$/, "");
     const workspace = `${home}/tarballs-${stamp}`;
     const big = `big-${stamp}.tar.gz`;
 
@@ -6052,9 +6074,8 @@ test("a tarball is answered with a sentence and a download, not a text area", as
     await page.keyboard.press("Enter");
     await expect(screen).toContainText(`made-${stamp}`, { timeout: 30_000 });
 
-    // The path field is the panel's own navigation, and a typed path is re-read on the way in.
-    await pathBar.fill(workspace);
-    await pathBar.press("Enter");
+    // The bar is the panel's own navigation, and a typed path is re-read on the way in.
+    await typePath(page, workspace);
 
     const row = page.getByRole("option").filter({ hasText: tarball });
     await expect(row).toBeVisible({ timeout: 30_000 });

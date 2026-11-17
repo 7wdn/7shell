@@ -8,6 +8,7 @@
     },
     "up": "Go up one directory",
     "path": "Path",
+    "pathEdit": "Edit the path",
     "go": "Go",
     "newFolder": "New folder",
     "newFolderName": "Folder name",

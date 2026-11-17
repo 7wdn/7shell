@@ -680,6 +680,7 @@
         "toggleTransfers": "显示传输面板",
         "toggleAssistant": "显示 AI 助手",
         "terminalFind": "在终端里查找",
+        "focusPath": "编辑文件路径",
         "completionAccept": "取用方向键指到的那一行",
         "completionTrigger": "打开联想列表"
       }

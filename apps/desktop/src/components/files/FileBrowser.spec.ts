@@ -77,6 +77,22 @@ async function render(entries: readonly SftpEntry[], props: Record<string, unkno
   await nextTick();
 }
 
+/** Turns the address bar into its field the way the pointer does, and hands the field back. */
+async function startTypingPath(): Promise<HTMLInputElement> {
+  const edit = host.querySelector<HTMLButtonElement>('button[aria-label="Edit the path"]');
+  if (edit === null) {
+    throw new Error("the panel drew no way into the path field");
+  }
+  edit.click();
+  await nextTick();
+
+  const field = host.querySelector<HTMLInputElement>('input[placeholder="Path"]');
+  if (field === null) {
+    throw new Error("the address bar did not become a field");
+  }
+  return field;
+}
+
 /**
  * The listing's scroll container, which is what carries the directory's menu.
  *
@@ -820,10 +836,7 @@ describe("selecting rows", () => {
   it("leaves what somebody typed in the path bar alone when an answer lands", async () => {
     await render(unsorted);
 
-    const field = host.querySelector<HTMLInputElement>('input[placeholder="Path"]');
-    if (field === null) {
-      throw new Error("the panel drew no path bar");
-    }
+    const field = await startTypingPath();
     expect(field.value, "the field shows where the panel is").toBe("/home/user");
 
     // Somebody starts typing the next path while the previous read is still in flight...
@@ -840,6 +853,63 @@ describe("selecting rows", () => {
     await nextTick();
 
     expect(field.value, "an answer does not put the old path back under somebody's hands").toBe("/home/user/logs");
+  });
+});
+
+/**
+ * The address bar: one row that reads as breadcrumbs and writes as a path.
+ *
+ * The two used to be two rows, and the second one was always a field. What is asserted here is that
+ * the one row really is both — that the pointer and the address-bar key turn it into a field, that
+ * Enter takes the field's path, and that abandoning the field navigates nowhere.
+ */
+describe("the address bar", () => {
+  beforeEach(async () => {
+    vi.mocked(filesList).mockClear();
+    await render(unsorted);
+  });
+
+  it("becomes a field holding the path the panel is showing", async () => {
+    const field = await startTypingPath();
+
+    expect(field.value).toBe("/home/user");
+  });
+
+  it("navigates to what the field says when it is submitted", async () => {
+    const field = await startTypingPath();
+    field.value = "/etc";
+    field.dispatchEvent(new Event("input"));
+    await nextTick();
+
+    field.closest("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await nextTick();
+
+    await vi.waitFor(() => expect(vi.mocked(filesList)).toHaveBeenCalledWith(HANDLE, "/etc"));
+  });
+
+  it("opens the field from anywhere in the panel with the address-bar key", async () => {
+    const root = host.firstElementChild;
+    if (root === null) {
+      throw new Error("the panel drew nothing");
+    }
+
+    root.dispatchEvent(new KeyboardEvent("keydown", { key: "l", ctrlKey: true, bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(host.querySelector<HTMLInputElement>('input[placeholder="Path"]')?.value).toBe("/home/user");
+  });
+
+  it("puts the breadcrumbs back without navigating when the field is abandoned", async () => {
+    const field = await startTypingPath();
+    field.value = "/etc";
+    field.dispatchEvent(new Event("input"));
+    await nextTick();
+
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(host.querySelector('input[placeholder="Path"]'), "the crumbs are back").toBeNull();
+    expect(vi.mocked(filesList)).not.toHaveBeenCalledWith(HANDLE, "/etc");
   });
 });
 

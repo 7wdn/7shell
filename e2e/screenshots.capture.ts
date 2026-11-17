@@ -157,11 +157,13 @@ test("the workspace: a terminal over a real host, with the files beside it", asy
     // And the file panel, pointed at a directory somebody would actually be looking at. A first
     // connection opens it at the far side's root, which on the container this runs against is a
     // scratch pad that the live tests have been writing into since the day it was created.
-    const pathBar = page.getByPlaceholder("Path");
-    if (await pathBar.isVisible().catch(() => false)) {
+    const editPath = page.getByRole("button", { name: "Edit the path" });
+    if (await editPath.isVisible().catch(() => false)) {
+      await editPath.click();
+      const pathBar = page.getByPlaceholder("Path");
       await pathBar.fill("/etc");
       await pathBar.press("Enter");
-      await expect(pathBar).toHaveValue("/etc");
+      await expect(page.getByRole("navigation", { name: "Path" }).getByRole("button", { name: "etc" })).toBeVisible();
       await page.waitForTimeout(3000);
     }
 
