@@ -190,6 +190,7 @@ describe("following the connection on screen", () => {
 
     const monitor = useMonitorStore();
     expect(monitor.target?.handle).toBe("t1");
+    expect(monitor.available, "an SSH terminal is something to watch").toBe(true);
 
     monitor.start();
     await settle();
@@ -208,6 +209,7 @@ describe("following the connection on screen", () => {
     const monitor = useMonitorStore();
 
     expect(monitor.target).toBeNull();
+    expect(monitor.available, "and the panel has nothing to stand over").toBe(false);
     monitor.start();
     await settle();
 
@@ -228,7 +230,31 @@ describe("following the connection on screen", () => {
     await settle();
 
     expect(monitor.target).toBeNull();
+    expect(monitor.available).toBe(false);
     expect(monitor.sample).toBeNull();
+  });
+
+  it("goes away on a terminal with no SSH channel and comes back with one", () => {
+    const localShell: Session = {
+      ...session,
+      id: "session-local",
+      name: "local",
+      protocol: "local",
+      host: "",
+      port: 0,
+      user: "",
+    };
+    workspaceWith([localShell, session], (entry) => `t-${entry.id}`);
+
+    const monitor = useMonitorStore();
+    expect(monitor.available, "the SSH terminal is the one on screen").toBe(true);
+
+    const terminals = useTerminalsStore();
+    terminals.activate("tab-1");
+    expect(monitor.available, "a local shell has no SSH channel to sample").toBe(false);
+
+    terminals.activate("tab-2");
+    expect(monitor.available, "and the panel comes back with the SSH terminal").toBe(true);
   });
 
   it("drops the readings of a session that is no longer the one on screen", async () => {

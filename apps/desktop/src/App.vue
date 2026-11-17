@@ -55,6 +55,7 @@ import { useBatchStore } from "@/stores/batch";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useFilesStore } from "@/stores/files";
 import { useMcpStore } from "@/stores/mcp";
+import { useMonitorStore } from "@/stores/monitor";
 import { backend } from "@/lib/backend/api";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
@@ -74,6 +75,7 @@ const editor = useSessionEditorStore();
 const library = useSessionsStore();
 const updates = useUpdatesStore();
 const mcp = useMcpStore();
+const monitor = useMonitorStore();
 const assistant = useAssistantStore();
 
 /**
@@ -633,7 +635,7 @@ onBeforeUnmount(() => {
         panel appearing and disappearing is also what starts and stops the sampling. Nothing is
         asked of a host while the setting is off.
       -->
-      <MonitorPanel v-if="preferences.monitorEnabled" />
+      <MonitorPanel v-if="preferences.monitorEnabled && monitor.available" />
 
       <!--
         The assistant, docked at the window's right edge beside the monitor: a conversation about

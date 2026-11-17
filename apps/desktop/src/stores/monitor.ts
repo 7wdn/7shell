@@ -209,6 +209,17 @@ export const useMonitorStore = defineStore("monitor", () => {
     };
   });
 
+  /**
+   * Whether the tab on screen has anything a sample can ride.
+   *
+   * A local shell, a serial console, a Telnet line, a container or cluster page and the settings
+   * page all have no SSH channel for the monitor's command, so the panel is mounted only while
+   * this is true. Being switched off here is not the same as the person switching it off: the
+   * preference is left alone, which is what brings the panel back when an SSH terminal is on
+   * screen again.
+   */
+  const available = computed(() => target.value !== null);
+
   /** Every interface the host reported, in the order it reported them. */
   const interfaces = computed(() => sample.value?.network.map((entry) => entry.name) ?? []);
 
@@ -587,6 +598,7 @@ export const useMonitorStore = defineStore("monitor", () => {
     socketFailure,
     readingSockets,
     target,
+    available,
     start,
     stop,
     selectInterface,
