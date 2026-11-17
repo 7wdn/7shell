@@ -1,7 +1,6 @@
-// Converts CSS lab() colours to sRGB and adds legacy fallbacks for color-mix().
-// Packaging-only: the desktop build keeps its wide-gamut values.
-const fs = require("fs");
-const path = require("path");
+// Converts CSS lab() colours to sRGB, for the browser package's colour fallbacks.
+// Packaging-only: the desktop build keeps its wide-gamut values. This file is a library — the
+// conversion itself lives in legacy-css.cjs — so requiring it must do nothing on its own.
 
 function labToSrgb(L, a, b) {
   const fy = (L + 16) / 116;
@@ -36,16 +35,4 @@ function labToCss(match, L, a, b, alpha) {
   return `rgba(${r}, ${g}, ${bl}, ${Number(value.toFixed(3))})`;
 }
 
-function inspect(input) {
-  const css = fs.readFileSync(input, "utf8");
-  const out = css.replace(labPattern, labToCss);
-  const labs = (out.match(/lab\(/g) || []).length;
-  console.log("lab remaining:", labs);
-  const sample = [...out.matchAll(/--(?:background|foreground|border|primary):(rgba?\([^)]*\))/g)].slice(0, 8);
-  for (const m of sample) console.log(m[0]);
-  fs.writeFileSync("D:/Develop/Projects/Individual/SevenShell/.scratch/web-build/legacy-converted.css", out);
-}
-
-const input = process.argv[2];
-if (input) inspect(input);
 module.exports = { labToSrgb, labToCss, labPattern };

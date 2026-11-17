@@ -30,6 +30,14 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
 
+      # The packaging tools come from the branch this workflow runs on, not from the tag: a fix to
+      # them must not require re-tagging a release that is already published. The application
+      # source stays the tag's — that is what the package is built from.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          path: .web-tools
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -55,12 +63,12 @@ jobs:
             exit 1
           fi
           for css in "${css_files[@]}"; do
-            node scripts/web-build/legacy-css.cjs "$css" "$css.legacy"
+            node .web-tools/scripts/web-build/legacy-css.cjs "$css" "$css.legacy"
             mv "$css.legacy" "$css"
           done
 
       - name: Build the Debian 10 image
-        run: docker build -t 7shell-web-build:debian10 scripts/web-build
+        run: docker build -t 7shell-web-build:debian10 .web-tools/scripts/web-build
 
       - name: Build the browser host and the bridge
         run: |
@@ -83,7 +91,7 @@ jobs:
             -e WEB_BUILD=/src/.scratch/web-build \
             -e VERSION="$VERSION" \
             7shell-web-build:debian10 \
-            bash /src/scripts/web-build/assemble.sh | tee "$RUNNER_TEMP/assemble.log"
+            bash /src/.web-tools/scripts/web-build/assemble.sh | tee "$RUNNER_TEMP/assemble.log"
 
           TAR="$GITHUB_WORKSPACE/.scratch/web-build/7Shell_${VERSION}_amd64-web.tar.gz"
           test -f "$TAR"
