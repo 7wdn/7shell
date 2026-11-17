@@ -18,14 +18,16 @@
 import {
   ArrowUp,
   ChevronRight,
+  Download,
   File,
+  FilePlus,
   FileSymlink,
   Folder,
   ClipboardPaste,
   FolderPlus,
   HardDrive,
   LoaderCircle,
-  Pencil,
+  RefreshCw,
   Upload,
   X,
 } from "@lucide/vue";
@@ -328,6 +330,14 @@ function onPathFocusOut(event: FocusEvent): void {
     return;
   }
   cancelPathEdit();
+}
+
+/** Reads the directory again, which is what brings in what somebody else has changed meanwhile. */
+function refreshListing(): void {
+  const path = browser.value?.path;
+  if (path !== undefined) {
+    void files.navigate(props.handle, path);
+  }
 }
 
 /**
@@ -1301,26 +1311,15 @@ function openAreaMenu(event: MouseEvent): void {
 <template>
   <div v-if="browser" class="flex min-h-0 flex-1 flex-col" @keydown="onBrowserKey">
     <header class="shrink-0 border-b border-border px-3 py-[var(--panel-header-y)]">
-      <div class="flex items-center gap-1.5">
-        <button
-          type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="parent === null"
-          :title="t('files.up')"
-          :aria-label="t('files.up')"
-          @click="parent && go(parent)"
-        >
-          <ArrowUp :size="13" />
-        </button>
-
+      <div class="flex items-center gap-1">
         <!--
-          One bar, two states. The breadcrumbs are the path a person reads and clicks; the field is
-          the same path when they want to write one. The empty part of the bar and the pencil are
-          the ways in, and Ctrl+L is the keyboard's.
+          One bar, two states, drawn as one field the way a file manager's address bar is: the
+          breadcrumbs are the path a person reads and clicks, and the empty part of the bar or
+          Ctrl+L turns it into the field that writes one.
         -->
         <form
           v-if="editingPath"
-          class="flex min-w-0 flex-1 items-center gap-1.5"
+          class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-muted/40 px-1.5 py-0.5"
           @submit.prevent="submitTypedPath()"
           @focusout="onPathFocusOut"
         >
@@ -1329,22 +1328,19 @@ function openAreaMenu(event: MouseEvent): void {
             v-model="typedPath"
             type="text"
             spellcheck="false"
-            class="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-0.5 font-mono text-[11px] focus:outline-none"
+            class="min-w-0 flex-1 bg-transparent px-1 py-0.5 font-mono text-[11px] focus:outline-none"
             :aria-label="t('files.path')"
             :placeholder="t('files.path')"
             @keydown.esc.prevent.stop="cancelPathEdit()"
           />
-          <button
-            type="submit"
-            class="shrink-0 rounded-md border border-border px-2.5 py-1 text-[11px] transition-colors hover:bg-accent"
-          >
+          <button type="submit" class="shrink-0 rounded px-2 py-0.5 text-[11px] transition-colors hover:bg-accent">
             {{ t("files.go") }}
           </button>
         </form>
 
         <nav
           v-else
-          class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto"
+          class="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-md bg-muted/40 px-1.5 py-1"
           :aria-label="t('files.path')"
           @click.self="startPathEdit()"
         >
@@ -1365,46 +1361,78 @@ function openAreaMenu(event: MouseEvent): void {
           </template>
         </nav>
 
-        <button
-          v-if="!editingPath"
-          type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          :title="t('files.pathEdit')"
-          :aria-label="t('files.pathEdit')"
-          @click="startPathEdit()"
-        >
-          <Pencil :size="12" />
-        </button>
-
         <LoaderCircle v-if="browser.loading" :size="12" class="shrink-0 animate-spin text-muted-foreground" />
 
         <FileBookmarksMenu :path="browser.path" @jump="go" />
 
         <button
           type="button"
-          class="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-          @click="startNew('folder')"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="browser.loading"
+          :title="t('files.refresh')"
+          :aria-label="t('files.refresh')"
+          @click="refreshListing()"
         >
-          <FolderPlus :size="12" />
-          {{ t("files.newFolder") }}
-        </button>
-        <button
-          type="button"
-          class="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-          @click="upload()"
-        >
-          <Upload :size="12" />
-          {{ t("files.upload") }}
+          <RefreshCw :size="12" />
         </button>
 
         <button
           type="button"
-          class="flex shrink-0 items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="parent === null"
+          :title="t('files.up')"
+          :aria-label="t('files.up')"
+          @click="parent && go(parent)"
+        >
+          <ArrowUp :size="13" />
+        </button>
+
+        <button
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('files.newFile')"
+          :aria-label="t('files.newFile')"
+          @click="startNew('file')"
+        >
+          <FilePlus :size="12" />
+        </button>
+        <button
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('files.newFolder')"
+          :aria-label="t('files.newFolder')"
+          @click="startNew('folder')"
+        >
+          <FolderPlus :size="12" />
+        </button>
+        <button
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          :disabled="chosen.length === 0"
+          :title="t('files.action.download')"
+          :aria-label="t('files.action.download')"
+          @click="download(chosen, supportsPacked && preferences.packedTransfer)"
+        >
+          <Download :size="12" />
+        </button>
+        <button
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('files.upload')"
+          :aria-label="t('files.upload')"
+          @click="upload()"
+        >
+          <Upload :size="12" />
+        </button>
+
+        <button
+          type="button"
+          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           :title="t('files.paste.title', { shortcut: pasteShortcut })"
+          :aria-label="t('files.paste.label')"
           @click="pasteFiles()"
         >
-          <ClipboardPaste :size="11" />
-          {{ t("files.paste.label") }}
+          <ClipboardPaste :size="12" />
         </button>
       </div>
 

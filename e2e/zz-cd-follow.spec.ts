@@ -131,8 +131,9 @@ test("the panel follows a cd into a subdirectory, not only into a top-level one"
     await page.getByRole("button", { name: "Send to this session" }).click();
     await expect(crumbs.getByRole("button", { name: "etc", exact: true })).toBeVisible({ timeout: 20_000 });
 
-    // The one bar is also the field: the pencil opens it, and Enter takes what was typed.
-    await page.getByRole("button", { name: "Edit the path" }).filter({ visible: true }).click();
+    // The one bar is also the field: the keyboard's way in is Ctrl+L, and Enter takes what was typed.
+    await page.getByRole("listbox", { name: "Files", exact: true }).filter({ visible: true }).focus();
+    await page.keyboard.press("Control+L");
     const field = page.getByPlaceholder("Path").filter({ visible: true });
     await field.fill("/data/test");
     await field.press("Enter");

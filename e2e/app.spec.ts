@@ -222,10 +222,18 @@ function breadcrumbs(page: Page): Locator {
   return page.getByRole("navigation", { name: "Path" }).filter({ visible: true });
 }
 
-/** Types a path the way a person does: the pencil opens the bar, Enter takes the field. */
-async function typePath(page: Page, path: string): Promise<void> {
-  await page.getByRole("button", { name: "Edit the path" }).filter({ visible: true }).click();
+/** Opens the address bar as a field: the panel takes the keyboard, and Ctrl+L is the way in. */
+async function openPathField(page: Page): Promise<Locator> {
+  await page.getByRole("listbox", { name: "Files", exact: true }).filter({ visible: true }).focus();
+  await page.keyboard.press("Control+L");
   const field = page.getByPlaceholder("Path").filter({ visible: true });
+  await expect(field).toBeVisible({ timeout: 10_000 });
+  return field;
+}
+
+/** Types a path the way a person does: the bar becomes a field, and Enter takes it. */
+async function typePath(page: Page, path: string): Promise<void> {
+  const field = await openPathField(page);
   await field.fill(path);
   await field.press("Enter");
 }
@@ -237,8 +245,7 @@ async function typePath(page: Page, path: string): Promise<void> {
  * caller polling this does not leave the bar in its typing state.
  */
 async function shownPath(page: Page): Promise<string> {
-  await page.getByRole("button", { name: "Edit the path" }).filter({ visible: true }).click();
-  const field = page.getByPlaceholder("Path").filter({ visible: true });
+  const field = await openPathField(page);
   const value = await field.inputValue();
   await field.press("Escape");
   return value;

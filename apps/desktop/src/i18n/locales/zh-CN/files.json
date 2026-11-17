@@ -8,7 +8,7 @@
     },
     "up": "返回上一级目录",
     "path": "路径",
-    "pathEdit": "编辑路径",
+    "refresh": "刷新当前目录",
     "go": "前往",
     "newFolder": "新建文件夹",
     "newFolderName": "文件夹名称",

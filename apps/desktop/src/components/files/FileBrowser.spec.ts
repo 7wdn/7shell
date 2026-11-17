@@ -77,13 +77,13 @@ async function render(entries: readonly SftpEntry[], props: Record<string, unkno
   await nextTick();
 }
 
-/** Turns the address bar into its field the way the pointer does, and hands the field back. */
+/** Turns the address bar into its field the way the keyboard does, and hands the field back. */
 async function startTypingPath(): Promise<HTMLInputElement> {
-  const edit = host.querySelector<HTMLButtonElement>('button[aria-label="Edit the path"]');
-  if (edit === null) {
-    throw new Error("the panel drew no way into the path field");
+  const root = host.firstElementChild;
+  if (root === null) {
+    throw new Error("the panel drew nothing");
   }
-  edit.click();
+  root.dispatchEvent(new KeyboardEvent("keydown", { key: "l", ctrlKey: true, bubbles: true, cancelable: true }));
   await nextTick();
 
   const field = host.querySelector<HTMLInputElement>('input[placeholder="Path"]');
@@ -869,6 +869,18 @@ describe("the address bar", () => {
     await render(unsorted);
   });
 
+  it("becomes a field when the empty part of the bar is clicked", async () => {
+    const bar = host.querySelector('nav[aria-label="Path"]');
+    if (bar === null) {
+      throw new Error("the panel drew no address bar");
+    }
+
+    bar.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(host.querySelector<HTMLInputElement>('input[placeholder="Path"]')?.value).toBe("/home/user");
+  });
+
   it("becomes a field holding the path the panel is showing", async () => {
     const field = await startTypingPath();
 
@@ -888,15 +900,9 @@ describe("the address bar", () => {
   });
 
   it("opens the field from anywhere in the panel with the address-bar key", async () => {
-    const root = host.firstElementChild;
-    if (root === null) {
-      throw new Error("the panel drew nothing");
-    }
+    const field = await startTypingPath();
 
-    root.dispatchEvent(new KeyboardEvent("keydown", { key: "l", ctrlKey: true, bubbles: true, cancelable: true }));
-    await nextTick();
-
-    expect(host.querySelector<HTMLInputElement>('input[placeholder="Path"]')?.value).toBe("/home/user");
+    expect(field.value).toBe("/home/user");
   });
 
   it("puts the breadcrumbs back without navigating when the field is abandoned", async () => {
@@ -910,6 +916,25 @@ describe("the address bar", () => {
 
     expect(host.querySelector('input[placeholder="Path"]'), "the crumbs are back").toBeNull();
     expect(vi.mocked(filesList)).not.toHaveBeenCalledWith(HANDLE, "/etc");
+  });
+});
+
+/** The strip above the listing: what each button offers, and what it needs first. */
+describe("the buttons above the listing", () => {
+  beforeEach(async () => {
+    await render(unsorted);
+  });
+
+  it("offers the download only once something is chosen below", async () => {
+    const downloadButton = (): HTMLButtonElement | null =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Download"]');
+    expect(downloadButton(), "the strip drew no download button").not.toBeNull();
+
+    expect(downloadButton()?.disabled, "nothing is chosen, so there is nothing to take").toBe(true);
+
+    await clickRow(0);
+
+    expect(downloadButton()?.disabled).toBe(false);
   });
 });
 
