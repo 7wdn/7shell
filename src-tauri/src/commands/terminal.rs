@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -186,9 +186,9 @@ fn notice(app: &AppHandle, handle: &str, kind: &'static str, name: Option<String
 /// dialog and a file to send needs a native picker, and this is the layer that owns both. The
 /// protocol sees only bytes; the choice of where they land is made by a person, in this process.
 ///
-/// The protocol itself is tested in `sevenshell-term` against scripted peers. A real `rz`/`sz`
-/// session is a manual acceptance step: the lab has no `lrzsz`, and the two native dialogs cannot
-/// be driven by Playwright.
+/// The detector advances only when it is fed. A send that is waiting on a file read produces no
+/// terminal output of its own, so an empty feed is given to every active session on a short tick;
+/// without it a real `rz` receives the ZDATA header and then waits forever for the file.
 pub fn pump_events(
     app: AppHandle,
     core: Arc<Core>,
@@ -196,20 +196,33 @@ pub fn pump_events(
 ) {
     tauri::async_runtime::spawn(async move {
         let mut sessions: HashMap<String, ZmodemSession> = HashMap::new();
-        while let Some(event) = events.recv().await {
-            match event.event {
-                sevenshell_session::TerminalEvent::Data(bytes) => {
-                    let state = sessions.entry(event.handle.clone()).or_default();
-                    feed_zmodem(&app, &core, &event.handle, state, bytes).await;
+        let mut ticker = tokio::time::interval(Duration::from_millis(25));
+        loop {
+            tokio::select! {
+                event = events.recv() => {
+                    let Some(event) = event else { break };
+                    match event.event {
+                        sevenshell_session::TerminalEvent::Data(bytes) => {
+                            let state = sessions.entry(event.handle.clone()).or_default();
+                            feed_zmodem(&app, &core, &event.handle, state, bytes).await;
+                        }
+                        sevenshell_session::TerminalEvent::Closed { reason } => {
+                            sessions.remove(&event.handle);
+                            let payload = TerminalClosed {
+                                handle: event.handle,
+                                reason,
+                            };
+                            if let Err(error) = app.emit("terminal:closed", payload) {
+                                log::warn!("a terminal ending could not be delivered: {error}");
+                            }
+                        }
+                    }
                 }
-                sevenshell_session::TerminalEvent::Closed { reason } => {
-                    sessions.remove(&event.handle);
-                    let payload = TerminalClosed {
-                        handle: event.handle,
-                        reason,
-                    };
-                    if let Err(error) = app.emit("terminal:closed", payload) {
-                        log::warn!("a terminal ending could not be delivered: {error}");
+                _ = ticker.tick() => {
+                    for (handle, session) in sessions.iter_mut() {
+                        if session.detector.active().is_some() {
+                            feed_zmodem(&app, &core, handle, session, Vec::new()).await;
+                        }
                     }
                 }
             }

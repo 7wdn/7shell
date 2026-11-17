@@ -104,6 +104,9 @@ let stopZmodem: (() => void) | undefined;
 let stopMcpEvents: (() => void) | undefined;
 let stopAssistantEvents: (() => void) | undefined;
 
+/** The terminal whose `rz` is waiting for the page to pick a file. */
+const zmodemChoice = ref<string | null>(null);
+
 /**
  * Says what a ZMODEM session is doing, because its file traffic never reaches the transfer list.
  *
@@ -113,6 +116,11 @@ let stopAssistantEvents: (() => void) | undefined;
 function reportZmodem(event: ZmodemEvent): void {
   const name = event.name ?? "";
   switch (event.kind) {
+    case "choose":
+      if (!isDesktopRuntime()) {
+        zmodemChoice.value = event.handle;
+      }
+      break;
     case "receiving":
       toast(t("terminal.zmodem.receiving", { name }), "confirmation");
       break;
@@ -123,7 +131,19 @@ function reportZmodem(event: ZmodemEvent): void {
       toast(t("terminal.zmodem.sent", { name }), "confirmation");
       break;
     case "done":
-      toast(t("terminal.zmodem.done", { name }), "confirmation");
+      if (event.token) {
+        backend.files.saveBrowserDownload(event.token, name);
+        toast(t("terminal.zmodem.done", { name }), "confirmation", {
+          label: t("terminal.zmodem.saveAction"),
+          onClick: () => {
+            if (event.token) {
+              backend.files.saveBrowserDownload(event.token, name);
+            }
+          },
+        });
+      } else {
+        toast(t("terminal.zmodem.done", { name }), "confirmation");
+      }
       break;
     case "finished":
       toast(t("terminal.zmodem.finished"), "confirmation");
@@ -139,6 +159,29 @@ function reportZmodem(event: ZmodemEvent): void {
       break;
     default:
       break;
+  }
+}
+
+/** The picker runs from the dialog's own button, while the page still has the person's click. */
+async function pickZmodemFile(): Promise<void> {
+  const handle = zmodemChoice.value;
+  zmodemChoice.value = null;
+  if (!handle) {
+    return;
+  }
+  try {
+    await backend.terminal.zmodemSend(handle);
+  } catch {
+    await backend.terminal.zmodemCancel(handle).catch(() => {});
+    toast(t("terminal.zmodem.chooseFailed"), "failure");
+  }
+}
+
+function cancelZmodemChoice(): void {
+  const handle = zmodemChoice.value;
+  zmodemChoice.value = null;
+  if (handle) {
+    void backend.terminal.zmodemCancel(handle).catch(() => {});
   }
 }
 
@@ -639,6 +682,20 @@ onBeforeUnmount(() => {
       it may be put away while the question is on screen.
     -->
     <ImportPassphraseDialog :question="library.importQuestion" @answer="library.answerImportPassphrase" />
+
+    <!--
+      A remote `rz` is waiting for a file. The picker belongs to a person's click, which is why
+      this question stays on screen instead of opening one from the event itself.
+    -->
+    <ConfirmDialog
+      v-if="zmodemChoice"
+      :open="true"
+      :title="t('terminal.zmodem.chooseTitle')"
+      :message="t('terminal.zmodem.choose')"
+      :confirm-label="t('terminal.zmodem.chooseAction')"
+      @confirm="pickZmodemFile()"
+      @update:open="cancelZmodemChoice()"
+    />
 
     <!--
       An upload that would replace a name already on the far side. Answering "no" tells the backend

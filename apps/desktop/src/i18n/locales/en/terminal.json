@@ -47,6 +47,11 @@
       "sent": "Sent {name} over ZMODEM.",
       "done": "Received {name} over ZMODEM.",
       "finished": "The ZMODEM transfer finished.",
+      "chooseTitle": "Send a file over ZMODEM",
+      "choose": "The remote side is waiting for a file. Choose one to send.",
+      "chooseAction": "Choose file",
+      "chooseFailed": "The file could not be chosen for ZMODEM.",
+      "saveAction": "Save file",
       "skipped": "ZMODEM skipped {name}: {reason}",
       "failed": "The ZMODEM transfer failed: {detail}",
       "cancelled": "The ZMODEM transfer was cancelled."

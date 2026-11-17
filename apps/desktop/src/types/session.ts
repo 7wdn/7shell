@@ -319,6 +319,7 @@ export interface ZmodemEvent {
   readonly handle: string;
   readonly kind:
     | "started"
+    | "choose"
     | "receiving"
     | "sending"
     | "sent"
@@ -329,6 +330,8 @@ export interface ZmodemEvent {
     | "cancelled";
   readonly name?: string;
   readonly detail?: string;
+  /** A staged download the page can save, on a received browser file. */
+  readonly token?: string;
 }
 
 /** What an entry in a remote directory is. */

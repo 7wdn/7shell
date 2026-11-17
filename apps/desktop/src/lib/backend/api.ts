@@ -926,6 +926,27 @@ export const backend = {
       forward("terminal_resize", () => desktop.terminalResize(handle, columns, rows)),
     close: (handle: string): Promise<void> => forward("terminal_close", () => desktop.terminalClose(handle)),
     openTerminals: (): Promise<OpenTerminal[]> => forward("terminals_open", () => desktop.terminalsOpen()),
+    /** Browser-only: asks the page for a file and hands the staged bytes to a waiting `rz`. */
+    zmodemSend: (handle: string): Promise<void> =>
+      forward("zmodem_send_staged", async () => {
+        if (isDesktopRuntime()) {
+          return;
+        }
+        const [file] = await pickBrowserFiles(false);
+        if (!file) {
+          await webInvoke<void>("zmodem_cancel", { handle });
+          return;
+        }
+        const staged = await stageBrowserFile(file);
+        await webInvoke<void>("zmodem_send_staged", { handle, token: staged.token });
+      }),
+    /** Browser-only: tells a waiting `rz` that the page is not going to choose a file. */
+    zmodemCancel: (handle: string): Promise<void> =>
+      forward("zmodem_cancel", async () => {
+        if (!isDesktopRuntime()) {
+          await webInvoke<void>("zmodem_cancel", { handle });
+        }
+      }),
 
     /** The shells this machine can start, for the local-terminal picker. */
     localShells: (): Promise<LocalShell[]> => forward("terminal_local_shells", () => desktop.terminalLocalShells()),

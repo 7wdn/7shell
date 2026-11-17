@@ -51,6 +51,7 @@ mod jsonl;
 mod mcp;
 mod policy;
 mod sync;
+mod zmodem;
 
 const HELP: &str = r#"Usage: sshell-web [OPTION]
 
@@ -66,9 +67,9 @@ Environment variables:
 "#;
 
 #[derive(Clone)]
-struct StagedFile {
-    path: PathBuf,
-    name: String,
+pub(crate) struct StagedFile {
+    pub(crate) path: PathBuf,
+    pub(crate) name: String,
 }
 
 struct PendingUpload {
@@ -104,9 +105,10 @@ struct WebState {
     tools: Arc<agent::ToolRuntime>,
     ai: Arc<ai::AiRuntime>,
     mcp: Arc<mcp::McpRuntime>,
-    staging: tokio::sync::Mutex<HashMap<String, StagedFile>>,
+    staging: Arc<tokio::sync::Mutex<HashMap<String, StagedFile>>>,
     pending_uploads: tokio::sync::Mutex<HashMap<String, PendingUpload>>,
     browser_downloads: tokio::sync::Mutex<HashMap<String, PathBuf>>,
+    zmodem: Arc<zmodem::Zmodem>,
 }
 
 #[derive(Deserialize)]
@@ -525,6 +527,24 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
         "terminal_close" => {
             let handle: String = from_args(&args, "handle")?;
             state.core.close_terminal(&handle).await?;
+            Ok(Value::Null)
+        }
+        "zmodem_send_staged" => {
+            let handle: String = from_args(&args, "handle")?;
+            let token: String = from_args(&args, "token")?;
+            let path = state
+                .staging
+                .lock()
+                .await
+                .get(&token)
+                .map(|file| file.path.clone())
+                .ok_or_else(|| ShellError::app_internal("a staged ZMODEM file is no longer available"))?;
+            state.zmodem.send_file(&handle, path).await?;
+            Ok(Value::Null)
+        }
+        "zmodem_cancel" => {
+            let handle: String = from_args(&args, "handle")?;
+            state.zmodem.cancel(&handle).await;
             Ok(Value::Null)
         }
         "terminals_open" => to_value(state.core.open_terminals().await),
@@ -1358,7 +1378,7 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
     }
 }
 
-fn staging_root() -> PathBuf {
+pub(crate) fn staging_root() -> PathBuf {
     sevenshell_platform::config_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("web-staging")
@@ -1522,18 +1542,20 @@ async fn stream_events(mut socket: WebSocket, mut receiver: broadcast::Receiver<
     }
 }
 
-async fn pump_core_events(mut receiver: mpsc::Receiver<CoreEvent>, events: broadcast::Sender<String>) {
+async fn pump_core_events(
+    mut receiver: mpsc::Receiver<CoreEvent>,
+    events: broadcast::Sender<String>,
+    zmodem: Arc<zmodem::Zmodem>,
+) {
     while let Some(event) = receiver.recv().await {
-        let (name, payload) = match event.event {
-            TerminalEvent::Data(bytes) => (
-                "terminal:data",
-                json!({ "handle": event.handle, "base64": BASE64.encode(bytes) }),
-            ),
+        match event.event {
+            TerminalEvent::Data(bytes) => zmodem.feed(&event.handle, bytes).await,
             TerminalEvent::Closed { reason } => {
-                ("terminal:closed", json!({ "handle": event.handle, "reason": reason }))
+                zmodem.forget(&event.handle).await;
+                let payload = json!({ "handle": event.handle, "reason": reason });
+                let _ = events.send(json!({ "event": "terminal:closed", "payload": payload }).to_string());
             }
-        };
-        let _ = events.send(json!({ "event": name, "payload": payload }).to_string());
+        }
     }
 }
 
@@ -1561,7 +1583,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vault = Arc::new(Vault::open_at(vault_path));
     let (core, core_events) = Core::new(Arc::clone(&vault));
     let (event_sender, _) = broadcast::channel(512);
-    tokio::spawn(pump_core_events(core_events, event_sender.clone()));
+    let staging = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    let zmodem = Arc::new(zmodem::Zmodem::new(core.clone(), event_sender.clone(), staging.clone()));
+    zmodem.spawn_ticker();
+    tokio::spawn(pump_core_events(core_events, event_sender.clone(), zmodem.clone()));
 
     let policy_log = Arc::new(match policy::default_path() {
         Ok(path) => policy::PolicyLog::new(path),
@@ -1606,9 +1631,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tools,
         ai,
         mcp,
-        staging: tokio::sync::Mutex::new(HashMap::new()),
+        staging,
         pending_uploads: tokio::sync::Mutex::new(HashMap::new()),
         browser_downloads: tokio::sync::Mutex::new(HashMap::new()),
+        zmodem,
     });
     let app = Router::new()
         .route("/invoke", post(invoke))

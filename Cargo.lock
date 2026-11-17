@@ -5543,6 +5543,7 @@ dependencies = [
  "sevenshell-session",
  "sevenshell-ssh",
  "sevenshell-sync",
+ "sevenshell-term",
  "sevenshell-types",
  "sevenshell-vault",
  "sha2 0.10.9",

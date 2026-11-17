@@ -47,6 +47,11 @@
       "sent": "{name} 已通过 ZMODEM 发送。",
       "done": "已通过 ZMODEM 接收 {name}。",
       "finished": "ZMODEM 传输已完成。",
+      "chooseTitle": "通过 ZMODEM 发送文件",
+      "choose": "远端正在等待一个文件，选择一个发送。",
+      "chooseAction": "选择文件",
+      "chooseFailed": "无法选择 ZMODEM 文件。",
+      "saveAction": "保存文件",
       "skipped": "ZMODEM 跳过了 {name}：{reason}",
       "failed": "ZMODEM 传输失败：{detail}",
       "cancelled": "ZMODEM 传输已取消。"
