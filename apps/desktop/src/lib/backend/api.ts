@@ -525,17 +525,23 @@ export const backend = {
         }
         return uploadStagedFiles(handle, directory, files, packed);
       }),
-    downloadBrowser: (handle: string, paths: readonly string[], packed: boolean): Promise<void> =>
+    /** Starts a browser download and answers the transfer the panel should watch. */
+    startBrowserDownload: (handle: string, paths: readonly string[], packed: boolean): Promise<string | null> =>
       forward("files_download_browser", async () => {
-        const answer = await webInvoke<{ files: { token: string; name: string }[] }>("files_download_browser", {
+        const answer = await webInvoke<{ transferId: string | null }>("files_download_browser", {
           handle,
           paths: [...paths],
           packed,
         });
-        for (const file of answer.files) {
-          saveBrowserFile(file.token, file.name);
-        }
+        return answer.transferId;
       }),
+    /** Reads a running download's progress; a finished one answers the files the page should save. */
+    takeBrowserDownload: (
+      transferId: string,
+    ): Promise<{ state: "running" | "done"; files: { token: string; name: string }[] }> =>
+      forward("files_download_browser_take", () => webInvoke("files_download_browser_take", { transferId })),
+    /** Hands one finished browser download to the page's own download mechanism. */
+    saveBrowserDownload: (token: string, name: string): void => saveBrowserFile(token, name),
   },
 
   transfers: {

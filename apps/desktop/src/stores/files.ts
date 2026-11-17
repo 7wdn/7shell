@@ -492,8 +492,27 @@ export const useFilesStore = defineStore("files", () => {
     transferFailure.value = null;
     try {
       if (!isDesktopRuntime()) {
-        await backend.files.downloadBrowser(handle, paths, packed);
-        return;
+        const transferId = await backend.files.startBrowserDownload(handle, paths, packed);
+        if (transferId === null) {
+          return;
+        }
+        await refreshTransfers();
+        const deadline = Date.now() + 15 * 60_000;
+        for (;;) {
+          const answer = await backend.files.takeBrowserDownload(transferId);
+          await refreshTransfers();
+          if (answer.state === "done") {
+            for (const file of answer.files) {
+              backend.files.saveBrowserDownload(file.token, file.name);
+            }
+            return;
+          }
+          if (Date.now() > deadline) {
+            await backend.transfers.stop(transferId).catch(() => {});
+            throw new Error("the download did not finish in time");
+          }
+          await new Promise((resolve) => setTimeout(resolve, TRANSFER_POLL_MS));
+        }
       }
       const ids = await backend.files.download(handle, paths, title, suggestedName, packed);
       if (ids.length > 0) {

@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{broadcast, mpsc};
@@ -106,6 +106,7 @@ struct WebState {
     mcp: Arc<mcp::McpRuntime>,
     staging: tokio::sync::Mutex<HashMap<String, StagedFile>>,
     pending_uploads: tokio::sync::Mutex<HashMap<String, PendingUpload>>,
+    browser_downloads: tokio::sync::Mutex<HashMap<String, PathBuf>>,
 }
 
 #[derive(Deserialize)]
@@ -676,7 +677,7 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             let paths: Vec<String> = from_args(&args, "paths")?;
             let packed: bool = from_args(&args, "packed")?;
             if paths.is_empty() {
-                return Ok(json!({ "files": [] }));
+                return Ok(json!({ "transferId": null }));
             }
 
             let directory = staging_root().join(format!("download-{}", uuid::Uuid::new_v4().simple()));
@@ -692,27 +693,41 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             } else {
                 state.core.start_download_into(&handle, &paths[0], &directory).await?
             };
-
-            let deadline = Instant::now() + Duration::from_secs(900);
-            loop {
-                if let Some(row) = state.core.transfers().await.into_iter().find(|row| row.id == id) {
-                    match row.state {
-                        TransferState::Done => break,
-                        TransferState::Failed { detail } => {
-                            return Err(ShellError::sftp_transfer_failed(&paths[0], detail));
-                        }
-                        TransferState::Cancelled => {
-                            return Err(ShellError::app_internal("the download was stopped"));
-                        }
-                        _ => {}
-                    }
+            state.browser_downloads.lock().await.insert(id.clone(), directory);
+            Ok(json!({ "transferId": id }))
+        }
+        "files_download_browser_take" => {
+            let transfer_id: String = from_args(&args, "transferId")?;
+            let directory = state
+                .browser_downloads
+                .lock()
+                .await
+                .get(&transfer_id)
+                .cloned()
+                .ok_or_else(|| ShellError::app_internal("that browser download is no longer waiting"))?;
+            let row = state
+                .core
+                .transfers()
+                .await
+                .into_iter()
+                .find(|row| row.id == transfer_id)
+                .ok_or_else(|| ShellError::app_internal("that browser download is no longer in the list"))?;
+            match row.state {
+                TransferState::Done => {}
+                TransferState::Failed { detail } => {
+                    state.browser_downloads.lock().await.remove(&transfer_id);
+                    let _ = tokio::fs::remove_dir_all(&directory).await;
+                    return Err(ShellError::sftp_transfer_failed(&row.remote_path, detail));
                 }
-                if Instant::now() >= deadline {
-                    return Err(ShellError::app_internal("the download did not finish in time"));
+                TransferState::Cancelled => {
+                    state.browser_downloads.lock().await.remove(&transfer_id);
+                    let _ = tokio::fs::remove_dir_all(&directory).await;
+                    return Err(ShellError::app_internal("the download was stopped"));
                 }
-                tokio::time::sleep(Duration::from_millis(200)).await;
+                _ => return Ok(json!({ "state": "running", "files": [] })),
             }
 
+            state.browser_downloads.lock().await.remove(&transfer_id);
             let mut files = Vec::new();
             let mut entries = tokio::fs::read_dir(&directory)
                 .await
@@ -739,9 +754,8 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             if files.is_empty() {
                 return Err(ShellError::app_internal("the download produced no file"));
             }
-            Ok(json!({ "files": files }))
+            Ok(json!({ "state": "done", "files": files }))
         }
-
         "transfers_open" => to_value(state.core.transfers().await),
         "transfer_stop" => {
             let id: String = from_args(&args, "id")?;
@@ -1594,6 +1608,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         mcp,
         staging: tokio::sync::Mutex::new(HashMap::new()),
         pending_uploads: tokio::sync::Mutex::new(HashMap::new()),
+        browser_downloads: tokio::sync::Mutex::new(HashMap::new()),
     });
     let app = Router::new()
         .route("/invoke", post(invoke))
