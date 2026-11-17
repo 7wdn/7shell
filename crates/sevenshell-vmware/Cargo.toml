@@ -1,0 +1,22 @@
+[package]
+name = "sevenshell-vmware"
+description = "VMware Workstation virtual machines through vmrun and Workstation's own inventory."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sevenshell-error = { workspace = true }
+sevenshell-types = { workspace = true }
+encoding_rs = { workspace = true }
+tokio = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# Workstation records where it was installed; a machine with the application on a second drive is
+# otherwise invisible to a command line that only knows the default folder.
+winreg = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

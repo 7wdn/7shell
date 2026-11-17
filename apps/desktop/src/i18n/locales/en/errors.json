@@ -111,6 +111,10 @@
       "commandFailed": "The container runtime rejected {operation}.",
       "notConnected": "That container connection is no longer open."
     },
+    "vmware": {
+      "unavailable": "VMware Workstation's command line is not available on this machine.",
+      "commandFailed": "The VMware command for {operation} did not succeed."
+    },
     "k8s": {
       "unavailable": "The Kubernetes API server could not be reached.",
       "kubeconfigInvalid": "The kubeconfig could not be read.",

@@ -130,6 +130,7 @@ fn lab(decisions: &[ApprovalDecision]) -> Option<Lab> {
         kubernetes: KubernetesSettings::default(),
         webdav: WebDavSettings::default(),
         ftp: FtpSettings::default(),
+        vmware: sevenshell_types::VmwareSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 0,

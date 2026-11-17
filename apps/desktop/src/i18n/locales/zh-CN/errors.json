@@ -111,6 +111,10 @@
       "commandFailed": "容器运行时拒绝了{operation}。",
       "notConnected": "这个容器连接已经关闭。"
     },
+    "vmware": {
+      "unavailable": "这台机器上找不到 VMware Workstation 的命令行。",
+      "commandFailed": "VMware 的{operation}没有成功。"
+    },
     "k8s": {
       "unavailable": "连不上 Kubernetes API 服务器。",
       "kubeconfigInvalid": "无法读取 kubeconfig。",

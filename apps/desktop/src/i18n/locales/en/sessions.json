@@ -9,6 +9,7 @@
       "openDesktopHint": "Open the remote desktop for {name}",
       "openWebdavHint": "Open the WebDAV folder for {name}",
       "openFtpHint": "Open the FTP folder for {name}",
+      "openVmHint": "Open the virtual machine {name}",
       "desktopLaunched": "Opened in Windows Remote Desktop.",
       "connecting": "Connecting to {name}…",
       "system": "Remote system: {name}",
@@ -52,6 +53,7 @@
       "importPassphraseConfirm": "Import",
       "dropOutOfGroups": "Move it out of every group",
       "importExport": "Import / Export",
+      "importVmware": "Import from VMware",
       "collapseAll": "Collapse all",
       "connectCancelled": "Connection cancelled: {name}",
       "connectFailed": "Could not connect to {name}: {reason}",
@@ -122,6 +124,7 @@
         "files": "File services",
         "desktop": "Remote desktop",
         "containers": "Containers & clusters",
+        "virtualization": "Virtual machines",
         "other": "Other"
       },
       "desktop": {
@@ -240,6 +243,20 @@
         "viaSshNone": "Connect directly",
         "viaSshHint": "Optional. When a session is chosen, the API server is reached through it, with that session's credentials and route."
       },
+      "vmware": {
+        "title": "VMware",
+        "machine": "Virtual machine",
+        "machinePick": "Choose a machine from the scan",
+        "machineHint": "Imported from Workstation's inventory. The session keeps the machine's identity, so renaming or moving it in Workstation does not break this entry.",
+        "unknownMachine": "A machine that is no longer in the inventory",
+        "sshUser": "SSH user",
+        "sshUserPlaceholder": "Guest account",
+        "sshPort": "SSH port",
+        "rdpUser": "Desktop user",
+        "rdpUserPlaceholder": "Leave empty to let the client ask",
+        "rdpPort": "RDP port",
+        "hint": "The workspace makes an ordinary SSH or remote-desktop session the first time it connects, and keeps its address up to date. Passwords are stored on that session, not here."
+      },
       "group": "Group",
       "groupNone": "No group",
       "method": "Authentication",
@@ -311,6 +328,7 @@
         "webdavUrl": "Enter a WebDAV address beginning with http:// or https://.",
         "user": "Enter the user to log in as.",
         "port": "The port must be a number between 1 and 65535.",
+        "vmwareId": "Choose a virtual machine from the scan.",
         "key": "Attach a key file for public-key authentication.",
         "serialPort": "Choose a serial port.",
         "serialBaud": "The baud rate must be a whole number between 50 and 4000000.",
@@ -326,6 +344,76 @@
         "record": "Write this session down",
         "recordNote": "A recording is a plain file holding everything the terminal shows, in asciicast format for players such as asciinema. It is kept in the recordings folder beside the settings."
       }
+    },
+    "vmware": {
+      "endpoint": "VMware",
+      "stateLabel": "Power",
+      "state": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "checking": "Checking…"
+      },
+      "toolsLabel": "VMware Tools",
+      "tools": {
+        "running": "Running",
+        "installed": "Installed",
+        "notInstalled": "Not installed",
+        "notRunning": "Not running",
+        "unknown": "Not reported"
+      },
+      "addressLabel": "Address",
+      "addressNone": "Not reported yet",
+      "refresh": "Refresh",
+      "start": "Start",
+      "stop": "Stop",
+      "suspend": "Suspend",
+      "stopTitle": "Stop {name}?",
+      "stopMessage": "The guest is asked to shut down through VMware Tools. Anything it had not saved is lost if the guest cannot answer in time.",
+      "sshTitle": "Terminal",
+      "rdpTitle": "Desktop",
+      "user": "User",
+      "port": "Port",
+      "sshUserPlaceholder": "Guest account",
+      "rdpUserPlaceholder": "Leave empty to let the client ask",
+      "openSsh": "Open SSH",
+      "openRdp": "Open RDP",
+      "hint": "The first open makes an ordinary saved session that reaches the guest; this button keeps its address current. Its password and key are edited there, not here.",
+      "lock": {
+        "hint": "A lock from an unfinished run is still here. Starting will offer to take ownership.",
+        "title": "Take ownership of {name}?",
+        "message": "The machine is not running, but its lock directory is still there — usually left by a run that did not shut down cleanly. Taking ownership removes the lock. Only do this if no Workstation window or other machine is using it: a live machine's lock is what keeps two hypervisors from writing the same disks.",
+        "confirm": "Take ownership and start"
+      },
+      "password": {
+        "title": "Password",
+        "description": "Signing in to {target} over SSH needs a password.",
+        "label": "Password",
+        "placeholder": "Password",
+        "hint": "Stored with that saved session in the vault, so a reconnect does not ask again.",
+        "connect": "Connect"
+      },
+      "connect": {
+        "powerOnFirst": "Start the virtual machine before opening a connection to it.",
+        "noAddress": "The guest has not reported an address yet. Wait for it to boot and VMware Tools to start, then refresh.",
+        "userRequired": "Enter the guest account an SSH connection signs in as."
+      }
+    },
+    "vmwareScan": {
+      "title": "Import from VMware",
+      "description": "Machines in this account's Workstation inventory become saved sessions. Each one opens a workspace with its power state and the two ways to reach the guest.",
+      "rescan": "Scan again",
+      "scanning": "Scanning Workstation…",
+      "empty": "No virtual machines were found in this account's inventory.",
+      "selectAll": "Select all",
+      "machine": "Machine",
+      "guest": "Guest",
+      "state": "State",
+      "running": "Running",
+      "stopped": "Stopped",
+      "alreadyImported": "Already in the list",
+      "selected": "{count} selected",
+      "import": "Import",
+      "imported": "Imported {count} virtual machines."
     },
     "reopen": {
       "title": "Open in a new tab",

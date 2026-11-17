@@ -639,7 +639,7 @@ describe("the rows", () => {
     expect(start?.querySelector("svg")?.getAttribute("width")).toBe("14");
 
     const glyphs = [...host.querySelectorAll<SVGElement>("header > span.shrink-0 button svg")];
-    expect(glyphs.length, "the header carries its five buttons").toBe(5);
+    expect(glyphs.length, "the header carries its six buttons").toBe(6);
     for (const glyph of glyphs) {
       expect(glyph.getAttribute("width"), `${glyph.classList.value} is drawn at the list's size`).toBe("14");
     }

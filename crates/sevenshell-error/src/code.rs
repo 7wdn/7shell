@@ -221,6 +221,12 @@ error_catalog! {
     #[doc = "The container connection this call names is no longer open."]
     ContainerNotConnected => "CONTAINER-NOT-CONNECTED", "errors.container.notConnected";
 
+    // -- VMware ------------------------------------------------------------
+    #[doc = "VMware Workstation's command line could not be found, or could not run."]
+    VmwareUnavailable => "VMWARE-UNAVAILABLE", "errors.vmware.unavailable";
+    #[doc = "A VMware command ran but did not succeed."]
+    VmwareCommandFailed => "VMWARE-COMMAND-FAILED", "errors.vmware.commandFailed";
+
     // -- Kubernetes --------------------------------------------------------
     #[doc = "The Kubernetes API server could not be reached."]
     K8sUnavailable => "K8S-UNAVAILABLE", "errors.k8s.unavailable";

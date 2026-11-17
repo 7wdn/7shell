@@ -229,6 +229,11 @@ impl Core {
                     "this session is a container engine; open it from the container workspace",
                 ));
             }
+            Protocol::Vmware => {
+                return Err(ShellError::app_unsupported(
+                    "this session is a virtual machine; open it from the VM workspace",
+                ));
+            }
             Protocol::Kubernetes => {
                 return Err(ShellError::app_unsupported(
                     "this session is a Kubernetes cluster; open it from the cluster workspace",
@@ -396,6 +401,7 @@ impl Core {
             | Protocol::WebDav
             | Protocol::Ftp
             | Protocol::Container
+            | Protocol::Vmware
             | Protocol::Kubernetes => {
                 unreachable!("only the stream protocols reach this function")
             }
@@ -937,6 +943,7 @@ mod tests {
             kubernetes: sevenshell_types::KubernetesSettings::default(),
             webdav: sevenshell_types::WebDavSettings::default(),
             ftp: sevenshell_types::FtpSettings::default(),
+            vmware: sevenshell_types::VmwareSettings::default(),
             jump: Vec::new(),
             forwards: Vec::new(),
             updated_at: 0,

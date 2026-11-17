@@ -73,6 +73,7 @@ import type {
   AiToolResultEvent,
 } from "@/types/ai";
 import type { HostSystem } from "@/types/system";
+import type { VmInfo, VmPowerAction, VmStatus } from "@/types/vmware";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CreatedKey,
@@ -903,6 +904,19 @@ export const backend = {
       desktop.onK8sStreamLine(listener),
     onStreamEnd: (listener: (payload: K8sStreamEnd) => void): Promise<() => void> => desktop.onK8sStreamEnd(listener),
     onWatch: (listener: (payload: K8sWatchEvent) => void): Promise<() => void> => desktop.onK8sWatch(listener),
+  },
+
+  vmware: {
+    /** Every machine Workstation on this machine knows about. */
+    scan: (): Promise<VmInfo[]> => forward("vmware_scan", () => desktop.vmwareScan()),
+    /** What one machine is doing now, including the guest's address. */
+    status: (vmId: string): Promise<VmStatus> => forward("vmware_status", () => desktop.vmwareStatus(vmId)),
+    /** Starts, stops or suspends one machine. `acknowledged` answers the policy question. */
+    power: (vmId: string, action: VmPowerAction, acknowledged: boolean): Promise<void> =>
+      forward("vmware_power", () => desktop.vmwarePower(vmId, action, acknowledged)),
+    /** Removes the lock an unfinished run left behind, on a machine that is not running. */
+    takeOwnership: (vmId: string, acknowledged: boolean): Promise<void> =>
+      forward("vmware_take_ownership", () => desktop.vmwareTakeOwnership(vmId, acknowledged)),
   },
 
   knownHosts: {

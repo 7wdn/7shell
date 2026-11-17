@@ -106,6 +106,7 @@ export const useSessionsStore = defineStore("sessions", () => {
               tab.kind !== "batch" &&
               tab.kind !== "container" &&
               tab.kind !== "kubernetes" &&
+              tab.kind !== "vmware" &&
               tab.status === "open"),
         )
         .map((tab) => sessionOf(tab))

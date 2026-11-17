@@ -28,6 +28,9 @@ pub enum Subsystem {
     Terminal,
     /// Docker, Podman, nerdctl and WSLC, reached through their command lines.
     Container,
+    /// VMware Workstation, reached through its `vmrun` command line: the machines are local, so a
+    /// failure here is not a network failure.
+    Vmware,
     /// A Kubernetes API server and the kubeconfig used to reach it.
     K8s,
     Fs,
@@ -47,6 +50,7 @@ impl Subsystem {
             Self::Rdp => "rdp",
             Self::Terminal => "terminal",
             Self::Container => "container",
+            Self::Vmware => "vmware",
             Self::K8s => "k8s",
             Self::Fs => "fs",
             Self::Store => "store",
@@ -850,6 +854,19 @@ impl ShellError {
         Self::new(ErrorCode::ContainerNotConnected, Origin::new(Subsystem::Container))
             .with_param("connection", id)
             .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn vmware_unavailable(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::VmwareUnavailable, Origin::new(Subsystem::Vmware))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn vmware_command_failed(operation: &str, detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::VmwareCommandFailed, Origin::new(Subsystem::Vmware))
+            .with_param("operation", operation)
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::Unknown)
     }
 
     pub fn k8s_unavailable(detail: impl AsRef<str>) -> Self {

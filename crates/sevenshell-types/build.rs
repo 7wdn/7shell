@@ -22,6 +22,7 @@ const GROUPS: &[&str] = &[
     "trust",
     "desktop",
     "container",
+    "virtualization",
 ];
 
 fn main() {

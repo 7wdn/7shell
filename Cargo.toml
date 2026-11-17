@@ -54,6 +54,9 @@ portable-pty = "0.9"
 # what lets a packed upload start from ordinary files rather than from an archive somebody made by
 # hand. `flate2` is already in the tree through russh's compression feature.
 tar = "0.4"
+# VMware's inventory is written in the system's ANSI code page on Chinese Windows — the file says
+# so in its own header (`.encoding = "GBK"`) — so reading it means decoding more than UTF-8.
+encoding_rs = "0.8"
 flate2 = "1"
 tokio = { version = "1.53", features = [
   "rt-multi-thread",
@@ -166,6 +169,7 @@ sevenshell-session = { version = "0.2.0", path = "crates/sevenshell-session" }
 sevenshell-sftp = { version = "0.2.0", path = "crates/sevenshell-sftp" }
 sevenshell-container = { version = "0.2.0", path = "crates/sevenshell-container" }
 sevenshell-k8s = { version = "0.2.0", path = "crates/sevenshell-k8s" }
+sevenshell-vmware = { version = "0.2.0", path = "crates/sevenshell-vmware" }
 sevenshell-types = { version = "0.2.0", path = "crates/sevenshell-types" }
 
 [profile.dev]

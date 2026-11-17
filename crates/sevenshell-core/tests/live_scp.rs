@@ -46,6 +46,7 @@ fn lab_session() -> Option<Session> {
         kubernetes: sevenshell_types::KubernetesSettings::default(),
         webdav: WebDavSettings::default(),
         ftp: FtpSettings::default(),
+        vmware: sevenshell_types::VmwareSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 1_700_000_000,

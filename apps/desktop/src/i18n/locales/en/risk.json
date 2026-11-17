@@ -34,6 +34,13 @@
       "remove": "Removes a container or an image",
       "unknown": "A container action this version does not recognise"
     },
+    "vm": {
+      "start": "Starts a virtual machine",
+      "stop": "Stops a running virtual machine",
+      "suspend": "Suspends a running virtual machine",
+      "takeOwnership": "Removes a virtual machine's lock and takes ownership of it",
+      "unknown": "A virtual machine action this version does not recognise"
+    },
     "k8s": {
       "write": "Changes a cluster object",
       "delete": "Deletes a cluster object",

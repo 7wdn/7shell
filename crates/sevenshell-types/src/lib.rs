@@ -23,6 +23,7 @@ mod snippet;
 mod sync;
 mod system;
 mod update;
+mod vmware;
 mod words;
 
 mod generated {
@@ -120,4 +121,5 @@ pub use sync::{
 };
 pub use system::HostSystem;
 pub use update::{AvailableRelease, UpdateCheck, UpdateProgress};
+pub use vmware::{VmInfo, VmPowerAction, VmStatus, VmwareSettings, default_vm_rdp_port, default_vm_ssh_port};
 pub use words::CompletionWord;

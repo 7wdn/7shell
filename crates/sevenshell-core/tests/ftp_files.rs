@@ -184,6 +184,7 @@ fn ftp_session(port: u16) -> Session {
         kubernetes: sevenshell_types::KubernetesSettings::default(),
         webdav: WebDavSettings::default(),
         ftp: FtpSettings { secure: false },
+        vmware: sevenshell_types::VmwareSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 1_700_000_000,

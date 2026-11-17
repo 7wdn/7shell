@@ -44,6 +44,7 @@ import {
   ListFilter,
   LoaderCircle,
   LocateFixed,
+  MonitorCog,
   Network,
   Pin,
   Plus,
@@ -64,6 +65,7 @@ import { useI18n } from "vue-i18n";
 
 import ExportSessionsDialog from "@/components/sessions/ExportSessionsDialog.vue";
 import SessionDetails from "@/components/sessions/SessionDetails.vue";
+import VmwareScanDialog from "@/components/vmware/VmwareScanDialog.vue";
 import SessionFailure from "@/components/sessions/SessionFailure.vue";
 import SidebarResizeHandle from "@/components/shell/SidebarResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
@@ -125,6 +127,8 @@ const DROP_OUT_ROW = "drop-out";
 
 const exportOpen = ref(false);
 const exportBusy = ref(false);
+/** The VMware import dialog: the machines Workstation knows about, offered as sessions. */
+const vmwareScanOpen = ref(false);
 
 /** The filter panel, and whether the panel the button opens is up. */
 const filterOpen = ref(false);
@@ -1028,6 +1032,16 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
             </button>
             <button
               type="button"
+              data-vmware-scan
+              class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('sessions.list.importVmware')"
+              :aria-label="t('sessions.list.importVmware')"
+              @click="vmwareScanOpen = true"
+            >
+              <MonitorCog :size="14" />
+            </button>
+            <button
+              type="button"
               class="grid size-5 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
               :title="t('sessions.list.refresh')"
               :aria-label="t('sessions.list.refresh')"
@@ -1400,7 +1414,9 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                               ? 'sessions.list.openWebdavHint'
                               : row.session.protocol === 'ftp'
                                 ? 'sessions.list.openFtpHint'
-                                : 'sessions.list.openHint',
+                                : row.session.protocol === 'vmware'
+                                  ? 'sessions.list.openVmHint'
+                                  : 'sessions.list.openHint',
                           { name: row.session.name },
                         )
                       "
@@ -1422,6 +1438,11 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                         v-else-if="hasMark(row.session)"
                         :system="terminals.systemOf(row.session)"
                         :label="markTitle(row.session)"
+                      />
+                      <MonitorCog
+                        v-else-if="row.session.protocol === 'vmware'"
+                        :size="13"
+                        class="shrink-0 text-muted-foreground"
                       />
                       <Terminal v-else :size="13" class="shrink-0 text-muted-foreground" />
                       <span class="min-w-0 flex-1">
@@ -1644,6 +1665,9 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
       @unencrypted="runExport(null)"
       @update:open="exportOpen = $event"
     />
+
+    <!-- The machines Workstation holds, added to the list as sessions that open a workspace. -->
+    <VmwareScanDialog :open="vmwareScanOpen" @update:open="vmwareScanOpen = $event" />
 
     <!--
       One question for both kinds of removal, drawn over everything rather than inside the list: a

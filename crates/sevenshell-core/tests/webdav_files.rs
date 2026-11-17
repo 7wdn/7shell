@@ -185,6 +185,7 @@ fn webdav_session(url: String) -> Session {
         kubernetes: sevenshell_types::KubernetesSettings::default(),
         webdav: WebDavSettings { url },
         ftp: sevenshell_types::FtpSettings::default(),
+        vmware: sevenshell_types::VmwareSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 1_700_000_000,

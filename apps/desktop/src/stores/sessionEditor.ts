@@ -105,7 +105,8 @@ export type SessionFieldProblem =
   | "serialPort"
   | "serialBaud"
   | "containerSshSession"
-  | "kubeconfig";
+  | "kubeconfig"
+  | "vmwareId";
 
 /** One hop as the list draws it. No session means the saved one it named has been deleted. */
 export interface HopEntry {
@@ -287,6 +288,16 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const containerNamespace = ref("");
 
   /**
+   * Which virtual machine this session stands for, and the two ways the workspace reaches the
+   * guest. The id is a scan's token, never a path.
+   */
+  const vmwareId = ref("");
+  const vmwareSshUser = ref("");
+  const vmwareSshPort = ref("22");
+  const vmwareRdpUser = ref("");
+  const vmwareRdpPort = ref("3389");
+
+  /**
    * Where a cluster session's kubeconfig comes from, and what it should be read as.
    *
    * The imported document is held as text and never read back: it travels inwards as the session's
@@ -338,6 +349,9 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   /** Whether this session talks to a Kubernetes API server. */
   const isKubernetes = computed(() => protocol.value === "kubernetes");
 
+  /** Whether this session stands for a virtual machine. */
+  const isVmware = computed(() => protocol.value === "vmware");
+
   /**
    * The saved sessions either new protocol may reach its target through.
    *
@@ -387,6 +401,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
       kubeSource.value === "imported" &&
       importedKubeconfig.value.trim() === "" &&
       !kubeconfigStored.value,
+    // A virtual machine is identified by what a scan answered; an empty one names nothing.
+    vmwareId: isVmware.value && vmwareId.value.trim() === "",
   }));
 
   const forwardProblems = computed<Record<string, readonly ForwardProblem[]>>(() => {
@@ -495,6 +511,12 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     kubeContexts.value = [];
     kubeContextsBusy.value = false;
     kubeContextsFailure.value = null;
+    const vmware = session?.vmware;
+    vmwareId.value = vmware?.vmId ?? "";
+    vmwareSshUser.value = vmware?.sshUser ?? "";
+    vmwareSshPort.value = String(vmware?.sshPort ?? 22);
+    vmwareRdpUser.value = vmware?.rdpUser ?? "";
+    vmwareRdpPort.value = String(vmware?.rdpPort ?? 3389);
   }
 
   /**
@@ -603,6 +625,19 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
             viaSsh: kubeViaSsh.value === "" ? undefined : kubeViaSsh.value,
           }
         : undefined,
+      vmware: isVmware.value
+        ? {
+            vmId: vmwareId.value.trim(),
+            sshUser: vmwareSshUser.value.trim() === "" ? undefined : vmwareSshUser.value.trim(),
+            sshPort: portNumber(vmwareSshPort.value) || 22,
+            rdpUser: vmwareRdpUser.value.trim() === "" ? undefined : vmwareRdpUser.value.trim(),
+            rdpPort: portNumber(vmwareRdpPort.value) || 3389,
+            // The sessions the workspace made keep their references across an edit: this dialog
+            // never manages them, and dropping them here would silently unlink both buttons.
+            sshSession: existing?.vmware?.sshSession,
+            rdpSession: existing?.vmware?.rdpSession,
+          }
+        : undefined,
       jump: jumps.value.length > 0 ? [...jumps.value] : undefined,
       forwards: forwards.value.length > 0 ? forwards.value.map(forwardFrom) : undefined,
       updatedAt: Math.floor(Date.now() / 1000),
@@ -707,6 +742,12 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     isFtp,
     isContainer,
     isKubernetes,
+    isVmware,
+    vmwareId,
+    vmwareSshUser,
+    vmwareSshPort,
+    vmwareRdpUser,
+    vmwareRdpPort,
     ftpSecure,
     containerRuntime,
     containerTransport,

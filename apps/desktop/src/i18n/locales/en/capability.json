@@ -86,6 +86,9 @@
     },
     "kubernetesTunnel": {
       "label": "Cluster through an SSH session"
+    },
+    "vmLifecycle": {
+      "label": "Virtual machine power and status"
     }
   }
 }

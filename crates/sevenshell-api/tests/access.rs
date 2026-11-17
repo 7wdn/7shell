@@ -149,6 +149,7 @@ fn session(id: &str, name: &str) -> Session {
         kubernetes: KubernetesSettings::default(),
         webdav: WebDavSettings::default(),
         ftp: FtpSettings::default(),
+        vmware: sevenshell_types::VmwareSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 0,

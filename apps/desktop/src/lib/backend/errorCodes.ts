@@ -84,6 +84,9 @@ export const ERROR_CATALOG = {
   "CONTAINER-UNAVAILABLE": "errors.container.unavailable",
   "CONTAINER-COMMAND-FAILED": "errors.container.commandFailed",
   "CONTAINER-NOT-CONNECTED": "errors.container.notConnected",
+  // VMware
+  "VMWARE-UNAVAILABLE": "errors.vmware.unavailable",
+  "VMWARE-COMMAND-FAILED": "errors.vmware.commandFailed",
   // Kubernetes
   "K8S-UNAVAILABLE": "errors.k8s.unavailable",
   "K8S-KUBECONFIG-INVALID": "errors.k8s.kubeconfigInvalid",

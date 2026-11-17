@@ -32,6 +32,7 @@ import { useI18n } from "vue-i18n";
 
 import ContainerSettingsFields from "@/components/sessions/ContainerSettingsFields.vue";
 import KubernetesSettingsFields from "@/components/sessions/KubernetesSettingsFields.vue";
+import VmwareSettingsFields from "@/components/sessions/VmwareSettingsFields.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import { describeShellError } from "@/i18n/errors";
@@ -97,6 +98,7 @@ const PROTOCOL_GROUPS: readonly { labelKey: string; protocols: readonly Protocol
   { labelKey: "sessions.editor.protocolGroups.files", protocols: ["webdav", "ftp"] },
   { labelKey: "sessions.editor.protocolGroups.desktop", protocols: ["rdp"] },
   { labelKey: "sessions.editor.protocolGroups.containers", protocols: ["container", "kubernetes"] },
+  { labelKey: "sessions.editor.protocolGroups.virtualization", protocols: ["vmware"] },
 ];
 
 /**
@@ -123,6 +125,10 @@ const CONTAINER_RUNTIMES: readonly { runtime: ContainerRuntime; labelKey: string
 const protocolOptions = computed<SelectOption[]>(() => {
   const visible = PROTOCOLS.filter(
     (protocol) => (protocol.id !== "rdp" && protocol.id !== "wsl") || app.info?.os === "windows",
+  ).filter(
+    // Workstation Pro is a Windows and Linux product, and every command this build's VM protocol
+    // drives is Workstation's own. Fusion's vmrun is a different target, so the kind is not offered.
+    (protocol) => protocol.id !== "vmware" || app.info?.os !== "macos",
   );
   const byId = new Map(visible.map((protocol) => [protocol.id, protocol]));
   const placed = new Set<string>();
@@ -1124,6 +1130,7 @@ async function forgetKey(): Promise<void> {
           -->
           <ContainerSettingsFields v-if="editor.isContainer" :submitted="submitted" />
           <KubernetesSettingsFields v-if="editor.isKubernetes" :submitted="submitted" />
+          <VmwareSettingsFields v-if="editor.isVmware" :submitted="submitted" />
 
           <p v-if="problemText" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
             <span>{{ problemText.message }}</span>

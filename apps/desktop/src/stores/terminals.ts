@@ -248,7 +248,27 @@ export interface KubernetesTab {
   connectionId: string | null;
 }
 
-export type WorkspaceTab = TerminalTab | FilesTab | InspectTab | SettingsTab | BatchTab | ContainerTab | KubernetesTab;
+/**
+ * A virtual machine, as a tab.
+ *
+ * No connection id: a machine is not connected to. The pane asks `vmrun` what the machine is doing
+ * when it is drawn, and every action resolves the session's identity against the inventory first.
+ */
+export interface VmwareTab {
+  readonly kind: "vmware";
+  id: string;
+  readonly session: Session;
+}
+
+export type WorkspaceTab =
+  | TerminalTab
+  | FilesTab
+  | InspectTab
+  | SettingsTab
+  | BatchTab
+  | ContainerTab
+  | KubernetesTab
+  | VmwareTab;
 
 /**
  * The session a tab is about, or nothing when it is about no host.
@@ -423,6 +443,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (session.protocol === "kubernetes") {
       recents.record(session.id);
       openKubernetes(session);
+      return;
+    }
+    // A virtual machine has a workspace of its own; it is not a terminal either.
+    if (session.protocol === "vmware") {
+      recents.record(session.id);
+      openVmware(session);
       return;
     }
     if (connectingSessionIds.value.includes(session.id)) {
@@ -997,6 +1023,19 @@ export const useTerminalsStore = defineStore("terminals", () => {
     addTab({ kind: "kubernetes", id: crypto.randomUUID(), session, connectionId: null });
   }
 
+  /** Opens a virtual machine for a session, or goes to the tab already showing it. */
+  function openVmware(session: Session): void {
+    const showing = tabs.value.find(
+      (entry): entry is VmwareTab => entry.kind === "vmware" && entry.session.id === session.id,
+    );
+    if (showing) {
+      activeTabId.value = showing.id;
+      return;
+    }
+
+    addTab({ kind: "vmware", id: crypto.randomUUID(), session });
+  }
+
   /**
    * Draws a terminal the backend has already opened.
    *
@@ -1247,6 +1286,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
 
+    // A virtual machine is not connected to: there is nothing on the backend to let go of, and a
+    // file browser it opened belongs to an ordinary SSH session rather than to this tab.
+    if (tab.kind === "vmware") {
+      forget(id);
+      return;
+    }
+
     // A container or cluster tab is one backend connection; closing the tab lets it go before the
     // row disappears, so a connection cannot outlive the only thing that could show it. The file
     // browsers opened from that tab ride the same connection, so they go first: leaving them behind
@@ -1403,7 +1449,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
       tab.kind === "settings" ||
       tab.kind === "batch" ||
       tab.kind === "container" ||
-      tab.kind === "kubernetes"
+      tab.kind === "kubernetes" ||
+      tab.kind === "vmware"
     ) {
       return null;
     }
@@ -1554,7 +1601,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
       tab.kind === "settings" ||
       tab.kind === "batch" ||
       tab.kind === "container" ||
-      tab.kind === "kubernetes"
+      tab.kind === "kubernetes" ||
+      tab.kind === "vmware"
     ) {
       return;
     }
@@ -1857,6 +1905,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openBatch,
     openContainer,
     openKubernetes,
+    openVmware,
     openHandle,
     writableHandles,
     activeTerminalHandle,

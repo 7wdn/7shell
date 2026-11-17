@@ -32,6 +32,9 @@
     },
     "kubernetes": {
       "label": "Kubernetes"
+    },
+    "vmware": {
+      "label": "VMware virtual machine"
     }
   }
 }

@@ -86,6 +86,9 @@
     },
     "kubernetesTunnel": {
       "label": "经 SSH 会话访问集群"
+    },
+    "vmLifecycle": {
+      "label": "虚拟机电源与状态"
     }
   }
 }

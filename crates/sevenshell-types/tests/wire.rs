@@ -488,6 +488,15 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
         webdav: sevenshell_types::WebDavSettings {
             url: "https://dav.example/folder/".to_owned(),
         },
+        vmware: sevenshell_types::VmwareSettings {
+            vm_id: "564db5f23515de032cd9338ba8d831b7".to_owned(),
+            ssh_user: Some("z".to_owned()),
+            ssh_port: 22,
+            rdp_user: None,
+            rdp_port: 3389,
+            ssh_session: Some("session-2".to_owned()),
+            rdp_session: None,
+        },
         ftp: sevenshell_types::FtpSettings { secure: true },
         jump: vec!["hop-1".to_owned()],
         forwards: vec![LocalForward {

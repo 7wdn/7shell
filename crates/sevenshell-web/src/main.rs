@@ -29,7 +29,7 @@ use sevenshell_types::{
     CreatedKey, DownloadFolderView, EntryKind, K8sExecRequest, K8sLogRequest, K8sRequest, K8sStreamEnd, K8sStreamLine,
     K8sWatchEvent, KeyAlgorithm, KeyInfo, PresentedHostKey, Protocol, SecretInput, SendTarget, Session,
     SessionExportSummary, SessionGroup, SessionImportOutcome, Snippet, SnippetGroup, SyncSelection, TransferState,
-    UpdateCheck, UploadAnswer, UploadOutcome, VaultState,
+    UpdateCheck, UploadAnswer, UploadOutcome, VaultState, VmPowerAction,
 };
 use sevenshell_vault::{ExportProtection, OpenedBundle, SessionSecret, Vault, VaultStatus};
 use std::collections::HashMap;
@@ -1040,6 +1040,25 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
         "desktop_open" => {
             let session_id: String = from_args(&args, "sessionId")?;
             state.core.open_desktop(&session_id).await?;
+            Ok(Value::Null)
+        }
+
+        "vmware_scan" => to_value(state.core.vmware_scan().await?),
+        "vmware_status" => {
+            let vm_id: String = from_args(&args, "vmId")?;
+            to_value(state.core.vmware_status(&vm_id).await?)
+        }
+        "vmware_power" => {
+            let vm_id: String = from_args(&args, "vmId")?;
+            let action: VmPowerAction = from_args(&args, "action")?;
+            let acknowledged: bool = from_args(&args, "acknowledged")?;
+            state.core.vmware_power(&vm_id, action, acknowledged).await?;
+            Ok(Value::Null)
+        }
+        "vmware_take_ownership" => {
+            let vm_id: String = from_args(&args, "vmId")?;
+            let acknowledged: bool = from_args(&args, "acknowledged")?;
+            state.core.vmware_take_ownership(&vm_id, acknowledged).await?;
             Ok(Value::Null)
         }
 

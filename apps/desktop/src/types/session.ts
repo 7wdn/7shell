@@ -116,6 +116,8 @@ export interface Session {
   readonly kubernetes?: KubernetesSettings;
   /** The HTTP folder a WebDAV browser opens. Absent on every other protocol. */
   readonly webdav?: WebDavSettings;
+  /** Which virtual machine this session stands for, and how to reach its guest. */
+  readonly vmware?: VmwareSettings;
   /** Whether an FTP session asks for TLS before login. Absent on every other protocol. */
   readonly ftp?: FtpSettings;
   /** Saved sessions to reach this one through, in order: the first is connected to directly. */
@@ -194,6 +196,24 @@ export interface WebDavSettings {
 export interface FtpSettings {
   /** Explicit FTPS: negotiate TLS before the login is sent. */
   readonly secure: boolean;
+}
+
+/**
+ * What a virtual-machine session remembers.
+ *
+ * `vmId` is the token a scan answered with, not the `.vmx` path: the host resolves it against its
+ * inventory, so the saved session keeps working after a machine is renamed or moved. The SSH and
+ * RDP halves are the ports and accounts the workspace uses when it makes a session that reaches
+ * the guest; the references name the sessions it made, once it made them.
+ */
+export interface VmwareSettings {
+  readonly vmId: string;
+  readonly sshUser?: string;
+  readonly sshPort: number;
+  readonly rdpUser?: string;
+  readonly rdpPort: number;
+  readonly sshSession?: string;
+  readonly rdpSession?: string;
 }
 
 /** One shell this machine can start, as the picker sees it. */

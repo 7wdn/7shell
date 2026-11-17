@@ -49,6 +49,10 @@ pub struct Session {
     /// The HTTP folder a WebDAV browser opens. Ignored by every other protocol.
     #[serde(default, skip_serializing_if = "WebDavSettings::is_empty")]
     pub webdav: WebDavSettings,
+    /// Which virtual machine this session stands for, and how to reach its guest.
+    /// Ignored by every other protocol.
+    #[serde(default, skip_serializing_if = "crate::VmwareSettings::is_empty")]
+    pub vmware: crate::VmwareSettings,
     /// Whether an FTP session asks for TLS before the login. Ignored by every other protocol.
     #[serde(default, skip_serializing_if = "FtpSettings::is_empty")]
     pub ftp: FtpSettings,

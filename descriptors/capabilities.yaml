@@ -173,3 +173,14 @@ capabilities:
     group: container
     labelKey: capability.kubernetesTunnel.label
     # Reaching an API server through a saved SSH session, covered by `live_k8s_via_ssh`.
+
+  # -- Virtual machines ---------------------------------------------------
+
+  # Workstation is driven through its own command line: power, status, VMware Tools and the
+  # guest's address. Opening a terminal or a desktop onto the guest is the SSH or RDP protocol's
+  # job, so nothing here claims those.
+
+  - key: vmLifecycle
+    order: 290
+    group: virtualization
+    labelKey: capability.vmLifecycle.label

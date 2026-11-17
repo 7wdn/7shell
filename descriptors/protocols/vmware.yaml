@@ -1,0 +1,14 @@
+schemaVersion: 1
+order: 70
+id: vmware
+rustVariant: Vmware
+labelKey: protocol.vmware.label
+# Not a wire protocol: Workstation's own command line is the interface. `runtime: native` says the
+# host scans the inventory and starts `vmrun` itself; the guest is reached by the SSH or RDP
+# session the VM workspace makes, not by this protocol. One capability: the lifecycle this build
+# actually performs (power, VMware Tools, the guest's current address).
+runtime: native
+transport: cli
+supportLevel: operate
+capabilities:
+  - vmLifecycle

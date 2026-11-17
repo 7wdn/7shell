@@ -202,6 +202,7 @@ fn capabilities_are_grouped_and_ordered() {
                 | CapabilityGroup::Trust
                 | CapabilityGroup::Desktop
                 | CapabilityGroup::Container
+                | CapabilityGroup::Virtualization
         ));
     }
 }

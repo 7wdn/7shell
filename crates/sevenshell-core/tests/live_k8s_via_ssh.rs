@@ -124,6 +124,7 @@ fn session(id: &str, protocol: sevenshell_types::Protocol, host: &str, port: u16
         kubernetes: KubernetesSettings::default(),
         webdav: sevenshell_types::WebDavSettings::default(),
         ftp: sevenshell_types::FtpSettings::default(),
+        vmware: sevenshell_types::VmwareSettings::default(),
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 0,

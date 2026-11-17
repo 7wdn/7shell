@@ -14,11 +14,13 @@
 pub mod command_risk;
 pub mod container_risk;
 pub mod matrix;
+pub mod vm_risk;
 
 pub use command_risk::classify;
 pub use container_risk::{container_action, kubernetes_request};
 pub use matrix::{PolicyAuditEvent, PolicyDecision, PolicySource, PolicyTarget, decide};
 pub use sevenshell_types::{RiskAssessment, RiskLevel, RiskReason};
+pub use vm_risk::vm_action;
 
 /// Where a policy decision goes once it has been made.
 ///

@@ -9,6 +9,7 @@
       "openDesktopHint": "为 {name} 打开远程桌面",
       "openWebdavHint": "打开 {name} 的 WebDAV 目录",
       "openFtpHint": "打开 {name} 的 FTP 目录",
+      "openVmHint": "打开虚拟机 {name}",
       "desktopLaunched": "已在 Windows 远程桌面中打开。",
       "connecting": "正在连接 {name}…",
       "system": "远程系统：{name}",
@@ -52,6 +53,7 @@
       "importPassphraseConfirm": "导入",
       "dropOutOfGroups": "移出所有分组",
       "importExport": "导入 / 导出",
+      "importVmware": "从 VMware 导入",
       "collapseAll": "全部折叠",
       "connectCancelled": "已取消连接：{name}",
       "connectFailed": "无法连接到 {name}：{reason}",
@@ -122,6 +124,7 @@
         "files": "文件服务",
         "desktop": "远程桌面",
         "containers": "容器与集群",
+        "virtualization": "虚拟机",
         "other": "其他"
       },
       "desktop": {
@@ -240,6 +243,20 @@
         "viaSshNone": "直接连接",
         "viaSshHint": "可选。选了会话后，API server 经由该会话访问，使用它的凭据和路线。"
       },
+      "vmware": {
+        "title": "VMware",
+        "machine": "虚拟机",
+        "machinePick": "从扫描结果中选择一台",
+        "machineHint": "来自 Workstation 的清单。会话保存的是虚拟机自身的标识，在 Workstation 里改名或移动都不会使它失效。",
+        "unknownMachine": "已不在清单中的虚拟机",
+        "sshUser": "SSH 用户",
+        "sshUserPlaceholder": "客户机账户",
+        "sshPort": "SSH 端口",
+        "rdpUser": "桌面用户",
+        "rdpUserPlaceholder": "留空则由客户端询问",
+        "rdpPort": "RDP 端口",
+        "hint": "首次连接时，工作台会建立一个普通的 SSH 或远程桌面会话，并在每次打开前更新它的地址。密码保存在那个会话里，不在这里。"
+      },
       "group": "分组",
       "groupNone": "不分组",
       "method": "认证方式",
@@ -311,6 +328,7 @@
         "webdavUrl": "请填写以 http:// 或 https:// 开头的 WebDAV 地址。",
         "user": "请填写登录用户。",
         "port": "端口必须是 1 到 65535 之间的数字。",
+        "vmwareId": "请从扫描结果中选择一台虚拟机。",
         "key": "公钥认证需要先附加一个密钥文件。",
         "serialPort": "请选择串口。",
         "serialBaud": "波特率必须是 50 到 4000000 之间的整数。",
@@ -326,6 +344,76 @@
         "record": "记录这次会话",
         "recordNote": "录制会保存终端显示的全部内容，格式为 asciicast，可用 asciinema 等播放器打开。文件位于设置旁边的 recordings 目录。"
       }
+    },
+    "vmware": {
+      "endpoint": "VMware",
+      "stateLabel": "电源",
+      "state": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "checking": "检查中…"
+      },
+      "toolsLabel": "VMware Tools",
+      "tools": {
+        "running": "运行中",
+        "installed": "已安装",
+        "notInstalled": "未安装",
+        "notRunning": "未运行",
+        "unknown": "未报告"
+      },
+      "addressLabel": "地址",
+      "addressNone": "尚未报告",
+      "refresh": "刷新",
+      "start": "开机",
+      "stop": "关机",
+      "suspend": "挂起",
+      "stopTitle": "关闭 {name}？",
+      "stopMessage": "将通过 VMware Tools 请求客户机自行关机。若客户机未能及时响应，未保存的内容会丢失。",
+      "sshTitle": "终端",
+      "rdpTitle": "桌面",
+      "user": "用户",
+      "port": "端口",
+      "sshUserPlaceholder": "客户机账户",
+      "rdpUserPlaceholder": "留空则由客户端询问",
+      "openSsh": "打开 SSH",
+      "openRdp": "打开 RDP",
+      "hint": "首次打开时会建立一个普通的已保存会话去连接客户机；这个按钮只负责把它的地址更新到当前值。密码和密钥在那个会话里编辑。",
+      "lock": {
+        "hint": "上次运行留下的锁还在，直接开机会被拒绝。点击开机时会提供获取所有权。",
+        "title": "取得 {name} 的所有权？",
+        "message": "虚拟机没有运行，但锁目录仍然存在——通常来自一次没有正常关闭的运行。取得所有权会删除这个锁。只有在确认没有 Workstation 窗口或其他机器正在使用它时才这样做：运行中虚拟机的锁是防止两个虚拟机监视器同时写同一份磁盘的最后一道防线。",
+        "confirm": "取得所有权并开机"
+      },
+      "password": {
+        "title": "输入密码",
+        "description": "通过 SSH 登录 {target} 需要密码。",
+        "label": "密码",
+        "placeholder": "输入密码",
+        "hint": "密码会随这个会话保存在保险库中，下次重连不再询问。",
+        "connect": "连接"
+      },
+      "connect": {
+        "powerOnFirst": "请先启动虚拟机，再打开到它的连接。",
+        "noAddress": "客户机还没有报告地址。等它启动完成、VMware Tools 运行起来后刷新。",
+        "userRequired": "请填写 SSH 登录使用的客户机账户。"
+      }
+    },
+    "vmwareScan": {
+      "title": "从 VMware 导入",
+      "description": "本账户 Workstation 清单中的虚拟机会成为已保存的会话。每个会话打开一个工作台，显示电源状态和两种连接客户机的方式。",
+      "rescan": "重新扫描",
+      "scanning": "正在扫描 Workstation…",
+      "empty": "这个账户的清单里没有找到虚拟机。",
+      "selectAll": "全选",
+      "machine": "虚拟机",
+      "guest": "客户机",
+      "state": "状态",
+      "running": "运行中",
+      "stopped": "已停止",
+      "alreadyImported": "已在列表中",
+      "selected": "已选择 {count} 台",
+      "import": "导入",
+      "imported": "已导入 {count} 台虚拟机。"
     },
     "reopen": {
       "title": "在新标签页打开",

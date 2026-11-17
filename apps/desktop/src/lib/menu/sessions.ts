@@ -92,6 +92,10 @@ export function sessionEndpoint(session: Session, t?: (key: string) => string): 
     }
     case "kubernetes":
       return session.kubernetes?.context || (t ? t("k8s.endpointDefault") : "kubeconfig");
+    case "vmware":
+      // The guest is reached at an address that is resolved on use, and the token that identifies
+      // the machine is not something a person reads. The row says what it is instead.
+      return t ? t("sessions.vmware.endpoint") : "VMware";
     default:
       return `${session.user}@${session.host}:${session.port}`;
   }

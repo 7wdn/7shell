@@ -204,6 +204,13 @@
       "group": "container",
       "labelKey": "capability.kubernetesTunnel.label",
       "planned": false
+    },
+    {
+      "key": "vmLifecycle",
+      "order": 290,
+      "group": "virtualization",
+      "labelKey": "capability.vmLifecycle.label",
+      "planned": false
     }
   ],
   "protocols": [
@@ -375,6 +382,19 @@
         "kubernetesExec",
         "kubernetesMetrics",
         "kubernetesTunnel"
+      ]
+    },
+    {
+      "id": "vmware",
+      "rustVariant": "Vmware",
+      "order": 70,
+      "labelKey": "protocol.vmware.label",
+      "defaultPort": null,
+      "runtime": "native",
+      "transport": "cli",
+      "supportLevel": "operate",
+      "capabilities": [
+        "vmLifecycle"
       ]
     }
   ],

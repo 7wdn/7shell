@@ -36,6 +36,7 @@ import {
   List,
   ListChecks,
   LoaderCircle,
+  MonitorCog,
   Network,
   PanelBottom,
   RotateCw,
@@ -51,6 +52,7 @@ import { sessionEndpoint } from "@/lib/menu/sessions";
 import BatchPanel from "@/components/batch/BatchPanel.vue";
 import ContainerPane from "@/components/container/ContainerPane.vue";
 import KubernetesPane from "@/components/k8s/KubernetesPane.vue";
+import VmwarePane from "@/components/vmware/VmwarePane.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
@@ -170,7 +172,8 @@ function hasHandle(tab: WorkspaceTab): boolean {
     tab.kind === "settings" ||
     tab.kind === "batch" ||
     tab.kind === "container" ||
-    tab.kind === "kubernetes"
+    tab.kind === "kubernetes" ||
+    tab.kind === "vmware"
   ) {
     return false;
   }
@@ -198,7 +201,8 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
           tab.kind === "settings" ||
           tab.kind === "batch" ||
           tab.kind === "container" ||
-          tab.kind === "kubernetes"
+          tab.kind === "kubernetes" ||
+          tab.kind === "vmware"
             ? null
             : tab.status,
         hasHandle: hasHandle(tab),
@@ -309,7 +313,8 @@ function dotClass(tab: WorkspaceTab): string | null {
     tab.kind === "settings" ||
     tab.kind === "batch" ||
     tab.kind === "container" ||
-    tab.kind === "kubernetes"
+    tab.kind === "kubernetes" ||
+    tab.kind === "vmware"
   ) {
     return null;
   }
@@ -614,6 +619,7 @@ function tabStyle(): Record<string, string> | undefined {
             <ListChecks v-else-if="entry.tab.kind === 'batch'" :size="12" class="shrink-0" />
             <Boxes v-else-if="entry.tab.kind === 'container'" :size="12" class="shrink-0" />
             <ShipWheel v-else-if="entry.tab.kind === 'kubernetes'" :size="12" class="shrink-0" />
+            <MonitorCog v-else-if="entry.tab.kind === 'vmware'" :size="12" class="shrink-0" />
             <Cpu v-else-if="entry.tab.view === 'system'" :size="12" class="shrink-0" />
             <List v-else-if="entry.tab.view === 'processes'" :size="12" class="shrink-0" />
             <Network v-else :size="12" class="shrink-0" />
@@ -896,6 +902,8 @@ function tabStyle(): Record<string, string> | undefined {
       <ContainerPane v-else-if="tab.kind === 'container'" :tab="tab" :active="tab.id === terminals.activeTabId" />
 
       <KubernetesPane v-else-if="tab.kind === 'kubernetes'" :tab="tab" :active="tab.id === terminals.activeTabId" />
+
+      <VmwarePane v-else-if="tab.kind === 'vmware'" :tab="tab" :active="tab.id === terminals.activeTabId" />
     </div>
   </section>
 </template>

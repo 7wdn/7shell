@@ -67,6 +67,7 @@ import type {
 } from "@/types/mcp";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
+import type { VmInfo, VmPowerAction, VmStatus } from "@/types/vmware";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CommandHistoryEntry,
@@ -1465,4 +1466,22 @@ export async function onK8sStreamEnd(listener: (payload: K8sStreamEnd) => void):
 
 export async function onK8sWatch(listener: (payload: K8sWatchEvent) => void): Promise<Unlisten> {
   return listen<K8sWatchEvent>("k8s:watch", (event) => listener(event.payload));
+}
+
+/** Every virtual machine this machine's Workstation can act on. */
+export function vmwareScan(): Promise<VmInfo[]> {
+  return invoke<VmInfo[]>("vmware_scan", {});
+}
+
+export function vmwareStatus(vmId: string): Promise<VmStatus> {
+  return invoke<VmStatus>("vmware_status", { vmId });
+}
+
+export function vmwarePower(vmId: string, action: VmPowerAction, acknowledged: boolean): Promise<void> {
+  return invoke<void>("vmware_power", { vmId, action, acknowledged });
+}
+
+/** Removes a stale lock from a machine that is not running; answers `acknowledged`. */
+export function vmwareTakeOwnership(vmId: string, acknowledged: boolean): Promise<void> {
+  return invoke<void>("vmware_take_ownership", { vmId, acknowledged });
 }
