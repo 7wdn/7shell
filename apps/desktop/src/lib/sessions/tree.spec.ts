@@ -15,11 +15,12 @@ function group(id: string, name: string, order: number, parentId?: string, pinne
   return { id, name, order, parentId, pinned };
 }
 
-function session(id: string, name: string, groupId?: string): Session {
+function session(id: string, name: string, groupId?: string, order?: number): Session {
   return {
     id,
     name,
     groupId,
+    order,
     protocol: "ssh",
     host: "example.test",
     port: 22,
@@ -104,13 +105,46 @@ describe("the rows the sidebar draws", () => {
     expect(shape(rows)).toEqual(["Work", "orphan"]);
   });
 
+  it("draws the sessions of a group in the order they were dragged into, ties by creation", () => {
+    const late = session("session-4", "late", work.id, 2);
+    const early = session("session-5", "early", work.id, 1);
+    const unplaced = session("session-6", "unplaced", work.id);
+
+    const rows = visibleRows([work], [late, unplaced, early, db], none);
+
+    // `db` carries no order, so it is level with zero: before the placed ones, in creation order.
+    expect(shape(rows)).toEqual(["Work", "  unplaced", "  db", "  early", "  late"]);
+  });
+
+  it("draws a session between two groups when the arrangement says so", () => {
+    const between = session("session-7", "between", undefined, 1);
+    const spaced = [
+      { ...work, order: 0 },
+      { ...lab, order: 2 },
+    ];
+
+    const rows = visibleRows(spaced, [between], none);
+
+    expect(shape(rows)).toEqual(["Work", "between", "Lab"]);
+  });
+
+  it("draws a group between two sessions when the arrangement says so", () => {
+    const first = session("session-8", "first", undefined, 0);
+    const second = session("session-9", "second", undefined, 2);
+    const between = { ...work, order: 1 };
+
+    const rows = visibleRows([between], [first, second], none);
+
+    expect(shape(rows)).toEqual(["first", "Work", "second"]);
+  });
+
   it("hands a drag the thing each row stands for", () => {
     const rows = visibleRows([work, lab], [db], none);
     const targets = rows.map((row) => rowTarget(row));
 
     expect(shape(rows)).toEqual(["Work", "  db", "Lab"]);
     expect(targets[0]).toEqual({ kind: "group", id: work.id });
-    expect(targets[1]).toEqual({ kind: "session", parentId: work.id });
+    expect(targets[1]).toEqual({ kind: "session", id: "session-2", parentId: work.id });
     expect(targets[2]).toEqual({ kind: "group", id: lab.id });
   });
 
@@ -118,6 +152,6 @@ describe("the rows the sidebar draws", () => {
     const rows = visibleRows([work], [web], none);
     const loose = rows.find((row) => row.kind === "session");
 
-    expect(loose && rowTarget(loose)).toEqual({ kind: "session", parentId: null });
+    expect(loose && rowTarget(loose)).toEqual({ kind: "session", id: "session-1", parentId: null });
   });
 });

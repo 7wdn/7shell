@@ -156,11 +156,17 @@ impl Document {
 
     /// The sessions, with `has_secret` set from the secrets table rather than from whatever
     /// the caller last wrote. The table is the authority; the flag is a report about it.
+    ///
+    /// The list is in the arrangement somebody dragged the sidebar into: lowest `order` first,
+    /// sessions nobody placed level with zero, ties in the order they were created. The sort is
+    /// stable, which is what keeps a vault written before sessions carried an order drawing the
+    /// way it always did.
     pub(crate) fn sessions(&self) -> Vec<Session> {
         let mut sessions = self.sessions.clone();
         for session in &mut sessions {
             session.auth.has_secret = self.stores_secret_for(&session.id);
         }
+        sessions.sort_by_key(|session| session.order.unwrap_or(0));
         sessions
     }
 
@@ -183,11 +189,51 @@ impl Document {
         }
 
         session.auth.has_secret = self.stores_secret_for(&session.id);
-        match self.sessions.iter_mut().find(|existing| existing.id == session.id) {
-            Some(existing) => *existing = session.clone(),
-            None => self.sessions.push(session.clone()),
+        let at = self.sessions.iter().position(|existing| existing.id == session.id);
+        match at {
+            Some(index) => {
+                // No order on the way in is an unanswered question, not a position: an editor that
+                // saved a name carries none, and reading it as "first" would undo the arrangement.
+                // The one exception is a move to another group — there the old number measured a
+                // list this session is no longer in, so it goes to the end of the new one.
+                if session.order.is_none() {
+                    let stored = &self.sessions[index];
+                    session.order = if stored.group_id == session.group_id {
+                        stored.order
+                    } else {
+                        Some(self.next_child_order(session.group_id.as_deref()))
+                    };
+                }
+                self.sessions[index] = session.clone();
+            }
+            None => {
+                if session.order.is_none() {
+                    session.order = Some(self.next_child_order(session.group_id.as_deref()));
+                }
+                self.sessions.push(session.clone());
+            }
         }
         session
+    }
+
+    /// The order a child made now goes to: after everything already under the same parent.
+    ///
+    /// Groups share the number space with sessions, so the last child of a parent may be either.
+    fn next_child_order(&self, group_id: Option<&str>) -> u32 {
+        let mut highest: Option<u32> = None;
+        for group in &self.groups {
+            if effective_parent(&self.groups, &group.id).as_deref() == group_id {
+                highest = Some(highest.map_or(group.order, |value| value.max(group.order)));
+            }
+        }
+        for session in &self.sessions {
+            if session_parent(&self.groups, session).as_deref() == group_id {
+                if let Some(order) = session.order {
+                    highest = Some(highest.map_or(order, |value| value.max(order)));
+                }
+            }
+        }
+        highest.map_or(0, |value| value.saturating_add(1))
     }
 
     /// Removes a session and the secret that belonged to it. Removing something already absent
@@ -945,6 +991,106 @@ impl<'de> Deserialize<'de> for SecretString {
     }
 }
 
+/// The parent a group really sits under, mirroring the interface's rule: a missing parent, or a
+/// chain of parents that loops back on itself, means the root.
+fn effective_parent(groups: &[SessionGroup], id: &str) -> Option<String> {
+    let start = groups.iter().find(|group| group.id == id)?;
+    let mut seen = std::collections::HashSet::from([id.to_owned()]);
+    let mut parent = start.parent_id.clone();
+    while let Some(current) = &parent {
+        let Some(next) = groups.iter().find(|group| &group.id == current) else {
+            return None;
+        };
+        if !seen.insert(next.id.clone()) {
+            return None;
+        }
+        parent = next.parent_id.clone();
+    }
+    start.parent_id.clone()
+}
+
+/// The group a session is really in: its own answer, unless that group is gone.
+fn session_parent(groups: &[SessionGroup], session: &Session) -> Option<String> {
+    session
+        .group_id
+        .clone()
+        .filter(|id| groups.iter().any(|group| &group.id == id))
+}
+
+/// Puts every parent's children — groups and sessions together — on one number line.
+///
+/// A vault written before sessions carried an order keeps the drawing it always had: every group
+/// first, then the sessions of that parent. One that already carries numbers keeps them, because a
+/// drag writes the whole list it lands in; this runs on every load and is idempotent, and what it
+/// numbers is exactly what it read.
+fn normalize_child_orders(document: &mut Document) {
+    let groups = document.groups.clone();
+    let sessions = document.sessions.clone();
+
+    let mut parents: Vec<Option<String>> = vec![None];
+    parents.extend(groups.iter().map(|group| Some(group.id.clone())));
+
+    let mut group_orders: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    let mut session_orders: std::collections::HashMap<String, Option<u32>> = std::collections::HashMap::new();
+
+    for parent in parents {
+        // A parent holding a session nobody placed is one nobody has dragged in since sessions
+        // carried a place, so its old drawing — groups before sessions — is what has to survive.
+        let legacy = sessions
+            .iter()
+            .filter(|session| session_parent(&groups, session) == parent)
+            .any(|session| session.order.is_none());
+
+        // (band, first, second, position, is-group, id): the middle pair is (kind, order) for a
+        // legacy parent and (order, kind) once every session carries a place.
+        let mut children: Vec<(u8, u32, u32, usize, bool, String)> = Vec::new();
+        for (position, group) in groups.iter().enumerate() {
+            if effective_parent(&groups, &group.id) != parent {
+                continue;
+            }
+            let band = u8::from(!group.pinned);
+            let key = if legacy {
+                (band, 0u32, group.order, position)
+            } else {
+                (band, group.order, 0u32, position)
+            };
+            children.push((key.0, key.1, key.2, key.3, true, group.id.clone()));
+        }
+        for (position, session) in sessions.iter().enumerate() {
+            if session_parent(&groups, session) != parent {
+                continue;
+            }
+            let order = session.order.unwrap_or(0);
+            let key = if legacy {
+                (1u8, 1u32, order, position)
+            } else {
+                (1u8, order, 1u32, position)
+            };
+            children.push((key.0, key.1, key.2, key.3, false, session.id.clone()));
+        }
+        children.sort();
+        for (index, (_, _, _, _, is_group, id)) in children.into_iter().enumerate() {
+            let order = index as u32;
+            if is_group {
+                group_orders.insert(id, order);
+            } else {
+                session_orders.insert(id, Some(order));
+            }
+        }
+    }
+
+    for group in &mut document.groups {
+        if let Some(order) = group_orders.get(&group.id) {
+            group.order = *order;
+        }
+    }
+    for session in &mut document.sessions {
+        if let Some(order) = session_orders.get(&session.id) {
+            session.order = *order;
+        }
+    }
+}
+
 /// Brings a document written by an older build up to [`VAULT_SCHEMA_VERSION`].
 ///
 /// Brings a stored document up to the shape this build reads.
@@ -975,6 +1121,9 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // too new instead of failing to read one unknown secret variant and calling the vault corrupt, and
     // so a build that predates the keys cannot drop them by writing the document back.
     document.schema_version = VAULT_SCHEMA_VERSION;
+
+    // Groups and sessions share one order per parent, so a session can sit between two groups.
+    normalize_child_orders(&mut document);
 
     Ok(document)
 }
@@ -1009,6 +1158,7 @@ mod tests {
             id: id.to_owned(),
             name: name.to_owned(),
             group_id: None,
+            order: None,
             protocol: sevenshell_types::Protocol::Ssh,
             host: "host.example".to_owned(),
             port: 22,
@@ -1072,6 +1222,173 @@ mod tests {
 
         assert!(document.sessions.is_empty());
         assert!(document.secrets.is_empty());
+    }
+
+    #[test]
+    fn a_new_session_lands_after_the_sessions_already_in_its_group() {
+        let mut document = Document::empty();
+        document.save_group(SessionGroup {
+            id: "g1".to_owned(),
+            name: "group".to_owned(),
+            parent_id: None,
+            order: 0,
+            pinned: false,
+        });
+        let mut web = session("a", "web");
+        web.group_id = Some("g1".to_owned());
+        let mut db = session("b", "db");
+        db.group_id = Some("g1".to_owned());
+
+        document.save_session(web, None);
+        document.save_session(db, None);
+
+        let orders: Vec<Option<u32>> = document
+            .sessions()
+            .iter()
+            .filter(|stored| stored.group_id.as_deref() == Some("g1"))
+            .map(|stored| stored.order)
+            .collect();
+        assert_eq!(orders, vec![Some(0), Some(1)]);
+    }
+
+    #[test]
+    fn an_edit_that_carries_no_order_keeps_the_one_already_stored() {
+        // The editor builds a session field by field and knows nothing about the arrangement; a
+        // rename must not send the row back to the top of its group.
+        let mut document = Document::empty();
+        let mut placed = session("a", "web");
+        placed.order = Some(4);
+        document.save_session(placed, None);
+
+        document.save_session(session("a", "web renamed"), None);
+
+        assert_eq!(document.sessions()[0].order, Some(4));
+    }
+
+    #[test]
+    fn a_session_moved_to_another_group_lands_at_the_end_of_it_without_being_told_where() {
+        // The old number measured a list this session is no longer in, so it cannot be kept.
+        let mut document = Document::empty();
+        document.save_group(SessionGroup {
+            id: "g1".to_owned(),
+            name: "group".to_owned(),
+            parent_id: None,
+            order: 0,
+            pinned: false,
+        });
+        let mut in_group = session("a", "web");
+        in_group.group_id = Some("g1".to_owned());
+        in_group.order = Some(0);
+        document.save_session(in_group, None);
+        document.save_session(session("c", "cache"), None);
+
+        document.save_session(
+            Session {
+                group_id: Some("g1".to_owned()),
+                ..session("c", "cache")
+            },
+            None,
+        );
+
+        let stored = document
+            .sessions()
+            .into_iter()
+            .find(|entry| entry.id == "c")
+            .expect("the moved session");
+        assert_eq!(stored.order, Some(1));
+    }
+
+    #[test]
+    fn the_list_is_drawn_in_the_arrangement_it_was_dragged_into() {
+        let mut document = Document::empty();
+        for (id, name, order) in [("a", "web", 2), ("b", "db", 0), ("c", "cache", 1)] {
+            let mut stored = session(id, name);
+            stored.order = Some(order);
+            document.save_session(stored, None);
+        }
+
+        let names: Vec<String> = document.sessions().into_iter().map(|stored| stored.name).collect();
+        assert_eq!(names, vec!["db", "cache", "web"]);
+    }
+
+    #[test]
+    fn a_vault_written_before_sessions_had_places_draws_groups_before_sessions() {
+        // What an older build wrote: groups carry an order, sessions carry none. The nesting is
+        // what draws it, and the normalization must keep that drawing rather than interleave by
+        // numbers the sessions never had.
+        let mut document = Document::empty();
+        for (id, name, order) in [("work", "Work", 0), ("lab", "Lab", 1)] {
+            document.save_group(SessionGroup {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                parent_id: None,
+                order,
+                pinned: false,
+            });
+        }
+        document.sessions.push(session("web", "web"));
+        let mut db = session("db", "db");
+        db.group_id = Some("work".to_owned());
+        document.sessions.push(db);
+
+        let migrated = migrate(document).expect("migrate");
+
+        let session_order = |id: &str| {
+            migrated
+                .sessions
+                .iter()
+                .find(|stored| stored.id == id)
+                .and_then(|stored| stored.order)
+        };
+        let group_order = |id: &str| {
+            migrated
+                .groups
+                .iter()
+                .find(|group| group.id == id)
+                .map(|group| group.order)
+        };
+        assert_eq!(group_order("work"), Some(0));
+        assert_eq!(group_order("lab"), Some(1));
+        assert_eq!(session_order("web"), Some(2));
+        assert_eq!(session_order("db"), Some(0));
+    }
+
+    #[test]
+    fn an_arrangement_with_sessions_between_groups_survives_a_reload() {
+        let mut document = Document::empty();
+        document.save_group(SessionGroup {
+            id: "work".to_owned(),
+            name: "Work".to_owned(),
+            parent_id: None,
+            order: 1,
+            pinned: false,
+        });
+        let mut early = session("web", "web");
+        early.order = Some(0);
+        document.save_session(early, None);
+
+        let migrated = migrate(document).expect("migrate");
+
+        assert_eq!(migrated.sessions[0].order, Some(0));
+        assert_eq!(migrated.groups[0].order, 1);
+    }
+
+    #[test]
+    fn a_new_session_lands_after_the_groups_of_its_parent() {
+        let mut document = Document::empty();
+        for (id, order) in [("work", 0), ("lab", 1)] {
+            document.save_group(SessionGroup {
+                id: id.to_owned(),
+                name: id.to_owned(),
+                parent_id: None,
+                order,
+                pinned: false,
+            });
+        }
+
+        document.save_session(session("web", "web"), None);
+
+        assert_eq!(document.sessions[0].order, Some(2));
     }
 
     #[test]

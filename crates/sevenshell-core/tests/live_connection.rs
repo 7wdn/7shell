@@ -108,6 +108,7 @@ fn lab_with_session(password_override: Option<&str>) -> Option<Lab> {
         id: "lab-session".to_owned(),
         name: "lab".to_owned(),
         group_id: None,
+        order: None,
         protocol: sevenshell_types::Protocol::Ssh,
         host: host.clone(),
         port,

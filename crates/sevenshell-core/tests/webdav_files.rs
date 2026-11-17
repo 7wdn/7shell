@@ -170,6 +170,7 @@ fn webdav_session(url: String) -> Session {
         id: "dav-1".to_owned(),
         name: "dav".to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::WebDav,
         host: String::new(),
         port: 443,

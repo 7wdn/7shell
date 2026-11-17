@@ -169,6 +169,7 @@ fn ftp_session(port: u16) -> Session {
         id: "ftp-1".to_owned(),
         name: "ftp".to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Ftp,
         host: "127.0.0.1".to_owned(),
         port,

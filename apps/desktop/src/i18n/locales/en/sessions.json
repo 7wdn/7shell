@@ -50,7 +50,6 @@
       "importPassphrase": "Passphrase",
       "importPassphrasePlaceholder": "Enter the passphrase",
       "importPassphraseConfirm": "Import",
-      "dropOutOfGroups": "Move it out of every group",
       "importExport": "Import / Export",
       "collapseAll": "Collapse all",
       "connectCancelled": "Connection cancelled: {name}",

@@ -29,6 +29,7 @@ fn session(id: &str, name: &str) -> Session {
         id: id.to_owned(),
         name: name.to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Ssh,
         host: format!("{name}.example"),
         port: 22,

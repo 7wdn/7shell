@@ -94,6 +94,14 @@ export interface Session {
   readonly id: string;
   readonly name: string;
   readonly groupId?: string;
+  /**
+   * Where the session sits among the sessions of its group, lowest first.
+   *
+   * Absent is "nobody has placed this one": it is drawn level with order zero, so it stays where
+   * it was created relative to the sessions that were never dragged. A reorder writes a number
+   * for every session it moves, which is how the arrangement survives a restart.
+   */
+  readonly order?: number;
   readonly protocol: Protocol;
   readonly host: string;
   readonly port: number;

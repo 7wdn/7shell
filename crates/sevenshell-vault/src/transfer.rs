@@ -546,6 +546,7 @@ mod tests {
             id: id.to_owned(),
             name: name.to_owned(),
             group_id: None,
+            order: None,
             protocol: sevenshell_types::Protocol::Ssh,
             host: "example.test".to_owned(),
             port: 22,

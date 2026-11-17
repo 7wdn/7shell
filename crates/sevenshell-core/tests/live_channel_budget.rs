@@ -49,6 +49,7 @@ fn lab() -> Option<Lab> {
         id: "lab-channels".to_owned(),
         name: "lab channels".to_owned(),
         group_id: None,
+        order: None,
         protocol: sevenshell_types::Protocol::Ssh,
         host,
         port,

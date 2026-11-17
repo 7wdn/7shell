@@ -109,6 +109,7 @@ fn session(id: &str, protocol: sevenshell_types::Protocol, host: &str, port: u16
         id: id.to_owned(),
         name: id.to_owned(),
         group_id: None,
+        order: None,
         protocol,
         host: host.to_owned(),
         port,

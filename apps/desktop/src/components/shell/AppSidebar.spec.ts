@@ -208,11 +208,6 @@ function rowElement(key: string): HTMLElement {
   return row;
 }
 
-/** The same lookup without the throw, for asking whether a row is there at all. */
-function rowOrNull(key: string): HTMLElement | null {
-  return host.querySelector<HTMLElement>(`[data-row="${key}"]`);
-}
-
 /** How far a row is indented, which is how far inside the tree it is drawn. */
 function indentOf(key: string): number {
   return Number.parseInt(rowElement(key).style.paddingLeft, 10);
@@ -653,22 +648,6 @@ describe("the rows", () => {
     // pointer is one somebody notices in the wrong place.
     expect(groupNameField()?.classList.contains("text-sm")).toBe(true);
   });
-
-  it("draws no row for leaving every group until something is being dragged", async () => {
-    await render([work], [db]);
-
-    // What that row is for exists only while a drag is: the rest of the time the list is the
-    // sessions and the folders, and nothing that is only a place to put something.
-    expect(rowOrNull("drop-out")).toBeNull();
-
-    await startDrag("session:session-2");
-    layOutRows();
-
-    expect(rowOrNull("drop-out")).not.toBeNull();
-
-    await drop();
-    expect(rowOrNull("drop-out")).toBeNull();
-  });
 });
 
 describe("making a group", () => {
@@ -682,9 +661,10 @@ describe("making a group", () => {
     await vi.waitFor(() => expect(groupNameField()).not.toBeNull());
     expect(groupNameField()?.value).toBe("New group");
 
-    // One write, with the name it is drawn under until somebody says otherwise.
+    // One write, with the name it is drawn under until somebody says otherwise. The order follows
+    // every child of the root, which now includes the session already there.
     const written = vi.mocked(groupSave).mock.calls[0]?.[0];
-    expect(written).toMatchObject({ name: "New group", order: 0 });
+    expect(written).toMatchObject({ name: "New group", order: 1 });
     expect(written?.parentId).toBeUndefined();
     expect(written?.id).toBeTruthy();
     expect(drawnRows()[0]?.startsWith("group:"), "and it is drawn where it landed").toBe(true);
@@ -1162,19 +1142,22 @@ describe("dragging", () => {
     expect(indentOf("session:session-1")).toBeGreaterThan(atRoot);
   });
 
-  it("takes a session out of every group when it is dropped on the row drawn for it", async () => {
+  it("takes a session out of every group when it is dropped beside a row at the root", async () => {
     await render([work], [web, db]);
     const inside = indentOf("session:session-2");
 
     await startDrag("session:session-2");
-    // The row appears with the drag, so it has to be given a place on screen before the pointer can
-    // be over it — jsdom lays nothing out.
-    layOutRows();
-    await dragOver("drop-out");
-    expect(marked("drop-out"), "the row says it is where the session would go").toBe(true);
+    await dragOver("session:session-1", "bottom");
+    expect(
+      rowElement("session:session-1").querySelector("span.absolute.bottom-0"),
+      "the line says where the session would land",
+    ).not.toBeNull();
     await drop();
 
-    expect(vi.mocked(sessionSave).mock.calls[0]?.[0]).toMatchObject({ id: "session-2", groupId: undefined });
+    // The reorder renumbers the list the session lands in, so the write for the row that moved is
+    // found among the calls rather than assumed to be the first one.
+    const written = vi.mocked(sessionSave).mock.calls.map(([session]) => session);
+    expect(written).toContainEqual(expect.objectContaining({ id: "session-2", groupId: undefined, order: 2 }));
     await vi.waitFor(() => expect(indentOf("session:session-2")).toBeLessThan(inside));
   });
 

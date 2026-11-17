@@ -245,6 +245,7 @@ mod tests {
             id: "desktop-1".to_owned(),
             name: "desktop".to_owned(),
             group_id: None,
+            order: None,
             protocol: Protocol::Rdp,
             host: "desktop.example".to_owned(),
             port: 3389,

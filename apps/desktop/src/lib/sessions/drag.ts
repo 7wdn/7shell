@@ -1,10 +1,11 @@
 /**
  * A pointer over a row, turned into what dropping there would mean.
  *
- * The bands come from what the two things that can be dragged have in common. A group dropped in
- * the middle of another group goes *inside* it, and dropped at either end goes beside it. A session
- * has no bands: it is in a group rather than between two things — our model keeps no order among
- * the sessions of one group — so the whole row means "the group this row is drawn in".
+ * The bands come from what the two kinds of row can offer. A group row has three: the ends mean
+ * "beside it, at its parent" and the middle means "inside it". A session row has two halves, and
+ * both mean "beside this session, in its parent" — which is also how a thing changes groups, since
+ * the row it lands beside is drawn in the parent it will join. Because groups and sessions share
+ * one order inside a parent, either can be dropped beside either: that is how the two interleave.
  *
  * What comes back is a *wish*, not a decision: whether it can be done is the planner's answer
  * (`planGroupDrop` / `planSessionDrop`), and asking the same functions the drop itself will ask is
@@ -46,24 +47,28 @@ export function zoneIn(box: RowBox, pointerY: number): DropZone {
   return "inside";
 }
 
-/** What dropping a group on this row, at this height, would mean. */
-export function groupDropFor(target: DragTarget, box: RowBox, pointerY: number): AimedDrop {
+/** Which half of a session row the pointer is in: before the session or after it. */
+export function halfIn(box: RowBox, pointerY: number): "before" | "after" {
+  const height = Math.max(1, box.height);
+  return pointerY - box.top < height / 2 ? "before" : "after";
+}
+
+/**
+ * What dropping something on this row, at this height, would mean.
+ *
+ * A group row has three bands: the ends mean "beside it, at its parent" and the middle means
+ * "inside it". A session row has two halves, and both mean "beside this session, in its parent" —
+ * which is also how a thing changes groups, since the row it lands beside is drawn in the parent it
+ * will join. Because groups and sessions share one order inside a parent, either can be dropped
+ * beside either: that is how the two interleave.
+ *
+ * What comes back is a *wish*, not a decision: whether it can be done is the planner's answer
+ * (`planGroupDrop` / `planSessionDrop`), and asking the same functions the drop itself will ask is
+ * what keeps the indicator from promising something the release would refuse.
+ */
+export function dropAt(target: DragTarget, box: RowBox, pointerY: number): AimedDrop {
   if (target.kind === "group") {
     return { drop: { kind: "group", id: target.id }, zone: zoneIn(box, pointerY) };
   }
-  // Onto a session: the group goes where that row is — inside the group the row is drawn in, or at
-  // the root when the row is in no group.
-  return target.parentId === null
-    ? { drop: { kind: "root" }, zone: "inside" }
-    : { drop: { kind: "group", id: target.parentId }, zone: "inside" };
-}
-
-/** What dropping a session on this row would mean. A session only ever changes which group it is in. */
-export function sessionDropFor(target: DragTarget): AimedDrop {
-  if (target.kind === "group") {
-    return { drop: { kind: "group", id: target.id }, zone: "inside" };
-  }
-  return target.parentId === null
-    ? { drop: { kind: "root" }, zone: "inside" }
-    : { drop: { kind: "group", id: target.parentId }, zone: "inside" };
+  return { drop: { kind: "session", id: target.id }, zone: halfIn(box, pointerY) };
 }

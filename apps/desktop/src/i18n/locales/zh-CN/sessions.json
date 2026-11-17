@@ -50,7 +50,6 @@
       "importPassphrase": "口令",
       "importPassphrasePlaceholder": "输入口令",
       "importPassphraseConfirm": "导入",
-      "dropOutOfGroups": "移出所有分组",
       "importExport": "导入 / 导出",
       "collapseAll": "全部折叠",
       "connectCancelled": "已取消连接：{name}",

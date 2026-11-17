@@ -104,6 +104,7 @@ fn library(vault: &Vault) {
                 id: "web".to_owned(),
                 name: "web".to_owned(),
                 group_id: None,
+                order: None,
                 protocol: Protocol::Ssh,
                 host: "web.example".to_owned(),
                 port: 22,

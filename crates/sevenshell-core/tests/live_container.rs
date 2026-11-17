@@ -40,6 +40,7 @@ fn session(id: &str, name: &str, protocol: Protocol) -> Session {
         id: id.to_owned(),
         name: name.to_owned(),
         group_id: None,
+        order: None,
         protocol,
         host: String::new(),
         port: 0,
