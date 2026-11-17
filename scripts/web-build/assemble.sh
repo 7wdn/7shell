@@ -14,10 +14,13 @@ set -euo pipefail
 SRC="${SRC:-/src}"
 WORK="${WEB_BUILD:?the work directory is required}"
 VERSION="${VERSION:?the version being packaged is required}"
+# The architecture of the build image this runs in, not of the machine the package is built on:
+# amd64 and arm64 each run this same script inside their own Debian 10 image.
+ARCH="${ARCH:?the architecture being packaged is required (amd64 or arm64)}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-OUT="$WORK/pkg/7Shell-web-linux-amd64"
-TAR="$WORK/7Shell_${VERSION}_amd64-web.tar.gz"
+OUT="$WORK/pkg/7Shell-web-linux-$ARCH"
+TAR="$WORK/7Shell_${VERSION}_${ARCH}-web.tar.gz"
 
 test -x "$WORK/target/release/sevenshell-web" || { echo "error: sevenshell-web was not built" >&2; exit 1; }
 test -x "$WORK/target/release/sshell-mcp" || { echo "error: sshell-mcp was not built" >&2; exit 1; }
@@ -49,6 +52,7 @@ sed -i "s/$CSS_NAME/$CSS_NEW/g" "$OUT/dist/index.html"
 {
   echo "7Shell web package"
   echo "version: $VERSION"
+  echo "arch: $ARCH"
   echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "css: assets/$CSS_NEW"
   echo "bridge: bin/sshell-mcp (bin/sshell-mcp.bin)"
@@ -62,7 +66,7 @@ for binary in "$OUT/bin/sevenshell-web" "$OUT/bin/sshell-mcp.bin"; do
   ldd "$binary" | awk '/=> \// {print $3}' | while read -r lib; do
     base="$(basename "$lib")"
     case "$base" in
-      libc.so.6|libm.so.6|libdl.so.2|libpthread.so.0|librt.so.1|ld-linux-x86-64.so.2|libresolv.so.2) continue ;;
+      libc.so.6|libm.so.6|libdl.so.2|libpthread.so.0|librt.so.1|libresolv.so.2|ld-linux-x86-64.so.2|ld-linux-aarch64.so.1) continue ;;
     esac
     cp -L "$lib" "$OUT/lib/$base"
   done
@@ -105,5 +109,5 @@ echo "== package size =="
 du -sh "$OUT"
 echo "== tar =="
 cd "$WORK/pkg"
-tar --owner=0 --group=0 -czf "$TAR" 7Shell-web-linux-amd64
+tar --owner=0 --group=0 -czf "$TAR" "7Shell-web-linux-$ARCH"
 sha256sum "$TAR"

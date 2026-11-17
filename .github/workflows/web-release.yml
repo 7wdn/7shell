@@ -31,16 +31,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: web-linux-x86_64
           path: web
 
-      - name: Upload it
+      - name: Upload them
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          ls -l web
+          find web -name '*-web.tar.gz' -type f
           # Named explicitly: this job has no checkout, and `gh` infers the repository from git
           # otherwise — which is a failure, not a guess it can make.
-          gh release upload "$TAG" web/*-web.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" web/*/*-web.tar.gz --repo "$GITHUB_REPOSITORY" --clobber

@@ -21,8 +21,20 @@ permissions:
 
 jobs:
   package:
-    name: Browser package (Linux x86_64)
-    runs-on: ubuntu-22.04
+    name: Browser package (Linux ${{ matrix.arch }})
+    strategy:
+      # One architecture failing must not throw away the other: they are separate packages for
+      # separate machines.
+      fail-fast: false
+      matrix:
+        include:
+          # The arm64 runner is the native one GitHub hosts; the Debian 10 image it builds in is
+          # arm64 too, so the toolchain and the package agree without emulation.
+          - runner: ubuntu-22.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,15 +100,16 @@ jobs:
             -e SRC=/src \
             -e WEB_BUILD=/src/.scratch/web-build \
             -e VERSION="$VERSION" \
+            -e ARCH="${{ matrix.arch }}" \
             7shell-web-build:debian10 \
             bash /src/.web-tools/scripts/web-build/assemble.sh | tee "$RUNNER_TEMP/assemble.log"
 
-          TAR="$GITHUB_WORKSPACE/.scratch/web-build/7Shell_${VERSION}_amd64-web.tar.gz"
+          TAR="$GITHUB_WORKSPACE/.scratch/web-build/7Shell_${VERSION}_${{ matrix.arch }}-web.tar.gz"
           test -f "$TAR"
           sha256sum "$TAR" | tee -a "$GITHUB_STEP_SUMMARY"
           {
             echo ""
-            echo "\`7Shell_${VERSION}_amd64-web.tar.gz\` was built against the glibc 2.28 baseline:"
+            echo "\`7Shell_${VERSION}_${{ matrix.arch }}-web.tar.gz\` was built against the glibc 2.28 baseline:"
             echo '```'
             grep -E 'GLIBC|bundled libraries' -A 20 "$RUNNER_TEMP/assemble.log" | head -n 30
             echo '```'
@@ -104,6 +117,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: web-linux-x86_64
+          name: web-linux-${{ matrix.arch }}
           path: .scratch/web-build/*-web.tar.gz
           if-no-files-found: error
