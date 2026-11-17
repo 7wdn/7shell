@@ -41,4 +41,6 @@ jobs:
         run: |
           set -euo pipefail
           ls -l web
-          gh release upload "$TAG" web/*-web.tar.gz --clobber
+          # Named explicitly: this job has no checkout, and `gh` infers the repository from git
+          # otherwise — which is a failure, not a guess it can make.
+          gh release upload "$TAG" web/*-web.tar.gz --repo "$GITHUB_REPOSITORY" --clobber
