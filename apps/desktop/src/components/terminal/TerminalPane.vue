@@ -278,6 +278,10 @@ const {
   terminal: () => terminal,
   pane: () => paneBox.value,
   send: (data) => {
+    // Completion writes into the shell without passing through the keyboard handler below, so the
+    // line the `cd` reader keeps is fed the same bytes: accepting a completed `cd /data/test`
+    // otherwise runs the line and leaves the file panel where it was.
+    typed.feed(data);
     void terminals.send(props.handle, encoder.encode(data));
   },
 });
@@ -763,7 +767,12 @@ onMounted(() => {
 
   terminal = instance;
   fitAddon = fit;
-  unregisterInputReset = registerInputReset(props.handle, resetCompletion);
+  unregisterInputReset = registerInputReset(props.handle, () => {
+    // A line written from outside the keyboard replaces whatever was being typed: both readers of
+    // that line — the completion's and the `cd` follower's — are wrong from here on until reset.
+    resetCompletion();
+    typed.reset();
+  });
   // The assistant panel reads the terminal on screen through this: what it previews is what it
   // sends, and only the pane can read the buffer it is drawing.
   unregisterBuffer = registerTerminalBuffer(props.handle, (lines) => tailOfBuffer(instance.buffer.active, lines));

@@ -161,6 +161,7 @@ import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { clipboardText, filesList, filesOpen, sessionOpen, transfersOpen, tunnelsOpen } from "@/lib/backend/tauri";
 import { copyText } from "@/lib/menu/clipboard";
+import { resetTerminalInput } from "@/lib/terminal/bus";
 import type { MenuAction } from "@/lib/menu/types";
 import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
@@ -329,6 +330,19 @@ describe("a terminal carrying a file panel", () => {
     await nextTick();
 
     expect(useFilesStore().browser("f1")?.path).toBe("/var/log");
+  });
+
+  it("forgets a half-typed line when a command was written into the shell from outside", async () => {
+    // The bar or the library wrote a line the keyboard never saw. What is still held here is a
+    // prefix of a line the shell no longer has, and reading it together with what is typed next
+    // would move the panel to a directory nobody named.
+    onData?.("cd /da");
+    resetTerminalInput("handle-1");
+    onData?.("ta/test\r");
+    await nextTick();
+    await nextTick();
+
+    expect(useFilesStore().browser("f1")?.path).toBe("/home/user");
   });
 });
 

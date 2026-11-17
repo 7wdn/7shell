@@ -124,6 +124,18 @@ export class TypedCommands {
   private readable = true;
   private pasting = false;
 
+  /**
+   * Forgets the line.
+   *
+   * For when the shell's line was rewritten by something other than the keyboard — a line sent from
+   * the command bar, a saved command — and what this side holds is no longer what the shell has.
+   */
+  reset(): void {
+    this.line = "";
+    this.readable = true;
+    this.pasting = false;
+  }
+
   /** Feeds what was typed since the last call; returns the directory to follow, if one was named. */
   feed(data: string): string | null {
     let followed: string | null = null;

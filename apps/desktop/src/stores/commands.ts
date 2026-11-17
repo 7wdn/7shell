@@ -21,6 +21,7 @@ import { BUILTIN_COMMANDS, libraryIsShipped } from "@/lib/commands/builtin";
 import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { fillSlots, slotsIn, SLOTS } from "@/lib/commands/slots";
 import { resetTerminalInput } from "@/lib/terminal/bus";
+import { directoryInCommand } from "@/lib/terminal/follow";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { RiskAssessment } from "@/types/batch";
 import type { CommandHistoryEntry, SendFailure, Snippet, SnippetGroup } from "@/types/snippet";
@@ -364,15 +365,11 @@ export const useCommandsStore = defineStore("commands", () => {
       return;
     }
 
+    const appendCr = draft.value?.appendCr ?? true;
     sending.value = true;
     sendFailure.value = null;
     try {
-      const outcome = await backend.commands.send(
-        { kind: "terminals", handles },
-        line,
-        draft.value?.appendCr ?? true,
-        agree,
-      );
+      const outcome = await backend.commands.send({ kind: "terminals", handles }, line, appendCr, agree);
       if (outcome.kind === "approvalRequired") {
         approval.value = outcome.risk;
         acknowledged.value = false;
@@ -383,6 +380,7 @@ export const useCommandsStore = defineStore("commands", () => {
       // Per terminal: "it reached three of them" is the useful answer when one tab has ended.
       sendFailures.value = [...outcome.report.failures];
       lastSent.value += 1;
+      await followSentLine(line, appendCr, outcome.report.sent);
       // The values that were used are the ones worth offering next time.
       const current = draft.value;
       if (current?.id && slots.value.length > 0) {
@@ -427,12 +425,36 @@ export const useCommandsStore = defineStore("commands", () => {
 
       sendFailures.value = [...outcome.report.failures];
       lastSent.value += 1;
+      await followSentLine(line, true, outcome.report.sent);
       await load();
     } catch (error) {
       sendFailure.value = asShellError(error, "command_send");
     } finally {
       sending.value = false;
       resetTerminalInput(handle);
+    }
+  }
+
+  /**
+   * Moves the file panels of the shells a line just ran in.
+   *
+   * A line sent from the input bar or the library is written straight into the pty, so the pane's
+   * keystroke reader never sees it — and a `cd` that arrived that way would move the shell and
+   * leave the panel behind. Only a line that ends with Enter is followed: a saved command with
+   * `appendCr` off is still sitting at the prompt, and a panel that moved for it would be describing
+   * something that has not happened. Only the shells the line reached are moved.
+   */
+  async function followSentLine(line: string, appendCr: boolean, sent: readonly string[]): Promise<void> {
+    if (!appendCr || sent.length === 0) {
+      return;
+    }
+    const directory = directoryInCommand(line);
+    if (directory === null) {
+      return;
+    }
+    const terminals = useTerminalsStore();
+    for (const handle of sent) {
+      await terminals.followDirectory(handle, directory);
     }
   }
 

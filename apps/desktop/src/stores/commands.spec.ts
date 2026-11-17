@@ -16,7 +16,25 @@ vi.mock("@/lib/backend/tauri", () => ({
   terminalWrite: vi.fn(),
 }));
 
-import { snippetDelete, snippetGroupDelete, snippetSave, snippetsOpen } from "@/lib/backend/tauri";
+// The panels a send has to move. The store reaches them through `useTerminalsStore`, and this
+// suite has no windows: the stub is the two halves a send uses — which terminals are open, and
+// where their panels go.
+const terminalsStub = vi.hoisted(() => ({
+  activeTerminalHandle: () => "t1" as string | null,
+  writableHandles: () => ["t1", "t2"],
+  followDirectory: vi.fn(),
+}));
+
+vi.mock("@/stores/terminals", () => ({ useTerminalsStore: () => terminalsStub }));
+
+import {
+  commandHistory,
+  commandSend,
+  snippetDelete,
+  snippetGroupDelete,
+  snippetSave,
+  snippetsOpen,
+} from "@/lib/backend/tauri";
 import { BUILTIN_COMMANDS } from "@/lib/commands/builtin";
 import { fillSlots, slotsIn, useCommandsStore } from "@/stores/commands";
 import type { Snippet, SnippetGroup } from "@/types/snippet";
@@ -25,6 +43,8 @@ const listMock = vi.mocked(snippetsOpen);
 const saveMock = vi.mocked(snippetSave);
 const deleteMock = vi.mocked(snippetDelete);
 const groupDeleteMock = vi.mocked(snippetGroupDelete);
+const sendMock = vi.mocked(commandSend);
+const historyMock = vi.mocked(commandHistory);
 
 function snippet(id: string, name: string, order: number, command = "uptime", enabled = true): Snippet {
   return {
@@ -195,4 +215,71 @@ describe("the command library", () => {
   // is open — which this suite has no way to have. The storage side of that is covered by the
   // vault's own tests (`Snippet::remember`), and the end-to-end case covers the rest: a command
   // with a `#1` reaches a real shell, substituted.
+});
+
+/**
+ * A line written into a shell from somewhere other than its keyboard.
+ *
+ * The bar and the library both send through the backend, so the pane's keystroke reader never sees
+ * the line — which is why the panel under the terminal has to be told where the `cd` went here.
+ */
+describe("a cd that was sent rather than typed", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+    terminalsStub.followDirectory.mockReset();
+    listMock.mockResolvedValue(library(shippedRows()));
+    historyMock.mockResolvedValue([]);
+    sendMock.mockResolvedValue({ kind: "sent", report: { sent: ["t1"], failures: [] } });
+  });
+
+  it("takes the panel of the shell the input bar sent a cd to", async () => {
+    const commands = useCommandsStore();
+
+    await commands.sendLiteral("cd /data/test");
+
+    expect(terminalsStub.followDirectory).toHaveBeenCalledWith("t1", "/data/test");
+  });
+
+  it("takes every shell a saved cd reached", async () => {
+    sendMock.mockResolvedValue({ kind: "sent", report: { sent: ["t1", "t2"], failures: [] } });
+    const commands = useCommandsStore();
+    commands.target = "all";
+    commands.draft = {
+      id: "",
+      groupId: "default",
+      name: "go",
+      prefix: "",
+      command: "cd /logs",
+      appendCr: true,
+      enabled: true,
+    };
+
+    await commands.send();
+
+    expect(terminalsStub.followDirectory.mock.calls).toEqual([
+      ["t1", "/logs"],
+      ["t2", "/logs"],
+    ]);
+  });
+
+  it("leaves the panels where they are for a line that did not run, or names no directory", async () => {
+    const commands = useCommandsStore();
+    commands.draft = {
+      id: "",
+      groupId: "default",
+      name: "go",
+      prefix: "",
+      command: "cd /logs",
+      appendCr: false,
+      enabled: true,
+    };
+
+    // Without the trailing Enter the line is sitting at a prompt, not somewhere the shell is.
+    await commands.send();
+    expect(terminalsStub.followDirectory).not.toHaveBeenCalled();
+
+    await commands.sendLiteral("uptime");
+    expect(terminalsStub.followDirectory).not.toHaveBeenCalled();
+  });
 });
