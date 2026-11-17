@@ -12,6 +12,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   commandHistoryClear: vi.fn(),
   commandClassify: vi.fn(),
   commandSend: vi.fn(),
+  commandRemember: vi.fn(async () => {}),
   sessionOpen: vi.fn(),
   terminalWrite: vi.fn(),
 }));
@@ -29,6 +30,7 @@ vi.mock("@/stores/terminals", () => ({ useTerminalsStore: () => terminalsStub })
 
 import {
   commandHistory,
+  commandRemember,
   commandSend,
   snippetDelete,
   snippetGroupDelete,
@@ -45,6 +47,7 @@ const deleteMock = vi.mocked(snippetDelete);
 const groupDeleteMock = vi.mocked(snippetGroupDelete);
 const sendMock = vi.mocked(commandSend);
 const historyMock = vi.mocked(commandHistory);
+const rememberMock = vi.mocked(commandRemember);
 
 function snippet(id: string, name: string, order: number, command = "uptime", enabled = true): Snippet {
   return {
@@ -281,5 +284,41 @@ describe("a cd that was sent rather than typed", () => {
 
     await commands.sendLiteral("uptime");
     expect(terminalsStub.followDirectory).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A line run at a prompt, which the bar never saw.
+ *
+ * The list the bar offers back is a read of the vault, so this is the one path where a line has to
+ * be put in front of it as well: without that, a command typed at a prompt would be missing until
+ * the library was read again.
+ */
+describe("recording what was typed at a prompt", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it("puts a typed line at the top of the history and writes it down", () => {
+    const commands = useCommandsStore();
+    commands.history = [
+      { command: "uptime", at: 10 },
+      { command: "df -h", at: 5 },
+    ];
+
+    commands.rememberTyped("df -h");
+
+    expect(commands.history.map((entry) => entry.command)).toEqual(["df -h", "uptime"]);
+    expect(rememberMock).toHaveBeenCalledWith("df -h");
+  });
+
+  it("ignores a line with nothing in it", () => {
+    const commands = useCommandsStore();
+
+    commands.rememberTyped("   ");
+
+    expect(commands.history).toEqual([]);
+    expect(rememberMock).not.toHaveBeenCalled();
   });
 });

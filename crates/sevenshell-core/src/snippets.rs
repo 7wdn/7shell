@@ -77,6 +77,14 @@ impl Core {
         self.vault.clear_command_history()
     }
 
+    /// Remembers a line that was typed at a shell's prompt and run there.
+    ///
+    /// The store has one list and one rule — a line that repeats moves to the top — so the same
+    /// command typed at a prompt and sent from the library is one entry rather than two.
+    pub fn remember_command(&self, command: &str) -> Result<(), ShellError> {
+        self.vault.remember_command(command, now_seconds())
+    }
+
     /// Writes a line into the terminals in the target, pressing Enter afterwards when asked.
     ///
     /// A terminal that cannot be written to is one entry in the report rather than a failed send:

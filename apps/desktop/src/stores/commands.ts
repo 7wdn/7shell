@@ -43,6 +43,9 @@ export interface SnippetDraft {
   enabled: boolean;
 }
 
+/** How many lines the history keeps, which is the ceiling the vault itself applies. */
+const HISTORY_LIMIT = 500;
+
 export const useCommandsStore = defineStore("commands", () => {
   const groups = ref<SnippetGroup[]>([]);
   const history = ref<CommandHistoryEntry[]>([]);
@@ -458,6 +461,28 @@ export const useCommandsStore = defineStore("commands", () => {
     }
   }
 
+  /**
+   * Records a line somebody ran at a terminal's prompt.
+   *
+   * The list the bar offers back is read out of the vault, so a line typed at a prompt would not
+   * be in it until the next read. The same entry is put at the top here, under the rule the vault
+   * applies when the write lands: a repeated line moves up rather than appearing twice. A write
+   * that fails leaves the list as it was — the command ran, and losing one row of history is not
+   * worth interrupting somebody's typing over.
+   */
+  function rememberTyped(line: string): void {
+    const command = line.trim();
+    if (command === "") {
+      return;
+    }
+    const at = Math.floor(Date.now() / 1000);
+    history.value = [{ command, at }, ...history.value.filter((entry) => entry.command !== command)].slice(
+      0,
+      HISTORY_LIMIT,
+    );
+    void backend.commands.remember(command).catch(() => {});
+  }
+
   /** Moves the values just used to the front of their slot's history, and stores that. */
   async function rememberValues(id: string): Promise<void> {
     const current = draft.value;
@@ -514,5 +539,6 @@ export const useCommandsStore = defineStore("commands", () => {
     needsRestore,
     send,
     sendLiteral,
+    rememberTyped,
   };
 });

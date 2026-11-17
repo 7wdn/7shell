@@ -1101,6 +1101,8 @@ export const backend = {
     clearWords: (): Promise<void> => forward("completion_words_clear", () => desktop.completionWordsClear()),
     history: (): Promise<CommandHistoryEntry[]> => forward("command_history", () => desktop.commandHistory()),
     clearHistory: (): Promise<void> => forward("command_history_clear", () => desktop.commandHistoryClear()),
+    /** Records a line somebody ran at a terminal's prompt, for the list the bar offers back. */
+    remember: (line: string): Promise<void> => forward("command_remember", () => desktop.commandRemember(line)),
     /** What the classifier makes of a command. Sends nothing. */
     classify: (command: string): Promise<RiskAssessment> =>
       forward("command_classify", () => desktop.commandClassify(command)),

@@ -31,6 +31,8 @@ let oscHandlers: Map<number, (data: string) => boolean>;
 let selection = "";
 /** Every terminal the pane built, so a test can look at what it was handed and when. */
 const builtTerminals: { options: Record<string, unknown> }[] = [];
+/** What the mocked screen holds, row by row: the pane reads the cursor's row and the one above. */
+const SCREEN_ROWS: string[] = [];
 let pasted: string[] = [];
 let selectedAll = 0;
 let cleared = 0;
@@ -58,6 +60,20 @@ vi.mock("@xterm/xterm", () => ({
     };
     cols = 80;
     rows = 24;
+    /**
+     * The screen, as the pane reads it: what the last line above the cursor says is what decides
+     * whether a typed line was a command or an answer to a password prompt.
+     */
+    readonly buffer = {
+      active: {
+        type: "normal",
+        baseY: 0,
+        get cursorY(): number {
+          return SCREEN_ROWS.length - 1;
+        },
+        getLine: (row: number) => ({ translateToString: () => SCREEN_ROWS[row] ?? "" }),
+      },
+    };
 
     loadAddon(): void {}
     /** Kept, so a test can press Ctrl+F the way xterm would route it. */
@@ -153,13 +169,22 @@ vi.mock("@/lib/backend/tauri", () => ({
   filesList: vi.fn(),
   filesClose: vi.fn(),
   transfersOpen: vi.fn(),
+  commandRemember: vi.fn(async () => {}),
 }));
 
 import { createPinia, setActivePinia } from "pinia";
 
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
-import { clipboardText, filesList, filesOpen, sessionOpen, transfersOpen, tunnelsOpen } from "@/lib/backend/tauri";
+import {
+  clipboardText,
+  commandRemember,
+  filesList,
+  filesOpen,
+  sessionOpen,
+  transfersOpen,
+  tunnelsOpen,
+} from "@/lib/backend/tauri";
 import { copyText } from "@/lib/menu/clipboard";
 import { resetTerminalInput } from "@/lib/terminal/bus";
 import type { MenuAction } from "@/lib/menu/types";
@@ -171,6 +196,8 @@ import type { Session } from "@/types/session";
 
 const sessionOpenMock = vi.mocked(sessionOpen);
 const filesOpenMock = vi.mocked(filesOpen);
+/** The history write, watched rather than mocked away: what was run is the claim. */
+const commandRememberMock = vi.mocked(commandRemember);
 const filesListMock = vi.mocked(filesList);
 const tunnelsOpenMock = vi.mocked(tunnelsOpen);
 const transfersOpenMock = vi.mocked(transfersOpen);
@@ -283,6 +310,8 @@ beforeEach(async () => {
   tunnelsOpenMock.mockReset().mockResolvedValue([]);
   transfersOpenMock.mockReset().mockResolvedValue([]);
   clipboardTextMock.mockReset().mockResolvedValue("");
+  commandRememberMock.mockReset().mockResolvedValue(undefined);
+  SCREEN_ROWS.length = 0;
 
   await withPanelUnderTerminal();
   await mountPane();
@@ -330,6 +359,24 @@ describe("a terminal carrying a file panel", () => {
     await nextTick();
 
     expect(useFilesStore().browser("f1")?.path).toBe("/var/log");
+  });
+
+  it("remembers a line that was run at the prompt", async () => {
+    onData?.("uptime\r");
+    await nextTick();
+
+    expect(commandRememberMock).toHaveBeenCalledWith("uptime");
+  });
+
+  it("does not remember what was typed at a prompt asking for an answer", async () => {
+    // `sudo` and `ssh` ask for a password the same way a shell asks for a command, and a password
+    // typed there must not be written into the history.
+    SCREEN_ROWS.splice(0, SCREEN_ROWS.length, "Password: ");
+
+    onData?.("hunter2\r");
+    await nextTick();
+
+    expect(commandRememberMock).not.toHaveBeenCalled();
   });
 
   it("forgets a half-typed line when a command was written into the shell from outside", async () => {

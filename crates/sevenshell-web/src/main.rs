@@ -859,6 +859,11 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             state.core.clear_command_history()?;
             Ok(Value::Null)
         }
+        "command_remember" => {
+            let line: String = from_args(&args, "line")?;
+            state.core.remember_command(&line)?;
+            Ok(Value::Null)
+        }
         "command_classify" => {
             let command: String = from_args(&args, "command")?;
             to_value(sevenshell_core::classify_send(&command))

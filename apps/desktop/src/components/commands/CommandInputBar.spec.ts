@@ -343,3 +343,22 @@ describe("what the bar remembers", () => {
     expect(acceptanceBoost("uptime")).toBeGreaterThan(0);
   });
 });
+
+describe("the history the bar folds out", () => {
+  it("closes when a click lands anywhere else", async () => {
+    await mount([], ran("uptime"));
+
+    const toggle = host.querySelector<HTMLButtonElement>('button[title="History"]');
+    if (toggle === null) {
+      throw new Error("the bar drew no history button");
+    }
+    toggle.click();
+    await nextTick();
+    expect(host.textContent, "the list is up").toContain("uptime");
+
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await nextTick();
+
+    expect(host.textContent?.includes("uptime") ?? false, "a click elsewhere puts it away").toBe(false);
+  });
+});

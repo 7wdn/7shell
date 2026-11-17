@@ -17,7 +17,7 @@
  * answers to "what did I just run".
  */
 import { History, Send } from "@lucide/vue";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import CompletionMenu from "@/components/commands/CompletionMenu.vue";
@@ -52,6 +52,9 @@ const words = useWordsStore();
 const line = ref("");
 const showHistory = ref(false);
 const field = ref<HTMLInputElement | null>(null);
+/** The folded-out history and the button that opens it, so a click anywhere else can close it. */
+const historyBox = ref<HTMLElement | null>(null);
+const historyToggle = ref<HTMLButtonElement | null>(null);
 /** True while any input method is composing: those keys are writing, not choosing. */
 const composing = ref(false);
 /** True while the field holds the keyboard; a generated answer arriving later may refresh it. */
@@ -351,6 +354,34 @@ function toggleHistory(): void {
 }
 
 /**
+ * A click anywhere but the list or its own button closes the list.
+ *
+ * Without this the button was the only way out: a click on the terminal below left the list folded
+ * out over somebody's output until they found the button again.
+ */
+function onDocumentPointerDown(event: PointerEvent): void {
+  if (!showHistory.value) {
+    return;
+  }
+  const target = event.target as Node | null;
+  if (
+    target !== null &&
+    (historyBox.value?.contains(target) === true || historyToggle.value?.contains(target) === true)
+  ) {
+    return;
+  }
+  showHistory.value = false;
+}
+
+onMounted(() => {
+  document.addEventListener("pointerdown", onDocumentPointerDown, true);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+});
+
+/**
  * What Enter does.
  *
  * A row somebody pointed at goes *into the line*, not to the shell: a command name is the beginning of
@@ -428,6 +459,7 @@ function reuse(entry: string): void {
     </span>
 
     <button
+      ref="historyToggle"
       type="button"
       class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] transition-colors"
       :class="showHistory ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'"
@@ -476,6 +508,7 @@ function reuse(entry: string): void {
     -->
     <div
       v-if="showHistory"
+      ref="historyBox"
       class="absolute bottom-full left-0 z-30 mb-1 max-h-64 w-full overflow-auto rounded-md border border-border bg-card shadow-lg"
     >
       <div class="flex items-center justify-between border-b border-border px-2 py-1">

@@ -1245,6 +1245,11 @@ export function commandHistoryClear(): Promise<void> {
   return invoke<void>("command_history_clear");
 }
 
+/** Remembers a line that was typed at a terminal's prompt and run there. */
+export function commandRemember(line: string): Promise<void> {
+  return invoke<void>("command_remember", { line });
+}
+
 /** The verdict for a command, without sending anything. */
 export function commandClassify(command: string): Promise<RiskAssessment> {
   return invoke<RiskAssessment>("command_classify", { command });

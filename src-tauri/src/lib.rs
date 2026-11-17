@@ -221,6 +221,7 @@ pub fn run() {
             commands::snippets::completion_words_clear,
             commands::snippets::command_history,
             commands::snippets::command_history_clear,
+            commands::snippets::command_remember,
             commands::snippets::command_classify,
             commands::snippets::command_send,
             commands::terminal::session_open,

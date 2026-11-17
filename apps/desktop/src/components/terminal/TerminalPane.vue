@@ -47,9 +47,11 @@ import { registerInputReset, registerTerminalSink } from "@/lib/terminal/bus";
 import { registerTerminalBuffer, tailOfBuffer } from "@/lib/terminal/buffers";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
 import { compileHighlightRules, HIGHLIGHT_DECORATION_LIMIT, highlightMatches } from "@/lib/terminal/highlight";
+import { interactivePromptNearCursor } from "@/lib/terminal/promptGuard";
 import { findTerminalScheme, schemeAnsi, withAlpha } from "@/lib/terminal/schemes";
 import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
 import { useAppStore } from "@/stores/app";
+import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 
@@ -223,6 +225,7 @@ const props = defineProps<{
 }>();
 
 const terminals = useTerminalsStore();
+const commands = useCommandsStore();
 const { openMenu } = useContextMenu();
 const container = ref<HTMLDivElement | null>(null);
 /** The pane itself, which is what the selection toolbar is positioned against and clamped inside. */
@@ -230,6 +233,21 @@ const paneBox = ref<HTMLDivElement | null>(null);
 
 /** What has been typed since the last Enter, so a `cd` in it can be read for the file panel. */
 const typed = new TypedCommands();
+
+/**
+ * Whether the screen at the cursor is a prompt asking for an answer rather than for a command.
+ *
+ * `sudo` and `ssh` ask for a password the same way a shell asks for a line, and a password typed
+ * there must not be written into the history.
+ */
+function answerPromptOnScreen(): boolean {
+  if (terminal === undefined) {
+    return false;
+  }
+  const buffer = terminal.buffer.active;
+  const row = buffer.baseY + buffer.cursorY;
+  return interactivePromptNearCursor(row, (at) => buffer.getLine(at)?.translateToString(true) ?? "");
+}
 
 const encoder = new TextEncoder();
 const FIT_DEBOUNCE_MS = 60;
@@ -796,6 +814,14 @@ onMounted(() => {
     const directory = typed.feed(data);
     if (directory !== null) {
       void terminals.followDirectory(props.handle, directory);
+    }
+    // The line Enter ran is what the history offers back — unless the screen at the cursor is a
+    // prompt asking for an answer, which is how a password would otherwise be written down.
+    const executed = typed.takeExecuted();
+    if (executed.length > 0 && !answerPromptOnScreen()) {
+      for (const line of executed) {
+        commands.rememberTyped(line);
+      }
     }
     feedCompletion(data);
     void terminals.send(props.handle, encoder.encode(data));

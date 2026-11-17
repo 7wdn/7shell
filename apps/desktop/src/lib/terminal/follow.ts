@@ -123,6 +123,8 @@ export class TypedCommands {
   private line = "";
   private readable = true;
   private pasting = false;
+  /** The lines Enter ran since the last take, in the order they ran. */
+  private executed: string[] = [];
 
   /**
    * Forgets the line.
@@ -134,6 +136,20 @@ export class TypedCommands {
     this.line = "";
     this.readable = true;
     this.pasting = false;
+    this.executed = [];
+  }
+
+  /**
+   * The lines Enter ran since the last call, gone from the reader.
+   *
+   * What it holds is a reading and not a report: a line rewritten by history or a completion is
+   * not in here, because this side could not say what it became. What is in here is the text the
+   * person's keystrokes spell, which is what the history is for.
+   */
+  takeExecuted(): string[] {
+    const lines = this.executed;
+    this.executed = [];
+    return lines;
   }
 
   /** Feeds what was typed since the last call; returns the directory to follow, if one was named. */
@@ -168,6 +184,10 @@ export class TypedCommands {
 
       if (character === "\r" || character === "\n") {
         followed = this.readable ? directoryInCommand(this.line) : null;
+        const ran = this.line.trim();
+        if (this.readable && ran !== "") {
+          this.executed.push(ran);
+        }
         this.line = "";
         this.readable = true;
         continue;

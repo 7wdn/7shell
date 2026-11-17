@@ -76,6 +76,12 @@ pub fn command_history_clear(state: State<'_, ShellState>) -> Result<(), ShellEr
     state.core().clear_command_history()
 }
 
+/// Remembers a line that was typed at a terminal's prompt and run there.
+#[tauri::command]
+pub fn command_remember(state: State<'_, ShellState>, line: String) -> Result<(), ShellError> {
+    state.core().remember_command(&line)
+}
+
 /// What the classifier makes of a command, without sending it.
 ///
 /// Asked for as somebody types, so the warning is on screen before the button is pressed. It is

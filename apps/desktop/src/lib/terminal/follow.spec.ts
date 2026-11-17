@@ -192,3 +192,29 @@ describe("reading the line somebody is typing", () => {
     expect(typed.feed("\r")).toBeNull();
   });
 });
+
+describe("the lines Enter ran", () => {
+  it("hands back what was run, once", () => {
+    const typed = new TypedCommands();
+    typed.feed("uptime\rdf -h\r");
+
+    expect(typed.takeExecuted()).toEqual(["uptime", "df -h"]);
+    expect(typed.takeExecuted(), "a line is handed out once").toEqual([]);
+  });
+
+  it("leaves out a line it could not read, and one that was thrown away", () => {
+    const typed = new TypedCommands();
+    typed.feed("rm -rf /tmp/x\x1b[A\r");
+    typed.feed("cd /nope\x03");
+
+    expect(typed.takeExecuted()).toEqual([]);
+  });
+
+  it("forgets a pending line when a command was written from outside", () => {
+    const typed = new TypedCommands();
+    typed.feed("uptime\r");
+    typed.reset();
+
+    expect(typed.takeExecuted()).toEqual([]);
+  });
+});
