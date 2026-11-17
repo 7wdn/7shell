@@ -72,7 +72,9 @@ echo "== bundled libraries =="
 ls "$OUT/lib"
 
 # The two ways this package becomes unusable on the systems it exists for, checked rather than
-# assumed: a symbol newer than the oldest glibc, and an OpenSSL the host may not have.
+# assumed: a symbol newer than the oldest glibc, and a library the runtime does not carry. The
+# launcher points LD_LIBRARY_PATH at lib/, so glibc is the only thing the host has to provide —
+# OpenSSL included in what travels: Debian 10's libssl1.1 is bundled beside the binaries.
 echo "== glibc ceiling of the binaries =="
 for binary in "$OUT/bin/sevenshell-web" "$OUT/bin/sshell-mcp.bin"; do
   ceiling="$(objdump -T "$binary" | grep -o 'GLIBC_[0-9.]*' | sed 's/^GLIBC_//' | sort -Vu | tail -n 1)"
@@ -81,11 +83,22 @@ for binary in "$OUT/bin/sevenshell-web" "$OUT/bin/sshell-mcp.bin"; do
     echo "error: $(basename "$binary") needs GLIBC $ceiling, above the 2.28 baseline" >&2
     exit 1
   fi
-  if objdump -p "$binary" | grep -qE 'NEEDED +lib(ssl|crypto)'; then
-    echo "error: $(basename "$binary") links OpenSSL dynamically; it has to be vendored" >&2
+  echo "$(basename "$binary"): GLIBC $ceiling"
+done
+
+echo "== every non-glibc dependency travels in lib/ =="
+needed="$(for binary in "$OUT/bin/sevenshell-web" "$OUT/bin/sshell-mcp.bin"; do
+  objdump -p "$binary" | awk '/NEEDED/ {print $2}'
+done | sort -u)"
+for library in $needed; do
+  case "$library" in
+    libc.so.6|libm.so.6|libdl.so.2|libpthread.so.0|librt.so.1|libresolv.so.2) continue ;;
+  esac
+  if [ ! -f "$OUT/lib/$library" ]; then
+    echo "error: $library is needed by the binaries and is not in lib/" >&2
     exit 1
   fi
-  echo "$(basename "$binary"): GLIBC $ceiling"
+  echo "bundled: $library"
 done
 
 echo "== package size =="
