@@ -541,6 +541,30 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             let session_id: String = from_args(&args, "sessionId")?;
             to_value(state.core.open_files(&session_id).await?)
         }
+        "files_open_container" => {
+            let connection_id: String = from_args(&args, "connectionId")?;
+            let container_id: String = from_args(&args, "containerId")?;
+            let path: String = from_args(&args, "path")?;
+            to_value(
+                state
+                    .core
+                    .open_container_files(&connection_id, &container_id, &path)
+                    .await?,
+            )
+        }
+        "files_open_pod" => {
+            let connection_id: String = from_args(&args, "connectionId")?;
+            let namespace: String = from_args(&args, "namespace")?;
+            let pod: String = from_args(&args, "pod")?;
+            let container: String = from_args(&args, "container")?;
+            let path: String = from_args(&args, "path")?;
+            to_value(
+                state
+                    .core
+                    .open_pod_files(&connection_id, &namespace, &pod, &container, &path)
+                    .await?,
+            )
+        }
         "files_list" => {
             let handle: String = from_args(&args, "handle")?;
             let path: String = from_args(&args, "path")?;
