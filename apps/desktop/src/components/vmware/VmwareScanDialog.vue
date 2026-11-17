@@ -8,18 +8,25 @@
  * is also what makes "already there" a fact and not a name comparison.
  */
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
-import { LoaderCircle, MonitorCog, RefreshCw } from "@lucide/vue";
-import { computed, ref, watch } from "vue";
+import { Check, LoaderCircle, MonitorCog, Plus, RefreshCw } from "@lucide/vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import Select from "@/components/ui/Select.vue";
 import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
+import { groupPath } from "@/lib/sessions/groups";
 import { vmSessionFromScan } from "@/lib/vmware/derive";
+import { guestOsLabel } from "@/lib/vmware/guest";
 import { TABLE, rowClass } from "@/lib/table";
+import { cn } from "@/lib/utils";
 import { useSessionsStore } from "@/stores/sessions";
 import type { VmInfo } from "@/types/vmware";
+
+/** The group an import lands in when nobody picked one. */
+const DEFAULT_GROUP = "VMware";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ "update:open": [value: boolean] }>();
@@ -33,6 +40,19 @@ const chosen = ref<ReadonlySet<string>>(new Set());
 const loading = ref(false);
 const importing = ref(false);
 const failure = ref<ShellError | null>(null);
+
+/** Where the imported sessions land, and the inline field that makes a new group. */
+const chosenGroup = ref("");
+const addingGroup = ref(false);
+const groupName = ref("");
+const groupBusy = ref(false);
+const groupField = ref<HTMLInputElement | null>(null);
+
+const groupOptions = computed(() =>
+  [...library.groups]
+    .map((group) => ({ value: group.id, label: groupPath(library.groups, group.id) }))
+    .sort((left, right) => left.label.localeCompare(right.label)),
+);
 
 const importedIds = computed(
   () =>
@@ -89,6 +109,63 @@ function toggleAll(): void {
   chosen.value = allChosen.value ? new Set() : new Set(selectable.value.map((machine) => machine.id));
 }
 
+/** The group named like the default, when one already exists at the top level. */
+function defaultGroup(): string {
+  const existing = library.groups.find(
+    (group) => !group.parentId && group.name.trim().toLowerCase() === DEFAULT_GROUP.toLowerCase(),
+  );
+  return existing?.id ?? "";
+}
+
+function startGroupAdd(): void {
+  addingGroup.value = true;
+  groupName.value = "";
+  void nextTick().then(() => groupField.value?.focus());
+}
+
+function closeGroupAdd(): void {
+  addingGroup.value = false;
+  groupName.value = "";
+}
+
+async function commitGroupAdd(): Promise<void> {
+  const name = groupName.value.trim();
+  if (name === "" || groupBusy.value) {
+    closeGroupAdd();
+    return;
+  }
+  groupBusy.value = true;
+  try {
+    const created = await library.addGroup(name, null);
+    if (created) {
+      chosenGroup.value = created.id;
+      closeGroupAdd();
+    } else {
+      failure.value = library.failure;
+    }
+  } finally {
+    groupBusy.value = false;
+  }
+}
+
+/** The group to import into: the chosen one, the existing default, or a new default. */
+async function targetGroup(): Promise<string | null> {
+  if (chosenGroup.value !== "") {
+    return chosenGroup.value;
+  }
+  const existing = defaultGroup();
+  if (existing !== "") {
+    return existing;
+  }
+  const created = await library.addGroup(DEFAULT_GROUP, null);
+  if (!created) {
+    failure.value = library.failure;
+    return null;
+  }
+  chosenGroup.value = created.id;
+  return created.id;
+}
+
 async function importSelected(): Promise<void> {
   if (importing.value || chosenCount.value === 0) {
     return;
@@ -97,11 +174,15 @@ async function importSelected(): Promise<void> {
   failure.value = null;
   let imported = 0;
   try {
+    const groupId = await targetGroup();
+    if (groupId === null) {
+      return;
+    }
     for (const machine of selectable.value) {
       if (!chosen.value.has(machine.id)) {
         continue;
       }
-      await library.save(vmSessionFromScan(machine));
+      await library.save(vmSessionFromScan(machine, groupId));
       imported += 1;
     }
     toast(t("sessions.vmwareScan.imported", { count: String(imported) }), "result");
@@ -117,6 +198,8 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
+      chosenGroup.value = defaultGroup();
+      addingGroup.value = false;
       void scan();
     }
   },
@@ -171,10 +254,10 @@ watch(
           <p v-else-if="machines.length === 0" class="p-6 text-center text-xs text-muted-foreground">
             {{ t("sessions.vmwareScan.empty") }}
           </p>
-          <table v-else :aria-label="t('sessions.vmwareScan.title')" :class="TABLE.page.table">
+          <table v-else :aria-label="t('sessions.vmwareScan.title')" :class="cn(TABLE.page.table, 'text-left')">
             <thead :class="TABLE.page.head">
               <tr :class="TABLE.page.headRow">
-                <th :class="TABLE.page.headCell" class="w-8">
+                <th :class="TABLE.page.headCell" class="w-8 pl-3">
                   <input
                     type="checkbox"
                     :checked="allChosen"
@@ -185,6 +268,7 @@ watch(
                 </th>
                 <th :class="TABLE.page.headCell">{{ t("sessions.vmwareScan.machine") }}</th>
                 <th :class="TABLE.page.headCell">{{ t("sessions.vmwareScan.guest") }}</th>
+                <th :class="TABLE.page.headCell" class="w-32">{{ t("sessions.vmwareScan.address") }}</th>
                 <th :class="TABLE.page.headCell" class="w-24">{{ t("sessions.vmwareScan.state") }}</th>
               </tr>
             </thead>
@@ -195,7 +279,7 @@ watch(
                 :class="rowClass('page')"
                 :data-vmware-scan-row="machine.id"
               >
-                <td :class="TABLE.page.cell" class="align-middle">
+                <td :class="TABLE.page.cell" class="pl-3 align-middle">
                   <input
                     type="checkbox"
                     :checked="chosen.has(machine.id)"
@@ -212,8 +296,19 @@ watch(
                     {{ t("sessions.vmwareScan.alreadyImported") }}
                   </span>
                 </td>
+                <td
+                  :class="TABLE.page.cell"
+                  class="align-middle font-mono text-[10px] text-muted-foreground"
+                  :title="machine.guestOs"
+                >
+                  {{ guestOsLabel(machine.guestOs) ?? machine.guestOs ?? "—" }}
+                </td>
                 <td :class="TABLE.page.cell" class="align-middle font-mono text-[10px] text-muted-foreground">
-                  {{ machine.guestOs ?? "—" }}
+                  {{
+                    machine.running
+                      ? (machine.ip ?? t("sessions.vmwareScan.addressPending"))
+                      : t("sessions.vmwareScan.addressOff")
+                  }}
                 </td>
                 <td :class="TABLE.page.cell" class="align-middle">
                   {{ machine.running ? t("sessions.vmwareScan.running") : t("sessions.vmwareScan.stopped") }}
@@ -224,10 +319,61 @@ watch(
         </div>
 
         <div class="flex items-center justify-between gap-2 px-4 py-3">
-          <span class="text-[11px] text-muted-foreground">
-            {{ t("sessions.vmwareScan.selected", { count: String(chosenCount) }) }}
-          </span>
-          <div class="flex gap-2">
+          <div class="flex min-w-0 items-center gap-1.5">
+            <label
+              class="shrink-0 text-[11px] text-muted-foreground"
+              :for="addingGroup ? 'vmware-group-name' : 'vmware-import-group'"
+            >
+              {{ t("sessions.vmwareScan.group") }}
+            </label>
+            <template v-if="!addingGroup">
+              <Select
+                id="vmware-import-group"
+                v-model="chosenGroup"
+                class="w-40"
+                :options="groupOptions"
+                :placeholder="t('sessions.vmwareScan.groupDefault')"
+              />
+              <button
+                type="button"
+                data-vmware-group-add
+                class="grid size-7 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-accent disabled:opacity-60"
+                :title="t('sessions.vmwareScan.groupAdd')"
+                :aria-label="t('sessions.vmwareScan.groupAdd')"
+                :disabled="groupBusy || importing"
+                @click="startGroupAdd()"
+              >
+                <Plus :size="12" />
+              </button>
+            </template>
+            <template v-else>
+              <input
+                id="vmware-group-name"
+                ref="groupField"
+                v-model="groupName"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                class="h-7 w-40 rounded-md border border-border bg-background px-2 text-xs focus:ring-1 focus:ring-ring focus:outline-none"
+                :placeholder="t('sessions.vmwareScan.groupName')"
+                @keydown.enter.prevent="commitGroupAdd()"
+                @keydown.esc.prevent="closeGroupAdd()"
+              />
+              <button
+                type="button"
+                data-vmware-group-create
+                class="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                :title="t('sessions.vmwareScan.groupCreate')"
+                :aria-label="t('sessions.vmwareScan.groupCreate')"
+                :disabled="groupBusy"
+                @click="commitGroupAdd()"
+              >
+                <LoaderCircle v-if="groupBusy" :size="12" class="animate-spin" />
+                <Check v-else :size="12" />
+              </button>
+            </template>
+          </div>
+          <div class="flex shrink-0 gap-2">
             <button
               type="button"
               class="rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent"
@@ -243,7 +389,11 @@ watch(
               @click="importSelected()"
             >
               <LoaderCircle v-if="importing" :size="12" class="animate-spin" />
-              {{ t("sessions.vmwareScan.import") }}
+              {{
+                chosenCount > 0
+                  ? t("sessions.vmwareScan.importCount", { count: String(chosenCount) })
+                  : t("sessions.vmwareScan.import")
+              }}
             </button>
           </div>
         </div>

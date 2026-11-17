@@ -31,7 +31,16 @@ describe("the sessions a VM workspace makes", () => {
     expect(session.protocol).toBe("vmware");
     expect(session.name).toBe("uos_test");
     expect(session.host).toBe("");
+    expect(session.groupId).toBeUndefined();
     expect(session.vmware).toMatchObject({ vmId: "564db5f23515de032cd9338ba8d831b7", sshPort: 22, rdpPort: 3389 });
+  });
+
+  it("puts an imported session in the group the import named", () => {
+    const session = vmSessionFromScan(
+      { id: "564db5f23515de032cd9338ba8d831b7", name: "uos_test", running: false },
+      "group-1",
+    );
+    expect(session.groupId).toBe("group-1");
   });
 
   it("builds an SSH session from the VM's settings and the resolved address", () => {

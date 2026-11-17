@@ -38,10 +38,11 @@ export type VmGuestKind = "ssh" | "rdp";
  * It carries the identity and the two ports only; the account arrives when somebody opens the
  * workspace and says which one to use. Nothing about the guest's address is written down.
  */
-export function vmSessionFromScan(vm: VmInfo): Session {
+export function vmSessionFromScan(vm: VmInfo, groupId?: string): Session {
   return {
     id: crypto.randomUUID(),
     name: vm.name,
+    groupId,
     protocol: "vmware",
     host: "",
     port: 0,

@@ -96,6 +96,10 @@ pub struct VmInfo {
     pub guest_os: Option<String>,
     /// Whether `vmrun list` named this machine as running when the scan ran.
     pub running: bool,
+    /// The guest's address when it is running, Tools answered and the guest has one. A scan
+    /// reports it; the address is never stored with the session, because a DHCP guest changes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
 }
 
 /// What one virtual machine is doing right now.
@@ -107,9 +111,17 @@ pub struct VmInfo {
 pub struct VmStatus {
     pub id: String,
     pub running: bool,
+    /// Suspended with its memory saved: `vmrun list` does not name it, but starting it is a
+    /// resume rather than a boot, and the interface says so.
+    #[serde(default)]
+    pub suspended: bool,
+    /// The `.vmx` guest identifier (`debian12-64`, `windows9-64`). Read from the document, so it
+    /// is known before the machine is powered on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guest_os: Option<String>,
     /// A lock file exists for the machine. While it is running that is the normal state; when it
-    /// is not, the lock is what `vmrun` refuses to start over — a run that did not finish, or a
-    /// Workstation window this build cannot see.
+    /// is neither running nor suspended, the lock is what `vmrun` refuses to start over — a run
+    /// that did not finish, or a Workstation window this build cannot see.
     #[serde(default)]
     pub locked: bool,
     /// What VMware Tools said: `running`, `installed`, `notInstalled`, `notRunning`.

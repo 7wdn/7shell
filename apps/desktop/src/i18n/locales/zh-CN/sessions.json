@@ -348,8 +348,10 @@
     "vmware": {
       "endpoint": "VMware",
       "stateLabel": "电源",
+      "systemLabel": "系统",
       "state": {
         "running": "运行中",
+        "suspended": "已挂起",
         "stopped": "已停止",
         "checking": "检查中…"
       },
@@ -365,6 +367,7 @@
       "addressNone": "尚未报告",
       "refresh": "刷新",
       "start": "开机",
+      "resume": "继续运行",
       "stop": "关机",
       "suspend": "挂起",
       "stopTitle": "关闭 {name}？",
@@ -393,7 +396,7 @@
         "connect": "连接"
       },
       "connect": {
-        "powerOnFirst": "请先启动虚拟机，再打开到它的连接。",
+        "powerOnFirst": "请先启动虚拟机，或让挂起的虚拟机继续运行，再打开到它的连接。",
         "noAddress": "客户机还没有报告地址。等它启动完成、VMware Tools 运行起来后刷新。",
         "userRequired": "请填写 SSH 登录使用的客户机账户。"
       }
@@ -407,12 +410,20 @@
       "selectAll": "全选",
       "machine": "虚拟机",
       "guest": "客户机",
+      "address": "地址",
+      "addressPending": "尚未报告",
+      "addressOff": "—",
       "state": "状态",
       "running": "运行中",
       "stopped": "已停止",
       "alreadyImported": "已在列表中",
-      "selected": "已选择 {count} 台",
+      "group": "分组",
+      "groupDefault": "VMware",
+      "groupName": "新分组名称",
+      "groupAdd": "新建分组",
+      "groupCreate": "创建分组",
       "import": "导入",
+      "importCount": "导入 {count} 台",
       "imported": "已导入 {count} 台虚拟机。"
     },
     "reopen": {

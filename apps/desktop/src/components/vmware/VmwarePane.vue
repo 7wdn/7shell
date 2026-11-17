@@ -21,6 +21,7 @@ import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
 import { vmGuestSession } from "@/lib/vmware/derive";
+import { guestOsLabel } from "@/lib/vmware/guest";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore, type VmwareTab } from "@/stores/terminals";
@@ -58,7 +59,15 @@ const rdpUser = ref("");
 const rdpPort = ref("3389");
 
 const isWindows = computed(() => app.info?.os === "windows");
-const stateKey = computed(() => (status.value === null ? "checking" : status.value.running ? "running" : "stopped"));
+const stateKey = computed(() =>
+  status.value === null
+    ? "checking"
+    : status.value.running
+      ? "running"
+      : status.value.suspended
+        ? "suspended"
+        : "stopped",
+);
 const toolsKey = computed(() => {
   switch (status.value?.toolsState) {
     case "running":
@@ -96,7 +105,9 @@ watch(
 );
 
 /** Whether the machine is stopped with a lock that would refuse the next start. */
-const staleLock = computed(() => status.value !== null && !status.value.running && status.value.locked);
+const staleLock = computed(
+  () => status.value !== null && !status.value.running && !status.value.suspended && status.value.locked,
+);
 const credentialTarget = computed(() => {
   const target = pendingGuest.value;
   return target ? `${target.guest.user}@${target.guest.host}` : "";
@@ -336,9 +347,13 @@ watch(
           <dd class="flex items-center gap-2">
             <span
               class="size-1.5 rounded-full"
-              :class="status?.running ? 'bg-success' : status === null ? 'bg-muted-foreground' : 'bg-muted-foreground'"
+              :class="status?.running ? 'bg-success' : status?.suspended ? 'bg-warning' : 'bg-muted-foreground'"
             ></span>
             {{ t(`sessions.vmware.state.${stateKey}`) }}
+          </dd>
+          <dt class="text-muted-foreground">{{ t("sessions.vmware.systemLabel") }}</dt>
+          <dd :title="status?.guestOs">
+            {{ guestOsLabel(status?.guestOs) ?? status?.guestOs ?? "—" }}
           </dd>
           <dt class="text-muted-foreground">{{ t("sessions.vmware.toolsLabel") }}</dt>
           <dd class="text-muted-foreground">{{ t(`sessions.vmware.tools.${toolsKey}`) }}</dd>
@@ -365,7 +380,7 @@ watch(
           >
             <LoaderCircle v-if="busy === 'start' || busy === 'ownership'" :size="12" class="animate-spin" />
             <Play v-else :size="12" />
-            {{ t("sessions.vmware.start") }}
+            {{ status?.suspended ? t("sessions.vmware.resume") : t("sessions.vmware.start") }}
           </button>
           <template v-else>
             <button

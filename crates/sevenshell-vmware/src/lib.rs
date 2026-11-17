@@ -12,6 +12,7 @@
 //! Nothing here reads or keeps a guest credential.
 
 mod inventory;
+mod vmcli;
 mod vmrun;
 
 use std::collections::BTreeMap;
@@ -24,8 +25,14 @@ use sevenshell_types::{VmInfo, VmPowerAction, VmStatus};
 pub use inventory::inventory_path;
 pub use vmrun::{Vmrun, parse_running};
 
+use vmcli::Vmcli;
+
 /// Power operations wait for a guest to finish, which is not a question's budget.
 const POWER_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// A scan asks every running machine for its address; one guest that cannot answer must not hold
+/// the list back for the command's full budget.
+const GUEST_IP_BUDGET: Duration = Duration::from_secs(3);
 
 /// Every machine this build can act on, running or not.
 pub async fn scan() -> Result<Vec<VmInfo>, ShellError> {
@@ -50,11 +57,17 @@ pub async fn scan() -> Result<Vec<VmInfo>, ShellError> {
             continue;
         };
         let is_running = running.iter().any(|path| inventory::same_path(path, &entry.path));
+        let ip = if is_running {
+            guest_ip(&vmrun, &entry.path).await
+        } else {
+            None
+        };
         let machine = VmInfo {
             id: id.clone(),
             name: pick_name(Some(&entry.display_name), info.display_name.as_deref(), &entry.path),
             guest_os: info.guest_os,
             running: is_running,
+            ip,
         };
         machines
             .entry(id)
@@ -72,11 +85,13 @@ pub async fn scan() -> Result<Vec<VmInfo>, ShellError> {
         let Some(id) = info.uuid else {
             continue;
         };
+        let ip = guest_ip(&vmrun, &path).await;
         machines.entry(id.clone()).or_insert(VmInfo {
             id,
             name: pick_name(None, info.display_name.as_deref(), &path),
             guest_os: info.guest_os,
             running: true,
+            ip,
         });
     }
 
@@ -94,11 +109,25 @@ pub async fn scan() -> Result<Vec<VmInfo>, ShellError> {
 pub async fn status(vm_id: &str) -> Result<VmStatus, ShellError> {
     let vm_id = checked_id(vm_id, "status")?;
     let vmrun = Vmrun::locate()?;
-    let (path, running) = resolve(&vmrun, &vm_id, "status").await?;
+    let (path, listed_running) = resolve(&vmrun, &vm_id, "status").await?;
+
+    // Workstation's own answer first: `vmrun list` cannot tell a suspended machine from a
+    // stopped one, and that is the distinction the interface draws. The `.vmss` file beside the
+    // document is the fallback for an install with no `vmcli`.
+    let queried = match Vmcli::beside(vmrun.program()).or_else(Vmcli::locate) {
+        Some(vmcli) => vmcli.power_state(&path).await,
+        None => None,
+    };
+    let (running, suspended) = derive_power(queried.as_deref(), listed_running, suspend_state_exists(&path));
+    // The guest identifier lives in the document, not in the runtime: it is an answer whether the
+    // machine is on, suspended or off.
+    let guest_os = inventory::read_vmx(&path).await.and_then(|info| info.guest_os);
 
     let mut status = VmStatus {
         id: vm_id,
         running,
+        suspended,
+        guest_os,
         locked: lock_exists(&path),
         tools_state: None,
         ip: None,
@@ -120,13 +149,22 @@ pub async fn status(vm_id: &str) -> Result<VmStatus, ShellError> {
     }
     // The address is a courtesy: a guest that has not booted far enough to answer is not a
     // failure of the status call.
-    if let Ok(output) = vmrun
-        .run("getGuestIPAddress", &["-T", "ws", "getGuestIPAddress", path])
-        .await
-    {
-        status.ip = first_ip(&output);
-    }
+    status.ip = guest_ip(&vmrun, path).await;
     Ok(status)
+}
+
+/// The guest's address, with the scan's short budget. A failing `getGuestIPAddress` prints a
+/// sentence, and a sentence is not an address.
+async fn guest_ip(vmrun: &Vmrun, vmx: &str) -> Option<String> {
+    let output = vmrun
+        .run_within(
+            GUEST_IP_BUDGET,
+            "getGuestIPAddress",
+            &["-T", "ws", "getGuestIPAddress", vmx],
+        )
+        .await
+        .ok()?;
+    first_ip(&output)
 }
 
 /// Starts, stops or suspends one machine.
@@ -148,10 +186,29 @@ pub async fn power(vm_id: &str, action: VmPowerAction) -> Result<(), ShellError>
         {
             return Ok(());
         }
-        vmrun
-            .run_within(POWER_TIMEOUT, "start", &["-T", "ws", "start", path.as_str(), "nogui"])
-            .await?;
-        return Ok(());
+        // A resume asked for a moment after a suspend can meet files the old process has not
+        // finished releasing; vmrun answers "already in use" for a second or two. Retrying is
+        // what makes "suspend, then resume" work without asking the person to wait on a timer.
+        let mut last: Option<ShellError> = None;
+        for attempt in 0..4u8 {
+            match vmrun
+                .run_within(POWER_TIMEOUT, "start", &["-T", "ws", "start", path.as_str(), "nogui"])
+                .await
+            {
+                Ok(_) => return Ok(()),
+                Err(error) => {
+                    let retryable = error
+                        .detail()
+                        .is_some_and(|detail| detail.to_ascii_lowercase().contains("already in use"));
+                    last = Some(error);
+                    if !retryable || attempt == 3 {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1_200)).await;
+                }
+            }
+        }
+        return Err(last.expect("the loop runs at least once"));
     }
 
     let args = power_args(action, path.as_str());
@@ -194,6 +251,45 @@ fn lock_path(vmx: &str) -> PathBuf {
 /// Whether Workstation's lock directory sits beside the document.
 fn lock_exists(vmx: &str) -> bool {
     lock_path(vmx).exists()
+}
+
+/// The state to draw from three sources: what `vmcli` answered, what `vmrun list` named, and
+/// whether a suspended-state file is there.
+///
+/// Workstation's own answer wins whenever it has one. Without it, a machine the running list names
+/// is running, and one that is not named but has a `.vmss` beside it is suspended rather than off.
+fn derive_power(queried: Option<&str>, listed_running: bool, suspend_file: bool) -> (bool, bool) {
+    match queried {
+        Some("on") => (true, false),
+        Some("suspended") => (false, true),
+        Some("off") => (false, false),
+        _ if listed_running => (true, false),
+        _ => (false, suspend_file),
+    }
+}
+
+/// Whether this machine's suspend state file is present.
+///
+/// Newer Workstation writes it as `<name>-<hash>.vmss` beside the document; older ones use the
+/// document's own name. Both are checked, and neither is read — only its presence is the answer.
+fn suspend_state_exists(vmx: &str) -> bool {
+    let path = Path::new(vmx);
+    let (Some(parent), Some(stem)) = (
+        path.parent(),
+        path.file_stem().map(|stem| stem.to_string_lossy().to_lowercase()),
+    ) else {
+        return false;
+    };
+    let plain = format!("{stem}.vmss");
+    let hashed = format!("{stem}-");
+    std::fs::read_dir(parent)
+        .map(|entries| {
+            entries.flatten().any(|entry| {
+                let name = entry.file_name().to_string_lossy().to_lowercase();
+                name.ends_with(".vmss") && (name == plain || name.starts_with(&hashed))
+            })
+        })
+        .unwrap_or(false)
 }
 
 /// Removes the lock directory, if there is one. A lock that is not there is already taken care
@@ -338,6 +434,37 @@ mod tests {
             !remove_lock(&vmx).expect("an absent lock is fine"),
             "nothing left to remove"
         );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn workstations_answer_wins_over_the_two_fallbacks() {
+        assert_eq!(derive_power(Some("suspended"), true, false), (false, true));
+        assert_eq!(derive_power(Some("on"), false, true), (true, false));
+        assert_eq!(derive_power(Some("off"), true, true), (false, false));
+        assert_eq!(derive_power(None, true, false), (true, false));
+        assert_eq!(derive_power(None, false, true), (false, true));
+        assert_eq!(derive_power(None, false, false), (false, false));
+    }
+
+    #[test]
+    fn a_suspend_state_file_is_recognised_with_or_without_the_hash() {
+        let directory = std::env::temp_dir().join(format!("7shell-vmware-vmss-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("temp dir");
+        let vmx = directory.join("Machine.vmx");
+        std::fs::write(&vmx, "").expect("fixture");
+        let vmx = vmx.to_string_lossy().into_owned();
+
+        assert!(!suspend_state_exists(&vmx), "nothing suspended yet");
+        std::fs::write(directory.join("Machine-9f2e4bb1.vmss"), "").expect("state file");
+        assert!(suspend_state_exists(&vmx), "the hashed name counts");
+        std::fs::remove_file(directory.join("Machine-9f2e4bb1.vmss")).expect("remove");
+        std::fs::write(directory.join("Machine.vmss"), "").expect("state file");
+        assert!(suspend_state_exists(&vmx), "the plain name counts");
+        std::fs::write(directory.join("Other-1234.vmss"), "").expect("other machine");
+        std::fs::remove_file(directory.join("Machine.vmss")).expect("remove");
+        assert!(!suspend_state_exists(&vmx), "another machine's state is not this one's");
         let _ = std::fs::remove_dir_all(&directory);
     }
 }

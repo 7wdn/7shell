@@ -348,8 +348,10 @@
     "vmware": {
       "endpoint": "VMware",
       "stateLabel": "Power",
+      "systemLabel": "System",
       "state": {
         "running": "Running",
+        "suspended": "Suspended",
         "stopped": "Stopped",
         "checking": "Checking…"
       },
@@ -365,6 +367,7 @@
       "addressNone": "Not reported yet",
       "refresh": "Refresh",
       "start": "Start",
+      "resume": "Resume",
       "stop": "Stop",
       "suspend": "Suspend",
       "stopTitle": "Stop {name}?",
@@ -393,7 +396,7 @@
         "connect": "Connect"
       },
       "connect": {
-        "powerOnFirst": "Start the virtual machine before opening a connection to it.",
+        "powerOnFirst": "Start the virtual machine, or resume it, before opening a connection to it.",
         "noAddress": "The guest has not reported an address yet. Wait for it to boot and VMware Tools to start, then refresh.",
         "userRequired": "Enter the guest account an SSH connection signs in as."
       }
@@ -407,12 +410,20 @@
       "selectAll": "Select all",
       "machine": "Machine",
       "guest": "Guest",
+      "address": "Address",
+      "addressPending": "Not reported yet",
+      "addressOff": "—",
       "state": "State",
       "running": "Running",
       "stopped": "Stopped",
       "alreadyImported": "Already in the list",
-      "selected": "{count} selected",
+      "group": "Group",
+      "groupDefault": "VMware",
+      "groupName": "New group name",
+      "groupAdd": "New group",
+      "groupCreate": "Create group",
       "import": "Import",
+      "importCount": "Import {count}",
       "imported": "Imported {count} virtual machines."
     },
     "reopen": {
