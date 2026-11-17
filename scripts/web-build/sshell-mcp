@@ -1,0 +1,5 @@
+#!/bin/sh
+# Wrapper so an MCP client can launch the bridge without setting up the package's libraries.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export LD_LIBRARY_PATH="$ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$ROOT/bin/sshell-mcp.bin" "$@"

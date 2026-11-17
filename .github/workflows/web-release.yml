@@ -1,0 +1,108 @@
+name: Web release
+
+# The browser edition's portable package, built by hand for one release and attached to it.
+#
+# It is not part of the tag-triggered matrix on purpose: that run builds with current runners, and
+# this package exists for the systems those builds cannot run on — glibc 2.28 and no
+# WebKitGTK 4.1 — so it is built inside a Debian 10 image instead. Dispatch it after the desktop
+# release exists; it only uploads an asset and touches no version or channel.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the package to (for example v0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Browser package (Linux x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      # The interface as Vite built it, then the same files with the colours rewritten for browsers
+      # without CSS Color 4. The rewrite happens on a copy: the desktop build keeps its wide-gamut
+      # values, and only this package carries the fallbacks.
+      - name: Prepare the legacy interface
+        run: |
+          set -euo pipefail
+          WORK="$GITHUB_WORKSPACE/.scratch/web-build"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          cp -a apps/desktop/dist "$WORK/legacy-dist"
+          shopt -s nullglob
+          css_files=("$WORK"/legacy-dist/assets/*.css)
+          if [ ${#css_files[@]} -eq 0 ]; then
+            echo "::error::the interface build produced no CSS to convert"
+            exit 1
+          fi
+          for css in "${css_files[@]}"; do
+            node scripts/web-build/legacy-css.cjs "$css" "$css.legacy"
+            mv "$css.legacy" "$css"
+          done
+
+      - name: Build the Debian 10 image
+        run: docker build -t 7shell-web-build:debian10 scripts/web-build
+
+      - name: Build the browser host and the bridge
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            -e CARGO_TARGET_DIR=/src/.scratch/web-build/target \
+            7shell-web-build:debian10 \
+            cargo build --release --locked -p sevenshell-web -p sevenshell-mcp
+
+      - name: Assemble the package
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            -e SRC=/src \
+            -e WEB_BUILD=/src/.scratch/web-build \
+            -e VERSION="$VERSION" \
+            7shell-web-build:debian10 \
+            bash /src/scripts/web-build/assemble.sh | tee "$RUNNER_TEMP/assemble.log"
+
+          TAR="$GITHUB_WORKSPACE/.scratch/web-build/7Shell_${VERSION}_amd64-web.tar.gz"
+          test -f "$TAR"
+          sha256sum "$TAR" | tee -a "$GITHUB_STEP_SUMMARY"
+          {
+            echo ""
+            echo "\`7Shell_${VERSION}_amd64-web.tar.gz\` was built against the glibc 2.28 baseline:"
+            echo '```'
+            grep -E 'GLIBC|bundled libraries' -A 20 "$RUNNER_TEMP/assemble.log" | head -n 30
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          gh release upload "$TAG" \
+            "$GITHUB_WORKSPACE/.scratch/web-build/7Shell_${VERSION}_amd64-web.tar.gz" \
+            --clobber

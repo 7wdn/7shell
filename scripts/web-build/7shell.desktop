@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=7Shell
+Comment=SSH and SFTP client (browser edition)
+Exec=bash -c 'd="${1#file://}"; cd "$(dirname "$d")" && exec ./7shell' _ %k
+Terminal=true
+Icon=utilities-terminal
+Categories=Development;Network;
