@@ -1218,10 +1218,31 @@ fn default_group() -> SnippetGroup {
     }
 }
 
+/// The one field a payload is read for before the rest of it is judged.
+///
+/// A document from a newer build can use a protocol or another value this build has never heard
+/// of, and the full parse fails on it. Read first, the version turns that failure into the answer
+/// the reader can act on — "written by a newer version" — instead of a wrong-password message.
+/// The payload already decrypted with the right key, so the version is not something its reader
+/// did not already know.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SchemaProbe {
+    schema_version: u32,
+}
+
 /// Parses a decrypted payload. A payload that decrypted correctly but does not parse was
 /// written by something that is not this format, and is reported as an unlock failure so the
 /// two cannot be told apart from outside.
 pub(crate) fn from_slice(payload: &[u8]) -> Result<Document, ShellError> {
+    let probe: SchemaProbe = serde_json::from_slice(payload).map_err(|_| ShellError::vault_unlock_failed())?;
+    if probe.schema_version > VAULT_SCHEMA_VERSION {
+        return Err(ShellError::store_schema_newer(
+            probe.schema_version,
+            VAULT_SCHEMA_VERSION,
+        ));
+    }
+
     let document = serde_json::from_slice::<Document>(payload).map_err(|_| ShellError::vault_unlock_failed())?;
     migrate(document)
 }
@@ -1553,6 +1574,34 @@ mod tests {
     #[test]
     fn a_document_without_a_schema_version_does_not_parse() {
         let error = from_slice(br#"{"sessions":[]}"#).expect_err("schemaVersion is required");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
+    }
+
+    #[test]
+    fn a_newer_document_is_refused_as_newer_even_when_its_content_would_not_parse() {
+        // What an older build saw: the document decrypted, but a value in it (a protocol this
+        // build never learned) failed the full parse, and the reader was told the password was
+        // wrong. The version is readable on its own, so the refusal must name the real reason.
+        let found = VAULT_SCHEMA_VERSION + 1;
+        let raw = format!(
+            r#"{{"schemaVersion":{found},"sessions":[{{"id":"one","name":"one","protocol":"aProtocolThisBuildDoesNotKnow"}}]}}"#
+        );
+
+        let error = from_slice(raw.as_bytes()).expect_err("a document from the future is not this build's shape");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::StoreSchemaNewer);
+        assert_eq!(
+            error.message_params().get("found").map(String::as_str),
+            Some(found.to_string().as_str())
+        );
+    }
+
+    #[test]
+    fn a_payload_that_is_not_a_document_is_still_an_unlock_failure() {
+        // Reading the version first must not turn a file that is not this format into a version
+        // report: the two failures stay indistinguishable until the payload parses as a document.
+        let error = from_slice(b"not a document at all").expect_err("this is not a payload");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::VaultUnlockFailed);
     }
