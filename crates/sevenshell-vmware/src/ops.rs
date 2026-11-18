@@ -111,9 +111,9 @@ pub async fn snapshot(vm_id: &str, action: &SnapshotAction) -> Result<String, Sh
     let vm_id = checked_id(vm_id, "snapshot")?;
     let vmrun = Vmrun::locate()?;
     let (path, _) = resolve(&vmrun, &vm_id, "snapshot").await?;
-    let vmcli = Vmcli::beside(vmrun.program()).or_else(Vmcli::locate).ok_or_else(|| {
-        ShellError::vmware_unavailable("the vmcli command was not found; snapshot operations need it")
-    })?;
+    let vmcli = Vmcli::beside(vmrun.program())
+        .or_else(Vmcli::locate)
+        .ok_or_else(crate::vmcli::unavailable)?;
     let args = match action {
         SnapshotAction::List => vec![path.clone(), "Snapshot".to_owned(), "query".to_owned()],
         SnapshotAction::Take(name) => vec![path.clone(), "Snapshot".to_owned(), "Take".to_owned(), name.clone()],
@@ -192,7 +192,7 @@ pub async fn send_key(vm_id: &str, sequence: &str) -> Result<String, ShellError>
     let (path, _) = resolve(&vmrun, &vm_id, "send-key").await?;
     let vmcli = Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; sending keys needs it"))?;
+        .ok_or_else(crate::vmcli::unavailable)?;
     // `sendKeySequence` takes the sequence as a positional argument; there is no `-s` in this
     // Workstation's `vmcli` even though some documentation shows one.
     vmcli

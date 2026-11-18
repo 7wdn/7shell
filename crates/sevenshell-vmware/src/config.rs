@@ -232,7 +232,7 @@ impl HostWrite {
 fn vmcli_beside(vmrun: &Vmrun) -> Result<Vmcli, ShellError> {
     Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))
+        .ok_or_else(crate::vmcli::unavailable)
 }
 
 fn bool_word(value: bool) -> &'static str {

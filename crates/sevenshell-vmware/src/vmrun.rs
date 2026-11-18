@@ -111,16 +111,11 @@ fn candidates() -> Vec<PathBuf> {
         if let Some(install) = registry_install_path() {
             paths.push(install.join("vmrun.exe"));
         }
-        for variable in ["ProgramFiles(x86)", "ProgramFiles"] {
-            if let Some(root) = std::env::var_os(variable) {
-                paths.push(
-                    PathBuf::from(root)
-                        .join("VMware")
-                        .join("VMware Workstation")
-                        .join("vmrun.exe"),
-                );
-            }
-        }
+        paths.extend(install_folders(
+            std::env::var_os("ProgramFiles").map(PathBuf::from),
+            std::env::var_os("ProgramFiles(x86)").map(PathBuf::from),
+            "vmrun.exe",
+        ));
         paths
     }
     #[cfg(not(windows))]
@@ -131,6 +126,19 @@ fn candidates() -> Vec<PathBuf> {
             PathBuf::from("/usr/local/bin/vmrun"),
         ]
     }
+}
+
+/// The two default install folders, 64-bit first.
+///
+/// Workstation 26H1 is a 64-bit application installed under `Program Files`; an upgrade can leave
+/// the old `Program Files (x86)` tree behind, so the new location is asked first.
+#[cfg(windows)]
+fn install_folders(programs: Option<PathBuf>, programs_x86: Option<PathBuf>, name: &str) -> Vec<PathBuf> {
+    [programs, programs_x86]
+        .into_iter()
+        .flatten()
+        .map(|root| root.join("VMware").join("VMware Workstation").join(name))
+        .collect()
 }
 
 /// Where Workstation says it is installed. A machine with the application on another drive is a
@@ -152,7 +160,9 @@ fn registry_install_path() -> Option<PathBuf> {
                 continue;
             };
             let path = PathBuf::from(path.trim());
-            if path.is_dir() {
+            // A key left pointing at an upgraded-away folder is not an install: the folder may
+            // remain with stale files while the binary this build runs now lives elsewhere.
+            if path.join("vmrun.exe").is_file() {
                 return Some(path);
             }
         }
@@ -186,5 +196,22 @@ mod tests {
     #[test]
     fn an_empty_running_list_is_an_empty_answer_not_an_error() {
         assert!(parse_running("Total running VMs: 0\n").is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_64_bit_install_folder_is_asked_before_the_legacy_one() {
+        let folders = install_folders(
+            Some(PathBuf::from(r"C:\Program Files")),
+            Some(PathBuf::from(r"C:\Program Files (x86)")),
+            "vmrun.exe",
+        );
+        assert_eq!(
+            folders,
+            [
+                PathBuf::from(r"C:\Program Files\VMware\VMware Workstation\vmrun.exe"),
+                PathBuf::from(r"C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe"),
+            ]
+        );
     }
 }

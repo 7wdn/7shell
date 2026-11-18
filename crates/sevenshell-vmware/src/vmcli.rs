@@ -92,21 +92,19 @@ pub fn parse_power_state(stdout: &str) -> Option<String> {
     None
 }
 
+/// The one sentence a caller gets when Workstation's module command is missing.
+pub(crate) fn unavailable() -> ShellError {
+    ShellError::vmware_unavailable("the vmcli command was not found; install VMware Workstation Pro or set VMCLI_PATH")
+}
+
 fn candidates() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
-        let mut paths = Vec::new();
-        for variable in ["ProgramFiles(x86)", "ProgramFiles"] {
-            if let Some(root) = std::env::var_os(variable) {
-                paths.push(
-                    PathBuf::from(root)
-                        .join("VMware")
-                        .join("VMware Workstation")
-                        .join("vmcli.exe"),
-                );
-            }
-        }
-        paths
+        install_folders(
+            std::env::var_os("ProgramFiles").map(PathBuf::from),
+            std::env::var_os("ProgramFiles(x86)").map(PathBuf::from),
+            "vmcli.exe",
+        )
     }
     #[cfg(not(windows))]
     {
@@ -116,6 +114,20 @@ fn candidates() -> Vec<PathBuf> {
             PathBuf::from("/usr/local/bin/vmcli"),
         ]
     }
+}
+
+/// The two default install folders, 64-bit first.
+///
+/// Workstation 26H1 is a 64-bit application installed under `Program Files`; an upgrade can leave
+/// the old `Program Files (x86)` tree behind, so the new location is asked first. `Vmcli::beside`
+/// still outranks both, because it follows whichever `vmrun` this machine actually resolved.
+#[cfg(windows)]
+fn install_folders(programs: Option<PathBuf>, programs_x86: Option<PathBuf>, name: &str) -> Vec<PathBuf> {
+    [programs, programs_x86]
+        .into_iter()
+        .flatten()
+        .map(|root| root.join("VMware").join("VMware Workstation").join(name))
+        .collect()
 }
 
 fn find_on_path() -> Option<PathBuf> {
@@ -131,6 +143,23 @@ fn find_on_path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn the_64_bit_install_folder_is_asked_before_the_legacy_one() {
+        let folders = install_folders(
+            Some(PathBuf::from(r"C:\Program Files")),
+            Some(PathBuf::from(r"C:\Program Files (x86)")),
+            "vmcli.exe",
+        );
+        assert_eq!(
+            folders,
+            [
+                PathBuf::from(r"C:\Program Files\VMware\VMware Workstation\vmcli.exe"),
+                PathBuf::from(r"C:\Program Files (x86)\VMware\VMware Workstation\vmcli.exe"),
+            ]
+        );
+    }
 
     #[test]
     fn the_power_line_is_the_answer_and_a_sentence_is_not() {

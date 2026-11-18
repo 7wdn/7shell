@@ -107,7 +107,7 @@ pub async fn screenshot(vm_id: &str, output_path: &str) -> Result<String, ShellE
     let (path, _) = resolve(&vmrun, &vm_id, "screenshot").await?;
     let vmcli = Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+        .ok_or_else(crate::vmcli::unavailable)?;
     vmcli
         .run(
             "screenshot",
@@ -124,7 +124,7 @@ pub async fn hgfs_set_host_path(vm_id: &str, index: u32, host_path: &str) -> Res
     let (path, _) = resolve(&vmrun, &vm_id, "hgfs").await?;
     let vmcli = Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+        .ok_or_else(crate::vmcli::unavailable)?;
     let index = index.to_string();
     vmcli
         .run(
@@ -180,7 +180,7 @@ pub async fn snapshot_clone(
     let (path, _) = resolve(&vmrun, &vm_id, "snapshot-clone").await?;
     let vmcli = Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+        .ok_or_else(crate::vmcli::unavailable)?;
     let mut args = vec![path.as_str(), "Snapshot", "Clone"];
     if linked {
         args.push("-l");
@@ -196,7 +196,7 @@ pub async fn template_create(vm_id: &str, template_path: &str, display_name: &st
     let (path, _) = resolve(&vmrun, &vm_id, "template-create").await?;
     let vmcli = Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+        .ok_or_else(crate::vmcli::unavailable)?;
     vmcli
         .run(
             "template-create",
@@ -219,7 +219,7 @@ pub async fn template_deploy(template_path: &str) -> Result<String, ShellError> 
     let vmrun = Vmrun::locate()?;
     let vmcli = Vmcli::beside(vmrun.program())
         .or_else(Vmcli::locate)
-        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+        .ok_or_else(crate::vmcli::unavailable)?;
     vmcli
         .run(
             "template-deploy",
