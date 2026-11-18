@@ -31,6 +31,7 @@ fn lab_session() -> Option<Session> {
         id: "lab-scp".to_owned(),
         name: "lab scp".to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Ssh,
         host,
         port,

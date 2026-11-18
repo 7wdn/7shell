@@ -1411,6 +1411,7 @@ mod tests {
             id: id.to_owned(),
             name: name.to_owned(),
             group_id: None,
+            order: None,
             protocol: Protocol::Ssh,
             host: "secret.example".to_owned(),
             port: 22,

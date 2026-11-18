@@ -49,7 +49,7 @@ export interface TreeDragOptions {
   readonly onDrop: (grabbed: Grabbed, aimed: AimedDrop) => void;
 }
 
-/** The row a drop decorates: a line beside the group it goes next to, or a ring around where it goes. */
+/** The row a drop decorates: a line beside the row it goes next to, or a ring around where it goes. */
 export function dropMark(aimed: AimedDrop, key: string): DropMark {
   if (aimed.drop.kind === "group") {
     if (aimed.zone === "before") {
@@ -60,9 +60,13 @@ export function dropMark(aimed: AimedDrop, key: string): DropMark {
     }
     return { key: `group:${aimed.drop.id}`, style: "ring" };
   }
-  // A drop at the root lands on the row it was dropped on, whatever that row is: a session row at
-  // the root means the root, and the row the sidebar draws during a drag means the root as well.
-  // The key comes from the row itself, so the ring is drawn around the row the pointer is on.
+  if (aimed.drop.kind === "session") {
+    // Beside another session: the line sits on the half of that row the release would put it on.
+    return { key, style: aimed.zone === "before" ? "line-before" : "line-after" };
+  }
+  // A drop at the root is not offered by a drag any more — anything it could do is now a drop
+  // beside a root row — but the planner still answers with it, so it is drawn as a ring around the
+  // row it was aimed at rather than as no mark at all.
   return { key, style: "ring" };
 }
 

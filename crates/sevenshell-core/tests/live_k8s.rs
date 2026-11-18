@@ -58,6 +58,7 @@ fn cluster() -> Option<Cluster> {
                 id: "lab-cluster".to_owned(),
                 name: "lab cluster".to_owned(),
                 group_id: None,
+                order: None,
                 protocol: sevenshell_types::Protocol::Kubernetes,
                 host: String::new(),
                 port: 0,

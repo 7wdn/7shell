@@ -92,6 +92,7 @@ fn lab() -> Option<Lab> {
                 id: "lab-session".to_owned(),
                 name: "lab".to_owned(),
                 group_id: None,
+                order: None,
                 protocol: sevenshell_types::Protocol::Ssh,
                 host,
                 port,

@@ -127,6 +127,7 @@ fn sample_session(id: &str, name: &str) -> Session {
         id: id.to_owned(),
         name: name.to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Ssh,
         host: "127.0.0.1".to_owned(),
         port: 2222,

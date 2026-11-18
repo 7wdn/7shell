@@ -19,6 +19,14 @@ pub struct Session {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_id: Option<String>,
+    /// Where the session sits among the sessions of its group, lowest first.
+    ///
+    /// `None` is "nobody has placed this one": it is drawn level with order zero, so it stays where
+    /// it was created relative to the sessions that were never dragged. A reorder writes a number
+    /// for every session it moves, so the arrangement somebody dragged the list into is what is
+    /// stored rather than an index into an order that changes underneath it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
     pub protocol: Protocol,
     pub host: String,
     pub port: u16,

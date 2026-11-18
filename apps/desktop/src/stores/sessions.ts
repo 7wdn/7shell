@@ -29,9 +29,9 @@ import { type ErrorCode } from "@/lib/backend/errorCodes";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { NO_FILTER, type SessionFilter, filterIsOn, filterLibrary } from "@/lib/sessions/filter";
 import {
+  type ChildPlacement,
   type Drop,
   type DropZone,
-  type GroupPlacement,
   type ParentId,
   nextOrder,
   planGroupDrop,
@@ -458,7 +458,7 @@ export const useSessionsStore = defineStore("sessions", () => {
       id,
       name,
       parentId: parentId ?? undefined,
-      order: nextOrder(groups.value, parentId),
+      order: nextOrder(groups.value, sessions.value, parentId),
       pinned: false,
     });
     if (!worked) {
@@ -507,23 +507,24 @@ export const useSessionsStore = defineStore("sessions", () => {
     return saveGroup({ ...group, pinned });
   }
 
-  /** Puts one group a place up or down among the groups it shares a parent with. */
+  /** Puts one group a place up or down among the children it shares a parent with. */
   async function moveGroupBy(id: string, direction: -1 | 1): Promise<boolean> {
-    const placements = planSiblingMove(groups.value, id, direction);
+    const placements = planSiblingMove(groups.value, sessions.value, id, direction);
     return placements !== null && write(placements);
   }
 
   /**
-   * Puts a group where a drop said it goes: into another group, beside one, or at the root.
+   * Puts a group where a drop said it goes: into another group, beside a group or a session, or at
+   * the root.
    *
-   * Every group whose parent or order changes is written, one after another, and a refusal stops
+   * Every child whose parent or order changes is written, one after another, and a refusal stops
    * the rest with its envelope in `failure`. The writes are deliberately not one transaction: the
    * vault has no way to say "all of these or none", and a half-finished move is still a tree that
    * can be drawn — so the honest thing is to say what happened rather than to pretend. Dropping
    * into a group opens it, so what was just put there can be seen.
    */
   async function placeGroup(id: string, drop: Drop, zone: DropZone = "inside"): Promise<boolean> {
-    const placements = planGroupDrop(groups.value, id, drop, zone);
+    const placements = planGroupDrop(groups.value, sessions.value, id, drop, zone);
     if (placements === null || !(await write(placements))) {
       return false;
     }
@@ -534,38 +535,25 @@ export const useSessionsStore = defineStore("sessions", () => {
   }
 
   /**
-   * Puts a session into a group, or into none, without opening the editor: a group is one field of
-   * a session, and it is the whole session that gets written. No secret travels — an absent one
-   * means "keep the stored one", the same rule the editor follows.
+   * Puts a session into a group, beside another group or session, or into none, without opening
+   * the editor.
+   *
+   * A group and a place are the same write: the drop renumbers the list it lands in — groups and
+   * sessions share that list — so what goes out is one save per child whose parent or order
+   * changed. No secret travels — an absent one means "keep the stored one", the same rule the
+   * editor follows — and only the session somebody dragged has its `updatedAt` bumped, because its
+   * neighbours were renumbered rather than edited.
    */
-  async function placeSession(id: string, drop: Drop): Promise<boolean> {
-    const session = sessions.value.find((entry) => entry.id === id);
-    if (!session) {
+  async function placeSession(id: string, drop: Drop, zone: DropZone = "inside"): Promise<boolean> {
+    const placements = planSessionDrop(groups.value, sessions.value, id, drop, zone);
+    if (placements === null || !(await write(placements, id))) {
       return false;
     }
-    const plan = planSessionDrop(groups.value, session, drop);
-    if (!plan) {
-      return false;
+    const landed = placements.find((placement) => placement.kind === "session" && placement.id === id);
+    if (landed) {
+      reveal(landed.parentId);
     }
-
-    failure.value = null;
-    try {
-      const saved = await backend.sessions.save(
-        { ...session, groupId: plan.groupId ?? undefined, updatedAt: Math.floor(Date.now() / 1000) },
-        undefined,
-      );
-      const index = sessions.value.findIndex((entry) => entry.id === saved.id);
-      if (index >= 0) {
-        sessions.value[index] = saved;
-      } else {
-        sessions.value.push(saved);
-      }
-      reveal(plan.groupId);
-      return true;
-    } catch (error) {
-      failure.value = asShellError(error, "session_save");
-      return false;
-    }
+    return true;
   }
 
   /**
@@ -576,22 +564,54 @@ export const useSessionsStore = defineStore("sessions", () => {
    * that happens.
    */
   function canPlaceGroup(id: string, drop: Drop, zone: DropZone): boolean {
-    return planGroupDrop(groups.value, id, drop, zone) !== null;
+    return planGroupDrop(groups.value, sessions.value, id, drop, zone) !== null;
   }
 
-  function canPlaceSession(id: string, drop: Drop): boolean {
-    const session = sessions.value.find((entry) => entry.id === id);
-    return session !== undefined && planSessionDrop(groups.value, session, drop) !== null;
+  function canPlaceSession(id: string, drop: Drop, zone: DropZone): boolean {
+    return planSessionDrop(groups.value, sessions.value, id, drop, zone) !== null;
   }
 
-  /** Writes each placement, one group at a time, stopping at the first refusal. */
-  async function write(placements: readonly GroupPlacement[]): Promise<boolean> {
+  /**
+   * Writes each placement, one child at a time, stopping at the first refusal.
+   *
+   * `draggedSession` names the session somebody picked up: that one gets its `updatedAt` bumped,
+   * and its renumbered neighbours keep theirs, so a reorder does not read as a day's work in every
+   * view that sorts by recency.
+   */
+  async function write(placements: readonly ChildPlacement[], draggedSession: string | null = null): Promise<boolean> {
     for (const placement of placements) {
-      const group = groups.value.find((entry) => entry.id === placement.id);
-      if (
-        !group ||
-        !(await saveGroup({ ...group, parentId: placement.parentId ?? undefined, order: placement.order }))
-      ) {
+      if (placement.kind === "group") {
+        const group = groups.value.find((entry) => entry.id === placement.id);
+        if (
+          !group ||
+          !(await saveGroup({ ...group, parentId: placement.parentId ?? undefined, order: placement.order }))
+        ) {
+          return false;
+        }
+        continue;
+      }
+      const session = sessions.value.find((entry) => entry.id === placement.id);
+      if (!session) {
+        return false;
+      }
+      try {
+        const saved = await backend.sessions.save(
+          {
+            ...session,
+            groupId: placement.parentId ?? undefined,
+            order: placement.order,
+            updatedAt: placement.id === draggedSession ? Math.floor(Date.now() / 1000) : session.updatedAt,
+          },
+          undefined,
+        );
+        const index = sessions.value.findIndex((entry) => entry.id === saved.id);
+        if (index >= 0) {
+          sessions.value[index] = saved;
+        } else {
+          sessions.value.push(saved);
+        }
+      } catch (error) {
+        failure.value = asShellError(error, "session_save");
         return false;
       }
     }

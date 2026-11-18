@@ -51,7 +51,6 @@
       "importPassphrase": "口令",
       "importPassphrasePlaceholder": "输入口令",
       "importPassphraseConfirm": "导入",
-      "dropOutOfGroups": "移出所有分组",
       "importExport": "导入 / 导出",
       "importVmware": "从 VMware 导入",
       "collapseAll": "全部折叠",

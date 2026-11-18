@@ -12,11 +12,10 @@
  * sentence the confirmation says out loud.
  *
  * A session that is in no group is drawn at the root with no heading over it — the rows say what
- * they are. What the heading was also for is drawn only while a session is being dragged: a row at
- * the end of the list that means "out of every group", there when somebody needs it and not part of
- * the list the rest of the time. Dragging is off while the list is filtered, because a drop lands
- * in the list as it is *drawn*, and when that order is not the saved order the drop would be a
- * guess.
+ * they are. Groups and sessions share one order inside a parent, so a session may sit between two
+ * groups and a group between two sessions. Dragging is off while the list is filtered, because a
+ * drop lands in the list as it is *drawn*, and when that order is not the saved order the drop
+ * would be a guess.
  *
  * Opening a terminal hangs off the row itself, with the file browser beside it; whether a terminal
  * comes up with its file panel is the settings' answer, not this row's. Editing and deleting are
@@ -82,7 +81,7 @@ import { systemLabel, systemMark } from "@/lib/system/icons";
 import { groupMenu, sessionEndpoint, sessionMenu, tunnelMenu } from "@/lib/menu/sessions";
 import { MENU_TITLES } from "@/lib/menu/titles";
 import type { MenuEntry } from "@/lib/menu/types";
-import { groupDropFor, sessionDropFor } from "@/lib/sessions/drag";
+import { dropAt } from "@/lib/sessions/drag";
 import { rememberExportPassphrase } from "@/lib/sessions/exportPassphrase";
 import { regexIsInvalid } from "@/lib/sessions/filter";
 import { drawOrder, groupPath, hasSibling } from "@/lib/sessions/groups";
@@ -121,9 +120,6 @@ const authMethods = computed(() => AUTH_METHODS);
  * the interface language is one that cannot be found again in a folder listing.
  */
 const SESSION_FILE_NAME = "7shell-sessions.json";
-
-/** The row that exists only while a session is being dragged: where "out of every group" is. */
-const DROP_OUT_ROW = "drop-out";
 
 const exportOpen = ref(false);
 const exportBusy = ref(false);
@@ -175,46 +171,28 @@ const groupBusy = ref(false);
 const listBox = ref<HTMLElement | null>(null);
 const rowByKey = computed(() => new Map(library.rows.map((row) => [row.key, row])));
 const {
-  active: dragActive,
-  grabbed: dragGrabbed,
   ghost: dragGhost,
   mark: dropMark,
   press: pressRow,
 } = useTreeDrag({
   container: listBox,
   targetOf: (element) => {
-    const key = element.dataset.row ?? "";
-    // The row that is there only while a drag is: it stands for the root of the list, which is
-    // where a session goes when it leaves every group. It is not in the tree, so it is answered for
-    // here rather than looked up.
-    if (key === DROP_OUT_ROW) {
-      return { kind: "session", parentId: null };
-    }
-    const row = rowByKey.value.get(key);
+    const row = rowByKey.value.get(element.dataset.row ?? "");
     return row ? rowTarget(row) : null;
   },
-  aim: (grabbed, target, box, pointerY) =>
-    grabbed.kind === "group" ? groupDropFor(target, box, pointerY) : sessionDropFor(target),
+  aim: (_grabbed, target, box, pointerY) => dropAt(target, box, pointerY),
   accepts: (grabbed, aimed) =>
     grabbed.kind === "group"
       ? library.canPlaceGroup(grabbed.id, aimed.drop, aimed.zone)
-      : library.canPlaceSession(grabbed.id, aimed.drop),
+      : library.canPlaceSession(grabbed.id, aimed.drop, aimed.zone),
   onDrop: (grabbed, aimed) => {
     if (grabbed.kind === "group") {
       void library.placeGroup(grabbed.id, aimed.drop, aimed.zone);
     } else {
-      void library.placeSession(grabbed.id, aimed.drop);
+      void library.placeSession(grabbed.id, aimed.drop, aimed.zone);
     }
   },
 });
-
-/**
- * Whether the row for "out of every group" belongs on screen: a session is in the air, and there is
- * a group for it to be outside of — with no groups at all, everything is already at the root.
- */
-const dropOutRow = computed(
-  () => dragActive.value && dragGrabbed.value?.kind === "session" && library.groups.length > 0,
-);
 
 /**
  * Starts a drag, unless the list is narrowed.
@@ -888,8 +866,8 @@ function openHeadingMenu(event: MouseEvent, group: SessionGroup): void {
         close: (target) => void terminals.closeSessions(openInside(target)),
       },
       {
-        up: hasSibling(library.groups, group.id, -1),
-        down: hasSibling(library.groups, group.id, 1),
+        up: hasSibling(library.groups, library.sessions, group.id, -1),
+        down: hasSibling(library.groups, library.sessions, group.id, 1),
         open: openInside(group).length,
       },
     ),
@@ -1397,6 +1375,18 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                     @contextmenu="openSessionMenu($event, row.session)"
                     @mousedown="startDrag($event, { kind: 'session', id: row.session.id }, row.session.name)"
                   >
+                    <!-- Where a dragged session would land among its neighbours: the line sits on
+                         the half of the row the release would put it on. -->
+                    <span
+                      v-if="markOf(row.key) === 'line-before'"
+                      class="absolute inset-x-1 top-0 h-0.5 rounded bg-primary"
+                      aria-hidden="true"
+                    ></span>
+                    <span
+                      v-if="markOf(row.key) === 'line-after'"
+                      class="absolute inset-x-1 bottom-0 h-0.5 rounded bg-primary"
+                      aria-hidden="true"
+                    ></span>
                     <!--
                       The row says a name and an address; hovering it says the rest. Pressing it goes
                       to the session: it opens one that is closed and brings one that is already open
@@ -1517,26 +1507,6 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
               </HoverCardRoot>
             </template>
           </template>
-
-          <!--
-            Where a dragged session goes to leave every group. It is drawn only while one is in the
-            air, at the end of the list rather than at its top so that nothing already drawn moves
-            under the pointer: what it replaces is the ungrouped heading, which was there the rest of
-            the time to say something the rows say themselves.
-          -->
-          <div
-            v-if="dropOutRow"
-            :data-row="DROP_OUT_ROW"
-            class="mt-1 flex items-center gap-2 rounded-md border border-dashed px-2 py-1.5 text-[11px] transition-colors"
-            :class="
-              markOf(DROP_OUT_ROW) === 'ring'
-                ? 'border-primary bg-primary/10 text-foreground'
-                : 'border-border text-muted-foreground'
-            "
-          >
-            <FolderInput :size="13" class="shrink-0" />
-            {{ t("sessions.list.dropOutOfGroups") }}
-          </div>
         </template>
       </div>
 

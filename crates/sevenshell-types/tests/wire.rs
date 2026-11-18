@@ -462,6 +462,7 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
         id: "session-1".to_owned(),
         name: "through the hop".to_owned(),
         group_id: Some("group-1".to_owned()),
+        order: Some(3),
         protocol: Protocol::Ssh,
         host: "host.example".to_owned(),
         port: 22,
@@ -512,6 +513,7 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
 
     let json = check(&session, "Session");
     assert_eq!(json["jump"], serde_json::json!(["hop-1"]));
+    assert_eq!(json["order"], serde_json::json!(3));
     assert_eq!(json["forwards"][0]["targetPort"], serde_json::json!(5432));
     assert_eq!(json["auth"]["key"]["hasPassphrase"], serde_json::json!(true));
     assert_eq!(json["desktop"]["width"], serde_json::json!(1280));

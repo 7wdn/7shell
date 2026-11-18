@@ -48,6 +48,7 @@ fn lab() -> Option<Lab> {
         id: "lab-files".to_owned(),
         name: "lab files".to_owned(),
         group_id: None,
+        order: None,
         protocol: sevenshell_types::Protocol::Ssh,
         host,
         port,

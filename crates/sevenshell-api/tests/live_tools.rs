@@ -115,6 +115,7 @@ fn lab(decisions: &[ApprovalDecision]) -> Option<Lab> {
         id: "lab".to_owned(),
         name: "lab".to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Ssh,
         host: host.clone(),
         port,
