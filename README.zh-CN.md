@@ -1,7 +1,7 @@
 <div align="center">
   <img src="art/icon.png" alt="7Shell" width="128" height="128" />
   <h1>7Shell</h1>
-  <p>开源的 SSH 运维客户端，支持 Windows、macOS 与 Linux<br>SSH、SFTP、Docker、Kubernetes、主机监控与批量执行</p>
+  <p>开源的 SSH 运维客户端，支持 Windows、macOS 与 Linux<br>SSH、SFTP、Docker、Kubernetes、VMware、主机监控与批量执行</p>
   <p><a href="https://github.com/7wdn/7shell">GitHub</a> &nbsp;|&nbsp; <a href="docs/">文档</a> &nbsp;|&nbsp; <a href="https://github.com/7wdn/7shell/releases">下载</a></p>
 </div>
 
@@ -50,6 +50,17 @@
 - **容器** — Docker、Podman、nerdctl、WSLC：容器、镜像、日志、统计、exec 终端、文件和镜像归档导入；可以走本机，也可以走 SSH 会话。
 - **Kubernetes** — kubeconfig 上下文、资源列表与 watch、Pod 日志、exec、Pod 文件、指标和 YAML 编辑；直连或经 SSH 会话。
 
+### 虚拟机
+
+工作区列出本机 Workstation 中的虚拟机、显示运行状态，并从同一条记录打开 SSH 或 RDP。快照、guest 操作、配置、宿主网络和控制台输入通过助手与 MCP 工具完成，经过同一套风险规则。
+
+- **Workstation 清单** — 扫描本机 VMware Workstation 中的虚拟机并导入为会话，以机器 UUID 作为身份。会话显示运行、挂起或停止状态，可开机、继续运行、关机或挂起；电源工具还提供重置、暂停与恢复。
+- **打开连接** — guest 有地址后，从同一条机器记录打开 SSH，Windows 上还可以打开 RDP。
+- **快照与克隆** — 创建、回滚和删除快照；生成链接或完整克隆（包括从快照克隆），以及 `.vmtx` 模板的创建与部署。
+- **虚拟机内部** — 浏览目录、传入传出文件、运行程序与脚本、新建、改名和删除文件、查看进程与环境变量；使用会话保存的 guest 账号登录。
+- **配置** — CPU、内存、磁盘、网卡与串口、SATA 与 NVMe 控制器、共享文件夹、VProbes 和配置项，不用打开 Workstation 的设置窗口。
+- **控制台与宿主网络** — 无需 guest 账号即可发送按键序列和截屏，覆盖启动菜单与安装界面；列出虚拟网络与端口转发，REST 服务额外提供 MAC 地址到 IP 的映射和新建网络。
+
 ### 运维
 
 - **主机监控** — 负载、CPU、内存、交换区、磁盘、进程、网络和连接，走已经打开的连接采样，服务器端不用安装任何东西。
@@ -63,6 +74,7 @@
 
 - **助手** — 支持 Anthropic、OpenAI 兼容接口和本地模型。
 - **MCP 服务端** — 外部 MCP 客户端可以在已保存的连接上调用同一套工具，凭据不出应用。
+- **VMware 工具** — 17 个内置工具覆盖清单、电源、快照与克隆、guest 操作、配置、宿主网络、控制台按键和截屏。
 - **审批与审计** — 工具调用经过风险规则，需要时弹出审批，并写入审计日志。
 
 ## 支持的连接
@@ -85,6 +97,7 @@
 | 容器 | nerdctl | containerd，可选 namespace |
 | 容器 | WSLC | Windows 容器，仅 Windows |
 | 集群 | Kubernetes | 上下文、资源、日志、exec、文件、指标、YAML |
+| 虚拟机 | VMware Workstation | Windows 与 Linux；清单、电源、快照、guest 文件与命令、控制台 |
 | 远程桌面 | RDP | 仅 Windows，交给系统客户端 |
 
 ## 界面截图
@@ -114,6 +127,7 @@
 2. 新建连接，填写地址、认证方式，需要时加上跳板机。
 3. 第一次连接时确认主机键。主机键发生变化会直接中断连接，不会再次询问。
 4. 打开终端。下方的文件工作台和右侧的主机监控使用同一个会话。
+5. 使用 VMware 虚拟机：在侧栏扫描 Workstation，导入机器后从该会话打开 SSH 或 RDP。
 
 ## 技术栈
 
@@ -145,7 +159,7 @@ pnpm check       # 全部门禁
 ## 项目结构
 
 ```text
-crates/          Rust 内核：SSH、SFTP、容器、Kubernetes、策略、AI、MCP
+crates/          Rust 内核：SSH、SFTP、容器、Kubernetes、VMware、策略、AI、MCP
 src-tauri/       Tauri 宿主：命令注册、窗口、原生对话框
 apps/desktop/    Vue 3 界面
 descriptors/     能力描述符，生成通信类型与 manifest
@@ -165,6 +179,7 @@ docs/            文档与截图
 - 凭据保存在本机保险库里，用 Argon2id 和 XChaCha20-Poly1305 加密，口令不保存。
 - 先用不发送任何内容的探测读取主机键，与本机已信任的键比对，通过后才用于认证。未知的键需要确认，发生变化的键会中断连接。
 - 界面拿不到本地路径。文件在 Rust 侧的原生对话框里选择，交给界面的只是不透明令牌。
+- VMware 的 guest 凭据与 REST 凭据存在同一个保险库里。导入的机器以 UUID 标识，工具按会话 id 访问，从不接收 `.vmx` 路径。
 - 助手和 MCP 客户端的工具调用要经过风险规则和审计日志，需要时弹出审批。终端里的输入不拦截。
 - 更新检查是应用唯一会自己发出的请求，可以关闭。同步只连接你配置的服务器。
 

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="art/icon.png" alt="7Shell" width="128" height="128" />
   <h1>7Shell</h1>
-  <p>An open-source SSH and operations client for Windows, macOS and Linux<br>SSH, SFTP, Docker, Kubernetes, host monitoring and batch commands</p>
+  <p>An open-source SSH and operations client for Windows, macOS and Linux<br>SSH, SFTP, Docker, Kubernetes, VMware, host monitoring and batch commands</p>
   <p><a href="https://github.com/7wdn/7shell">GitHub</a> &nbsp;|&nbsp; <a href="docs/">Documentation</a> &nbsp;|&nbsp; <a href="https://github.com/7wdn/7shell/releases">Releases</a></p>
 </div>
 
@@ -50,6 +50,17 @@
 - **Containers** — Docker, Podman, nerdctl and WSLC: containers, images, logs, stats, an exec terminal, files and image archive import, on this machine or through an SSH session.
 - **Kubernetes** — kubeconfig contexts, resource lists and watches, pod logs, exec, pod files, metrics and YAML editing, directly or through an SSH session.
 
+### Virtual machines
+
+The workspace lists this computer's Workstation machines, shows their state and opens SSH or RDP. Snapshots, guest operations, configuration, host networks and console input run through the assistant and MCP tools, under the same risk rules.
+
+- **Workstation inventory** — scans the machines VMware Workstation knows on this computer and imports them as sessions, keeping the machine's UUID as the identity. A session shows whether the machine is running, suspended or stopped, and starts, resumes, stops or suspends it; the power tool also resets, pauses and unpauses.
+- **Open a connection** — SSH, or RDP on Windows, from the same machine entry once the guest has an address.
+- **Snapshots and clones** — take, revert to and delete snapshots; make linked or full clones, including from a snapshot; and create or deploy `.vmtx` templates.
+- **Inside the guest** — browse directories, copy files in and out, run programs and scripts, create, rename and delete files, list processes and read the environment. These operations sign in with the guest account the session stores.
+- **Configuration** — CPU, memory, disks, network and serial adapters, SATA and NVMe controllers, shared folders, VProbes and configuration entries, without opening Workstation's settings window.
+- **Console and host network** — send key sequences and capture a screenshot without a guest account, which covers boot menus and installers; list virtual networks and port forwards, with the REST service adding MAC-to-IP maps and network creation.
+
 ### Operations
 
 - **Host monitor** — load, CPU, memory, swap, disks, processes, network and sockets, sampled over the connection that is already open; nothing to install on the server.
@@ -63,6 +74,7 @@
 
 - **Assistant** — Anthropic, OpenAI-compatible endpoints and local models.
 - **MCP server** — external MCP clients can call the same tools on saved sessions; credentials stay in the application.
+- **VMware tools** — 17 built-in tools cover inventory, power, snapshots and clones, guest operations, configuration, host networks, console keys and screenshots.
 - **Approval and audit** — tool calls are checked against the risk rules and written to an audit log, and an approval prompt appears when a call needs one.
 
 ## Connections
@@ -85,6 +97,7 @@
 | Containers | nerdctl | containerd, with namespace selection |
 | Containers | WSLC | Windows containers, Windows only |
 | Cluster | Kubernetes | Contexts, resources, logs, exec, files, metrics, YAML |
+| Virtual machine | VMware Workstation | Windows and Linux; inventory, power, snapshots, guest files and commands, console |
 | Remote desktop | RDP | Windows only, through the system client |
 
 ## Screenshots
@@ -114,6 +127,7 @@ The builds are not code-signed and the macOS app is not notarized. Windows Smart
 2. Add a session: address, authentication method and, if needed, jump hosts.
 3. Confirm the host key on the first connection. A changed key stops the connection instead of asking again.
 4. Open a terminal. The file workbench below it and the host monitor beside it use the same session.
+5. For a VMware machine, scan Workstation from the sidebar, import the machine, and open SSH or RDP from its session.
 
 ## Tech stack
 
@@ -145,7 +159,7 @@ pnpm check       # every gate
 ## Project layout
 
 ```text
-crates/          Rust crates: SSH, SFTP, containers, Kubernetes, policy, AI, MCP
+crates/          Rust crates: SSH, SFTP, containers, Kubernetes, VMware, policy, AI, MCP
 src-tauri/       Tauri host: commands, windows, native dialogs
 apps/desktop/    Vue 3 interface
 descriptors/     Capability descriptors that generate wire types and manifests
@@ -165,6 +179,7 @@ docs/            Documentation and screenshots
 - Credentials are stored in a local vault encrypted with Argon2id and XChaCha20-Poly1305. The passphrase is never saved.
 - A host key is read over a probe that sends nothing, compared with the trusted keys on this device, and only then used for authentication. An unknown key is shown for confirmation; a changed key stops the connection.
 - The interface never receives a local path. Files are picked in native dialogs in Rust and passed on as opaque tokens.
+- VMware guest and REST credentials are kept in the same vault. Imported machines are identified by UUID, and agent tools reach them by session id, never by `.vmx` path.
 - Tool calls from the assistant and from MCP clients go through the risk rules and the audit log, with an approval prompt when a call needs one. Typing in a terminal is not gated.
 - The update check is the only request the application makes on its own, and it can be turned off. Sync only connects to the server you configure.
 
