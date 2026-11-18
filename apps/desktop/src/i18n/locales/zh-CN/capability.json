@@ -39,6 +39,9 @@
     "jumpHost": {
       "label": "可作为跳板机"
     },
+    "opensshConfig": {
+      "label": "读取 ~/.ssh/config"
+    },
     "recording": {
       "label": "会话录制"
     },

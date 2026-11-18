@@ -285,6 +285,19 @@
         "forgetMessage": "移除密钥“{name}”？它会从保险库里删除，用过它的会话下次会重新要求提供。",
         "none": "尚未附加密钥。"
       },
+      "openssh": {
+        "title": "OpenSSH 配置",
+        "useConfig": "主机与身份来自 ~/.ssh/config",
+        "note": "会话保存的是别名而不是地址副本。每次连接都会重新解析主机、账号、端口和身份：优先使用配置指定的密钥，其次按顺序尝试默认的 ~/.ssh/id_* 文件。",
+        "pick": "从 OpenSSH 配置添加…",
+        "dialogTitle": "~/.ssh/config 中的主机",
+        "dialogDescription": "选择一个别名。地址与账号按本机解析结果显示；保存前不会复制任何内容。",
+        "loading": "正在读取 ~/.ssh/config…",
+        "empty": "还没有可用主机。在 ~/.ssh/config 中添加 Host 块后重新打开。",
+        "unsupported": "暂不支持：{directives}",
+        "close": "关闭",
+        "keyNote": "连接时会从 ~/.ssh/config 或默认的 ~/.ssh/id_* 读取身份，这里无需导入密钥。"
+      },
       "jumps": {
         "title": "跳板机",
         "note": "按顺序连接：第一个跳板机直连，之后每个都经由前一个。每个跳板机的密钥都会在发送任何内容前验证。",

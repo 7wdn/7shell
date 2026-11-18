@@ -19,6 +19,7 @@
 mod credential;
 mod hostkey;
 mod keygen;
+pub mod openssh;
 mod session;
 
 mod agent;

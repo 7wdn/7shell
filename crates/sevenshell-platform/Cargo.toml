@@ -15,6 +15,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sevenshell-error = { workspace = true }
 sevenshell-types = { workspace = true }
+zeroize = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# DPAPI seals the vault's unlock material for the current Windows account.
+windows = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The login keychain holds the same material on macOS.
+security-framework = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

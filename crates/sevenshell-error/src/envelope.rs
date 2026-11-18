@@ -277,6 +277,17 @@ impl ShellError {
         Self::new(ErrorCode::VaultCorrupt, Origin::new(Subsystem::Vault)).with_detail(detail)
     }
 
+    /// This platform has nowhere to keep the unlock material outside the vault.
+    pub fn vault_keychain_unavailable() -> Self {
+        Self::new(ErrorCode::VaultKeychainUnavailable, Origin::new(Subsystem::Vault))
+            .with_outcome(OperationOutcome::Rejected)
+    }
+
+    /// The system store was reachable but refused. The detail names the operation, never the bytes.
+    pub fn vault_keychain_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::VaultKeychainFailed, Origin::new(Subsystem::Vault)).with_detail(detail)
+    }
+
     // -- SSH ---------------------------------------------------------------
 
     pub fn ssh_host_key_unknown(host: &str, port: u16, key_type: &str) -> Self {
@@ -292,6 +303,41 @@ impl ShellError {
             .with_param("host", host)
             .with_param("port", port.to_string())
             .with_diagnostic("keyType", key_type)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// The system's own record has a different key. Unlike the vault's record, there is no replace
+    /// action: this build never writes the person's `~/.ssh/known_hosts`.
+    pub fn ssh_host_key_system_mismatch(host: &str, port: u16, key_type: &str) -> Self {
+        Self::new(ErrorCode::SshHostKeySystemMismatch, ssh_origin(host, port))
+            .with_param("host", host)
+            .with_param("port", port.to_string())
+            .with_diagnostic("keyType", key_type)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    /// An OpenSSH directive that changes where a connection goes, which this build will not guess at.
+    pub fn ssh_config_unsupported(directive: &str) -> Self {
+        Self::new(ErrorCode::SshConfigUnsupported, Origin::new(Subsystem::Ssh))
+            .with_param("directive", directive)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn ssh_config_unknown_alias(alias: &str) -> Self {
+        Self::new(ErrorCode::SshConfigUnknownAlias, Origin::new(Subsystem::Ssh))
+            .with_param("alias", alias)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn ssh_config_key_passphrase(key: &str) -> Self {
+        Self::new(ErrorCode::SshConfigKeyPassphrase, Origin::new(Subsystem::Ssh))
+            .with_param("key", key)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn ssh_config_no_key(alias: &str) -> Self {
+        Self::new(ErrorCode::SshConfigNoKey, Origin::new(Subsystem::Ssh))
+            .with_param("alias", alias)
             .with_outcome(OperationOutcome::NotSent)
     }
 

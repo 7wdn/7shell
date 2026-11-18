@@ -117,6 +117,46 @@ pub fn settings_file() -> Option<PathBuf> {
     config_dir().map(|directory| directory.join(SETTINGS_FILE_NAME))
 }
 
+/// The environment variable that moves OpenSSH's own directory for a test or a controlled run.
+///
+/// The application normally reads the person's real `~/.ssh`. A live test that wants a known
+/// `config` and a known `known_hosts` must not edit that directory, and neither must an e2e run;
+/// this override is the seam both use. It is not a setting: the interface never sees it.
+pub const SSH_DIR_OVERRIDE: &str = "SEVENSHELL_SSH_DIR";
+
+/// The home directory of the account this process runs as, for `~` expansion.
+pub fn home_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    match target_os {
+        "windows" => environment("USERPROFILE"),
+        _ => environment("HOME"),
+    }
+    .map(PathBuf::from)
+}
+
+pub fn home_dir() -> Option<PathBuf> {
+    home_dir_for(std::env::consts::OS, &|key| std::env::var(key).ok())
+}
+
+/// `~/.ssh`, where OpenSSH keeps its config, known hosts and default identities.
+pub fn ssh_dir_for(target_os: &str, environment: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+    home_dir_for(target_os, environment).map(|home| home.join(".ssh"))
+}
+
+pub fn ssh_dir() -> Option<PathBuf> {
+    if let Some(directory) = std::env::var_os(SSH_DIR_OVERRIDE) {
+        let directory = PathBuf::from(directory);
+        if !directory.as_os_str().is_empty() {
+            return Some(directory);
+        }
+    }
+    ssh_dir_for(std::env::consts::OS, &|key| std::env::var(key).ok())
+}
+
+/// `~/.ssh/config`, whether or not it exists.
+pub fn openssh_config_path() -> Option<PathBuf> {
+    ssh_dir().map(|directory| directory.join("config"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +272,46 @@ mod tests {
             Some(root.path().join("data")),
             "the marker moves the vault, settings and bridge into the copy's own folder",
         );
+    }
+
+    #[test]
+    fn the_ssh_directory_comes_from_the_accounts_home_on_every_platform() {
+        let windows = environment(&[("USERPROFILE", "C:\\Users\\someone")]);
+        assert_eq!(
+            ssh_dir_for("windows", &windows).expect("USERPROFILE is set"),
+            PathBuf::from("C:\\Users\\someone").join(".ssh")
+        );
+
+        let macos = environment(&[("HOME", "/Users/someone")]);
+        assert_eq!(
+            ssh_dir_for("macos", &macos).expect("HOME is set"),
+            PathBuf::from("/Users/someone").join(".ssh")
+        );
+
+        let linux = environment(&[("HOME", "/home/someone")]);
+        assert_eq!(
+            ssh_dir_for("linux", &linux).expect("HOME is set"),
+            PathBuf::from("/home/someone").join(".ssh")
+        );
+    }
+
+    #[test]
+    fn the_ssh_override_moves_the_config_and_nothing_else() {
+        // Safety: this test is the only reader of the variable in this process, and it puts it
+        // back before it finishes.
+        let previous = std::env::var_os(SSH_DIR_OVERRIDE);
+        unsafe { std::env::set_var(SSH_DIR_OVERRIDE, "/tmp/seven-shell-ssh") };
+
+        let directory = ssh_dir().expect("the override is what decides");
+        let config = openssh_config_path();
+
+        match previous {
+            Some(value) => unsafe { std::env::set_var(SSH_DIR_OVERRIDE, value) },
+            None => unsafe { std::env::remove_var(SSH_DIR_OVERRIDE) },
+        }
+
+        assert_eq!(directory, PathBuf::from("/tmp/seven-shell-ssh"));
+        assert_eq!(config, Some(PathBuf::from("/tmp/seven-shell-ssh").join("config")));
     }
 
     #[test]

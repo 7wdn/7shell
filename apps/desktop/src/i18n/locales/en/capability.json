@@ -39,6 +39,9 @@
     "jumpHost": {
       "label": "Use as a jump host"
     },
+    "opensshConfig": {
+      "label": "Uses ~/.ssh/config"
+    },
     "recording": {
       "label": "Session recording"
     },

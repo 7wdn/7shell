@@ -17,6 +17,7 @@ mod host_locations;
 mod k8s;
 mod keys;
 mod monitor;
+pub mod openssh;
 mod policy;
 mod sessions;
 mod snippets;

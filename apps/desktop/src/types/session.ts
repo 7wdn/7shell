@@ -10,6 +10,21 @@ import type { ContainerSettings } from "@/types/container";
 import type { AuthMethod, Protocol } from "@/types/generated/protocols";
 import type { KubernetesSettings } from "@/types/k8s";
 
+/**
+ * One host this machine's OpenSSH configuration names.
+ *
+ * The alias is what a saved session stores; the resolved values are shown beside it. No identity
+ * path is here: the connection reads those in the process that owns them.
+ */
+export interface SshConfigHost {
+  readonly alias: string;
+  readonly host: string;
+  readonly user?: string;
+  readonly port?: number;
+  /** Directives this build cannot honour; selecting one would make a session that refuses. */
+  readonly unsupported: readonly string[];
+}
+
 /** What the interface may know about an imported key. */
 export interface KeyInfo {
   /** The handle the vault knows the material by. */
@@ -47,6 +62,8 @@ export interface SessionAuth {
   readonly method: AuthMethod;
   readonly key?: KeyInfo;
   readonly hasSecret: boolean;
+  /** The host, account and identity come from this machine's ~/.ssh/config; `host` holds the alias. */
+  readonly sshConfig?: boolean;
 }
 
 export interface TerminalSettings {
@@ -306,6 +323,19 @@ export type OpenOutcome =
     };
 
 export type VaultState = "missing" | "locked" | "unlocked";
+
+/**
+ * Whether this machine can keep the vault's unlock key in the system's own store.
+ *
+ * `enrolled` is about the open vault: while the application is locked the status is reported as
+ * not enrolled, because drawing the unlock screen must not ask the keychain a question that can
+ * turn into a system prompt. The settings page, which is where this is acted on, is only reachable
+ * with the vault open.
+ */
+export interface VaultKeychainStatus {
+  readonly available: boolean;
+  readonly enrolled: boolean;
+}
 
 /**
  * One archived vault file that sits beside the live one.

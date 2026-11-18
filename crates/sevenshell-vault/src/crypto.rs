@@ -154,8 +154,22 @@ const VERIFIER_PLAINTEXT: &[u8] = b"sevenshell-vault-verifier";
 pub(crate) struct VaultKey(Zeroizing<[u8; KEY_LEN]>);
 
 impl VaultKey {
-    fn as_bytes(&self) -> &[u8; KEY_LEN] {
+    pub(crate) fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0
+    }
+
+    /// A key that arrived from outside the derivation, as the system keychain holds it.
+    ///
+    /// The length is checked here rather than trusted: a key of the wrong size cannot be a vault
+    /// key, and letting the cipher report that would turn a bad keychain entry into a different
+    /// failure from a bad password in a place the caller has to distinguish them.
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Result<Self, ShellError> {
+        if bytes.len() != KEY_LEN {
+            return Err(ShellError::vault_unlock_failed());
+        }
+        let mut key = Zeroizing::new([0u8; KEY_LEN]);
+        key.copy_from_slice(bytes);
+        Ok(Self(key))
     }
 }
 

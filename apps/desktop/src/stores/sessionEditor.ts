@@ -34,6 +34,7 @@ import type {
   SerialSettings,
   SerialStopBits,
   Session,
+  SshConfigHost,
   TelnetSettings,
   TerminalSettings,
   WslSettings,
@@ -227,6 +228,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const protocol = ref<Protocol>(PROTOCOLS[0]?.id ?? "ssh");
   const method = ref<AuthMethodId>("password");
   const attachedKey = ref<KeyInfo | null>(null);
+  /** Whether the saved host is an OpenSSH alias rather than a literal address. */
+  const sshConfig = ref(false);
   const secret = ref("");
   const passphrase = ref("");
   const keyHasPassphrase = ref(false);
@@ -389,7 +392,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     // has to be answered, and even that can be left for an anonymous server.
     user: needsUser.value && !isWebDav.value && user.value.trim() === "",
     port: needsEndpoint.value && !isWebDav.value && !validPort(port.value, 1),
-    key: isSsh.value && method.value === "publicKey" && !attachedKey.value?.keyRef,
+    key: isSsh.value && method.value === "publicKey" && !attachedKey.value?.keyRef && !sshConfig.value,
     serialPort: protocol.value === "serial" && serialPort.value.trim() === "",
     serialBaud: protocol.value === "serial" && !validBaud(serialBaud.value),
     // An engine on another machine is reached through a saved session; an empty id has no route.
@@ -454,6 +457,30 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     open.value = value;
   }
 
+  /**
+   * Fills the draft from one host the machine's OpenSSH configuration names.
+   *
+   * The alias becomes the saved host, and the authentication starts at `publicKey` with no key
+   * attached: the connection resolves the configuration's `IdentityFile` — or the default
+   * `~/.ssh/id_*` files — at connect time. Choosing the agent instead is one dropdown away.
+   */
+  function applySshConfigHost(entry: SshConfigHost): void {
+    protocol.value = "ssh";
+    host.value = entry.alias;
+    if (entry.user) {
+      user.value = entry.user;
+    }
+    if (entry.port) {
+      port.value = String(entry.port);
+    }
+    method.value = "publicKey";
+    attachedKey.value = null;
+    sshConfig.value = true;
+    if (name.value.trim() === "") {
+      name.value = entry.alias;
+    }
+  }
+
   /** Starts a draft from a saved session, or from nothing when a new one is being made. */
   function fill(session: Session | null): void {
     editing.value = session;
@@ -465,6 +492,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     groupId.value = session?.groupId ?? "";
     method.value = session?.auth.method ?? "password";
     attachedKey.value = session?.auth.key ?? null;
+    sshConfig.value = session?.auth.sshConfig ?? false;
     secret.value = "";
     passphrase.value = "";
     keyHasPassphrase.value = false;
@@ -577,6 +605,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
         method: method.value,
         key: attachedKey.value ?? undefined,
         hasSecret: existing?.auth.hasSecret ?? false,
+        sshConfig: sshConfig.value,
       },
       terminal: { ...terminal.value },
       desktop: {
@@ -711,6 +740,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     protocol,
     method,
     attachedKey,
+    sshConfig,
+    applySshConfigHost,
     secret,
     passphrase,
     keyHasPassphrase,

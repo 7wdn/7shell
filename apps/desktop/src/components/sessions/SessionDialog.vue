@@ -32,6 +32,7 @@ import { useI18n } from "vue-i18n";
 
 import ContainerSettingsFields from "@/components/sessions/ContainerSettingsFields.vue";
 import KubernetesSettingsFields from "@/components/sessions/KubernetesSettingsFields.vue";
+import SshConfigHostDialog from "@/components/sessions/SshConfigHostDialog.vue";
 import VmwareSettingsFields from "@/components/sessions/VmwareSettingsFields.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
@@ -55,6 +56,7 @@ import type {
   SerialPortInfo,
   SerialStopBits,
   Session,
+  SshConfigHost,
   ForwardMode,
 } from "@/types/session";
 import type { ContainerRuntime } from "@/types/container";
@@ -333,6 +335,8 @@ const hopOptions = computed<SelectOption[]>(() =>
 const submitted = ref(false);
 const busy = ref(false);
 const keyBusy = ref(false);
+/** The OpenSSH host picker, over this dialog. */
+const sshConfigOpen = ref(false);
 const problem = ref<ShellError | null>(null);
 
 const title = computed(() => (props.session ? t("sessions.editor.titleEdit") : t("sessions.editor.titleNew")));
@@ -460,6 +464,11 @@ async function chooseKey(): Promise<void> {
 /** Whether the question about forgetting the attached key is on screen. */
 const forgetting = ref(false);
 
+/** Takes one host from `~/.ssh/config` into the draft: the alias is saved, not a copy of it. */
+function pickSshConfigHost(host: SshConfigHost): void {
+  editor.applySshConfigHost(host);
+}
+
 /** Asking to forget the key: the question comes first, because the material does not come back. */
 function requestForget(): void {
   forgetting.value = true;
@@ -555,6 +564,26 @@ async function forgetKey(): Promise<void> {
                 "
               />
               <p v-if="submitted && errors.host" class="mt-1 text-[11px] text-destructive">{{ errors.host }}</p>
+
+              <template v-if="editor.isSsh">
+                <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <label class="flex items-center gap-2 text-xs">
+                    <input v-model="editor.sshConfig" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                    {{ t("sessions.editor.openssh.useConfig") }}
+                  </label>
+                  <button
+                    type="button"
+                    data-ssh-config-picker
+                    class="rounded-md border border-border px-2.5 py-1 text-[11px] transition-colors hover:bg-accent"
+                    @click="sshConfigOpen = true"
+                  >
+                    {{ t("sessions.editor.openssh.pick") }}
+                  </button>
+                </div>
+                <p v-if="editor.sshConfig" class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  {{ t("sessions.editor.openssh.note") }}
+                </p>
+              </template>
             </div>
 
             <div v-if="editor.needsEndpoint && !editor.isWebDav">
@@ -691,6 +720,12 @@ async function forgetKey(): Promise<void> {
                 {{ t("sessions.editor.key.choose") }}
               </button>
               <p v-if="submitted && errors.key" class="text-[11px] text-destructive">{{ errors.key }}</p>
+              <p
+                v-if="editor.sshConfig && !editor.attachedKey"
+                class="text-[11px] leading-relaxed text-muted-foreground"
+              >
+                {{ t("sessions.editor.openssh.keyNote") }}
+              </p>
             </div>
           </section>
 
@@ -1168,5 +1203,11 @@ async function forgetKey(): Promise<void> {
     danger
     @confirm="forgetKey()"
     @update:open="forgetting = false"
+  />
+
+  <SshConfigHostDialog
+    :open="sshConfigOpen"
+    @update:open="(value: boolean) => (sshConfigOpen = value)"
+    @select="pickSshConfigHost"
   />
 </template>

@@ -19,8 +19,8 @@
  * Nothing here shows a password back: the fields are cleared when the change succeeds, and a refusal
  * is drawn under the form that caused it with the code the backend sent.
  */
-import { History, LoaderCircle, Lock } from "@lucide/vue";
-import { computed, ref, watch } from "vue";
+import { History, KeyRound, LoaderCircle, Lock } from "@lucide/vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import VaultHistoryDialog from "@/components/vault/VaultHistoryDialog.vue";
@@ -56,6 +56,24 @@ const canSubmit = computed(
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
 }
+
+/** The keychain's own refusal, drawn beside the switch that caused it. */
+const keychainProblem = computed(() =>
+  vault.keychainFailure ? describeShellError(translate, vault.keychainFailure) : null,
+);
+
+/** Turns the automatic unlock on or off. The row only offers it where the platform has a store. */
+async function toggleKeychain(): Promise<void> {
+  const status = vault.keychain;
+  if (!status?.available || vault.keychainBusy) {
+    return;
+  }
+  await vault.setKeychain(!status.enrolled);
+}
+
+onMounted(() => {
+  void vault.loadKeychain();
+});
 
 /** Clears the fields on anything that ends the attempt, so a mistyped password is not left on screen. */
 function forget(): void {
@@ -194,6 +212,55 @@ async function lockNow(): Promise<void> {
     <!-- Locking, and where the libraries of forgotten passwords went. -->
     <section class="space-y-2">
       <h4 class="text-sm font-medium text-muted-foreground">{{ t("settings.security.vault") }}</h4>
+
+      <!--
+        The system keychain: present only where the platform has one. The switch says what is true
+        now rather than what pressing it will do, because "On" is also the answer to "will the next
+        start ask for the password?".
+      -->
+      <div
+        v-if="vault.keychain"
+        class="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5"
+      >
+        <div class="min-w-0">
+          <p class="text-sm font-medium">{{ t("settings.security.keychain.title") }}</p>
+          <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            {{ t("settings.security.keychain.help") }}
+          </p>
+          <p v-if="!vault.keychain.available" class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            {{ t("settings.security.keychain.unavailable") }}
+          </p>
+          <p
+            v-if="keychainProblem"
+            role="alert"
+            class="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs"
+          >
+            <span>{{ keychainProblem.message }}</span>
+            <span class="mt-1 block font-mono text-[11px] text-muted-foreground">{{ keychainProblem.code }}</span>
+          </p>
+        </div>
+        <button
+          v-if="vault.keychain.available"
+          type="button"
+          role="switch"
+          data-vault-keychain
+          :aria-checked="vault.keychain.enrolled"
+          :disabled="vault.keychainBusy"
+          class="flex shrink-0 items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+          :class="vault.keychain.enrolled ? 'border-primary/40 bg-primary/10' : 'border-border'"
+          @click="toggleKeychain()"
+        >
+          <LoaderCircle v-if="vault.keychainBusy" :size="12" class="animate-spin" />
+          <KeyRound v-else :size="12" />
+          {{
+            vault.keychainBusy
+              ? t("settings.security.keychain.busy")
+              : vault.keychain.enrolled
+                ? t("settings.security.keychain.on")
+                : t("settings.security.keychain.off")
+          }}
+        </button>
+      </div>
 
       <div class="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5">
         <div class="min-w-0">

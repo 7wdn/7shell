@@ -46,12 +46,26 @@ error_catalog! {
     VaultUnlockFailed => "VAULT-UNLOCK-FAILED", "errors.vault.unlockFailed";
     #[doc = "The vault file exists but cannot be decrypted or parsed."]
     VaultCorrupt => "VAULT-CORRUPT", "errors.vault.corrupt";
+    #[doc = "This machine has no system keychain this build can use."]
+    VaultKeychainUnavailable => "VAULT-KEYCHAIN-UNAVAILABLE", "errors.vault.keychainUnavailable";
+    #[doc = "The system keychain refused to store or remove the vault's unlock material."]
+    VaultKeychainFailed => "VAULT-KEYCHAIN-FAILED", "errors.vault.keychainFailed";
 
     // -- SSH ---------------------------------------------------------------
     #[doc = "The server presented a host key that has never been seen for this host."]
     SshHostKeyUnknown => "SSH-HOSTKEY-UNKNOWN", "errors.ssh.hostKeyUnknown";
     #[doc = "The presented host key differs from the trusted one. Credentials were withheld."]
     SshHostKeyMismatch => "SSH-HOSTKEY-MISMATCH", "errors.ssh.hostKeyMismatch";
+    #[doc = "The key differs from the one this machine's OpenSSH known_hosts records. Nothing was sent."]
+    SshHostKeySystemMismatch => "SSH-HOSTKEY-SYSTEM-MISMATCH", "errors.ssh.hostKeySystemMismatch";
+    #[doc = "The OpenSSH configuration uses a directive this build cannot honour."]
+    SshConfigUnsupported => "SSH-CONFIG-UNSUPPORTED", "errors.ssh.configUnsupported";
+    #[doc = "A session asked OpenSSH's configuration for an alias no Host block matches."]
+    SshConfigUnknownAlias => "SSH-CONFIG-UNKNOWN-ALIAS", "errors.ssh.configUnknownAlias";
+    #[doc = "The key OpenSSH's configuration names needs a passphrase this build cannot ask for."]
+    SshConfigKeyPassphrase => "SSH-CONFIG-KEY-PASSPHRASE", "errors.ssh.configKeyPassphrase";
+    #[doc = "OpenSSH's configuration and its default identity files held no usable private key."]
+    SshConfigNoKey => "SSH-CONFIG-NO-KEY", "errors.ssh.configNoKey";
     #[doc = "The server rejected the credentials or the authentication method."]
     SshAuthFailed => "SSH-AUTH-FAILED", "errors.ssh.authFailed";
     #[doc = "The host could not be reached."]

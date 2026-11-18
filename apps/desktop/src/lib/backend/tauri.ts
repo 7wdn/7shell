@@ -96,6 +96,7 @@ import type {
   SessionImportOutcome,
   SessionImportSummary,
   SftpListing,
+  SshConfigHost,
   SftpOutcome,
   SftpPasteOutcome,
   TerminalClosed,
@@ -104,6 +105,7 @@ import type {
   UploadAnswer,
   UploadOutcome,
   VaultArchive,
+  VaultKeychainStatus,
   VaultState,
   ZmodemEvent,
 } from "@/types/session";
@@ -607,6 +609,21 @@ export function vaultLock(): Promise<VaultState> {
   return invoke<VaultState>("vault_lock");
 }
 
+/** Whether the system store can keep the unlock key, and whether it does for the open vault. */
+export function vaultKeychainStatus(): Promise<VaultKeychainStatus> {
+  return invoke<VaultKeychainStatus>("vault_keychain_status");
+}
+
+/** Seals the open vault's derived key in the system store. */
+export function vaultKeychainEnroll(): Promise<VaultKeychainStatus> {
+  return invoke<VaultKeychainStatus>("vault_keychain_enroll");
+}
+
+/** Removes the sealed key; the vault and its password are untouched. */
+export function vaultKeychainForget(): Promise<VaultKeychainStatus> {
+  return invoke<VaultKeychainStatus>("vault_keychain_forget");
+}
+
 export function vaultChangePassword(current: string, next: string): Promise<void> {
   return invoke<void>("vault_change_password", { current, next });
 }
@@ -645,6 +662,11 @@ export function vaultRevealFolder(): Promise<void> {
 
 export function sessionsList(): Promise<Session[]> {
   return invoke<Session[]>("sessions_list");
+}
+
+/** The aliases this machine's OpenSSH configuration names, for the picker. */
+export function sshConfigHosts(): Promise<SshConfigHost[]> {
+  return invoke<SshConfigHost[]>("ssh_config_hosts");
 }
 
 /** Saves a session. `secret` absent means "leave the stored one alone". */

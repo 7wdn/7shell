@@ -756,6 +756,7 @@ mod tests {
                 has_passphrase: false,
             }),
             has_secret: false,
+            ssh_config: false,
         };
 
         let plan = plan_import(bundle(vec![keyed], Vec::new()), &Document::empty());

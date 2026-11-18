@@ -574,6 +574,7 @@ fn a_session_naming_a_key_the_file_did_not_carry_is_counted() {
                     method: AuthMethod::PublicKey,
                     key: Some(imported),
                     has_secret: false,
+                    ssh_config: false,
                 },
                 ..session("keyed", "keyed")
             },
@@ -605,6 +606,7 @@ fn a_session_pointing_at_a_key_that_travelled_points_at_it_here() {
                     method: AuthMethod::PublicKey,
                     key: Some(imported),
                     has_secret: false,
+                    ssh_config: false,
                 },
                 ..session("keyed", "keyed")
             },

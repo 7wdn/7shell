@@ -40,6 +40,7 @@ export type CapabilityKey =
   | "dynamicForwarding"
   | "agentForwarding"
   | "jumpHost"
+  | "opensshConfig"
   | "recording"
   | "secret"
   | "interactive"
@@ -96,7 +97,7 @@ export const PROTOCOLS: readonly ProtocolDescriptor[] = [
     runtime: "native",
     transport: "tcp",
     supportLevel: "operate",
-    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "scp", "forwarding", "dynamicForwarding", "agentForwarding", "recording", "jumpHost"],
+    capabilities: ["shell", "exec", "resize", "keepalive", "hostMetrics", "sftp", "scp", "forwarding", "dynamicForwarding", "agentForwarding", "recording", "jumpHost", "opensshConfig"],
   },
   {
     id: "rdp",
@@ -246,6 +247,7 @@ export const CAPABILITIES: readonly CapabilityDescriptor[] = [
   { key: "dynamicForwarding", group: "network", labelKey: "capability.dynamicForwarding.label" },
   { key: "agentForwarding", group: "network", labelKey: "capability.agentForwarding.label" },
   { key: "jumpHost", group: "network", labelKey: "capability.jumpHost.label" },
+  { key: "opensshConfig", group: "network", labelKey: "capability.opensshConfig.label" },
   { key: "recording", group: "session", labelKey: "capability.recording.label" },
   { key: "secret", group: "auth", labelKey: "capability.secret.label" },
   { key: "interactive", group: "auth", labelKey: "capability.interactive.label" },

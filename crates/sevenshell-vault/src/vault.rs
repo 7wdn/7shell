@@ -301,6 +301,43 @@ impl Vault {
 
     /// Opens the vault and leaves it unlocked until [`Vault::lock`].
     pub fn unlock(&self, password: &str) -> Result<(), ShellError> {
+        let envelope = self.envelope()?;
+        let key = crypto::derive_key(password, &envelope.salt, &envelope.kdf)?;
+        self.adopt(envelope, key)
+    }
+
+    /// Opens the vault with a key that was derived earlier and kept outside the process.
+    ///
+    /// The system keychain stores exactly this value, so an application restart can open the vault
+    /// without asking for the password again. Nothing about the file changes: a wrong or stale key
+    /// fails the same verifier a wrong password does, and the caller falls back to the form.
+    pub fn unlock_with_key(&self, key: &[u8]) -> Result<(), ShellError> {
+        let envelope = self.envelope()?;
+        let key = crypto::VaultKey::from_bytes(key)?;
+        self.adopt(envelope, key)
+    }
+
+    /// The derived key, for a caller that is about to seal it in the system's own store.
+    ///
+    /// Only an unlocked vault can hand this out: while locked there is no key in memory, and
+    /// asking for one would be asking the caller to have solved the problem already.
+    pub fn export_key(&self) -> Result<Zeroizing<Vec<u8>>, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+        Ok(Zeroizing::new(state.key.as_bytes().to_vec()))
+    }
+
+    /// What a sealed key must match to belong to this vault: the envelope's salt.
+    ///
+    /// The salt is already plaintext in the file, so reporting it reveals nothing a reader of the
+    /// file did not have. It is enough to notice that a keychain entry was enrolled for a different
+    /// vault file before asking the cipher to open it.
+    pub fn binding(&self) -> Result<String, ShellError> {
+        Ok(self.envelope()?.salt)
+    }
+
+    /// Reads and checks the envelope without opening it.
+    fn envelope(&self) -> Result<Envelope, ShellError> {
         let raw = match std::fs::read(&self.path) {
             Ok(raw) => raw,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -332,7 +369,11 @@ impl Vault {
             );
         }
 
-        let key = crypto::derive_key(password, &envelope.salt, &envelope.kdf)?;
+        Ok(envelope)
+    }
+
+    /// Decrypts the document under a key and makes it the vault's open state.
+    fn adopt(&self, envelope: Envelope, key: crypto::VaultKey) -> Result<(), ShellError> {
         crypto::decrypt_verifier(&key, &envelope.verifier)?;
 
         let payload = Zeroizing::new(crypto::decrypt(&key, &envelope.payload, crypto::AAD_PAYLOAD)?);
@@ -2954,5 +2995,102 @@ mod tests {
         assert!(vault.host_locations().expect("read").is_empty());
         vault.set_vmrest_credentials("", "").expect("forget");
         assert!(vault.vmrest_credentials().expect("read").is_none());
+    }
+
+    #[test]
+    fn a_key_exported_from_an_open_vault_opens_it_again() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+        vault.save_session(sample_session("s1", "web-1"), None).expect("save");
+
+        let key = vault.export_key().expect("an open vault can lend its key");
+        assert_eq!(key.len(), crypto::KEY_LEN);
+        vault.lock();
+
+        let reopened = Vault::open_at(path);
+        reopened
+            .unlock_with_key(key.as_slice())
+            .expect("the exported key opens it");
+        assert_eq!(reopened.status(), VaultStatus::Unlocked);
+        assert_eq!(reopened.sessions().expect("sessions").len(), 1);
+    }
+
+    #[test]
+    fn a_wrong_external_key_does_not_open_the_vault() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+        vault.lock();
+
+        let error = Vault::open_at(path)
+            .unlock_with_key(&[0u8; crypto::KEY_LEN])
+            .expect_err("the wrong key must not open the vault");
+        assert_eq!(error.code(), ErrorCode::VaultUnlockFailed);
+    }
+
+    #[test]
+    fn an_external_key_of_the_wrong_length_is_refused() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+        vault.lock();
+
+        let error = Vault::open_at(path)
+            .unlock_with_key(&[0u8; crypto::KEY_LEN - 1])
+            .expect_err("a short key is not a vault key");
+        assert_eq!(error.code(), ErrorCode::VaultUnlockFailed);
+    }
+
+    #[test]
+    fn exporting_the_key_while_locked_is_refused() {
+        let directory = tempdir().expect("temp dir");
+        let vault = Vault::open_at(directory.path().join("vault.json"));
+        vault.create("master").expect("create");
+        vault.lock();
+
+        let error = vault.export_key().expect_err("a locked vault has no key to lend");
+        assert_eq!(error.code(), ErrorCode::VaultLocked);
+    }
+
+    #[test]
+    fn changing_the_password_retires_the_exported_key() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+        let old_key = vault.export_key().expect("old key");
+        vault.change_password("master", "next").expect("rekey");
+        let new_key = vault.export_key().expect("new key");
+        vault.lock();
+
+        let error = Vault::open_at(path.clone())
+            .unlock_with_key(old_key.as_slice())
+            .expect_err("the retired key must not open the vault");
+        assert_eq!(error.code(), ErrorCode::VaultUnlockFailed);
+
+        let reopened = Vault::open_at(path);
+        reopened
+            .unlock_with_key(new_key.as_slice())
+            .expect("the new key opens it");
+    }
+
+    #[test]
+    fn the_binding_is_the_salt_and_changes_with_the_password() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path.clone());
+        vault.create("master").expect("create");
+
+        let before = vault.binding().expect("binding");
+        let stored = envelope_at(&std::fs::read(&path).expect("read"));
+        assert_eq!(before, stored.salt, "the binding must be the public salt");
+
+        vault.change_password("master", "next").expect("rekey");
+        let after = vault.binding().expect("binding");
+        assert_ne!(before, after, "a rekey must change what a sealed key binds to");
     }
 }

@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
-use sevenshell_types::{SecretInput, Session, SessionExportSummary, SessionGroup, SessionImportOutcome};
+use sevenshell_types::{SecretInput, Session, SessionExportSummary, SessionGroup, SessionImportOutcome, SshConfigHost};
 use sevenshell_vault::{ExportProtection, OpenedBundle};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
@@ -29,6 +29,14 @@ use crate::state::ShellState;
 #[tauri::command]
 pub fn sessions_list(state: State<'_, ShellState>) -> Result<Vec<Session>, ShellError> {
     state.vault().sessions()
+}
+
+/// The hosts this machine's OpenSSH configuration names, for the picker.
+///
+/// Aliases and resolved values only: no identity path, no known_hosts path, no config path.
+#[tauri::command]
+pub fn ssh_config_hosts() -> Vec<SshConfigHost> {
+    sevenshell_core::openssh::hosts()
 }
 
 /// Saves a session, and its secret when one is supplied.

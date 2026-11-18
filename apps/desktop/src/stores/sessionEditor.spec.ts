@@ -461,4 +461,29 @@ describe("session editor store", () => {
     expect(editor.kubeContextsFailure?.code).toBeTruthy();
     expect(editor.kubeContextsBusy).toBe(false);
   });
+
+  it("fills the draft from an OpenSSH host and leaves the key to the connection", () => {
+    const editor = useSessionEditorStore();
+    editor.fill(null);
+
+    editor.applySshConfigHost({
+      alias: "web",
+      host: "10.0.0.5",
+      user: "deploy",
+      port: 2222,
+      unsupported: [],
+    });
+
+    expect(editor.protocol).toBe("ssh");
+    expect(editor.host).toBe("web");
+    expect(editor.user).toBe("deploy");
+    expect(editor.port).toBe("2222");
+    expect(editor.method).toBe("publicKey");
+    expect(editor.sshConfig).toBe(true);
+    expect(editor.sessionProblems.key).toBe(false);
+
+    const draft = editor.draft();
+    expect(draft.auth.sshConfig).toBe(true);
+    expect(draft.name).toBe("web");
+  });
 });

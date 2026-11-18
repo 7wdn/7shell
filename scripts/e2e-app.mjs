@@ -35,6 +35,14 @@ const DATA_DIR = path.join(REPO_ROOT, "e2e", ".run", "config");
  * end-to-end run checks.
  */
 const DOWNLOAD_DIR = path.join(REPO_ROOT, "e2e", ".run", "downloads", "fsdownload");
+/**
+ * The OpenSSH directory a run sees.
+ *
+ * The application reads `~/.ssh/config` and `~/.ssh/known_hosts`; an e2e run must not read the
+ * person's real ones, and a test that checks the picker needs a file whose contents it knows. The
+ * application's own override is the seam, and the lab's coordinates are seeded into it.
+ */
+const SSH_DIR = path.join(REPO_ROOT, "e2e", ".run", "ssh");
 const DEBUG_PORT = Number(process.env.SEVENSHELL_E2E_PORT ?? 9222);
 const CDP_URL = `http://127.0.0.1:${DEBUG_PORT}`;
 
@@ -198,6 +206,20 @@ async function main() {
   // testable at all — with a folder in force there is no dialog between the click and the bytes,
   // which is exactly the case the end-to-end run exists to check. The folder itself is deliberately
   // not created here: the application makes it, and the test is that it does.
+  // A fresh OpenSSH directory for the run. When the SSH lab is configured, its coordinates are
+  // written as one alias, so the picker test has a host whose resolution is known.
+  await rm(SSH_DIR, { recursive: true, force: true });
+  await mkdir(SSH_DIR, { recursive: true });
+  if (process.env.SEVENSHELL_TEST_HOST && process.env.SEVENSHELL_TEST_USER) {
+    await writeFile(
+      path.join(SSH_DIR, "config"),
+      `Host e2e-lab\n  HostName ${process.env.SEVENSHELL_TEST_HOST}\n  Port ${
+        process.env.SEVENSHELL_TEST_PORT ?? "22"
+      }\n  User ${process.env.SEVENSHELL_TEST_USER}\n`,
+      "utf8",
+    );
+  }
+
   await writeFile(
     path.join(DATA_DIR, "downloads.json"),
     `${JSON.stringify(
@@ -222,6 +244,7 @@ async function main() {
     env: {
       ...process.env,
       SEVENSHELL_CONFIG_DIR: DATA_DIR,
+      SEVENSHELL_SSH_DIR: SSH_DIR,
       // The bridge is copied out of the application directory on startup; a test run keeps that
       // copy in its own room rather than the person's real local data.
       SEVENSHELL_BRIDGE_DIR: path.join(REPO_ROOT, "e2e", ".run", "bridge"),

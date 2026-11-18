@@ -97,11 +97,13 @@ import type {
   SessionGroup,
   SessionImportOutcome,
   SessionImportSummary,
+  SshConfigHost,
   TerminalClosed,
   TerminalData,
   UploadAnswer,
   UploadOutcome,
   VaultArchive,
+  VaultKeychainStatus,
   VaultState,
   ZmodemEvent,
 } from "@/types/session";
@@ -383,6 +385,18 @@ export const backend = {
     create: (password: string): Promise<VaultState> => forward("vault_create", () => desktop.vaultCreate(password)),
     unlock: (password: string): Promise<VaultState> => forward("vault_unlock", () => desktop.vaultUnlock(password)),
     lock: (): Promise<VaultState> => forward("vault_lock", () => desktop.vaultLock()),
+    /**
+     * Whether this machine can keep the unlock key in its own store, and whether it does for the
+     * open vault. A browser host reports unavailable: it has no keychain to ask.
+     */
+    keychainStatus: (): Promise<VaultKeychainStatus> =>
+      forward("vault_keychain_status", () => desktop.vaultKeychainStatus()),
+    /** Seals the open vault's derived key, after the person asked for an automatic unlock. */
+    keychainEnroll: (): Promise<VaultKeychainStatus> =>
+      forward("vault_keychain_enroll", () => desktop.vaultKeychainEnroll()),
+    /** Removes the sealed key; the vault keeps its password and stays open. */
+    keychainForget: (): Promise<VaultKeychainStatus> =>
+      forward("vault_keychain_forget", () => desktop.vaultKeychainForget()),
     changePassword: (current: string, next: string): Promise<void> =>
       forward("vault_change_password", () => desktop.vaultChangePassword(current, next)),
     /**
@@ -596,6 +610,8 @@ export const backend = {
 
   sessions: {
     list: (): Promise<Session[]> => forward("sessions_list", () => desktop.sessionsList()),
+    /** The aliases in this machine's ~/.ssh/config, with the values they resolve to. */
+    sshConfigHosts: (): Promise<SshConfigHost[]> => forward("ssh_config_hosts", () => desktop.sshConfigHosts()),
     /** Absent `secret` means "leave the stored one alone", which is not the same as blank. */
     save: (session: Session, secret?: SecretInput): Promise<Session> =>
       forward("session_save", () => desktop.sessionSave(session, secret)),

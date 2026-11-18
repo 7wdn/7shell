@@ -47,8 +47,11 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// and write it back — every conversation and every server credential gone in the course of
 /// somebody opening the window. Version 13 added the host locations an agent may name and the
 /// Workstation REST service's credentials, with the same failure if an older build wrote the
-/// document back.
-pub const VAULT_SCHEMA_VERSION: u32 = 13;
+/// document back. Version 14 added whether a session's host comes from this machine's OpenSSH
+/// configuration: an older build would drop the flag and dial the alias as a host name, which is a
+/// different machine's problem only until DNS answers. The bump makes that build refuse the file
+/// instead.
+pub const VAULT_SCHEMA_VERSION: u32 = 14;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -1197,7 +1200,8 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // document simply has neither table. 12 → 13: it may now carry the host locations an agent may
     // name and the Workstation REST service's credentials, which an older document also lacks; the
     // number moves so an older build refuses the whole file as too new instead of dropping them on
-    // its next write.
+    // its next write. 13 → 14: a session may now say its host is an OpenSSH alias, which an older
+    // build would drop and then dial as a literal host name.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     // Groups and sessions share one order per parent, so a session can sit between two groups.

@@ -29,7 +29,7 @@ use sevenshell_types::{
     CreatedKey, DownloadFolderView, EntryKind, K8sExecRequest, K8sLogRequest, K8sRequest, K8sStreamEnd, K8sStreamLine,
     K8sWatchEvent, KeyAlgorithm, KeyInfo, PresentedHostKey, Protocol, SecretInput, SendTarget, Session,
     SessionExportSummary, SessionGroup, SessionImportOutcome, Snippet, SnippetGroup, SyncSelection, TransferState,
-    UpdateCheck, UploadAnswer, UploadOutcome, VaultState, VmPowerAction,
+    UpdateCheck, UploadAnswer, UploadOutcome, VaultKeychainStatus, VaultState, VmPowerAction,
 };
 use sevenshell_vault::{ExportProtection, OpenedBundle, SessionSecret, Vault, VaultStatus};
 use std::collections::HashMap;
@@ -408,10 +408,18 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             state.vault.change_password(&current, &next)?;
             Ok(Value::Null)
         }
+        // A browser host keeps no system keychain of its own: the package is used from a desktop
+        // session this process cannot ask, and the fallback is the password the vault already has.
+        "vault_keychain_status" => to_value(VaultKeychainStatus {
+            available: false,
+            enrolled: false,
+        }),
+        "vault_keychain_enroll" | "vault_keychain_forget" => Err(ShellError::vault_keychain_unavailable()),
         "vault_set_aside" => to_value(state.vault.set_aside()?),
         "vault_archives" => to_value(state.vault.archives()?),
 
         "sessions_list" => to_value(state.vault.sessions()?),
+        "ssh_config_hosts" => to_value(sevenshell_core::openssh::hosts()),
         "sessions_export_browser" => {
             let file_name: String =
                 optional_args(&args, "fileName")?.unwrap_or_else(|| "7shell-sessions.json".to_owned());

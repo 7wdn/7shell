@@ -5,17 +5,24 @@
       "locked": "保险库已锁定。",
       "kdfFailed": "无法派生保险库密钥。",
       "corrupt": "保险库文件无法读取。",
-      "unlockFailed": "解锁失败：密码错误或保险库文件校验未通过。"
+      "unlockFailed": "解锁失败：密码错误或保险库文件校验未通过。",
+      "keychainUnavailable": "本机没有可用的系统钥匙串，保险库仍需输入密码解锁。",
+      "keychainFailed": "系统钥匙串无法保存保险库的解锁密钥。"
     },
     "ssh": {
       "hostKeyUnknown": "{host}:{port} 提供的主机键此前从未见过。",
       "hostKeyMismatch": "{host}:{port} 提供的主机键与已信任的主机键不一致。未向该服务器发送任何内容。",
+      "hostKeySystemMismatch": "{host}:{port} 提供的主机键与本机 ~/.ssh/known_hosts 中记录的不一致。未发送任何内容。",
       "authFailed": "{host}:{port} 拒绝了这个凭据。",
       "unreachable": "无法连接到 {host}:{port}。",
       "timeout": "{host}:{port} 在 {seconds} 秒内没有响应。",
       "channelFailed": "无法在 {host}:{port} 上打开或使用 SSH 通道。",
       "keyInvalid": "无法读取该密钥。如果它带口令，口令也需要检查。",
-      "keyUnsupported": "当前版本无法使用这种类型的密钥。"
+      "keyUnsupported": "当前版本无法使用这种类型的密钥。",
+      "configUnsupported": "本机 OpenSSH 配置使用了 {directive}，当前版本无法按它连接。未发送任何内容。",
+      "configUnknownAlias": "~/.ssh/config 中没有与 {alias} 匹配的 Host 块。",
+      "configKeyPassphrase": "~/.ssh/config 指定的密钥 {key} 带口令。请把它加入 ssh-agent，或导入保险库。",
+      "configNoKey": "~/.ssh/config 与默认身份文件中没有 {alias} 可用的私钥。"
     },
     "rdp": {
       "launchFailed": "无法启动 Windows 远程桌面客户端。"

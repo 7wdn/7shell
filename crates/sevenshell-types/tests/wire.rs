@@ -28,12 +28,12 @@ use sevenshell_types::{
     RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
     SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen,
     SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt,
-    SocketRow, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome, SyncReceipt,
-    SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
-    TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
-    TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, TerminalSettings,
-    ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive,
-    VaultState,
+    SocketRow, SshConfigHost, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome,
+    SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth,
+    TabPlacement, TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme,
+    TerminalHighlightMode, TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile,
+    TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress,
+    UploadAnswer, UploadOutcome, VaultArchive, VaultKeychainStatus, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -477,6 +477,7 @@ fn a_session_with_a_route_and_forwards_serializes_with_camel_case_fields() {
                 has_passphrase: true,
             }),
             has_secret: true,
+            ssh_config: false,
         },
         terminal: TerminalSettings::default(),
         desktop: sevenshell_types::DesktopSettings::default(),
@@ -860,6 +861,23 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     check(&ThemePalette::Claude, "ThemePalette");
     check(&ThemePalette::Default, "ThemePalette");
     check(&VaultState::Unlocked, "VaultState");
+    check(
+        &SshConfigHost {
+            alias: "web".to_owned(),
+            host: "10.0.0.5".to_owned(),
+            user: Some("deploy".to_owned()),
+            port: Some(2222),
+            unsupported: Vec::new(),
+        },
+        "SshConfigHost",
+    );
+    check(
+        &VaultKeychainStatus {
+            available: true,
+            enrolled: true,
+        },
+        "VaultKeychainStatus",
+    );
     let archived = check(
         &VaultArchive {
             name: "vault.json.old".to_owned(),

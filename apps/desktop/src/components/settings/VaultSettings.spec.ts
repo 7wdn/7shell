@@ -22,6 +22,9 @@ vi.mock("@/lib/backend/tauri", () => ({
   vaultArchiveActivate: vi.fn(),
   vaultArchiveImport: vi.fn(),
   vaultRevealFolder: vi.fn(),
+  vaultKeychainStatus: vi.fn(),
+  vaultKeychainEnroll: vi.fn(),
+  vaultKeychainForget: vi.fn(),
   sessionsList: vi.fn(),
   groupsList: vi.fn(),
 }));
@@ -33,6 +36,9 @@ import {
   sessionsList,
   vaultArchives,
   vaultChangePassword,
+  vaultKeychainEnroll,
+  vaultKeychainForget,
+  vaultKeychainStatus,
   vaultLock,
   vaultState,
 } from "@/lib/backend/tauri";
@@ -42,6 +48,9 @@ const vaultStateMock = vi.mocked(vaultState);
 const changeMock = vi.mocked(vaultChangePassword);
 const lockMock = vi.mocked(vaultLock);
 const archivesMock = vi.mocked(vaultArchives);
+const keychainStatusMock = vi.mocked(vaultKeychainStatus);
+const keychainEnrollMock = vi.mocked(vaultKeychainEnroll);
+const keychainForgetMock = vi.mocked(vaultKeychainForget);
 
 const WRONG_CURRENT = {
   version: 1,
@@ -103,6 +112,9 @@ describe("the vault block on the security page", () => {
     changeMock.mockReset();
     lockMock.mockReset().mockResolvedValue("locked");
     archivesMock.mockReset().mockResolvedValue([]);
+    keychainStatusMock.mockReset().mockResolvedValue({ available: true, enrolled: false });
+    keychainEnrollMock.mockReset().mockResolvedValue({ available: true, enrolled: true });
+    keychainForgetMock.mockReset().mockResolvedValue({ available: true, enrolled: false });
     vi.mocked(sessionsList).mockReset().mockResolvedValue([]);
     vi.mocked(groupsList).mockReset().mockResolvedValue([]);
   });
@@ -188,5 +200,30 @@ describe("the vault block on the security page", () => {
 
     expect(lockMock).toHaveBeenCalled();
     expect(useVaultStore().state).toBe("locked");
+  });
+
+  it("turns automatic unlock on and off through the system store", async () => {
+    const root = await mount();
+    const toggle = (): HTMLButtonElement | null => root.querySelector<HTMLButtonElement>("[data-vault-keychain]");
+
+    expect(toggle()?.getAttribute("aria-checked")).toBe("false");
+    toggle()?.click();
+    await settle();
+    expect(keychainEnrollMock).toHaveBeenCalled();
+    expect(toggle()?.getAttribute("aria-checked")).toBe("true");
+
+    toggle()?.click();
+    await settle();
+    expect(keychainForgetMock).toHaveBeenCalled();
+    expect(toggle()?.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("says the machine has no keychain instead of drawing a switch that does nothing", async () => {
+    keychainStatusMock.mockResolvedValue({ available: false, enrolled: false });
+    const root = await mount();
+
+    expect(root.querySelector("[data-vault-keychain]")).toBeNull();
+    expect(root.textContent).toContain("no system keychain");
+    expect(keychainEnrollMock).not.toHaveBeenCalled();
   });
 });

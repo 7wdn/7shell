@@ -12,11 +12,12 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
-use sevenshell_types::{SessionImportSummary, VaultArchive, VaultState};
+use sevenshell_types::{SessionImportSummary, VaultArchive, VaultKeychainStatus, VaultState};
 use tauri::State;
 
 use crate::reveal::{self, Show};
 use crate::state::ShellState;
+use crate::vault_keychain;
 
 fn state_of(vault: &sevenshell_vault::Vault) -> VaultState {
     match vault.status() {
@@ -73,9 +74,30 @@ pub fn vault_create(state: State<'_, ShellState>, password: String) -> Result<Va
 #[tauri::command]
 pub fn vault_unlock(state: State<'_, ShellState>, password: String) -> Result<VaultState, ShellError> {
     state.vault().unlock(&password)?;
+    // A password that was just proven correct also heals a sealed key that a backup restore or an
+    // earlier password change left behind.
+    vault_keychain::reseal_if_enrolled(&state);
     reopen_external_servers(&state);
     reapply_agent_policy(&state);
     Ok(state_of(state.vault()))
+}
+
+/// Whether this machine can keep the vault's unlock key, and whether it already does.
+#[tauri::command]
+pub fn vault_keychain_status(state: State<'_, ShellState>) -> VaultKeychainStatus {
+    vault_keychain::status(&state)
+}
+
+/// Seals the open vault's key in the system's store, after the person asked for it.
+#[tauri::command]
+pub fn vault_keychain_enroll(state: State<'_, ShellState>) -> Result<VaultKeychainStatus, ShellError> {
+    vault_keychain::enroll(&state)
+}
+
+/// Removes the sealed key. The vault itself and its password are untouched.
+#[tauri::command]
+pub fn vault_keychain_forget(state: State<'_, ShellState>) -> Result<VaultKeychainStatus, ShellError> {
+    vault_keychain::forget(&state)
 }
 
 /// Locks the vault. Open terminals are deliberately left alone: they are authenticated already,
@@ -91,7 +113,13 @@ pub fn vault_lock(state: State<'_, ShellState>) -> VaultState {
 
 #[tauri::command]
 pub fn vault_change_password(state: State<'_, ShellState>, current: String, next: String) -> Result<(), ShellError> {
-    state.vault().change_password(&current, &next)
+    // Read before the change: the old record is bound to the salt the change is about to replace.
+    let enrolled = vault_keychain::status(&state).enrolled;
+    state.vault().change_password(&current, &next)?;
+    if enrolled {
+        vault_keychain::reseal_after_password_change(&state);
+    }
+    Ok(())
 }
 
 /// Moves a vault that cannot be opened beside itself, so a new one can be created.

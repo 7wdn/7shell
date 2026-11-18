@@ -101,6 +101,10 @@ windows = { version = "0.62", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 
+# The macOS login keychain, for the vault's unlock material. The same store the platform's own
+# password dialogs use; it needs no entitlement for a non-sandboxed application.
+security-framework = "3.7"
+
 # Talking to a server that is not an SSH host: the sync service, and the snippet hosts later.
 #
 # The platform's own TLS stack rather than a bundled one: Schannel on Windows, Security.framework on

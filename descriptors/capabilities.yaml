@@ -83,6 +83,13 @@ capabilities:
     group: network
     labelKey: capability.jumpHost.label
 
+  # The host, account and identity may come from this machine's `~/.ssh/config`, so a saved
+  # connection can store an alias instead of a copy of the values.
+  - key: opensshConfig
+    order: 95
+    group: network
+    labelKey: capability.opensshConfig.label
+
   - key: recording
     order: 100
     group: session

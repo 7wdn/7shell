@@ -94,6 +94,13 @@
       "planned": false
     },
     {
+      "key": "opensshConfig",
+      "order": 95,
+      "group": "network",
+      "labelKey": "capability.opensshConfig.label",
+      "planned": false
+    },
+    {
       "key": "recording",
       "order": 100,
       "group": "session",
@@ -235,7 +242,8 @@
         "dynamicForwarding",
         "agentForwarding",
         "recording",
-        "jumpHost"
+        "jumpHost",
+        "opensshConfig"
       ]
     },
     {

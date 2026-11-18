@@ -104,10 +104,15 @@ impl Core {
     /// A missing session is not an error here: the caller is about to fail with the session's own
     /// error, and the decision that matters in the meantime is the global rule.
     pub fn session_policy_target(&self, session_id: &str) -> Option<SessionPolicyTarget> {
-        self.session(session_id).ok().map(|session| SessionPolicyTarget {
-            group_id: session.group_id,
-            host: session.host,
-            port: session.port,
+        self.session(session_id).ok().map(|session| {
+            // An OpenSSH alias must not hide the machine a host rule is about: the policy layer
+            // sees the resolved address, the same one the connection and the audit line use.
+            let (host, port) = self.policy_target_for(&session);
+            SessionPolicyTarget {
+                group_id: session.group_id,
+                host,
+                port,
+            }
         })
     }
 

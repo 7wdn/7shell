@@ -5,17 +5,24 @@
       "locked": "The vault is locked.",
       "kdfFailed": "The vault key could not be derived.",
       "corrupt": "The vault file could not be read.",
-      "unlockFailed": "Unlock failed: the password is wrong, or the vault file failed verification."
+      "unlockFailed": "Unlock failed: the password is wrong, or the vault file failed verification.",
+      "keychainUnavailable": "This machine has no system keychain this build can use, so the vault still asks for its password.",
+      "keychainFailed": "The system keychain could not store the vault's unlock key."
     },
     "ssh": {
       "hostKeyUnknown": "The server at {host}:{port} presented a host key that has not been seen before.",
       "hostKeyMismatch": "The host key from {host}:{port} does not match the trusted one. Nothing was sent to that server.",
+      "hostKeySystemMismatch": "The host key from {host}:{port} differs from the one recorded in this machine's ~/.ssh/known_hosts. Nothing was sent.",
       "authFailed": "The server at {host}:{port} rejected these credentials.",
       "unreachable": "Could not reach {host}:{port}.",
       "timeout": "{host}:{port} did not respond within {seconds} seconds.",
       "channelFailed": "An SSH channel on {host}:{port} could not be opened or used.",
       "keyInvalid": "The key could not be read. If it has a passphrase, check that too.",
-      "keyUnsupported": "This build cannot use that kind of key."
+      "keyUnsupported": "This build cannot use that kind of key.",
+      "configUnsupported": "This OpenSSH configuration uses {directive}, which this build cannot honour. Nothing was sent.",
+      "configUnknownAlias": "No Host block in ~/.ssh/config matches {alias}.",
+      "configKeyPassphrase": "The key {key} named by ~/.ssh/config needs a passphrase. Add it to ssh-agent or import it into the vault.",
+      "configNoKey": "~/.ssh/config and the default identity files hold no usable private key for {alias}."
     },
     "rdp": {
       "launchFailed": "The Windows Remote Desktop client could not be started."

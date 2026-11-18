@@ -18,6 +18,7 @@ mod state;
 mod tray;
 mod update_portable;
 mod uploads;
+mod vault_keychain;
 mod window_chrome;
 
 use std::sync::Arc;
@@ -174,6 +175,9 @@ pub fn run() {
             commands::vault::vault_create,
             commands::vault::vault_unlock,
             commands::vault::vault_lock,
+            commands::vault::vault_keychain_status,
+            commands::vault::vault_keychain_enroll,
+            commands::vault::vault_keychain_forget,
             commands::vault::vault_change_password,
             commands::vault::vault_set_aside,
             commands::vault::vault_archives,
@@ -182,6 +186,7 @@ pub fn run() {
             commands::vault::vault_archive_import,
             commands::vault::vault_reveal_folder,
             commands::sessions::sessions_list,
+            commands::sessions::ssh_config_hosts,
             commands::sessions::session_save,
             commands::sessions::session_delete,
             commands::sessions::groups_list,
@@ -446,6 +451,13 @@ fn apply_startup_shell_settings(app: &tauri::AppHandle) {
                 // rather than awaited: opening a socket is not a reason for the window to wait, and
                 // the interface's first `mcp_status` reports what actually came up.
                 crate::mcp::start_if_enabled(app, state.mcp_arc(), &settings);
+
+                // The system keychain, when the person asked for it. Done here rather than in
+                // `vault_state`, so the tray's lock is not undone by the next screen asking whether
+                // the vault is open: only a start may open it without a password.
+                if crate::vault_keychain::unlock_at_startup(&state, &settings) {
+                    log::info!("the vault was opened with the system keychain");
+                }
             }
         }
         Err(error) => {

@@ -574,6 +574,14 @@
         "submitting": "Changing…",
         "changed": "The vault now opens with the new password."
       },
+      "keychain": {
+        "title": "Automatic unlock on this device",
+        "help": "Keeps the vault's unlock key in the system's own store, so the application opens without asking for the master password. The vault stays encrypted, and the master password still opens it anywhere.",
+        "on": "On",
+        "off": "Off",
+        "busy": "Working…",
+        "unavailable": "This machine has no system keychain this build can use, so the vault asks for its password at every start."
+      },
       "lock": {
         "title": "Lock the vault",
         "help": "Drops the derived key and the decrypted document. Open terminals keep running — they are authenticated already — and the unlock screen comes back.",

@@ -8,10 +8,14 @@
 pub mod background;
 pub mod downloads;
 pub mod fonts;
+pub mod keychain;
 pub mod paths;
 pub mod settings;
 
 pub use downloads::{DownloadFolder, HISTORY_LIMIT, downloads_file};
 pub use fonts::list_families;
-pub use paths::{APP_IDENTIFIER, BRIDGE_DIR_OVERRIDE, bridge_dir, config_dir, settings_file};
+pub use paths::{
+    APP_IDENTIFIER, BRIDGE_DIR_OVERRIDE, SSH_DIR_OVERRIDE, bridge_dir, config_dir, home_dir, openssh_config_path,
+    settings_file, ssh_dir,
+};
 pub use settings::{SETTINGS_SCHEMA_VERSION, load, load_from, save, save_to};

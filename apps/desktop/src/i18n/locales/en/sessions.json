@@ -285,6 +285,19 @@
         "forgetMessage": "Forget “{name}”? The key is deleted from the vault, and a session that used it will ask for it again.",
         "none": "No key attached yet."
       },
+      "openssh": {
+        "title": "OpenSSH configuration",
+        "useConfig": "Host and identity come from ~/.ssh/config",
+        "note": "The alias is saved instead of a copy of the address. Host, account, port and identity are resolved again on every connection; a key named by the configuration is used first, then the default ~/.ssh/id_* files.",
+        "pick": "From OpenSSH config…",
+        "dialogTitle": "Hosts in ~/.ssh/config",
+        "dialogDescription": "Choose an alias. The address and account are shown as this machine resolves them; nothing is copied until you save.",
+        "loading": "Reading ~/.ssh/config…",
+        "empty": "No hosts yet. Add a Host block to ~/.ssh/config and open this again.",
+        "unsupported": "Not supported yet: {directives}",
+        "close": "Close",
+        "keyNote": "The identity is read from ~/.ssh/config or the default ~/.ssh/id_* files when connecting; no key needs to be imported here."
+      },
       "jumps": {
         "title": "Jump hosts",
         "note": "Connected in order: the first hop directly, each next one through the one before it. Every hop's key is verified before anything is sent through it.",

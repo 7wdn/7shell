@@ -147,6 +147,12 @@ pub struct SessionAuth {
     pub key: Option<KeyInfo>,
     /// Whether a password or passphrase is stored for this session.
     pub has_secret: bool,
+    /// Whether the host, account and identity come from this machine's `~/.ssh/config`.
+    ///
+    /// The session stores the alias in `host`; the values are resolved again on every connection,
+    /// so editing the configuration changes the connection without editing the session.
+    #[serde(default)]
+    pub ssh_config: bool,
 }
 
 impl SessionAuth {
@@ -155,6 +161,7 @@ impl SessionAuth {
             method,
             key: None,
             has_secret: false,
+            ssh_config: false,
         }
     }
 }
@@ -835,6 +842,41 @@ pub enum VaultState {
     Missing,
     Locked,
     Unlocked,
+}
+
+/// One host an OpenSSH configuration names, as the picker may show it.
+///
+/// The alias is what a saved session stores and what a person recognises. `host`, `user` and
+/// `port` are the resolved values shown beside it; identity files and any other local path stay in
+/// the process, because the interface never holds one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConfigHost {
+    pub alias: String,
+    pub host: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// Directives this build cannot honour: the entry is listed, but connecting will refuse.
+    ///
+    /// Always serialized, including when empty: the picker reads the list to decide whether a row
+    /// is selectable, and an omitted field is an `undefined` in the interface, not an empty list.
+    #[serde(default)]
+    pub unsupported: Vec<String>,
+}
+
+/// Whether the system's own store can open the vault on this machine.
+///
+/// `available` is the platform's answer — a machine with no keychain says no — and `enrolled` is
+/// whether an entry exists **for the vault that is in place now**. A stale entry left by a vault
+/// that was set aside is not an enrollment of its replacement, and reporting it as one would claim
+/// an automatic unlock that the next start would not be able to deliver.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultKeychainStatus {
+    pub available: bool,
+    pub enrolled: bool,
 }
 
 /// One archived vault file that sits beside the active one.

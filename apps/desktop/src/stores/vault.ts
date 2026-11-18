@@ -28,7 +28,7 @@ import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { useSessionsStore } from "@/stores/sessions";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
-import type { SessionImportSummary, VaultArchive, VaultState } from "@/types/session";
+import type { SessionImportSummary, VaultArchive, VaultKeychainStatus, VaultState } from "@/types/session";
 
 /** `unknown` until the backend has answered; the gate draws nothing else until then. */
 export type GateState = VaultState | "unknown";
@@ -70,6 +70,47 @@ export const useVaultStore = defineStore("vault", () => {
   const unlocked = computed(() => state.value === "unlocked");
 
   /**
+   * The system store, as the backend last described it.
+   *
+   * `null` until the first answer. A backend that cannot be asked reports unavailable rather than
+   * an error: the password form is still the way in, and the settings page should not draw a
+   * failure for a capability this build does not have.
+   */
+  const keychain = ref<VaultKeychainStatus | null>(null);
+  const keychainBusy = ref(false);
+  const keychainFailure = ref<ShellError | null>(null);
+
+  /** Reads the status again. Safe while the gate is up: it never asks the keychain for a key. */
+  async function loadKeychain(): Promise<void> {
+    try {
+      keychain.value = await backend.vault.keychainStatus();
+    } catch {
+      keychain.value = { available: false, enrolled: false };
+    }
+  }
+
+  /**
+   * Turns the automatic unlock on or off.
+   *
+   * The vault stays open either way: enrolling only writes the key somewhere the next start can
+   * find it, and forgetting removes that copy. A failure belongs beside the switch that caused it,
+   * not on the gate — nothing about the open vault changed.
+   */
+  async function setKeychain(enabled: boolean): Promise<boolean> {
+    keychainBusy.value = true;
+    keychainFailure.value = null;
+    try {
+      keychain.value = enabled ? await backend.vault.keychainEnroll() : await backend.vault.keychainForget();
+      return true;
+    } catch (error) {
+      keychainFailure.value = asShellError(error, "vault_keychain");
+      return false;
+    } finally {
+      keychainBusy.value = false;
+    }
+  }
+
+  /**
    * Everything the library screens draw, read in one place.
    *
    * The recent list comes along because the home page ranks the library by it: loading one without
@@ -93,6 +134,7 @@ export const useVaultStore = defineStore("vault", () => {
     if (state.value === "unlocked") {
       await loadLibrary();
     }
+    await loadKeychain();
   }
 
   /**
@@ -116,6 +158,7 @@ export const useVaultStore = defineStore("vault", () => {
     try {
       state.value = await action();
       await loadLibrary();
+      await loadKeychain();
       return true;
     } catch (error) {
       reportFailure(operation, error);
@@ -281,6 +324,11 @@ export const useVaultStore = defineStore("vault", () => {
     failure,
     failedOperation,
     unlocked,
+    keychain,
+    keychainBusy,
+    keychainFailure,
+    loadKeychain,
+    setKeychain,
     setAsideName,
     archives,
     archivesBusy,
