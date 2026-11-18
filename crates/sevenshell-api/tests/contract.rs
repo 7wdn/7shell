@@ -78,6 +78,7 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
             "sshell_vm_guest_write",
             json!({ "sessionId": "lab", "action": "toolsInstall" }),
         ),
+        ("sshell_vm_send_key", json!({ "sessionId": "lab", "sequence": "esc" })),
         (
             "sshell_vm_config_read",
             json!({ "sessionId": "lab", "action": "config" }),
@@ -216,8 +217,8 @@ fn the_registry_lists_exactly_the_declared_tools() {
     let registry = local::default_registry();
     let descriptors = registry.descriptors();
 
-    assert_eq!(descriptors.len(), 26, "every declared tool is registered");
-    assert_eq!(registry.len(), 26);
+    assert_eq!(descriptors.len(), 27, "every declared tool is registered");
+    assert_eq!(registry.len(), 27);
 
     for descriptor in &descriptors {
         assert!(

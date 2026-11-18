@@ -100,6 +100,19 @@ impl Core {
         sevenshell_vmware::config_write(&vm_id, action).await
     }
 
+    /// Sends one key sequence to the console of the machine a saved session names.
+    pub async fn vmware_send_key(&self, session_id: &str, sequence: &str) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::send_key(&vm_id, sequence).await
+    }
+
+    /// Loads the VProbes script a file token names into the machine's hypervisor.
+    pub async fn vmware_vprobes_load(&self, session_id: &str, token: &str) -> Result<String, ShellError> {
+        let script = self.host_location_path(token, HostLocationKind::File)?;
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::config_write(&vm_id, &ConfigWrite::VprobesLoad(host_path(&script))).await
+    }
+
     /// The host's own virtual networks, or one network's port forwards.
     pub async fn vmware_host_read(&self, session_id: &str, action: &HostRead) -> Result<String, ShellError> {
         let vm_id = self.vmware_session_vm_id(session_id)?;

@@ -89,6 +89,7 @@ pub enum ConfigWriteAction {
     HgfsSetRead,
     HgfsSetWrite,
     VprobesEnable,
+    VprobesLoad,
     VprobesReset,
     ConfigSet,
     DeviceConnect,
@@ -130,6 +131,7 @@ impl ConfigWriteAction {
             Self::HgfsSetRead => "hgfs-set-read",
             Self::HgfsSetWrite => "hgfs-set-write",
             Self::VprobesEnable => "vprobes-enable",
+            Self::VprobesLoad => "vprobes-load",
             Self::VprobesReset => "vprobes-reset",
             Self::ConfigSet => "config-set",
             Self::DeviceConnect => "device-connect",
@@ -350,7 +352,7 @@ pub fn vm_config_write_descriptor() -> ToolDescriptor {
         title: "Change a virtual machine's configuration".to_owned(),
         description: "Changes CPU, memory or cores; creates or extends a disk; changes or removes \
                       network, serial, SATA or NVMe adapters; changes a shared folder's name, \
-                      presence or permissions; enables or resets VProbes; sets a configuration key; \
+                      presence or permissions; enables, loads or resets VProbes; sets a configuration key; \
                       connects or disconnects a device; writes a runtime variable; upgrades VMware \
                       Tools; or enables, disables or removes shared folders. Purging an adapter, \
                       extending a disk and disconnecting a device are graded destructive."
@@ -367,7 +369,7 @@ pub fn vm_config_write_descriptor() -> ToolDescriptor {
                         "serialSetPresent", "serialPurge", "sataSetPresent", "sataPurge",
                         "nvmeSetPresent", "nvmePurge", "hgfsSetEnabled", "hgfsSetGuestName",
                         "hgfsSetPresent", "hgfsSetRead", "hgfsSetWrite", "vprobesEnable",
-                        "vprobesReset", "configSet", "deviceConnect", "deviceDisconnect",
+                        "vprobesLoad", "vprobesReset", "configSet", "deviceConnect", "deviceDisconnect",
                         "variableWrite", "toolsUpgrade", "sharedEnable", "sharedDisable", "sharedRemove",
                         "hgfsSetHostPath", "sharedAdd", "sharedSetState"
                     ]
@@ -391,7 +393,7 @@ pub fn vm_config_write_descriptor() -> ToolDescriptor {
                 "value": string("For configSet and variableWrite: the value."),
                 "varType": string("For variableWrite: `runtimeConfig`."),
                 "deviceName": string("For deviceConnect and deviceDisconnect: e.g. `ethernet0` or `cdrom0`."),
-                "token": string("For hgfsSetHostPath, sharedAdd and sharedSetState: a folder token from sshell_host_locations_list."),
+                "token": string("For hgfsSetHostPath, sharedAdd and sharedSetState: a folder token from sshell_host_locations_list. For vprobesLoad: a file token naming the probe script."),
                 "writable": boolean("For sharedSetState: whether the shared folder is writable.")
             }),
             &["sessionId", "action"],
@@ -614,7 +616,10 @@ impl Tool for VmConfigWriteTool {
         context.guard_session(session_id, ToolAccess::Write)?;
         let token_action = matches!(
             input.action,
-            ConfigWriteAction::HgfsSetHostPath | ConfigWriteAction::SharedAdd | ConfigWriteAction::SharedSetState
+            ConfigWriteAction::HgfsSetHostPath
+                | ConfigWriteAction::SharedAdd
+                | ConfigWriteAction::SharedSetState
+                | ConfigWriteAction::VprobesLoad
         );
         if token_action {
             let token = required_text(input.token.as_deref(), "token")?;
@@ -640,6 +645,7 @@ impl Tool for VmConfigWriteTool {
             let detail = match input.action {
                 ConfigWriteAction::HgfsSetHostPath => index.unwrap_or_default().to_string(),
                 ConfigWriteAction::SharedAdd => name.clone().unwrap_or_default(),
+                ConfigWriteAction::VprobesLoad => String::new(),
                 _ => format!("{} {}", name.clone().unwrap_or_default(), writable.unwrap_or_default()),
             };
             let vm_id = vm_id(context, session_id)?;
@@ -669,6 +675,7 @@ impl Tool for VmConfigWriteTool {
                             .vmware_shared_add(session_id, name.as_deref().unwrap_or_default(), &token)
                             .await
                     }
+                    ConfigWriteAction::VprobesLoad => context.core().vmware_vprobes_load(session_id, &token).await,
                     _ => {
                         context
                             .core()
@@ -879,7 +886,10 @@ impl Tool for VmConfigWriteTool {
                 detail = name.clone();
                 ConfigWrite::SharedRemove(name)
             }
-            ConfigWriteAction::HgfsSetHostPath | ConfigWriteAction::SharedAdd | ConfigWriteAction::SharedSetState => {
+            ConfigWriteAction::HgfsSetHostPath
+            | ConfigWriteAction::SharedAdd
+            | ConfigWriteAction::SharedSetState
+            | ConfigWriteAction::VprobesLoad => {
                 unreachable!("the token actions are handled before the change is built")
             }
         };

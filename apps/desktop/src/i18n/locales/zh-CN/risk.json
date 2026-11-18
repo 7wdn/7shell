@@ -48,6 +48,7 @@
       "guestRemove": "删除虚拟机内部的内容",
       "configChange": "修改虚拟机的配置",
       "configRemove": "移除或调整虚拟机的部件",
+      "vprobesLoad": "向虚拟机监控器加载 VProbes 脚本",
       "hostChange": "修改本机的虚拟网络",
       "clone": "复制一台虚拟机",
       "template": "创建模板或从模板部署虚拟机",

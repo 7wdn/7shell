@@ -32,6 +32,7 @@ pub const VM_SNAPSHOTS: &str = "sshell_vm_snapshots";
 pub const VM_SNAPSHOT_CHANGE: &str = "sshell_vm_snapshot_change";
 pub const VM_GUEST_READ: &str = "sshell_vm_guest_read";
 pub const VM_GUEST_WRITE: &str = "sshell_vm_guest_write";
+pub const VM_SEND_KEY: &str = "sshell_vm_send_key";
 
 /// Guest operations and snapshots wait on a hypervisor, not on a network round trip.
 const VM_OPERATION_TIMEOUT: Duration = Duration::from_secs(120);
@@ -166,6 +167,13 @@ impl GuestWriteAction {
             Self::ToolsInstall => "tools-install",
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VmSendKeyInput {
+    pub session_id: String,
+    pub sequence: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -365,6 +373,27 @@ pub fn vm_guest_write_descriptor() -> ToolDescriptor {
                 "pid": { "type": "integer", "minimum": 1, "description": "For kill: the process id." }
             }),
             &["sessionId", "action"],
+        ),
+        access: ToolAccess::Write,
+    }
+}
+
+pub fn vm_send_key_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: VM_SEND_KEY.to_owned(),
+        title: "Send keys to a virtual machine".to_owned(),
+        description: "Sends one key sequence to the machine's console without signing in to the \
+                      guest, so it works while the guest has no account or no VMware Tools. The \
+                      syntax is vmcli's (`esc`, `ctrl-alt-delete`, `a b c`). Keys can answer any \
+                      prompt the guest shows, including a destructive one, so this is graded \
+                      destructive and stops for a person's approval on the desktop."
+            .to_owned(),
+        input_schema: ToolInputSchema::object(
+            json!({
+                "sessionId": session_id_property(),
+                "sequence": string("The key sequence, as vmcli spells it.")
+            }),
+            &["sessionId", "sequence"],
         ),
         access: ToolAccess::Write,
     }
@@ -857,13 +886,74 @@ impl Tool for VmGuestWriteTool {
     }
 }
 
+pub struct VmSendKeyTool;
+
+#[async_trait]
+impl Tool for VmSendKeyTool {
+    fn descriptor(&self) -> ToolDescriptor {
+        vm_send_key_descriptor()
+    }
+
+    async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
+        let input: VmSendKeyInput = parse_arguments(arguments)?;
+        let session_id = session_id(&input.session_id)?;
+        context.guard_session(session_id, ToolAccess::Write)?;
+        let sequence = input.sequence.trim();
+        if sequence.is_empty() {
+            return Err(ToolError::invalid_arguments("sequence is empty"));
+        }
+        let vm_id = vm_id(context, session_id)?;
+        let subject = gate::subject(&format!("{vm_id} send-key"));
+        let verdict = sevenshell_policy::vm_guest("send-key");
+        let session_name = saved_session(context.core(), session_id).map(|session| session.name);
+        let approval = gate::approve_risk(
+            context,
+            VM_SEND_KEY,
+            &verdict,
+            Some((session_id, session_name)),
+            None,
+            &subject,
+        )
+        .await?;
+
+        let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+            context
+                .core()
+                .vmware_send_key(session_id, sequence)
+                .await
+                .map_err(ToolError::from)
+        })
+        .await?;
+
+        let mut audit = ToolAudit::for_session(session_id)
+            .with_subject(subject)
+            .with_risk(verdict);
+        if let Some(record) = approval {
+            audit = audit.with_approval(record);
+        }
+        let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
+        Ok(ToolResult::new(json!({
+            "sessionId": session_id,
+            "action": "send-key",
+            "output": text,
+            "truncated": truncated,
+        }))
+        .with_audit(audit))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn the_destructive_guest_actions_are_the_ones_that_ask() {
-        for action in [GuestWriteAction::Rm, GuestWriteAction::Rmdir, GuestWriteAction::Kill] {
+        for action in [
+            GuestWriteAction::Rm,
+            GuestWriteAction::Rmdir,
+            GuestWriteAction::Kill,
+            GuestWriteAction::Type,
+        ] {
             assert!(
                 sevenshell_policy::vm_guest(action.as_str()).needs_approval(),
                 "`{}` must stop for a person",
@@ -877,6 +967,10 @@ mod tests {
                 action.as_str()
             );
         }
+        assert!(
+            sevenshell_policy::vm_guest("send-key").needs_approval(),
+            "console keys can answer a prompt that erases a disk"
+        );
     }
 
     #[test]

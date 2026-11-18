@@ -48,6 +48,7 @@
       "guestRemove": "Deletes something inside a virtual machine",
       "configChange": "Changes a virtual machine's configuration",
       "configRemove": "Removes or resizes part of a virtual machine",
+      "vprobesLoad": "Loads a VProbes script into the hypervisor",
       "hostChange": "Changes this machine's virtual network",
       "clone": "Creates a copy of a virtual machine",
       "template": "Creates a template or a machine from one",

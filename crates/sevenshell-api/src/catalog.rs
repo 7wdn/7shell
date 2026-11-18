@@ -127,6 +127,11 @@ pub const BUILTIN_CATALOG: &[CatalogEntry] = &[
         risk: ToolRisk::CommandGraded,
     },
     CatalogEntry {
+        name: "sshell_vm_send_key",
+        category: CatalogCategory::VirtualMachines,
+        risk: ToolRisk::Write,
+    },
+    CatalogEntry {
         name: "sshell_vm_config_read",
         category: CatalogCategory::VirtualMachines,
         risk: ToolRisk::Read,
@@ -188,7 +193,7 @@ mod tests {
         let mut unique = names.clone();
         unique.dedup();
         assert_eq!(names, unique, "a name may not appear twice");
-        assert_eq!(BUILTIN_CATALOG.len(), 26, "every registered tool has a catalogue entry");
+        assert_eq!(BUILTIN_CATALOG.len(), 27, "every registered tool has a catalogue entry");
     }
 
     #[test]

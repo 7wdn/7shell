@@ -12,7 +12,8 @@
 //!
 //! Snapshot clone, template create and template deploy write under a scratch output folder; the
 //! clone and the deployed machine are deleted before the test ends. The snapshot is taken and
-//! deleted on the scratch VM. Reset runs on the scratch VM only — no guest exists there to lose.
+//! deleted on the scratch VM. Reset and console keys run on the scratch VM only — no guest exists
+//! there to lose, which is also why the keys exercise the console path rather than a guest account.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -254,12 +255,19 @@ async fn snapshots_clone_templates_deploy_and_reset_through_the_tools() {
     )
     .await;
 
-    // Start, reset (a destructive action that the broker approved) and stop the scratch machine.
+    // Start, send a console key (no guest account exists on this machine) and reset — both are
+    // destructive actions the broker approved — then stop the scratch machine.
     call(
         "sshell_vm_power",
         json!({ "sessionId": "vm-manage", "action": "start" }),
     )
     .await;
+    let keys = call(
+        "sshell_vm_send_key",
+        json!({ "sessionId": "vm-manage", "sequence": "esc" }),
+    )
+    .await;
+    assert_eq!(keys["action"], json!("send-key"));
     call(
         "sshell_vm_power",
         json!({ "sessionId": "vm-manage", "action": "reset" }),

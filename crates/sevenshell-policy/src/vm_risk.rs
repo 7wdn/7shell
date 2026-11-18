@@ -48,7 +48,8 @@ pub fn vm_snapshot(action: &str) -> RiskAssessment {
 /// Classifies one guest operation.
 ///
 /// Reading is safe; writing a file, making a directory or running a program is a change; deleting
-/// something or killing a process destroys work inside the guest.
+/// something or killing a process destroys work inside the guest. Keys are destructive because they
+/// answer whatever prompt is in front of the guest — including one that erases a disk.
 pub fn vm_guest(action: &str) -> RiskAssessment {
     let action = action.trim().to_ascii_lowercase();
     let verdict = match action.as_str() {
@@ -56,6 +57,7 @@ pub fn vm_guest(action: &str) -> RiskAssessment {
             return RiskAssessment::safe();
         }
         "mkdir" | "rename" | "run" | "tools-install" => ("vm.guest-change", "risk.vm.guestChange", RiskLevel::Caution),
+        "type" | "send-key" => ("vm.guest-input", "risk.vm.guestInput", RiskLevel::Destructive),
         "rm" | "rmdir" | "kill" => ("vm.guest-remove", "risk.vm.guestRemove", RiskLevel::Destructive),
         _ => ("vm.unknown", "risk.vm.unknown", RiskLevel::Caution),
     };
@@ -72,6 +74,9 @@ pub fn vm_config(action: &str) -> RiskAssessment {
         "disk-extend" | "ethernet-purge" | "serial-purge" | "sata-purge" | "nvme-purge" | "device-disconnect" => {
             ("vm.config-remove", "risk.vm.configRemove", RiskLevel::Destructive)
         }
+        // A VProbes script runs inside the hypervisor and can observe everything the machine does,
+        // so loading one is not an ordinary configuration change.
+        "vprobes-load" => ("vm.vprobes-load", "risk.vm.vprobesLoad", RiskLevel::Destructive),
         "query" | "read" => return RiskAssessment::safe(),
         _ => ("vm.config-change", "risk.vm.configChange", RiskLevel::Caution),
     };
@@ -111,7 +116,10 @@ mod tests {
         assert_eq!(vm_action("suspend").level, RiskLevel::Caution);
         assert_eq!(vm_action("take-ownership").level, RiskLevel::Destructive);
         assert_eq!(vm_config("disk-extend").level, RiskLevel::Destructive);
+        assert_eq!(vm_config("vprobes-load").level, RiskLevel::Destructive);
         assert_eq!(vm_config("set-cpu").level, RiskLevel::Caution);
+        assert_eq!(vm_guest("send-key").level, RiskLevel::Destructive);
+        assert_eq!(vm_guest("type").level, RiskLevel::Destructive);
         assert_eq!(vm_image("delete").level, RiskLevel::Destructive);
         assert_eq!(
             vm_action("reboot").level,

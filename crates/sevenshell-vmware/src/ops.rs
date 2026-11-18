@@ -20,6 +20,8 @@ use crate::{checked_id, resolve};
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(120);
 /// A program started in a guest may run for a while; the command itself bounds the wait.
 const GUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// Keys go to a console, not to a guest account; there is nothing to wait on but the click.
+const KEY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What may be done with snapshots.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +167,43 @@ fn parse_snapshot_uid(output: &str, name: &str) -> Option<String> {
     None
 }
 
+/// Sends one key sequence to the machine's console.
+///
+/// This is the console's own input, not a guest sign-in: it works while the guest has no account
+/// or no VMware Tools, which is exactly when somebody needs to answer a boot prompt. The sequence
+/// syntax is `vmcli`'s own (`esc`, `ctrl-alt-delete`, `a b c`, …), and the caller never builds it
+/// from a path.
+pub async fn send_key(vm_id: &str, sequence: &str) -> Result<String, ShellError> {
+    let sequence = sequence.trim();
+    if sequence.is_empty() {
+        return Err(ShellError::vmware_command_failed(
+            "send-key",
+            "a key sequence is required",
+        ));
+    }
+    if sequence.starts_with('-') {
+        return Err(ShellError::vmware_command_failed(
+            "send-key",
+            "a key sequence may not start with `-`, which the command line would read as an option",
+        ));
+    }
+    let vm_id = checked_id(vm_id, "send-key")?;
+    let vmrun = Vmrun::locate()?;
+    let (path, _) = resolve(&vmrun, &vm_id, "send-key").await?;
+    let vmcli = Vmcli::beside(vmrun.program())
+        .or_else(Vmcli::locate)
+        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; sending keys needs it"))?;
+    // `sendKeySequence` takes the sequence as a positional argument; there is no `-s` in this
+    // Workstation's `vmcli` even though some documentation shows one.
+    vmcli
+        .run(
+            "send-key",
+            &[path.as_str(), "MKS", "sendKeySequence", sequence],
+            KEY_TIMEOUT,
+        )
+        .await
+}
+
 /// One guest operation on one machine, signed in with the session's guest account.
 pub async fn guest(vm_id: &str, op: &GuestOp, auth: &GuestAuth) -> Result<String, ShellError> {
     let vm_id = checked_id(vm_id, "guest")?;
@@ -285,6 +324,18 @@ mod tests {
         assert_eq!(parse_snapshot_uid(output, "live").as_deref(), Some("1"));
         assert_eq!(parse_snapshot_uid(output, "older").as_deref(), Some("2"));
         assert_eq!(parse_snapshot_uid(output, "missing"), None);
+    }
+
+    #[tokio::test]
+    async fn an_empty_key_sequence_never_reaches_vmcli() {
+        let error = send_key("not-a-vm", "   ").await.unwrap_err();
+        assert_eq!(
+            error.code(),
+            sevenshell_error::ErrorCode::VmwareCommandFailed,
+            "an empty sequence is refused before the machine is even looked up"
+        );
+        let error = send_key("not-a-vm", "-x").await.unwrap_err();
+        assert!(error.detail().unwrap_or_default().contains("option"));
     }
 
     #[test]

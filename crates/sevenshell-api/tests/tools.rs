@@ -78,6 +78,7 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
             "sshell_vm_guest_write",
             json!({ "sessionId": "lab", "action": "toolsInstall" }),
         ),
+        ("sshell_vm_send_key", json!({ "sessionId": "lab", "sequence": "esc" })),
         (
             "sshell_vm_config_read",
             json!({ "sessionId": "lab", "action": "config" }),

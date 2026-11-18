@@ -38,7 +38,7 @@ pub use k8s::K8sGetInput;
 pub use sessions::{SessionOpenInput, SessionsListInput, SessionsListKind};
 pub use vmware::{
     GuestReadAction, GuestWriteAction, SnapshotChange, VmGuestReadInput, VmGuestWriteInput, VmPowerInput,
-    VmSnapshotChangeInput, VmSnapshotsInput, VmStatusInput, VmsListInput,
+    VmSendKeyInput, VmSnapshotChangeInput, VmSnapshotsInput, VmStatusInput, VmsListInput,
 };
 
 /// Every tool this build declares.
@@ -60,6 +60,7 @@ pub fn register(registry: &mut ToolRegistry) -> Result<(), ApiError> {
     registry.register(Arc::new(vmware::VmSnapshotChangeTool))?;
     registry.register(Arc::new(vmware::VmGuestReadTool))?;
     registry.register(Arc::new(vmware::VmGuestWriteTool))?;
+    registry.register(Arc::new(vmware::VmSendKeyTool))?;
     registry.register(Arc::new(vmware_admin::VmConfigReadTool))?;
     registry.register(Arc::new(vmware_admin::VmConfigWriteTool))?;
     registry.register(Arc::new(vmware_admin::VmHostReadTool))?;

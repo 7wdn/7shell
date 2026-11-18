@@ -4,9 +4,10 @@
 //! chipset, disks, adapters, shared folders, VProbes, the configuration key/value pairs, the host's
 //! virtual networks and port forwards, and deleting or upgrading a machine.
 //!
-//! Nothing here takes a host path. Shared folders are changed by name, disks are created inside the
-//! machine, and a clone or a template — the operations whose destination is a folder on this
-//! machine — wait for a token that can name one without the interface ever holding it.
+//! Nothing here takes a host path a caller chose. Shared folders are changed by name, disks are
+//! created inside the machine, and a clone or a template — the operations whose destination is a
+//! folder on this machine — wait for a token that can name one without the interface ever holding
+//! it. The VProbes script is the one document here; the core resolves its token first.
 
 use sevenshell_error::ShellError;
 
@@ -34,7 +35,8 @@ pub enum ConfigRead {
     Variable { var_type: String, name: String },
 }
 
-/// One change to a machine's configuration. Each variant is a fixed command; none takes a host path.
+/// One change to a machine's configuration. Each variant is a fixed command; the VProbes script is
+/// the only path, and the core builds it from a file token rather than from anything a caller sent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigWrite {
     SetCpu(u32),
@@ -116,6 +118,7 @@ pub enum ConfigWrite {
         write: bool,
     },
     VprobesEnable(bool),
+    VprobesLoad(String),
     VprobesReset,
     ConfigSet {
         key: String,
@@ -203,6 +206,7 @@ impl ConfigWrite {
             Self::HgfsSetRead { .. } => "hgfs-set-read",
             Self::HgfsSetWrite { .. } => "hgfs-set-write",
             Self::VprobesEnable(_) => "vprobes-enable",
+            Self::VprobesLoad(_) => "vprobes-load",
             Self::VprobesReset => "vprobes-reset",
             Self::ConfigSet { .. } => "config-set",
             Self::DeviceConnect(_) => "device-connect",
@@ -508,6 +512,9 @@ pub(crate) fn config_write_args(action: &ConfigWrite) -> Vec<String> {
             "-e".into(),
             bool_word(*enabled).into(),
         ]),
+        ConfigWrite::VprobesLoad(script) => {
+            values.extend(["VProbes".into(), "Load".into(), "-s".into(), script.clone()])
+        }
         ConfigWrite::VprobesReset => values.extend(["VProbes".into(), "Reset".into()]),
         ConfigWrite::ConfigSet { key, value } => values.extend([
             "ConfigParams".into(),
@@ -657,6 +664,12 @@ mod tests {
             values,
             ["Disk", "Create", "-s", "40", "-t", "scsi", "-a", "0", "-d", "1"]
         );
+    }
+
+    #[test]
+    fn a_vprobes_load_names_the_script_it_was_handed() {
+        let values = config_write_args(&ConfigWrite::VprobesLoad(r"c:\probes\io.ems".to_owned()));
+        assert_eq!(values, ["VProbes", "Load", "-s", r"c:\probes\io.ems"]);
     }
 
     #[test]
