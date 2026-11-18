@@ -40,7 +40,7 @@
 
 ### Files
 
-- **SFTP workbench** — two panes, create, rename, delete, edit text in place, upload and download.
+- **SFTP workbench** — two panes, create, rename, delete, edit text in place, filter the listing by name, upload and download.
 - **Transfers** — queue, pause, resume and outlive the tab; on SSH a whole directory can be sent as one archive.
 - **Other file servers** — WebDAV and FTP/FTPS folders in the same workbench; a server without SFTP falls back to SCP.
 - **ZMODEM** — `rz` and `sz` inside the terminal, using the system file dialogs.

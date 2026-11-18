@@ -191,6 +191,29 @@ async function clickName(index: number, detail = 1): Promise<void> {
   await nextTick();
 }
 
+/** Opens the filter the way the keyboard does, and hands back its field. */
+async function startFiltering(): Promise<HTMLInputElement> {
+  const root = host.firstElementChild;
+  if (root === null) {
+    throw new Error("the panel drew nothing");
+  }
+  root.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
+  await nextTick();
+
+  const field = host.querySelector<HTMLInputElement>("[data-files-filter-field]");
+  if (field === null) {
+    throw new Error("the filter did not become a field");
+  }
+  return field;
+}
+
+/** Types into the filter, which is what narrows the listing. */
+async function typeInto(field: HTMLInputElement, text: string): Promise<void> {
+  field.value = text;
+  field.dispatchEvent(new Event("input"));
+  await nextTick();
+}
+
 /** Presses a key on the listing, which is where the keyboard for the rows lives. */
 async function press(key: string, ...modifiers: ("ctrl" | "shift" | "meta")[]): Promise<void> {
   listing()?.dispatchEvent(
@@ -1221,5 +1244,77 @@ describe("a failure in the panel", () => {
 
     expect(browser.failure).toBeNull();
     expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+});
+
+describe("filtering the listing by name", () => {
+  it("narrows the rows to the names that contain what was typed", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+
+    await typeInto(field, "TXT");
+
+    expect(drawn()).toEqual(["a.txt", "b.txt", "c.txt"]);
+  });
+
+  it("matches folders as well as files, without caring about case", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+
+    await typeInto(field, "LOG");
+
+    expect(drawn()).toEqual(["logs"]);
+  });
+
+  it("puts the whole directory back when Escape is pressed", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+    await typeInto(field, "a.txt");
+    expect(drawn()).toEqual(["a.txt"]);
+
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(drawn()).toHaveLength(4);
+    expect(host.querySelector("[data-files-filter-field]")).toBeNull();
+  });
+
+  it("says that no name matches rather than calling the directory empty", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+
+    await typeInto(field, "missing");
+
+    expect(drawn()).toEqual([]);
+    expect(host.textContent).toContain("No file or folder matches");
+  });
+
+  it("takes the keyboard to the rows on Enter, so the arrows walk what was found", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+    await typeInto(field, "txt");
+
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    await nextTick();
+
+    expect(document.activeElement).toBe(listing());
+  });
+
+  it("leaves Enter and Escape to an input method that is still composing", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+    await typeInto(field, "年");
+
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true, cancelable: true }),
+    );
+    await nextTick();
+    expect(document.activeElement).not.toBe(listing());
+
+    field.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true }),
+    );
+    await nextTick();
+    expect(host.querySelector("[data-files-filter-field]")).toBe(field);
   });
 });

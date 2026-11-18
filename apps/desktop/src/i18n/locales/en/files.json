@@ -27,6 +27,13 @@
     "downloadTitle": "Choose where to save this file",
     "downloadPackedTitle": "Choose the folder to download into",
     "empty": "This directory is empty.",
+    "filter": {
+      "title": "Filter files ({shortcut})",
+      "label": "Filter files by name",
+      "placeholder": "Filter by name",
+      "clear": "Clear the filter",
+      "empty": "No file or folder matches “{query}”."
+    },
     "listing": "Files",
     "name": "File name",
     "size": "Size",

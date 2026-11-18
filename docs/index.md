@@ -21,7 +21,7 @@ features:
   - title: Terminals that stay readable
     details: "A terminal per session, each with its own font, colour palette and scrollback. A terminal that ends stays on screen with what it printed and a reconnect action beside it."
   - title: A file workbench, not a file list
-    details: "Browse with a directory tree or a plain listing, create, rename, delete and edit text in place, and move files in both directions. The transfer list says which row failed and why, and a stopped transfer is retried from where it stopped."
+    details: "Browse with a directory tree or a plain listing, narrow a busy directory by name, create, rename, delete and edit text in place, and move files in both directions. The transfer list says which row failed and why, and a stopped transfer is retried from where it stopped."
   - title: Jump hosts and port forwards
     details: "Reach a host through other saved sessions, each hop's key verified and each hop authenticated in turn. Local port forwards come up with their session and count the connections they carried."
   - title: A host monitor without an agent

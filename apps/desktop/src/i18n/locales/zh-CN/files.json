@@ -27,6 +27,13 @@
     "downloadTitle": "选择此文件的保存位置",
     "downloadPackedTitle": "选择下载到的文件夹",
     "empty": "该目录为空。",
+    "filter": {
+      "title": "筛选文件（{shortcut}）",
+      "label": "按名称筛选文件",
+      "placeholder": "按名称筛选",
+      "clear": "清除筛选",
+      "empty": "没有名称匹配“{query}”的文件或文件夹。"
+    },
     "listing": "文件列表",
     "name": "文件名",
     "size": "大小",

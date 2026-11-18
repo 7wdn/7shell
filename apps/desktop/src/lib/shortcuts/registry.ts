@@ -19,6 +19,7 @@ export type ShortcutActionId =
   | "global.toggleAssistant"
   | "terminal.find"
   | "files.focusPath"
+  | "files.filter"
   | "commands.completionAccept"
   | "commands.completionTrigger";
 
@@ -73,6 +74,15 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     scope: "files",
     labelKey: "settings.shortcuts.actions.focusPath",
     defaultBinding: "Mod+L",
+  },
+  // The same key as the terminal's find, in the surface where the rows are what is being looked
+  // through. Scoping is what keeps the two from both answering: a terminal's key belongs to the
+  // terminal, and this one only reaches the panel that has the keyboard.
+  {
+    id: "files.filter",
+    scope: "files",
+    labelKey: "settings.shortcuts.actions.filterFiles",
+    defaultBinding: "Mod+F",
   },
   {
     id: "commands.completionAccept",

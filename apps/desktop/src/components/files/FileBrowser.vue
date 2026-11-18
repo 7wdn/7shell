@@ -28,6 +28,7 @@ import {
   HardDrive,
   LoaderCircle,
   RefreshCw,
+  Search,
   Upload,
   X,
 } from "@lucide/vue";
@@ -57,6 +58,7 @@ import { useContextMenu } from "@/composables/useContextMenu";
 import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import { type ColumnLine, type ColumnWidth } from "@/lib/columns";
+import { filterByName } from "@/lib/files/filter";
 import {
   extensionOf,
   familyOf,
@@ -262,6 +264,10 @@ const app = useAppStore();
 const pasteShortcut = computed(() =>
   formatShortcutDisplay(bindingFor("global.uploadClipboard", preferences.keybindings), app.platform),
 );
+/** The filter's key, spelled the same way. */
+const filterShortcut = computed(() =>
+  formatShortcutDisplay(bindingFor("files.filter", preferences.keybindings), app.platform),
+);
 
 const browser = computed(() => files.browser(props.handle));
 /** What this browser can paste: the clipboard is only meaningful on the connection it came from. */ const pasteable =
@@ -308,8 +314,16 @@ const typedPath = ref("");
 const editingPath = ref(false);
 const pathField = ref<HTMLInputElement | null>(null);
 
+/** What is typed into the filter, and whether its field is showing instead of the breadcrumbs. */
+const filterText = ref("");
+const filtering = ref(false);
+const filterField = ref<HTMLInputElement | null>(null);
+/** The query as the rows compare it: trimmed, so a stray space does not hide everything. */
+const filterQuery = computed(() => filterText.value.trim());
+
 /** Turns the address bar into a field holding the path the panel is showing, selected for replacing. */
 function startPathEdit(): void {
+  stopFilter();
   typedPath.value = browser.value?.path ?? "";
   editingPath.value = true;
   void nextTick(() => {
@@ -332,6 +346,56 @@ function onPathFocusOut(event: FocusEvent): void {
   cancelPathEdit();
 }
 
+/** Opens the filter field in place of the breadcrumbs, with whatever is already there selected. */
+function startFilter(): void {
+  cancelPathEdit();
+  filtering.value = true;
+  void nextTick(() => {
+    filterField.value?.focus();
+    filterField.value?.select();
+  });
+}
+
+/** Closes the field and drops what was typed: the listing goes back to the whole directory. */
+function stopFilter(): void {
+  filtering.value = false;
+  filterText.value = "";
+}
+
+/** The toolbar's button: opens the field, or puts the keyboard back in it while it is already open. */
+function toggleFilter(): void {
+  if (filtering.value) {
+    filterField.value?.focus();
+    filterField.value?.select();
+    return;
+  }
+  startFilter();
+}
+
+/** Enter hands the keyboard to the rows, so the arrows can walk what the filter found. */
+function focusListing(): void {
+  listing.value?.focus();
+}
+
+/** Enter ends the search field unless an input method is still composing the name being typed. */
+function onFilterEnter(event: KeyboardEvent): void {
+  if (event.isComposing) {
+    return;
+  }
+  event.preventDefault();
+  focusListing();
+}
+
+/** Escape closes the filter for the same reason: composing Chinese or Japanese is not a dismissal. */
+function onFilterEscape(event: KeyboardEvent): void {
+  if (event.isComposing) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  stopFilter();
+}
+
 /** Reads the directory again, which is what brings in what somebody else has changed meanwhile. */
 function refreshListing(): void {
   const path = browser.value?.path;
@@ -347,6 +411,11 @@ function refreshListing(): void {
  * in the registry so the settings page lists it and a conflict is visible there.
  */
 function onBrowserKey(event: KeyboardEvent): void {
+  if (matchesShortcut(event, bindingFor("files.filter", preferences.keybindings), app.platform)) {
+    event.preventDefault();
+    toggleFilter();
+    return;
+  }
   if (!matchesShortcut(event, bindingFor("files.focusPath", preferences.keybindings), app.platform)) {
     return;
   }
@@ -522,8 +591,10 @@ onUnmounted(() => {
  * a directory and back out of it.
  */
 const order = ref<Order>(INITIAL_ORDER);
-/** What the server sent, in the order the headings say to draw it. */
-const ordered = computed(() => orderEntries(browser.value?.entries ?? [], order.value, typeOf));
+/** What the server sent, narrowed by the filter, in the order the headings say to draw it. */
+const ordered = computed(() =>
+  orderEntries(filterByName(browser.value?.entries ?? [], filterText.value), order.value, typeOf),
+);
 
 /** The paths the listing is showing, in the order it draws them: what the selection is made of. */
 const rows = computed(() => ordered.value.map((entry) => entry.path));
@@ -686,6 +757,9 @@ watch(rows, (current) => {
 watch(
   () => browser.value?.path,
   () => {
+    // A filter belongs to the directory somebody was looking at; carrying it into the next one
+    // would hide files they never chose to hide.
+    stopFilter();
     void nextTick(() => {
       if (listing.value) {
         listing.value.scrollTop = 0;
@@ -1313,9 +1387,9 @@ function openAreaMenu(event: MouseEvent): void {
     <header class="shrink-0 border-b border-border px-3 py-[var(--panel-header-y)]">
       <div class="flex items-center gap-1">
         <!--
-          One bar, two states, drawn as one field the way a file manager's address bar is: the
-          breadcrumbs are the path a person reads and clicks, and the empty part of the bar or
-          Ctrl+L turns it into the field that writes one.
+          One bar, three states, drawn as one field the way a file manager's address bar is: the
+          breadcrumbs are the path a person reads and clicks, Ctrl+L turns it into the field that
+          writes one, and the filter key turns it into the field that narrows the listing.
         -->
         <form
           v-if="editingPath"
@@ -1335,6 +1409,39 @@ function openAreaMenu(event: MouseEvent): void {
           />
           <button type="submit" class="shrink-0 rounded px-2 py-0.5 text-[11px] transition-colors hover:bg-accent">
             {{ t("files.go") }}
+          </button>
+        </form>
+
+        <form
+          v-else-if="filtering"
+          class="flex min-w-0 flex-1 items-center gap-1.5 rounded-md bg-muted/40 px-1.5 py-0.5"
+          @submit.prevent="focusListing()"
+        >
+          <Search :size="11" class="shrink-0 text-muted-foreground" />
+          <input
+            ref="filterField"
+            v-model="filterText"
+            data-files-filter-field
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            class="min-w-0 flex-1 bg-transparent px-1 py-0.5 text-[11px] select-text focus:outline-none"
+            :placeholder="t('files.filter.placeholder')"
+            :aria-label="t('files.filter.label')"
+            @keydown.enter="onFilterEnter"
+            @keydown.esc="onFilterEscape"
+          />
+          <span v-if="filterQuery !== ''" class="shrink-0 font-mono text-[10px] text-muted-foreground">
+            {{ ordered.length }}/{{ browser.entries.length }}
+          </span>
+          <button
+            type="button"
+            class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            :title="t('files.filter.clear')"
+            :aria-label="t('files.filter.clear')"
+            @click="stopFilter()"
+          >
+            <X :size="11" />
           </button>
         </form>
 
@@ -1374,6 +1481,22 @@ function openAreaMenu(event: MouseEvent): void {
           @click="refreshListing()"
         >
           <RefreshCw :size="12" />
+        </button>
+
+        <button
+          type="button"
+          data-files-filter
+          :class="
+            cn(
+              'grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-accent hover:text-foreground',
+              filtering ? 'bg-accent text-foreground' : 'text-muted-foreground',
+            )
+          "
+          :title="t('files.filter.title', { shortcut: filterShortcut })"
+          :aria-label="t('files.filter.label')"
+          @click="toggleFilter()"
+        >
+          <Search :size="12" />
         </button>
 
         <button
@@ -1619,6 +1742,12 @@ function openAreaMenu(event: MouseEvent): void {
             class="px-3 py-6 text-center text-xs text-muted-foreground"
           >
             {{ t("files.empty") }}
+          </p>
+          <p
+            v-else-if="!browser.loading && ordered.length === 0"
+            class="px-3 py-6 text-center text-xs text-muted-foreground"
+          >
+            {{ t("files.filter.empty", { query: filterQuery }) }}
           </p>
 
           <!--
