@@ -229,6 +229,7 @@
     },
     "list": {
       "filter": "Filter by name or reading",
+      "clear": "Clear the filter",
       "count": "{count} item(s)",
       "refresh": "Read the list again",
       "create": "Create",

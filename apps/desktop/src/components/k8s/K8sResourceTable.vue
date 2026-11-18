@@ -25,6 +25,7 @@ import {
   Search,
   SquareTerminal,
   Trash2,
+  X,
 } from "@lucide/vue";
 import { type Component, computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -113,6 +114,15 @@ function actionIcon(action: ResourceAction, obj: K8sObject): Component {
 }
 
 const filter = ref("");
+const filterField = ref<HTMLInputElement | null>(null);
+
+/**
+ * Puts the filter back to showing every row, with the caret where the text was.
+ */
+function clearFilter(): void {
+  filter.value = "";
+  filterField.value?.focus();
+}
 const order = ref<{ readonly key: string; readonly descending: boolean }>({ key: "name", descending: false });
 
 /**
@@ -219,17 +229,28 @@ function keyOf(obj: K8sObject): string {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
-      <label class="relative flex min-w-40 flex-1 items-center">
+      <div class="relative flex min-w-40 flex-1 items-center">
         <Search :size="12" class="pointer-events-none absolute left-2 text-muted-foreground" />
         <input
+          ref="filterField"
           v-model="filter"
           type="search"
           spellcheck="false"
-          class="w-full rounded-md border border-border bg-background py-1 pr-2 pl-7 text-xs focus:outline-none"
+          class="w-full rounded-md border border-border bg-background py-1 pr-7 pl-7 text-xs focus:outline-none"
           :placeholder="t('k8s.list.filter')"
           :aria-label="t('k8s.list.filter')"
         />
-      </label>
+        <button
+          v-if="filter !== ''"
+          type="button"
+          class="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('k8s.list.clear')"
+          :aria-label="t('k8s.list.clear')"
+          @click="clearFilter()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
 
       <span class="font-mono text-[11px] text-muted-foreground">
         {{ t("k8s.list.count", { count: String(visibleRows.length) }) }}

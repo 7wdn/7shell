@@ -229,6 +229,7 @@
     },
     "list": {
       "filter": "按名称或读数筛选",
+      "clear": "清除筛选",
       "count": "{count} 项",
       "refresh": "重新读取列表",
       "create": "创建",

@@ -39,6 +39,7 @@
     },
     "filters": {
       "text": "按名称、镜像或 ID 过滤",
+      "clear": "清除筛选",
       "runningOnly": "仅运行中",
       "state": "状态",
       "allStates": "全部状态",
@@ -201,6 +202,7 @@
     },
     "images": {
       "filter": "按仓库、标签或 ID 过滤",
+      "clear": "清除筛选",
       "none": "没有匹配这个过滤条件的镜像。",
       "related": "显示使用 {name} 的容器",
       "run": "用 {name} 新建容器",

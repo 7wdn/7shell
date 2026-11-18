@@ -982,7 +982,7 @@ function translate(key: string, params?: Record<string, string>): string {
             the answer to a search is a page of results rather than a list hanging under a box.
           -->
           <div class="shrink-0 px-5 pt-4 pb-3">
-            <div class="relative mx-auto w-full max-w-3xl">
+            <div class="relative mx-auto flex w-full max-w-3xl items-center">
               <Search
                 :size="14"
                 class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"

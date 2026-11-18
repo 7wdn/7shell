@@ -17,7 +17,7 @@
  *    a row whose server is off stays off here — the switch is disabled and says why — while a row
  *    whose server is on can be switched off individually. The access tab is where the server goes.
  */
-import { RefreshCw } from "@lucide/vue";
+import { RefreshCw, X } from "@lucide/vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -42,7 +42,14 @@ const preferences = usePreferencesStore();
 const notice = ref<"" | "applied" | "failed">("");
 /** What the list is narrowed to. Nothing set means every tool. */
 const query = ref("");
+const searchField = ref<HTMLInputElement | null>(null);
 const onlyEnabled = ref(false);
+
+/** Empties the search, with the caret left where the text was. */
+function clearSearch(): void {
+  query.value = "";
+  searchField.value?.focus();
+}
 /** Whether an apply is in flight: one write, and no second one on top of it. */
 const applying = ref(false);
 
@@ -232,17 +239,30 @@ function badgeClass(risk: McpToolRisk): string {
     </div>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <input
-        data-mcp-capabilities-search
-        :value="query"
-        type="search"
-        autocomplete="off"
-        spellcheck="false"
-        class="min-w-48 flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs focus:outline-none select-text"
-        :aria-label="t('mcp.capabilities.search')"
-        :placeholder="t('mcp.capabilities.search')"
-        @input="query = ($event.target as HTMLInputElement).value"
-      />
+      <div class="relative flex min-w-48 flex-1 items-center">
+        <input
+          ref="searchField"
+          data-mcp-capabilities-search
+          :value="query"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          class="w-full rounded-md border border-border bg-background py-1.5 pr-8 pl-3 text-xs focus:outline-none select-text"
+          :aria-label="t('mcp.capabilities.search')"
+          :placeholder="t('mcp.capabilities.search')"
+          @input="query = ($event.target as HTMLInputElement).value"
+        />
+        <button
+          v-if="query !== ''"
+          type="button"
+          class="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('mcp.capabilities.clear')"
+          :aria-label="t('mcp.capabilities.clear')"
+          @click="clearSearch()"
+        >
+          <X :size="12" />
+        </button>
+      </div>
       <label class="flex items-center gap-2 text-xs text-muted-foreground">
         <Switch
           data-mcp-capabilities-filter

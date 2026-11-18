@@ -23,6 +23,7 @@ import {
   RotateCw,
   Tag,
   Trash2,
+  X,
 } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
@@ -65,7 +66,16 @@ const { openMenu } = useContextMenu();
 const { toast } = useToast();
 
 const text = ref("");
+const filterField = ref<HTMLInputElement | null>(null);
 const rows = computed(() => filterImages(props.session.images, text.value));
+
+/**
+ * Puts the filter back to showing every image, with the caret where the text was.
+ */
+function clearFilter(): void {
+  text.value = "";
+  filterField.value?.focus();
+}
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -261,14 +271,27 @@ function openRowMenu(event: MouseEvent, image: ContainerImage): void {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-2.5 py-1.5">
-      <input
-        v-model="text"
-        type="text"
-        spellcheck="false"
-        class="h-6 w-56 rounded-md border border-border bg-background px-2 text-[11px] focus:outline-none"
-        :placeholder="t('container.images.filter')"
-        :aria-label="t('container.images.filter')"
-      />
+      <div class="relative flex items-center">
+        <input
+          ref="filterField"
+          v-model="text"
+          type="text"
+          spellcheck="false"
+          class="h-6 w-56 rounded-md border border-border bg-background pr-7 pl-2 text-[11px] focus:outline-none"
+          :placeholder="t('container.images.filter')"
+          :aria-label="t('container.images.filter')"
+        />
+        <button
+          v-if="text !== ''"
+          type="button"
+          class="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('container.images.clear')"
+          :aria-label="t('container.images.clear')"
+          @click="clearFilter()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
       <div class="min-w-0 flex-1"></div>
 
       <button

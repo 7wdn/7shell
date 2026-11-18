@@ -73,6 +73,15 @@ const terminals = useTerminalsStore();
 const { openMenu } = useContextMenu();
 
 const text = ref("");
+const filterField = ref<HTMLInputElement | null>(null);
+
+/**
+ * Puts the filter back to showing every container, with the caret where the text was.
+ */
+function clearFilter(): void {
+  text.value = "";
+  filterField.value?.focus();
+}
 /**
  * Running only, by default: an engine that has been up for a while accumulates exited containers
  * nobody is going to look at, and they are what buries the ones that are alive.
@@ -368,14 +377,27 @@ function openRowMenu(event: MouseEvent, container: ContainerSummary): void {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-2.5 py-1.5">
-      <input
-        v-model="text"
-        type="text"
-        spellcheck="false"
-        class="h-6 w-52 rounded-md border border-border bg-background px-2 text-[11px] focus:outline-none"
-        :placeholder="t('container.filters.text')"
-        :aria-label="t('container.filters.text')"
-      />
+      <div class="relative flex items-center">
+        <input
+          ref="filterField"
+          v-model="text"
+          type="text"
+          spellcheck="false"
+          class="h-6 w-52 rounded-md border border-border bg-background pr-7 pl-2 text-[11px] focus:outline-none"
+          :placeholder="t('container.filters.text')"
+          :aria-label="t('container.filters.text')"
+        />
+        <button
+          v-if="text !== ''"
+          type="button"
+          class="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('container.filters.clear')"
+          :aria-label="t('container.filters.clear')"
+          @click="clearFilter()"
+        >
+          <X :size="11" />
+        </button>
+      </div>
 
       <label class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <input v-model="runningOnly" type="checkbox" class="size-3 accent-[var(--primary)]" />

@@ -18,6 +18,7 @@
  *    the two override maps are written only by Apply, which also re-reads the listener so what is
  *    drawn afterwards is what the host now holds.
  */
+import { X } from "@lucide/vue";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -60,7 +61,14 @@ const notice = ref<"" | "applied" | "failed">("");
 const applying = ref(false);
 /** What the tree is narrowed to. */
 const query = ref("");
+const searchField = ref<HTMLInputElement | null>(null);
 const onlyOverrides = ref(false);
+
+/** Empties the search, with the caret left where the text was. */
+function clearSearch(): void {
+  query.value = "";
+  searchField.value?.focus();
+}
 
 /**
  * The default tier as the store holds it, which is applied the moment a card is pressed.
@@ -448,17 +456,30 @@ async function apply(): Promise<void> {
         </label>
       </div>
 
-      <input
-        data-mcp-permission-search
-        :value="query"
-        type="search"
-        autocomplete="off"
-        spellcheck="false"
-        class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-xs focus:outline-none select-text"
-        :aria-label="t('mcp.permissions.search')"
-        :placeholder="t('mcp.permissions.search')"
-        @input="query = ($event.target as HTMLInputElement).value"
-      />
+      <div class="relative flex items-center">
+        <input
+          ref="searchField"
+          data-mcp-permission-search
+          :value="query"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          class="w-full rounded-md border border-border bg-background py-1.5 pr-8 pl-3 text-xs focus:outline-none select-text"
+          :aria-label="t('mcp.permissions.search')"
+          :placeholder="t('mcp.permissions.search')"
+          @input="query = ($event.target as HTMLInputElement).value"
+        />
+        <button
+          v-if="query !== ''"
+          type="button"
+          class="absolute top-1/2 right-1 grid size-5 -translate-y-1/2 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          :title="t('mcp.permissions.clear')"
+          :aria-label="t('mcp.permissions.clear')"
+          @click="clearSearch()"
+        >
+          <X :size="12" />
+        </button>
+      </div>
 
       <div
         v-if="visibleSessionIds !== null"

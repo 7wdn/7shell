@@ -1047,7 +1047,7 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
         and anything else that asks "what is drawn" get the same answer.
       -->
       <div class="relative mb-2 flex shrink-0 items-center gap-1">
-        <div class="relative min-w-0 flex-1">
+        <div class="relative flex min-w-0 flex-1 items-center">
           <Search
             :size="12"
             class="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
