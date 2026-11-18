@@ -257,10 +257,10 @@ impl Document {
             }
         }
         for session in &self.sessions {
-            if session_parent(&self.groups, session).as_deref() == group_id {
-                if let Some(order) = session.order {
-                    highest = Some(highest.map_or(order, |value| value.max(order)));
-                }
+            if session_parent(&self.groups, session).as_deref() == group_id
+                && let Some(order) = session.order
+            {
+                highest = Some(highest.map_or(order, |value| value.max(order)));
             }
         }
         highest.map_or(0, |value| value.saturating_add(1))
@@ -1077,9 +1077,7 @@ fn effective_parent(groups: &[SessionGroup], id: &str) -> Option<String> {
     let mut seen = std::collections::HashSet::from([id.to_owned()]);
     let mut parent = start.parent_id.clone();
     while let Some(current) = &parent {
-        let Some(next) = groups.iter().find(|group| &group.id == current) else {
-            return None;
-        };
+        let next = groups.iter().find(|group| &group.id == current)?;
         if !seen.insert(next.id.clone()) {
             return None;
         }
