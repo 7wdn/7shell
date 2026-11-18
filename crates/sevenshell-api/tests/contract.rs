@@ -106,6 +106,11 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
             "sshell_vm_screenshot",
             json!({ "sessionId": "lab", "token": "location-1" }),
         ),
+        ("sshell_vmrest_read", json!({ "action": "vms" })),
+        (
+            "sshell_vmrest_network_create",
+            json!({ "name": "vmnet-test", "kind": "nat" }),
+        ),
     ]
 }
 
@@ -211,8 +216,8 @@ fn the_registry_lists_exactly_the_declared_tools() {
     let registry = local::default_registry();
     let descriptors = registry.descriptors();
 
-    assert_eq!(descriptors.len(), 24, "every declared tool is registered");
-    assert_eq!(registry.len(), 24);
+    assert_eq!(descriptors.len(), 26, "every declared tool is registered");
+    assert_eq!(registry.len(), 26);
 
     for descriptor in &descriptors {
         assert!(

@@ -1043,13 +1043,24 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             Ok(Value::Null)
         }
 
+        "vmrest_config_set" => {
+            let user: String = from_args(&args, "user")?;
+            let password: String = from_args(&args, "password")?;
+            state.core.set_vmrest_auth(user, password)?;
+            Ok(Value::Null)
+        }
+        "vmrest_status" => {
+            state.core.vmrest_probe().await?;
+            Ok(Value::Null)
+        }
+        "vmrest_start" => Err(ShellError::app_unsupported("starting vmrest needs the desktop shell")),
         "host_location_choose" => Err(ShellError::app_unsupported(
             "choosing a host location needs the desktop shell",
         )),
-        "host_locations_list" => to_value(state.core.host_locations()),
+        "host_locations_list" => to_value(state.core.host_locations()?),
         "host_location_forget" => {
             let token: String = from_args(&args, "token")?;
-            Ok(json!(state.core.host_location_forget(&token)))
+            Ok(json!(state.core.host_location_forget(&token)?))
         }
         "vmware_scan" => to_value(state.core.vmware_scan().await?),
         "vmware_status" => {

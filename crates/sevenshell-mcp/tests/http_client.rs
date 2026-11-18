@@ -220,7 +220,7 @@ async fn the_tool_table_is_read_from_the_desktop_with_the_bearer_token_and_cache
     let client = HttpToolClient::new(endpoint).expect("a client");
     assert_eq!(
         client.descriptors().len(),
-        24,
+        26,
         "before a refresh the compiled list is what a list answers"
     );
 
@@ -286,7 +286,7 @@ async fn a_table_that_cannot_be_read_leaves_the_compiled_list_in_place() {
             .expect("a refresh that cannot be read is not a session failure");
         assert_eq!(
             client.descriptors().len(),
-            24,
+            26,
             "the compiled list is the floor, not the table of a desktop that is gone"
         );
     }
@@ -302,7 +302,7 @@ async fn a_refresh_without_an_endpoint_file_answers_from_the_compiled_list() {
         .await
         .expect("a missing desktop is not a failed session");
 
-    assert_eq!(client.descriptors().len(), 24);
+    assert_eq!(client.descriptors().len(), 26);
 }
 
 // -- Cancelling ---------------------------------------------------------

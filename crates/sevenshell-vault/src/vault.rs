@@ -219,6 +219,30 @@ impl Slot {
     }
 }
 
+/// One host location as the host side sees it: the path exists for the core and nowhere else.
+///
+/// The `Debug` form leaves the path out on purpose. A token, a display name and whether it is a
+/// file or a folder are what any reader of a log line could want, and the path is the one part
+/// that must not travel that way.
+#[derive(Clone, PartialEq, Eq)]
+pub struct HostLocationRecord {
+    pub token: String,
+    pub name: String,
+    pub kind: sevenshell_types::HostLocationKind,
+    pub path: String,
+}
+
+impl std::fmt::Debug for HostLocationRecord {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HostLocationRecord")
+            .field("token", &self.token)
+            .field("name", &self.name)
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Vault {
     /// Points a vault at `path` without reading it.
     pub fn open_at(path: PathBuf) -> Self {
@@ -1005,6 +1029,74 @@ impl Vault {
         let state = guard.open()?;
 
         state.document.set_mcp_server_secrets(server_id, secrets);
+        state.write_to(&self.path)
+    }
+
+    /// Every host location this vault holds, in display-name order.
+    ///
+    /// `path` is here because the core resolves tokens; it is not part of what the interface or an
+    /// agent receives, and [`HostLocationRecord`] keeps it out of a `Debug` line.
+    pub fn host_locations(&self) -> Result<Vec<HostLocationRecord>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard
+            .open()?
+            .document
+            .host_locations()
+            .into_iter()
+            .map(|(token, entry)| HostLocationRecord {
+                token,
+                name: entry.name,
+                kind: entry.kind,
+                path: entry.path,
+            })
+            .collect())
+    }
+
+    pub fn host_location(&self, token: &str) -> Result<Option<HostLocationRecord>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard
+            .open()?
+            .document
+            .host_location(token)
+            .map(|entry| HostLocationRecord {
+                token: token.to_owned(),
+                name: entry.name.clone(),
+                kind: entry.kind,
+                path: entry.path.clone(),
+            }))
+    }
+
+    pub fn save_host_location(
+        &self,
+        token: &str,
+        name: &str,
+        kind: sevenshell_types::HostLocationKind,
+        path: &str,
+    ) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+        state.document.set_host_location(token, name, kind, path);
+        state.write_to(&self.path)
+    }
+
+    pub fn remove_host_location(&self, token: &str) -> Result<bool, ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+        let removed = state.document.remove_host_location(token);
+        state.write_to(&self.path)?;
+        Ok(removed)
+    }
+
+    /// The Workstation REST service's account, when somebody asked for it to be kept.
+    pub fn vmrest_credentials(&self) -> Result<Option<(String, String)>, ShellError> {
+        let mut guard = self.slot();
+        Ok(guard.open()?.document.vmrest_credentials())
+    }
+
+    pub fn set_vmrest_credentials(&self, user: &str, password: &str) -> Result<(), ShellError> {
+        let mut guard = self.slot();
+        let state = guard.open()?;
+        state.document.set_vmrest_credentials(user, password);
         state.write_to(&self.path)
     }
 
@@ -2819,5 +2911,47 @@ mod tests {
 
         assert_eq!(plain.code(), ErrorCode::VaultLocked);
         assert_eq!(sealed.code(), ErrorCode::VaultLocked);
+    }
+
+    #[test]
+    fn host_locations_and_vmrest_credentials_survive_a_reopen() {
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("vault.json");
+        let vault = Vault::open_at(path);
+        vault.create("master").expect("create");
+
+        vault
+            .save_host_location(
+                "location-1",
+                "exports",
+                sevenshell_types::HostLocationKind::Folder,
+                r"C:\vault-secret-folder",
+            )
+            .expect("keep");
+        vault.set_vmrest_credentials("admin", "hunter2").expect("keep");
+
+        let records = vault.host_locations().expect("read");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, r"C:\vault-secret-folder");
+        assert!(
+            !format!("{:?}", records[0]).contains("vault-secret-folder"),
+            "the debug form must not print the path: {records:?}"
+        );
+
+        vault.lock();
+        vault.unlock("master").expect("unlock");
+        let records = vault.host_locations().expect("reopen");
+        assert_eq!(records[0].path, r"C:\vault-secret-folder");
+        assert_eq!(records[0].kind, sevenshell_types::HostLocationKind::Folder);
+        assert_eq!(
+            vault.vmrest_credentials().expect("read").expect("kept").1,
+            "hunter2",
+            "the vmrest password did not survive a reopen"
+        );
+
+        assert!(vault.remove_host_location("location-1").expect("forget"));
+        assert!(vault.host_locations().expect("read").is_empty());
+        vault.set_vmrest_credentials("", "").expect("forget");
+        assert!(vault.vmrest_credentials().expect("read").is_none());
     }
 }

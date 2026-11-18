@@ -55,6 +55,8 @@ const passwordOpen = ref(false);
 const passwordBusy = ref(false);
 
 const locations = ref<readonly HostLocationView[]>([]);
+const vmrestUser = ref("");
+const vmrestPassword = ref("");
 const sshUser = ref("");
 const sshPort = ref("22");
 const rdpUser = ref("");
@@ -335,6 +337,29 @@ async function addLocation(kind: HostLocationKind): Promise<void> {
   }
 }
 
+async function saveVmrest(): Promise<void> {
+  try {
+    await backend.vmrest.configSet(vmrestUser.value, vmrestPassword.value);
+    await backend.vmrest.status();
+    toast(t("sessions.vmware.vmrest.saved"), "receipt");
+  } catch (error) {
+    failure.value = asShellError(error, "vmrest_config_set");
+  }
+}
+
+async function startVmrest(): Promise<void> {
+  busy.value = "vmrest";
+  failure.value = null;
+  try {
+    await backend.vmrest.start();
+    toast(t("sessions.vmware.vmrest.started"), "receipt");
+  } catch (error) {
+    failure.value = asShellError(error, "vmrest_start");
+  } finally {
+    busy.value = null;
+  }
+}
+
 async function forgetLocation(token: string): Promise<void> {
   try {
     await backend.hostLocations.forget(token);
@@ -540,6 +565,48 @@ watch(
         </template>
 
         <p class="mt-3 text-[11px] text-muted-foreground">{{ t("sessions.vmware.hint") }}</p>
+      </div>
+
+      <div v-if="isDesktop" class="rounded-md border border-border p-4" data-vmrest>
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-xs font-medium">{{ t("sessions.vmware.vmrest.title") }}</h3>
+          <button
+            type="button"
+            data-vmrest-start
+            class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent disabled:opacity-60"
+            :disabled="busy !== null"
+            @click="startVmrest()"
+          >
+            <LoaderCircle v-if="busy === 'vmrest'" :size="12" class="animate-spin" />
+            {{ t("sessions.vmware.vmrest.start") }}
+          </button>
+        </div>
+        <div class="mt-2 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+          <input
+            v-model="vmrestUser"
+            type="text"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none"
+            :placeholder="t('sessions.vmware.vmrest.user')"
+          />
+          <input
+            v-model="vmrestPassword"
+            type="password"
+            autocomplete="new-password"
+            class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs focus:outline-none"
+            :placeholder="t('sessions.vmware.vmrest.password')"
+          />
+          <button
+            type="button"
+            data-vmrest-save
+            class="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
+            @click="saveVmrest()"
+          >
+            {{ t("sessions.vmware.vmrest.save") }}
+          </button>
+        </div>
       </div>
 
       <div v-if="isDesktop" class="rounded-md border border-border p-4" data-vmware-locations>

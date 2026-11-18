@@ -1,23 +1,16 @@
 //! Places on this machine an agent may name, held as opaque tokens.
 //!
 //! A token is minted after a native dialog the host opens on the person's behalf: the person picks
-//! a file or a folder, the path stays in this registry, and everything the interface or an agent
-//! sees is the token and a display name. The registry lives as long as the application: a token is
-//! a permission granted in this session, not a file somebody handed over for ever.
+//! a file or a folder, the path is written into the vault, and everything the interface or an
+//! agent sees is the token and a display name. The vault is where the path lives — encrypted at
+//! rest, read only by the core, and never printed, audited or sent anywhere.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use sevenshell_error::ShellError;
 use sevenshell_types::{HostLocationKind, HostLocationView};
 
 use crate::Core;
-
-pub(crate) struct HostLocationEntry {
-    path: PathBuf,
-    name: String,
-    kind: HostLocationKind,
-}
 
 impl Core {
     /// Records a location the host's dialog just returned, and answers the token that stands for it.
@@ -36,55 +29,41 @@ impl Core {
             .filter(|name| !name.is_empty())
             .ok_or_else(|| ShellError::host_location_unknown("the chosen location has no name to show"))?;
         let token = uuid::Uuid::new_v4().to_string();
-        self.host_locations_lock().insert(
-            token.clone(),
-            HostLocationEntry {
-                path: path.to_path_buf(),
-                name: name.clone(),
-                kind,
-            },
-        );
+        self.vault
+            .save_host_location(&token, &name, kind, &path.to_string_lossy())?;
         Ok(HostLocationView { token, name, kind })
     }
 
-    /// Every location this session knows, by display name.
-    pub fn host_locations(&self) -> Vec<HostLocationView> {
-        let mut views: Vec<HostLocationView> = self
-            .host_locations_lock()
-            .iter()
-            .map(|(token, entry)| HostLocationView {
-                token: token.clone(),
-                name: entry.name.clone(),
-                kind: entry.kind,
+    /// Every location this vault holds, by display name. A locked vault is an error, not an empty list.
+    pub fn host_locations(&self) -> Result<Vec<HostLocationView>, ShellError> {
+        Ok(self
+            .vault
+            .host_locations()?
+            .into_iter()
+            .map(|record| HostLocationView {
+                token: record.token,
+                name: record.name,
+                kind: record.kind,
             })
-            .collect();
-        views.sort_by_key(|view| view.name.to_lowercase());
-        views
+            .collect())
     }
 
     /// Forgets one token. The path is left alone: nothing here created it.
-    pub fn host_location_forget(&self, token: &str) -> bool {
-        self.host_locations_lock().remove(token).is_some()
+    pub fn host_location_forget(&self, token: &str) -> Result<bool, ShellError> {
+        self.vault.remove_host_location(token)
     }
 
     /// The path behind a token, when it is the kind the operation needs.
     pub(crate) fn host_location_path(&self, token: &str, expected: HostLocationKind) -> Result<PathBuf, ShellError> {
-        let locations = self.host_locations_lock();
-        let entry = locations.get(token).ok_or_else(|| {
+        let record = self.vault.host_location(token)?.ok_or_else(|| {
             ShellError::host_location_unknown("this host location is not known; add it in the app first")
         })?;
-        if entry.kind != expected {
+        if record.kind != expected {
             return Err(ShellError::host_location_unknown(match expected {
                 HostLocationKind::File => "this operation needs a file token, and that token names a folder",
                 HostLocationKind::Folder => "this operation needs a folder token, and that token names a file",
             }));
         }
-        Ok(entry.path.clone())
-    }
-
-    fn host_locations_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, HostLocationEntry>> {
-        self.host_locations
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        Ok(PathBuf::from(record.path))
     }
 }

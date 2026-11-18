@@ -67,7 +67,7 @@ pub use transfer::{
     MIN_PASSPHRASE_LEN, OpenedBundle, SessionBundle, open,
 };
 pub use vault::{
-    ExportProtection, VAULT_FILE_NAME, Vault, VaultStatus, change_password, create, default_path, delete_group,
-    delete_session, find_known_host, forget_host, forget_key, groups, import_key, key_material, known_hosts, lock,
-    save_group, save_session, secret_for_session, sessions, status, trust_host, unlock,
+    ExportProtection, HostLocationRecord, VAULT_FILE_NAME, Vault, VaultStatus, change_password, create, default_path,
+    delete_group, delete_session, find_known_host, forget_host, forget_key, groups, import_key, key_material,
+    known_hosts, lock, save_group, save_session, secret_for_session, sessions, status, trust_host, unlock,
 };

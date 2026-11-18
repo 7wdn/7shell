@@ -29,6 +29,8 @@ pub const VM_HOST_WRITE: &str = "sshell_vm_host_write";
 pub const VM_IMAGE: &str = "sshell_vm_image";
 pub const HOST_LOCATIONS_LIST: &str = "sshell_host_locations_list";
 pub const VM_SCREENSHOT: &str = "sshell_vm_screenshot";
+pub const VMREST_READ: &str = "sshell_vmrest_read";
+pub const VMREST_NETWORK_CREATE: &str = "sshell_vmrest_network_create";
 
 const VM_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
@@ -262,6 +264,32 @@ pub struct VmImageInput {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HostLocationsInput {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum VmrestReadAction {
+    Vms,
+    Vm,
+    Networks,
+    MacToIp,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VmrestReadInput {
+    pub action: VmrestReadAction,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub vmnet: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VmrestNetworkCreateInput {
+    pub name: String,
+    pub kind: String,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1184,6 +1212,119 @@ impl Tool for VmScreenshotTool {
                 .with_subject(subject)
                 .with_risk(verdict),
         ))
+    }
+}
+
+pub fn vmrest_read_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: VMREST_READ.to_owned(),
+        title: "Read the Workstation REST service".to_owned(),
+        description: "Reads the virtual machines vmrest knows, one of them by id, the host virtual                       networks, or one network's MAC-to-IP map. The service must be running and                       its credentials saved."
+            .to_owned(),
+        input_schema: ToolInputSchema::object(
+            json!({
+                "action": string_enum("What to read.", &["vms", "vm", "networks", "macToIp"]),
+                "id": string("For vm: the id vmrest reports."),
+                "vmnet": string("For macToIp: the network, e.g. `vmnet8`.")
+            }),
+            &["action"],
+        ),
+        access: ToolAccess::Read,
+    }
+}
+
+pub fn vmrest_network_create_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: VMREST_NETWORK_CREATE.to_owned(),
+        title: "Create a host virtual network".to_owned(),
+        description: "Creates one virtual network on this machine. This is the operation no                       command line offers; the service must be running and its credentials saved."
+            .to_owned(),
+        input_schema: ToolInputSchema::object(
+            json!({
+                "name": string("The network's name, e.g. `vmnet20`."),
+                "kind": string_enum("The network's type.", &["bridged", "nat", "hostonly"])
+            }),
+            &["name", "kind"],
+        ),
+        access: ToolAccess::Write,
+    }
+}
+
+pub struct VmrestReadTool;
+
+#[async_trait]
+impl Tool for VmrestReadTool {
+    fn descriptor(&self) -> ToolDescriptor {
+        vmrest_read_descriptor()
+    }
+
+    async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
+        let input: VmrestReadInput = parse_arguments(arguments)?;
+        let id = if input.action == VmrestReadAction::Vm {
+            Some(required_text(input.id.as_deref(), "id")?)
+        } else {
+            None
+        };
+        let vmnet = if input.action == VmrestReadAction::MacToIp {
+            Some(required_text(input.vmnet.as_deref(), "vmnet")?)
+        } else {
+            None
+        };
+        let subject = match input.action {
+            VmrestReadAction::Vms => "vmrest vms".to_owned(),
+            VmrestReadAction::Vm => format!("vmrest vm {}", id.as_deref().unwrap_or_default()),
+            VmrestReadAction::Networks => "vmrest networks".to_owned(),
+            VmrestReadAction::MacToIp => {
+                format!("vmrest macToIp {}", vmnet.as_deref().unwrap_or_default())
+            }
+        };
+        let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+            let result = match input.action {
+                VmrestReadAction::Vms => context.core().vmrest_list_vms().await,
+                VmrestReadAction::Vm => context.core().vmrest_get_vm(id.as_deref().unwrap_or_default()).await,
+                VmrestReadAction::Networks => context.core().vmrest_list_networks().await,
+                VmrestReadAction::MacToIp => {
+                    context
+                        .core()
+                        .vmrest_mac_to_ip(vmnet.as_deref().unwrap_or_default())
+                        .await
+                }
+            };
+            result.map_err(ToolError::from)
+        })
+        .await?;
+        Ok(ToolResult::new(json!({ "output": output })).with_audit(ToolAudit::default().with_subject(subject)))
+    }
+}
+
+pub struct VmrestNetworkCreateTool;
+
+#[async_trait]
+impl Tool for VmrestNetworkCreateTool {
+    fn descriptor(&self) -> ToolDescriptor {
+        vmrest_network_create_descriptor()
+    }
+
+    async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
+        let input: VmrestNetworkCreateInput = parse_arguments(arguments)?;
+        let name = required_text(Some(input.name.as_str()), "name")?;
+        let kind = required_text(Some(input.kind.as_str()), "kind")?;
+        let subject = gate::subject(&format!("{name} {kind}"));
+        let verdict = sevenshell_policy::vm_host("create-network");
+        let approval = gate::approve_risk(context, VMREST_NETWORK_CREATE, &verdict, None, None, &subject).await?;
+        let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+            context
+                .core()
+                .vmrest_create_network(&name, &kind)
+                .await
+                .map_err(ToolError::from)
+        })
+        .await?;
+        let mut audit = ToolAudit::default().with_subject(subject).with_risk(verdict);
+        if let Some(record) = approval {
+            audit = audit.with_approval(record);
+        }
+        Ok(ToolResult::new(json!({ "output": output })).with_audit(audit))
     }
 }
 

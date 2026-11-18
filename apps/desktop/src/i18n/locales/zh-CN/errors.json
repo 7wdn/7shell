@@ -111,6 +111,10 @@
       "commandFailed": "容器运行时拒绝了{operation}。",
       "notConnected": "这个容器连接已经关闭。"
     },
+    "vmrest": {
+      "unavailable": "连不上 Workstation 的 REST 服务。请启动 vmrest；如果从未配置过，先运行一次 `vmrest -C`。",
+      "unauthorized": "Workstation 的 REST 服务不接受当前配置的凭据。"
+    },
     "hostLocation": {
       "unknown": "这个主机位置已不可用，请在应用里重新添加。"
     },

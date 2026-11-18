@@ -161,6 +161,16 @@ pub const BUILTIN_CATALOG: &[CatalogEntry] = &[
         category: CatalogCategory::VirtualMachines,
         risk: ToolRisk::Write,
     },
+    CatalogEntry {
+        name: "sshell_vmrest_read",
+        category: CatalogCategory::VirtualMachines,
+        risk: ToolRisk::Read,
+    },
+    CatalogEntry {
+        name: "sshell_vmrest_network_create",
+        category: CatalogCategory::VirtualMachines,
+        risk: ToolRisk::Write,
+    },
 ];
 
 pub fn catalog_entry(name: &str) -> Option<&'static CatalogEntry> {
@@ -178,7 +188,7 @@ mod tests {
         let mut unique = names.clone();
         unique.dedup();
         assert_eq!(names, unique, "a name may not appear twice");
-        assert_eq!(BUILTIN_CATALOG.len(), 24, "every registered tool has a catalogue entry");
+        assert_eq!(BUILTIN_CATALOG.len(), 26, "every registered tool has a catalogue entry");
     }
 
     #[test]

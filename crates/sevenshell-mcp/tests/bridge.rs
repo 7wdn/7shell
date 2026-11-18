@@ -314,7 +314,7 @@ async fn a_session_over_the_pipe_reaches_the_desktop_and_every_line_is_json() {
     // The table came from the desktop over `GET /tools`, not from the bridge's compiled list.
     let listing = bridge.request("tools/list", json!({})).await;
     let tools = listing["result"]["tools"].as_array().expect("a list of tools");
-    assert_eq!(tools.len(), 25, "the desktop's table has one tool more: {listing}");
+    assert_eq!(tools.len(), 27, "the desktop's table has one tool more: {listing}");
     assert!(
         tools.iter().any(|tool| tool["name"] == json!("mcp__lab__list_things")),
         "a tool the desktop listed has to reach the agent: {listing}"
@@ -384,7 +384,7 @@ async fn the_list_an_agent_sees_is_the_registry_this_build_compiles_in() {
         .collect();
     listed.sort_unstable();
 
-    assert_eq!(expected.len(), 24, "the compiled list and the registry agree");
+    assert_eq!(expected.len(), 26, "the compiled list and the registry agree");
     assert_eq!(
         listed, expected,
         "a list that disagrees with the registry is a tool an agent can see and never call"
@@ -423,7 +423,7 @@ async fn a_bridge_with_no_endpoint_file_still_answers_the_handshake_and_the_list
     assert_eq!(initialize["result"]["protocolVersion"], json!(LATEST_PROTOCOL_VERSION));
 
     let listing = bridge.request("tools/list", json!({})).await;
-    assert_eq!(listing["result"]["tools"].as_array().expect("tools").len(), 24);
+    assert_eq!(listing["result"]["tools"].as_array().expect("tools").len(), 26);
 
     let call = bridge
         .request("tools/call", json!({ "name": "sshell_sessions_list", "arguments": {} }))

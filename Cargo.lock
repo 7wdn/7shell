@@ -5526,6 +5526,8 @@ name = "sevenshell-vmware"
 version = "0.2.0"
 dependencies = [
  "encoding_rs",
+ "reqwest",
+ "serde_json",
  "sevenshell-error",
  "sevenshell-types",
  "tokio",

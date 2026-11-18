@@ -387,6 +387,15 @@
         "message": "虚拟机没有运行，但锁目录仍然存在——通常来自一次没有正常关闭的运行。取得所有权会删除这个锁。只有在确认没有 Workstation 窗口或其他机器正在使用它时才这样做：运行中虚拟机的锁是防止两个虚拟机监视器同时写同一份磁盘的最后一道防线。",
         "confirm": "取得所有权并开机"
       },
+      "vmrest": {
+        "title": "VMware REST",
+        "user": "用户",
+        "password": "密码",
+        "save": "保存",
+        "start": "启动",
+        "saved": "已保存。",
+        "started": "vmrest 已应答。"
+      },
       "locations": {
         "title": "主机位置",
         "folder": "目录",

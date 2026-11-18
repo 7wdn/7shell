@@ -16,6 +16,7 @@ mod host_ops;
 mod inventory;
 mod ops;
 mod vmcli;
+mod vmrest;
 mod vmrun;
 
 use std::collections::BTreeMap;
@@ -35,6 +36,7 @@ pub use host_ops::{
 };
 pub use inventory::inventory_path;
 pub use ops::{GuestAuth, GuestOp, SnapshotAction, guest, snapshot};
+pub use vmrest::{Vmrest, locate as locate_vmrest};
 pub use vmrun::{Vmrun, parse_running};
 
 use vmcli::Vmcli;

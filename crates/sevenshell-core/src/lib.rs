@@ -21,6 +21,7 @@ mod policy;
 mod sessions;
 mod snippets;
 mod system;
+mod vmrest;
 mod vmware;
 
 pub use archive::{ARCHIVE_TIMEOUT, archive_name, shell_quote};

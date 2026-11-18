@@ -516,8 +516,8 @@ mod tests {
             "from the descriptor, not from the catalogue"
         );
 
-        assert_eq!(catalog.counts.total, 24, "every built-in is drawn");
-        assert_eq!(catalog.counts.enabled, 23);
+        assert_eq!(catalog.counts.total, 26, "every built-in is drawn");
+        assert_eq!(catalog.counts.enabled, 25);
         assert!(find(&catalog, "sshell_sessions_list").enabled);
     }
 
@@ -549,10 +549,10 @@ mod tests {
         assert!(!switched_off.enabled, "a switched-off server offers nothing");
 
         assert_eq!(
-            catalog.counts.total, 27,
-            "twenty-four built-ins and three external tools"
+            catalog.counts.total, 29,
+            "twenty-six built-ins and three external tools"
         );
-        assert_eq!(catalog.counts.enabled, 26);
+        assert_eq!(catalog.counts.enabled, 28);
     }
 
     #[test]
@@ -567,10 +567,10 @@ mod tests {
         );
 
         assert!(!find(&catalog, "mcp__files__read").enabled);
-        assert_eq!(catalog.counts.total, 25);
+        assert_eq!(catalog.counts.total, 27);
         assert_eq!(
-            catalog.counts.enabled, 24,
-            "the twenty-four built-ins are untouched by an external tool switch"
+            catalog.counts.enabled, 26,
+            "the twenty-six built-ins are untouched by an external tool switch"
         );
     }
 
@@ -622,7 +622,7 @@ mod tests {
             first["source"].is_null(),
             "a built-in tool names no server, and the page matches on null rather than a missing field"
         );
-        assert_eq!(rendered["counts"]["total"], serde_json::json!(24));
-        assert_eq!(rendered["counts"]["enabled"], serde_json::json!(24));
+        assert_eq!(rendered["counts"]["total"], serde_json::json!(26));
+        assert_eq!(rendered["counts"]["enabled"], serde_json::json!(26));
     }
 }

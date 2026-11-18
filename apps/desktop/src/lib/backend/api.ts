@@ -927,6 +927,13 @@ export const backend = {
       forward("host_location_forget", () => desktop.hostLocationForget(token)),
   },
 
+  vmrest: {
+    configSet: (user: string, password: string): Promise<void> =>
+      forward("vmrest_config_set", () => desktop.vmrestConfigSet(user, password)),
+    status: (): Promise<void> => forward("vmrest_status", () => desktop.vmrestStatus()),
+    start: (): Promise<void> => forward("vmrest_start", () => desktop.vmrestStart()),
+  },
+
   knownHosts: {
     list: (): Promise<KnownHostEntry[]> => forward("known_hosts_list", () => desktop.knownHostsList()),
     trust: (key: PresentedHostKey): Promise<void> => forward("known_host_trust", () => desktop.knownHostTrust(key)),

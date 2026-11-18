@@ -875,6 +875,18 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    pub fn vmrest_unavailable(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::VmrestUnavailable, Origin::new(Subsystem::Vmware))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
+    pub fn vmrest_unauthorized(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::VmrestUnauthorized, Origin::new(Subsystem::Vmware))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::Sent)
+    }
+
     pub fn host_location_unknown(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::HostLocationUnknown, Origin::new(Subsystem::App))
             .with_detail(detail)

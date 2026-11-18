@@ -106,7 +106,7 @@ pub struct Core {
     pub(crate) container_streams: Arc<Mutex<ContainerStreamStops>>,
     /// Tokens for places on this machine a native dialog picked. Paths stay here; the token is
     /// what the interface and the tools see.
-    pub(crate) host_locations: std::sync::Mutex<HashMap<String, crate::host_locations::HostLocationEntry>>,
+    pub(crate) vmrest_auth: std::sync::Mutex<Option<(String, String)>>,
     pub(crate) next_file: std::sync::atomic::AtomicU64,
     pub(crate) next_transfer: std::sync::atomic::AtomicU64,
     /// The matrix and the audit trail behind every unattended action. Replaced together, read
@@ -135,7 +135,7 @@ impl Core {
                 containers: Arc::new(sevenshell_container::ContainerManager::new()),
                 clusters: Arc::new(sevenshell_k8s::K8sManager::new()),
                 container_streams: Arc::new(Mutex::new(HashMap::new())),
-                host_locations: std::sync::Mutex::new(HashMap::new()),
+                vmrest_auth: std::sync::Mutex::new(None),
                 next_file: std::sync::atomic::AtomicU64::new(1),
                 next_transfer: std::sync::atomic::AtomicU64::new(1),
                 // The default rule until a host replaces it: safe and caution run, the destructive

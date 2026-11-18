@@ -387,6 +387,15 @@
         "message": "The machine is not running, but its lock directory is still there — usually left by a run that did not shut down cleanly. Taking ownership removes the lock. Only do this if no Workstation window or other machine is using it: a live machine's lock is what keeps two hypervisors from writing the same disks.",
         "confirm": "Take ownership and start"
       },
+      "vmrest": {
+        "title": "VMware REST",
+        "user": "User",
+        "password": "Password",
+        "save": "Save",
+        "start": "Start",
+        "saved": "Saved.",
+        "started": "vmrest is answering."
+      },
       "locations": {
         "title": "Host locations",
         "folder": "Folder",

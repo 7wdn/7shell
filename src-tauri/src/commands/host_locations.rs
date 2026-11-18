@@ -41,11 +41,11 @@ pub async fn host_location_choose(
 }
 
 #[tauri::command]
-pub fn host_locations_list(state: State<'_, ShellState>) -> Vec<HostLocationView> {
+pub fn host_locations_list(state: State<'_, ShellState>) -> Result<Vec<HostLocationView>, ShellError> {
     state.core().host_locations()
 }
 
 #[tauri::command]
-pub fn host_location_forget(state: State<'_, ShellState>, token: String) -> bool {
+pub fn host_location_forget(state: State<'_, ShellState>, token: String) -> Result<bool, ShellError> {
     state.core().host_location_forget(&token)
 }

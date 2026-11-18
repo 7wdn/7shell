@@ -229,6 +229,12 @@ error_catalog! {
     #[doc = "A guest operation needs an account and password the VM session has not saved."]
     VmwareGuestCredentials => "VMWARE-GUEST-CREDENTIALS", "errors.vmware.guestCredentials";
 
+    // -- VMware REST service ------------------------------------------------
+    #[doc = "The Workstation REST service (vmrest) could not be reached."]
+    VmrestUnavailable => "VMREST-UNAVAILABLE", "errors.vmrest.unavailable";
+    #[doc = "vmrest refused the configured credentials."]
+    VmrestUnauthorized => "VMREST-UNAUTHORIZED", "errors.vmrest.unauthorized";
+
     // -- Host locations ----------------------------------------------------
     #[doc = "A host location token is not known, or names the wrong kind of location."]
     HostLocationUnknown => "HOST-LOCATION-UNKNOWN", "errors.hostLocation.unknown";

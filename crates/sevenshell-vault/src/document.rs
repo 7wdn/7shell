@@ -18,8 +18,8 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    AuthMethod, CommandHistoryEntry, CompletionWord, DEFAULT_GROUP_ID, KeyInfo, KnownHostEntry, Session, SessionGroup,
-    Snippet, SnippetGroup,
+    AuthMethod, CommandHistoryEntry, CompletionWord, DEFAULT_GROUP_ID, HostLocationKind, KeyInfo, KnownHostEntry,
+    Session, SessionGroup, Snippet, SnippetGroup,
 };
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
@@ -45,8 +45,10 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// Version 12 added the assistant's stored conversations and the table the secrets of an external
 /// MCP server will live in: an older build reading one would parse the document, drop both tables
 /// and write it back — every conversation and every server credential gone in the course of
-/// somebody opening the window.
-pub const VAULT_SCHEMA_VERSION: u32 = 12;
+/// somebody opening the window. Version 13 added the host locations an agent may name and the
+/// Workstation REST service's credentials, with the same failure if an older build wrote the
+/// document back.
+pub const VAULT_SCHEMA_VERSION: u32 = 13;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.
@@ -130,6 +132,32 @@ pub struct Document {
     /// read the configuration directory. One opaque value per server, like a conversation above.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     mcp_server_secrets: BTreeMap<String, SecretString>,
+    /// The places on this machine an agent may name, by the token the interface holds.
+    ///
+    /// The path is here and nowhere else: the interface and an agent see the token and a display
+    /// name, and a log line would be the last place a host path should appear.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    host_locations: BTreeMap<String, StoredHostLocation>,
+    /// The Workstation REST service's credentials. One account, kept only when somebody asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vmrest: Option<StoredVmrest>,
+}
+
+/// One host location as the vault keeps it: the token is the key, the path stays here.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoredHostLocation {
+    pub(crate) name: String,
+    pub(crate) kind: HostLocationKind,
+    pub(crate) path: String,
+}
+
+/// The Workstation REST service's account. One per installation.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoredVmrest {
+    pub(crate) user: String,
+    password: SecretString,
 }
 
 impl Document {
@@ -151,6 +179,8 @@ impl Document {
             ai_tokens: BTreeMap::new(),
             ai_sessions: BTreeMap::new(),
             mcp_server_secrets: BTreeMap::new(),
+            host_locations: BTreeMap::new(),
+            vmrest: None,
         }
     }
 
@@ -770,6 +800,53 @@ impl Document {
             }
         }
     }
+
+    /// Every host location, in display-name order.
+    pub(crate) fn host_locations(&self) -> Vec<(String, StoredHostLocation)> {
+        let mut locations: Vec<(String, StoredHostLocation)> = self
+            .host_locations
+            .iter()
+            .map(|(token, entry)| (token.clone(), entry.clone()))
+            .collect();
+        locations.sort_by_key(|(_, entry)| entry.name.to_lowercase());
+        locations
+    }
+
+    pub(crate) fn host_location(&self, token: &str) -> Option<&StoredHostLocation> {
+        self.host_locations.get(token)
+    }
+
+    pub(crate) fn set_host_location(&mut self, token: &str, name: &str, kind: HostLocationKind, path: &str) {
+        self.host_locations.insert(
+            token.to_owned(),
+            StoredHostLocation {
+                name: name.to_owned(),
+                kind,
+                path: path.to_owned(),
+            },
+        );
+    }
+
+    pub(crate) fn remove_host_location(&mut self, token: &str) -> bool {
+        self.host_locations.remove(token).is_some()
+    }
+
+    pub(crate) fn vmrest_credentials(&self) -> Option<(String, String)> {
+        self.vmrest
+            .as_ref()
+            .map(|stored| (stored.user.clone(), stored.password.expose().to_owned()))
+    }
+
+    pub(crate) fn set_vmrest_credentials(&mut self, user: &str, password: &str) {
+        self.vmrest = if user.trim().is_empty() {
+            None
+        } else {
+            Some(StoredVmrest {
+                user: user.trim().to_owned(),
+                password: SecretString::new(password.to_owned()),
+            })
+        };
+    }
 }
 
 impl fmt::Debug for Document {
@@ -798,6 +875,8 @@ impl fmt::Debug for Document {
                 "mcp_server_secrets",
                 &self.mcp_server_secrets.keys().collect::<Vec<_>>(),
             )
+            .field("host_locations", &self.host_locations.len())
+            .field("vmrest", &self.vmrest.is_some())
             .finish()
     }
 }
@@ -971,9 +1050,10 @@ pub(crate) fn migrate(mut document: Document) -> Result<Document, ShellError> {
     // meant — so the steps are the version number alone. 9 → 10: a session secret may now be a
     // kubeconfig document. 10 → 11: the document may now carry an assistant provider's key. 11 → 12:
     // it may now carry the assistant's conversations and an MCP server's credentials, and an older
-    // document simply has neither table. The number moves so an older build refuses the whole file as
-    // too new instead of failing to read one unknown secret variant and calling the vault corrupt, and
-    // so a build that predates the keys cannot drop them by writing the document back.
+    // document simply has neither table. 12 → 13: it may now carry the host locations an agent may
+    // name and the Workstation REST service's credentials, which an older document also lacks; the
+    // number moves so an older build refuses the whole file as too new instead of dropping them on
+    // its next write.
     document.schema_version = VAULT_SCHEMA_VERSION;
 
     Ok(document)

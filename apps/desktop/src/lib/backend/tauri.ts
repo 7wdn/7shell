@@ -1498,3 +1498,15 @@ export function hostLocationChoose(kind: HostLocationKind, title: string): Promi
 export function hostLocationForget(token: string): Promise<boolean> {
   return invoke<boolean>("host_location_forget", { token });
 }
+
+export function vmrestConfigSet(user: string, password: string): Promise<void> {
+  return invoke<void>("vmrest_config_set", { user, password });
+}
+
+export function vmrestStatus(): Promise<void> {
+  return invoke<void>("vmrest_status", {});
+}
+
+export function vmrestStart(): Promise<void> {
+  return invoke<void>("vmrest_start", {});
+}

@@ -111,6 +111,10 @@
       "commandFailed": "The container runtime rejected {operation}.",
       "notConnected": "That container connection is no longer open."
     },
+    "vmrest": {
+      "unavailable": "The Workstation REST service is not reachable. Start vmrest, and run `vmrest -C` once if it has never been configured.",
+      "unauthorized": "The Workstation REST service refused the configured credentials."
+    },
     "hostLocation": {
       "unknown": "That host location is no longer known. Add it on the desktop again."
     },
