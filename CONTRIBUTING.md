@@ -14,6 +14,11 @@ pnpm dev:tauri   # the desktop application
 pnpm check       # everything the CI runs, minus the platform matrix
 ```
 
+`pnpm dev:tauri` keeps the development vault and settings in `.scratch/dev-config`, apart from an
+installed copy: a newer build writing the same vault an older installed binary later opens is how a
+working password starts reading as wrong. An existing `SEVENSHELL_CONFIG_DIR` wins; the e2e
+launcher already points the same command at its own throwaway directory.
+
 ## What a change must satisfy
 
 1. **`pnpm check` passes.** It runs the descriptor drift check, the translation key check, the
@@ -25,19 +30,19 @@ pnpm check       # everything the CI runs, minus the platform matrix
    `pnpm check:i18n` fails when a key is used and not translated, or when the locales disagree
    about which keys exist. Adding English text only is not enough.
 4. **The invariants in [docs/security-model.md](docs/security-model.md) still hold.** If a change
-   cannot keep one of them, that is a conversation to have *before* the pull request, not a
+   cannot keep one of them, that is a conversation to have _before_ the pull request, not a
    footnote in it. Each invariant names the test that proves it, and those tests are expected to
    be updated alongside.
 
 ## Layout rules
 
-| Rule | Why |
-|---|---|
-| A Rust crate may only depend on lower-ranked crates, and only hosts may depend on Tauri. | Keeps the operations callable from a command line or an agent interface later. `scripts/tests/architecture.test.mjs` enforces it; rank a new crate deliberately. |
-| The interface imports the backend only through `src/lib/backend/api.ts`. | One place to add a second transport. `scripts/tests/frontendBoundary.test.mjs` enforces it. |
-| Anything both languages must agree on goes into `descriptors/`, never into two hand-written lists. | `pnpm check:descriptors` fails when the generated files are stale. |
-| Domain code and tests live in domain folders, not at the root of `src/lib/`. | With a few hundred files, "where does this belong" stops being obvious. |
-| No file is copied from another project without its licence being compatible and its attribution recorded. | This project is an independent implementation; a copy-paste can silently change that. |
+| Rule                                                                                                      | Why                                                                                                                                                              |
+| --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A Rust crate may only depend on lower-ranked crates, and only hosts may depend on Tauri.                  | Keeps the operations callable from a command line or an agent interface later. `scripts/tests/architecture.test.mjs` enforces it; rank a new crate deliberately. |
+| The interface imports the backend only through `src/lib/backend/api.ts`.                                  | One place to add a second transport. `scripts/tests/frontendBoundary.test.mjs` enforces it.                                                                      |
+| Anything both languages must agree on goes into `descriptors/`, never into two hand-written lists.        | `pnpm check:descriptors` fails when the generated files are stale.                                                                                               |
+| Domain code and tests live in domain folders, not at the root of `src/lib/`.                              | With a few hundred files, "where does this belong" stops being obvious.                                                                                          |
+| No file is copied from another project without its licence being compatible and its attribution recorded. | This project is an independent implementation; a copy-paste can silently change that.                                                                            |
 
 ## Commits and branches
 
@@ -53,7 +58,7 @@ chore(ci): cache the Rust build
 Scopes in use: `vault`, `ssh`, `sftp`, `terminal`, `sessions`, `policy`, `types`, `error`,
 `descriptors`, `ui`, `i18n`, `scripts`, `ci`, `docs`. Branch names: `feat/…`, `fix/…`, `docs/…`.
 
-Explain *why* in the body when the change is not obvious. The commit that says what changed is
+Explain _why_ in the body when the change is not obvious. The commit that says what changed is
 useful; the one that says why is the one people read in two years.
 
 ## Adding a dependency

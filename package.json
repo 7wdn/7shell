@@ -2,16 +2,12 @@
   "name": "sevenshell",
   "version": "0.3.0",
   "private": true,
+  "description": "7Shell - an open-source SSH and operations console.",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "7Shell - an open-source SSH and operations console.",
-  "engines": {
-    "node": ">=22.13.0"
-  },
-  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "vite --config apps/desktop/vite.config.ts",
-    "dev:tauri": "tauri dev",
+    "dev:tauri": "node scripts/dev-app.mjs",
     "build": "vite build --config apps/desktop/vite.config.ts",
     "preview": "vite preview --config apps/desktop/vite.config.ts",
     "docs:dev": "vitepress dev docs",
@@ -81,5 +77,9 @@
   "lint-staged": {
     "apps/desktop/src/**/*.{ts,vue}": "oxfmt --no-error-on-unmatched-pattern",
     "scripts/**/*.mjs": "oxfmt --no-error-on-unmatched-pattern"
-  }
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "packageManager": "pnpm@11.9.0"
 }
