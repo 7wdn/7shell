@@ -112,34 +112,57 @@ pub async fn snapshot(vm_id: &str, action: &SnapshotAction) -> Result<String, Sh
     let vmcli = Vmcli::beside(vmrun.program()).or_else(Vmcli::locate).ok_or_else(|| {
         ShellError::vmware_unavailable("the vmcli command was not found; snapshot operations need it")
     })?;
-    let args = snapshot_args(&path, action);
+    let args = match action {
+        SnapshotAction::List => vec![path.clone(), "Snapshot".to_owned(), "query".to_owned()],
+        SnapshotAction::Take(name) => vec![path.clone(), "Snapshot".to_owned(), "Take".to_owned(), name.clone()],
+        SnapshotAction::Revert(name) => {
+            let uid = snapshot_uid(&vmcli, &path, name).await?;
+            vec![path.clone(), "Snapshot".to_owned(), "Revert".to_owned(), uid]
+        }
+        SnapshotAction::Delete { name, delete_children } => {
+            let uid = snapshot_uid(&vmcli, &path, name).await?;
+            let mut args = vec![path.clone(), "Snapshot".to_owned(), "Delete".to_owned()];
+            if *delete_children {
+                args.push("-d".to_owned());
+            }
+            args.push(uid);
+            args
+        }
+    };
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     vmcli.run("snapshot", &refs, SNAPSHOT_TIMEOUT).await
 }
 
-fn snapshot_args(path: &str, action: &SnapshotAction) -> Vec<String> {
-    let base = |command: &str| vec![path.to_owned(), "Snapshot".to_owned(), command.to_owned()];
-    match action {
-        SnapshotAction::List => base("query"),
-        SnapshotAction::Take(name) => {
-            let mut args = base("Take");
-            args.extend(["-n".to_owned(), name.clone()]);
-            args
+/// The uid `vmcli` names a snapshot by, found in the query it prints.
+///
+/// The display name is what a person sees and what the tools take; the uid is what revert, delete
+/// and clone insist on. The query lists each snapshot as `displayName` followed by `uid`.
+async fn snapshot_uid(vmcli: &Vmcli, path: &str, name: &str) -> Result<String, ShellError> {
+    let output = vmcli
+        .run("snapshot", &[path, "Snapshot", "query"], SNAPSHOT_TIMEOUT)
+        .await?;
+    parse_snapshot_uid(&output, name).ok_or_else(|| {
+        ShellError::vmware_command_failed("snapshot", format!("no snapshot named `{name}` is on this machine"))
+    })
+}
+
+/// The uid of one snapshot, by display name.
+fn parse_snapshot_uid(output: &str, name: &str) -> Option<String> {
+    let mut current: Option<String> = None;
+    for line in output.lines() {
+        let line = line.trim().trim_start_matches('-').trim();
+        if let Some(value) = line.strip_prefix("displayName:") {
+            current = Some(value.trim().trim_matches('"').to_owned());
+            continue;
         }
-        SnapshotAction::Revert(name) => {
-            let mut args = base("Revert");
-            args.extend(["-n".to_owned(), name.clone()]);
-            args
-        }
-        SnapshotAction::Delete { name, delete_children } => {
-            let mut args = base("Delete");
-            args.extend(["-n".to_owned(), name.clone()]);
-            if *delete_children {
-                args.push("--andDeleteChildren".to_owned());
+        if let Some(value) = line.strip_prefix("uid:") {
+            let uid = value.trim();
+            if current.as_deref() == Some(name) && !uid.is_empty() {
+                return Some(uid.to_owned());
             }
-            args
         }
     }
+    None
 }
 
 /// One guest operation on one machine, signed in with the session's guest account.
@@ -257,23 +280,11 @@ mod tests {
     }
 
     #[test]
-    fn a_snapshot_argument_vector_names_the_machine_and_the_snapshot() {
-        let path = "e:\\vms\\a.vmx";
-        assert_eq!(snapshot_args(path, &SnapshotAction::List), [path, "Snapshot", "query"]);
-        assert_eq!(
-            snapshot_args(path, &SnapshotAction::Take("before upgrade".to_owned())),
-            [path, "Snapshot", "Take", "-n", "before upgrade"]
-        );
-        assert_eq!(
-            snapshot_args(
-                path,
-                &SnapshotAction::Delete {
-                    name: "old".to_owned(),
-                    delete_children: true
-                }
-            ),
-            [path, "Snapshot", "Delete", "-n", "old", "--andDeleteChildren"]
-        );
+    fn a_snapshot_uid_is_found_by_its_display_name() {
+        let output = "currentUID: 1\nhelperUID: 0\nsnapshots: \n  - displayName: live\n    parentUID: 0\n    uid: 1\n  - displayName: older\n    parentUID: 0\n    uid: 2\n";
+        assert_eq!(parse_snapshot_uid(output, "live").as_deref(), Some("1"));
+        assert_eq!(parse_snapshot_uid(output, "older").as_deref(), Some("2"));
+        assert_eq!(parse_snapshot_uid(output, "missing"), None);
     }
 
     #[test]

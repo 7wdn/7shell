@@ -236,7 +236,7 @@ fn power_args(action: VmPowerAction, path: &str) -> Vec<&str> {
         VmPowerAction::Start => vec!["-T", "ws", "start", path, "gui"],
         VmPowerAction::Stop => vec!["-T", "ws", "stop", path, "soft"],
         VmPowerAction::Suspend => vec!["-T", "ws", "suspend", path, "soft"],
-        VmPowerAction::Reset => vec!["-T", "ws", "reset", path, "soft"],
+        VmPowerAction::Reset => vec!["-T", "ws", "reset", path, "hard"],
         VmPowerAction::Pause => vec!["-T", "ws", "pause", path],
         VmPowerAction::Unpause => vec!["-T", "ws", "unpause", path],
     }

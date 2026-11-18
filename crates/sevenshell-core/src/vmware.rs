@@ -182,6 +182,9 @@ impl Core {
         };
         let folder = self.host_location_path(token, HostLocationKind::Folder)?;
         let destination = folder.join(&name).join(format!("{name}.vmx"));
+        // `vmrun clone` writes the document at the path it is given but not the folder above it.
+        std::fs::create_dir_all(destination.parent().expect("the clone has a folder"))
+            .map_err(|error| ShellError::store_io(format!("the clone folder could not be created: {error}")))?;
         let vm_id = self.vmware_session_vm_id(session_id)?;
         sevenshell_vmware::clone(&vm_id, &host_path(&destination), clone_type, snapshot).await
     }
@@ -254,6 +257,10 @@ impl Core {
         let name = safe_component(name, "snapshot-clone")?;
         let folder = self.host_location_path(token, HostLocationKind::Folder)?;
         let destination = folder.join(&name).join(format!("{name}.vmx"));
+        // `vmcli Snapshot Clone` answers "Could not find the file" when the folder above the
+        // destination is missing; it creates the document, not the directory.
+        std::fs::create_dir_all(destination.parent().expect("the clone has a folder"))
+            .map_err(|error| ShellError::store_io(format!("the clone folder could not be created: {error}")))?;
         let vm_id = self.vmware_session_vm_id(session_id)?;
         sevenshell_vmware::snapshot_clone(&vm_id, uid, &host_path(&destination), &name, linked).await
     }
