@@ -97,15 +97,22 @@ pub async fn clone(
 }
 
 /// Captures the machine's screen into a file the core built from a folder token and a name.
+///
+/// The console capture lives in `vmcli`'s MKS module; `vmrun captureScreen` is routed through the
+/// guest-operations API and refuses a machine nobody is signed in to, which is exactly the
+/// powered-off or unbootable machine a screenshot is most useful for.
 pub async fn screenshot(vm_id: &str, output_path: &str) -> Result<String, ShellError> {
     let vm_id = checked_id(vm_id, "screenshot")?;
     let vmrun = Vmrun::locate()?;
     let (path, _) = resolve(&vmrun, &vm_id, "screenshot").await?;
-    vmrun
-        .run_within(
-            OPERATION_TIMEOUT,
+    let vmcli = Vmcli::beside(vmrun.program())
+        .or_else(Vmcli::locate)
+        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+    vmcli
+        .run(
             "screenshot",
-            &["-T", "ws", "captureScreen", &path, output_path],
+            &[path.as_str(), "MKS", "captureScreenshot", output_path],
+            OPERATION_TIMEOUT,
         )
         .await
 }

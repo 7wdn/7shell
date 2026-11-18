@@ -293,7 +293,7 @@ pub fn vm_snapshot_change_descriptor() -> ToolDescriptor {
                     "type": "boolean",
                     "description": "For delete: remove the snapshots taken under this one too."
                 },
-                "uid": string("For clone: the snapshot uid that sshell_vm_snapshots printed."),
+                "uid": string("For clone: the snapshot uid that sshell_vm_snapshots printed. The machine must be powered off."),
                 "token": string("For clone: a folder token from sshell_host_locations_list; the clone lands in a subfolder named after `name`."),
                 "linked": { "type": "boolean", "description": "For clone: create a linked clone." }
             }),

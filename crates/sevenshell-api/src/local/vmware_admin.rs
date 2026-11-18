@@ -457,7 +457,7 @@ pub fn vm_image_descriptor() -> ToolDescriptor {
                     &["delete", "upgrade", "clone", "templateCreate", "templateDeploy"]
                 ),
                 "token": string("For clone and templateCreate: a folder token from sshell_host_locations_list. For templateDeploy: a file token naming the .vmtx."),
-                "name": string("For clone: the new machine's name. For templateCreate: the template's name, which also names its .vmtx."),
+                "name": string("For clone: the new machine's name. For templateCreate: the template's name, which also names its .vmtx; the machine must be powered off."),
                 "cloneType": string("For clone: `full` or `linked`. Defaults to `linked`."),
                 "snapshot": string("For clone: clone from this snapshot instead of the current state.")
             }),
