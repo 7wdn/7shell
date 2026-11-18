@@ -1,9 +1,8 @@
 # Release process
 
-**Nothing has been released yet.** This is the process the first release will follow, written down
-before it is needed so the first one is boring. Everything below is what the workflows and scripts
-actually do; a step described here that no file implements is a bug in this document, not an
-aspiration.
+`v0.1.0` and `v0.2.0` have gone out with this process. Everything below is what the workflows and
+scripts actually do; a step described here that no file implements is a bug in this document, not
+an aspiration.
 
 ## Version lines
 
@@ -44,16 +43,19 @@ update channel follows the promotion — installed builds are never offered a ca
 1. Tag `v<version>` on the commit that bumped the version, and push the tag. That is the whole
    trigger: `.github/workflows/release.yml` refuses to build when the tag, `version.json` and the
    changelog disagree, so the three cannot drift apart unnoticed.
-2. Six builds run in parallel — Windows x64 and ARM64 (MSI and NSIS), macOS on Apple silicon and
-   Intel, Linux x64 and ARM64 (AppImage, deb, rpm) — each on the runner for the platform it
-   produces. The two Windows legs also make a portable ZIP and a WebView2-offline NSIS installer.
-3. The release job hashes every installer, writes the update manifest, writes the package manager
-   manifests, and attaches everything to a **draft** release. Nothing is on the releases page while
-   that is happening, so nobody opens a release that is still being filled.
+2. Six desktop builds run in parallel — Windows x64 and ARM64 (MSI and NSIS), macOS on Apple
+   silicon and Intel, Linux x64 and ARM64 (AppImage, deb, rpm) — each on the runner for the platform
+   it produces. The two Windows legs also make a portable ZIP and a WebView2-offline NSIS installer.
+   A separate job builds the browser edition for amd64 and arm64 in the Debian 10 image its glibc
+   2.28 baseline requires.
+3. The release job hashes every file, writes the update manifest when the signing key is present,
+   writes the package manager manifests, and attaches the installers, the two browser archives and
+   the manifests to a **draft** release. Nothing is on the releases page while that is happening, so
+   nobody opens a release that is still being filled.
 4. When everything is attached, the draft is published **as a prerelease** — the candidate. Its notes
    and its files are the real thing; what it is not is what installed builds are offered.
 5. **Promoting** it is the other half: `workflow_dispatch` on the Release workflow with the tag and
-   `promote` set, or by hand — `gh release edit v0.1.0 --prerelease=false --latest`. That is the moment
+   `promote` set, or by hand — `gh release edit v<version> --prerelease=false --latest`. That is the moment
    the update channel starts offering it, and it is a decision rather than a build step: a channel that
    offered candidates would make users the ones who find out that a build was not ready. A release
    whose build carried no signed update manifest cannot fill the channel, and the step says so rather
@@ -76,14 +78,14 @@ an archive has no signature beside it, when two platform files disagree about th
 archive has a name it cannot place. The application verifies the signature of everything it downloads
 against the public key committed in `src-tauri/tauri.conf.json` before installing it.
 
-Two things worth knowing before the first release:
+Two things worth knowing before a release:
 
 - **Without the signing key a release has no update manifest at all.** The workflow says so in its
   summary and publishes installers only; the promotion step then leaves the channel as it was, because
   a manifest pointing at files nobody signed would be worse than none.
-- **The channel has never delivered an update until it has.** It needs two versions: install one, and
-  it should be offered the next. Until that has happened, the manifest's shape is covered by tests and
-  its behaviour is not.
+- **A delivery becomes evidence only when it happens.** `v0.2.0` is in the channel, so this release is
+  the first chance to watch one: install 0.2.0, promote the new version, and it should be offered.
+  The manifest's shape is covered by tests; the delivery itself is not until somebody sees it.
 
 ## Signing and secrets
 

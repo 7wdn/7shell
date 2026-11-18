@@ -4,6 +4,80 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-18
+
+The virtual-machine release. VMware Workstation machines on this computer are part of the library
+now: imported with their UUID as identity, shown with their real power state, and driven from the
+same workspace and the same agent tools as everything else. The session list also learned to
+interleave groups and sessions, and a directory with thousands of entries can be narrowed by name.
+
+### Added
+
+#### Virtual machines
+
+- Scan the Workstation inventory and import machines as sessions, into a chosen group or a new one.
+  A machine keeps its UUID when its `.vmx` is renamed or moved.
+- Running, suspended and stopped are drawn apart, so a suspended machine resumes instead of
+  booting. The workspace starts, resumes, stops and suspends; the power tool adds reset, pause and
+  unpause. A lock left by a machine that is not running can be taken over after confirmation.
+- SSH, or RDP on Windows, opens from the machine entry. The guest account and password are the
+  session's own vault slot.
+- Snapshots can be listed, taken, gone back to and deleted; one can be cloned, linked or full, into
+  a folder chosen through a host token. `.vmtx` templates are created and deployed the same way.
+- Through VMware Tools: list and check paths, copy files both ways, run programs and scripts,
+  create, rename and remove, list processes, read the environment, kill a process, and install or
+  upgrade Tools.
+- Configuration covers CPU, memory and cores, disks to create or extend, network and serial
+  adapters, SATA and NVMe controllers, shared folders, VProbes (enable, load, reset), configuration
+  entries, device connection and runtime variables.
+- On the host: virtual networks and port forwards, console screenshots, key sequences that need no
+  guest account, and the Workstation REST service for machine reads, MAC-to-IP maps and network
+  creation.
+- Host locations are opaque tokens whose paths stay in the vault; imported machines are reached by
+  session id. The vault schema is now 13.
+
+#### Agent tools
+
+- 17 built-in VMware tools cover inventory, status and power, snapshots and clones, guest reads and
+  writes, console keys, configuration, host networking, templates and images, screenshots and the
+  REST reads. Destructive calls stop for the same approval and are written to the same audit log as
+  every other tool.
+
+#### Files
+
+- The open directory can be filtered by name: `Ctrl+F` or the search button turns the address bar
+  into a field, matching files and folders without case; Enter hands the keyboard to the results,
+  Escape puts the whole directory back, and walking into another directory drops the filter.
+
+#### Sessions
+
+- Groups and sessions now share one order. A dragged row lands beside the row it was released on, a
+  group can sit between two sessions, pinned groups keep their band, and existing vaults are
+  numbered the way they were already drawn.
+
+### Fixed
+
+- Workstation 26H1 installs under 64-bit `Program Files`; that folder is asked before the legacy
+  one, a registry entry only counts when the binary is really there, and a missing module command
+  names `VMCLI_PATH`.
+- Guest operations read the password from the session's vault slot rather than the global one, which
+  made an unlocked vault answer `VAULT-LOCKED`.
+- Snapshot revert and delete resolve the uid the query prints (`-d` for children), a clone creates
+  its destination folder, and reset is hard so it works before Tools answers.
+- Console capture uses `vmcli MKS`, which works before a guest has Tools or an account.
+- The Workstation REST service no longer returns `.vmx` paths in its answers.
+
+### Notes
+
+- The vault is at schema 13. A 0.2.0 build refuses a vault written by 0.3.0; downgrading means
+  restoring a backup.
+- The installers are not code-signed and the macOS build is not notarized. Windows SmartScreen and
+  macOS Gatekeeper will warn; check the SHA-256 in the release notes.
+- The browser edition is attached to the same release for amd64 and arm64 as `*-web.tar.gz`, built
+  against the glibc 2.28 baseline. It is not part of the desktop installers.
+- Signed update archives and `latest.json` are attached when the signing key is configured. The
+  update channel changes only when the release is promoted.
+
 ## [0.2.0] - 2026-11-17
 
 The browser-host release. The interface now runs in a normal browser from a loopback host, so
