@@ -334,6 +334,18 @@ jobs:
             } else {
               pnpm tauri signer sign $zip
             }
+
+            # This platform's manifest entry is rebuilt over the directory as it will be published:
+            # the portable archive did not exist when the first pass ran, and a manifest that cannot
+            # name it is a portable update nobody is offered. Reading the release directory rather
+            # than the bundler's tree also keeps the offline installer, which replaced the normal
+            # one there, out of the entry.
+            node scripts/update-manifest.mjs platform `
+              --bundle release-artifacts `
+              --platform "${{ matrix.platform }}" `
+              --tag "${{ inputs.tag || github.ref_name }}" `
+              --repository "${{ github.repository }}" `
+              --out "release-artifacts/updater-${{ matrix.platform }}.json"
           }
 
           ls -l release-artifacts

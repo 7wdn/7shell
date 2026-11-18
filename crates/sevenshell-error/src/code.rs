@@ -212,6 +212,8 @@ error_catalog! {
     UpdateInstallFailed => "UPDATE-INSTALL-FAILED", "errors.update.installFailed";
     #[doc = "The page a release is published on could not be opened."]
     UpdateReleasePageFailed => "UPDATE-RELEASE-PAGE-FAILED", "errors.update.releasePageFailed";
+    #[doc = "A portable copy checked for updates and the release names no archive it could unpack."]
+    UpdatePortableUnavailable => "UPDATE-PORTABLE-UNAVAILABLE", "errors.update.portableUnavailable";
 
     // -- Containers --------------------------------------------------------
     #[doc = "The container runtime could not be reached, or its command line is not installed."]

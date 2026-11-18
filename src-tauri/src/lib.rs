@@ -16,6 +16,7 @@ mod policy;
 mod reveal;
 mod state;
 mod tray;
+mod update_portable;
 mod uploads;
 mod window_chrome;
 
@@ -57,6 +58,11 @@ pub fn run() {
         // ours — a permission the interface does not have is a path nobody can forget to audit.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // A portable copy that updated itself left the copy it replaced beside it: the old
+            // process still had that file open while the new one was written, and only a later
+            // start can remove it. Nothing to do in any other copy.
+            crate::update_portable::clean_leftovers();
+
             window_chrome::prepare_main_window(app.handle());
             window_chrome::silence_browser_keys(app.handle());
             apply_startup_window_theme(app.handle());

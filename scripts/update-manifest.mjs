@@ -59,6 +59,10 @@ const INSTALLERS = [
   { installer: "appimage", suffix: ".AppImage" },
   { installer: "nsis", suffix: "-setup.exe" },
   { installer: "msi", suffix: ".msi" },
+  // The zip a portable copy replaces itself with: it extracts over its own folder rather than
+  // running an installer, because that copy has no installation to update. Signed like every other
+  // archive here, so the host can hold it to the same key.
+  { installer: "portable", suffix: "-portable.zip" },
 ];
 
 /**
@@ -78,9 +82,10 @@ const NOT_AN_UPDATE = [".deb", ".rpm"];
  * The plugin looks for `{os}-{arch}-{installer}` first and falls back to `{os}-{arch}`, and the
  * fallback is what a build whose installer kind cannot be detected reads. NSIS is the installer
  * Tauri recommends for updates and the one the release attaches for people who have no preference,
- * so it is what the plain key has to name.
+ * so it is what the plain key has to name. The portable archive only ever sits under its own key:
+ * an installed build cannot use it, and a portable copy asks for that key by name.
  */
-const PREFERRED = ["nsis", "msi", "appimage", "app"];
+const PREFERRED = ["nsis", "msi", "portable", "appimage", "app"];
 
 export class ManifestError extends Error {}
 

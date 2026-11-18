@@ -65,6 +65,36 @@ test("a Windows build publishes both installers, and the plain key names the rec
   assert.equal(keys["windows-x86_64-msi"].signature, "msi-signature");
 });
 
+test("the portable archive gets its own key and never becomes the plain one", async () => {
+  const root = await bundle();
+  await writeArtifact(path.join(root, "nsis"), "7Shell_0.3.0_x64-setup.exe", "nsis-signature");
+  await writeArtifact(path.join(root, "msi"), "7Shell_0.3.0_x64_en-US.msi", "msi-signature");
+  // Signed by the same key as the installers: a portable copy downloads it by name and replaces
+  // itself with it, and nothing on the installed side may be handed an archive it cannot run.
+  await writeArtifact(path.join(root, "portable"), "7Shell_0.3.0_x64-portable.zip", "portable-signature");
+
+  const entry = await platformEntries({
+    bundleDir: root,
+    platform: "windows-x86_64",
+    tag: TAG,
+    repository: "7wdn/7shell",
+  });
+  const keys = manifestKeys(entry);
+
+  assert.deepEqual(Object.keys(keys).sort(), [
+    "windows-x86_64",
+    "windows-x86_64-msi",
+    "windows-x86_64-nsis",
+    "windows-x86_64-portable",
+  ]);
+  assert.equal(keys["windows-x86_64-portable"].signature, "portable-signature");
+  assert.equal(
+    keys["windows-x86_64"].url.endsWith("-setup.exe"),
+    true,
+    "an installed build must keep being offered the installer, not the portable archive",
+  );
+});
+
 test("an installer with no signature beside it is not published", async () => {
   const root = await bundle();
   // A build with no signing key writes the installers and nothing else: a release people can download

@@ -810,6 +810,15 @@ impl ShellError {
             .with_detail(detail)
     }
 
+    /// A portable copy found a newer release but the manifest names no archive for it.
+    ///
+    /// Not an install failure: nothing was downloaded. The answer is to take the new archive from
+    /// the release page by hand, which is what the message for this code says.
+    pub fn update_portable_unavailable() -> Self {
+        Self::new(ErrorCode::UpdatePortableUnavailable, Origin::new(Subsystem::App))
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     // -- Application -------------------------------------------------------
 
     pub fn app_not_ready() -> Self {

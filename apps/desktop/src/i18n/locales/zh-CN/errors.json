@@ -104,7 +104,8 @@
       "checkFailed": "无法读取更新通道，可能有新版本但没有被发现。",
       "notAvailable": "没有已检查、待安装的更新。",
       "installFailed": "无法安装这次更新。",
-      "releasePageFailed": "无法打开这次版本的发布页面。"
+      "releasePageFailed": "无法打开这次版本的发布页面。",
+      "portableUnavailable": "这次发布没有附带便携版压缩包，便携版因此无法自动替换。请到发布页面下载新的便携版压缩包，解压覆盖当前目录（data 目录不要动）。"
     },
     "container": {
       "unavailable": "找不到 {runtime} 命令，或容器引擎没有运行。",

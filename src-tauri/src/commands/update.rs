@@ -28,17 +28,39 @@ pub struct PendingUpdate {
     /// across an `await` is a guard this command cannot hold at all, and what the download needs is
     /// the release's name and address rather than the only copy of it.
     slot: Mutex<Option<Arc<Update>>>,
+    /// The archive a portable copy replaces itself with. Only a portable copy ever takes this:
+    /// an installed build cannot unpack an archive over itself and is offered its installer.
+    portable: Mutex<Option<crate::update_portable::PortableSource>>,
     /// The release downloaded and not yet installed, and the version it belongs to.
     ///
     /// Kept by version because the two steps are separate now: a check that finds something newer
     /// while an archive is waiting must not have that archive installed under the new version's name.
-    downloaded: Mutex<Option<(String, Vec<u8>)>>,
+    downloaded: Mutex<Option<Downloaded>>,
+}
+
+/// Bytes downloaded for a version, and which kind of archive they are.
+pub(crate) struct Downloaded {
+    version: String,
+    bytes: Vec<u8>,
+    /// Whether these bytes are the portable archive rather than an installer. The installer is
+    /// handed to the updater to run; the archive is unpacked over this copy.
+    portable: bool,
 }
 
 impl PendingUpdate {
     /// Remembers the release a check found, replacing any earlier one.
-    pub fn remember(&self, update: Update) {
+    pub fn remember(&self, update: Update, portable: Option<crate::update_portable::PortableSource>) {
         *self.lock() = Some(Arc::new(update));
+        self.set_portable(portable);
+    }
+
+    fn set_portable(&self, portable: Option<crate::update_portable::PortableSource>) {
+        *self.lock_portable() = portable;
+    }
+
+    /// The portable archive the manifest named, when this copy is portable.
+    pub fn peek_portable(&self) -> Option<crate::update_portable::PortableSource> {
+        self.lock_portable().clone()
     }
 
     /// Takes the release to install. Taking rather than borrowing, because installing consumes it:
@@ -57,25 +79,37 @@ impl PendingUpdate {
     /// since withdrawn is not installable from a stale answer.
     pub fn clear(&self) {
         *self.lock() = None;
+        self.set_portable(None);
         *self.downloaded.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 
     /// Remembers an archive downloaded for a version.
-    pub fn remember_download(&self, version: String, bytes: Vec<u8>) {
-        *self.downloaded.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((version, bytes));
+    pub fn remember_download(&self, version: String, bytes: Vec<u8>, portable: bool) {
+        *self.downloaded.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Downloaded {
+            version,
+            bytes,
+            portable,
+        });
     }
 
     /// Takes the archive downloaded for *this* version, if there is one.
-    pub fn take_download(&self, version: &str) -> Option<Vec<u8>> {
+    pub fn take_download(&self, version: &str) -> Option<Downloaded> {
         let mut slot = self.downloaded.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         match slot.as_ref() {
-            Some((downloaded, _)) if downloaded == version => slot.take().map(|(_, bytes)| bytes),
+            Some(downloaded) if downloaded.version == version => slot.take(),
             _ => None,
         }
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Arc<Update>>> {
         match self.slot.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    fn lock_portable(&self) -> std::sync::MutexGuard<'_, Option<crate::update_portable::PortableSource>> {
+        match self.portable.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),
         }
@@ -111,7 +145,24 @@ pub async fn update_check(app: AppHandle, state: State<'_, ShellState>) -> Resul
                 published_at: update.date.map(|date| date.unix_timestamp()),
             };
             log::info!("the update channel offers {} over {}", release.version, current_version);
-            state.pending_update().remember(update);
+
+            // A portable copy updates from its own archive; an installed one never looks at it.
+            // The manifest entry is read here rather than at install time so the download and the
+            // check name the same release — the slot below is what keeps them from drifting apart.
+            let portable = if crate::update_portable::this_copy_is_portable() {
+                let source = crate::update_portable::portable_source(&update);
+                if source.is_none() {
+                    log::warn!(
+                        "the release {} names no portable archive for this platform",
+                        release.version
+                    );
+                }
+                source
+            } else {
+                None
+            };
+
+            state.pending_update().remember(update, portable);
             Ok(UpdateCheck::Available {
                 current_version,
                 release,
@@ -140,9 +191,35 @@ pub async fn update_download(app: AppHandle, state: State<'_, ShellState>) -> Re
     };
     let version = update.version.clone();
 
+    // A portable copy must never be handed the installer: it has no installation for one to
+    // replace, and running it would put a second copy somewhere else instead of updating this one.
+    let (bytes, portable) = if crate::update_portable::this_copy_is_portable() {
+        let Some(source) = state.pending_update().peek_portable() else {
+            return Err(ShellError::update_portable_unavailable());
+        };
+        let archive = crate::update_portable::archive_for(&update, &source);
+        (download(&app, &archive).await?, true)
+    } else {
+        (download(&app, &update).await?, false)
+    };
+
+    log::info!(
+        "the update {} was downloaded ({} bytes) and waits to be installed",
+        version,
+        bytes.len()
+    );
+    state.pending_update().remember_download(version, bytes, portable);
+    Ok(())
+}
+
+/// Downloads whatever `update` points at, announcing progress while it runs.
+///
+/// The address and the signature are the only things a portable copy changes: the release is the
+/// same, and so is the key its bytes are checked against.
+async fn download(app: &AppHandle, update: &Update) -> Result<Vec<u8>, ShellError> {
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
-    let bytes = update
+    update
         .download(
             move |chunk, total| {
                 downloaded += chunk as u64;
@@ -154,15 +231,7 @@ pub async fn update_download(app: AppHandle, state: State<'_, ShellState>) -> Re
         .map_err(|error| {
             log::warn!("the update could not be downloaded: {error}");
             ShellError::update_install_failed(error.to_string())
-        })?;
-
-    log::info!(
-        "the update {} was downloaded ({} bytes) and waits to be installed",
-        version,
-        bytes.len()
-    );
-    state.pending_update().remember_download(version, bytes);
-    Ok(())
+        })
 }
 
 /// Installs the release a check found, downloading it first when nobody has.
@@ -181,10 +250,14 @@ pub async fn update_install(app: AppHandle, state: State<'_, ShellState>) -> Res
 
     let waiting = state.pending_update().take_download(&update.version);
 
-    if let Some(bytes) = waiting {
-        log::info!("the downloaded update {} is being installed", update.version);
+    if let Some(downloaded) = waiting {
         let _ = app.emit(PROGRESS_EVENT, UpdateProgress::Installing);
-        return match update.install(bytes) {
+        if downloaded.portable {
+            log::info!("the downloaded portable archive {} is being unpacked", update.version);
+            return install_portable(&app, &downloaded.bytes, &update.version);
+        }
+        log::info!("the downloaded update {} is being installed", update.version);
+        return match update.install(downloaded.bytes) {
             Ok(()) => {
                 log::info!("the update is installed; restarting into it");
                 app.restart()
@@ -194,6 +267,18 @@ pub async fn update_install(app: AppHandle, state: State<'_, ShellState>) -> Res
                 Err(ShellError::update_install_failed(error.to_string()))
             }
         };
+    }
+
+    // Nobody downloaded first. A portable copy fetches its own archive here and unpacks it; an
+    // installed build hands the download straight to the installer as before.
+    if crate::update_portable::this_copy_is_portable() {
+        let Some(source) = state.pending_update().peek_portable() else {
+            return Err(ShellError::update_portable_unavailable());
+        };
+        let archive = crate::update_portable::archive_for(&update, &source);
+        let bytes = download(&app, &archive).await?;
+        let _ = app.emit(PROGRESS_EVENT, UpdateProgress::Installing);
+        return install_portable(&app, &bytes, &update.version);
     }
 
     // The chunk length rather than a running total: the plugin reports each piece as it arrives, and
@@ -225,6 +310,16 @@ pub async fn update_install(app: AppHandle, state: State<'_, ShellState>) -> Res
             Err(ShellError::update_install_failed(error.to_string()))
         }
     }
+}
+
+/// Unpacks the portable archive over this copy and restarts into it.
+///
+/// The restart is the same call an installer update ends with: the executable at the path this
+/// process started from is the new one by now, so restarting runs the new version.
+fn install_portable(app: &AppHandle, archive: &[u8], version: &str) -> Result<(), ShellError> {
+    crate::update_portable::install(archive)?;
+    log::info!("the portable copy was replaced with {version}; restarting into it");
+    app.restart()
 }
 
 /// Opens the page this release is published on, in whatever the system uses for the web.

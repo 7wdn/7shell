@@ -5315,10 +5315,12 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower",
+ "url",
  "uuid",
  "webview2-com",
  "windows-core",
  "winreg 0.55.0",
+ "zip",
 ]
 
 [[package]]
@@ -8005,6 +8007,7 @@ checksum = "953a376f4930ed5af88e1e65948385f76866b45e7f75b21ac275327d0eeb9b46"
 dependencies = [
  "constant_time_eq",
  "crc32fast",
+ "flate2",
  "getrandom 0.4.3",
  "indexmap 2.14.2",
  "libc",

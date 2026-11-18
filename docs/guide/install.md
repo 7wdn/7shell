@@ -22,6 +22,18 @@ stable channel once it has been used, and the
 If no build is on the releases page for your platform, the way to run the application is
 [to build it from source](#build-from-source).
 
+### The portable copy
+
+The Windows release also carries a `-portable.zip`. Unpack it anywhere and run `7Shell.exe`: the
+vault, settings and MCP bridge stay in the `data` folder beside the executable, and no installer
+runs. Move the folder whenever you like — take `data` with it.
+
+A portable copy updates itself in place: the built-in update downloads the next release's portable
+archive, checks its signature, and replaces the executable beside `data`; the folder, the vault and
+the settings are not touched, and the shortcut keeps working. This applies to portable copies from
+the release that introduced it onward. A portable copy from an earlier release cannot replace
+itself: unpack the new archive over it once, keeping the `data` folder.
+
 ### The operating system will warn, and that is expected
 
 The installers are **not code-signed**, and the macOS build is **not notarized**. Both are the

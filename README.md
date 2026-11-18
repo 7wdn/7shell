@@ -115,7 +115,7 @@ The workspace lists this computer's Workstation machines, shows their state and 
 
 Installers are published on [GitHub Releases](https://github.com/7wdn/7shell/releases).
 
-- **Windows** — `.exe` (NSIS) or `.msi`, plus a `-portable.zip` that keeps its vault and settings in a `data` folder beside the executable, and an `-offline-setup.exe` that carries the WebView2 runtime.
+- **Windows** — `.exe` (NSIS) or `.msi`, plus a `-portable.zip` that keeps its vault and settings in a `data` folder beside the executable and updates itself in place, and an `-offline-setup.exe` that carries the WebView2 runtime.
 - **macOS** — `.dmg` for Apple silicon or Intel.
 - **Linux** — `.AppImage`, `.deb` or `.rpm`.
 

@@ -130,6 +130,13 @@ bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # A WebDAV listing carries date strings, not timestamps; the browser column wants a time.
 httpdate = "1"
+# The address an update archive is downloaded from. The updater already stores it as this type, and
+# a portable copy rewrites it to the archive it replaces itself with.
+url = "2"
+# Unpacking the portable update archive: a handful of top-level files written by PowerShell's
+# Compress-Archive, which is Deflate. Nothing else is enabled — no AES, no other codecs in every
+# build — because the archive is this project's own.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # FTP and FTPS. The async client is the same `tokio` runtime the rest of the workspace uses, and
 # `native-tls` is the same trust store `reqwest` was built with — one TLS story on each platform
 # rather than two. `no-log` is deliberate: FTP sends the password as a command, and a client that

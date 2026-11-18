@@ -113,6 +113,7 @@ export const ERROR_CATALOG = {
   "UPDATE-NOT-AVAILABLE": "errors.update.notAvailable",
   "UPDATE-INSTALL-FAILED": "errors.update.installFailed",
   "UPDATE-RELEASE-PAGE-FAILED": "errors.update.releasePageFailed",
+  "UPDATE-PORTABLE-UNAVAILABLE": "errors.update.portableUnavailable",
   // External MCP servers
   "MCP-SERVER-DUPLICATE": "errors.mcp.serverDuplicate",
   "MCP-SERVER-CONNECT-FAILED": "errors.mcp.serverConnectFailed",

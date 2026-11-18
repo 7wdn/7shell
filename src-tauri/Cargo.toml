@@ -45,6 +45,9 @@ tauri-plugin-single-instance = { workspace = true }
 tokio = { workspace = true }
 # The assistant reads the first item of a provider stream in a connection test.
 futures-util = { workspace = true }
+# A portable copy replaces itself from its release archive rather than running an installer.
+url = { workspace = true }
+zip = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
