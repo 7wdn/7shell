@@ -78,6 +78,29 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
             "sshell_vm_guest_write",
             json!({ "sessionId": "lab", "action": "toolsInstall" }),
         ),
+        (
+            "sshell_vm_config_read",
+            json!({ "sessionId": "lab", "action": "config" }),
+        ),
+        (
+            "sshell_vm_config_write",
+            json!({ "sessionId": "lab", "action": "toolsUpgrade" }),
+        ),
+        (
+            "sshell_vm_host_read",
+            json!({ "sessionId": "lab", "action": "networks" }),
+        ),
+        (
+            "sshell_vm_host_write",
+            json!({
+                "sessionId": "lab",
+                "action": "deletePortForward",
+                "network": "vmnet8",
+                "protocol": "tcp",
+                "hostPort": 2222
+            }),
+        ),
+        ("sshell_vm_image", json!({ "sessionId": "lab", "action": "delete" })),
     ]
 }
 

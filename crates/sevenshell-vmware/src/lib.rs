@@ -11,6 +11,7 @@
 //! what keeps a saved session pointing at the right machine after somebody renames or moves it.
 //! Nothing here reads or keeps a guest credential.
 
+mod config;
 mod inventory;
 mod ops;
 mod vmcli;
@@ -23,6 +24,10 @@ use std::time::Duration;
 use sevenshell_error::ShellError;
 use sevenshell_types::{VmInfo, VmPowerAction, VmStatus};
 
+pub use config::{
+    ConfigRead, ConfigWrite, HostRead, HostWrite, ImageAction, config_read, config_write, guest_env, host_read,
+    host_write, image,
+};
 pub use inventory::inventory_path;
 pub use ops::{GuestAuth, GuestOp, SnapshotAction, guest, snapshot};
 pub use vmrun::{Vmrun, parse_running};

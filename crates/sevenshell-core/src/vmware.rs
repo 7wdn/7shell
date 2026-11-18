@@ -9,7 +9,9 @@ use sevenshell_error::ShellError;
 use sevenshell_policy::PolicyTarget;
 use sevenshell_types::{PolicyAction, Protocol, RiskAssessment, VmInfo, VmPowerAction, VmStatus};
 use sevenshell_vault::SessionSecret;
-use sevenshell_vmware::{GuestAuth, GuestOp, SnapshotAction};
+use sevenshell_vmware::{
+    ConfigRead, ConfigWrite, GuestAuth, GuestOp, HostRead, HostWrite, ImageAction, SnapshotAction,
+};
 
 use crate::Core;
 
@@ -82,6 +84,43 @@ impl Core {
         let vm_id = self.vmware_session_vm_id(session_id)?;
         let auth = self.vmware_guest_auth(session_id)?;
         sevenshell_vmware::guest(&vm_id, op, &auth).await
+    }
+
+    /// One configuration module of the machine a saved session names.
+    pub async fn vmware_config_read(&self, session_id: &str, action: &ConfigRead) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::config_read(&vm_id, action).await
+    }
+
+    /// One configuration change on the machine a saved session names.
+    pub async fn vmware_config_write(&self, session_id: &str, action: &ConfigWrite) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::config_write(&vm_id, action).await
+    }
+
+    /// The host's own virtual networks, or one network's port forwards.
+    pub async fn vmware_host_read(&self, session_id: &str, action: &HostRead) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::host_read(&vm_id, action).await
+    }
+
+    /// One port-forward change on the host.
+    pub async fn vmware_host_write(&self, session_id: &str, action: &HostWrite) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::host_write(&vm_id, action).await
+    }
+
+    /// Deletes or upgrades one machine.
+    pub async fn vmware_image(&self, session_id: &str, action: ImageAction) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::image(&vm_id, action).await
+    }
+
+    /// The guest's environment, which only `vmcli` prints.
+    pub async fn vmware_guest_env(&self, session_id: &str) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        let auth = self.vmware_guest_auth(session_id)?;
+        sevenshell_vmware::guest_env(&vm_id, &auth).await
     }
 
     /// Every virtual machine this machine's Workstation can act on.

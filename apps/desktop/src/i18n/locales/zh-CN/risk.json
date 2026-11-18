@@ -45,6 +45,11 @@
       "snapshotDelete": "删除快照",
       "guestChange": "修改虚拟机内部的内容",
       "guestRemove": "删除虚拟机内部的内容",
+      "configChange": "修改虚拟机的配置",
+      "configRemove": "移除或调整虚拟机的部件",
+      "hostChange": "修改本机的虚拟网络",
+      "imageChange": "删除或升级整台虚拟机",
+      "guestInput": "向虚拟机中输入按键",
       "takeOwnership": "移除虚拟机的锁并取得所有权",
       "unknown": "当前版本不认识的虚拟机操作"
     },

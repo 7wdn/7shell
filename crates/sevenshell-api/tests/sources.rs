@@ -113,11 +113,11 @@ fn a_source_joins_the_list_and_a_built_in_tool_keeps_a_shared_name() {
     ])));
 
     let descriptors = registry.descriptors();
-    assert_eq!(descriptors.len(), 18, "seventeen built-in tools plus one new name");
+    assert_eq!(descriptors.len(), 23, "twenty-two built-in tools plus one new name");
     assert_eq!(
         registry.len(),
-        18,
-        "seventeen built-in tools plus the one new source name"
+        23,
+        "twenty-two built-in tools plus the one new source name"
     );
 
     let names: Vec<&str> = descriptors.iter().map(|descriptor| descriptor.name.as_str()).collect();
@@ -217,7 +217,7 @@ async fn a_switched_off_tool_is_not_offered_and_a_direct_call_is_refused_by_name
         .into_iter()
         .map(|descriptor| descriptor.name)
         .collect();
-    assert_eq!(names.len(), 16, "the other sixteen tools stay on the list");
+    assert_eq!(names.len(), 21, "the other twenty-one tools stay on the list");
     assert!(
         !names.iter().any(|name| name == "sshell_sessions_list"),
         "a switched-off tool must not be advertised: {names:?}"

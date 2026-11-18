@@ -45,6 +45,11 @@
       "snapshotDelete": "Deletes a snapshot",
       "guestChange": "Changes something inside a virtual machine",
       "guestRemove": "Deletes something inside a virtual machine",
+      "configChange": "Changes a virtual machine's configuration",
+      "configRemove": "Removes or resizes part of a virtual machine",
+      "hostChange": "Changes this machine's virtual network",
+      "imageChange": "Deletes or upgrades a whole virtual machine",
+      "guestInput": "Types keystrokes into a virtual machine",
       "takeOwnership": "Removes a virtual machine's lock and takes ownership of it",
       "unknown": "A virtual machine action this version does not recognise"
     },

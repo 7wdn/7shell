@@ -99,6 +99,7 @@ pub enum GuestReadAction {
     DirectoryExists,
     Processes,
     ToolsState,
+    Env,
 }
 
 impl GuestReadAction {
@@ -109,6 +110,7 @@ impl GuestReadAction {
             Self::DirectoryExists => "directory-exists",
             Self::Processes => "processes",
             Self::ToolsState => "tools-state",
+            Self::Env => "env",
         }
     }
 }
@@ -130,6 +132,9 @@ pub enum GuestWriteAction {
     Rm,
     Rename,
     Run,
+    Script,
+    Type,
+    TempFile,
     Kill,
     ToolsInstall,
 }
@@ -142,6 +147,9 @@ impl GuestWriteAction {
             Self::Rm => "rm",
             Self::Rename => "rename",
             Self::Run => "run",
+            Self::Script => "script",
+            Self::Type => "type",
+            Self::TempFile => "temp-file",
             Self::Kill => "kill",
             Self::ToolsInstall => "tools-install",
         }
@@ -165,6 +173,12 @@ pub struct VmGuestWriteInput {
     pub no_wait: bool,
     #[serde(default)]
     pub interactive: bool,
+    #[serde(default)]
+    pub interpreter: Option<String>,
+    #[serde(default)]
+    pub script: Option<String>,
+    #[serde(default)]
+    pub keystrokes: Option<String>,
     #[serde(default)]
     pub pid: Option<u64>,
 }
@@ -282,7 +296,7 @@ pub fn vm_guest_read_descriptor() -> ToolDescriptor {
                 "sessionId": session_id_property(),
                 "action": string_enum(
                     "What to read. `path` is required for ls, fileExists and directoryExists.",
-                    &["ls", "fileExists", "directoryExists", "processes", "toolsState"]
+                    &["ls", "fileExists", "directoryExists", "processes", "toolsState", "env"]
                 ),
                 "path": guest_path_property()
             }),
@@ -308,7 +322,7 @@ pub fn vm_guest_write_descriptor() -> ToolDescriptor {
                 "action": string_enum(
                     "What to do. `path` is the target for mkdir/rmdir/rm/rename; `newPath` is the \
                      new name for rename; `program` and `args` are for run; `pid` is for kill.",
-                    &["mkdir", "rmdir", "rm", "rename", "run", "kill", "toolsInstall"]
+                    &["mkdir", "rmdir", "rm", "rename", "run", "script", "type", "tempFile", "kill", "toolsInstall"]
                 ),
                 "path": guest_path_property(),
                 "newPath": string("For rename: the new path inside the guest."),
@@ -355,7 +369,7 @@ fn vm_id(context: &ToolContext, session_id: &str) -> Result<String, ToolError> {
     context.core().vmware_session_vm_id(session_id).map_err(ToolError::from)
 }
 
-fn output_result(session_id: &str, subject: Option<String>, output: String) -> ToolResult {
+pub(super) fn output_result(session_id: &str, subject: Option<String>, output: String) -> ToolResult {
     let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
     let mut audit = ToolAudit::for_session(session_id);
     if let Some(subject) = subject {
@@ -571,11 +585,14 @@ impl Tool for VmGuestReadTool {
         context.guard_session(session_id, ToolAccess::Read)?;
         let action = input.action;
         let op = match action {
-            GuestReadAction::Ls => GuestOp::ListDirectory(guest_path(input.path.as_deref(), "path")?),
-            GuestReadAction::FileExists => GuestOp::FileExists(guest_path(input.path.as_deref(), "path")?),
-            GuestReadAction::DirectoryExists => GuestOp::DirectoryExists(guest_path(input.path.as_deref(), "path")?),
-            GuestReadAction::Processes => GuestOp::Processes,
-            GuestReadAction::ToolsState => GuestOp::ToolsState,
+            GuestReadAction::Ls => Some(GuestOp::ListDirectory(guest_path(input.path.as_deref(), "path")?)),
+            GuestReadAction::FileExists => Some(GuestOp::FileExists(guest_path(input.path.as_deref(), "path")?)),
+            GuestReadAction::DirectoryExists => {
+                Some(GuestOp::DirectoryExists(guest_path(input.path.as_deref(), "path")?))
+            }
+            GuestReadAction::Processes => Some(GuestOp::Processes),
+            GuestReadAction::ToolsState => Some(GuestOp::ToolsState),
+            GuestReadAction::Env => None,
         };
         let vm_id = vm_id(context, session_id)?;
         let subject = gate::subject(&format!(
@@ -584,11 +601,11 @@ impl Tool for VmGuestReadTool {
             input.path.unwrap_or_default()
         ));
         let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
-            context
-                .core()
-                .vmware_guest(session_id, &op)
-                .await
-                .map_err(ToolError::from)
+            let result = match &op {
+                Some(op) => context.core().vmware_guest(session_id, op).await,
+                None => context.core().vmware_guest_env(session_id).await,
+            };
+            result.map_err(ToolError::from)
         })
         .await?;
         Ok(output_result(session_id, Some(subject), output))
@@ -634,6 +651,30 @@ impl Tool for VmGuestWriteTool {
                     interactive: input.interactive,
                 }
             }
+            GuestWriteAction::Script => {
+                let interpreter = input.interpreter.as_deref().unwrap_or("").trim();
+                if interpreter.is_empty() {
+                    return Err(ToolError::invalid_arguments("interpreter is required for script"));
+                }
+                let script = input.script.as_deref().unwrap_or("");
+                if script.trim().is_empty() {
+                    return Err(ToolError::invalid_arguments("script is required for script"));
+                }
+                GuestOp::RunScript {
+                    interpreter: interpreter.to_owned(),
+                    script: script.to_owned(),
+                    no_wait: input.no_wait,
+                    interactive: input.interactive,
+                }
+            }
+            GuestWriteAction::Type => {
+                let keystrokes = input.keystrokes.as_deref().unwrap_or("");
+                if keystrokes.is_empty() {
+                    return Err(ToolError::invalid_arguments("keystrokes is required for type"));
+                }
+                GuestOp::Type(keystrokes.to_owned())
+            }
+            GuestWriteAction::TempFile => GuestOp::TempFile,
             GuestWriteAction::Kill => {
                 let pid = input.pid.unwrap_or(0);
                 if pid == 0 {
@@ -651,6 +692,7 @@ impl Tool for VmGuestWriteTool {
             | GuestOp::ListDirectory(path) => format!("{} {path}", action.as_str()),
             GuestOp::Rename { from, to } => format!("rename {from} {to}"),
             GuestOp::Run { program, .. } => format!("run {program}"),
+            GuestOp::RunScript { interpreter, .. } => format!("script {interpreter}"),
             GuestOp::Kill(pid) => format!("kill {pid}"),
             _ => action.as_str().to_owned(),
         };

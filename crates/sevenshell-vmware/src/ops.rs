@@ -67,6 +67,14 @@ pub enum GuestOp {
         no_wait: bool,
         interactive: bool,
     },
+    RunScript {
+        interpreter: String,
+        script: String,
+        no_wait: bool,
+        interactive: bool,
+    },
+    Type(String),
+    TempFile,
     Processes,
     Kill(u64),
     ToolsState,
@@ -85,6 +93,9 @@ impl GuestOp {
             Self::RemoveFile(_) => "rm",
             Self::Rename { .. } => "rename",
             Self::Run { .. } => "run",
+            Self::RunScript { .. } => "script",
+            Self::Type(_) => "type",
+            Self::TempFile => "temp-file",
             Self::Processes => "processes",
             Self::Kill(_) => "kill",
             Self::ToolsState => "tools-state",
@@ -202,6 +213,27 @@ fn guest_args(path: &str, op: &GuestOp, auth: &GuestAuth) -> Vec<String> {
             args.push(program.clone());
             args.extend(program_args.iter().cloned());
         }
+        GuestOp::RunScript {
+            interpreter,
+            script,
+            no_wait,
+            interactive,
+        } => {
+            command(&mut args, "runScriptInGuest");
+            if *no_wait {
+                args.push("-noWait".to_owned());
+            }
+            if *interactive {
+                args.push("-interactive".to_owned());
+            }
+            args.push(interpreter.clone());
+            args.push(script.clone());
+        }
+        GuestOp::Type(keystrokes) => {
+            command(&mut args, "typeKeystrokesInGuest");
+            args.push(keystrokes.clone());
+        }
+        GuestOp::TempFile => command(&mut args, "CreateTempfileInGuest"),
         GuestOp::Processes => command(&mut args, "listProcessesInGuest"),
         GuestOp::Kill(pid) => {
             command(&mut args, "killProcessInGuest");

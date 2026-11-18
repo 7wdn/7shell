@@ -22,6 +22,7 @@ mod gate;
 mod k8s;
 mod sessions;
 mod vmware;
+mod vmware_admin;
 
 use std::sync::Arc;
 
@@ -59,6 +60,11 @@ pub fn register(registry: &mut ToolRegistry) -> Result<(), ApiError> {
     registry.register(Arc::new(vmware::VmSnapshotChangeTool))?;
     registry.register(Arc::new(vmware::VmGuestReadTool))?;
     registry.register(Arc::new(vmware::VmGuestWriteTool))?;
+    registry.register(Arc::new(vmware_admin::VmConfigReadTool))?;
+    registry.register(Arc::new(vmware_admin::VmConfigWriteTool))?;
+    registry.register(Arc::new(vmware_admin::VmHostReadTool))?;
+    registry.register(Arc::new(vmware_admin::VmHostWriteTool))?;
+    registry.register(Arc::new(vmware_admin::VmImageTool))?;
     Ok(())
 }
 

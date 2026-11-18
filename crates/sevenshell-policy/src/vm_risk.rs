@@ -61,6 +61,41 @@ pub fn vm_guest(action: &str) -> RiskAssessment {
     RiskAssessment::from_reasons(vec![RiskReason::new(verdict.0, verdict.1, verdict.2)])
 }
 
+/// Classifies one configuration change.
+///
+/// Resizing or creating is a change; purging an adapter or disconnecting a device takes something
+/// away from a machine that may be running, so it asks first.
+pub fn vm_config(action: &str) -> RiskAssessment {
+    let action = action.trim().to_ascii_lowercase();
+    let verdict = match action.as_str() {
+        "disk-extend" | "ethernet-purge" | "serial-purge" | "sata-purge" | "nvme-purge" | "device-disconnect" => {
+            ("vm.config-remove", "risk.vm.configRemove", RiskLevel::Destructive)
+        }
+        "query" | "read" => return RiskAssessment::safe(),
+        _ => ("vm.config-change", "risk.vm.configChange", RiskLevel::Caution),
+    };
+    RiskAssessment::from_reasons(vec![RiskReason::new(verdict.0, verdict.1, verdict.2)])
+}
+
+/// Classifies a change to this machine's virtual network (port forwards).
+pub fn vm_host(_action: &str) -> RiskAssessment {
+    RiskAssessment::from_reasons(vec![RiskReason::new(
+        "vm.host-change",
+        "risk.vm.hostChange",
+        RiskLevel::Caution,
+    )])
+}
+
+/// Classifies a whole-machine operation. Deleting a machine loses its files; upgrading it takes it
+/// away from older Workstation versions. Both ask.
+pub fn vm_image(_action: &str) -> RiskAssessment {
+    RiskAssessment::from_reasons(vec![RiskReason::new(
+        "vm.image",
+        "risk.vm.imageChange",
+        RiskLevel::Destructive,
+    )])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -71,6 +106,9 @@ mod tests {
         assert_eq!(vm_action("start").level, RiskLevel::Caution);
         assert_eq!(vm_action("suspend").level, RiskLevel::Caution);
         assert_eq!(vm_action("take-ownership").level, RiskLevel::Destructive);
+        assert_eq!(vm_config("disk-extend").level, RiskLevel::Destructive);
+        assert_eq!(vm_config("set-cpu").level, RiskLevel::Caution);
+        assert_eq!(vm_image("delete").level, RiskLevel::Destructive);
         assert_eq!(
             vm_action("reboot").level,
             RiskLevel::Caution,

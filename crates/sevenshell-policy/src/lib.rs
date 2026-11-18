@@ -20,7 +20,7 @@ pub use command_risk::classify;
 pub use container_risk::{container_action, kubernetes_request};
 pub use matrix::{PolicyAuditEvent, PolicyDecision, PolicySource, PolicyTarget, decide};
 pub use sevenshell_types::{RiskAssessment, RiskLevel, RiskReason};
-pub use vm_risk::{vm_action, vm_guest, vm_snapshot};
+pub use vm_risk::{vm_action, vm_config, vm_guest, vm_host, vm_image, vm_snapshot};
 
 /// Where a policy decision goes once it has been made.
 ///
