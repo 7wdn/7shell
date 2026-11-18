@@ -33,6 +33,7 @@ fn vm_session(vm_id: &str, user: &str) -> Session {
         id: "vm-live".to_owned(),
         name: "vm live".to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Vmware,
         host: String::new(),
         port: 0,

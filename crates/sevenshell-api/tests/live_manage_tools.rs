@@ -47,6 +47,7 @@ fn vm_session(vm_id: &str) -> Session {
         id: "vm-manage".to_owned(),
         name: "vm manage".to_owned(),
         group_id: None,
+        order: None,
         protocol: Protocol::Vmware,
         host: String::new(),
         port: 0,
