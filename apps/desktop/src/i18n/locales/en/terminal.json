@@ -2,6 +2,7 @@
   "terminal": {
     "tab": {
       "close": "Close terminal",
+      "newTerminal": "New terminal for {name}",
       "reconnect": "Reconnect",
       "ended": "This terminal has ended.",
       "disconnected": "Disconnected.",

@@ -33,6 +33,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Plus,
   Terminal,
   Trash2,
   Unplug,
@@ -40,6 +41,7 @@ import {
 } from "@lucide/vue";
 
 import { drawOrder, groupPath } from "@/lib/sessions/groups";
+import { protocolSupports } from "@/types/generated/protocols";
 import type { OpenTunnel, Session, SessionGroup } from "@/types/session";
 
 import { copyText } from "./clipboard";
@@ -55,6 +57,14 @@ export interface SessionMenuActions {
    * one — see `terminals.reopen`.
    */
   readonly open: (session: Session) => void;
+  /**
+   * One more terminal for the same session, without the question the ordinary open asks.
+   *
+   * A session that is already open is exactly the case this entry exists for: "one more shell on
+   * that machine" is an answer, and a person who chose to ask every time should not be asked
+   * about the thing they just spelled out.
+   */
+  readonly openTerminal: (session: Session) => void;
   /** The file manager in a tab of its own, which is what its entry always means. */
   readonly openFiles: (session: Session) => void;
   readonly edit: (session: Session) => void;
@@ -158,6 +168,19 @@ export function sessionMenu(
       icon: Terminal,
       run: () => actions.open(session),
     },
+    // Directly below the ordinary open, and only where a terminal is what the session is: a
+    // container workspace or a cluster has no second shell to give.
+    ...(protocolSupports(session.protocol, "shell")
+      ? ([
+          {
+            kind: "action",
+            id: "open-another-terminal",
+            labelKey: "sessions.list.newTerminal",
+            icon: Plus,
+            run: () => actions.openTerminal(session),
+          },
+        ] satisfies MenuEntry[])
+      : []),
     // Beside the terminal rather than instead of it, and drawn whatever the settings say a session
     // looks like: the files a split brings are the shell's own panel (they follow its `cd`), while
     // this entry is the file manager in a tab somebody browses in — two different things. A remote
@@ -173,6 +196,8 @@ export function sessionMenu(
           },
         ] satisfies MenuEntry[])
       : []),
+    // The test lives on the row itself, not here: it is about one session, and a button beside the
+    // selection tick is where somebody reaches for it while looking at that row.
     { kind: "separator", id: "sep-edit" },
     { kind: "action", id: "edit", labelKey: "sessions.list.edit", icon: Pencil, run: () => actions.edit(session) },
     ...(moveEntries.length > 0

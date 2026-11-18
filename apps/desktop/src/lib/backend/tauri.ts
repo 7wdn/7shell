@@ -78,6 +78,7 @@ import type {
   SnippetGroup,
 } from "@/types/snippet";
 import type {
+  ConnectionTestOutcome,
   CreatedKey,
   DownloadFolderView,
   KeyAlgorithm,
@@ -676,6 +677,11 @@ export function sessionSave(session: Session, secret?: SecretInput): Promise<Ses
 
 export function sessionDelete(id: string): Promise<void> {
   return invoke<void>("session_delete", { id });
+}
+
+/** Tests a draft's connection. `secret` is the password typed into the editor, when there is one. */
+export function sessionTest(session: Session, secret?: SecretInput): Promise<ConnectionTestOutcome> {
+  return invoke<ConnectionTestOutcome>("session_test", { session, secret: secret ?? null });
 }
 
 export function groupsList(): Promise<SessionGroup[]> {

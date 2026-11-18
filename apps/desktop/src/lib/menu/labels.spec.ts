@@ -216,6 +216,7 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
       title: MENU_TITLES.session,
       entries: sessionMenu(session, [group], {
         open: nothing,
+        openTerminal: nothing,
         openFiles: nothing,
         edit: nothing,
         remove: nothing,

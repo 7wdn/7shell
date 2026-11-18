@@ -599,6 +599,32 @@ pub enum OpenOutcome {
     },
 }
 
+/// What testing a saved session's connection answered.
+///
+/// The two host key variants are the same decisions [`OpenOutcome`] carries, for the same reason:
+/// an unknown key is a question for a person, and a changed key is a stop. The difference is that
+/// a test sends no terminal request after authenticating — what is being tested is the connection,
+/// not the shell.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ConnectionTestOutcome {
+    /// The connection came up. `authenticated` is false for transports that have no login.
+    Connected {
+        latency_ms: u64,
+        authenticated: bool,
+        /// The server key that was verified, when the transport presents one.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        fingerprint: Option<String>,
+    },
+    /// The host key has never been seen. Nothing was sent to the server.
+    HostKeyUnknown { key: PresentedHostKey },
+    /// The presented key differs from the trusted one. A hard stop, not a prompt.
+    HostKeyMismatch {
+        key: PresentedHostKey,
+        trusted: KnownHostEntry,
+    },
+}
+
 /// What an entry in a directory is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -15,6 +15,7 @@ import { computed, ref } from "vue";
 
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { runConnectionTest } from "@/lib/sessions/testConnection";
 import { useSessionsStore } from "@/stores/sessions";
 import type { ContainerRuntime, ContainerSettings, ContainerTransport } from "@/types/container";
 import { PROTOCOLS, protocolById, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
@@ -232,6 +233,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   const sshConfig = ref(false);
   const secret = ref("");
   const passphrase = ref("");
+  /** Whether a test is in flight, which is what keeps the button from asking twice. */
+  const testing = ref(false);
   const keyHasPassphrase = ref(false);
   const jumps = ref<string[]>([]);
   const forwards = ref<ForwardDraft[]>([]);
@@ -589,6 +592,26 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     }
   }
 
+  /**
+   * Tests the draft as it stands: the route, the host key and the credential, with no shell.
+   *
+   * The draft rather than a saved id is what makes this useful while editing: the password in the
+   * field, the alias just chosen and the key just attached are all testable before any of it is
+   * written down. The answer is a toast — it leaves on its own, and nothing about the draft changes
+   * because a test was run.
+   */
+  async function testConnection(): Promise<void> {
+    if (testing.value) {
+      return;
+    }
+    testing.value = true;
+    try {
+      await runConnectionTest(draft(), secretInput());
+    } finally {
+      testing.value = false;
+    }
+  }
+
   /** What would be saved. Routes and forwards are part of the session, like every other field. */
   function draft(): Session {
     const existing = editing.value;
@@ -806,6 +829,8 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     fill,
     secretInput,
     draft,
+    testing,
+    testConnection,
     setProtocol,
     addHop,
     removeHopAt,

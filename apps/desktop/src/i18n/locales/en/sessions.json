@@ -4,6 +4,8 @@
       "empty": "No sessions yet. Add one to keep its address, user and credentials together.",
       "add": "New session",
       "open": "Open terminal",
+      "newTerminal": "New terminal",
+      "testConnection": "Test the connection to {name}",
       "openDesktop": "Open remote desktop",
       "openHint": "Open a terminal for {name}",
       "openDesktopHint": "Open the remote desktop for {name}",
@@ -109,6 +111,19 @@
       "noGroup": "In no group",
       "jump": "Jump hosts",
       "forwards": "Forwards"
+    },
+    "connectionTest": {
+      "action": "Test connection",
+      "testing": "Testing…",
+      "signedIn": "Signed in, in {ms} ms.",
+      "reachable": "The address answered, in {ms} ms.",
+      "fingerprint": "Host key {value}",
+      "unknownTitle": "This host key has never been seen",
+      "trust": "Trust this key and test again",
+      "mismatchTitle": "The host key changed",
+      "mismatchBody": "A changed key is a stop, not a question: do not trust it unless you know why it changed.",
+      "trustedFingerprint": "Trusted: {value}",
+      "presentedFingerprint": "Presented: {value}"
     },
     "editor": {
       "titleNew": "New session",

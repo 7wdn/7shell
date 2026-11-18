@@ -18,6 +18,7 @@ vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   filesClose: vi.fn(async () => null),
   filesOpen: vi.fn(),
+  sessionOpen: vi.fn(),
   snippetsOpen: vi.fn(async () => []),
   commandHistory: vi.fn(async () => []),
   onDesktopResized: vi.fn(async () => () => {}),
@@ -27,7 +28,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { i18n } from "@/i18n";
-import { filesOpen } from "@/lib/backend/tauri";
+import { filesOpen, sessionOpen } from "@/lib/backend/tauri";
 import { usePreferencesStore } from "@/stores/preferences";
 import { type TerminalPanel, useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
@@ -108,6 +109,27 @@ function strip(): HTMLElement {
   }
   return found;
 }
+
+describe("another terminal on the same machine", () => {
+  it("offers the strip's plus for the session on screen and opens a second tab", async () => {
+    usePreferencesStore().sessionLayout = "terminal";
+    vi.mocked(sessionOpen).mockResolvedValue({
+      kind: "opened",
+      handle: "handle-2",
+      sessionId: session.id,
+      tunnels: [],
+      tunnelFailures: [],
+    });
+    await render(null);
+
+    const button = host.querySelector<HTMLElement>("[data-new-terminal]");
+    expect(button?.getAttribute("title")).toContain("web");
+    button?.click();
+
+    await vi.waitFor(() => expect(sessionOpen).toHaveBeenCalledWith("session-1"));
+    await vi.waitFor(() => expect(useTerminalsStore().tabs.filter((tab) => tab.kind === "terminal")).toHaveLength(2));
+  });
+});
 
 /** What the tab with this id says on screen. */
 function tabName(id: string): string {

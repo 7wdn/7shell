@@ -24,7 +24,8 @@ use sevenshell_core::Core;
 use sevenshell_error::{ErrorCode, ShellError};
 use sevenshell_session::TerminalEvent;
 use sevenshell_types::{
-    AuthMethod, ForwardMode, KnownHostEntry, LocalForward, OpenOutcome, Session, SessionAuth, TerminalSettings,
+    AuthMethod, ConnectionTestOutcome, ForwardMode, KnownHostEntry, LocalForward, OpenOutcome, Session, SessionAuth,
+    TerminalSettings,
 };
 use sevenshell_vault::{SessionSecret, Vault};
 use tempfile::{TempDir, tempdir};
@@ -237,6 +238,56 @@ async fn a_new_host_key_is_a_decision_and_then_the_session_opens() {
         lab.core.open_terminals().await.is_empty(),
         "a closed terminal is not still open"
     );
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn testing_a_connection_verifies_the_key_and_the_password_without_a_shell() {
+    let Some(lab) = lab_with_session(None) else {
+        return;
+    };
+    let session = lab.vault.sessions().expect("sessions")[0].clone();
+
+    // The first test is a decision, for the reason opening is: the key has not been seen.
+    match lab.core.test_session(&session, None).await.expect("test") {
+        ConnectionTestOutcome::HostKeyUnknown { key } => lab.core.trust_host_key(&key).expect("trust"),
+        other => panic!("expected an unknown host key, got {other:?}"),
+    }
+
+    // With the key trusted, the saved password is accepted — and what came up is a carrier, so no
+    // shell exists on the far side and none is left behind here.
+    let outcome = lab.core.test_session(&session, None).await.expect("test");
+    match outcome {
+        ConnectionTestOutcome::Connected {
+            authenticated,
+            fingerprint,
+            ..
+        } => {
+            assert!(authenticated, "a successful SSH test authenticated");
+            assert!(
+                fingerprint.as_deref().is_some_and(|value| value.starts_with("SHA256:")),
+                "the test reports the fingerprint it verified: {fingerprint:?}"
+            );
+        }
+        other => panic!("expected a connected test, got {other:?}"),
+    }
+    assert!(
+        lab.core.open_terminals().await.is_empty(),
+        "a connection test leaves no terminal behind"
+    );
+
+    // A password typed into the editor is what the test uses, so a wrong one fails before saving.
+    let error = lab
+        .core
+        .test_session(
+            &session,
+            Some(sevenshell_types::SecretInput {
+                value: "definitely-not-the-password".to_owned(),
+            }),
+        )
+        .await
+        .expect_err("a wrong password is refused");
+    assert_eq!(error.code(), ErrorCode::SshAuthFailed);
 }
 
 #[tokio::test]

@@ -24,12 +24,13 @@ use sevenshell_core::{BatchEvent, Core, CoreEvent};
 use sevenshell_error::ShellError;
 use sevenshell_session::TerminalEvent;
 use sevenshell_types::{
-    AppInfo, AppSettings, AuthMethod, BatchRequest, CompletionExecuteRequest, CompletionWord, ContainerCommitRequest,
-    ContainerCreateRequest, ContainerImageTransfer, ContainerRegistryLogin, ContainerStreamEnd, ContainerStreamLine,
-    CreatedKey, DownloadFolderView, EntryKind, K8sExecRequest, K8sLogRequest, K8sRequest, K8sStreamEnd, K8sStreamLine,
-    K8sWatchEvent, KeyAlgorithm, KeyInfo, PresentedHostKey, Protocol, SecretInput, SendTarget, Session,
-    SessionExportSummary, SessionGroup, SessionImportOutcome, Snippet, SnippetGroup, SyncSelection, TransferState,
-    UpdateCheck, UploadAnswer, UploadOutcome, VaultKeychainStatus, VaultState, VmPowerAction,
+    AppInfo, AppSettings, AuthMethod, BatchRequest, CompletionExecuteRequest, CompletionWord, ConnectionTestOutcome,
+    ContainerCommitRequest, ContainerCreateRequest, ContainerImageTransfer, ContainerRegistryLogin, ContainerStreamEnd,
+    ContainerStreamLine, CreatedKey, DownloadFolderView, EntryKind, K8sExecRequest, K8sLogRequest, K8sRequest,
+    K8sStreamEnd, K8sStreamLine, K8sWatchEvent, KeyAlgorithm, KeyInfo, PresentedHostKey, Protocol, SecretInput,
+    SendTarget, Session, SessionExportSummary, SessionGroup, SessionImportOutcome, Snippet, SnippetGroup,
+    SyncSelection, TransferState, UpdateCheck, UploadAnswer, UploadOutcome, VaultKeychainStatus, VaultState,
+    VmPowerAction,
 };
 use sevenshell_vault::{ExportProtection, OpenedBundle, SessionSecret, Vault, VaultStatus};
 use std::collections::HashMap;
@@ -511,6 +512,12 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
         "session_open_cancel" => {
             let session_id: String = from_args(&args, "sessionId")?;
             Ok(json!(state.core.cancel_open(&session_id).await))
+        }
+        "session_test" => {
+            let session: Session = from_args(&args, "session")?;
+            let secret: Option<SecretInput> = optional_args(&args, "secret")?;
+            let outcome: ConnectionTestOutcome = state.core.test_session(&session, secret).await?;
+            to_value(outcome)
         }
         "session_system" => {
             let handle: String = from_args(&args, "handle")?;

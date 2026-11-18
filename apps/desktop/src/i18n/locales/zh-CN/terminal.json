@@ -2,6 +2,7 @@
   "terminal": {
     "tab": {
       "close": "关闭终端",
+      "newTerminal": "在 {name} 上新建终端",
       "reconnect": "重新连接",
       "ended": "该终端已结束。",
       "disconnected": "连接已断开。",

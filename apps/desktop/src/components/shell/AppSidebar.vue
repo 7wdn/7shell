@@ -28,6 +28,7 @@
  * that are, because "the tunnel is not there" is the answer somebody staring at a port needs.
  */
 import {
+  Activity,
   ArrowDownUp,
   ArrowRight,
   Check,
@@ -86,6 +87,8 @@ import { rememberExportPassphrase } from "@/lib/sessions/exportPassphrase";
 import { regexIsInvalid } from "@/lib/sessions/filter";
 import { drawOrder, groupPath, hasSibling } from "@/lib/sessions/groups";
 import { importReceipt } from "@/lib/sessions/receipt";
+import { canTestConnection } from "@/lib/sessions/testable";
+import { runConnectionTest } from "@/lib/sessions/testConnection";
 import { rowTarget } from "@/lib/sessions/tree";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -561,6 +564,11 @@ function failureOf(session: Session): ShellError | undefined {
   return terminals.failures[session.id];
 }
 
+/** Tests one saved session; the answer arrives as the window's toast and leaves on its own. */
+function testSession(session: Session): void {
+  void runConnectionTest(session);
+}
+
 /**
  * Whether this session's host said something this build has a mark for.
  *
@@ -771,6 +779,8 @@ function openSessionMenu(event: MouseEvent, session: Session): void {
     { key: MENU_TITLES.session },
     sessionMenu(session, library.groups, {
       open: (target) => void openFromMenu(target),
+      // The entry that says "one more" outright: no question, because the choice was the entry.
+      openTerminal: (target) => void terminals.open(target),
       openFiles: (target) => void terminals.openFiles(target),
       edit: startEdit,
       remove: (target) => {
@@ -1470,6 +1480,24 @@ function openTunnelMenu(event: MouseEvent, tunnel: OpenTunnel): void {
                       @click.stop="terminals.cancelOpen(row.session.id)"
                     >
                       <X :size="12" />
+                    </button>
+
+                    <!--
+                      The row's own test, beside the tick that picks it out: a saved session can be
+                      checked without opening the editor, and the answer is a toast rather than a
+                      strip that stays in the row.
+                    -->
+                    <button
+                      v-if="!library.selecting && !isConnecting(row.session) && canTestConnection(row.session.protocol)"
+                      type="button"
+                      data-session-test
+                      class="grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground/55 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none"
+                      :title="t('sessions.list.testConnection', { name: row.session.name })"
+                      :aria-label="t('sessions.list.testConnection', { name: row.session.name })"
+                      @mousedown.stop
+                      @click.stop="testSession(row.session)"
+                    >
+                      <Activity :size="12" />
                     </button>
 
                     <!-- The tick that picks one out: there when the pointer is, and always there while

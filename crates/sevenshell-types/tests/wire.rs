@@ -16,10 +16,10 @@ use sevenshell_types::{
     AgentOrigin, AiContextSummary, AiProviderConfig, AiProviderKind, AiProviderView, AiSessionDetail, AiSessionSummary,
     AiToolOutcome, AppLayout, AppSettings, AuthMethod, BackgroundDisplayMode, BackgroundImage, BatchHostOutcome,
     BatchHostRef, BatchHostResult, BatchOutcome, BatchRequest, CommandHistoryEntry, CompletionExecuteResult,
-    CompletionWord, ContainerDetail, ContainerMount, ContainerPort, ContainerRuntime, ContainerSettings,
-    ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey, CustomColors,
-    DiskUsage, DownloadFolderView, EnvironmentEntry, FileBookmark, FilesLayout, ForwardMode, HomeLayout, HostFailure,
-    HostMetrics, HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry,
+    CompletionWord, ConnectionTestOutcome, ContainerDetail, ContainerMount, ContainerPort, ContainerRuntime,
+    ContainerSettings, ContainerSummary, ContainerTransport, CornerStyle, CpuCounters, CpuModel, CpuStates, CreatedKey,
+    CustomColors, DiskUsage, DownloadFolderView, EnvironmentEntry, FileBookmark, FilesLayout, ForwardMode, HomeLayout,
+    HostFailure, HostMetrics, HostSystem, K8sMethod, K8sRequest, K8sResponse, KeyAlgorithm, KeyInfo, KnownHostEntry,
     KubeContextInfo, KubeconfigSource, KubernetesSettings, LoadAverage, LocalForward, McpAccessPolicy, McpPrompt,
     McpPromptArgument, McpPromptMessage, McpPromptRole, McpPromptText, McpResource, McpResourceContent,
     McpResourceRead, McpResourceTemplate, McpScope, McpServerConfig, McpServerContent, McpServerState, McpServerStatus,
@@ -130,6 +130,40 @@ fn every_outcome_serializes_with_camel_case_fields() {
     assert_eq!(opened["sessionId"], serde_json::json!("session-1"));
     assert_eq!(opened["tunnels"][0]["bindPort"], serde_json::json!(18080));
     assert_eq!(opened["tunnelFailures"][0]["forwardId"], serde_json::json!("f2"));
+}
+
+#[test]
+fn a_connection_test_serializes_with_camel_case_fields() {
+    let connected = check(
+        &ConnectionTestOutcome::Connected {
+            latency_ms: 42,
+            authenticated: true,
+            fingerprint: Some("SHA256:AAAA".to_owned()),
+        },
+        "Connected",
+    );
+    assert_eq!(connected["kind"], serde_json::json!("connected"));
+    assert_eq!(connected["latencyMs"], serde_json::json!(42));
+    assert_eq!(connected["authenticated"], serde_json::json!(true));
+
+    // The two decisions keep the names the open already uses, so the editor can reuse the same
+    // prompt vocabulary rather than inventing a second one.
+    let unknown = check(
+        &ConnectionTestOutcome::HostKeyUnknown { key: presented() },
+        "TestHostKeyUnknown",
+    );
+    assert_eq!(unknown["kind"], serde_json::json!("hostKeyUnknown"));
+    assert_eq!(unknown["key"]["fingerprint"], serde_json::json!("SHA256:AAAA"));
+
+    let mismatch = check(
+        &ConnectionTestOutcome::HostKeyMismatch {
+            key: presented(),
+            trusted: trusted(),
+        },
+        "TestHostKeyMismatch",
+    );
+    assert_eq!(mismatch["kind"], serde_json::json!("hostKeyMismatch"));
+    assert_eq!(mismatch["trusted"]["addedAt"], serde_json::json!(1));
 }
 
 #[test]

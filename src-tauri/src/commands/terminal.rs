@@ -16,7 +16,9 @@ use sevenshell_core::Core;
 use sevenshell_error::ShellError;
 use sevenshell_session::OpenTerminal;
 use sevenshell_term::zmodem::{Detector, DetectorEvent, Direction, EndReason, FileInfo, ReceiveEvent};
-use sevenshell_types::{HostSystem, LocalShell, OpenOutcome, OpenTunnel, SerialPortInfo};
+use sevenshell_types::{
+    ConnectionTestOutcome, HostSystem, LocalShell, OpenOutcome, OpenTunnel, SecretInput, SerialPortInfo, Session,
+};
 use tauri::{AppHandle, Emitter as _, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::io::AsyncWriteExt;
@@ -69,6 +71,19 @@ pub async fn session_system(state: State<'_, ShellState>, handle: String) -> Res
 #[tauri::command]
 pub async fn session_open_cancel(state: State<'_, ShellState>, session_id: String) -> Result<bool, ShellError> {
     Ok(state.core().cancel_open(&session_id).await)
+}
+
+/// Tests a connection without opening a terminal.
+///
+/// The session is the editor's draft, so a password typed into the dialog can be tested before it
+/// is saved. A typed secret travels only this once: nothing here stores it.
+#[tauri::command]
+pub async fn session_test(
+    state: State<'_, ShellState>,
+    session: Session,
+    secret: Option<SecretInput>,
+) -> Result<ConnectionTestOutcome, ShellError> {
+    state.core().test_session(&session, secret).await
 }
 
 /// Sends keystrokes or pasted text, base64-encoded.

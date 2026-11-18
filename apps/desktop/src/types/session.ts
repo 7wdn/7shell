@@ -322,6 +322,23 @@ export type OpenOutcome =
       readonly tunnelFailures: readonly TunnelFailure[];
     };
 
+/**
+ * What testing a connection answered.
+ *
+ * `connected` with `authenticated: false` is a transport that has no login — Telnet and a raw TCP
+ * console — where reachability is the whole question. The two host key variants mean the same as
+ * they do for an open: an unknown key is a question, a changed key is a stop.
+ */
+export type ConnectionTestOutcome =
+  | {
+      readonly kind: "connected";
+      readonly latencyMs: number;
+      readonly authenticated: boolean;
+      readonly fingerprint?: string;
+    }
+  | { readonly kind: "hostKeyUnknown"; readonly key: PresentedHostKey }
+  | { readonly kind: "hostKeyMismatch"; readonly key: PresentedHostKey; readonly trusted: KnownHostEntry };
+
 export type VaultState = "missing" | "locked" | "unlocked";
 
 /**

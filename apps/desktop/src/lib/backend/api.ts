@@ -77,6 +77,7 @@ import type { HostLocationKind, HostLocationView, VmInfo, VmPowerAction, VmStatu
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CreatedKey,
+  ConnectionTestOutcome,
   DownloadFolderView,
   KeyAlgorithm,
   KeyInfo,
@@ -616,6 +617,14 @@ export const backend = {
     save: (session: Session, secret?: SecretInput): Promise<Session> =>
       forward("session_save", () => desktop.sessionSave(session, secret)),
     remove: (id: string): Promise<void> => forward("session_delete", () => desktop.sessionDelete(id)),
+    /**
+     * Tests a draft's connection: the key, the route and the credential, with no shell opened.
+     *
+     * `secret` is a password typed into the editor; absent means "use the stored one", the same
+     * rule a save follows. A typed secret is used once and stored nowhere.
+     */
+    test: (session: Session, secret?: SecretInput): Promise<ConnectionTestOutcome> =>
+      forward("session_test", () => desktop.sessionTest(session, secret)),
 
     /**
      * Writes the library to a file the user picks. The dialog runs in Rust, and the secrets are read

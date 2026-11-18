@@ -47,6 +47,7 @@ import {
   type SessionFieldProblem,
 } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
+import { canTestConnection } from "@/lib/sessions/testable";
 import type {
   BackspaceMode,
   EnterMode,
@@ -372,6 +373,18 @@ const errors = computed<Partial<Record<SessionFieldProblem, string>>>(() => {
 
 const problemText = computed(() => (problem.value ? describeShellError(translate, problem.value) : null));
 
+/** Whether this draft is a kind a test can answer; the rule lives in one place for both callers. */
+const testable = computed(() => canTestConnection(editor.protocol));
+
+/** Runs the test the way saving runs: reveal the field problems first, and stop if there are any. */
+function runTest(): void {
+  submitted.value = true;
+  if (editor.hasProblems) {
+    return;
+  }
+  void editor.testConnection();
+}
+
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
 }
@@ -496,9 +509,9 @@ async function forgetKey(): Promise<void> {
     <DialogPortal>
       <DialogOverlay class="fixed inset-0 z-50 bg-overlay" />
       <DialogContent
-        class="fixed top-1/2 left-1/2 z-50 w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-xl focus:outline-none"
+        class="fixed top-1/2 left-1/2 z-50 flex max-h-[85vh] w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-card shadow-xl focus:outline-none"
       >
-        <header class="flex items-center justify-between border-b border-border px-4 py-3">
+        <header class="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
           <DialogTitle class="text-sm font-medium">{{ title }}</DialogTitle>
           <DialogDescription class="sr-only">{{ t("sessions.editor.description") }}</DialogDescription>
           <DialogClose
@@ -509,670 +522,697 @@ async function forgetKey(): Promise<void> {
           </DialogClose>
         </header>
 
-        <form class="max-h-[70vh] space-y-4 overflow-auto px-4 py-4" @submit.prevent="save()">
-          <div>
-            <label class="block text-xs font-medium" for="session-protocol">{{ t("sessions.editor.protocol") }}</label>
-            <Select
-              id="session-protocol"
-              :model-value="protocolChoice"
-              class="mt-1"
-              :options="protocolOptions"
-              @update:model-value="chooseProtocol"
-            />
-            <p v-if="isDesktop" class="mt-1 text-[11px] text-muted-foreground">
-              {{ t("sessions.editor.desktop.note") }}
-            </p>
-            <p v-else-if="editor.protocol === 'telnet'" class="mt-1 text-[11px] text-muted-foreground">
-              {{ t("sessions.editor.telnet.note") }}
-            </p>
-            <p v-else-if="editor.protocol === 'rawTcp'" class="mt-1 text-[11px] text-muted-foreground">
-              {{ t("sessions.editor.rawTcp.note") }}
-            </p>
-          </div>
-
-          <div class="grid gap-4 sm:grid-cols-2">
+        <form class="flex min-h-0 flex-1 flex-col" @submit.prevent="save()">
+          <!--
+            The fields scroll; the three buttons below do not. A footer that scrolled away with the
+            form would make somebody at the bottom of a long editor hunt for Save, and the test
+            button beside it is the other thing a person reaches for while editing.
+          -->
+          <div class="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4">
             <div>
-              <label class="block text-xs font-medium" for="session-name">{{ t("sessions.editor.name") }}</label>
-              <input
-                id="session-name"
-                v-model="editor.name"
-                type="text"
-                class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
-                :class="submitted && errors.name ? 'border-destructive' : 'border-border'"
-                :placeholder="t('sessions.editor.namePlaceholder')"
-              />
-              <p v-if="submitted && errors.name" class="mt-1 text-[11px] text-destructive">{{ errors.name }}</p>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium" for="session-group">{{ t("sessions.editor.group") }}</label>
-              <Select id="session-group" v-model="editor.groupId" class="mt-1" :options="groupOptions" />
-            </div>
-
-            <div v-if="editor.needsEndpoint" class="sm:col-span-2">
-              <label class="block text-xs font-medium" for="session-host">{{
-                editor.isWebDav ? t("sessions.editor.webdavUrl") : t("sessions.editor.host")
+              <label class="block text-xs font-medium" for="session-protocol">{{
+                t("sessions.editor.protocol")
               }}</label>
-              <input
-                id="session-host"
-                v-model="editor.host"
-                type="text"
-                class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
-                :class="submitted && errors.host ? 'border-destructive' : 'border-border'"
-                :placeholder="
-                  editor.isWebDav ? t('sessions.editor.webdavUrlPlaceholder') : t('sessions.editor.hostPlaceholder')
-                "
+              <Select
+                id="session-protocol"
+                :model-value="protocolChoice"
+                class="mt-1"
+                :options="protocolOptions"
+                @update:model-value="chooseProtocol"
               />
-              <p v-if="submitted && errors.host" class="mt-1 text-[11px] text-destructive">{{ errors.host }}</p>
-
-              <template v-if="editor.isSsh">
-                <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <label class="flex items-center gap-2 text-xs">
-                    <input v-model="editor.sshConfig" type="checkbox" class="size-3.5 rounded-sm border-border" />
-                    {{ t("sessions.editor.openssh.useConfig") }}
-                  </label>
-                  <button
-                    type="button"
-                    data-ssh-config-picker
-                    class="rounded-md border border-border px-2.5 py-1 text-[11px] transition-colors hover:bg-accent"
-                    @click="sshConfigOpen = true"
-                  >
-                    {{ t("sessions.editor.openssh.pick") }}
-                  </button>
-                </div>
-                <p v-if="editor.sshConfig" class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                  {{ t("sessions.editor.openssh.note") }}
-                </p>
-              </template>
-            </div>
-
-            <div v-if="editor.needsEndpoint && !editor.isWebDav">
-              <label class="block text-xs font-medium" for="session-port">{{ t("sessions.editor.port") }}</label>
-              <input
-                id="session-port"
-                v-model="editor.port"
-                type="text"
-                inputmode="numeric"
-                class="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
-                :class="submitted && errors.port ? 'border-destructive' : 'border-border'"
-              />
-              <p v-if="submitted && errors.port" class="mt-1 text-[11px] text-destructive">{{ errors.port }}</p>
-            </div>
-
-            <div v-if="editor.needsUser">
-              <label class="block text-xs font-medium" for="session-user">{{ t("sessions.editor.user") }}</label>
-              <input
-                id="session-user"
-                v-model="editor.user"
-                type="text"
-                class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
-                :class="submitted && errors.user ? 'border-destructive' : 'border-border'"
-                :placeholder="t('sessions.editor.userPlaceholder')"
-              />
-              <p v-if="submitted && errors.user" class="mt-1 text-[11px] text-destructive">{{ errors.user }}</p>
-              <p v-if="editor.isWebDav" class="mt-1 text-[11px] text-muted-foreground">
-                {{ t("sessions.editor.webdavAnonymous") }}
+              <p v-if="isDesktop" class="mt-1 text-[11px] text-muted-foreground">
+                {{ t("sessions.editor.desktop.note") }}
               </p>
-            </div>
-          </div>
-
-          <section v-if="editor.isFtp">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.ftp.title") }}</h3>
-            <label class="mt-2 flex items-center gap-2 text-xs">
-              <input v-model="editor.ftpSecure" type="checkbox" class="size-3.5 rounded-sm border-border" />
-              {{ t("sessions.editor.ftp.secure") }}
-            </label>
-            <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-              {{ t("sessions.editor.ftp.secureHint") }}
-            </p>
-          </section>
-
-          <section v-if="editor.isSsh || isDesktop || editor.isWebDav || editor.isFtp || editor.isVmware">
-            <template v-if="!isDesktop && !editor.isWebDav && !editor.isFtp">
-              <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
-              <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
-              <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
-            </template>
-
-            <div v-if="editor.method === 'password' || editor.method === 'keyboardInteractive'" class="mt-3">
-              <label class="block text-xs font-medium" for="session-secret">{{
-                t("sessions.editor.secret.label")
-              }}</label>
-              <input
-                id="session-secret"
-                v-model="editor.secret"
-                type="password"
-                autocomplete="off"
-                class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
-                :placeholder="
-                  storedSecret ? t('sessions.editor.secret.storedPlaceholder') : t('sessions.editor.secret.placeholder')
-                "
-              />
-              <p class="mt-1 text-[11px] text-muted-foreground">
-                {{
-                  storedSecret
-                    ? t("sessions.editor.secret.stored")
-                    : isDesktop
-                      ? t("sessions.editor.secret.blankAllowed")
-                      : editor.isWebDav
-                        ? t("sessions.editor.secret.webdavBlank")
-                        : t("sessions.editor.secret.notStored")
-                }}
+              <p v-else-if="editor.protocol === 'telnet'" class="mt-1 text-[11px] text-muted-foreground">
+                {{ t("sessions.editor.telnet.note") }}
+              </p>
+              <p v-else-if="editor.protocol === 'rawTcp'" class="mt-1 text-[11px] text-muted-foreground">
+                {{ t("sessions.editor.rawTcp.note") }}
               </p>
             </div>
 
-            <div v-else-if="editor.method === 'publicKey'" class="mt-3 space-y-3">
-              <div v-if="editor.attachedKey" class="rounded-md border border-border bg-background px-3 py-3">
-                <p class="flex items-center gap-2 text-xs font-medium">
-                  <KeyRound :size="13" class="text-muted-foreground" />
-                  {{ t("sessions.editor.key.attached") }}
-                </p>
-                <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
-                  <dt class="text-muted-foreground">{{ t("sessions.editor.key.name") }}</dt>
-                  <dd class="font-mono break-all">{{ editor.attachedKey.displayName }}</dd>
-                  <dt class="text-muted-foreground">{{ t("sessions.editor.key.algorithm") }}</dt>
-                  <dd class="font-mono">{{ editor.attachedKey.algorithm }}</dd>
-                  <dt class="text-muted-foreground">{{ t("sessions.editor.key.fingerprint") }}</dt>
-                  <dd class="font-mono break-all">{{ editor.attachedKey.fingerprint }}</dd>
-                </dl>
-                <p class="mt-2 text-[11px] text-muted-foreground">
-                  {{
-                    editor.attachedKey.hasPassphrase
-                      ? t("sessions.editor.key.passphraseStored")
-                      : t("sessions.editor.key.noPassphraseStored")
-                  }}
-                </p>
-                <button
-                  type="button"
-                  class="mt-2 flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-                  @click="requestForget()"
-                >
-                  <Trash2 :size="12" />
-                  {{ t("sessions.editor.key.forget") }}
-                </button>
-              </div>
-              <p v-else class="text-[11px] text-muted-foreground">{{ t("sessions.editor.key.none") }}</p>
-
-              <label class="flex items-center gap-2 text-xs">
-                <input v-model="editor.keyHasPassphrase" type="checkbox" class="size-3.5 rounded-sm border-border" />
-                {{ t("sessions.editor.key.hasPassphrase") }}
-              </label>
-
-              <div v-if="editor.keyHasPassphrase">
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="block text-xs font-medium" for="session-name">{{ t("sessions.editor.name") }}</label>
                 <input
-                  v-model="editor.passphrase"
+                  id="session-name"
+                  v-model="editor.name"
+                  type="text"
+                  class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
+                  :class="submitted && errors.name ? 'border-destructive' : 'border-border'"
+                  :placeholder="t('sessions.editor.namePlaceholder')"
+                />
+                <p v-if="submitted && errors.name" class="mt-1 text-[11px] text-destructive">{{ errors.name }}</p>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium" for="session-group">{{ t("sessions.editor.group") }}</label>
+                <Select id="session-group" v-model="editor.groupId" class="mt-1" :options="groupOptions" />
+              </div>
+
+              <div v-if="editor.needsEndpoint" class="sm:col-span-2">
+                <label class="block text-xs font-medium" for="session-host">{{
+                  editor.isWebDav ? t("sessions.editor.webdavUrl") : t("sessions.editor.host")
+                }}</label>
+                <input
+                  id="session-host"
+                  v-model="editor.host"
+                  type="text"
+                  class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
+                  :class="submitted && errors.host ? 'border-destructive' : 'border-border'"
+                  :placeholder="
+                    editor.isWebDav ? t('sessions.editor.webdavUrlPlaceholder') : t('sessions.editor.hostPlaceholder')
+                  "
+                />
+                <p v-if="submitted && errors.host" class="mt-1 text-[11px] text-destructive">{{ errors.host }}</p>
+
+                <template v-if="editor.isSsh">
+                  <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <label class="flex items-center gap-2 text-xs">
+                      <input v-model="editor.sshConfig" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                      {{ t("sessions.editor.openssh.useConfig") }}
+                    </label>
+                    <button
+                      type="button"
+                      data-ssh-config-picker
+                      class="rounded-md border border-border px-2.5 py-1 text-[11px] transition-colors hover:bg-accent"
+                      @click="sshConfigOpen = true"
+                    >
+                      {{ t("sessions.editor.openssh.pick") }}
+                    </button>
+                  </div>
+                  <p v-if="editor.sshConfig" class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    {{ t("sessions.editor.openssh.note") }}
+                  </p>
+                </template>
+              </div>
+
+              <div v-if="editor.needsEndpoint && !editor.isWebDav">
+                <label class="block text-xs font-medium" for="session-port">{{ t("sessions.editor.port") }}</label>
+                <input
+                  id="session-port"
+                  v-model="editor.port"
+                  type="text"
+                  inputmode="numeric"
+                  class="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                  :class="submitted && errors.port ? 'border-destructive' : 'border-border'"
+                />
+                <p v-if="submitted && errors.port" class="mt-1 text-[11px] text-destructive">{{ errors.port }}</p>
+              </div>
+
+              <div v-if="editor.needsUser">
+                <label class="block text-xs font-medium" for="session-user">{{ t("sessions.editor.user") }}</label>
+                <input
+                  id="session-user"
+                  v-model="editor.user"
+                  type="text"
+                  class="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none"
+                  :class="submitted && errors.user ? 'border-destructive' : 'border-border'"
+                  :placeholder="t('sessions.editor.userPlaceholder')"
+                />
+                <p v-if="submitted && errors.user" class="mt-1 text-[11px] text-destructive">{{ errors.user }}</p>
+                <p v-if="editor.isWebDav" class="mt-1 text-[11px] text-muted-foreground">
+                  {{ t("sessions.editor.webdavAnonymous") }}
+                </p>
+              </div>
+            </div>
+
+            <section v-if="editor.isFtp">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.ftp.title") }}</h3>
+              <label class="mt-2 flex items-center gap-2 text-xs">
+                <input v-model="editor.ftpSecure" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                {{ t("sessions.editor.ftp.secure") }}
+              </label>
+              <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                {{ t("sessions.editor.ftp.secureHint") }}
+              </p>
+            </section>
+
+            <section v-if="editor.isSsh || isDesktop || editor.isWebDav || editor.isFtp || editor.isVmware">
+              <template v-if="!isDesktop && !editor.isWebDav && !editor.isFtp">
+                <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
+                <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />
+                <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.methodUnsupported") }}</p>
+              </template>
+
+              <div v-if="editor.method === 'password' || editor.method === 'keyboardInteractive'" class="mt-3">
+                <label class="block text-xs font-medium" for="session-secret">{{
+                  t("sessions.editor.secret.label")
+                }}</label>
+                <input
+                  id="session-secret"
+                  v-model="editor.secret"
                   type="password"
                   autocomplete="off"
-                  class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
-                  :placeholder="t('sessions.editor.key.passphrasePlaceholder')"
+                  class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
+                  :placeholder="
+                    storedSecret
+                      ? t('sessions.editor.secret.storedPlaceholder')
+                      : t('sessions.editor.secret.placeholder')
+                  "
                 />
-                <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.key.passphraseHint") }}</p>
+                <p class="mt-1 text-[11px] text-muted-foreground">
+                  {{
+                    storedSecret
+                      ? t("sessions.editor.secret.stored")
+                      : isDesktop
+                        ? t("sessions.editor.secret.blankAllowed")
+                        : editor.isWebDav
+                          ? t("sessions.editor.secret.webdavBlank")
+                          : t("sessions.editor.secret.notStored")
+                  }}
+                </p>
               </div>
 
-              <button
-                type="button"
-                class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="keyBusy"
-                @click="chooseKey()"
-              >
-                <LoaderCircle v-if="keyBusy" :size="12" class="animate-spin" />
-                <KeyRound v-else :size="12" />
-                {{ t("sessions.editor.key.choose") }}
-              </button>
-              <p v-if="submitted && errors.key" class="text-[11px] text-destructive">{{ errors.key }}</p>
-              <p
-                v-if="editor.sshConfig && !editor.attachedKey"
-                class="text-[11px] leading-relaxed text-muted-foreground"
-              >
-                {{ t("sessions.editor.openssh.keyNote") }}
-              </p>
-            </div>
-          </section>
+              <div v-else-if="editor.method === 'publicKey'" class="mt-3 space-y-3">
+                <div v-if="editor.attachedKey" class="rounded-md border border-border bg-background px-3 py-3">
+                  <p class="flex items-center gap-2 text-xs font-medium">
+                    <KeyRound :size="13" class="text-muted-foreground" />
+                    {{ t("sessions.editor.key.attached") }}
+                  </p>
+                  <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[11px]">
+                    <dt class="text-muted-foreground">{{ t("sessions.editor.key.name") }}</dt>
+                    <dd class="font-mono break-all">{{ editor.attachedKey.displayName }}</dd>
+                    <dt class="text-muted-foreground">{{ t("sessions.editor.key.algorithm") }}</dt>
+                    <dd class="font-mono">{{ editor.attachedKey.algorithm }}</dd>
+                    <dt class="text-muted-foreground">{{ t("sessions.editor.key.fingerprint") }}</dt>
+                    <dd class="font-mono break-all">{{ editor.attachedKey.fingerprint }}</dd>
+                  </dl>
+                  <p class="mt-2 text-[11px] text-muted-foreground">
+                    {{
+                      editor.attachedKey.hasPassphrase
+                        ? t("sessions.editor.key.passphraseStored")
+                        : t("sessions.editor.key.noPassphraseStored")
+                    }}
+                  </p>
+                  <button
+                    type="button"
+                    class="mt-2 flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+                    @click="requestForget()"
+                  >
+                    <Trash2 :size="12" />
+                    {{ t("sessions.editor.key.forget") }}
+                  </button>
+                </div>
+                <p v-else class="text-[11px] text-muted-foreground">{{ t("sessions.editor.key.none") }}</p>
 
-          <section v-if="isDesktop">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.display.title") }}</h3>
-            <div class="mt-2 flex items-center gap-2">
-              <Select
-                :model-value="resolution"
-                :options="resolutionOptions"
-                class="w-36 shrink-0"
-                :aria-label="t('sessions.editor.display.resolution')"
-                @update:model-value="setResolution($event as string)"
-              />
-              <input
-                v-model="editor.desktopWidth"
-                type="text"
-                inputmode="numeric"
-                class="w-20 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none disabled:opacity-50"
-                :disabled="editor.desktopFullscreen"
-                :aria-label="t('sessions.editor.display.width')"
-              />
-              <span class="text-xs text-muted-foreground">×</span>
-              <input
-                v-model="editor.desktopHeight"
-                type="text"
-                inputmode="numeric"
-                class="w-20 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none disabled:opacity-50"
-                :disabled="editor.desktopFullscreen"
-                :aria-label="t('sessions.editor.display.height')"
-              />
-            </div>
-            <label class="mt-2 flex items-center gap-2 text-xs">
-              <input v-model="editor.desktopFullscreen" type="checkbox" class="size-3.5 rounded-sm border-border" />
-              {{ t("sessions.editor.display.fullscreen") }}
-            </label>
-            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.display.note") }}</p>
-          </section>
+                <label class="flex items-center gap-2 text-xs">
+                  <input v-model="editor.keyHasPassphrase" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                  {{ t("sessions.editor.key.hasPassphrase") }}
+                </label>
 
-          <section v-if="isDesktop">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.mapping.title") }}</h3>
-            <label class="mt-2 flex items-center gap-2 text-xs">
-              <input v-model="editor.desktopDrives" type="checkbox" class="size-3.5 rounded-sm border-border" />
-              {{ t("sessions.editor.mapping.drives") }}
-            </label>
-            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.mapping.note") }}</p>
-          </section>
+                <div v-if="editor.keyHasPassphrase">
+                  <input
+                    v-model="editor.passphrase"
+                    type="password"
+                    autocomplete="off"
+                    class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none"
+                    :placeholder="t('sessions.editor.key.passphrasePlaceholder')"
+                  />
+                  <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.key.passphraseHint") }}</p>
+                </div>
 
-          <section v-if="!isDesktop">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.terminal.title") }}</h3>
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="keyBusy"
+                  @click="chooseKey()"
+                >
+                  <LoaderCircle v-if="keyBusy" :size="12" class="animate-spin" />
+                  <KeyRound v-else :size="12" />
+                  {{ t("sessions.editor.key.choose") }}
+                </button>
+                <p v-if="submitted && errors.key" class="text-[11px] text-destructive">{{ errors.key }}</p>
+                <p
+                  v-if="editor.sshConfig && !editor.attachedKey"
+                  class="text-[11px] leading-relaxed text-muted-foreground"
+                >
+                  {{ t("sessions.editor.openssh.keyNote") }}
+                </p>
+              </div>
+            </section>
 
-            <label v-if="editor.isSsh" class="mt-2 flex items-start gap-2 text-xs">
-              <input v-model="editor.terminal.forwardAgent" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
-              <span>
-                <span>{{ t("sessions.editor.terminal.forwardAgent") }}</span>
-                <!--
+            <section v-if="isDesktop">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.display.title") }}</h3>
+              <div class="mt-2 flex items-center gap-2">
+                <Select
+                  :model-value="resolution"
+                  :options="resolutionOptions"
+                  class="w-36 shrink-0"
+                  :aria-label="t('sessions.editor.display.resolution')"
+                  @update:model-value="setResolution($event as string)"
+                />
+                <input
+                  v-model="editor.desktopWidth"
+                  type="text"
+                  inputmode="numeric"
+                  class="w-20 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none disabled:opacity-50"
+                  :disabled="editor.desktopFullscreen"
+                  :aria-label="t('sessions.editor.display.width')"
+                />
+                <span class="text-xs text-muted-foreground">×</span>
+                <input
+                  v-model="editor.desktopHeight"
+                  type="text"
+                  inputmode="numeric"
+                  class="w-20 rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none disabled:opacity-50"
+                  :disabled="editor.desktopFullscreen"
+                  :aria-label="t('sessions.editor.display.height')"
+                />
+              </div>
+              <label class="mt-2 flex items-center gap-2 text-xs">
+                <input v-model="editor.desktopFullscreen" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                {{ t("sessions.editor.display.fullscreen") }}
+              </label>
+              <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.display.note") }}</p>
+            </section>
+
+            <section v-if="isDesktop">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.mapping.title") }}</h3>
+              <label class="mt-2 flex items-center gap-2 text-xs">
+                <input v-model="editor.desktopDrives" type="checkbox" class="size-3.5 rounded-sm border-border" />
+                {{ t("sessions.editor.mapping.drives") }}
+              </label>
+              <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.mapping.note") }}</p>
+            </section>
+
+            <section v-if="!isDesktop">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.terminal.title") }}</h3>
+
+              <label v-if="editor.isSsh" class="mt-2 flex items-start gap-2 text-xs">
+                <input v-model="editor.terminal.forwardAgent" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
+                <span>
+                  <span>{{ t("sessions.editor.terminal.forwardAgent") }}</span>
+                  <!--
                   Said plainly, next to the switch: this is the one setting here that lends
                   something to the far side, and what it lends is the ability to sign with the keys
                   in this machine's agent.
                 -->
-                <span class="mt-0.5 block text-[11px] text-muted-foreground">
-                  {{ t("sessions.editor.terminal.forwardAgentNote") }}
+                  <span class="mt-0.5 block text-[11px] text-muted-foreground">
+                    {{ t("sessions.editor.terminal.forwardAgentNote") }}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
 
-            <label class="mt-2 flex items-start gap-2 text-xs">
-              <input v-model="editor.terminal.record" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
-              <span>
-                <span>{{ t("sessions.editor.terminal.record") }}</span>
-                <span class="mt-0.5 block text-[11px] text-muted-foreground">
-                  {{ t("sessions.editor.terminal.recordNote") }}
+              <label class="mt-2 flex items-start gap-2 text-xs">
+                <input v-model="editor.terminal.record" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
+                <span>
+                  <span>{{ t("sessions.editor.terminal.record") }}</span>
+                  <span class="mt-0.5 block text-[11px] text-muted-foreground">
+                    {{ t("sessions.editor.terminal.recordNote") }}
+                  </span>
                 </span>
-              </span>
-            </label>
-          </section>
+              </label>
+            </section>
 
-          <section v-if="editor.isSsh">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.jumps.title") }}</h3>
-            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.jumps.note") }}</p>
+            <section v-if="editor.isSsh">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.jumps.title") }}</h3>
+              <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.jumps.note") }}</p>
 
-            <p v-if="editor.hops.length === 0" class="mt-2 text-[11px] text-muted-foreground">
-              {{ t("sessions.editor.jumps.empty") }}
-            </p>
+              <p v-if="editor.hops.length === 0" class="mt-2 text-[11px] text-muted-foreground">
+                {{ t("sessions.editor.jumps.empty") }}
+              </p>
 
-            <ul v-else class="mt-2 space-y-1">
-              <li
-                v-for="(hop, index) in editor.hops"
-                :key="hop.id + ':' + index"
-                class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
-              >
-                <span
-                  class="grid size-4 shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] text-muted-foreground"
+              <ul v-else class="mt-2 space-y-1">
+                <li
+                  v-for="(hop, index) in editor.hops"
+                  :key="hop.id + ':' + index"
+                  class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
                 >
-                  {{ index + 1 }}
-                </span>
-                <span class="min-w-0 flex-1">
-                  <template v-if="hop.session">
-                    <span class="block truncate text-xs">{{ hop.session.name }}</span>
-                    <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
-                      hopEndpoint(hop.session)
-                    }}</span>
-                  </template>
-                  <template v-else>
-                    <span class="block truncate text-xs text-warning">{{ t("sessions.editor.jumps.missing") }}</span>
-                    <span
-                      class="block truncate font-mono text-[10px] text-muted-foreground"
-                      :title="t('sessions.editor.jumps.missingTip')"
-                      >{{ hop.id }}</span
+                  <span
+                    class="grid size-4 shrink-0 place-items-center rounded-sm bg-muted font-mono text-[10px] text-muted-foreground"
+                  >
+                    {{ index + 1 }}
+                  </span>
+                  <span class="min-w-0 flex-1">
+                    <template v-if="hop.session">
+                      <span class="block truncate text-xs">{{ hop.session.name }}</span>
+                      <span class="block truncate font-mono text-[10px] text-muted-foreground">{{
+                        hopEndpoint(hop.session)
+                      }}</span>
+                    </template>
+                    <template v-else>
+                      <span class="block truncate text-xs text-warning">{{ t("sessions.editor.jumps.missing") }}</span>
+                      <span
+                        class="block truncate font-mono text-[10px] text-muted-foreground"
+                        :title="t('sessions.editor.jumps.missingTip')"
+                        >{{ hop.id }}</span
+                      >
+                    </template>
+                  </span>
+                  <span class="flex shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="index === 0"
+                      :title="t('sessions.editor.jumps.up')"
+                      :aria-label="t('sessions.editor.jumps.up')"
+                      @click="editor.moveHop(index, -1)"
                     >
-                  </template>
-                </span>
-                <span class="flex shrink-0 items-center gap-0.5">
-                  <button
-                    type="button"
-                    class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                    :disabled="index === 0"
-                    :title="t('sessions.editor.jumps.up')"
-                    :aria-label="t('sessions.editor.jumps.up')"
-                    @click="editor.moveHop(index, -1)"
-                  >
-                    <ChevronUp :size="12" />
-                  </button>
-                  <button
-                    type="button"
-                    class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-                    :disabled="index === editor.hops.length - 1"
-                    :title="t('sessions.editor.jumps.down')"
-                    :aria-label="t('sessions.editor.jumps.down')"
-                    @click="editor.moveHop(index, 1)"
-                  >
-                    <ChevronDown :size="12" />
-                  </button>
-                  <button
-                    type="button"
-                    class="grid size-5 place-items-center rounded-sm text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    :title="t('sessions.editor.jumps.remove')"
-                    :aria-label="t('sessions.editor.jumps.remove')"
-                    @click="editor.removeHopAt(index)"
-                  >
-                    <X :size="12" />
-                  </button>
-                </span>
-              </li>
-            </ul>
+                      <ChevronUp :size="12" />
+                    </button>
+                    <button
+                      type="button"
+                      class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="index === editor.hops.length - 1"
+                      :title="t('sessions.editor.jumps.down')"
+                      :aria-label="t('sessions.editor.jumps.down')"
+                      @click="editor.moveHop(index, 1)"
+                    >
+                      <ChevronDown :size="12" />
+                    </button>
+                    <button
+                      type="button"
+                      class="grid size-5 place-items-center rounded-sm text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      :title="t('sessions.editor.jumps.remove')"
+                      :aria-label="t('sessions.editor.jumps.remove')"
+                      @click="editor.removeHopAt(index)"
+                    >
+                      <X :size="12" />
+                    </button>
+                  </span>
+                </li>
+              </ul>
 
-            <div class="mt-2 flex gap-1.5">
-              <Select
-                v-model="hopToAdd"
-                class="min-w-0 flex-1"
-                :options="hopOptions"
-                :placeholder="t('sessions.editor.jumps.pick')"
-                :disabled="editor.hopChoices.length === 0"
-                :aria-label="t('sessions.editor.jumps.choose')"
-              />
-              <button
-                type="button"
-                class="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="!canAddHop"
-                @click="addSelectedHop()"
-              >
-                <Plus :size="12" />
-                {{ t("sessions.editor.jumps.add") }}
-              </button>
-            </div>
-          </section>
+              <div class="mt-2 flex gap-1.5">
+                <Select
+                  v-model="hopToAdd"
+                  class="min-w-0 flex-1"
+                  :options="hopOptions"
+                  :placeholder="t('sessions.editor.jumps.pick')"
+                  :disabled="editor.hopChoices.length === 0"
+                  :aria-label="t('sessions.editor.jumps.choose')"
+                />
+                <button
+                  type="button"
+                  class="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="!canAddHop"
+                  @click="addSelectedHop()"
+                >
+                  <Plus :size="12" />
+                  {{ t("sessions.editor.jumps.add") }}
+                </button>
+              </div>
+            </section>
 
-          <section v-if="editor.isSsh">
-            <div class="flex items-center justify-between">
-              <h3 class="text-xs font-medium">{{ t("sessions.editor.forwards.title") }}</h3>
-              <button
-                type="button"
-                class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
-                @click="editor.addForward()"
-              >
-                <Plus :size="12" />
-                {{ t("sessions.editor.forwards.add") }}
-              </button>
-            </div>
-            <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.forwards.hint") }}</p>
+            <section v-if="editor.isSsh">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-medium">{{ t("sessions.editor.forwards.title") }}</h3>
+                <button
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent"
+                  @click="editor.addForward()"
+                >
+                  <Plus :size="12" />
+                  {{ t("sessions.editor.forwards.add") }}
+                </button>
+              </div>
+              <p class="mt-1 text-[11px] text-muted-foreground">{{ t("sessions.editor.forwards.hint") }}</p>
 
-            <p v-if="editor.forwards.length === 0" class="mt-2 text-[11px] text-muted-foreground">
-              {{ t("sessions.editor.forwards.empty") }}
-            </p>
+              <p v-if="editor.forwards.length === 0" class="mt-2 text-[11px] text-muted-foreground">
+                {{ t("sessions.editor.forwards.empty") }}
+              </p>
 
-            <ul v-else class="mt-2 space-y-2">
-              <li v-for="row in editor.forwards" :key="row.id">
-                <div class="flex items-center gap-1">
-                  <!--
+              <ul v-else class="mt-2 space-y-2">
+                <li v-for="row in editor.forwards" :key="row.id">
+                  <div class="flex items-center gap-1">
+                    <!--
                     What kind of forward this is, first, because it decides what the rest of the row
                     asks for: a local forward has a destination, a dynamic one is told where to go by
                     whoever connects and has none to type.
                   -->
+                    <Select
+                      :model-value="row.mode"
+                      :options="forwardModes"
+                      size="compact"
+                      class="shrink-0"
+                      :aria-label="t('sessions.editor.forwards.mode')"
+                      @update:model-value="row.mode = $event as ForwardMode"
+                    />
+                    <input
+                      v-model="row.bindHost"
+                      type="text"
+                      class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                      :class="submitted && forwardProblem(row, 'bindHost') ? 'border-destructive' : 'border-border'"
+                      :placeholder="t('sessions.editor.forwards.bindHostPlaceholder')"
+                      :aria-label="t('sessions.editor.forwards.bindHost')"
+                    />
+                    <span class="text-muted-foreground">:</span>
+                    <input
+                      v-model="row.bindPort"
+                      type="text"
+                      inputmode="numeric"
+                      class="w-14 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                      :class="submitted && forwardProblem(row, 'bindPort') ? 'border-destructive' : 'border-border'"
+                      :aria-label="t('sessions.editor.forwards.bindPort')"
+                    />
+                    <ArrowRight v-if="row.mode === 'local'" :size="12" class="shrink-0 text-muted-foreground" />
+                    <span v-else class="shrink-0 font-mono text-[10px] text-muted-foreground">SOCKS5</span>
+                    <input
+                      v-if="row.mode === 'local'"
+                      v-model="row.targetHost"
+                      type="text"
+                      class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                      :class="submitted && forwardProblem(row, 'targetHost') ? 'border-destructive' : 'border-border'"
+                      :placeholder="t('sessions.editor.forwards.targetHostPlaceholder')"
+                      :aria-label="t('sessions.editor.forwards.targetHost')"
+                    />
+                    <span v-if="row.mode === 'local'" class="text-muted-foreground">:</span>
+                    <input
+                      v-if="row.mode === 'local'"
+                      v-model="row.targetPort"
+                      type="text"
+                      inputmode="numeric"
+                      class="w-14 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
+                      :class="submitted && forwardProblem(row, 'targetPort') ? 'border-destructive' : 'border-border'"
+                      :placeholder="t('sessions.editor.forwards.targetPortPlaceholder')"
+                      :aria-label="t('sessions.editor.forwards.targetPort')"
+                    />
+                    <button
+                      type="button"
+                      class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      :title="t('sessions.editor.forwards.remove')"
+                      :aria-label="t('sessions.editor.forwards.remove')"
+                      @click="editor.removeForward(row.id)"
+                    >
+                      <Trash2 :size="12" />
+                    </button>
+                  </div>
+                  <template v-if="submitted">
+                    <p
+                      v-for="message in forwardMessages(row)"
+                      :key="message"
+                      class="mt-0.5 text-[11px] text-destructive"
+                    >
+                      {{ message }}
+                    </p>
+                  </template>
+                </li>
+              </ul>
+            </section>
+
+            <section v-if="editor.protocol === 'telnet'">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.telnet.title") }}</h3>
+              <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="block text-xs font-medium" for="session-telnet-enter">{{
+                    t("sessions.editor.telnet.enter")
+                  }}</label>
                   <Select
-                    :model-value="row.mode"
-                    :options="forwardModes"
-                    size="compact"
-                    class="shrink-0"
-                    :aria-label="t('sessions.editor.forwards.mode')"
-                    @update:model-value="row.mode = $event as ForwardMode"
+                    id="session-telnet-enter"
+                    :model-value="editor.telnetEnter"
+                    class="mt-1"
+                    :options="enterOptions"
+                    @update:model-value="editor.telnetEnter = $event as EnterMode"
                   />
-                  <input
-                    v-model="row.bindHost"
-                    type="text"
-                    class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
-                    :class="submitted && forwardProblem(row, 'bindHost') ? 'border-destructive' : 'border-border'"
-                    :placeholder="t('sessions.editor.forwards.bindHostPlaceholder')"
-                    :aria-label="t('sessions.editor.forwards.bindHost')"
-                  />
-                  <span class="text-muted-foreground">:</span>
-                  <input
-                    v-model="row.bindPort"
-                    type="text"
-                    inputmode="numeric"
-                    class="w-14 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
-                    :class="submitted && forwardProblem(row, 'bindPort') ? 'border-destructive' : 'border-border'"
-                    :aria-label="t('sessions.editor.forwards.bindPort')"
-                  />
-                  <ArrowRight v-if="row.mode === 'local'" :size="12" class="shrink-0 text-muted-foreground" />
-                  <span v-else class="shrink-0 font-mono text-[10px] text-muted-foreground">SOCKS5</span>
-                  <input
-                    v-if="row.mode === 'local'"
-                    v-model="row.targetHost"
-                    type="text"
-                    class="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
-                    :class="submitted && forwardProblem(row, 'targetHost') ? 'border-destructive' : 'border-border'"
-                    :placeholder="t('sessions.editor.forwards.targetHostPlaceholder')"
-                    :aria-label="t('sessions.editor.forwards.targetHost')"
-                  />
-                  <span v-if="row.mode === 'local'" class="text-muted-foreground">:</span>
-                  <input
-                    v-if="row.mode === 'local'"
-                    v-model="row.targetPort"
-                    type="text"
-                    inputmode="numeric"
-                    class="w-14 rounded-md border bg-background px-2 py-1.5 font-mono text-xs focus:outline-none"
-                    :class="submitted && forwardProblem(row, 'targetPort') ? 'border-destructive' : 'border-border'"
-                    :placeholder="t('sessions.editor.forwards.targetPortPlaceholder')"
-                    :aria-label="t('sessions.editor.forwards.targetPort')"
-                  />
-                  <button
-                    type="button"
-                    class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-destructive/10 hover:text-destructive"
-                    :title="t('sessions.editor.forwards.remove')"
-                    :aria-label="t('sessions.editor.forwards.remove')"
-                    @click="editor.removeForward(row.id)"
-                  >
-                    <Trash2 :size="12" />
-                  </button>
                 </div>
-                <template v-if="submitted">
-                  <p v-for="message in forwardMessages(row)" :key="message" class="mt-0.5 text-[11px] text-destructive">
-                    {{ message }}
+                <div>
+                  <label class="block text-xs font-medium" for="session-telnet-backspace">{{
+                    t("sessions.editor.telnet.backspace")
+                  }}</label>
+                  <Select
+                    id="session-telnet-backspace"
+                    :model-value="editor.telnetBackspace"
+                    class="mt-1"
+                    :options="backspaceOptions"
+                    @update:model-value="editor.telnetBackspace = $event as BackspaceMode"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section v-if="editor.protocol === 'serial'">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.serial.title") }}</h3>
+              <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-medium" for="session-serial-port">{{
+                    t("sessions.editor.serial.port")
+                  }}</label>
+                  <Select
+                    id="session-serial-port"
+                    v-model="editor.serialPort"
+                    class="mt-1"
+                    :options="serialPortOptions"
+                  />
+                  <p v-if="submitted && errors.serialPort" class="mt-1 text-[11px] text-destructive">
+                    {{ errors.serialPort }}
                   </p>
-                </template>
-              </li>
-            </ul>
-          </section>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-serial-baud">{{
+                    t("sessions.editor.serial.baud")
+                  }}</label>
+                  <input
+                    id="session-serial-baud"
+                    v-model="editor.serialBaud"
+                    type="text"
+                    inputmode="numeric"
+                    class="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                    :class="submitted && errors.serialBaud ? 'border-destructive' : 'border-border'"
+                    :placeholder="t('sessions.editor.serial.baudPlaceholder')"
+                  />
+                  <p v-if="submitted && errors.serialBaud" class="mt-1 text-[11px] text-destructive">
+                    {{ errors.serialBaud }}
+                  </p>
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-serial-databits">{{
+                    t("sessions.editor.serial.dataBits")
+                  }}</label>
+                  <Select
+                    id="session-serial-databits"
+                    :model-value="String(editor.serialDataBits)"
+                    class="mt-1"
+                    :options="dataBitsOptions"
+                    @update:model-value="editor.serialDataBits = Number($event)"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-serial-parity">{{
+                    t("sessions.editor.serial.parity")
+                  }}</label>
+                  <Select
+                    id="session-serial-parity"
+                    :model-value="editor.serialParity"
+                    class="mt-1"
+                    :options="parityOptions"
+                    @update:model-value="editor.serialParity = $event as SerialParity"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-serial-stopbits">{{
+                    t("sessions.editor.serial.stopBits")
+                  }}</label>
+                  <Select
+                    id="session-serial-stopbits"
+                    :model-value="editor.serialStopBits"
+                    class="mt-1"
+                    :options="stopBitsOptions"
+                    @update:model-value="editor.serialStopBits = $event as SerialStopBits"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-serial-flow">{{
+                    t("sessions.editor.serial.flowControl")
+                  }}</label>
+                  <Select
+                    id="session-serial-flow"
+                    :model-value="editor.serialFlowControl"
+                    class="mt-1"
+                    :options="flowOptions"
+                    @update:model-value="editor.serialFlowControl = $event as SerialFlowControl"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-serial-backspace">{{
+                    t("sessions.editor.telnet.backspace")
+                  }}</label>
+                  <Select
+                    id="session-serial-backspace"
+                    :model-value="editor.serialBackspace"
+                    class="mt-1"
+                    :options="backspaceOptions"
+                    @update:model-value="editor.serialBackspace = $event as BackspaceMode"
+                  />
+                </div>
+              </div>
+            </section>
 
-          <section v-if="editor.protocol === 'telnet'">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.telnet.title") }}</h3>
-            <div class="mt-2 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label class="block text-xs font-medium" for="session-telnet-enter">{{
-                  t("sessions.editor.telnet.enter")
-                }}</label>
-                <Select
-                  id="session-telnet-enter"
-                  :model-value="editor.telnetEnter"
-                  class="mt-1"
-                  :options="enterOptions"
-                  @update:model-value="editor.telnetEnter = $event as EnterMode"
-                />
+            <section v-if="editor.protocol === 'local'">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.local.title") }}</h3>
+              <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="block text-xs font-medium" for="session-local-shell">{{
+                    t("sessions.editor.local.shell")
+                  }}</label>
+                  <Select id="session-local-shell" v-model="editor.localShell" class="mt-1" :options="shellOptions" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-local-args">{{
+                    t("sessions.editor.local.args")
+                  }}</label>
+                  <input
+                    id="session-local-args"
+                    v-model="editor.localArgs"
+                    type="text"
+                    class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                    :placeholder="t('sessions.editor.local.argsPlaceholder')"
+                  />
+                </div>
               </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-telnet-backspace">{{
-                  t("sessions.editor.telnet.backspace")
-                }}</label>
-                <Select
-                  id="session-telnet-backspace"
-                  :model-value="editor.telnetBackspace"
-                  class="mt-1"
-                  :options="backspaceOptions"
-                  @update:model-value="editor.telnetBackspace = $event as BackspaceMode"
-                />
-              </div>
-            </div>
-          </section>
+            </section>
 
-          <section v-if="editor.protocol === 'serial'">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.serial.title") }}</h3>
-            <div class="mt-2 grid gap-3 sm:grid-cols-2">
-              <div class="sm:col-span-2">
-                <label class="block text-xs font-medium" for="session-serial-port">{{
-                  t("sessions.editor.serial.port")
-                }}</label>
-                <Select
-                  id="session-serial-port"
-                  v-model="editor.serialPort"
-                  class="mt-1"
-                  :options="serialPortOptions"
-                />
-                <p v-if="submitted && errors.serialPort" class="mt-1 text-[11px] text-destructive">
-                  {{ errors.serialPort }}
-                </p>
+            <section v-if="editor.protocol === 'wsl'">
+              <h3 class="text-xs font-medium">{{ t("sessions.editor.wsl.title") }}</h3>
+              <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="block text-xs font-medium" for="session-wsl-distro">{{
+                    t("sessions.editor.wsl.distro")
+                  }}</label>
+                  <Select id="session-wsl-distro" v-model="editor.wslDistro" class="mt-1" :options="distroOptions" />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-wsl-args">{{
+                    t("sessions.editor.wsl.args")
+                  }}</label>
+                  <input
+                    id="session-wsl-args"
+                    v-model="editor.wslArgs"
+                    type="text"
+                    class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
+                    :placeholder="t('sessions.editor.local.argsPlaceholder')"
+                  />
+                </div>
               </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-serial-baud">{{
-                  t("sessions.editor.serial.baud")
-                }}</label>
-                <input
-                  id="session-serial-baud"
-                  v-model="editor.serialBaud"
-                  type="text"
-                  inputmode="numeric"
-                  class="mt-1 w-full rounded-md border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
-                  :class="submitted && errors.serialBaud ? 'border-destructive' : 'border-border'"
-                  :placeholder="t('sessions.editor.serial.baudPlaceholder')"
-                />
-                <p v-if="submitted && errors.serialBaud" class="mt-1 text-[11px] text-destructive">
-                  {{ errors.serialBaud }}
-                </p>
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-serial-databits">{{
-                  t("sessions.editor.serial.dataBits")
-                }}</label>
-                <Select
-                  id="session-serial-databits"
-                  :model-value="String(editor.serialDataBits)"
-                  class="mt-1"
-                  :options="dataBitsOptions"
-                  @update:model-value="editor.serialDataBits = Number($event)"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-serial-parity">{{
-                  t("sessions.editor.serial.parity")
-                }}</label>
-                <Select
-                  id="session-serial-parity"
-                  :model-value="editor.serialParity"
-                  class="mt-1"
-                  :options="parityOptions"
-                  @update:model-value="editor.serialParity = $event as SerialParity"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-serial-stopbits">{{
-                  t("sessions.editor.serial.stopBits")
-                }}</label>
-                <Select
-                  id="session-serial-stopbits"
-                  :model-value="editor.serialStopBits"
-                  class="mt-1"
-                  :options="stopBitsOptions"
-                  @update:model-value="editor.serialStopBits = $event as SerialStopBits"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-serial-flow">{{
-                  t("sessions.editor.serial.flowControl")
-                }}</label>
-                <Select
-                  id="session-serial-flow"
-                  :model-value="editor.serialFlowControl"
-                  class="mt-1"
-                  :options="flowOptions"
-                  @update:model-value="editor.serialFlowControl = $event as SerialFlowControl"
-                />
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-serial-backspace">{{
-                  t("sessions.editor.telnet.backspace")
-                }}</label>
-                <Select
-                  id="session-serial-backspace"
-                  :model-value="editor.serialBackspace"
-                  class="mt-1"
-                  :options="backspaceOptions"
-                  @update:model-value="editor.serialBackspace = $event as BackspaceMode"
-                />
-              </div>
-            </div>
-          </section>
+            </section>
 
-          <section v-if="editor.protocol === 'local'">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.local.title") }}</h3>
-            <div class="mt-2 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label class="block text-xs font-medium" for="session-local-shell">{{
-                  t("sessions.editor.local.shell")
-                }}</label>
-                <Select id="session-local-shell" v-model="editor.localShell" class="mt-1" :options="shellOptions" />
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-local-args">{{
-                  t("sessions.editor.local.args")
-                }}</label>
-                <input
-                  id="session-local-args"
-                  v-model="editor.localArgs"
-                  type="text"
-                  class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
-                  :placeholder="t('sessions.editor.local.argsPlaceholder')"
-                />
-              </div>
-            </div>
-          </section>
-
-          <section v-if="editor.protocol === 'wsl'">
-            <h3 class="text-xs font-medium">{{ t("sessions.editor.wsl.title") }}</h3>
-            <div class="mt-2 grid gap-3 sm:grid-cols-2">
-              <div>
-                <label class="block text-xs font-medium" for="session-wsl-distro">{{
-                  t("sessions.editor.wsl.distro")
-                }}</label>
-                <Select id="session-wsl-distro" v-model="editor.wslDistro" class="mt-1" :options="distroOptions" />
-              </div>
-              <div>
-                <label class="block text-xs font-medium" for="session-wsl-args">{{
-                  t("sessions.editor.wsl.args")
-                }}</label>
-                <input
-                  id="session-wsl-args"
-                  v-model="editor.wslArgs"
-                  type="text"
-                  class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm focus:outline-none"
-                  :placeholder="t('sessions.editor.local.argsPlaceholder')"
-                />
-              </div>
-            </div>
-          </section>
-
-          <!--
+            <!--
             Both are drawn by components of their own: each binds the store, and each turns the one
             store problem it owns into a sentence beside the field it belongs to.
           -->
-          <ContainerSettingsFields v-if="editor.isContainer" :submitted="submitted" />
-          <KubernetesSettingsFields v-if="editor.isKubernetes" :submitted="submitted" />
-          <VmwareSettingsFields v-if="editor.isVmware" :submitted="submitted" />
+            <ContainerSettingsFields v-if="editor.isContainer" :submitted="submitted" />
+            <KubernetesSettingsFields v-if="editor.isKubernetes" :submitted="submitted" />
+            <VmwareSettingsFields v-if="editor.isVmware" :submitted="submitted" />
 
-          <p v-if="problemText" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
-            <span>{{ problemText.message }}</span>
-            <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problemText.code }}</span>
-          </p>
+            <p v-if="problemText" class="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs">
+              <span>{{ problemText.message }}</span>
+              <span class="mt-1 block font-mono text-[10px] text-muted-foreground">{{ problemText.code }}</span>
+            </p>
+          </div>
 
-          <div class="flex justify-end gap-2 border-t border-border pt-4">
+          <div class="flex shrink-0 items-center gap-2 border-t border-border px-4 py-3">
+            <button
+              v-if="testable"
+              type="button"
+              data-session-test
+              class="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="busy || editor.testing"
+              @click="runTest()"
+            >
+              <LoaderCircle v-if="editor.testing" :size="12" class="animate-spin" />
+              {{ editor.testing ? t("sessions.connectionTest.testing") : t("sessions.connectionTest.action") }}
+            </button>
+            <span class="flex-1"></span>
             <DialogClose class="rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent">
               {{ t("sessions.editor.cancel") }}
             </DialogClose>

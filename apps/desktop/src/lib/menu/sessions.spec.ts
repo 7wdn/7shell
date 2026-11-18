@@ -65,6 +65,7 @@ function submenu(entries: readonly MenuEntry[], id: string): MenuSubmenu {
 function sessionActions() {
   return {
     open: vi.fn(),
+    openTerminal: vi.fn(),
     openFiles: vi.fn(),
     edit: vi.fn(),
     remove: vi.fn(),
@@ -98,6 +99,7 @@ describe("a saved session's menu", () => {
 
     expect(entries.filter((entry) => entry.kind === "action").map((entry) => entry.id)).toEqual([
       "open",
+      "open-another-terminal",
       "open-files",
       "edit",
       "move-to-new-group",
@@ -112,14 +114,24 @@ describe("a saved session's menu", () => {
     const entries = menu(session, [], wired);
 
     pick(entries, "open").run();
+    pick(entries, "open-another-terminal").run();
     pick(entries, "open-files").run();
     pick(entries, "edit").run();
     pick(entries, "remove").run();
 
     expect(wired.open).toHaveBeenCalledWith(session);
+    expect(wired.openTerminal).toHaveBeenCalledWith(session);
     expect(wired.openFiles).toHaveBeenCalledWith(session);
     expect(wired.edit).toHaveBeenCalledWith(session);
     expect(wired.remove).toHaveBeenCalledWith(session);
+  });
+
+  it("offers another terminal only where a shell is what the session is", () => {
+    const cluster: Session = { ...session, protocol: "kubernetes", host: "", port: 0, user: "" };
+    expect(pick(menu(session, [], sessionActions()), "open-another-terminal").labelKey).toBe(
+      "sessions.list.newTerminal",
+    );
+    expect(menu(cluster, [], sessionActions()).some((entry) => entry.id === "open-another-terminal")).toBe(false);
   });
 
   it("copies the address the way the row writes it", () => {

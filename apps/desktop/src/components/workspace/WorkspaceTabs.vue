@@ -39,6 +39,7 @@ import {
   MonitorCog,
   Network,
   PanelBottom,
+  Plus,
   RotateCw,
   Settings,
   ShipWheel,
@@ -541,6 +542,28 @@ function tabStyle(): Record<string, string> | undefined {
   }
   return { maxWidth: `${maxTabWidth.value}px` };
 }
+
+/**
+ * The session the "+" in the strip would open another terminal for: the one the tab on screen is
+ * about, when that session opens a shell.
+ *
+ * The button is absent rather than disabled for a settings page, a file browser of a folder
+ * service or a container workspace — there is no second shell to give, and a disabled control
+ * would advertise one that does not exist. The session's name is in the tooltip because two
+ * terminals of two machines look identical in a strip otherwise.
+ */
+const newTerminalSession = computed(() => {
+  const tab = terminals.activeTab;
+  const session = tab ? sessionOf(tab) : undefined;
+  return session && protocolSupports(session.protocol, "shell") ? session : undefined;
+});
+
+function openNewTerminal(): void {
+  const session = newTerminalSession.value;
+  if (session) {
+    void terminals.open(session);
+  }
+}
 </script>
 
 <template>
@@ -638,6 +661,28 @@ function tabStyle(): Record<string, string> | undefined {
           </button>
         </div>
       </template>
+
+      <!--
+        One more terminal on the machine the tab on screen is about. It is the strip's own
+        "duplicate", reachable without knowing that a tab's menu has one — and it disappears when
+        the tab is about something a shell would not be: a cluster, a container engine, a folder.
+      -->
+      <button
+        v-if="newTerminalSession"
+        type="button"
+        data-new-terminal
+        :class="
+          cn(
+            'grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+            vertical ? 'mx-1.5 my-1' : 'my-1.5',
+          )
+        "
+        :title="t('terminal.tab.newTerminal', { name: newTerminalSession.name })"
+        :aria-label="t('terminal.tab.newTerminal', { name: newTerminalSession.name })"
+        @click.stop="openNewTerminal()"
+      >
+        <Plus :size="13" />
+      </button>
     </div>
 
     <div

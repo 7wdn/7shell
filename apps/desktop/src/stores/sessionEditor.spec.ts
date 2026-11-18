@@ -9,8 +9,10 @@ vi.mock("@/lib/backend/tauri", () => ({
   groupsList: vi.fn(),
   k8sContexts: vi.fn(),
 }));
+vi.mock("@/lib/sessions/testConnection", () => ({ runConnectionTest: vi.fn() }));
 
 import { groupsList, k8sContexts, sessionSave, sessionsList } from "@/lib/backend/tauri";
+import { runConnectionTest } from "@/lib/sessions/testConnection";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
 import type { Session } from "@/types/session";
@@ -19,6 +21,7 @@ const sessionsListMock = vi.mocked(sessionsList);
 const sessionSaveMock = vi.mocked(sessionSave);
 const groupsListMock = vi.mocked(groupsList);
 const k8sContextsMock = vi.mocked(k8sContexts);
+const runConnectionTestMock = vi.mocked(runConnectionTest);
 
 function sample(id: string, name: string): Session {
   return {
@@ -41,6 +44,52 @@ describe("session editor store", () => {
     groupsListMock.mockReset().mockResolvedValue([]);
     sessionSaveMock.mockReset().mockImplementation(async (session: Session) => session);
     k8sContextsMock.mockReset().mockResolvedValue([]);
+    runConnectionTestMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("tests the draft as it stands, without keeping the answer in the editor", async () => {
+    const editor = useSessionEditorStore();
+    editor.fill(sample("app", "app"));
+
+    await editor.testConnection();
+
+    expect(runConnectionTestMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "app", host: "app.test" }),
+      undefined,
+    );
+    expect(editor.testing).toBe(false);
+  });
+
+  it("passes a typed password to the test and stores nothing", async () => {
+    const editor = useSessionEditorStore();
+    editor.fill(null);
+    editor.name = "new";
+    editor.host = "new.test";
+    editor.user = "root";
+    editor.secret = "hunter2";
+
+    await editor.testConnection();
+
+    expect(runConnectionTestMock).toHaveBeenCalledWith(expect.objectContaining({ name: "new" }), { value: "hunter2" });
+  });
+
+  it("keeps the button busy until the helper answers", async () => {
+    let answer: (() => void) | undefined;
+    runConnectionTestMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const editor = useSessionEditorStore();
+    editor.fill(sample("app", "app"));
+
+    const pending = editor.testConnection();
+    expect(editor.testing).toBe(true);
+
+    answer?.();
+    await pending;
+    expect(editor.testing).toBe(false);
   });
 
   it("keeps hops in the order they were added, moved and removed", async () => {

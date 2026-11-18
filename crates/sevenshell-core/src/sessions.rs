@@ -2,17 +2,18 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
 use sevenshell_session::{OpenTerminal, RecordingSpec, SessionRegistry};
 use sevenshell_ssh::{
-    Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize, TunnelHandle,
+    ChannelEvent, Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target,
+    TerminalSize, TunnelHandle,
 };
 use sevenshell_term::{LocalSpec, SerialSpec, TcpSpec, TelnetSpec, WslSpec};
 use sevenshell_types::{
-    AuthMethod, ForwardMode, KnownHostEntry, LocalForward, LocalShell, OpenOutcome, OpenTunnel, PresentedHostKey,
-    Protocol, SerialPortInfo, Session, TransferInfo, TunnelFailure,
+    AuthMethod, ConnectionTestOutcome, ForwardMode, KnownHostEntry, LocalForward, LocalShell, OpenOutcome, OpenTunnel,
+    PresentedHostKey, Protocol, SecretInput, SerialPortInfo, Session, TransferInfo, TunnelFailure,
 };
 use sevenshell_vault::Vault;
 use tokio::sync::{Mutex, Notify, mpsc};
@@ -44,9 +45,9 @@ pub(crate) enum HostKeyDecision {
 /// resolved entry when there was one, so the credential step can read the identities it names
 /// without the interface ever learning a path.
 #[derive(Debug)]
-struct PreparedSession {
-    session: Session,
-    config: Option<sevenshell_ssh::openssh::ResolvedHost>,
+pub(crate) struct PreparedSession {
+    pub(crate) session: Session,
+    pub(crate) config: Option<sevenshell_ssh::openssh::ResolvedHost>,
 }
 
 /// A key file larger than this is not a key.
@@ -405,6 +406,167 @@ impl Core {
             if open.session_id == session_id {
                 let _ = self.close_terminal(&open.handle).await;
             }
+        }
+    }
+
+    /// Tests a session's connection without opening a terminal.
+    ///
+    /// The order is the open's order, because a test that skipped a step would be testing a
+    /// different connection than the one the person would get: every jump host is authenticated,
+    /// the target's key is probed and checked against what is trusted, and only then is a
+    /// credential offered. What comes up is a carrier — no session channel and no pty — so the
+    /// server sees a login and nothing else. Calling this "connected" therefore means the key was
+    /// verified and the credential was accepted, which is the question a test is for.
+    ///
+    /// The session is the editor's draft rather than a saved id: a person should be able to learn
+    /// that a password is wrong before saving it. The credential is the one typed into the dialog
+    /// when there is one, and the vault's when there is not.
+    ///
+    /// Telnet and a raw TCP console have no login; for them the honest test is whether the
+    /// address answers. Every other transport has no connection of its own to test.
+    pub async fn test_session(
+        &self,
+        session: &Session,
+        secret: Option<SecretInput>,
+    ) -> Result<ConnectionTestOutcome, ShellError> {
+        let started = Instant::now();
+        let PreparedSession { session, config } = self.prepare_session(session)?;
+
+        match session.protocol {
+            Protocol::Ssh => self.test_ssh(&session, config.as_ref(), secret, started).await,
+            Protocol::Telnet | Protocol::RawTcp => {
+                let stream = match tokio::time::timeout(
+                    self.timeout,
+                    tokio::net::TcpStream::connect((session.host.as_str(), session.port)),
+                )
+                .await
+                {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(error)) => {
+                        return Err(ShellError::terminal_unreachable(
+                            &session.host,
+                            session.port,
+                            error.to_string(),
+                        ));
+                    }
+                    Err(_) => {
+                        return Err(ShellError::terminal_unreachable(
+                            &session.host,
+                            session.port,
+                            format!("nothing answered within {} seconds", self.timeout.as_secs()),
+                        ));
+                    }
+                };
+                drop(stream);
+                Ok(ConnectionTestOutcome::Connected {
+                    latency_ms: elapsed_millis(started),
+                    authenticated: false,
+                    fingerprint: None,
+                })
+            }
+            _ => Err(ShellError::app_unsupported(
+                "this kind of session has no connection to test",
+            )),
+        }
+    }
+
+    /// The SSH half of [`Core::test_session`]: verify the route and the key, authenticate, hang up.
+    async fn test_ssh(
+        &self,
+        session: &Session,
+        config: Option<&sevenshell_ssh::openssh::ResolvedHost>,
+        secret: Option<SecretInput>,
+        started: Instant,
+    ) -> Result<ConnectionTestOutcome, ShellError> {
+        let credential = self.credential_for_test(session, config, secret)?;
+        let target = Target {
+            host: session.host.clone(),
+            port: session.port,
+            user: session.user.clone(),
+        };
+
+        let route = self.open_route(session).await?;
+        let hop = match route {
+            RouteOutcome::Ready(hop) => hop,
+            RouteOutcome::Decision(decision) => return Ok(test_decision(*decision)),
+        };
+
+        let presented = match &hop {
+            Some(hop) => sevenshell_ssh::probe_host_key_via(hop, &target.host, target.port, self.timeout).await?,
+            None => sevenshell_ssh::probe_host_key(&target.host, target.port, self.timeout).await?,
+        };
+
+        let system = system_known_host(&target.host, target.port, &presented);
+        if system == sevenshell_ssh::openssh::SystemHostKey::Changed {
+            return Err(ShellError::ssh_host_key_system_mismatch(
+                &target.host,
+                target.port,
+                &presented.key_type,
+            ));
+        }
+        match self.vault.find_known_host(&target.host, target.port)? {
+            None if system == sevenshell_ssh::openssh::SystemHostKey::Trusted => {}
+            None => return Ok(ConnectionTestOutcome::HostKeyUnknown { key: presented }),
+            Some(trusted) if trusted.public_key != presented.public_key => {
+                return Ok(ConnectionTestOutcome::HostKeyMismatch {
+                    key: presented,
+                    trusted,
+                });
+            }
+            Some(_) => {}
+        }
+
+        let route = match hop {
+            Some(hop) => Route::Through {
+                hop,
+                host: target.host.clone(),
+                port: target.port,
+            },
+            None => Route::Direct,
+        };
+        let fingerprint = presented.fingerprint.clone();
+        let request = OpenRequest {
+            target,
+            credential,
+            terminal_type: session.terminal.terminal_type.clone(),
+            // A connection with no terminal has no life to keep.
+            keepalive_seconds: 0,
+            forward_agent: false,
+            timeout: self.timeout,
+            expected_host_key: presented,
+            size: INITIAL_SIZE,
+            route,
+            purpose: Purpose::Carrier,
+        };
+
+        let (events, _unused) = mpsc::channel::<ChannelEvent>(1);
+        let connected = SshSession::open(request, events).await?;
+        let outcome = ConnectionTestOutcome::Connected {
+            latency_ms: elapsed_millis(started),
+            authenticated: true,
+            fingerprint: Some(fingerprint),
+        };
+        // The test is over either way. A disconnect that fails changes nothing about what the
+        // connection already answered.
+        let _ = connected.close().await;
+        Ok(outcome)
+    }
+
+    /// The credential a test offers: the typed one when there is one, the stored one otherwise.
+    ///
+    /// Only the login-and-password method has anything new to offer here. A key's material is in
+    /// the vault or on disk already, and an imported key carries its own passphrase with it.
+    fn credential_for_test(
+        &self,
+        session: &Session,
+        config: Option<&sevenshell_ssh::openssh::ResolvedHost>,
+        secret: Option<SecretInput>,
+    ) -> Result<Credential, ShellError> {
+        match (session.auth.method, secret) {
+            (AuthMethod::Password | AuthMethod::KeyboardInteractive, Some(input)) => {
+                Ok(Credential::Password(input.value))
+            }
+            _ => self.credential(session, config),
         }
     }
 
@@ -906,7 +1068,7 @@ impl Core {
     /// resolved again on every connection, so editing `~/.ssh/config` changes the next connection
     /// without editing the session. Every directive that would change where the connection goes and
     /// that this build cannot honour refuses here, before a socket.
-    fn prepare_session(&self, session: &Session) -> Result<PreparedSession, ShellError> {
+    pub(crate) fn prepare_session(&self, session: &Session) -> Result<PreparedSession, ShellError> {
         if !session.auth.ssh_config || session.protocol != Protocol::Ssh {
             return Ok(PreparedSession {
                 session: session.clone(),
@@ -1097,6 +1259,19 @@ fn terminal_decision(decision: HostKeyDecision) -> OpenOutcome {
     }
 }
 
+/// The same two decisions, in the vocabulary a connection test answers in.
+fn test_decision(decision: HostKeyDecision) -> ConnectionTestOutcome {
+    match decision {
+        HostKeyDecision::Unknown(key) => ConnectionTestOutcome::HostKeyUnknown { key },
+        HostKeyDecision::Mismatch { key, trusted } => ConnectionTestOutcome::HostKeyMismatch { key, trusted },
+    }
+}
+
+/// A stopwatch reading as whole milliseconds, which is the precision the interface prints.
+fn elapsed_millis(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
 pub(crate) fn now_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1197,6 +1372,38 @@ mod tests {
             .expect_err("no such session");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::SessionNotFound);
+    }
+
+    #[tokio::test]
+    async fn a_raw_tcp_test_reports_reachability_without_authenticating() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("a free port");
+        let port = listener.local_addr().expect("the bound address").port();
+        let (_directory, vault, _) = vault_with_a_session();
+        let (core, _events) = Core::new(vault);
+        let mut session = sample("raw", "raw");
+        session.protocol = sevenshell_types::Protocol::RawTcp;
+        session.port = port;
+        session.user = String::new();
+
+        let outcome = core.test_session(&session, None).await.expect("the address answers");
+        match outcome {
+            ConnectionTestOutcome::Connected {
+                authenticated,
+                fingerprint,
+                ..
+            } => {
+                assert!(!authenticated, "a raw TCP console has no login to authenticate");
+                assert_eq!(fingerprint, None, "and no key to report");
+            }
+            other => panic!("expected a connected test, got {other:?}"),
+        }
+
+        drop(listener);
+        let error = core
+            .test_session(&session, None)
+            .await
+            .expect_err("nothing is listening");
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::TerminalUnreachable);
     }
 
     #[tokio::test]

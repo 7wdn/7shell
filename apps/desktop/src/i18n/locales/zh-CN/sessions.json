@@ -4,6 +4,8 @@
       "empty": "还没有会话。新建一个，把地址、用户和凭据放在一起。",
       "add": "新建会话",
       "open": "打开终端",
+      "newTerminal": "新建终端",
+      "testConnection": "测试到 {name} 的连接",
       "openDesktop": "打开远程桌面",
       "openHint": "为 {name} 打开终端",
       "openDesktopHint": "为 {name} 打开远程桌面",
@@ -109,6 +111,19 @@
       "noGroup": "不在任何分组",
       "jump": "跳板机",
       "forwards": "转发"
+    },
+    "connectionTest": {
+      "action": "测试连接",
+      "testing": "测试中…",
+      "signedIn": "已登录，用时 {ms} ms。",
+      "reachable": "地址已响应，用时 {ms} ms。",
+      "fingerprint": "主机键 {value}",
+      "unknownTitle": "这个主机键从未见过",
+      "trust": "信任此键并重新测试",
+      "mismatchTitle": "主机键已变更",
+      "mismatchBody": "主机键变更时是硬停而不是询问：除非你确认变更原因，否则不要信任。",
+      "trustedFingerprint": "已信任：{value}",
+      "presentedFingerprint": "现在提供：{value}"
     },
     "editor": {
       "titleNew": "新建会话",

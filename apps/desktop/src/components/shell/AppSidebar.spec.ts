@@ -24,6 +24,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionOpenCancel: vi.fn(async () => false),
   // The menu's own open is a real open when the question about a second tab is answered yes.
   sessionOpen: vi.fn(async () => undefined),
+  sessionTest: vi.fn(async () => ({ kind: "connected", latencyMs: 9, authenticated: true })),
   groupsList: vi.fn(async () => []),
   groupSave: vi.fn(async (group: SessionGroup) => group),
   groupDelete: vi.fn(async () => {}),
@@ -50,6 +51,7 @@ import {
   sessionsExport,
   sessionsImport,
   sessionsList,
+  sessionTest,
   settingsSet,
   terminalClose,
 } from "@/lib/backend/tauri";
@@ -480,6 +482,7 @@ function resetBackend(): void {
   vi.mocked(sessionsExport).mockReset().mockResolvedValue(undefined);
   vi.mocked(sessionsImport).mockReset().mockResolvedValue(undefined);
   vi.mocked(sessionOpenCancel).mockReset().mockResolvedValue(false);
+  vi.mocked(sessionTest).mockReset().mockResolvedValue({ kind: "connected", latencyMs: 9, authenticated: true });
   vi.mocked(sessionOpen)
     .mockReset()
     .mockImplementation(async (sessionId: string) => ({
@@ -1552,15 +1555,16 @@ describe("an attempt that is still going, and one that failed", () => {
     expect(host.querySelector("[data-session-details]")).toBeNull();
   });
 
-  it("carries nothing else on the row: the rest is a right-click away", async () => {
+  it("carries only the test and the tick on the row: the rest is a right-click away", async () => {
     // Editing, deleting and the file browser were three buttons on every row, which is three
-    // buttons per row saying what the menu already says.
+    // buttons per row saying what the menu already says. The test is the one action that belongs
+    // beside the row it is about, and the tick is how a row is picked out.
     await render([work], [db]);
 
     const labels = [...rowElement("session:session-2").querySelectorAll("button")].map(
       (button) => button.getAttribute("aria-label") ?? button.getAttribute("title"),
     );
-    expect(labels).toEqual(["Open a terminal for db", "Select db"]);
+    expect(labels).toEqual(["Open a terminal for db", "Test the connection to db", "Select db"]);
   });
 });
 
@@ -1906,5 +1910,21 @@ describe("importing and exporting the library", () => {
 
     await vi.waitFor(() => expect(host.textContent).toContain("is not a session export"));
     expect(host.textContent).toContain("SESSION-BUNDLE-INVALID");
+  });
+});
+
+describe("the row's test", () => {
+  it("tests a session from the row, in the slot left of the selection tick", async () => {
+    await render([], [web]);
+
+    const row = host.querySelector<HTMLElement>('[data-row="session:session-1"]');
+    const order = [...(row?.querySelectorAll("[data-session-test],[data-session-select]") ?? [])].map((element) =>
+      element.hasAttribute("data-session-test") ? "test" : "select",
+    );
+    expect(order).toEqual(["test", "select"]);
+
+    row?.querySelector<HTMLElement>("[data-session-test]")?.click();
+
+    await vi.waitFor(() => expect(vi.mocked(sessionTest)).toHaveBeenCalledWith(web, undefined));
   });
 });
