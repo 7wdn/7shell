@@ -12,6 +12,7 @@ sevenshell-core = { workspace = true }
 sevenshell-error = { workspace = true }
 sevenshell-policy = { workspace = true }
 sevenshell-types = { workspace = true }
+sevenshell-vmware = { workspace = true }
 async-trait = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }

@@ -21,6 +21,7 @@ mod files;
 mod gate;
 mod k8s;
 mod sessions;
+mod vmware;
 
 use std::sync::Arc;
 
@@ -34,6 +35,10 @@ pub use exec::{BatchExecInput, ExecRunInput};
 pub use files::{SftpListInput, SftpReadTextInput, SftpWriteTextInput};
 pub use k8s::K8sGetInput;
 pub use sessions::{SessionOpenInput, SessionsListInput, SessionsListKind};
+pub use vmware::{
+    GuestReadAction, GuestWriteAction, SnapshotChange, VmGuestReadInput, VmGuestWriteInput, VmPowerInput,
+    VmSnapshotChangeInput, VmSnapshotsInput, VmStatusInput, VmsListInput,
+};
 
 /// Every tool this build declares.
 pub fn register(registry: &mut ToolRegistry) -> Result<(), ApiError> {
@@ -47,6 +52,13 @@ pub fn register(registry: &mut ToolRegistry) -> Result<(), ApiError> {
     registry.register(Arc::new(containers::ContainersListTool))?;
     registry.register(Arc::new(containers::ContainerActionTool))?;
     registry.register(Arc::new(k8s::K8sGetTool))?;
+    registry.register(Arc::new(vmware::VmsListTool))?;
+    registry.register(Arc::new(vmware::VmStatusTool))?;
+    registry.register(Arc::new(vmware::VmPowerTool))?;
+    registry.register(Arc::new(vmware::VmSnapshotsTool))?;
+    registry.register(Arc::new(vmware::VmSnapshotChangeTool))?;
+    registry.register(Arc::new(vmware::VmGuestReadTool))?;
+    registry.register(Arc::new(vmware::VmGuestWriteTool))?;
     Ok(())
 }
 

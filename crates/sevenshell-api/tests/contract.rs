@@ -2,7 +2,7 @@
 //!
 //! What is frozen here is what a later change is not allowed to move without saying so:
 //!
-//! * the list — ten tools, `sshell_`-prefixed;
+//! * the list — the declared tools, `sshell_`-prefixed;
 //! * the argument schemas — closed objects whose required fields are the ones the input types
 //!   refuse to live without;
 //! * the refusal of `acknowledged` — an agent cannot agree on a person's behalf;
@@ -61,6 +61,22 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
         (
             "sshell_batch_exec",
             json!({ "sessionIds": ["lab"], "command": "uptime" }),
+        ),
+        ("sshell_vms_list", json!({})),
+        ("sshell_vm_status", json!({ "sessionId": "lab" })),
+        ("sshell_vm_power", json!({ "sessionId": "lab", "action": "start" })),
+        ("sshell_vm_snapshots", json!({ "sessionId": "lab" })),
+        (
+            "sshell_vm_snapshot_change",
+            json!({ "sessionId": "lab", "action": "take", "name": "before" }),
+        ),
+        (
+            "sshell_vm_guest_read",
+            json!({ "sessionId": "lab", "action": "processes" }),
+        ),
+        (
+            "sshell_vm_guest_write",
+            json!({ "sessionId": "lab", "action": "toolsInstall" }),
         ),
     ]
 }
@@ -163,12 +179,12 @@ fn error_of(outcome: ToolOutcome) -> ToolError {
 // -- The list -----------------------------------------------------------
 
 #[test]
-fn the_registry_lists_exactly_the_ten_declared_tools() {
+fn the_registry_lists_exactly_the_declared_tools() {
     let registry = local::default_registry();
     let descriptors = registry.descriptors();
 
-    assert_eq!(descriptors.len(), 10, "the first wave is ten tools");
-    assert_eq!(registry.len(), 10);
+    assert_eq!(descriptors.len(), 17, "every declared tool is registered");
+    assert_eq!(registry.len(), 17);
 
     for descriptor in &descriptors {
         assert!(

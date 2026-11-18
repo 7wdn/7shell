@@ -359,7 +359,7 @@ async fn the_tool_list_is_the_ten_prefixed_tools_with_closed_schemas() {
     let response = harness.request("tools/list", json!({})).await;
     let tools = response["result"]["tools"].as_array().expect("a list of tools");
 
-    assert_eq!(tools.len(), 10, "the first wave is ten tools");
+    assert_eq!(tools.len(), 17, "every declared tool is listed");
     for tool in tools {
         let name = tool["name"].as_str().expect("a name");
         assert!(name.starts_with("sshell_"), "{name} is outside the shared prefix");
@@ -420,7 +420,7 @@ async fn a_list_whose_refresh_failed_is_answered_from_the_compiled_table() {
         .unwrap_or_else(|| panic!("a failed refresh must not turn the list into an error: {response}"));
     assert_eq!(
         tools.len(),
-        10,
+        17,
         "the compiled list is still a complete answer for this build"
     );
     assert_eq!(response.get("error"), None);

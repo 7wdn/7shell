@@ -136,22 +136,38 @@ pub struct VmStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum VmPowerAction {
-    /// Boot the machine, showing Workstation's window.
+    /// Boot the machine, or resume it when it is suspended, showing Workstation's window.
     Start,
     /// Ask the guest to shut down through VMware Tools.
     Stop,
     /// Suspend the machine, keeping its state.
     Suspend,
+    /// Reset a running machine, which discards what the guest has not written down.
+    Reset,
+    /// Pause a running machine without saving its state.
+    Pause,
+    /// Resume a paused machine.
+    Unpause,
 }
 
 impl VmPowerAction {
-    pub const ALL: &'static [VmPowerAction] = &[VmPowerAction::Start, VmPowerAction::Stop, VmPowerAction::Suspend];
+    pub const ALL: &'static [VmPowerAction] = &[
+        VmPowerAction::Start,
+        VmPowerAction::Stop,
+        VmPowerAction::Suspend,
+        VmPowerAction::Reset,
+        VmPowerAction::Pause,
+        VmPowerAction::Unpause,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Start => "start",
             Self::Stop => "stop",
             Self::Suspend => "suspend",
+            Self::Reset => "reset",
+            Self::Pause => "pause",
+            Self::Unpause => "unpause",
         }
     }
 

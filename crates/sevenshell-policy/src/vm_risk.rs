@@ -16,10 +16,46 @@ pub fn vm_action(action: &str) -> RiskAssessment {
     let verdict = match action.as_str() {
         "start" => ("vm.start", "risk.vm.start", RiskLevel::Caution),
         "suspend" => ("vm.suspend", "risk.vm.suspend", RiskLevel::Caution),
+        "pause" | "unpause" => ("vm.pause", "risk.vm.pause", RiskLevel::Caution),
         "stop" => ("vm.stop", "risk.vm.stop", RiskLevel::Destructive),
+        // A reset discards whatever the guest has not written down.
+        "reset" => ("vm.reset", "risk.vm.reset", RiskLevel::Destructive),
         // Removing a lock that belongs to a live machine would let two hypervisors write the same
         // disks, so taking ownership asks like any other destructive action.
         "take-ownership" => ("vm.ownership", "risk.vm.takeOwnership", RiskLevel::Destructive),
+        _ => ("vm.unknown", "risk.vm.unknown", RiskLevel::Caution),
+    };
+    RiskAssessment::from_reasons(vec![RiskReason::new(verdict.0, verdict.1, verdict.2)])
+}
+
+/// Classifies one snapshot operation.
+///
+/// Taking one is a change; going back to it throws away everything since, and deleting one throws
+/// away the state itself.
+pub fn vm_snapshot(action: &str) -> RiskAssessment {
+    let action = action.trim().to_ascii_lowercase();
+    let verdict = match action.as_str() {
+        "list" => return RiskAssessment::safe(),
+        "take" => ("vm.snapshot-take", "risk.vm.snapshotTake", RiskLevel::Caution),
+        "revert" => ("vm.snapshot-revert", "risk.vm.snapshotRevert", RiskLevel::Destructive),
+        "delete" => ("vm.snapshot-delete", "risk.vm.snapshotDelete", RiskLevel::Destructive),
+        _ => ("vm.unknown", "risk.vm.unknown", RiskLevel::Caution),
+    };
+    RiskAssessment::from_reasons(vec![RiskReason::new(verdict.0, verdict.1, verdict.2)])
+}
+
+/// Classifies one guest operation.
+///
+/// Reading is safe; writing a file, making a directory or running a program is a change; deleting
+/// something or killing a process destroys work inside the guest.
+pub fn vm_guest(action: &str) -> RiskAssessment {
+    let action = action.trim().to_ascii_lowercase();
+    let verdict = match action.as_str() {
+        "ls" | "file-exists" | "directory-exists" | "processes" | "tools-state" => {
+            return RiskAssessment::safe();
+        }
+        "mkdir" | "rename" | "run" | "tools-install" => ("vm.guest-change", "risk.vm.guestChange", RiskLevel::Caution),
+        "rm" | "rmdir" | "kill" => ("vm.guest-remove", "risk.vm.guestRemove", RiskLevel::Destructive),
         _ => ("vm.unknown", "risk.vm.unknown", RiskLevel::Caution),
     };
     RiskAssessment::from_reasons(vec![RiskReason::new(verdict.0, verdict.1, verdict.2)])

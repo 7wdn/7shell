@@ -12,6 +12,7 @@
 //! Nothing here reads or keeps a guest credential.
 
 mod inventory;
+mod ops;
 mod vmcli;
 mod vmrun;
 
@@ -23,6 +24,7 @@ use sevenshell_error::ShellError;
 use sevenshell_types::{VmInfo, VmPowerAction, VmStatus};
 
 pub use inventory::inventory_path;
+pub use ops::{GuestAuth, GuestOp, SnapshotAction, guest, snapshot};
 pub use vmrun::{Vmrun, parse_running};
 
 use vmcli::Vmcli;
@@ -222,6 +224,9 @@ fn power_args(action: VmPowerAction, path: &str) -> Vec<&str> {
         VmPowerAction::Start => vec!["-T", "ws", "start", path, "gui"],
         VmPowerAction::Stop => vec!["-T", "ws", "stop", path, "soft"],
         VmPowerAction::Suspend => vec!["-T", "ws", "suspend", path, "soft"],
+        VmPowerAction::Reset => vec!["-T", "ws", "reset", path, "soft"],
+        VmPowerAction::Pause => vec!["-T", "ws", "pause", path],
+        VmPowerAction::Unpause => vec!["-T", "ws", "unpause", path],
     }
 }
 
@@ -310,7 +315,7 @@ fn remove_lock(vmx: &str) -> Result<bool, ShellError> {
 /// The inventory is consulted on every action rather than cached: a machine that was moved,
 /// renamed or removed since the scan is then answered for what it is now, and a token the
 /// interface holds stays useful across those changes.
-async fn resolve(vmrun: &Vmrun, vm_id: &str, operation: &str) -> Result<(String, bool), ShellError> {
+pub(crate) async fn resolve(vmrun: &Vmrun, vm_id: &str, operation: &str) -> Result<(String, bool), ShellError> {
     let running = vmrun.list_running().await?;
     let mut paths: Vec<String> = inventory::load().into_iter().map(|entry| entry.path).collect();
     for path in &running {
@@ -364,7 +369,7 @@ fn file_stem(path: &str) -> String {
 }
 
 /// A token an action may be pointed at: a UUID-shaped identity, normalized.
-fn checked_id(vm_id: &str, operation: &str) -> Result<String, ShellError> {
+pub(crate) fn checked_id(vm_id: &str, operation: &str) -> Result<String, ShellError> {
     inventory::normalize_uuid(vm_id.trim())
         .ok_or_else(|| ShellError::vmware_command_failed(operation, "the id is not a virtual machine identity"))
 }

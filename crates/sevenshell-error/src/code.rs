@@ -226,6 +226,8 @@ error_catalog! {
     VmwareUnavailable => "VMWARE-UNAVAILABLE", "errors.vmware.unavailable";
     #[doc = "A VMware command ran but did not succeed."]
     VmwareCommandFailed => "VMWARE-COMMAND-FAILED", "errors.vmware.commandFailed";
+    #[doc = "A guest operation needs an account and password the VM session has not saved."]
+    VmwareGuestCredentials => "VMWARE-GUEST-CREDENTIALS", "errors.vmware.guestCredentials";
 
     // -- Kubernetes --------------------------------------------------------
     #[doc = "The Kubernetes API server could not be reached."]

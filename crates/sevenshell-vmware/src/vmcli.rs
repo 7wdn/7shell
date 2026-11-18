@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
+use sevenshell_error::ShellError;
 use tokio::process::Command;
 
 const QUERY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -40,18 +41,37 @@ impl Vmcli {
 
     /// `on`, `off` or `suspended`; nothing when the command could not answer.
     pub async fn power_state(&self, vmx: &str) -> Option<String> {
+        let output = self.run("power", &[vmx, "Power", "query"], QUERY_TIMEOUT).await.ok()?;
+        parse_power_state(&output)
+    }
+
+    /// Runs one module command and answers its standard output, or the failure its own words.
+    pub(crate) async fn run(&self, operation: &str, args: &[&str], budget: Duration) -> Result<String, ShellError> {
         let mut command = Command::new(&self.program);
         command
-            .args([vmx, "Power", "query"])
+            .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        let output = tokio::time::timeout(QUERY_TIMEOUT, command.output()).await.ok()?.ok()?;
+        let output = tokio::time::timeout(budget, command.output())
+            .await
+            .map_err(|_| {
+                ShellError::vmware_command_failed(
+                    operation,
+                    format!("the command did not finish within {} seconds", budget.as_secs()),
+                )
+            })?
+            .map_err(|error| {
+                ShellError::vmware_unavailable(format!("`{}` could not be started: {error}", self.program.display()))
+            })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if !output.status.success() {
-            return None;
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+            let detail = if stderr.is_empty() { stdout } else { stderr };
+            return Err(ShellError::vmware_command_failed(operation, detail));
         }
-        parse_power_state(&String::from_utf8_lossy(&output.stdout))
+        Ok(stdout)
     }
 }
 

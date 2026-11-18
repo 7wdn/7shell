@@ -5228,6 +5228,7 @@ dependencies = [
  "sevenshell-policy",
  "sevenshell-types",
  "sevenshell-vault",
+ "sevenshell-vmware",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",

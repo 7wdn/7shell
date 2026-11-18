@@ -63,6 +63,7 @@
         "files": "Files",
         "containers": "Containers",
         "kubernetes": "Kubernetes",
+        "virtualMachines": "Virtual machines",
         "external": "External servers"
       },
       "risk": {

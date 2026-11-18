@@ -38,6 +38,13 @@
       "start": "启动虚拟机",
       "stop": "停止正在运行的虚拟机",
       "suspend": "挂起正在运行的虚拟机",
+      "pause": "暂停或恢复正在运行的虚拟机",
+      "reset": "重置正在运行的虚拟机",
+      "snapshotTake": "为虚拟机创建快照",
+      "snapshotRevert": "回到某个快照，丢弃此后的全部改动",
+      "snapshotDelete": "删除快照",
+      "guestChange": "修改虚拟机内部的内容",
+      "guestRemove": "删除虚拟机内部的内容",
       "takeOwnership": "移除虚拟机的锁并取得所有权",
       "unknown": "当前版本不认识的虚拟机操作"
     },

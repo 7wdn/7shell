@@ -68,6 +68,7 @@ export const MCP_TOOL_CATEGORY_LABEL_KEYS: Record<McpToolCategory, string> = {
   files: "mcp.capabilities.category.files",
   containers: "mcp.capabilities.category.containers",
   kubernetes: "mcp.capabilities.category.kubernetes",
+  virtualMachines: "mcp.capabilities.category.virtualMachines",
   external: "mcp.capabilities.category.external",
 };
 

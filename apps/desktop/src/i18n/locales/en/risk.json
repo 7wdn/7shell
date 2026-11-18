@@ -38,6 +38,13 @@
       "start": "Starts a virtual machine",
       "stop": "Stops a running virtual machine",
       "suspend": "Suspends a running virtual machine",
+      "pause": "Pauses or resumes a running virtual machine",
+      "reset": "Resets a running virtual machine",
+      "snapshotTake": "Takes a snapshot of a virtual machine",
+      "snapshotRevert": "Goes back to a snapshot, discarding everything since",
+      "snapshotDelete": "Deletes a snapshot",
+      "guestChange": "Changes something inside a virtual machine",
+      "guestRemove": "Deletes something inside a virtual machine",
       "takeOwnership": "Removes a virtual machine's lock and takes ownership of it",
       "unknown": "A virtual machine action this version does not recognise"
     },

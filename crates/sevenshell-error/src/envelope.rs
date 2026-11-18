@@ -869,6 +869,12 @@ impl ShellError {
             .with_outcome(OperationOutcome::Unknown)
     }
 
+    pub fn vmware_guest_credentials(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::VmwareGuestCredentials, Origin::new(Subsystem::Vmware))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     pub fn k8s_unavailable(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::K8sUnavailable, Origin::new(Subsystem::K8s))
             .with_detail(detail)

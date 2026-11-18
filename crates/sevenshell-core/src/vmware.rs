@@ -7,11 +7,83 @@
 
 use sevenshell_error::ShellError;
 use sevenshell_policy::PolicyTarget;
-use sevenshell_types::{PolicyAction, RiskAssessment, VmInfo, VmPowerAction, VmStatus};
+use sevenshell_types::{PolicyAction, Protocol, RiskAssessment, VmInfo, VmPowerAction, VmStatus};
+use sevenshell_vault::SessionSecret;
+use sevenshell_vmware::{GuestAuth, GuestOp, SnapshotAction};
 
 use crate::Core;
 
 impl Core {
+    /// The machine a saved VM session names, for a caller that has the session id.
+    pub fn vmware_session_vm_id(&self, session_id: &str) -> Result<String, ShellError> {
+        let session = self.session(session_id)?;
+        if session.protocol != Protocol::Vmware {
+            return Err(ShellError::app_unsupported(
+                "this session is not a virtual machine, so it has no guest",
+            ));
+        }
+        let vm_id = session.vmware.vm_id.trim();
+        if vm_id.is_empty() {
+            return Err(ShellError::app_unsupported(
+                "this session names no virtual machine, so there is nothing to act on",
+            ));
+        }
+        Ok(vm_id.to_owned())
+    }
+
+    /// The guest account and password a VM session carries.
+    ///
+    /// The account is the session's own guest account, and the password is the one secret the
+    /// vault keeps beside a session — the same slot the editor's password field writes. A guest
+    /// operation without one is refused here rather than sent to `vmrun` to fail without saying
+    /// what is missing.
+    pub fn vmware_guest_auth(&self, session_id: &str) -> Result<GuestAuth, ShellError> {
+        let session = self.session(session_id)?;
+        if session.protocol != Protocol::Vmware {
+            return Err(ShellError::app_unsupported(
+                "this session is not a virtual machine, so it has no guest",
+            ));
+        }
+        let user = session.vmware.ssh_user.as_deref().unwrap_or("").trim().to_owned();
+        if user.is_empty() {
+            return Err(ShellError::vmware_guest_credentials(
+                "the session has no guest account; set the SSH user on it first",
+            ));
+        }
+        let Some(secret) = sevenshell_vault::secret_for_session(session_id)? else {
+            return Err(ShellError::vmware_guest_credentials(
+                "the session has no guest password stored",
+            ));
+        };
+        let password = match &secret {
+            SessionSecret::Password(password) => password.clone(),
+            _ => {
+                return Err(ShellError::vmware_guest_credentials(
+                    "the session's stored secret is not a guest password",
+                ));
+            }
+        };
+        if password.is_empty() {
+            return Err(ShellError::vmware_guest_credentials(
+                "the session's stored guest password is empty",
+            ));
+        }
+        Ok(GuestAuth { user, password })
+    }
+
+    /// One snapshot action on the machine a saved session names.
+    pub async fn vmware_snapshot(&self, session_id: &str, action: &SnapshotAction) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::snapshot(&vm_id, action).await
+    }
+
+    /// One guest operation on the machine a saved session names, with its stored guest account.
+    pub async fn vmware_guest(&self, session_id: &str, op: &GuestOp) -> Result<String, ShellError> {
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        let auth = self.vmware_guest_auth(session_id)?;
+        sevenshell_vmware::guest(&vm_id, op, &auth).await
+    }
+
     /// Every virtual machine this machine's Workstation can act on.
     pub async fn vmware_scan(&self) -> Result<Vec<VmInfo>, ShellError> {
         sevenshell_vmware::scan().await

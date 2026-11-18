@@ -62,6 +62,22 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
             "sshell_batch_exec",
             json!({ "sessionIds": ["lab"], "command": "uptime" }),
         ),
+        ("sshell_vms_list", json!({})),
+        ("sshell_vm_status", json!({ "sessionId": "lab" })),
+        ("sshell_vm_power", json!({ "sessionId": "lab", "action": "start" })),
+        ("sshell_vm_snapshots", json!({ "sessionId": "lab" })),
+        (
+            "sshell_vm_snapshot_change",
+            json!({ "sessionId": "lab", "action": "take", "name": "before" }),
+        ),
+        (
+            "sshell_vm_guest_read",
+            json!({ "sessionId": "lab", "action": "processes" }),
+        ),
+        (
+            "sshell_vm_guest_write",
+            json!({ "sessionId": "lab", "action": "toolsInstall" }),
+        ),
     ]
 }
 

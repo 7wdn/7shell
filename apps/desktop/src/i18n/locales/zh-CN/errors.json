@@ -113,7 +113,8 @@
     },
     "vmware": {
       "unavailable": "这台机器上找不到 VMware Workstation 的命令行。",
-      "commandFailed": "VMware 的{operation}没有成功。"
+      "commandFailed": "VMware 的{operation}没有成功。",
+      "guestCredentials": "这个虚拟机的会话还没有保存客户机密码，无法登录客户机执行操作。"
     },
     "k8s": {
       "unavailable": "连不上 Kubernetes API 服务器。",

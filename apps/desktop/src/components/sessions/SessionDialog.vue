@@ -598,7 +598,7 @@ async function forgetKey(): Promise<void> {
             </p>
           </section>
 
-          <section v-if="editor.isSsh || isDesktop || editor.isWebDav || editor.isFtp">
+          <section v-if="editor.isSsh || isDesktop || editor.isWebDav || editor.isFtp || editor.isVmware">
             <template v-if="!isDesktop && !editor.isWebDav && !editor.isFtp">
               <label class="block text-xs font-medium" for="session-method">{{ t("sessions.editor.method") }}</label>
               <Select id="session-method" v-model="editor.method" class="mt-1" :options="methodOptions" />

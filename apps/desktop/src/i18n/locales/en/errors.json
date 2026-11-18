@@ -113,7 +113,8 @@
     },
     "vmware": {
       "unavailable": "VMware Workstation's command line is not available on this machine.",
-      "commandFailed": "The VMware command for {operation} did not succeed."
+      "commandFailed": "The VMware command for {operation} did not succeed.",
+      "guestCredentials": "This virtual machine's session has no guest password saved, so the operation cannot sign in."
     },
     "k8s": {
       "unavailable": "The Kubernetes API server could not be reached.",

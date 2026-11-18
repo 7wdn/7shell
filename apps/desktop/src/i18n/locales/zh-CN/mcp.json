@@ -63,6 +63,7 @@
         "files": "文件",
         "containers": "容器",
         "kubernetes": "集群",
+        "virtualMachines": "虚拟机",
         "external": "外部服务器"
       },
       "risk": {

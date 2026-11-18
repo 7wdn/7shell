@@ -281,10 +281,13 @@ async function connectWithPassword(password: string): Promise<void> {
   passwordBusy.value = true;
   failure.value = null;
   try {
+    // One password answers both questions: the SSH session that was just made, and the guest
+    // account the machine's session keeps for guest operations the agent may ask for later.
+    const vm = await library.save(pending.vm, { value: password });
     const saved = await library.save(pending.guest, { value: password });
     pendingGuest.value = null;
     passwordOpen.value = false;
-    await finishGuest(pending.vm, saved);
+    await finishGuest(vm, saved);
   } catch (error) {
     failure.value = asShellError(error, "vmware_guest_open");
   } finally {

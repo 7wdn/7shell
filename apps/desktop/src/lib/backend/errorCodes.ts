@@ -87,6 +87,7 @@ export const ERROR_CATALOG = {
   // VMware
   "VMWARE-UNAVAILABLE": "errors.vmware.unavailable",
   "VMWARE-COMMAND-FAILED": "errors.vmware.commandFailed",
+  "VMWARE-GUEST-CREDENTIALS": "errors.vmware.guestCredentials",
   // Kubernetes
   "K8S-UNAVAILABLE": "errors.k8s.unavailable",
   "K8S-KUBECONFIG-INVALID": "errors.k8s.kubeconfigInvalid",

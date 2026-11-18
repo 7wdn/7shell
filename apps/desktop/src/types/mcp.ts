@@ -329,7 +329,14 @@ export const MCP_AUDIT_TAIL_LIMIT = 50;
  * arrived only in a newer build's catalog would be drawn under the external heading rather than
  * dropped — see {@link isMcpToolCategory}.
  */
-export type McpToolCategory = "sessions" | "exec" | "files" | "containers" | "kubernetes" | "external";
+export type McpToolCategory =
+  | "sessions"
+  | "exec"
+  | "files"
+  | "containers"
+  | "kubernetes"
+  | "virtualMachines"
+  | "external";
 
 /** The categories, in the order the capabilities page lists them. */
 export const MCP_TOOL_CATEGORIES: readonly McpToolCategory[] = [
@@ -338,6 +345,7 @@ export const MCP_TOOL_CATEGORIES: readonly McpToolCategory[] = [
   "files",
   "containers",
   "kubernetes",
+  "virtualMachines",
   "external",
 ];
 
