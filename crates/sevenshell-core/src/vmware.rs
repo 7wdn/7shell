@@ -235,6 +235,50 @@ impl Core {
         sevenshell_vmware::shared_set_state(&vm_id, &name, &host_path(&folder), writable).await
     }
 
+    /// Clones one snapshot into a subfolder of the folder a token names.
+    pub async fn vmware_snapshot_clone(
+        &self,
+        session_id: &str,
+        token: &str,
+        uid: &str,
+        name: &str,
+        linked: bool,
+    ) -> Result<String, ShellError> {
+        let uid = uid.trim();
+        if uid.is_empty() {
+            return Err(ShellError::vmware_command_failed(
+                "snapshot-clone",
+                "a snapshot uid is required",
+            ));
+        }
+        let name = safe_component(name, "snapshot-clone")?;
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let destination = folder.join(&name).join(format!("{name}.vmx"));
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::snapshot_clone(&vm_id, uid, &host_path(&destination), &name, linked).await
+    }
+
+    /// Creates a `.vmtx` template in the folder a token names, under `<name>.vmtx`.
+    pub async fn vmware_template_create(
+        &self,
+        session_id: &str,
+        token: &str,
+        name: &str,
+    ) -> Result<String, ShellError> {
+        let name = safe_component(name, "template-create")?;
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let template = folder.join(format!("{name}.vmtx"));
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::template_create(&vm_id, &host_path(&template), &name).await
+    }
+
+    /// Deploys the `.vmtx` template a file token names.
+    pub async fn vmware_template_deploy(&self, session_id: &str, token: &str) -> Result<String, ShellError> {
+        let template = self.host_location_path(token, HostLocationKind::File)?;
+        self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::template_deploy(&host_path(&template)).await
+    }
+
     /// Every virtual machine this machine's Workstation can act on.
     pub async fn vmware_scan(&self) -> Result<Vec<VmInfo>, ShellError> {
         sevenshell_vmware::scan().await

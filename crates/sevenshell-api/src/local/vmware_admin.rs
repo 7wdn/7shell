@@ -240,6 +240,8 @@ pub enum ImageActionInput {
     Delete,
     Upgrade,
     Clone,
+    TemplateCreate,
+    TemplateDeploy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -415,15 +417,19 @@ pub fn vm_image_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: VM_IMAGE.to_owned(),
         title: "Delete or upgrade a virtual machine".to_owned(),
-        description: "Deletes a machine and its files, or upgrades its hardware format. Both are \
-                      irreversible and stop for a person's approval on the desktop."
+        description: "Deletes a machine and its files, upgrades its hardware format, clones it into \
+                      a host folder, or creates and deploys a .vmtx template. Delete and upgrade \
+                      are irreversible and stop for a person's approval on the desktop."
             .to_owned(),
         input_schema: ToolInputSchema::object(
             json!({
                 "sessionId": session_id_property(),
-                "action": string_enum("What to do with the machine.", &["delete", "upgrade", "clone"]),
-                "token": string("For clone: a folder token from sshell_host_locations_list; the clone is created in a subfolder named after it."),
-                "name": string("For clone: the new machine's name."),
+                "action": string_enum(
+                    "What to do with the machine.",
+                    &["delete", "upgrade", "clone", "templateCreate", "templateDeploy"]
+                ),
+                "token": string("For clone and templateCreate: a folder token from sshell_host_locations_list. For templateDeploy: a file token naming the .vmtx."),
+                "name": string("For clone: the new machine's name. For templateCreate: the template's name, which also names its .vmtx."),
                 "cloneType": string("For clone: `full` or `linked`. Defaults to `linked`."),
                 "snapshot": string("For clone: clone from this snapshot instead of the current state.")
             }),
@@ -967,6 +973,62 @@ impl Tool for VmImageTool {
         let input: VmImageInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         context.guard_session(session_id, ToolAccess::Write)?;
+        if matches!(
+            input.action,
+            ImageActionInput::TemplateCreate | ImageActionInput::TemplateDeploy
+        ) {
+            let token = required_text(input.token.as_deref(), "token")?;
+            let create = input.action == ImageActionInput::TemplateCreate;
+            let name = if create {
+                Some(required_text(input.name.as_deref(), "name")?)
+            } else {
+                None
+            };
+            let action_name = if create { "template-create" } else { "template-deploy" };
+            let vm_id = vm_id(context, session_id)?;
+            let detail = if create {
+                format!("{token} {}", name.as_deref().unwrap_or_default())
+            } else {
+                token.clone()
+            };
+            let subject = gate::subject(&format!("{vm_id} {action_name} {detail}"));
+            let verdict = sevenshell_policy::vm_image(action_name);
+            let session_name = saved_session(context.core(), session_id).map(|session| session.name);
+            let approval = gate::approve_risk(
+                context,
+                VM_IMAGE,
+                &verdict,
+                Some((session_id, session_name)),
+                None,
+                &subject,
+            )
+            .await?;
+            let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+                let result = if create {
+                    context
+                        .core()
+                        .vmware_template_create(session_id, &token, name.as_deref().unwrap_or_default())
+                        .await
+                } else {
+                    context.core().vmware_template_deploy(session_id, &token).await
+                };
+                result.map_err(ToolError::from)
+            })
+            .await?;
+            let mut audit = ToolAudit::for_session(session_id)
+                .with_subject(subject)
+                .with_risk(verdict);
+            if let Some(record) = approval {
+                audit = audit.with_approval(record);
+            }
+            let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
+            return Ok(ToolResult::new(json!({
+                "sessionId": session_id,
+                "output": text,
+                "truncated": truncated,
+            }))
+            .with_audit(audit));
+        }
         if input.action == ImageActionInput::Clone {
             let token = required_text(input.token.as_deref(), "token")?;
             let name = required_text(input.name.as_deref(), "name")?;
@@ -1009,7 +1071,9 @@ impl Tool for VmImageTool {
         let (action, action_name) = match input.action {
             ImageActionInput::Delete => (ImageAction::Delete, "delete"),
             ImageActionInput::Upgrade => (ImageAction::Upgrade, "upgrade"),
-            ImageActionInput::Clone => unreachable!("handled above"),
+            ImageActionInput::Clone | ImageActionInput::TemplateCreate | ImageActionInput::TemplateDeploy => {
+                unreachable!("handled above")
+            }
         };
         let vm_id = vm_id(context, session_id)?;
         let subject = gate::subject(&format!("{vm_id} {action_name}"));

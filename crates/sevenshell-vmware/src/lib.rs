@@ -31,6 +31,7 @@ pub use config::{
 };
 pub use host_ops::{
     clone, copy_from_guest, copy_to_guest, hgfs_set_host_path, screenshot, shared_add, shared_set_state,
+    snapshot_clone, template_create, template_deploy,
 };
 pub use inventory::inventory_path;
 pub use ops::{GuestAuth, GuestOp, SnapshotAction, guest, snapshot};

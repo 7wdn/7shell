@@ -69,6 +69,7 @@ pub enum SnapshotChange {
     Take,
     Revert,
     Delete,
+    Clone,
 }
 
 impl SnapshotChange {
@@ -77,6 +78,7 @@ impl SnapshotChange {
             Self::Take => "take",
             Self::Revert => "revert",
             Self::Delete => "delete",
+            Self::Clone => "clone",
         }
     }
 }
@@ -89,6 +91,12 @@ pub struct VmSnapshotChangeInput {
     pub name: String,
     #[serde(default)]
     pub delete_children: bool,
+    #[serde(default)]
+    pub uid: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub linked: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -271,19 +279,23 @@ pub fn vm_snapshot_change_descriptor() -> ToolDescriptor {
     ToolDescriptor {
         name: VM_SNAPSHOT_CHANGE.to_owned(),
         title: "Change a snapshot".to_owned(),
-        description: "Takes a snapshot, goes back to one, or deletes one. Going back and deleting \
-                      are graded destructive: both throw away state, and a revert stops for a \
-                      person's approval on the desktop."
+        description: "Takes a snapshot, goes back to one, deletes one, or clones one into a new \
+                      machine in a host folder a token names. Going back and deleting are graded \
+                      destructive: both throw away state, and a revert stops for a person's \
+                      approval on the desktop."
             .to_owned(),
         input_schema: ToolInputSchema::object(
             json!({
                 "sessionId": session_id_property(),
-                "action": string_enum("What to do with the snapshot.", &["take", "revert", "delete"]),
+                "action": string_enum("What to do with the snapshot.", &["take", "revert", "delete", "clone"]),
                 "name": string("The snapshot's name."),
                 "deleteChildren": {
                     "type": "boolean",
                     "description": "For delete: remove the snapshots taken under this one too."
-                }
+                },
+                "uid": string("For clone: the snapshot uid that sshell_vm_snapshots printed."),
+                "token": string("For clone: a folder token from sshell_host_locations_list; the clone lands in a subfolder named after `name`."),
+                "linked": { "type": "boolean", "description": "For clone: create a linked clone." }
             }),
             &["sessionId", "action", "name"],
         ),
@@ -534,7 +546,52 @@ impl Tool for VmSnapshotChangeTool {
             return Err(ToolError::invalid_arguments("name contains a control character"));
         }
         let action = input.action;
+        if action == SnapshotChange::Clone {
+            let token = input.token.as_deref().unwrap_or("").trim();
+            if token.is_empty() {
+                return Err(ToolError::invalid_arguments("token is required for clone"));
+            }
+            let uid = input.uid.as_deref().unwrap_or("").trim();
+            if uid.is_empty() {
+                return Err(ToolError::invalid_arguments("uid is required for clone"));
+            }
+            let vm_id = vm_id(context, session_id)?;
+            let subject = gate::subject(&format!("{vm_id} clone {name}"));
+            let verdict = sevenshell_policy::vm_snapshot("clone");
+            let session_name = saved_session(context.core(), session_id).map(|session| session.name);
+            let approval = gate::approve_risk(
+                context,
+                VM_SNAPSHOT_CHANGE,
+                &verdict,
+                Some((session_id, session_name)),
+                None,
+                &subject,
+            )
+            .await?;
+            let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+                context
+                    .core()
+                    .vmware_snapshot_clone(session_id, token, uid, name, input.linked)
+                    .await
+                    .map_err(ToolError::from)
+            })
+            .await?;
+            let mut audit = ToolAudit::for_session(session_id)
+                .with_subject(subject)
+                .with_risk(verdict);
+            if let Some(record) = approval {
+                audit = audit.with_approval(record);
+            }
+            let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
+            return Ok(ToolResult::new(json!({
+                "sessionId": session_id,
+                "output": text,
+                "truncated": truncated,
+            }))
+            .with_audit(audit));
+        }
         let op = match action {
+            SnapshotChange::Clone => unreachable!("handled above"),
             SnapshotChange::Take => SnapshotAction::Take(name.to_owned()),
             SnapshotChange::Revert => SnapshotAction::Revert(name.to_owned()),
             SnapshotChange::Delete => SnapshotAction::Delete {

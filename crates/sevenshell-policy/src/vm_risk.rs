@@ -37,6 +37,7 @@ pub fn vm_snapshot(action: &str) -> RiskAssessment {
     let verdict = match action.as_str() {
         "list" => return RiskAssessment::safe(),
         "take" => ("vm.snapshot-take", "risk.vm.snapshotTake", RiskLevel::Caution),
+        "clone" => ("vm.snapshot-clone", "risk.vm.snapshotClone", RiskLevel::Caution),
         "revert" => ("vm.snapshot-revert", "risk.vm.snapshotRevert", RiskLevel::Destructive),
         "delete" => ("vm.snapshot-delete", "risk.vm.snapshotDelete", RiskLevel::Destructive),
         _ => ("vm.unknown", "risk.vm.unknown", RiskLevel::Caution),

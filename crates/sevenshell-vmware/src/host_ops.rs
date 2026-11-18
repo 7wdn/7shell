@@ -156,3 +156,68 @@ pub async fn shared_set_state(vm_id: &str, name: &str, host_path: &str, writable
         )
         .await
 }
+
+/// Clones one snapshot of a machine into a new `.vmx` the core built from a folder token.
+///
+/// `vmcli` names a snapshot by its uid here, not by its display name; the help of this very
+/// command says so.
+pub async fn snapshot_clone(
+    vm_id: &str,
+    uid: &str,
+    dest_vmx: &str,
+    name: &str,
+    linked: bool,
+) -> Result<String, ShellError> {
+    let vm_id = checked_id(vm_id, "snapshot-clone")?;
+    let vmrun = Vmrun::locate()?;
+    let (path, _) = resolve(&vmrun, &vm_id, "snapshot-clone").await?;
+    let vmcli = Vmcli::beside(vmrun.program())
+        .or_else(Vmcli::locate)
+        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+    let mut args = vec![path.as_str(), "Snapshot", "Clone"];
+    if linked {
+        args.push("-l");
+    }
+    args.extend([uid, dest_vmx, name]);
+    vmcli.run("snapshot-clone", &args, OPERATION_TIMEOUT).await
+}
+
+/// Creates a `.vmtx` template from a machine. Both paths came from a folder token.
+pub async fn template_create(vm_id: &str, template_path: &str, display_name: &str) -> Result<String, ShellError> {
+    let vm_id = checked_id(vm_id, "template-create")?;
+    let vmrun = Vmrun::locate()?;
+    let (path, _) = resolve(&vmrun, &vm_id, "template-create").await?;
+    let vmcli = Vmcli::beside(vmrun.program())
+        .or_else(Vmcli::locate)
+        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+    vmcli
+        .run(
+            "template-create",
+            &[
+                path.as_str(),
+                "VMTemplate",
+                "Create",
+                "-p",
+                template_path,
+                "-n",
+                display_name,
+            ],
+            OPERATION_TIMEOUT,
+        )
+        .await
+}
+
+/// Deploys an existing `.vmtx` template. The template decides where the machine lands.
+pub async fn template_deploy(template_path: &str) -> Result<String, ShellError> {
+    let vmrun = Vmrun::locate()?;
+    let vmcli = Vmcli::beside(vmrun.program())
+        .or_else(Vmcli::locate)
+        .ok_or_else(|| ShellError::vmware_unavailable("the vmcli command was not found; this operation needs it"))?;
+    vmcli
+        .run(
+            "template-deploy",
+            &["VMTemplate", "Deploy", "-p", template_path],
+            OPERATION_TIMEOUT,
+        )
+        .await
+}
