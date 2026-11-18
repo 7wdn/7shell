@@ -139,9 +139,18 @@ async fn a_terminal_carries_bytes_in_both_directions() {
     terminal.write(line.as_bytes()).await.expect("write should be accepted");
 
     let mut seen = Vec::new();
+    let mut answered_cursor_query = false;
     let found = tokio::time::timeout(Duration::from_secs(30), async {
         while let Some(chunk) = terminal.next_output().await {
             seen.extend_from_slice(&chunk);
+            // `cmd` asks the terminal where the cursor is before drawing its prompt and waits for
+            // the answer. The application's terminal is xterm.js, which answers; this test has no
+            // emulator, so it is the terminal here and must answer rather than leave the shell
+            // waiting for a reply that never comes on a loaded runner.
+            if !answered_cursor_query && seen.windows(4).any(|window| window == b"\x1b[6n") {
+                answered_cursor_query = true;
+                terminal.write(b"\x1b[1;1R").await.expect("answer the cursor query");
+            }
             if String::from_utf8_lossy(&seen).contains("pty-ok") {
                 return true;
             }
