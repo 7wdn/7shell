@@ -140,6 +140,15 @@
       "backgroundScheme": "整套外观",
       "backgroundHost": "仅 ANSI 颜色",
       "backgroundHint": "整套外观会连同背景与文字一起替换；仅 ANSI 颜色则保留窗口配色，只改变 ls、git 和编辑器输出用到的十六色。",
+      "foreground": {
+        "title": "终端字体颜色",
+        "hint": "只改变文字颜色，背景和十六种 ANSI 颜色仍跟随界面配色。",
+        "dark": "深色终端",
+        "light": "浅色终端",
+        "follow": "跟随界面配色",
+        "code": "颜色代码",
+        "reset": "恢复跟随界面配色"
+      },
       "close": "关闭",
       "saved": "已保存的配色",
       "savePlaceholder": "给这套配色起个名字…",

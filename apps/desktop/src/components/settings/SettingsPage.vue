@@ -358,6 +358,8 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
     fields.push(
       "terminalSchemeDark",
       "terminalSchemeLight",
+      "terminalForegroundDark",
+      "terminalForegroundLight",
       "terminalSchemeBackground",
       "terminalSchemeProfiles",
       "terminalHighlightMode",

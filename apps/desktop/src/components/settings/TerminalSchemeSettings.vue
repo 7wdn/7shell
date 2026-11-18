@@ -11,7 +11,7 @@
  * The catalogue is the build's; imported schemes are stored in the settings file beside the ids
  * that name them, and an id that resolves to nothing falls back to the interface palette.
  */
-import { Plus, Trash2 } from "@lucide/vue";
+import { Plus, RotateCcw, Trash2 } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -120,6 +120,105 @@ function remove(): void {
 
 function swatches(colors: readonly string[]): readonly string[] {
   return colors.slice(0, 16);
+}
+
+// -- The terminal's own text colour ------------------------------------------
+
+type PaletteTone = "dark" | "light";
+
+const TONES: readonly PaletteTone[] = ["dark", "light"];
+
+/**
+ * Whether the palette supplies the text this setting changes.
+ *
+ * It does when no scheme is worn, and when a scheme is worn for its ANSI colours alone — the two
+ * modes where the pane's text is the window's text. A scheme that replaces the whole look brought
+ * a text colour of its own, and a picker here would be a control the pane ignores.
+ */
+const paletteSuppliesText = computed(
+  () => preferences.terminalSchemeSource === "host" || preferences.terminalSchemeBackground === "host",
+);
+
+/**
+ * The palette's own text colour for each half, as `#rrggbb` the colour picker can show.
+ *
+ * Read from the document rather than from a table of palettes: the stylesheet is where a palette is
+ * defined, and the tokens carry both halves at once — the one on screen and the one the terminal
+ * would wear if its own theme changed.
+ */
+function paletteForeground(tone: PaletteTone): string {
+  const fallback = tone === "dark" ? "#d8d8d8" : "#222222";
+  if (typeof document === "undefined") {
+    return fallback;
+  }
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(`--terminal-${tone}-foreground`).trim();
+  if (raw === "" || typeof CSS === "undefined" || !CSS.supports("color", raw)) {
+    return fallback;
+  }
+  const probe = document.createElement("canvas").getContext("2d");
+  if (!probe) {
+    return fallback;
+  }
+  probe.fillStyle = raw;
+  const parsed = probe.fillStyle;
+  return typeof parsed === "string" && /^#[0-9a-f]{6}$/i.test(parsed) ? parsed : fallback;
+}
+
+/** Recomputed when the palette changes, so the swatch shows what "follow" currently means. */
+const paletteText = computed<Record<PaletteTone, string>>(() => {
+  void preferences.wornPalette;
+  void preferences.resolvedTheme;
+  return { dark: paletteForeground("dark"), light: paletteForeground("light") };
+});
+
+function chosenForeground(tone: PaletteTone): string | null {
+  return tone === "dark" ? preferences.terminalForegroundDark : preferences.terminalForegroundLight;
+}
+
+function setChosenForeground(tone: PaletteTone, colour: string): void {
+  preferences.setTerminalForeground(tone, colour.toLowerCase());
+}
+
+function clearChosenForeground(tone: PaletteTone): void {
+  preferences.setTerminalForeground(tone, null);
+}
+
+/**
+ * A typed colour code, or nothing when it is not one.
+ *
+ * The short form is expanded rather than refused: `#e61919` and `#e619`-style shorthand are the
+ * same colour, and somebody pasting one from a stylesheet should not have to rewrite it. Everything
+ * else — a half-typed value, a name, a missing digit — answers nothing.
+ */
+function parseHexColour(value: string): string | null {
+  const digits = value.trim().replace(/^#/, "");
+  if (!/^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(digits)) {
+    return null;
+  }
+  const full = digits.length === 3 ? [...digits].map((digit) => digit + digit).join("") : digits;
+  return `#${full.toLowerCase()}`;
+}
+
+/**
+ * Takes what was typed into the colour code field.
+ *
+ * An empty field means "follow the palette again", which is the one way to write that answer down
+ * from the field itself. Anything that is not a colour is put back rather than turned into one:
+ * the field shows the colour the terminal is actually drawing.
+ */
+function commitForegroundCode(tone: PaletteTone, input: HTMLInputElement): void {
+  if (input.value.trim() === "") {
+    clearChosenForeground(tone);
+    input.value = paletteText.value[tone];
+    return;
+  }
+  const parsed = parseHexColour(input.value);
+  if (parsed === null) {
+    input.value = chosenForeground(tone) ?? paletteText.value[tone];
+    return;
+  }
+  setChosenForeground(tone, parsed);
+  input.value = parsed;
 }
 </script>
 
@@ -293,6 +392,69 @@ function swatches(colors: readonly string[]): readonly string[] {
           </li>
         </ul>
         <p v-else class="text-[11px] text-muted-foreground">{{ t("settings.schemes.import.none") }}</p>
+      </div>
+    </div>
+
+    <!--
+      The one colour that can be changed without leaving the palette: somebody who likes the
+      window's colours — its dark theme especially — and only wants the terminal's text to be
+      something else. Shown exactly where the palette supplies the text: with no scheme, and with a
+      scheme that replaces only the ANSI colours.
+    -->
+    <div v-if="paletteSuppliesText" class="space-y-2 border-t border-border pt-3" data-terminal-foreground>
+      <div>
+        <span class="block text-xs font-medium text-muted-foreground">
+          {{ t("settings.schemes.foreground.title") }}
+        </span>
+        <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+          {{ t("settings.schemes.foreground.hint") }}
+        </p>
+      </div>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <div
+          v-for="tone in TONES"
+          :key="tone"
+          class="flex min-w-0 items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5"
+        >
+          <div class="min-w-0">
+            <span class="block text-xs font-medium">{{ t(`settings.schemes.foreground.${tone}`) }}</span>
+            <span class="block truncate font-mono text-[11px] text-muted-foreground">
+              {{ chosenForeground(tone) ?? t("settings.schemes.foreground.follow") }}
+            </span>
+          </div>
+          <div class="flex shrink-0 items-center gap-1">
+            <input
+              type="color"
+              class="h-6 w-9 shrink-0 cursor-pointer rounded border border-border bg-transparent p-0.5"
+              :value="chosenForeground(tone) ?? paletteText[tone]"
+              :aria-label="t(`settings.schemes.foreground.${tone}`)"
+              @input="setChosenForeground(tone, ($event.target as HTMLInputElement).value)"
+            />
+            <!--
+              The code beside the swatch: a colour is sometimes known as one — copied out of a
+              stylesheet or a config file — and opening a picker to reproduce it is a detour.
+            -->
+            <input
+              type="text"
+              spellcheck="false"
+              class="w-20 rounded-sm border border-border bg-background px-1.5 py-0.5 font-mono text-[11px] text-foreground focus:border-primary focus:outline-none"
+              :value="chosenForeground(tone) ?? paletteText[tone]"
+              :aria-label="t('settings.schemes.foreground.code')"
+              @change="commitForegroundCode(tone, $event.target as HTMLInputElement)"
+              @keydown.enter.prevent="commitForegroundCode(tone, $event.target as HTMLInputElement)"
+            />
+            <button
+              v-if="chosenForeground(tone)"
+              type="button"
+              class="grid size-6 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              :title="t('settings.schemes.foreground.reset')"
+              :aria-label="t('settings.schemes.foreground.reset')"
+              @click="clearChosenForeground(tone)"
+            >
+              <RotateCcw :size="12" />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 

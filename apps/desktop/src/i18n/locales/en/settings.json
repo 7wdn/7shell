@@ -140,6 +140,15 @@
       "backgroundScheme": "The whole look",
       "backgroundHost": "Only the ANSI colours",
       "backgroundHint": "The whole look replaces the background and text as well. Only the ANSI colours keeps the pane matching the window and changes what ls, git and editors print.",
+      "foreground": {
+        "title": "Terminal text colour",
+        "hint": "Changes the text colour only; the background and the sixteen ANSI colours stay with the interface palette.",
+        "dark": "Dark terminal",
+        "light": "Light terminal",
+        "follow": "Following the interface palette",
+        "code": "Colour code",
+        "reset": "Follow the interface palette again"
+      },
       "close": "Close",
       "saved": "Saved schemes",
       "savePlaceholder": "Name this scheme…",

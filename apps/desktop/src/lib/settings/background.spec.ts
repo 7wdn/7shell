@@ -81,8 +81,9 @@ describe("what the picture does to the surfaces", () => {
   });
 
   it("names the surfaces a picture shows through, and the ones it does not", () => {
-    // The frame and the panels: the picture is meant to be seen there. `--card` is deliberately not in
-    // the list — the cards and dialogs carry the text, and the setting promises they stay readable.
-    expect([...WALLPAPER_SURFACE_TOKENS]).toEqual(["--background", "--muted", "--accent"]);
+    // The window, the floating panels behind the workspace, the quieter blocks and the lit rows: the
+    // picture is meant to be seen there. `--card` is deliberately not in the list — the cards and
+    // dialogs carry the text, and the setting promises they stay readable.
+    expect([...WALLPAPER_SURFACE_TOKENS]).toEqual(["--background", "--panel", "--muted", "--accent"]);
   });
 });

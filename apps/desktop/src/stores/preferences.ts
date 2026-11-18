@@ -193,6 +193,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   terminalSchemeSource: DEFAULT_TERMINAL_SCHEME_SOURCE,
   terminalSchemeDark: undefined,
   terminalSchemeLight: undefined,
+  terminalForegroundDark: undefined,
+  terminalForegroundLight: undefined,
   terminalSchemeBackground: DEFAULT_TERMINAL_SCHEME_BACKGROUND,
   terminalCustomSchemes: [],
   terminalSchemeProfiles: [],
@@ -677,6 +679,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const terminalSchemeSource = ref<TerminalSchemeSource>(DEFAULT_TERMINAL_SCHEME_SOURCE);
   const terminalSchemeDark = ref<string | null>(null);
   const terminalSchemeLight = ref<string | null>(null);
+  /** The terminal's own text colour, `#rrggbb`; null while the palette's own text is worn. */
+  const terminalForegroundDark = ref<string | null>(null);
+  const terminalForegroundLight = ref<string | null>(null);
   const terminalSchemeBackground = ref<TerminalSchemeBackground>(DEFAULT_TERMINAL_SCHEME_BACKGROUND);
   /** Schemes somebody imported; the shipped catalogue is not copied into this list. */
   const terminalCustomSchemes = ref<readonly TerminalCustomScheme[]>([]);
@@ -907,6 +912,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       terminalSchemeSource.value = settings.terminalSchemeSource ?? DEFAULT_TERMINAL_SCHEME_SOURCE;
       terminalSchemeDark.value = settings.terminalSchemeDark ?? null;
       terminalSchemeLight.value = settings.terminalSchemeLight ?? null;
+      terminalForegroundDark.value = settings.terminalForegroundDark ?? null;
+      terminalForegroundLight.value = settings.terminalForegroundLight ?? null;
       terminalSchemeBackground.value = settings.terminalSchemeBackground ?? DEFAULT_TERMINAL_SCHEME_BACKGROUND;
       terminalCustomSchemes.value = settings.terminalCustomSchemes ?? [];
       terminalSchemeProfiles.value = settings.terminalSchemeProfiles ?? [];
@@ -1060,6 +1067,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         terminalSchemeSource: terminalSchemeSource.value,
         terminalSchemeDark: terminalSchemeDark.value ?? undefined,
         terminalSchemeLight: terminalSchemeLight.value ?? undefined,
+        terminalForegroundDark: terminalForegroundDark.value ?? undefined,
+        terminalForegroundLight: terminalForegroundLight.value ?? undefined,
         terminalSchemeBackground: terminalSchemeBackground.value,
         terminalCustomSchemes: [...terminalCustomSchemes.value],
         terminalSchemeProfiles: [...terminalSchemeProfiles.value],
@@ -1404,6 +1413,22 @@ export const usePreferencesStore = defineStore("preferences", () => {
     dirty.value = true;
   }
 
+  /**
+   * Sets the colour the terminal prints its text in, for one half of the palette.
+   *
+   * Only the text: the background and the sixteen ANSI colours stay with the palette, which is the
+   * point of the setting. `null` puts the palette's own text colour back.
+   */
+  function setTerminalForeground(tone: "dark" | "light", colour: string | null): void {
+    const normalised = colour === null ? null : colour.trim().toLowerCase();
+    if (tone === "dark") {
+      terminalForegroundDark.value = normalised;
+    } else {
+      terminalForegroundLight.value = normalised;
+    }
+    dirty.value = true;
+  }
+
   function setTerminalSchemeBackground(background: TerminalSchemeBackground): void {
     terminalSchemeBackground.value = background;
     dirty.value = true;
@@ -1445,6 +1470,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalSchemeSource.value = profile.schemeSource;
     terminalSchemeDark.value = profile.schemeDark ?? null;
     terminalSchemeLight.value = profile.schemeLight ?? null;
+    terminalForegroundDark.value = profile.foregroundDark ?? null;
+    terminalForegroundLight.value = profile.foregroundLight ?? null;
     terminalSchemeBackground.value = profile.schemeBackground;
     dirty.value = true;
   }
@@ -1468,6 +1495,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       schemeDark: terminalSchemeDark.value ?? undefined,
       schemeLight: terminalSchemeLight.value ?? undefined,
       schemeBackground: terminalSchemeBackground.value,
+      foregroundDark: terminalForegroundDark.value ?? undefined,
+      foregroundLight: terminalForegroundLight.value ?? undefined,
     };
     terminalSchemeProfiles.value = [...terminalSchemeProfiles.value, profile];
     dirty.value = true;
@@ -1516,6 +1545,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       terminalSchemeSource.value === profile.schemeSource &&
       (terminalSchemeDark.value ?? undefined) === profile.schemeDark &&
       (terminalSchemeLight.value ?? undefined) === profile.schemeLight &&
+      (terminalForegroundDark.value ?? undefined) === profile.foregroundDark &&
+      (terminalForegroundLight.value ?? undefined) === profile.foregroundLight &&
       terminalSchemeBackground.value === profile.schemeBackground
     );
   }
@@ -2208,6 +2239,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalSchemeLight":
           terminalSchemeLight.value = null;
           break;
+        case "terminalForegroundDark":
+          terminalForegroundDark.value = null;
+          break;
+        case "terminalForegroundLight":
+          terminalForegroundLight.value = null;
+          break;
         case "terminalSchemeBackground":
           terminalSchemeBackground.value = DEFAULT_TERMINAL_SCHEME_BACKGROUND;
           break;
@@ -2342,6 +2379,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     terminalSchemeSource,
     terminalSchemeDark,
     terminalSchemeLight,
+    terminalForegroundDark,
+    terminalForegroundLight,
+    setTerminalForeground,
     terminalSchemeBackground,
     terminalCustomSchemes,
     terminalSchemeProfiles,

@@ -54,6 +54,7 @@ import { useAppStore } from "@/stores/app";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
+import { backgroundIsSet } from "@/types/app";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -186,6 +187,21 @@ function rescanHighlights(): void {
   applyHighlights(Math.max(0, cursorLine - HIGHLIGHT_RESCAN_LINES), cursorLine);
 }
 
+/**
+ * Whether the window has a picture behind it.
+ *
+ * The terminal is the largest surface on screen, and its colour is painted on the pane rather than
+ * by xterm's canvas — see the stylesheet below — so letting the picture through is a class and one
+ * number, not a second rendering path.
+ */
+const wallpaperActive = computed(() => backgroundIsSet(preferences.backgroundImage));
+
+/** What is left of the pane's colour, as the terminal's surface lets the picture through. */
+const wallpaperOpacity = computed(() => {
+  const transparency = Math.min(Math.max(Math.round(preferences.backgroundImage.transparency), 0), 100);
+  return `${100 - transparency}%`;
+});
+
 const surfaceStyle = computed<Record<string, string>>(() => {
   const style: Record<string, string> = {
     "--terminal-padding-x": `${preferences.terminalPaddingX}px`,
@@ -196,6 +212,11 @@ const surfaceStyle = computed<Record<string, string>>(() => {
   // a frame in the palette's colour around a scheme-coloured terminal.
   if (activeScheme.value && preferences.terminalSchemeBackground === "scheme") {
     style["--terminal-background"] = activeScheme.value.background;
+  }
+  // How much of the pane's colour survives while a picture is behind the window: the same number
+  // the panels take, so the terminal is not the one surface a picture can never be seen through.
+  if (wallpaperActive.value) {
+    style["--terminal-surface-opacity"] = wallpaperOpacity.value;
   }
   return style;
 });
@@ -374,6 +395,17 @@ function paletteTerminalTheme(): ITheme {
     // Read from the pane, not the document: the pane carries the palette class, and a dark
     // terminal in a light interface is a choice somebody is allowed to make.
     theme[name] = token(customProperty, container.value);
+  }
+
+  // The one colour the page lets somebody set without leaving the palette: only the text moves, so
+  // the background and the sixteen colours still describe the palette. A scheme's own text colour,
+  // when the scheme was chosen to replace the whole look, is applied below and wins over this.
+  const chosen =
+    preferences.resolvedTerminalTheme === "dark"
+      ? preferences.terminalForegroundDark
+      : preferences.terminalForegroundLight;
+  if (chosen) {
+    theme.foreground = chosen;
   }
 
   return theme as ITheme;
@@ -901,6 +933,8 @@ watch(
     preferences.terminalSchemeSource,
     preferences.terminalSchemeDark,
     preferences.terminalSchemeLight,
+    preferences.terminalForegroundDark,
+    preferences.terminalForegroundLight,
     preferences.terminalSchemeBackground,
     preferences.terminalCustomSchemes,
   ],
@@ -1069,7 +1103,7 @@ onBeforeUnmount(() => {
     <div
       ref="container"
       class="terminal-surface h-full overflow-hidden bg-[var(--terminal-background)]"
-      :class="paletteClass"
+      :class="[paletteClass, wallpaperActive ? 'terminal-wallpaper' : undefined]"
       :style="surfaceStyle"
       @contextmenu.capture="onContextMenu"
       @pointerdown="onSurfacePointerDown"
@@ -1212,6 +1246,29 @@ onBeforeUnmount(() => {
 .terminal-surface :deep(.xterm-viewport),
 .terminal-surface :deep(.xterm-screen) {
   background-color: var(--terminal-background);
+}
+
+/*
+ * The picture behind the window, let through the terminal.
+ *
+ * The pane paints the colour, not xterm: every layer inside gets its background from the token the
+ * pane carries, and xterm's own scrollable element is given the theme's background inline. So the
+ * transparent version is one rule on the pane itself, the inner layers become transparent rather
+ * than each taking their own alpha (two translucent layers stack into something more opaque than
+ * either), and the inline one needs `!important` because stylesheets lose to element styles.
+ */
+.terminal-surface.terminal-wallpaper {
+  background-color: color-mix(in oklab, var(--terminal-background) var(--terminal-surface-opacity, 100%), transparent);
+}
+
+.terminal-surface.terminal-wallpaper :deep(.xterm),
+.terminal-surface.terminal-wallpaper :deep(.xterm-viewport),
+.terminal-surface.terminal-wallpaper :deep(.xterm-screen) {
+  background-color: transparent;
+}
+
+.terminal-surface.terminal-wallpaper :deep(.xterm-scrollable-element) {
+  background-color: transparent !important;
 }
 
 /* The rest of a line somebody ran before, drawn where the terminal's own text would be. It is not

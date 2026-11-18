@@ -20,6 +20,12 @@
   --foreground: oklch(0.1448 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.1448 0 0);
+  /*
+   * The panels the workspace is made of, as a token of their own. It follows the card colour, and
+   * it exists so that the background picture can put an alpha on the panels without also putting
+   * one on every card and dialog that carries text.
+   */
+  --panel: var(--card);
   --muted: oklch(0.9702 0 0);
   --muted-foreground: oklch(0.5555 0 0);
   --border: oklch(0.9219 0 0);
@@ -127,7 +133,12 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--card);
+  /*
+   * A token of its own rather than `--card` directly: a panel is the window's content surface, and
+   * when a picture is behind the window this one is what lets it through. Cards, dialogs and
+   * popovers keep `--card` and stay opaque, because they carry text over whatever is behind them.
+   */
+  background: var(--panel);
 }
 
 [data-app-layout="classic"] {

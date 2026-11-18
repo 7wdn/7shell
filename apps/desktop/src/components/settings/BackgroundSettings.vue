@@ -127,8 +127,8 @@ function translate(key: string, params?: Record<string, string>): string {
         <Select
           :model-value="preferences.backgroundImage.displayMode"
           :options="modes"
-          :label="t('settings.background.displayMode')"
-          @choose="(value: string) => preferences.setBackgroundDisplayMode(value as BackgroundDisplayMode)"
+          :aria-label="t('settings.background.displayMode')"
+          @update:model-value="(value: string) => preferences.setBackgroundDisplayMode(value as BackgroundDisplayMode)"
         />
       </label>
 

@@ -339,6 +339,9 @@ export interface TerminalSchemeProfile {
   readonly schemeDark?: string;
   readonly schemeLight?: string;
   readonly schemeBackground: TerminalSchemeBackground;
+  /** The text colour saved with the answer, absent when the palette's own was worn. */
+  readonly foregroundDark?: string;
+  readonly foregroundLight?: string;
 }
 
 /** How many saved scheme choices this build keeps. */
@@ -726,6 +729,14 @@ export interface AppSettings {
   readonly terminalSchemeDark?: string;
   /** The scheme worn while the terminal is light. */
   readonly terminalSchemeLight?: string;
+  /**
+   * The colour the terminal's text is drawn in, while the palette supplies it — `#rrggbb`.
+   *
+   * Absent means the palette's own text colour. Only the text changes: the background and the
+   * sixteen ANSI colours stay with the palette. One per half, because the two are chosen apart.
+   */
+  readonly terminalForegroundDark?: string;
+  readonly terminalForegroundLight?: string;
   /** What a chosen scheme replaces: its own surfaces, or the palette's with only the ANSI colours. */
   readonly terminalSchemeBackground: TerminalSchemeBackground;
   /** The schemes somebody imported, which the shipped catalogue does not include. */

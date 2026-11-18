@@ -17,6 +17,7 @@ import { useI18n } from "vue-i18n";
 
 import { findTerminalScheme, schemeCssVars } from "@/lib/terminal/schemes";
 import { usePreferencesStore } from "@/stores/preferences";
+import { backgroundIsSet } from "@/types/app";
 
 const { t } = useI18n();
 const preferences = usePreferencesStore();
@@ -38,20 +39,30 @@ const half = computed(() => (preferences.resolvedTerminalTheme === "dark" ? "ter
  * terminal will not draw.
  */
 const schemeVars = computed<Record<string, string>>(() => {
-  if (preferences.terminalSchemeSource !== "custom") {
-    return {};
+  const vars: Record<string, string> = {};
+  if (preferences.terminalSchemeSource === "custom") {
+    const id =
+      preferences.resolvedTerminalTheme === "dark" ? preferences.terminalSchemeDark : preferences.terminalSchemeLight;
+    const scheme = findTerminalScheme(id, preferences.terminalCustomSchemes);
+    if (scheme) {
+      Object.assign(vars, schemeCssVars(scheme));
+      if (preferences.terminalSchemeBackground === "scheme") {
+        vars["--terminal-background"] = scheme.background;
+        vars["--terminal-foreground"] = scheme.foreground;
+      }
+    }
   }
-  const id =
-    preferences.resolvedTerminalTheme === "dark" ? preferences.terminalSchemeDark : preferences.terminalSchemeLight;
-  const scheme = findTerminalScheme(id, preferences.terminalCustomSchemes);
-  if (!scheme) {
-    return {};
+
+  // The text colour chosen beside the source cards, shown exactly where the pane would use it: a
+  // scheme that replaced the whole look brought its own and keeps it.
+  const chosen =
+    preferences.resolvedTerminalTheme === "dark"
+      ? preferences.terminalForegroundDark
+      : preferences.terminalForegroundLight;
+  if (chosen && vars["--terminal-foreground"] === undefined) {
+    vars["--terminal-foreground"] = chosen;
   }
-  const vars = schemeCssVars(scheme);
-  if (preferences.terminalSchemeBackground === "scheme") {
-    vars["--terminal-background"] = scheme.background;
-    vars["--terminal-foreground"] = scheme.foreground;
-  }
+
   return vars;
 });
 
@@ -82,6 +93,21 @@ const style = computed(() => ({
 const boxStyle = computed(() => ({
   padding: `${preferences.terminalPaddingY}px ${preferences.terminalPaddingX}px`,
 }));
+
+/**
+ * What the picture's own layer behind everything does to this surface.
+ *
+ * The same answer the real pane gives: with a picture behind the window, the pane's colour keeps
+ * only what the transparency slider leaves of it. Drawn with the same CSS the pane uses, so the
+ * two cannot disagree about how much shows through.
+ */
+const background = computed(() => {
+  if (!backgroundIsSet(preferences.backgroundImage)) {
+    return "var(--terminal-background)";
+  }
+  const transparency = Math.min(Math.max(Math.round(preferences.backgroundImage.transparency), 0), 100);
+  return `color-mix(in oklab, var(--terminal-background) ${100 - transparency}%, transparent)`;
+});
 </script>
 
 <template>
@@ -89,7 +115,7 @@ const boxStyle = computed(() => ({
     data-terminal-preview
     class="min-w-0 overflow-hidden rounded-md border border-border"
     :class="half"
-    :style="{ background: 'var(--terminal-background)', ...schemeVars, ...boxStyle }"
+    :style="{ background, ...schemeVars, ...boxStyle }"
   >
     <!--
       One line per colour, in the monospace face and at the size the settings hold. Not selectable: a

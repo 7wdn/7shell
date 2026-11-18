@@ -214,6 +214,17 @@ impl StoredMcpServerConfig {
     }
 }
 
+/// A stored text colour, or nothing when it is not the `#rrggbb` the terminal can draw.
+///
+/// A hand-edited value that is not a colour is dropped rather than repaired: the answer it falls
+/// back to — the palette's own text colour — is the one that is always readable in the theme it is
+/// used in, which a guessed replacement would not be.
+fn hex_colour(value: Option<String>) -> Option<String> {
+    value.map(|colour| colour.trim().to_ascii_lowercase()).filter(|colour| {
+        colour.len() == 7 && colour.starts_with('#') && colour[1..].bytes().all(|byte| byte.is_ascii_hexdigit())
+    })
+}
+
 /// One saved answer to "which terminal colours", as the file holds it.
 ///
 /// The three enums are strings for the reason every other stored enum is: a profile written by a
@@ -235,6 +246,10 @@ struct StoredTerminalSchemeProfile {
     scheme_light: Option<String>,
     #[serde(default)]
     scheme_background: String,
+    #[serde(default)]
+    foreground_dark: Option<String>,
+    #[serde(default)]
+    foreground_light: Option<String>,
 }
 
 impl StoredTerminalSchemeProfile {
@@ -247,6 +262,8 @@ impl StoredTerminalSchemeProfile {
             scheme_dark: profile.scheme_dark.clone(),
             scheme_light: profile.scheme_light.clone(),
             scheme_background: profile.scheme_background.as_str().to_owned(),
+            foreground_dark: profile.foreground_dark.clone(),
+            foreground_light: profile.foreground_light.clone(),
         }
     }
 
@@ -273,6 +290,8 @@ impl StoredTerminalSchemeProfile {
                 .filter(|id| !id.trim().is_empty())
                 .map(str::to_owned),
             scheme_background: TerminalSchemeBackground::from_id(&self.scheme_background).unwrap_or_default(),
+            foreground_dark: hex_colour(self.foreground_dark.clone()),
+            foreground_light: hex_colour(self.foreground_light.clone()),
         })
     }
 }
@@ -441,6 +460,12 @@ struct StoredSettings {
     terminal_scheme_dark: Option<String>,
     #[serde(default)]
     terminal_scheme_light: Option<String>,
+    /// The terminal's own text colour, absent until somebody changes it — the palette's text is
+    /// the answer otherwise.
+    #[serde(default)]
+    terminal_foreground_dark: Option<String>,
+    #[serde(default)]
+    terminal_foreground_light: Option<String>,
     #[serde(default)]
     terminal_scheme_background: String,
     #[serde(default)]
@@ -605,6 +630,8 @@ impl StoredSettings {
             terminal_scheme_source: settings.terminal_scheme_source.as_str().to_owned(),
             terminal_scheme_dark: settings.terminal_scheme_dark.clone(),
             terminal_scheme_light: settings.terminal_scheme_light.clone(),
+            terminal_foreground_dark: settings.terminal_foreground_dark.clone(),
+            terminal_foreground_light: settings.terminal_foreground_light.clone(),
             terminal_scheme_background: settings.terminal_scheme_background.as_str().to_owned(),
             terminal_custom_schemes: settings.terminal_custom_schemes.clone(),
             terminal_scheme_profiles: settings
@@ -775,6 +802,10 @@ impl StoredSettings {
             terminal_scheme_source: TerminalSchemeSource::from_id(&self.terminal_scheme_source).unwrap_or_default(),
             terminal_scheme_dark: self.terminal_scheme_dark.filter(|id| !id.trim().is_empty()),
             terminal_scheme_light: self.terminal_scheme_light.filter(|id| !id.trim().is_empty()),
+            // A number the colour picker cannot have produced is not a colour this build can draw;
+            // it reads as the palette's own text, which is the answer that is always available.
+            terminal_foreground_dark: hex_colour(self.terminal_foreground_dark),
+            terminal_foreground_light: hex_colour(self.terminal_foreground_light),
             terminal_scheme_background: TerminalSchemeBackground::from_id(&self.terminal_scheme_background)
                 .unwrap_or_default(),
             // An imported scheme that cannot be drawn is dropped whole, and the first one with an id
@@ -998,6 +1029,8 @@ mod tests {
             terminal_scheme_source: TerminalSchemeSource::default(),
             terminal_scheme_dark: None,
             terminal_scheme_light: None,
+            terminal_foreground_dark: None,
+            terminal_foreground_light: None,
             terminal_scheme_background: TerminalSchemeBackground::default(),
             terminal_custom_schemes: Vec::new(),
             terminal_scheme_profiles: Vec::new(),
@@ -1577,6 +1610,8 @@ mod tests {
             terminal_scheme_source: TerminalSchemeSource::Custom,
             terminal_scheme_dark: Some("dracula".to_owned()),
             terminal_scheme_light: Some("solarized-light".to_owned()),
+            terminal_foreground_dark: Some("#c0ffee".to_owned()),
+            terminal_foreground_light: Some("#102030".to_owned()),
             terminal_scheme_background: TerminalSchemeBackground::Host,
             terminal_custom_schemes: vec![TerminalCustomScheme {
                 id: "imported".to_owned(),
@@ -1595,6 +1630,8 @@ mod tests {
                 scheme_dark: Some("dracula".to_owned()),
                 scheme_light: Some("solarized-light".to_owned()),
                 scheme_background: TerminalSchemeBackground::Scheme,
+                foreground_dark: Some("#d0d0d0".to_owned()),
+                foreground_light: None,
             }],
             terminal_highlight_rules: vec![TerminalHighlightRule {
                 id: "timeout".to_owned(),
@@ -1617,7 +1654,8 @@ mod tests {
                 "terminalLineHeight":0.2,"terminalLetterSpacing":-99,"terminalPaddingX":90,
                 "terminalPaddingY":40,"terminalCursorStyle":"diamond","terminalCursorInactiveStyle":"sparkle",
                 "terminalMinContrast":99,"terminalSchemeSource":"rainbow","terminalSchemeDark":"",
-                "terminalSchemeLight":"  ","terminalSchemeBackground":"glass"}"#,
+                "terminalSchemeLight":"  ","terminalSchemeBackground":"glass",
+                "terminalForegroundDark":"not-a-colour","terminalForegroundLight":"12345"}"#,
         )
         .expect("write");
         let loaded = load_from(&path).expect("a hand-edited file is not a hard failure");
@@ -1636,6 +1674,10 @@ mod tests {
         assert_eq!(loaded.terminal_scheme_source, TerminalSchemeSource::default());
         assert_eq!(loaded.terminal_scheme_dark, None);
         assert_eq!(loaded.terminal_scheme_light, None);
+        // A value the colour picker could not have produced is not repaired into a colour: the
+        // palette's own text is the answer that is always readable.
+        assert_eq!(loaded.terminal_foreground_dark, None);
+        assert_eq!(loaded.terminal_foreground_light, None);
         assert_eq!(loaded.terminal_scheme_background, TerminalSchemeBackground::default());
     }
 

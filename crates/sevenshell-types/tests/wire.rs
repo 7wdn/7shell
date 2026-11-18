@@ -642,6 +642,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             terminal_scheme_source: TerminalSchemeSource::Custom,
             terminal_scheme_dark: Some("dracula".to_owned()),
             terminal_scheme_light: Some("solarized-light".to_owned()),
+            terminal_foreground_dark: Some("#c8c8c8".to_owned()),
+            terminal_foreground_light: Some("#2b2b2b".to_owned()),
             terminal_scheme_background: TerminalSchemeBackground::Host,
             terminal_custom_schemes: vec![TerminalCustomScheme {
                 id: "imported".to_owned(),
@@ -660,6 +662,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
                 scheme_dark: Some("dracula".to_owned()),
                 scheme_light: Some("solarized-light".to_owned()),
                 scheme_background: TerminalSchemeBackground::Scheme,
+                foreground_dark: Some("#d0d0d0".to_owned()),
+                foreground_light: None,
             }],
             terminal_highlight_rules: vec![TerminalHighlightRule {
                 id: "timeout".to_owned(),
@@ -754,6 +758,14 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
     assert_eq!(settings["terminalSchemeSource"], serde_json::json!("custom"));
     assert_eq!(settings["terminalSchemeDark"], serde_json::json!("dracula"));
     assert_eq!(settings["terminalSchemeBackground"], serde_json::json!("host"));
+    // The terminal's own text colour travels beside the two slots, under the names the page reads.
+    assert_eq!(settings["terminalForegroundDark"], serde_json::json!("#c8c8c8"));
+    assert_eq!(settings["terminalForegroundLight"], serde_json::json!("#2b2b2b"));
+    assert_eq!(
+        settings["terminalSchemeProfiles"][0]["foregroundDark"],
+        serde_json::json!("#d0d0d0"),
+        "a saved scheme carries the text colour it was saved with"
+    );
     assert_eq!(
         settings["terminalCustomSchemes"][0]["selectionBackground"],
         serde_json::json!("#654321"),

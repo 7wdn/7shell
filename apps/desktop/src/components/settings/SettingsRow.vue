@@ -26,10 +26,16 @@ const props = defineProps<{
 
 <template>
   <div
-    class="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5 transition-colors hover:bg-muted"
+    class="flex flex-wrap items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-3 py-2.5 transition-colors hover:bg-muted"
     :class="props.found ? 'settings-found' : undefined"
   >
-    <div class="min-w-0">
+    <!--
+      The title keeps a width of its own. A block control — the terminal's colour schemes, the
+      highlight rules — is as wide as its content, and at a narrow page the two together no longer
+      fit on one line: without a floor the control took the row and the title was squeezed into a
+      column one character wide.
+    -->
+    <div class="min-w-40 flex-1">
       <div class="flex items-center gap-1.5">
         <span class="text-sm font-medium">{{ props.title }}</span>
         <SettingsHelp :title="props.title" :help="props.help" />
@@ -37,7 +43,12 @@ const props = defineProps<{
       <p class="mt-0.5 text-xs text-muted-foreground">{{ props.summary }}</p>
     </div>
 
-    <div class="shrink-0 pt-0.5">
+    <!--
+      The control drops under the title when the row cannot hold both, rather than pushing the row
+      wider than the page: the page scrolls down, and a scrollbar across the bottom of it was the
+      other half of the same squeeze.
+    -->
+    <div class="min-w-0 max-w-full shrink-0 pt-0.5">
       <slot />
     </div>
   </div>

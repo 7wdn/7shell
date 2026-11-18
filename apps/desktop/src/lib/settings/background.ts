@@ -118,12 +118,15 @@ export function surfaceColorWithAlpha(color: string, alpha: number): string | nu
 /**
  * The surfaces a picture shows through.
  *
- * The frame and the panels, and nothing that carries text on a surface of its own: the cards, the
- * dialogs and the popovers keep their colour whatever is behind them, which is what the setting's own
- * words promise. `--background` is the window, `--muted` the quieter blocks on it and `--accent` the
- * lit rows — each of them a place where the picture is meant to be seen rather than read through.
+ * The window, the floating panels that fill most of it, the quieter blocks on it and the lit rows —
+ * each of them a place where the picture is meant to be seen rather than read through. What is
+ * deliberately not here is `--card`: cards, dialogs and popovers carry text on a surface of their
+ * own and keep their colour whatever is behind them, which is what the setting's own words promise.
+ * `--panel` is the one that would otherwise hide the picture completely: the separated layout draws
+ * the workspace, the session list and the monitor as cards of their own, and an opaque panel is a
+ * window with no picture visible at any transparency.
  */
-export const WALLPAPER_SURFACE_TOKENS = ["--background", "--muted", "--accent"] as const;
+export const WALLPAPER_SURFACE_TOKENS = ["--background", "--panel", "--muted", "--accent"] as const;
 
 /**
  * Makes those surfaces translucent, and answers with the way back.

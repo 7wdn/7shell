@@ -1090,6 +1090,12 @@ pub struct TerminalSchemeProfile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scheme_light: Option<String>,
     pub scheme_background: TerminalSchemeBackground,
+    /// The text colour set beside the scheme slots, in the same two halves. `None` is the
+    /// palette's own text colour, which is what "follow the interface" means.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreground_dark: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foreground_light: Option<String>,
 }
 
 /// How many of somebody's own scheme choices this build keeps.
@@ -1628,6 +1634,18 @@ pub struct AppSettings {
     /// background, and a dark scheme worn on a light terminal is the one combination nobody drew.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_scheme_light: Option<String>,
+    /// The colour the terminal prints its text in, while the interface palette supplies it.
+    ///
+    /// Absent means the palette's own text colour. A chosen colour replaces only the text: the
+    /// background and the sixteen ANSI colours stay with the palette, which is what somebody who
+    /// wants the window's colours everywhere but a different terminal font is asking for. Two
+    /// values rather than one for the same reason the scheme slots have two: the two halves of the
+    /// palette are chosen apart, and a colour readable on one is not necessarily readable on the
+    /// other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_foreground_dark: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_foreground_light: Option<String>,
     /// What a chosen scheme replaces. Absent means the whole look, which is what choosing a scheme
     /// is normally for.
     #[serde(default)]
@@ -1892,6 +1910,8 @@ impl Default for AppSettings {
             terminal_scheme_source: TerminalSchemeSource::default(),
             terminal_scheme_dark: None,
             terminal_scheme_light: None,
+            terminal_foreground_dark: None,
+            terminal_foreground_light: None,
             terminal_scheme_background: TerminalSchemeBackground::default(),
             terminal_custom_schemes: Vec::new(),
             terminal_scheme_profiles: Vec::new(),
@@ -1960,6 +1980,8 @@ impl AppSettings {
             && self.terminal_scheme_source == TerminalSchemeSource::Host
             && self.terminal_scheme_dark.is_none()
             && self.terminal_scheme_light.is_none()
+            && self.terminal_foreground_dark.is_none()
+            && self.terminal_foreground_light.is_none()
             && self.terminal_scheme_background == TerminalSchemeBackground::Scheme
             && self.terminal_custom_schemes.is_empty()
             && self.terminal_scheme_profiles.is_empty()
