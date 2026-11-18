@@ -54,7 +54,7 @@ impl Core {
                 "the session has no guest account; set the SSH user on it first",
             ));
         }
-        let Some(secret) = sevenshell_vault::secret_for_session(session_id)? else {
+        let Some(secret) = self.vault.secret_for_session(session_id)? else {
             return Err(ShellError::vmware_guest_credentials(
                 "the session has no guest password stored",
             ));
