@@ -1,0 +1,83 @@
+name: "💡 Feature Request / 功能建议"
+description: "Propose a new feature, an interaction improvement, or an enhancement to an existing one. / 提议新功能、交互改进或现有功能增强。"
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        好的建议要说明使用场景，而不只是“支持 X”；每个 issue 只写一个需求。可以先查看 README 与文档，确认功能是否已经存在。
+        A good request describes the use case instead of only “support X”; file one request per issue. Check the README and docs first in case the feature already exists.
+
+        应用内可一键复制版本与运行环境：**设置 → 关于 → 支持信息 → 复制**。
+        Copy the version and runtime in one click: **Settings → About → Support information → Copy**.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能领域 / Affected area
+      description: 这个建议属于哪一部分？ / Which part of the app does this concern?
+      options:
+        - 连接与终端 / Connection & terminal
+        - SFTP 文件 / SFTP files
+        - 容器 / Containers
+        - Kubernetes
+        - AI 助手 / AI assistant
+        - MCP / Agent access
+        - 同步 / Sync
+        - 设置与界面 / Settings & UI
+        - 安装与自动更新 / Install & auto-update
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: support-info
+    attributes:
+      label: 支持信息 / Support information
+      description: 粘贴“设置 → 关于 → 支持信息 → 复制”的结果，方便判断建议相对哪个版本。 / Paste the copied block so maintainers know which version the request is against.
+      placeholder: |
+        7Shell 版本 / Version: v0.3.0
+        运行环境 / Runtime: 桌面端 · Desktop
+        操作系统 / OS: macOS 15
+        系统架构 / Architecture: aarch64
+        连接类型 / Connection types: ssh, sftp
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前痛点 / Current pain point
+      description: 现在做这件事有什么不方便？ / What is inconvenient about the current workflow?
+      placeholder: "例如：每次部署后都要手动逐个会话执行同一组命令。 / Example: After every deployment I run the same commands across sessions by hand."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案 / Proposed solution
+      description: 希望怎么支持？有参考截图或相似工具的做法更好。 / How would you like this to work? Screenshots or examples from other tools help.
+      placeholder: "例如：选中多个会话，一键广播发送命令。 / Example: Select multiple sessions and broadcast a command to all of them."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级（是否紧急） / Priority (urgency)
+      description: 紧急 = 希望下个版本优先做；维护者可调整。 / Urgent means you hope for the next release; maintainers may adjust it.
+      options:
+        - "🔴 P0 紧急 · 下个版本必须做 / Urgent · Must do next release"
+        - "🟠 P1 重要 · 尽快实现 / Important · Do soon"
+        - "🟡 P2 普通 · 按排期处理 / Normal · Schedule as appropriate"
+        - "🟢 P3 低优 · 有空再做 / Low · Do when possible"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息 / Additional information
+      description: 替代方案、特殊环境、相关 issue 等。 / Alternatives, special environments, related issues, and so on.

@@ -1,0 +1,95 @@
+name: "🐞 Bug Report / 问题反馈"
+description: "Crashes, connection failures, terminal or file errors, and other reproducible problems. / 崩溃、连接失败、终端或文件异常，以及其他可复现的问题。"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。发帖前请先脱敏密码、私钥、主机名等敏感信息；每个 issue 只描述一个问题，并先搜索已有 issue。
+        Thanks for reporting. Redact passwords, keys, hostnames, and other sensitive data; file one issue per problem and search existing issues first.
+
+        应用内可一键复制版本与运行环境：**设置 → 关于 → 支持信息 → 复制**。
+        Copy the version and runtime in one click: **Settings → About → Support information → Copy**.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能领域 / Affected area
+      description: 出问题的是哪一部分？ / Which part of the app is affected?
+      options:
+        - 连接与终端 / Connection & terminal
+        - SFTP 文件 / SFTP files
+        - 容器 / Containers
+        - Kubernetes
+        - AI 助手 / AI assistant
+        - MCP / Agent access
+        - 同步 / Sync
+        - 设置与界面 / Settings & UI
+        - 安装与自动更新 / Install & auto-update
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: input
+    id: target
+    attributes:
+      label: 目标环境与版本 / Target environment and version
+      description: 涉及的远端主机、运行时或平台；与远端无关的界面问题请填“不适用”。 / The remote host, runtime, or platform involved; write “不适用 / N/A” for local UI problems.
+      placeholder: "例如：Ubuntu 22.04 + OpenSSH 9.6 · Docker 27 · k3s v1.34 / Example: Ubuntu 22.04 with OpenSSH 9.6"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Problem description
+      description: 请按下面的清单逐项填写。 / Complete each item below.
+      placeholder: |
+        1. 复现步骤 / Steps: 打开会话 → 文件面板 → 上传一个 2 GB 文件 / Open session → Files panel → upload a 2 GB file
+        2. 期望结果 / Expected: 上传完成后文件出现在列表中 / The uploaded file appears in the list
+        3. 实际结果 / Actual: 进度到 80% 卡住，传输行一直停在 running / Stuck at 80%; the transfer row stays on running
+        4. 出现频率 / Frequency: 每次 / Always
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: 错误信息与错误码 / Error message and code
+      description: 粘贴界面上的错误文本或错误码（例如 SSH-CHANNEL-FAILED、POLICY-DENIED）；没有就留空。 / Paste the error text or code shown in the app (for example SSH-CHANNEL-FAILED or POLICY-DENIED); leave empty if none.
+      render: shell
+
+  - type: textarea
+    id: support-info
+    attributes:
+      label: 支持信息 / Support information
+      description: 粘贴“设置 → 关于 → 支持信息 → 复制”的结果；应用打不开时请说明原因。 / Paste the copied block; if the app will not open, explain why.
+      placeholder: |
+        7Shell 版本 / Version: v0.3.0
+        运行环境 / Runtime: 桌面端 · Desktop
+        操作系统 / OS: Windows 11 (10.0.26300)
+        系统架构 / Architecture: x86_64
+        User-Agent: Mozilla/5.0 ...
+        连接类型 / Connection types: ssh, sftp, telnet, serial, local, docker
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级（是否紧急） / Priority (urgency)
+      description: 紧急 = 希望下个版本优先修；维护者可调整。 / Urgent means you hope for the next release; maintainers may adjust it.
+      options:
+        - "🔴 P0 紧急 · 下个版本必须修 / Urgent · Must fix next release"
+        - "🟠 P1 重要 · 尽快修复 / Important · Fix soon"
+        - "🟡 P2 普通 · 按排期处理 / Normal · Schedule as appropriate"
+        - "🟢 P3 低优 · 有空再修 / Low · Fix when possible"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息 / Additional information
+      description: 截图、录屏、日志片段、连接方式（直连 / 跳板 / 隧道）等。 / Screenshots, recordings, log excerpts, connection method (direct, jump host, tunnel), and so on.

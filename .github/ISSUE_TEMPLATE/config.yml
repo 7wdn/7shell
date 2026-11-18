@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: FAQ / 常见问题
+    url: https://github.com/7wdn/7shell/blob/main/docs/guide/faq.md
+    about: Check the FAQ before filing an issue. / 提交 issue 前请先查看常见问题。
+  - name: Troubleshooting / 故障排查
+    url: https://github.com/7wdn/7shell/blob/main/docs/guide/troubleshooting.md
+    about: Connection, file, and install problems often have a known fix. / 连接、文件与安装问题通常已有对应解法。
+  - name: Security Policy / 安全策略
+    url: https://github.com/7wdn/7shell/blob/main/SECURITY.md
+    about: Report vulnerabilities privately, never in a public issue. / 安全漏洞请私下报告，不要发公开 issue。

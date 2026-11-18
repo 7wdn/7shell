@@ -1,0 +1,84 @@
+name: "🔀 Platform Compatibility / 平台兼容性问题"
+description: "Install, launch, tray, input-method, or rendering problems on a specific distribution, architecture, or package format. / 某个发行版、架构或安装包格式下的安装、启动、托盘、输入法或渲染问题。"
+title: "[Compatibility] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        用于收集平台兼容性细节，例如安装失败、启动崩溃、托盘缺失、输入法异常、界面渲染错误等。请脱敏，并尽量附上发行版与架构。
+        This form collects platform compatibility details such as install failures, launch crashes, missing tray icons, input-method problems, and rendering errors. Redact sensitive information and include the distribution and architecture.
+
+        应用内可一键复制版本与运行环境：**设置 → 关于 → 支持信息 → 复制**；应用打不开时请手动给出安装包版本。
+        Copy the version and runtime via **Settings → About → Support information → Copy**; if the app will not open, state the package version by hand.
+
+  - type: input
+    id: platform
+    attributes:
+      label: 发行版、架构与内核 / Distribution, architecture, and kernel
+      description: 操作系统名称与版本、CPU 架构；Linux 请附 `uname -r`。 / OS name and version, CPU architecture; include `uname -r` on Linux.
+      placeholder: "例如：UOS 20 专业版 arm64，4.19.0-arm64-desktop / Example: UOS 20 Pro arm64, kernel 4.19.0-arm64-desktop"
+    validations:
+      required: true
+
+  - type: input
+    id: glibc
+    attributes:
+      label: glibc 版本（Linux） / glibc version (Linux)
+      description: Linux 上请填写 `ldd --version | head -1` 的输出。 / On Linux, paste the output of `ldd --version | head -1`.
+      placeholder: "例如：ldd (Debian GLIBC 2.28-10) 2.28"
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: 安装包格式 / Package format
+      description: 用的是哪一种安装包？ / Which package did you install?
+      options:
+        - Windows 安装包（exe / msi）/ Windows installer
+        - macOS 安装包（dmg）/ macOS dmg
+        - Linux AppImage
+        - Linux deb / rpm
+        - UOS / 麒麟 APM 包 / APM package
+        - 浏览器版便携包 / Browser portable tar
+        - 从源码构建 / Built from source
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Problem description
+      description: 什么操作，出了什么错，期望怎样？ / What did you do, what went wrong, and what did you expect?
+      placeholder: "例如：安装后启动即退出，期望正常打开主窗口。 / Example: The app exits right after launch; the main window should open."
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: 终端输出或日志 / Terminal output or logs
+      description: 从终端启动时的完整输出、安装器报错、系统日志片段等。 / Full output when launched from a terminal, installer errors, or system log excerpts.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: support-info
+    attributes:
+      label: 支持信息 / Support information
+      description: 粘贴“设置 → 关于 → 支持信息 → 复制”的结果；应用打不开时请填写“无法启动”并说明症状。 / Paste the copied block; if the app will not open, write “无法启动 / Cannot launch” and describe the symptom.
+      placeholder: |
+        7Shell 版本 / Version: v0.3.0
+        运行环境 / Runtime: 桌面端 · Desktop
+        操作系统 / OS: UOS 20
+        系统架构 / Architecture: aarch64
+        连接类型 / Connection types: ssh, sftp
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息 / Additional information
+      description: 安装方式（商店 / 手动 dpkg / 解压便携包）、是否首次安装、之前可用的版本等。 / Install method (store, manual dpkg, extracted portable tar), whether this is a fresh install, and the last version that worked.

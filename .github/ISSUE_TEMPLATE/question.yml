@@ -1,0 +1,67 @@
+name: "❓ Question / 使用咨询"
+description: "Usage questions, configuration help, or feedback you are not sure qualifies as a bug. / 使用疑问、配置求助，或不确定是否为 bug 的反馈。"
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提问前可以先看 FAQ 与故障排查（上方链接）。如果确认是可复现的程序问题，请改用 Bug Report。
+        Check the FAQ and troubleshooting guide first (links above). If the problem is reproducible, use Bug Report instead.
+
+        应用内可一键复制版本与运行环境：**设置 → 关于 → 支持信息 → 复制**。
+        Copy the version and runtime in one click: **Settings → About → Support information → Copy**.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 功能领域 / Affected area
+      description: 问题涉及哪一部分？ / Which part of the app does this concern?
+      options:
+        - 连接与终端 / Connection & terminal
+        - SFTP 文件 / SFTP files
+        - 容器 / Containers
+        - Kubernetes
+        - AI 助手 / AI assistant
+        - MCP / Agent access
+        - 同步 / Sync
+        - 设置与界面 / Settings & UI
+        - 安装与自动更新 / Install & auto-update
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: support-info
+    attributes:
+      label: 支持信息 / Support information
+      description: 粘贴“设置 → 关于 → 支持信息 → 复制”的结果；应用打不开时请说明原因。 / Paste the copied block; if the app will not open, explain why.
+      placeholder: |
+        7Shell 版本 / Version: v0.3.0
+        运行环境 / Runtime: 桌面端 · Desktop
+        操作系统 / OS: Ubuntu 24.04
+        系统架构 / Architecture: x86_64
+        连接类型 / Connection types: ssh, sftp
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Description
+      description: 你想完成什么？已经尝试了什么？ / What are you trying to accomplish, and what have you already tried?
+      placeholder: |
+        例如：想通过跳板机连接内网服务器，已确认本机 ssh 命令可以连通，但界面里提示连接失败。
+        Example: I want to reach an intranet host through a jump host. Plain ssh works, but the app reports a connection failure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: 环境信息 / Environment
+      description: 连接方式（直连 / 跳板 / 隧道）、认证方式（密码 / 密钥 / Agent）、特殊网络环境、已排查项等。 / Connection method (direct, jump host, tunnel), authentication (password, key, agent), network specifics, and troubleshooting already attempted.
+      placeholder: |
+        连接方式：
+        认证方式：
+        补充环境：
