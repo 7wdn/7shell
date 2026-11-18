@@ -38,13 +38,32 @@ impl Vmrest {
         self.get("vms", PROBE_TIMEOUT).await.map(|_| ())
     }
 
+    /// The machines the service knows, as ids only.
+    ///
+    /// The service's own answer carries each machine's `.vmx` path. That path is exactly what this
+    /// build never hands to an interface or an agent, so the answer is reduced to the id here.
     pub async fn list_vms(&self) -> Result<Value, ShellError> {
-        self.get("vms", REQUEST_TIMEOUT).await
+        let value = self.get("vms", REQUEST_TIMEOUT).await?;
+        Ok(match value {
+            Value::Array(machines) => Value::Array(
+                machines
+                    .into_iter()
+                    .filter_map(|machine| {
+                        machine
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .map(|id| serde_json::json!({ "id": id }))
+                    })
+                    .collect(),
+            ),
+            other => other,
+        })
     }
 
     pub async fn get_vm(&self, id: &str) -> Result<Value, ShellError> {
         let id = component(id, "vm id")?;
-        self.get(&format!("vms/{id}"), REQUEST_TIMEOUT).await
+        let value = self.get(&format!("vms/{id}"), REQUEST_TIMEOUT).await?;
+        Ok(strip_paths(value))
     }
 
     pub async fn list_networks(&self) -> Result<Value, ShellError> {
@@ -149,6 +168,20 @@ pub fn locate() -> Option<PathBuf> {
         .filter(|entry| !entry.trim().is_empty())
         .map(|entry| Path::new(entry).join(name))
         .find(|path| path.is_file())
+}
+
+/// Drops every field called `path` at any depth, in case a service answer grows one.
+fn strip_paths(value: Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .filter(|(key, _)| !key.eq_ignore_ascii_case("path"))
+                .map(|(key, value)| (key, strip_paths(value)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.into_iter().map(strip_paths).collect()),
+        other => other,
+    }
 }
 
 /// One path component: an id from the service, never a path an agent composed.
