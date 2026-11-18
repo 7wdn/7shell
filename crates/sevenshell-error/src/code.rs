@@ -229,6 +229,10 @@ error_catalog! {
     #[doc = "A guest operation needs an account and password the VM session has not saved."]
     VmwareGuestCredentials => "VMWARE-GUEST-CREDENTIALS", "errors.vmware.guestCredentials";
 
+    // -- Host locations ----------------------------------------------------
+    #[doc = "A host location token is not known, or names the wrong kind of location."]
+    HostLocationUnknown => "HOST-LOCATION-UNKNOWN", "errors.hostLocation.unknown";
+
     // -- Kubernetes --------------------------------------------------------
     #[doc = "The Kubernetes API server could not be reached."]
     K8sUnavailable => "K8S-UNAVAILABLE", "errors.k8s.unavailable";

@@ -65,6 +65,8 @@ pub fn register(registry: &mut ToolRegistry) -> Result<(), ApiError> {
     registry.register(Arc::new(vmware_admin::VmHostReadTool))?;
     registry.register(Arc::new(vmware_admin::VmHostWriteTool))?;
     registry.register(Arc::new(vmware_admin::VmImageTool))?;
+    registry.register(Arc::new(vmware_admin::HostLocationsListTool))?;
+    registry.register(Arc::new(vmware_admin::VmScreenshotTool))?;
     Ok(())
 }
 

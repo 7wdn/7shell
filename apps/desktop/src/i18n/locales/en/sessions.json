@@ -387,6 +387,14 @@
         "message": "The machine is not running, but its lock directory is still there — usually left by a run that did not shut down cleanly. Taking ownership removes the lock. Only do this if no Workstation window or other machine is using it: a live machine's lock is what keeps two hypervisors from writing the same disks.",
         "confirm": "Take ownership and start"
       },
+      "locations": {
+        "title": "Host locations",
+        "folder": "Folder",
+        "file": "File",
+        "chooseFolder": "Choose a host folder",
+        "chooseFile": "Choose a host file",
+        "forget": "Remove"
+      },
       "password": {
         "title": "Password",
         "description": "Signing in to {target} over SSH needs a password.",

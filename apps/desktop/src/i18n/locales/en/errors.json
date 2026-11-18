@@ -111,6 +111,9 @@
       "commandFailed": "The container runtime rejected {operation}.",
       "notConnected": "That container connection is no longer open."
     },
+    "hostLocation": {
+      "unknown": "That host location is no longer known. Add it on the desktop again."
+    },
     "vmware": {
       "unavailable": "VMware Workstation's command line is not available on this machine.",
       "commandFailed": "The VMware command for {operation} did not succeed.",

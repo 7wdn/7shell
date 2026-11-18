@@ -18,6 +18,7 @@ pub mod container;
 pub mod desktop;
 pub mod files;
 pub mod fonts;
+pub mod host_locations;
 pub mod k8s;
 pub mod keys;
 pub mod known_hosts;

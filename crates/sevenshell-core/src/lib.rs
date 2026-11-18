@@ -13,6 +13,7 @@ mod completion;
 mod container;
 mod desktop;
 mod files;
+mod host_locations;
 mod k8s;
 mod keys;
 mod monitor;

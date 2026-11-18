@@ -73,7 +73,7 @@ import type {
   AiToolResultEvent,
 } from "@/types/ai";
 import type { HostSystem } from "@/types/system";
-import type { VmInfo, VmPowerAction, VmStatus } from "@/types/vmware";
+import type { HostLocationKind, HostLocationView, VmInfo, VmPowerAction, VmStatus } from "@/types/vmware";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CreatedKey,
@@ -917,6 +917,14 @@ export const backend = {
     /** Removes the lock an unfinished run left behind, on a machine that is not running. */
     takeOwnership: (vmId: string, acknowledged: boolean): Promise<void> =>
       forward("vmware_take_ownership", () => desktop.vmwareTakeOwnership(vmId, acknowledged)),
+  },
+
+  hostLocations: {
+    list: (): Promise<HostLocationView[]> => forward("host_locations_list", () => desktop.hostLocationsList()),
+    choose: (kind: HostLocationKind, title: string): Promise<HostLocationView | null> =>
+      forward("host_location_choose", () => desktop.hostLocationChoose(kind, title)),
+    forget: (token: string): Promise<boolean> =>
+      forward("host_location_forget", () => desktop.hostLocationForget(token)),
   },
 
   knownHosts: {

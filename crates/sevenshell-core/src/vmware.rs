@@ -7,7 +7,9 @@
 
 use sevenshell_error::ShellError;
 use sevenshell_policy::PolicyTarget;
-use sevenshell_types::{PolicyAction, Protocol, RiskAssessment, VmInfo, VmPowerAction, VmStatus};
+use std::path::Path;
+
+use sevenshell_types::{HostLocationKind, PolicyAction, Protocol, RiskAssessment, VmInfo, VmPowerAction, VmStatus};
 use sevenshell_vault::SessionSecret;
 use sevenshell_vmware::{
     ConfigRead, ConfigWrite, GuestAuth, GuestOp, HostRead, HostWrite, ImageAction, SnapshotAction,
@@ -123,6 +125,116 @@ impl Core {
         sevenshell_vmware::guest_env(&vm_id, &auth).await
     }
 
+    /// Copies one host file into the guest, named by a file token.
+    pub async fn vmware_guest_copy_to(
+        &self,
+        session_id: &str,
+        token: &str,
+        guest_path: &str,
+    ) -> Result<String, ShellError> {
+        let path = self.host_location_path(token, HostLocationKind::File)?;
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        let auth = self.vmware_guest_auth(session_id)?;
+        sevenshell_vmware::copy_to_guest(&vm_id, &host_path(&path), guest_path, &auth).await
+    }
+
+    /// Copies one guest file into the folder a folder token names. The host file keeps the guest
+    /// file's own name.
+    pub async fn vmware_guest_copy_from(
+        &self,
+        session_id: &str,
+        token: &str,
+        guest_path: &str,
+    ) -> Result<String, ShellError> {
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let name = Path::new(guest_path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                ShellError::vmware_command_failed("copy-from", "the guest path has no file name to save under")
+            })?;
+        let destination = folder.join(&name);
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        let auth = self.vmware_guest_auth(session_id)?;
+        sevenshell_vmware::copy_from_guest(&vm_id, guest_path, &host_path(&destination), &auth).await
+    }
+
+    /// Clones one machine into a subfolder of the folder a token names.
+    pub async fn vmware_clone(
+        &self,
+        session_id: &str,
+        token: &str,
+        name: &str,
+        clone_type: &str,
+        snapshot: Option<&str>,
+    ) -> Result<String, ShellError> {
+        let name = safe_component(name, "clone")?;
+        let clone_type = match clone_type.trim().to_ascii_lowercase().as_str() {
+            "full" => "full",
+            "linked" => "linked",
+            _ => {
+                return Err(ShellError::vmware_command_failed(
+                    "clone",
+                    "cloneType must be `full` or `linked`",
+                ));
+            }
+        };
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let destination = folder.join(&name).join(format!("{name}.vmx"));
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::clone(&vm_id, &host_path(&destination), clone_type, snapshot).await
+    }
+
+    /// Captures the machine's screen into the folder a token names, and answers the file name.
+    pub async fn vmware_screenshot(&self, session_id: &str, token: &str) -> Result<String, ShellError> {
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let stem = safe_component(&self.session(session_id)?.name, "screenshot")?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or_default();
+        let file_name = format!("{stem}-{stamp}.png");
+        let destination = folder.join(&file_name);
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::screenshot(&vm_id, &host_path(&destination)).await?;
+        Ok(file_name)
+    }
+
+    /// Points one shared folder at the folder a token names.
+    pub async fn vmware_hgfs_set_host_path(
+        &self,
+        session_id: &str,
+        index: u32,
+        token: &str,
+    ) -> Result<String, ShellError> {
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::hgfs_set_host_path(&vm_id, index, &host_path(&folder)).await
+    }
+
+    /// Adds a shared folder for the folder a token names.
+    pub async fn vmware_shared_add(&self, session_id: &str, name: &str, token: &str) -> Result<String, ShellError> {
+        let name = safe_component(name, "shared-add")?;
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::shared_add(&vm_id, &name, &host_path(&folder)).await
+    }
+
+    /// Sets whether one shared folder is writable, still pointing at the folder a token names.
+    pub async fn vmware_shared_set_state(
+        &self,
+        session_id: &str,
+        name: &str,
+        token: &str,
+        writable: bool,
+    ) -> Result<String, ShellError> {
+        let name = safe_component(name, "shared-set")?;
+        let folder = self.host_location_path(token, HostLocationKind::Folder)?;
+        let vm_id = self.vmware_session_vm_id(session_id)?;
+        sevenshell_vmware::shared_set_state(&vm_id, &name, &host_path(&folder), writable).await
+    }
+
     /// Every virtual machine this machine's Workstation can act on.
     pub async fn vmware_scan(&self) -> Result<Vec<VmInfo>, ShellError> {
         sevenshell_vmware::scan().await
@@ -172,6 +284,30 @@ impl Core {
     }
 }
 
+/// A host path as the command line takes it.
+fn host_path(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// A name that is one component: no separators, no control characters, no "..". A name is what the
+/// agent typed, and a name that can walk out of the folder it was given is a path.
+fn safe_component(name: &str, operation: &str) -> Result<String, ShellError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed
+            .chars()
+            .any(|character| character == '/' || character == '\\' || character.is_control())
+    {
+        return Err(ShellError::vmware_command_failed(
+            operation,
+            "the name must be a single file or folder name",
+        ));
+    }
+    Ok(trimmed.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -180,6 +316,7 @@ mod tests {
     use sevenshell_vault::Vault;
     use tempfile::tempdir;
 
+    use super::safe_component;
     use crate::Core;
 
     fn test_core() -> (tempfile::TempDir, Arc<Core>) {
@@ -228,6 +365,14 @@ mod tests {
             sevenshell_error::ErrorCode::VmwareCommandFailed,
             "starting is not gated, so the invalid identity is the failure"
         );
+    }
+
+    #[test]
+    fn a_name_that_can_walk_out_of_its_folder_is_refused() {
+        assert!(safe_component("..", "clone").is_err());
+        assert!(safe_component("a/b", "clone").is_err());
+        assert!(safe_component(r"a\b", "clone").is_err());
+        assert_eq!(safe_component("ubuntu-2", "clone").expect("a name"), "ubuntu-2");
     }
 
     #[tokio::test]

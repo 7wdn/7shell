@@ -27,6 +27,8 @@ pub const VM_CONFIG_WRITE: &str = "sshell_vm_config_write";
 pub const VM_HOST_READ: &str = "sshell_vm_host_read";
 pub const VM_HOST_WRITE: &str = "sshell_vm_host_write";
 pub const VM_IMAGE: &str = "sshell_vm_image";
+pub const HOST_LOCATIONS_LIST: &str = "sshell_host_locations_list";
+pub const VM_SCREENSHOT: &str = "sshell_vm_screenshot";
 
 const VM_OPERATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
@@ -94,6 +96,9 @@ pub enum ConfigWriteAction {
     SharedEnable,
     SharedDisable,
     SharedRemove,
+    HgfsSetHostPath,
+    SharedAdd,
+    SharedSetState,
 }
 
 impl ConfigWriteAction {
@@ -132,6 +137,9 @@ impl ConfigWriteAction {
             Self::SharedEnable => "shared-enable",
             Self::SharedDisable => "shared-disable",
             Self::SharedRemove => "shared-remove",
+            Self::HgfsSetHostPath => "hgfs-set-host-path",
+            Self::SharedAdd => "shared-add",
+            Self::SharedSetState => "shared-set-state",
         }
     }
 }
@@ -179,6 +187,10 @@ pub struct VmConfigWriteInput {
     pub var_type: Option<String>,
     #[serde(default)]
     pub device_name: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub writable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -227,6 +239,7 @@ pub struct VmHostWriteInput {
 pub enum ImageActionInput {
     Delete,
     Upgrade,
+    Clone,
 }
 
 #[derive(Debug, Deserialize)]
@@ -234,6 +247,25 @@ pub enum ImageActionInput {
 pub struct VmImageInput {
     pub session_id: String,
     pub action: ImageActionInput,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub clone_type: Option<String>,
+    #[serde(default)]
+    pub snapshot: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HostLocationsInput {}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VmScreenshotInput {
+    pub session_id: String,
+    pub token: String,
 }
 
 // -- Descriptors --------------------------------------------------------
@@ -306,7 +338,8 @@ pub fn vm_config_write_descriptor() -> ToolDescriptor {
                         "nvmeSetPresent", "nvmePurge", "hgfsSetEnabled", "hgfsSetGuestName",
                         "hgfsSetPresent", "hgfsSetRead", "hgfsSetWrite", "vprobesEnable",
                         "vprobesReset", "configSet", "deviceConnect", "deviceDisconnect",
-                        "variableWrite", "toolsUpgrade", "sharedEnable", "sharedDisable", "sharedRemove"
+                        "variableWrite", "toolsUpgrade", "sharedEnable", "sharedDisable", "sharedRemove",
+                        "hgfsSetHostPath", "sharedAdd", "sharedSetState"
                     ]
                 ),
                 "count": integer("For setCpu: the number of virtual CPUs."),
@@ -327,7 +360,9 @@ pub fn vm_config_write_descriptor() -> ToolDescriptor {
                 "key": string("For configSet: the configuration key."),
                 "value": string("For configSet and variableWrite: the value."),
                 "varType": string("For variableWrite: `runtimeConfig`."),
-                "deviceName": string("For deviceConnect and deviceDisconnect: e.g. `ethernet0` or `cdrom0`.")
+                "deviceName": string("For deviceConnect and deviceDisconnect: e.g. `ethernet0` or `cdrom0`."),
+                "token": string("For hgfsSetHostPath, sharedAdd and sharedSetState: a folder token from sshell_host_locations_list."),
+                "writable": boolean("For sharedSetState: whether the shared folder is writable.")
             }),
             &["sessionId", "action"],
         ),
@@ -386,7 +421,11 @@ pub fn vm_image_descriptor() -> ToolDescriptor {
         input_schema: ToolInputSchema::object(
             json!({
                 "sessionId": session_id_property(),
-                "action": string_enum("What to do with the machine.", &["delete", "upgrade"])
+                "action": string_enum("What to do with the machine.", &["delete", "upgrade", "clone"]),
+                "token": string("For clone: a folder token from sshell_host_locations_list; the clone is created in a subfolder named after it."),
+                "name": string("For clone: the new machine's name."),
+                "cloneType": string("For clone: `full` or `linked`. Defaults to `linked`."),
+                "snapshot": string("For clone: clone from this snapshot instead of the current state.")
             }),
             &["sessionId", "action"],
         ),
@@ -539,6 +578,92 @@ impl Tool for VmConfigWriteTool {
         let input: VmConfigWriteInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         context.guard_session(session_id, ToolAccess::Write)?;
+        let token_action = matches!(
+            input.action,
+            ConfigWriteAction::HgfsSetHostPath | ConfigWriteAction::SharedAdd | ConfigWriteAction::SharedSetState
+        );
+        if token_action {
+            let token = required_text(input.token.as_deref(), "token")?;
+            let index = if input.action == ConfigWriteAction::HgfsSetHostPath {
+                Some(required_number(input.index, "index")?)
+            } else {
+                None
+            };
+            let name = if matches!(
+                input.action,
+                ConfigWriteAction::SharedAdd | ConfigWriteAction::SharedSetState
+            ) {
+                Some(required_text(input.name.as_deref(), "name")?)
+            } else {
+                None
+            };
+            let writable = if input.action == ConfigWriteAction::SharedSetState {
+                Some(required_switch(input.writable, "writable")?)
+            } else {
+                None
+            };
+            let action_name = input.action.as_str();
+            let detail = match input.action {
+                ConfigWriteAction::HgfsSetHostPath => index.unwrap_or_default().to_string(),
+                ConfigWriteAction::SharedAdd => name.clone().unwrap_or_default(),
+                _ => format!("{} {}", name.clone().unwrap_or_default(), writable.unwrap_or_default()),
+            };
+            let vm_id = vm_id(context, session_id)?;
+            let subject = gate::subject(&format!("{vm_id} {action_name} {detail}"));
+            let verdict = sevenshell_policy::vm_config(action_name);
+            let session_name = saved_session(context.core(), session_id).map(|session| session.name);
+            let approval = gate::approve_risk(
+                context,
+                VM_CONFIG_WRITE,
+                &verdict,
+                Some((session_id, session_name)),
+                None,
+                &subject,
+            )
+            .await?;
+            let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+                let result = match input.action {
+                    ConfigWriteAction::HgfsSetHostPath => {
+                        context
+                            .core()
+                            .vmware_hgfs_set_host_path(session_id, index.unwrap_or_default(), &token)
+                            .await
+                    }
+                    ConfigWriteAction::SharedAdd => {
+                        context
+                            .core()
+                            .vmware_shared_add(session_id, name.as_deref().unwrap_or_default(), &token)
+                            .await
+                    }
+                    _ => {
+                        context
+                            .core()
+                            .vmware_shared_set_state(
+                                session_id,
+                                name.as_deref().unwrap_or_default(),
+                                &token,
+                                writable.unwrap_or(false),
+                            )
+                            .await
+                    }
+                };
+                result.map_err(ToolError::from)
+            })
+            .await?;
+            let mut audit = ToolAudit::for_session(session_id)
+                .with_subject(subject)
+                .with_risk(verdict);
+            if let Some(record) = approval {
+                audit = audit.with_approval(record);
+            }
+            let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
+            return Ok(ToolResult::new(json!({
+                "sessionId": session_id,
+                "output": text,
+                "truncated": truncated,
+            }))
+            .with_audit(audit));
+        }
         let action_name = input.action.as_str();
         let detail;
         let action = match input.action {
@@ -720,6 +845,9 @@ impl Tool for VmConfigWriteTool {
                 detail = name.clone();
                 ConfigWrite::SharedRemove(name)
             }
+            ConfigWriteAction::HgfsSetHostPath | ConfigWriteAction::SharedAdd | ConfigWriteAction::SharedSetState => {
+                unreachable!("the token actions are handled before the change is built")
+            }
         };
         run_write(context, session_id, VM_CONFIG_WRITE, action_name, &detail, async {
             context.core().vmware_config_write(session_id, &action).await
@@ -839,9 +967,49 @@ impl Tool for VmImageTool {
         let input: VmImageInput = parse_arguments(arguments)?;
         let session_id = session_id(&input.session_id)?;
         context.guard_session(session_id, ToolAccess::Write)?;
+        if input.action == ImageActionInput::Clone {
+            let token = required_text(input.token.as_deref(), "token")?;
+            let name = required_text(input.name.as_deref(), "name")?;
+            let clone_type = input.clone_type.as_deref().unwrap_or("linked");
+            let vm_id = vm_id(context, session_id)?;
+            let subject = gate::subject(&format!("{vm_id} clone {name}"));
+            let verdict = sevenshell_policy::vm_image("clone");
+            let session_name = saved_session(context.core(), session_id).map(|session| session.name);
+            let approval = gate::approve_risk(
+                context,
+                VM_IMAGE,
+                &verdict,
+                Some((session_id, session_name)),
+                None,
+                &subject,
+            )
+            .await?;
+            let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+                context
+                    .core()
+                    .vmware_clone(session_id, &token, &name, clone_type, input.snapshot.as_deref())
+                    .await
+                    .map_err(ToolError::from)
+            })
+            .await?;
+            let mut audit = ToolAudit::for_session(session_id)
+                .with_subject(subject)
+                .with_risk(verdict);
+            if let Some(record) = approval {
+                audit = audit.with_approval(record);
+            }
+            let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
+            return Ok(ToolResult::new(json!({
+                "sessionId": session_id,
+                "output": text,
+                "truncated": truncated,
+            }))
+            .with_audit(audit));
+        }
         let (action, action_name) = match input.action {
             ImageActionInput::Delete => (ImageAction::Delete, "delete"),
             ImageActionInput::Upgrade => (ImageAction::Upgrade, "upgrade"),
+            ImageActionInput::Clone => unreachable!("handled above"),
         };
         let vm_id = vm_id(context, session_id)?;
         let subject = gate::subject(&format!("{vm_id} {action_name}"));
@@ -870,6 +1038,88 @@ impl Tool for VmImageTool {
             "truncated": truncated,
         }))
         .with_audit(audit))
+    }
+}
+
+pub fn host_locations_list_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: HOST_LOCATIONS_LIST.to_owned(),
+        title: "List host locations".to_owned(),
+        description: "Lists the files and folders somebody has handed to agents on this desktop, as \
+                      tokens and display names. A tool that reads or writes a host file takes the \
+                      token; the path itself never leaves the host."
+            .to_owned(),
+        input_schema: ToolInputSchema::object(json!({}), &[]),
+        access: ToolAccess::Read,
+    }
+}
+
+pub fn vm_screenshot_descriptor() -> ToolDescriptor {
+    ToolDescriptor {
+        name: VM_SCREENSHOT.to_owned(),
+        title: "Capture a virtual machine's screen".to_owned(),
+        description: "Writes a PNG of the machine's screen into the folder a host location token \
+                      names and answers the file name. The token comes from \
+                      sshell_host_locations_list."
+            .to_owned(),
+        input_schema: ToolInputSchema::object(
+            json!({
+                "sessionId": session_id_property(),
+                "token": string("A folder token from sshell_host_locations_list.")
+            }),
+            &["sessionId", "token"],
+        ),
+        access: ToolAccess::Write,
+    }
+}
+
+pub struct HostLocationsListTool;
+
+#[async_trait]
+impl Tool for HostLocationsListTool {
+    fn descriptor(&self) -> ToolDescriptor {
+        host_locations_list_descriptor()
+    }
+
+    async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
+        let _input: HostLocationsInput = parse_arguments(arguments)?;
+        Ok(ToolResult::new(json!({ "locations": context.core().host_locations() })).with_audit(ToolAudit::default()))
+    }
+}
+
+pub struct VmScreenshotTool;
+
+#[async_trait]
+impl Tool for VmScreenshotTool {
+    fn descriptor(&self) -> ToolDescriptor {
+        vm_screenshot_descriptor()
+    }
+
+    async fn call(&self, context: &ToolContext, arguments: Value) -> Result<ToolResult, ToolError> {
+        let input: VmScreenshotInput = parse_arguments(arguments)?;
+        let session_id = session_id(&input.session_id)?;
+        context.guard_session(session_id, ToolAccess::Write)?;
+        let token = required_text(Some(input.token.as_str()), "token")?;
+        let vm_id = vm_id(context, session_id)?;
+        let subject = gate::subject(&format!("{vm_id} screenshot {token}"));
+        let verdict = sevenshell_types::RiskAssessment::safe();
+        let file_name = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+            context
+                .core()
+                .vmware_screenshot(session_id, &token)
+                .await
+                .map_err(ToolError::from)
+        })
+        .await?;
+        Ok(ToolResult::new(json!({
+            "sessionId": session_id,
+            "fileName": file_name,
+        }))
+        .with_audit(
+            ToolAudit::for_session(session_id)
+                .with_subject(subject)
+                .with_risk(verdict),
+        ))
     }
 }
 

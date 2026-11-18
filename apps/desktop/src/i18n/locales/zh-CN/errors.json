@@ -111,6 +111,9 @@
       "commandFailed": "容器运行时拒绝了{operation}。",
       "notConnected": "这个容器连接已经关闭。"
     },
+    "hostLocation": {
+      "unknown": "这个主机位置已不可用，请在应用里重新添加。"
+    },
     "vmware": {
       "unavailable": "这台机器上找不到 VMware Workstation 的命令行。",
       "commandFailed": "VMware 的{operation}没有成功。",

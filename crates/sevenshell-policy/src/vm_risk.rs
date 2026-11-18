@@ -87,8 +87,11 @@ pub fn vm_host(_action: &str) -> RiskAssessment {
 }
 
 /// Classifies a whole-machine operation. Deleting a machine loses its files; upgrading it takes it
-/// away from older Workstation versions. Both ask.
-pub fn vm_image(_action: &str) -> RiskAssessment {
+/// away from older Workstation versions. Both ask; a clone creates files and does not.
+pub fn vm_image(action: &str) -> RiskAssessment {
+    if action.trim().eq_ignore_ascii_case("clone") {
+        return RiskAssessment::from_reasons(vec![RiskReason::new("vm.clone", "risk.vm.clone", RiskLevel::Caution)]);
+    }
     RiskAssessment::from_reasons(vec![RiskReason::new(
         "vm.image",
         "risk.vm.imageChange",

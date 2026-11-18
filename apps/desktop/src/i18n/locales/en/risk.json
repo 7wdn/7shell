@@ -48,6 +48,7 @@
       "configChange": "Changes a virtual machine's configuration",
       "configRemove": "Removes or resizes part of a virtual machine",
       "hostChange": "Changes this machine's virtual network",
+      "clone": "Creates a copy of a virtual machine",
       "imageChange": "Deletes or upgrades a whole virtual machine",
       "guestInput": "Types keystrokes into a virtual machine",
       "takeOwnership": "Removes a virtual machine's lock and takes ownership of it",

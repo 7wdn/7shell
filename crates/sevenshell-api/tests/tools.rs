@@ -101,6 +101,11 @@ fn minimal_arguments() -> Vec<(&'static str, Value)> {
             }),
         ),
         ("sshell_vm_image", json!({ "sessionId": "lab", "action": "delete" })),
+        ("sshell_host_locations_list", json!({})),
+        (
+            "sshell_vm_screenshot",
+            json!({ "sessionId": "lab", "token": "location-1" }),
+        ),
     ]
 }
 

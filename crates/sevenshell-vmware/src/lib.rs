@@ -12,6 +12,7 @@
 //! Nothing here reads or keeps a guest credential.
 
 mod config;
+mod host_ops;
 mod inventory;
 mod ops;
 mod vmcli;
@@ -27,6 +28,9 @@ use sevenshell_types::{VmInfo, VmPowerAction, VmStatus};
 pub use config::{
     ConfigRead, ConfigWrite, HostRead, HostWrite, ImageAction, config_read, config_write, guest_env, host_read,
     host_write, image,
+};
+pub use host_ops::{
+    clone, copy_from_guest, copy_to_guest, hgfs_set_host_path, screenshot, shared_add, shared_set_state,
 };
 pub use inventory::inventory_path;
 pub use ops::{GuestAuth, GuestOp, SnapshotAction, guest, snapshot};

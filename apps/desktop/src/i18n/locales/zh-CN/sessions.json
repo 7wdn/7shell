@@ -387,6 +387,14 @@
         "message": "虚拟机没有运行，但锁目录仍然存在——通常来自一次没有正常关闭的运行。取得所有权会删除这个锁。只有在确认没有 Workstation 窗口或其他机器正在使用它时才这样做：运行中虚拟机的锁是防止两个虚拟机监视器同时写同一份磁盘的最后一道防线。",
         "confirm": "取得所有权并开机"
       },
+      "locations": {
+        "title": "主机位置",
+        "folder": "目录",
+        "file": "文件",
+        "chooseFolder": "选择主机目录",
+        "chooseFile": "选择主机文件",
+        "forget": "移除"
+      },
       "password": {
         "title": "输入密码",
         "description": "通过 SSH 登录 {target} 需要密码。",

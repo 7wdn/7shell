@@ -67,7 +67,7 @@ import type {
 } from "@/types/mcp";
 import type { HostMetrics, ProcessDetail, ProcessPage, SocketRow } from "@/types/monitor";
 import type { HostSystem } from "@/types/system";
-import type { VmInfo, VmPowerAction, VmStatus } from "@/types/vmware";
+import type { HostLocationKind, HostLocationView, VmInfo, VmPowerAction, VmStatus } from "@/types/vmware";
 import type { UpdateCheck, UpdateProgress } from "@/types/update";
 import type {
   CommandHistoryEntry,
@@ -1484,4 +1484,17 @@ export function vmwarePower(vmId: string, action: VmPowerAction, acknowledged: b
 /** Removes a stale lock from a machine that is not running; answers `acknowledged`. */
 export function vmwareTakeOwnership(vmId: string, acknowledged: boolean): Promise<void> {
   return invoke<void>("vmware_take_ownership", { vmId, acknowledged });
+}
+
+export function hostLocationsList(): Promise<HostLocationView[]> {
+  return invoke<HostLocationView[]>("host_locations_list", {});
+}
+
+/** Opens the native picker; `null` is the picker being closed without a choice. */
+export function hostLocationChoose(kind: HostLocationKind, title: string): Promise<HostLocationView | null> {
+  return invoke<HostLocationView | null>("host_location_choose", { kind, title }).then((value) => value ?? null);
+}
+
+export function hostLocationForget(token: string): Promise<boolean> {
+  return invoke<boolean>("host_location_forget", { token });
 }

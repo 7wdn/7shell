@@ -174,7 +174,7 @@ fn a_session_without_a_desktop_answers_every_request_and_exits_zero() {
             .as_array()
             .expect("a list of tools")
             .len(),
-        22
+        24
     );
     let call = answer_for(&answers, 3);
     assert_eq!(

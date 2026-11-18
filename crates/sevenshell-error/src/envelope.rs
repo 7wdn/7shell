@@ -875,6 +875,12 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    pub fn host_location_unknown(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::HostLocationUnknown, Origin::new(Subsystem::App))
+            .with_detail(detail)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     pub fn k8s_unavailable(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::K8sUnavailable, Origin::new(Subsystem::K8s))
             .with_detail(detail)

@@ -84,6 +84,8 @@ export const ERROR_CATALOG = {
   "CONTAINER-UNAVAILABLE": "errors.container.unavailable",
   "CONTAINER-COMMAND-FAILED": "errors.container.commandFailed",
   "CONTAINER-NOT-CONNECTED": "errors.container.notConnected",
+  // Host locations
+  "HOST-LOCATION-UNKNOWN": "errors.hostLocation.unknown",
   // VMware
   "VMWARE-UNAVAILABLE": "errors.vmware.unavailable",
   "VMWARE-COMMAND-FAILED": "errors.vmware.commandFailed",

@@ -29,3 +29,12 @@ export interface VmStatus {
 }
 
 export type VmPowerAction = "start" | "stop" | "suspend";
+
+/** A place on this machine an agent may name: the token, a display name, and nothing else. */
+export type HostLocationKind = "file" | "folder";
+
+export interface HostLocationView {
+  readonly token: string;
+  readonly name: string;
+  readonly kind: HostLocationKind;
+}

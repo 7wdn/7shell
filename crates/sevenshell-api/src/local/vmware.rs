@@ -135,6 +135,8 @@ pub enum GuestWriteAction {
     Script,
     Type,
     TempFile,
+    CopyTo,
+    CopyFrom,
     Kill,
     ToolsInstall,
 }
@@ -150,6 +152,8 @@ impl GuestWriteAction {
             Self::Script => "script",
             Self::Type => "type",
             Self::TempFile => "temp-file",
+            Self::CopyTo => "copy-to",
+            Self::CopyFrom => "copy-from",
             Self::Kill => "kill",
             Self::ToolsInstall => "tools-install",
         }
@@ -179,6 +183,10 @@ pub struct VmGuestWriteInput {
     pub script: Option<String>,
     #[serde(default)]
     pub keystrokes: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+    #[serde(default)]
+    pub guest_path: Option<String>,
     #[serde(default)]
     pub pid: Option<u64>,
 }
@@ -322,7 +330,7 @@ pub fn vm_guest_write_descriptor() -> ToolDescriptor {
                 "action": string_enum(
                     "What to do. `path` is the target for mkdir/rmdir/rm/rename; `newPath` is the \
                      new name for rename; `program` and `args` are for run; `pid` is for kill.",
-                    &["mkdir", "rmdir", "rm", "rename", "run", "script", "type", "tempFile", "kill", "toolsInstall"]
+                    &["mkdir", "rmdir", "rm", "rename", "run", "script", "type", "tempFile", "copyTo", "copyFrom", "kill", "toolsInstall"]
                 ),
                 "path": guest_path_property(),
                 "newPath": string("For rename: the new path inside the guest."),
@@ -340,6 +348,8 @@ pub fn vm_guest_write_descriptor() -> ToolDescriptor {
                     "type": "boolean",
                     "description": "For run: run the program in the guest's interactive session."
                 },
+                "token": string("For copyTo and copyFrom: a host location token from sshell_host_locations_list. copyTo needs a file, copyFrom a folder."),
+                "guestPath": string("For copyTo and copyFrom: the file's path inside the guest."),
                 "pid": { "type": "integer", "minimum": 1, "description": "For kill: the process id." }
             }),
             &["sessionId", "action"],
@@ -625,6 +635,59 @@ impl Tool for VmGuestWriteTool {
         let session_id = session_id(&input.session_id)?;
         context.guard_session(session_id, ToolAccess::Write)?;
         let action = input.action;
+        if matches!(action, GuestWriteAction::CopyTo | GuestWriteAction::CopyFrom) {
+            let token = input.token.as_deref().unwrap_or("").trim();
+            if token.is_empty() {
+                return Err(ToolError::invalid_arguments(
+                    "token is required for copyTo and copyFrom",
+                ));
+            }
+            let guest_path_value = guest_path(input.guest_path.as_deref(), "guestPath")?;
+            let vm_id = vm_id(context, session_id)?;
+            let subject = gate::subject(&format!("{vm_id} {} {guest_path_value}", action.as_str()));
+            let verdict = sevenshell_policy::vm_guest(action.as_str());
+            let session_name = saved_session(context.core(), session_id).map(|session| session.name);
+            let approval = gate::approve_risk(
+                context,
+                VM_GUEST_WRITE,
+                &verdict,
+                Some((session_id, session_name)),
+                None,
+                &subject,
+            )
+            .await?;
+            let output = gate::bounded(context, VM_OPERATION_TIMEOUT, async {
+                let result = match action {
+                    GuestWriteAction::CopyTo => {
+                        context
+                            .core()
+                            .vmware_guest_copy_to(session_id, token, &guest_path_value)
+                            .await
+                    }
+                    _ => {
+                        context
+                            .core()
+                            .vmware_guest_copy_from(session_id, token, &guest_path_value)
+                            .await
+                    }
+                };
+                result.map_err(ToolError::from)
+            })
+            .await?;
+            let mut audit = ToolAudit::for_session(session_id)
+                .with_subject(subject)
+                .with_risk(verdict);
+            if let Some(record) = approval {
+                audit = audit.with_approval(record);
+            }
+            let (text, truncated) = gate::clip(&output, gate::TEXT_LIMIT);
+            return Ok(ToolResult::new(json!({
+                "sessionId": session_id,
+                "output": text,
+                "truncated": truncated,
+            }))
+            .with_audit(audit));
+        }
         let op = match action {
             GuestWriteAction::Mkdir => GuestOp::MakeDirectory(guest_path(input.path.as_deref(), "path")?),
             GuestWriteAction::Rmdir => GuestOp::RemoveDirectory(guest_path(input.path.as_deref(), "path")?),
@@ -675,6 +738,9 @@ impl Tool for VmGuestWriteTool {
                 GuestOp::Type(keystrokes.to_owned())
             }
             GuestWriteAction::TempFile => GuestOp::TempFile,
+            GuestWriteAction::CopyTo | GuestWriteAction::CopyFrom => {
+                unreachable!("copy actions are handled before the guest operation is built")
+            }
             GuestWriteAction::Kill => {
                 let pid = input.pid.unwrap_or(0);
                 if pid == 0 {

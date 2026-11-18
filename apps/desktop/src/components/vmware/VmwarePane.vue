@@ -10,7 +10,7 @@
  * The identity held by the session is a token a scan answered with, never a path: this pane edits
  * an account and two ports, and the host resolves everything else.
  */
-import { LoaderCircle, MonitorCog, Pause, Play, RefreshCw, Square } from "@lucide/vue";
+import { FilePlus, FolderPlus, LoaderCircle, MonitorCog, Pause, Play, RefreshCw, Square, X } from "@lucide/vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -20,13 +20,14 @@ import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { asShellError, type ShellError } from "@/lib/backend/errors";
+import { isDesktopRuntime } from "@/lib/runtime";
 import { vmGuestSession } from "@/lib/vmware/derive";
 import { guestOsLabel } from "@/lib/vmware/guest";
 import { useAppStore } from "@/stores/app";
 import { useSessionsStore } from "@/stores/sessions";
 import { useTerminalsStore, type VmwareTab } from "@/stores/terminals";
 import type { Session } from "@/types/session";
-import type { VmPowerAction, VmStatus } from "@/types/vmware";
+import type { HostLocationKind, HostLocationView, VmPowerAction, VmStatus } from "@/types/vmware";
 
 const props = defineProps<{ tab: VmwareTab; active: boolean }>();
 
@@ -53,12 +54,14 @@ const pendingGuest = ref<{ guest: Session; vm: Session } | null>(null);
 const passwordOpen = ref(false);
 const passwordBusy = ref(false);
 
+const locations = ref<readonly HostLocationView[]>([]);
 const sshUser = ref("");
 const sshPort = ref("22");
 const rdpUser = ref("");
 const rdpPort = ref("3389");
 
 const isWindows = computed(() => app.info?.os === "windows");
+const isDesktop = computed(() => isDesktopRuntime());
 const stateKey = computed(() =>
   status.value === null
     ? "checking"
@@ -303,8 +306,47 @@ function closePassword(open: boolean): void {
   }
 }
 
+async function loadLocations(): Promise<void> {
+  if (!isDesktop.value) {
+    return;
+  }
+  try {
+    locations.value = await backend.hostLocations.list();
+  } catch {
+    // The list is only needed by the operations that name a host place.
+  }
+}
+
+async function addLocation(kind: HostLocationKind): Promise<void> {
+  busy.value = "location";
+  failure.value = null;
+  try {
+    const title = t(
+      kind === "folder" ? "sessions.vmware.locations.chooseFolder" : "sessions.vmware.locations.chooseFile",
+    );
+    const chosen = await backend.hostLocations.choose(kind, title);
+    if (chosen) {
+      locations.value = [...locations.value.filter((entry) => entry.token !== chosen.token), chosen];
+    }
+  } catch (error) {
+    failure.value = asShellError(error, "host_location_choose");
+  } finally {
+    busy.value = null;
+  }
+}
+
+async function forgetLocation(token: string): Promise<void> {
+  try {
+    await backend.hostLocations.forget(token);
+    locations.value = locations.value.filter((entry) => entry.token !== token);
+  } catch (error) {
+    failure.value = asShellError(error, "host_location_forget");
+  }
+}
+
 onMounted(() => {
   void refresh();
+  void loadLocations();
 });
 
 watch(
@@ -498,6 +540,56 @@ watch(
         </template>
 
         <p class="mt-3 text-[11px] text-muted-foreground">{{ t("sessions.vmware.hint") }}</p>
+      </div>
+
+      <div v-if="isDesktop" class="rounded-md border border-border p-4" data-vmware-locations>
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="text-xs font-medium">{{ t("sessions.vmware.locations.title") }}</h3>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              data-vmware-add-folder
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent disabled:opacity-60"
+              :disabled="busy !== null"
+              @click="addLocation('folder')"
+            >
+              <FolderPlus :size="12" />
+              {{ t("sessions.vmware.locations.folder") }}
+            </button>
+            <button
+              type="button"
+              data-vmware-add-file
+              class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] transition-colors hover:bg-accent disabled:opacity-60"
+              :disabled="busy !== null"
+              @click="addLocation('file')"
+            >
+              <FilePlus :size="12" />
+              {{ t("sessions.vmware.locations.file") }}
+            </button>
+          </div>
+        </div>
+        <ul v-if="locations.length > 0" class="mt-2 space-y-1">
+          <li
+            v-for="location in locations"
+            :key="location.token"
+            class="flex items-center gap-2 text-xs"
+            :data-vmware-location="location.token"
+          >
+            <span class="min-w-0 flex-1 truncate" :title="location.name">{{ location.name }}</span>
+            <span class="shrink-0 text-[10px] text-muted-foreground">{{
+              t(`sessions.vmware.locations.${location.kind}`)
+            }}</span>
+            <button
+              type="button"
+              class="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
+              :title="t('sessions.vmware.locations.forget')"
+              :aria-label="t('sessions.vmware.locations.forget')"
+              @click="forgetLocation(location.token)"
+            >
+              <X :size="12" />
+            </button>
+          </li>
+        </ul>
       </div>
 
       <p

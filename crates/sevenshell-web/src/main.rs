@@ -1043,6 +1043,14 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             Ok(Value::Null)
         }
 
+        "host_location_choose" => Err(ShellError::app_unsupported(
+            "choosing a host location needs the desktop shell",
+        )),
+        "host_locations_list" => to_value(state.core.host_locations()),
+        "host_location_forget" => {
+            let token: String = from_args(&args, "token")?;
+            Ok(json!(state.core.host_location_forget(&token)))
+        }
         "vmware_scan" => to_value(state.core.vmware_scan().await?),
         "vmware_status" => {
             let vm_id: String = from_args(&args, "vmId")?;

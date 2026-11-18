@@ -12,6 +12,7 @@ mod batch;
 mod completion;
 mod container;
 mod descriptors;
+mod host_location;
 mod k8s;
 mod mcp_client;
 mod monitor;
@@ -56,6 +57,7 @@ pub use generated::{
     AUTH_METHODS, AuthMethod, AuthMethodSpec, CAPABILITIES, Capability, CapabilityGroup, CapabilitySpec,
     DESCRIPTOR_SCHEMA_VERSION, PROTOCOLS, Protocol, ProtocolSpec, Runtime, SupportLevel,
 };
+pub use host_location::{HostLocationKind, HostLocationView};
 pub use k8s::{
     K8sExecRequest, K8sLogRequest, K8sMethod, K8sRequest, K8sResponse, K8sStreamEnd, K8sStreamLine, K8sWatchEvent,
     KubeContextInfo, KubeconfigSource, KubernetesSettings,
