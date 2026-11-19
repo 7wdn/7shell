@@ -56,7 +56,7 @@ import { type DockedPanelPlacement, type TerminalPanelPlacement } from "@/types/
 import type { BackspaceMode, TerminalEncoding } from "@/types/session";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
-import { type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores/terminals";
+import { type FilesTab, type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores/terminals";
 
 const { t } = useI18n();
 const preferences = usePreferencesStore();
@@ -239,10 +239,10 @@ function chooseCommandPlacement(tab: TerminalTab, placement: DockedPanelPlacemen
  * The file tab is shared by the session, so the control inside it moves the first terminal that
  * chose the tab position; the store then decides whether the tab stays for the others.
  */
-function filesTabOwner(tab: TerminalTab): TerminalTab | null {
+function filesTabOwner(tab: TerminalTab | FilesTab): TerminalTab | null {
   return (
     terminals.tabs.find(
-      (candidate) =>
+      (candidate): candidate is TerminalTab =>
         candidate.kind === "terminal" &&
         candidate.session.id === tab.session.id &&
         terminals.effectivePlacement(candidate) === "tab",
@@ -250,11 +250,11 @@ function filesTabOwner(tab: TerminalTab): TerminalTab | null {
   );
 }
 
-function filesTabPlacement(tab: TerminalTab): TerminalPanelPlacement | undefined {
+function filesTabPlacement(tab: TerminalTab | FilesTab): TerminalPanelPlacement | undefined {
   return filesTabOwner(tab) === null ? undefined : "tab";
 }
 
-function chooseFilesTabPlacement(tab: TerminalTab, placement: TerminalPanelPlacement): void {
+function chooseFilesTabPlacement(tab: TerminalTab | FilesTab, placement: TerminalPanelPlacement): void {
   const owner = filesTabOwner(tab);
   if (owner !== null) {
     void choosePlacement(owner, placement);

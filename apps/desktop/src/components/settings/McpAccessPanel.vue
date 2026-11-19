@@ -636,7 +636,7 @@ onMounted(() => {
             <span
               v-if="entry === 'qoder'"
               data-mcp-client-recommended
-              class="rounded bg-primary/15 px-1 py-0.5 text-[9px] leading-none text-primary"
+              class="rounded bg-primary/15 px-1 py-0.5 text-[11px] leading-none text-primary"
             >
               {{ t("mcp.clients.recommended") }}
             </span>

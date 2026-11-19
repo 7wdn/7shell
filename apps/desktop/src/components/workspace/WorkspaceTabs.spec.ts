@@ -502,6 +502,6 @@ describe("where the file panel sits", () => {
     await click(stripButton("Commands"));
 
     expect(host.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("left");
-    expect(host.querySelector("[data-command-placement]")?.dataset.placement).toBe("left");
+    expect(host.querySelector<HTMLElement>("[data-command-placement]")?.dataset.placement).toBe("left");
   });
 });
