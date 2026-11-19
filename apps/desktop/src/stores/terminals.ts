@@ -76,7 +76,7 @@ import type {
   TunnelFailure,
 } from "@/types/session";
 import type { HostSystem } from "@/types/system";
-import type { SettingsCategoryId, TerminalPanelPlacement } from "@/types/app";
+import type { DockedPanelPlacement, SettingsCategoryId, TerminalPanelPlacement } from "@/types/app";
 import { protocolSupports } from "@/types/generated/protocols";
 
 /** What the backend answers when an attempt was called off, which is not a failure. */
@@ -167,6 +167,12 @@ export interface TerminalTab {
    * the same host can look different; a tab that has not chosen follows the remembered default.
    */
   panelPlacement?: TerminalPanelPlacement;
+  /**
+   * Where this tab's commands are shown. Independent of the files: the two halves are different
+   * panes, and moving one is not a reason to move the other. The commands half has no standalone
+   * tab, so its vocabulary stops at the three docked sides.
+   */
+  commandPlacement?: DockedPanelPlacement;
 }
 
 /** A file browser, drawn as a tab. The session names it; the handle says which browser it is. */
@@ -576,6 +582,18 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return tab.panelPlacement ?? preferences.terminalPanelPlacement;
   }
 
+  /**
+   * Where a terminal tab draws its commands.
+   *
+   * The tab's own answer wins; a tab that never chose follows the remembered default. The value is
+   * always a docked side — the commands half has no standalone tab — so a hand-edited or stale
+   * "tab" reads as the bottom rather than drawing nothing.
+   */
+  function effectiveCommandPlacement(tab: TerminalTab): DockedPanelPlacement {
+    const placement = (tab.commandPlacement ?? preferences.terminalCommandPanelPlacement) as TerminalPanelPlacement;
+    return placement === "tab" ? "bottom" : placement;
+  }
+
   /** How many of a session's terminals currently use the standalone browser. */
   function terminalsInPanelTab(sessionId: string): number {
     return tabs.value.filter(
@@ -677,6 +695,33 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
     for (const id of sessions.keys()) {
       await releasePlacementFilesIfLast(id);
+    }
+  }
+
+  /**
+   * Moves one terminal's commands.
+   *
+   * Unlike the file half there is no browser to open, close or let go of: the commands panel is a
+   * document, so this only records where it is drawn. The choice becomes the default for terminals
+   * opened later, the same way a file position does.
+   */
+  async function changeTabCommandPlacement(
+    tab: TerminalTab,
+    placement: DockedPanelPlacement,
+    options: { remember?: boolean } = {},
+  ): Promise<void> {
+    tab.commandPlacement = placement;
+    if (options.remember && preferences.terminalCommandPanelPlacement !== placement) {
+      await preferences.setTerminalCommandPanelPlacement(placement);
+    }
+  }
+
+  /** Applies the settings page's command position to every terminal that is open. */
+  function applyCommandPanelPlacementToAll(placement: DockedPanelPlacement): void {
+    for (const tab of tabs.value) {
+      if (tab.kind === "terminal") {
+        tab.commandPlacement = placement;
+      }
     }
   }
 
@@ -1098,6 +1143,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
         failure: null,
         panel: null,
         panelPlacement: preferences.terminalPanelPlacement,
+        commandPlacement: preferences.terminalCommandPanelPlacement,
       };
       addTab(tab);
       // Asked once the terminal is up rather than as part of opening it: which mark a row draws is
@@ -1396,6 +1442,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       session,
       panel: null,
       panelPlacement: preferences.terminalPanelPlacement,
+      commandPlacement: preferences.terminalCommandPanelPlacement,
       ...fields,
     });
   }
@@ -2183,8 +2230,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
     openFiles,
     releasePlacementFiles,
     effectivePlacement,
+    effectiveCommandPlacement,
     changeTabPanelPlacement,
+    changeTabCommandPlacement,
     applyPanelPlacementToAll,
+    applyCommandPanelPlacementToAll,
     newTabPickerOpen,
     openNewTabPicker,
     closeNewTabPicker,

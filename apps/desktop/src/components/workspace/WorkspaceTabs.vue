@@ -28,17 +28,7 @@
  * connected to. It is drawn like the other panes — kept mounted behind its tab — so that a search
  * someone typed is still there when they come back to it.
  */
-import {
-  CircleAlert,
-  ExternalLink,
-  Folder,
-  ListChecks,
-  LoaderCircle,
-  PanelBottom,
-  PanelLeft,
-  PanelRight,
-  RotateCw,
-} from "@lucide/vue";
+import { ChevronDown, CircleAlert, Folder, ListChecks, LoaderCircle, RotateCw } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -63,7 +53,7 @@ import SplitDivider from "@/components/workspace/SplitDivider.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { MENU_TITLES } from "@/lib/menu/titles";
-import { panelPlacementMenu } from "@/lib/menu/workspace";
+import { panelPlacementMenu, commandPanelPlacementMenu } from "@/lib/menu/workspace";
 import { MIN_PANE_PX, SIDE_DIVIDER_PX, SIDE_PANE_KEEP_PX } from "@/lib/workspace/split";
 import { type TerminalPanelPlacement } from "@/types/app";
 import type { BackspaceMode, TerminalEncoding } from "@/types/session";
@@ -141,6 +131,8 @@ function showFiles(tab: TerminalTab): void {
   // A terminal whose position is the standalone tab shows its files there; "Files" means the same
   // thing in all four positions, and the browser stays the position's while this tab is using it.
   if (terminals.effectivePlacement(tab) === "tab") {
+    // The file manager is a tab of its own, so the commands half has nothing left to show here.
+    delete panelTab.value[tab.id];
     void terminals.openFiles(tab.session, { origin: "placement" });
     return;
   }
@@ -159,16 +151,15 @@ function showFiles(tab: TerminalTab): void {
 /**
  * Where the panel is drawn right now.
  *
- * The command panel has no standalone tab to move to, so it keeps the bottom when this tab's
- * position is that tab; every other position applies to whichever half is showing, which is what
- * "move the panel" means while the commands are the half on screen.
+ * The two halves keep their own position: the files can sit on the left while the commands stay at
+ * the bottom, and showing one half moves the panel to that half's answer. Only one half is drawn at
+ * a time, so there is never a second panel to squeeze the terminal from another side.
  */
 function panelPlacement(tab: TerminalTab): TerminalPanelPlacement {
-  const placement = terminals.effectivePlacement(tab);
-  if (placement === "tab" && panelTab.value[tab.id] === "commands") {
-    return "bottom";
+  if (panelTab.value[tab.id] === "commands") {
+    return terminals.effectiveCommandPlacement(tab);
   }
-  return placement;
+  return terminals.effectivePlacement(tab);
 }
 
 /** The side the panel is docked to, or nothing when it is under the terminal. */
@@ -223,15 +214,6 @@ function filesButtonTitle(tab: TerminalTab): string {
   return filesShowing(tab) ? t("terminal.panel.close") : t("terminal.panel.open");
 }
 
-/** The mark the placement button wears: this tab's position, which is about files alone. */
-function panelIcon(tab: TerminalTab) {
-  const placement = terminals.effectivePlacement(tab);
-  if (placement === "tab") return ExternalLink;
-  if (placement === "left") return PanelLeft;
-  if (placement === "right") return PanelRight;
-  return PanelBottom;
-}
-
 /**
  * Takes this tab's files to one of their four positions.
  *
@@ -257,6 +239,17 @@ function openPlacementMenu(event: MouseEvent, tab: TerminalTab): void {
     { key: MENU_TITLES.panelPlacement },
     panelPlacementMenu(terminals.effectivePlacement(tab), {
       choose: (placement) => void choosePlacement(tab, placement),
+    }),
+  );
+}
+
+/** Takes this tab's commands to one of their three sides, leaving the files where they are. */
+function openCommandPlacementMenu(event: MouseEvent, tab: TerminalTab): void {
+  openMenu(
+    event,
+    { key: MENU_TITLES.commandPanelPlacement },
+    commandPanelPlacementMenu(terminals.effectiveCommandPlacement(tab), {
+      choose: (placement) => void terminals.changeTabCommandPlacement(tab, placement, { remember: true }),
     }),
   );
 }
@@ -360,55 +353,73 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
                 {{ sessionEndpoint(tab.session, t) }}
               </span>
               <TerminalSchemeMenu />
-              <button
+              <div
                 v-if="protocolSupports(tab.session.protocol, 'sftp')"
-                type="button"
                 :class="
                   cn(
-                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
+                    'flex shrink-0 items-center overflow-hidden rounded-md transition-colors',
                     filesShowing(tab)
                       ? 'bg-accent text-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                    'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
                   )
                 "
-                :disabled="tab.panel === null && tab.status !== 'open'"
-                :aria-pressed="filesShowing(tab)"
-                :title="filesButtonTitle(tab)"
-                @click="showFiles(tab)"
               >
-                <Folder :size="11" />
-                {{ t("terminal.panel.label") }}
-              </button>
-              <button
-                v-if="protocolSupports(tab.session.protocol, 'sftp')"
-                type="button"
-                data-panel-placement
-                :data-placement="terminals.effectivePlacement(tab)"
-                class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                :title="t('terminal.panel.position')"
-                :aria-label="t('terminal.panel.position')"
-                aria-haspopup="true"
-                @click.stop="openPlacementMenu($event, tab)"
-              >
-                <component :is="panelIcon(tab)" :size="11" />
-              </button>
-              <button
-                type="button"
+                <button
+                  type="button"
+                  class="flex items-center gap-1 px-2 py-0.5 text-[10px] disabled:cursor-not-allowed disabled:opacity-40"
+                  :disabled="tab.panel === null && tab.status !== 'open'"
+                  :aria-pressed="filesShowing(tab)"
+                  :title="filesButtonTitle(tab)"
+                  @click="showFiles(tab)"
+                >
+                  <Folder :size="11" />
+                  {{ t("terminal.panel.label") }}
+                </button>
+                <button
+                  type="button"
+                  data-panel-placement
+                  :data-placement="terminals.effectivePlacement(tab)"
+                  class="grid w-4 shrink-0 place-items-center self-stretch border-l border-border/60 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
+                  :title="t('terminal.panel.position')"
+                  :aria-label="t('terminal.panel.position')"
+                  aria-haspopup="true"
+                  @click.stop="openPlacementMenu($event, tab)"
+                >
+                  <ChevronDown :size="10" />
+                </button>
+              </div>
+              <div
                 :class="
                   cn(
-                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
+                    'flex shrink-0 items-center overflow-hidden rounded-md transition-colors',
                     panelTab[tab.id] === 'commands'
                       ? 'bg-accent text-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )
                 "
-                :aria-pressed="panelTab[tab.id] === 'commands'"
-                @click="showCommands(tab)"
               >
-                <ListChecks :size="11" />
-                {{ t("commands.panel") }}
-              </button>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 px-2 py-0.5 text-[10px]"
+                  :aria-pressed="panelTab[tab.id] === 'commands'"
+                  @click="showCommands(tab)"
+                >
+                  <ListChecks :size="11" />
+                  {{ t("commands.panel") }}
+                </button>
+                <button
+                  type="button"
+                  data-command-placement
+                  :data-placement="terminals.effectiveCommandPlacement(tab)"
+                  class="grid w-4 shrink-0 place-items-center self-stretch border-l border-border/60 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
+                  :title="t('terminal.panel.commandPosition')"
+                  :aria-label="t('terminal.panel.commandPosition')"
+                  aria-haspopup="true"
+                  @click.stop="openCommandPlacementMenu($event, tab)"
+                >
+                  <ChevronDown :size="10" />
+                </button>
+              </div>
             </footer>
 
             <footer

@@ -26,7 +26,7 @@ import {
   X,
 } from "@lucide/vue";
 
-import type { TerminalPanelPlacement } from "@/types/app";
+import type { DockedPanelPlacement, TerminalPanelPlacement } from "@/types/app";
 
 import type { MenuEntry } from "./types";
 
@@ -108,6 +108,43 @@ export function panelPlacementMenu(current: TerminalPanelPlacement, actions: Pan
       icon: ExternalLink,
       checked: current === "tab",
       run: () => actions.choose("tab"),
+    },
+  ];
+}
+
+/** The commands half moves the same way, but has no standalone tab to move to. */
+export interface CommandPanelPlacementActions {
+  readonly choose: (placement: DockedPanelPlacement) => void;
+}
+
+export function commandPanelPlacementMenu(
+  current: DockedPanelPlacement,
+  actions: CommandPanelPlacementActions,
+): MenuEntry[] {
+  return [
+    {
+      kind: "action",
+      id: "command-panel-bottom",
+      labelKey: "terminal.panel.placeBottom",
+      icon: PanelBottom,
+      checked: current === "bottom",
+      run: () => actions.choose("bottom"),
+    },
+    {
+      kind: "action",
+      id: "command-panel-left",
+      labelKey: "terminal.panel.placeLeft",
+      icon: PanelLeft,
+      checked: current === "left",
+      run: () => actions.choose("left"),
+    },
+    {
+      kind: "action",
+      id: "command-panel-right",
+      labelKey: "terminal.panel.placeRight",
+      icon: PanelRight,
+      checked: current === "right",
+      run: () => actions.choose("right"),
     },
   ];
 }

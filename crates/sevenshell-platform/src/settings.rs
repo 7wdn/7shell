@@ -331,6 +331,9 @@ struct StoredSettings {
     /// Absent in a file written before the file panel could move, which reads as the bottom.
     #[serde(default)]
     terminal_panel_placement: String,
+    /// Absent in a file written before the commands panel could move, which reads as the bottom.
+    #[serde(default)]
+    terminal_command_panel_placement: String,
     /// Absent in a file written before the panel could sit beside the terminal.
     #[serde(default)]
     terminal_panel_width: Option<u32>,
@@ -597,6 +600,7 @@ impl StoredSettings {
             session_layout: settings.session_layout.as_str().to_owned(),
             session_reopen: settings.session_reopen.as_str().to_owned(),
             terminal_panel_placement: settings.terminal_panel_placement.as_str().to_owned(),
+            terminal_command_panel_placement: settings.terminal_command_panel_placement.as_str().to_owned(),
             terminal_panel_width: settings.terminal_panel_width,
             terminal_panel_height: settings.terminal_panel_height,
             sidebar_width: settings.sidebar_width,
@@ -763,6 +767,10 @@ impl StoredSettings {
             session_reopen: SessionReopen::from_id(&self.session_reopen).unwrap_or_default(),
             terminal_panel_placement: TerminalPanelPlacement::from_id(&self.terminal_panel_placement)
                 .unwrap_or_default(),
+            terminal_command_panel_placement: TerminalPanelPlacement::from_id(
+                &self.terminal_command_panel_placement,
+            )
+            .unwrap_or_default(),
             terminal_panel_width: self.terminal_panel_width,
             terminal_panel_height: self.terminal_panel_height,
             sidebar_width: self.sidebar_width,
@@ -999,6 +1007,7 @@ mod tests {
             session_layout: SessionLayout::default(),
             session_reopen: SessionReopen::default(),
             terminal_panel_placement: TerminalPanelPlacement::default(),
+            terminal_command_panel_placement: TerminalPanelPlacement::default(),
             terminal_panel_width: None,
             terminal_panel_height: None,
             sidebar_width: None,

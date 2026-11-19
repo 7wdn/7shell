@@ -13,6 +13,7 @@
     "moveToGroup": "Move to group",
     "tunnel": "Forward actions",
     "panelPlacement": "File panel position",
+    "commandPanelPlacement": "Command panel position",
     "process": "Process actions",
     "disk": "File system actions",
     "socket": "Listening socket actions",

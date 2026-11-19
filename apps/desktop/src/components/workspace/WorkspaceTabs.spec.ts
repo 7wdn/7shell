@@ -66,6 +66,7 @@ async function renderTabs(
     session: Session;
     panel?: TerminalPanel | null;
     panelPlacement?: "bottom" | "left" | "right" | "tab";
+    commandPlacement?: "bottom" | "left" | "right";
   }[],
 ): Promise<void> {
   const terminals = useTerminalsStore();
@@ -78,6 +79,7 @@ async function renderTabs(
     failure: null,
     panel: tab.panel ?? null,
     panelPlacement: tab.panelPlacement,
+    commandPlacement: tab.commandPlacement,
   }));
   // The order these tabs were opened in, which the store keeps beside the tabs themselves: it is
   // what says which copy of a session a tab is, so a case here writes the pair the way the store
@@ -475,5 +477,34 @@ describe("where the file panel sits", () => {
 
     expect(activePane()?.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("bottom");
     expect(activePane()?.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("bottom");
+  });
+
+  it("draws the commands at their own side while the files stay where they are", async () => {
+    usePreferencesStore().terminalPanelPlacement = "left";
+    usePreferencesStore().terminalCommandPanelPlacement = "bottom";
+    await render(openPanel);
+
+    const side = (): string | null | undefined =>
+      host.querySelector("[data-terminal-panel]")?.getAttribute("data-side");
+    expect(side()).toBe("left");
+
+    await click(stripButton("Commands"));
+    expect(side(), "the commands are not dragged to the files' side").toBe("bottom");
+    expect(host.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("left");
+    expect(host.querySelector<HTMLElement>("[data-command-placement]")?.dataset.placement).toBe("bottom");
+
+    await click(stripButton("Files"));
+    expect(side(), "the files return to their own side").toBe("left");
+  });
+
+  it("moves the commands without changing the files' remembered side", async () => {
+    usePreferencesStore().terminalPanelPlacement = "right";
+    await renderTabs([{ kind: "terminal", id: "tab-1", session, panel: openPanel, commandPlacement: "left" }]);
+
+    await click(stripButton("Commands"));
+
+    expect(host.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("left");
+    expect(host.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("right");
+    expect(host.querySelector<HTMLElement>("[data-command-placement]")?.dataset.placement).toBe("left");
   });
 });

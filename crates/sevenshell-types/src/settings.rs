@@ -1464,6 +1464,12 @@ pub struct AppSettings {
     /// position that build knew.
     #[serde(default)]
     pub terminal_panel_placement: TerminalPanelPlacement,
+    /// Where the commands panel sits while a terminal is open.
+    ///
+    /// The file half can also be the standalone manager tab; the commands half has no tab of its
+    /// own, so the three docked positions are the vocabulary they share. Absent reads as the bottom.
+    #[serde(default)]
+    pub terminal_command_panel_placement: TerminalPanelPlacement,
     /// How wide the file panel is when it sits on the left or right, in pixels.
     ///
     /// Its own size rather than a share of the height's: a panel beside the terminal is measured
@@ -1930,6 +1936,7 @@ impl Default for AppSettings {
             session_layout: SessionLayout::default(),
             session_reopen: SessionReopen::default(),
             terminal_panel_placement: TerminalPanelPlacement::default(),
+            terminal_command_panel_placement: TerminalPanelPlacement::default(),
             terminal_panel_width: None,
             terminal_panel_height: None,
             sidebar_width: None,

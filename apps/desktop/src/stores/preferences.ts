@@ -106,6 +106,7 @@ import {
   type CornerStyle,
   type HomeLayout,
   type CustomColors,
+  type DockedPanelPlacement,
   type FileBookmark,
   type FilesLayout,
   type McpAccessPolicy,
@@ -209,6 +210,7 @@ const FRESH: Omit<AppSettings, "locale"> = {
   sessionLayout: "split",
   sessionReopen: DEFAULT_SESSION_REOPEN,
   terminalPanelPlacement: DEFAULT_TERMINAL_PANEL_PLACEMENT,
+  terminalCommandPanelPlacement: "bottom",
   terminalPanelWidth: undefined,
   terminalPanelHeight: undefined,
   sidebarWidth: undefined,
@@ -383,6 +385,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * every host, and the panel's own menu writes this the moment a position is chosen.
    */
   const terminalPanelPlacement = ref<TerminalPanelPlacement>(DEFAULT_TERMINAL_PANEL_PLACEMENT);
+  /** Where the commands half sits; it has no standalone tab, so only the three docked sides. */
+  const terminalCommandPanelPlacement = ref<DockedPanelPlacement>("bottom");
   /**
    * How wide the file panel is when it sits on the left or right, in pixels; null until moved.
    *
@@ -955,6 +959,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
       sessionLayout.value = settings.sessionLayout;
       sessionReopen.value = settings.sessionReopen;
       terminalPanelPlacement.value = settings.terminalPanelPlacement;
+      terminalCommandPanelPlacement.value = settings.terminalCommandPanelPlacement;
       terminalPanelWidth.value = settings.terminalPanelWidth ?? null;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       sidebarWidth.value = settings.sidebarWidth ?? null;
@@ -1112,6 +1117,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         sessionLayout: sessionLayout.value,
         sessionReopen: sessionReopen.value,
         terminalPanelPlacement: terminalPanelPlacement.value,
+        terminalCommandPanelPlacement: terminalCommandPanelPlacement.value,
         terminalPanelWidth: terminalPanelWidth.value ?? undefined,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         sidebarWidth: sidebarWidth.value ?? undefined,
@@ -2079,6 +2085,19 @@ export const usePreferencesStore = defineStore("preferences", () => {
     dirty.value = true;
   }
 
+  /** Chooses where the commands half sits; the next terminal opened sees this as its default. */
+  async function setTerminalCommandPanelPlacement(placement: DockedPanelPlacement): Promise<void> {
+    terminalCommandPanelPlacement.value = placement;
+    dirty.value = true;
+    await commit();
+  }
+
+  /** The same choice from the settings page, waiting for its Apply. */
+  function setCommandPanelPlacementDefault(placement: DockedPanelPlacement): void {
+    terminalCommandPanelPlacement.value = placement;
+    dirty.value = true;
+  }
+
   /** Moves the divider beside the terminal, applied at once and written down when the drag ends. */
   function setPanelWidth(width: number): void {
     terminalPanelWidth.value = Math.round(width);
@@ -2352,6 +2371,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalPanelPlacement":
           terminalPanelPlacement.value = FRESH.terminalPanelPlacement;
           break;
+        case "terminalCommandPanelPlacement":
+          terminalCommandPanelPlacement.value = FRESH.terminalCommandPanelPlacement;
+          break;
         case "terminalPanelWidth":
           terminalPanelWidth.value = null;
           break;
@@ -2470,6 +2492,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     sessionLayout,
     sessionReopen,
     terminalPanelPlacement,
+    terminalCommandPanelPlacement,
     terminalPanelWidth,
     terminalPanelHeight,
     sidebarWidth,
@@ -2581,6 +2604,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSessionReopen,
     setTerminalPanelPlacement,
     setPanelPlacementDefault,
+    setTerminalCommandPanelPlacement,
+    setCommandPanelPlacementDefault,
     setPanelWidth,
     rememberPanelWidth,
     resetPanelWidth,

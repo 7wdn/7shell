@@ -94,6 +94,7 @@ import {
   type HomeLayout,
   type CustomColors,
   type FilesLayout,
+  type DockedPanelPlacement,
   type SessionLayout,
   type SessionReopen,
   type TerminalCursorInactiveStyle,
@@ -473,6 +474,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.sessionLayout;
     case "terminalPanelPlacement":
       return preferences.terminalPanelPlacement;
+    case "terminalCommandPanelPlacement":
+      return preferences.terminalCommandPanelPlacement;
     case "sessionReopen":
       return preferences.sessionReopen;
     case "monitorEnabled":
@@ -634,6 +637,10 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       // the store keeps any panel with unsaved edits where it is.
       preferences.setPanelPlacementDefault(value as TerminalPanelPlacement);
       void terminals.applyPanelPlacementToAll(value as TerminalPanelPlacement);
+      return;
+    case "terminalCommandPanelPlacement":
+      preferences.setCommandPanelPlacementDefault(value as DockedPanelPlacement);
+      terminals.applyCommandPanelPlacementToAll(value as DockedPanelPlacement);
       return;
     case "sessionReopen":
       void preferences.setSessionReopen(value as SessionReopen);

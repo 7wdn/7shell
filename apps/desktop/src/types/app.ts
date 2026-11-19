@@ -484,6 +484,9 @@ export const DEFAULT_SESSION_REOPEN: SessionReopen = "ask";
  */
 export type TerminalPanelPlacement = "bottom" | "left" | "right" | "tab";
 
+/** The three docked positions a panel has when it has no standalone tab of its own. */
+export type DockedPanelPlacement = Exclude<TerminalPanelPlacement, "tab">;
+
 /** The panel starts where the split layout has always drawn it. */
 export const DEFAULT_TERMINAL_PANEL_PLACEMENT: TerminalPanelPlacement = "bottom";
 
@@ -643,6 +646,8 @@ export interface AppSettings {
   readonly sessionReopen: SessionReopen;
   /** Where the file panel sits while a terminal is open. */
   readonly terminalPanelPlacement: TerminalPanelPlacement;
+  /** Where the commands panel sits while a terminal is open; it has no standalone tab. */
+  readonly terminalCommandPanelPlacement: DockedPanelPlacement;
   /** How wide the file panel is on the left or right, in pixels. Absent means nobody has moved it. */
   readonly terminalPanelWidth?: number;
   /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */

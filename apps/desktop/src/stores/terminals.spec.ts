@@ -852,6 +852,42 @@ describe("terminals store", () => {
     expect(filesCloseMock).toHaveBeenCalledWith("f-shared");
   });
 
+  it("keeps a terminal's command position independent of its files", async () => {
+    usePreferencesStore().sessionLayout = "terminal";
+    sessionOpenMock.mockResolvedValue(opened());
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    const tab = terminalTabOrFail(store);
+
+    expect(store.effectiveCommandPlacement(tab)).toBe("bottom");
+
+    await store.changeTabCommandPlacement(tab, "left", { remember: true });
+
+    expect(store.effectiveCommandPlacement(tab)).toBe("left");
+    expect(store.effectivePlacement(tab), "moving the commands moved no files").toBe("bottom");
+    expect(usePreferencesStore().terminalCommandPanelPlacement).toBe("left");
+    expect(usePreferencesStore().terminalPanelPlacement).toBe("bottom");
+  });
+
+  it("applies a command default to open terminals without touching their files", async () => {
+    usePreferencesStore().sessionLayout = "terminal";
+    sessionOpenMock.mockResolvedValueOnce(opened()).mockResolvedValueOnce({ ...opened(), handle: "handle-2" });
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.open(session);
+    const tabs = store.tabs.filter((entry): entry is TerminalTab => entry.kind === "terminal");
+
+    store.applyCommandPanelPlacementToAll("right");
+
+    expect(tabs.map((tab) => store.effectiveCommandPlacement(tab))).toEqual(["right", "right"]);
+    expect(
+      tabs.map((tab) => store.effectivePlacement(tab)),
+      "the files keep their own answer",
+    ).toEqual(["bottom", "bottom"]);
+  });
+
   it("puts the shared file tab down when the last terminal using it closes", async () => {
     usePreferencesStore().sessionLayout = "split";
     sessionOpenMock

@@ -518,6 +518,11 @@
         "summary": "Where a terminal's files open: under it, beside it, or in the file manager tab.",
         "help": "The default for terminals opened from now on. Each terminal's own strip menu can move that terminal without changing this; changing this moves the terminals that are already open."
       },
+      "commandPanelPlacement": {
+        "title": "Command panel position",
+        "summary": "Where a terminal's commands open, independent of the file panel.",
+        "help": "The default for terminals opened from now on. The menu beside Commands moves one terminal without changing this; changing this moves the terminals that are already open."
+      },
       "sessionReopen": {
         "title": "A session that is already open",
         "summary": "What “Open terminal” and the new-tab picker do when the session is already open: ask, open another tab, or go to it.",

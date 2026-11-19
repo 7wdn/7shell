@@ -27,6 +27,7 @@
       "opening": "Opening the file panel…",
       "retry": "Try again",
       "position": "Move the file panel",
+      "commandPosition": "Move the commands panel",
       "placeBottom": "Bottom",
       "placeLeft": "Left",
       "placeRight": "Right",

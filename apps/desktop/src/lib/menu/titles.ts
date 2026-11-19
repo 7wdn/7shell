@@ -23,6 +23,8 @@ export const MENU_TITLES = {
   tunnel: "menu.tunnel",
   /** The four positions of the file panel beside a terminal. */
   panelPlacement: "menu.panelPlacement",
+  /** The three docked positions of the commands half. */
+  commandPanelPlacement: "menu.commandPanelPlacement",
   process: "menu.process",
   disk: "menu.disk",
   socket: "menu.socket",

@@ -627,6 +627,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             session_layout: SessionLayout::Terminal,
             session_reopen: SessionReopen::NewTab,
             terminal_panel_placement: TerminalPanelPlacement::Right,
+            terminal_command_panel_placement: TerminalPanelPlacement::Left,
             terminal_panel_width: Some(420),
             terminal_panel_height: Some(320),
             sidebar_width: Some(300),
@@ -781,6 +782,11 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         settings["terminalPanelPlacement"],
         serde_json::json!("right"),
         "the panel position travels as the word the menu matches"
+    );
+    assert_eq!(
+        settings["terminalCommandPanelPlacement"],
+        serde_json::json!("left"),
+        "the commands half keeps a position of its own"
     );
     assert_eq!(settings["terminalPanelWidth"], serde_json::json!(420));
     assert_eq!(

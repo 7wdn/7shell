@@ -859,8 +859,7 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     },
   },
   {
-    // The default a terminal is opened with; each tab's own strip menu can move that tab without
-    // touching this, and changing this moves the terminals that are open.
+    // The file half's own default; the commands half remembers independently below.
     id: "file-panel-position",
     category: "workspace",
     field: "terminalPanelPlacement",
@@ -874,6 +873,22 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         { value: "left", labelKey: "settings.panelPlacement.left" },
         { value: "right", labelKey: "settings.panelPlacement.right" },
         { value: "tab", labelKey: "settings.panelPlacement.tab" },
+      ],
+    },
+  },
+  {
+    id: "command-panel-position",
+    category: "workspace",
+    field: "terminalCommandPanelPlacement",
+    titleKey: "settings.rows.commandPanelPlacement.title",
+    summaryKey: "settings.rows.commandPanelPlacement.summary",
+    helpKey: "settings.rows.commandPanelPlacement.help",
+    control: {
+      kind: "select",
+      options: [
+        { value: "bottom", labelKey: "settings.panelPlacement.bottom" },
+        { value: "left", labelKey: "settings.panelPlacement.left" },
+        { value: "right", labelKey: "settings.panelPlacement.right" },
       ],
     },
   },
