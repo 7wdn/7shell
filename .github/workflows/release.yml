@@ -245,11 +245,37 @@ jobs:
                -o -name '*.deb' -o -name '*.rpm' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \) \
             -exec cp {} release-artifacts/ \;
 
+          # The macOS updater archive is the one bundle artifact whose name carries no arch: both
+          # legs bundle a `7Shell.app.tar.gz`, and the release ends up holding a single merged copy
+          # of whichever leg finished last while each leg's manifest entry still carries its own
+          # signature — which is how 0.4.0 offered Apple Silicon an x86_64 archive under a
+          # signature that could never match it (issue #15). Name the archive the way the dmg
+          # beside it is named, so two legs can never arrive under one name again.
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            version="$(node -p "require('./version.json').app")"
+            case "${{ matrix.platform }}" in
+              darwin-x86_64) arch="x64" ;;
+              *)             arch="aarch64" ;;
+            esac
+            for suffix in .app.tar.gz .app.tar.gz.sig; do
+              if [ -f "release-artifacts/7Shell$suffix" ]; then
+                mv "release-artifacts/7Shell$suffix" "release-artifacts/7Shell_${version}_${arch}$suffix"
+              fi
+            done
+          fi
+
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             # Named per platform: the six builds' outputs are downloaded into one directory at the
             # end, and a file every job calls the same thing would leave the last platform standing.
+            # On macOS the entry describes the renamed release directory rather than the bundler's
+            # tree, because the manifest must name the file that is actually attached — the same
+            # reason the Windows portable step re-runs this command over the directory below.
+            bundle="target"
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              bundle="release-artifacts"
+            fi
             node scripts/update-manifest.mjs platform \
-              --bundle target \
+              --bundle "$bundle" \
               --platform "${{ matrix.platform }}" \
               --tag "$TAG" \
               --repository "${{ github.repository }}" \
