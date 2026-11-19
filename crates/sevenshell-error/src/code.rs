@@ -66,6 +66,8 @@ error_catalog! {
     SshConfigKeyPassphrase => "SSH-CONFIG-KEY-PASSPHRASE", "errors.ssh.configKeyPassphrase";
     #[doc = "OpenSSH's configuration and its default identity files held no usable private key."]
     SshConfigNoKey => "SSH-CONFIG-NO-KEY", "errors.ssh.configNoKey";
+    #[doc = "The ProxyJump chain in OpenSSH's configuration loops or names a hop that cannot be parsed."]
+    SshConfigProxyChain => "SSH-CONFIG-PROXY-CHAIN", "errors.ssh.configProxyChain";
     #[doc = "The server rejected the credentials or the authentication method."]
     SshAuthFailed => "SSH-AUTH-FAILED", "errors.ssh.authFailed";
     #[doc = "The host could not be reached."]

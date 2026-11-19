@@ -19,7 +19,9 @@ use std::time::Duration;
 use sevenshell_core::Core;
 use sevenshell_error::ErrorCode;
 use sevenshell_ssh::{Credential, OpenRequest, Purpose, Route, SshSession, Target, TerminalSize};
-use sevenshell_types::{AuthMethod, KeyAlgorithm, OpenOutcome, Protocol, Session, SessionAuth, TerminalSettings};
+use sevenshell_types::{
+    AuthMethod, KeyAlgorithm, OpenOutcome, Protocol, SecretInput, Session, SessionAuth, TerminalSettings,
+};
 use sevenshell_vault::{SessionSecret, Vault};
 use tempfile::{TempDir, tempdir};
 
@@ -49,27 +51,28 @@ fn lab_credentials() -> Option<(String, u16, String, String)> {
     }
 }
 
+/// The port the lab's sshd listens on inside the container.
+///
+/// A host that maps a different port onto it (the Docker port override) records that inside port
+/// with `SEVENSHELL_TEST_REMOTE_PORT`; without it the two are the same number.
+fn remote_port(mapped: u16) -> u16 {
+    environment("SEVENSHELL_TEST_REMOTE_PORT")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(mapped)
+}
+
 /// A vault with one session that stores the alias rather than the coordinates.
 fn lab_with_alias() -> Option<(TempDir, Arc<Vault>, Arc<Core>, String)> {
-    let (host, port, user, password) = lab_credentials()?;
+    let (host, port, user, _password) = lab_credentials()?;
+    let (directory, vault, core, session_id, _events) =
+        lab_session(format!("Host lab\n  HostName {host}\n  Port {port}\n  User {user}\n"))?;
+    Some((directory, vault, core, session_id))
+}
 
-    let directory = tempdir().expect("temp dir");
-    let ssh = directory.path().join("ssh");
-    std::fs::create_dir_all(&ssh).expect("ssh dir");
-    std::fs::write(
-        ssh.join("config"),
-        format!("Host lab\n  HostName {host}\n  Port {port}\n  User {user}\n"),
-    )
-    .expect("config");
-    // Safety: this test binary is run with one thread, and the directory is this test's own.
-    unsafe { std::env::set_var(sevenshell_platform::SSH_DIR_OVERRIDE, &ssh) };
-
-    let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
-    vault
-        .create("the password of the vault itself, which is not the one under test")
-        .expect("create vault");
-
-    let session = Session {
+/// The session record both kinds of test save: the alias is the host, everything else is wrong on
+/// purpose, and the configuration is the authority.
+fn lab_session_record() -> Session {
+    Session {
         id: "openssh-lab".to_owned(),
         name: "lab through its alias".to_owned(),
         group_id: None,
@@ -100,13 +103,37 @@ fn lab_with_alias() -> Option<(TempDir, Arc<Vault>, Arc<Core>, String)> {
         jump: Vec::new(),
         forwards: Vec::new(),
         updated_at: 0,
-    };
+    }
+}
 
+type LabSession = (
+    TempDir,
+    Arc<Vault>,
+    Arc<Core>,
+    String,
+    tokio::sync::mpsc::Receiver<sevenshell_core::CoreEvent>,
+);
+
+/// A vault with the record above, saved with the lab password, and its event stream.
+fn lab_session(config: String) -> Option<LabSession> {
+    let (_host, _port, _user, password) = lab_credentials()?;
+
+    let directory = tempdir().expect("temp dir");
+    let ssh = directory.path().join("ssh");
+    std::fs::create_dir_all(&ssh).expect("ssh dir");
+    std::fs::write(ssh.join("config"), config).expect("config");
+    // Safety: this test binary is run with one thread, and the directory is this test's own.
+    unsafe { std::env::set_var(sevenshell_platform::SSH_DIR_OVERRIDE, &ssh) };
+
+    let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
     vault
-        .save_session(session, Some(SessionSecret::Password(password)))
+        .create("the password of the vault itself, which is not the one under test")
+        .expect("create vault");
+    vault
+        .save_session(lab_session_record(), Some(SessionSecret::Password(password)))
         .expect("save session");
-    let (core, _events) = Core::new(Arc::clone(&vault));
-    Some((directory, vault, core, "openssh-lab".to_owned()))
+    let (core, events) = Core::new(Arc::clone(&vault));
+    Some((directory, vault, core, "openssh-lab".to_owned(), events))
 }
 
 #[tokio::test]
@@ -239,6 +266,82 @@ async fn a_matching_system_record_is_trusted_beside_a_stale_one() {
             panic!("a key already in the system known_hosts was asked about again");
         }
         other => panic!("expected the session to open, got {other:?}"),
+    }
+}
+
+/// A `ProxyJump` route from the configuration: the hop's key is asked about first, the target's
+/// second, and a password typed for a draft that was never saved answers for both.
+#[tokio::test]
+#[ignore = "needs the SSH lab: see the module comment"]
+async fn a_proxy_jump_route_is_followed_with_every_key_verified() {
+    let Some((host, port, user, password)) = lab_credentials() else {
+        return;
+    };
+    let far = remote_port(port);
+    let config = format!(
+        "Host lab\n  HostName {host}\n  Port {far}\n  User {user}\n  ProxyJump lab-jump\n\
+         Host lab-jump\n  HostName {host}\n  Port {port}\n  User {user}\n"
+    );
+    let Some((_directory, _vault, core, session_id, mut events)) = lab_session(config) else {
+        return;
+    };
+
+    let hop_key = match core.open_terminal(&session_id).await.expect("the first open answers") {
+        OpenOutcome::HostKeyUnknown { key } => key,
+        other => panic!("expected the jump host's key question, got {other:?}"),
+    };
+    assert_eq!(hop_key.port, port, "the first question is about the jump host");
+    core.trust_host_key(&hop_key).expect("trust the hop");
+
+    let target_key = match core.open_terminal(&session_id).await.expect("the second open answers") {
+        OpenOutcome::HostKeyUnknown { key } => key,
+        other => panic!("expected the target's key question, got {other:?}"),
+    };
+    assert_eq!(
+        target_key.port, far,
+        "the second question is about the target reached through the hop"
+    );
+    core.trust_host_key(&target_key).expect("trust the target");
+
+    let handle = match core.open_terminal(&session_id).await.expect("the third open answers") {
+        OpenOutcome::Opened { handle, .. } => handle,
+        other => panic!("expected the route to open, got {other:?}"),
+    };
+
+    let marker = "7shell-proxyjump-marker";
+    core.write(&handle, format!("echo {marker}\n").as_bytes())
+        .await
+        .expect("write");
+    let mut collected = String::new();
+    let seen = tokio::time::timeout(Duration::from_secs(20), async {
+        while let Some(event) = events.recv().await {
+            if event.handle != handle {
+                continue;
+            }
+            if let sevenshell_session::TerminalEvent::Data(bytes) = event.event {
+                collected.push_str(&String::from_utf8_lossy(&bytes));
+                if collected.contains(marker) {
+                    break;
+                }
+            }
+        }
+    })
+    .await;
+    assert!(seen.is_ok(), "the command ran through the hop; collected: {collected}");
+    core.close_terminal(&handle).await.expect("close");
+
+    // Typed for a draft that is not saved, the password answers the hop as well as the target.
+    let mut draft = lab_session_record();
+    draft.id = "draft-proxyjump".to_owned();
+    let outcome = core
+        .test_session(&draft, Some(SecretInput { value: password }))
+        .await
+        .expect("the test answers");
+    match outcome {
+        sevenshell_types::ConnectionTestOutcome::Connected { authenticated, .. } => {
+            assert!(authenticated, "the draft authenticated through the hop");
+        }
+        other => panic!("expected the draft to connect, got {other:?}"),
     }
 }
 

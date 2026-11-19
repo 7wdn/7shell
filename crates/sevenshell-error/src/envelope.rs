@@ -352,6 +352,13 @@ impl ShellError {
             .with_outcome(OperationOutcome::NotSent)
     }
 
+    /// A `ProxyJump` chain that cannot be followed: a loop, a malformed hop, or one too deep.
+    pub fn ssh_config_proxy_chain(chain: &str) -> Self {
+        Self::new(ErrorCode::SshConfigProxyChain, Origin::new(Subsystem::Ssh))
+            .with_param("chain", chain)
+            .with_outcome(OperationOutcome::NotSent)
+    }
+
     pub fn ssh_auth_failed(host: &str, port: u16, method: &str) -> Self {
         Self::new(ErrorCode::SshAuthFailed, ssh_origin(host, port))
             .with_param("host", host)

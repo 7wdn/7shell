@@ -22,7 +22,8 @@
       "configUnsupported": "This OpenSSH configuration uses {directive}, which this build cannot honour. Nothing was sent.",
       "configUnknownAlias": "No Host block in ~/.ssh/config matches {alias}.",
       "configKeyPassphrase": "The key {key} named by ~/.ssh/config needs a passphrase. Add it to ssh-agent or import it into the vault.",
-      "configNoKey": "~/.ssh/config and the default identity files hold no usable private key for {alias}."
+      "configNoKey": "~/.ssh/config and the default identity files hold no usable private key for {alias}.",
+      "configProxyChain": "The ProxyJump chain in ~/.ssh/config cannot be followed: {chain}. Nothing was sent."
     },
     "rdp": {
       "launchFailed": "The Windows Remote Desktop client could not be started."

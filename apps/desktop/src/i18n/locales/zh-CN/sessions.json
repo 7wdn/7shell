@@ -315,7 +315,7 @@
       "openssh": {
         "title": "OpenSSH 配置",
         "useConfig": "主机与身份来自 ~/.ssh/config",
-        "note": "会话保存的是别名而不是地址副本。每次连接都会重新解析主机、账号、端口和身份：优先使用配置指定的密钥，其次按顺序尝试默认的 ~/.ssh/id_* 文件。",
+        "note": "会话保存的是别名而不是地址副本。每次连接都会重新解析主机、账号、端口和身份：优先使用配置指定的密钥，其次按顺序尝试默认的 ~/.ssh/id_* 文件。文件里的 ProxyJump 路线会被沿用，每一跳都做同样的主机键校验。",
         "pick": "从 OpenSSH 配置添加…",
         "dialogTitle": "~/.ssh/config 中的主机",
         "dialogDescription": "选择一个别名。地址与账号按本机解析结果显示；保存前不会复制任何内容。",
@@ -323,6 +323,7 @@
         "filterPlaceholder": "筛选别名、地址或账号…",
         "empty": "还没有可用主机。在 ~/.ssh/config 中添加 Host 块后重新打开。",
         "noMatch": "没有匹配的主机。",
+        "viaProxy": "途经 {route}",
         "unsupported": "暂不支持：{directives}",
         "close": "关闭",
         "keyNote": "连接时会从 ~/.ssh/config 或默认的 ~/.ssh/id_* 读取身份，这里无需导入密钥。"

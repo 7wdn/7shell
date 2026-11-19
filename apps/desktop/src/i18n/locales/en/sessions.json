@@ -315,7 +315,7 @@
       "openssh": {
         "title": "OpenSSH configuration",
         "useConfig": "Host and identity come from ~/.ssh/config",
-        "note": "The alias is saved instead of a copy of the address. Host, account, port and identity are resolved again on every connection; a key named by the configuration is used first, then the default ~/.ssh/id_* files.",
+        "note": "The alias is saved instead of a copy of the address. Host, account, port and identity are resolved again on every connection; a key named by the configuration is used first, then the default ~/.ssh/id_* files. A ProxyJump route in the file is followed, with the same host-key checks on every hop.",
         "pick": "From OpenSSH config…",
         "dialogTitle": "Hosts in ~/.ssh/config",
         "dialogDescription": "Choose an alias. The address and account are shown as this machine resolves them; nothing is copied until you save.",
@@ -323,6 +323,7 @@
         "filterPlaceholder": "Filter by alias, address, or account…",
         "empty": "No hosts yet. Add a Host block to ~/.ssh/config and open this again.",
         "noMatch": "No hosts match this filter.",
+        "viaProxy": "via {route}",
         "unsupported": "Not supported yet: {directives}",
         "close": "Close",
         "keyNote": "The identity is read from ~/.ssh/config or the default ~/.ssh/id_* files when connecting; no key needs to be imported here."

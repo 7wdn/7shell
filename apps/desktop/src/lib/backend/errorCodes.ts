@@ -22,6 +22,7 @@ export const ERROR_CATALOG = {
   "SSH-CONFIG-UNKNOWN-ALIAS": "errors.ssh.configUnknownAlias",
   "SSH-CONFIG-KEY-PASSPHRASE": "errors.ssh.configKeyPassphrase",
   "SSH-CONFIG-NO-KEY": "errors.ssh.configNoKey",
+  "SSH-CONFIG-PROXY-CHAIN": "errors.ssh.configProxyChain",
   "SSH-AUTH-FAILED": "errors.ssh.authFailed",
   "SSH-UNREACHABLE": "errors.ssh.unreachable",
   "SSH-TIMEOUT": "errors.ssh.timeout",

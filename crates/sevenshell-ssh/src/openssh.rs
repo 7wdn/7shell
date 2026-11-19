@@ -26,6 +26,84 @@ use russh::keys::PublicKey;
 /// The identities OpenSSH tries, in its own order, when a host names none.
 pub const DEFAULT_IDENTITY_FILES: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
 
+/// One destination named by `ProxyJump`.
+///
+/// The host is still a name: whether it is an alias with its own `Host` block, or a literal
+/// address, is decided where the configuration is resolved, not here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JumpStep {
+    pub user: Option<String>,
+    pub host: String,
+    pub port: Option<u16>,
+}
+
+/// Parses a `ProxyJump` value: comma-separated `[user@]host[:port]`, or `none` for no jump.
+///
+/// A malformed element is returned as written rather than dropped: a route that quietly loses a
+/// hop dials a different machine than the person's own `ssh` would. Brackets are honoured for
+/// IPv6, and an unbracketed address with more than one colon is read as a host without a port,
+/// which is what OpenSSH expects.
+pub fn parse_proxy_jump(value: &str) -> Result<Vec<JumpStep>, String> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Ok(Vec::new());
+    }
+
+    let mut steps = Vec::new();
+    for raw in value.split(',') {
+        let hop = raw.trim();
+        if hop.is_empty() {
+            return Err(raw.to_owned());
+        }
+        steps.push(parse_jump_step(hop)?);
+    }
+    Ok(steps)
+}
+
+fn parse_jump_step(hop: &str) -> Result<JumpStep, String> {
+    let (user, rest) = match hop.rsplit_once('@') {
+        Some((user, rest)) => {
+            if user.is_empty() {
+                return Err(hop.to_owned());
+            }
+            (Some(user.to_owned()), rest)
+        }
+        None => (None, hop),
+    };
+
+    let (host, port) = if let Some(bracketed) = rest.strip_prefix('[') {
+        let Some((address, after)) = bracketed.split_once(']') else {
+            return Err(hop.to_owned());
+        };
+        let port = match after {
+            "" => None,
+            after => match after.strip_prefix(':') {
+                Some(port) => Some(proxy_port(port).ok_or_else(|| hop.to_owned())?),
+                None => return Err(hop.to_owned()),
+            },
+        };
+        (address.to_owned(), port)
+    } else if rest.matches(':').count() == 1 {
+        let (address, port) = rest.rsplit_once(':').expect("one colon");
+        (
+            address.to_owned(),
+            Some(proxy_port(port).ok_or_else(|| hop.to_owned())?),
+        )
+    } else {
+        // No colon at all, or an unbracketed IPv6 address whose colons are not a port.
+        (rest.to_owned(), None)
+    };
+
+    if host.is_empty() {
+        return Err(hop.to_owned());
+    }
+    Ok(JumpStep { user, host, port })
+}
+
+fn proxy_port(value: &str) -> Option<u16> {
+    value.parse::<u16>().ok().filter(|port| *port != 0)
+}
+
 /// What this machine's own `known_hosts` says about the key a server just presented.
 ///
 /// `Changed` is a stop, not a question: this build never edits the person's OpenSSH files, so there
@@ -166,7 +244,8 @@ pub struct ResolvedHost {
     pub proxy_jump: Option<String>,
     /// The same, for a command this build will not execute.
     pub proxy_command: Option<String>,
-    /// Directives a connection must not ignore: `ProxyCommand`, `ProxyJump`, `Match`, a bad port.
+    /// Directives a connection must not ignore: `ProxyCommand`, `Match`, a bad port. `ProxyJump`
+    /// is not here — it is a route this build follows, carried in [`Self::proxy_jump`].
     pub unsupported: Vec<String>,
     /// Whether any `Host` block matched. A caller that promised the alias comes from this file
     /// refuses when it does not, rather than dialling the alias as a literal host name.
@@ -658,6 +737,66 @@ mod tests {
         let config = load(&directory.path().join("not-there"), directory.path());
         assert!(config.aliases().is_empty());
         assert_eq!(config.resolve("anything").address("anything"), "anything");
+    }
+
+    #[test]
+    fn a_proxy_jump_value_is_read_as_its_hops_in_order() {
+        assert_eq!(parse_proxy_jump("none"), Ok(Vec::new()));
+        assert_eq!(parse_proxy_jump(" NONE "), Ok(Vec::new()));
+        assert_eq!(
+            parse_proxy_jump("bastion,deploy@10.0.0.9:2222"),
+            Ok(vec![
+                JumpStep {
+                    user: None,
+                    host: "bastion".to_owned(),
+                    port: None,
+                },
+                JumpStep {
+                    user: Some("deploy".to_owned()),
+                    host: "10.0.0.9".to_owned(),
+                    port: Some(2222),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn an_ipv6_hop_is_read_with_and_without_a_port() {
+        assert_eq!(
+            parse_proxy_jump("[2001:db8::1]:2200"),
+            Ok(vec![JumpStep {
+                user: None,
+                host: "2001:db8::1".to_owned(),
+                port: Some(2200),
+            }])
+        );
+        assert_eq!(
+            parse_proxy_jump("ops@[2001:db8::1]"),
+            Ok(vec![JumpStep {
+                user: Some("ops".to_owned()),
+                host: "2001:db8::1".to_owned(),
+                port: None,
+            }])
+        );
+        // Unbracketed, the colons belong to the address rather than to a port.
+        assert_eq!(
+            parse_proxy_jump("2001:db8::1"),
+            Ok(vec![JumpStep {
+                user: None,
+                host: "2001:db8::1".to_owned(),
+                port: None,
+            }])
+        );
+    }
+
+    #[test]
+    fn a_malformed_hop_is_returned_as_written() {
+        assert_eq!(parse_proxy_jump("bastion:"), Err("bastion:".to_owned()));
+        assert_eq!(parse_proxy_jump(":22"), Err(":22".to_owned()));
+        assert_eq!(parse_proxy_jump("@bastion"), Err("@bastion".to_owned()));
+        assert_eq!(parse_proxy_jump("bastion, ,db"), Err(" ".to_owned()));
+        assert_eq!(parse_proxy_jump("bastion:0"), Err("bastion:0".to_owned()));
+        assert_eq!(parse_proxy_jump("[2001:db8::1"), Err("[2001:db8::1".to_owned()));
     }
 
     #[test]

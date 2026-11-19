@@ -44,11 +44,30 @@ pub(crate) enum HostKeyDecision {
 ///
 /// The saved session keeps the alias; this is the copy a connection actually uses. `config` is the
 /// resolved entry when there was one, so the credential step can read the identities it names
-/// without the interface ever learning a path.
+/// without the interface ever learning a path. `proxy` is the `ProxyJump` route the same file
+/// names, outermost hop first; it is empty when the session keeps its own saved jump list, which
+/// is the person's explicit route.
 #[derive(Debug)]
 pub(crate) struct PreparedSession {
     pub(crate) session: Session,
     pub(crate) config: Option<sevenshell_ssh::openssh::ResolvedHost>,
+    pub(crate) proxy: Vec<crate::openssh::ProxyHop>,
+}
+
+/// One connection a route makes before it reaches the target.
+struct HopPlan {
+    host: String,
+    port: u16,
+    user: String,
+    keepalive_seconds: u16,
+    source: HopSource,
+}
+
+enum HopSource {
+    /// A saved session the route names, resolved on its own terms.
+    Saved(Box<PreparedSession>),
+    /// A hop the target's own `ProxyJump` names.
+    Config(Box<crate::openssh::ProxyHop>),
 }
 
 /// A key file larger than this is not a key.
@@ -289,7 +308,8 @@ impl Core {
         session_id: &str,
         cancel: &Arc<Notify>,
     ) -> Result<OpenOutcome, ShellError> {
-        let PreparedSession { session, config } = self.prepare_session(&self.session(session_id)?)?;
+        let prepared = self.prepare_session(&self.session(session_id)?)?;
+        let session = &prepared.session;
         match session.protocol {
             Protocol::Ssh => {}
             Protocol::Rdp => {
@@ -323,17 +343,17 @@ impl Core {
                 ));
             }
             Protocol::Telnet | Protocol::RawTcp | Protocol::Serial | Protocol::Local | Protocol::Wsl => {
-                return self.open_stream_terminal_until_cancelled(&session, cancel).await;
+                return self.open_stream_terminal_until_cancelled(session, cancel).await;
             }
         }
-        let credential = self.credential(&session, config.as_ref())?;
+        let credential = self.credential(session, prepared.config.as_ref())?;
         let target = Target {
             host: session.host.clone(),
             port: session.port,
             user: session.user.clone(),
         };
 
-        let route = until_cancelled(self.open_route(&session), cancel).await?;
+        let route = until_cancelled(self.open_route(&prepared, None), cancel).await?;
         let hop = match route {
             RouteOutcome::Ready(hop) => hop,
             RouteOutcome::Decision(decision) => return Ok(terminal_decision(*decision)),
@@ -405,7 +425,7 @@ impl Core {
         };
 
         let opened = until_cancelled(
-            self.registry.open(session_id, request, self.recording_for(&session)?),
+            self.registry.open(session_id, request, self.recording_for(session)?),
             cancel,
         )
         .await;
@@ -420,7 +440,7 @@ impl Core {
                 return Err(cancelled);
             }
         };
-        let (tunnels, tunnel_failures) = self.bring_up_forwards(&handle, &session).await;
+        let (tunnels, tunnel_failures) = self.bring_up_forwards(&handle, session).await;
 
         Ok(OpenOutcome::Opened {
             handle,
@@ -460,10 +480,11 @@ impl Core {
         secret: Option<SecretInput>,
     ) -> Result<ConnectionTestOutcome, ShellError> {
         let started = Instant::now();
-        let PreparedSession { session, config } = self.prepare_session(session)?;
+        let prepared = self.prepare_session(session)?;
+        let session = &prepared.session;
 
         match session.protocol {
-            Protocol::Ssh => self.test_ssh(&session, config.as_ref(), secret, started).await,
+            Protocol::Ssh => self.test_ssh(&prepared, secret, started).await,
             Protocol::Telnet | Protocol::RawTcp => {
                 let stream = match tokio::time::timeout(
                     self.timeout,
@@ -503,19 +524,19 @@ impl Core {
     /// The SSH half of [`Core::test_session`]: verify the route and the key, authenticate, hang up.
     async fn test_ssh(
         &self,
-        session: &Session,
-        config: Option<&sevenshell_ssh::openssh::ResolvedHost>,
+        prepared: &PreparedSession,
         secret: Option<SecretInput>,
         started: Instant,
     ) -> Result<ConnectionTestOutcome, ShellError> {
-        let credential = self.credential_for_test(session, config, secret)?;
+        let session = &prepared.session;
+        let credential = self.credential_for_test(session, prepared.config.as_ref(), secret.as_ref())?;
         let target = Target {
             host: session.host.clone(),
             port: session.port,
             user: session.user.clone(),
         };
 
-        let route = self.open_route(session).await?;
+        let route = self.open_route(prepared, secret.as_ref()).await?;
         let hop = match route {
             RouteOutcome::Ready(hop) => hop,
             RouteOutcome::Decision(decision) => return Ok(test_decision(*decision)),
@@ -594,11 +615,11 @@ impl Core {
         &self,
         session: &Session,
         config: Option<&sevenshell_ssh::openssh::ResolvedHost>,
-        secret: Option<SecretInput>,
+        secret: Option<&SecretInput>,
     ) -> Result<Credential, ShellError> {
         match (session.auth.method, secret) {
             (AuthMethod::Password | AuthMethod::KeyboardInteractive, Some(input)) => {
-                Ok(Credential::Password(input.value))
+                Ok(Credential::Password(input.value.clone()))
             }
             _ => self.credential(session, config),
         }
@@ -801,29 +822,32 @@ impl Core {
             .ok_or_else(|| ShellError::session_not_found(id))
     }
 
-    /// Connects every jump host in order, and answers with the last one.
+    /// Connects every hop in order, and answers with the last one.
     ///
-    /// Each hop is a connection of its own, on the same terms as the final one: verified before
-    /// anything is sent through it, and authenticated with its own saved credential. A hop whose
-    /// key is unknown ends the attempt with a decision about *that* host, so asking again after
-    /// trusting it moves the chain forward one link at a time.
-    pub(crate) async fn open_route(&self, session: &Session) -> Result<RouteOutcome, ShellError> {
+    /// The route is the session's own saved jump list when it has one; otherwise it is the
+    /// `ProxyJump` chain its alias names, already walked outward first. Each hop is a connection of
+    /// its own, verified before anything is sent through it, and authenticated with its own
+    /// credential — a saved hop's stored one, or the target's for a hop the configuration names. A
+    /// hop whose key is unknown ends the attempt with a decision about *that* host, so asking again
+    /// after trusting it moves the chain forward one link at a time.
+    ///
+    /// `secret` is a password typed into the connection test. It answers for every hop whose
+    /// credential is inherited from the target, which is what makes testing a draft before it is
+    /// saved say something true.
+    pub(crate) async fn open_route(
+        &self,
+        prepared: &PreparedSession,
+        secret: Option<&SecretInput>,
+    ) -> Result<RouteOutcome, ShellError> {
+        let plan = self.route_plan(prepared)?;
         let mut current: Option<Arc<SshSession>> = None;
 
-        for hop_id in &session.jump {
-            if hop_id == &session.id {
-                return Err(ShellError::app_unsupported("a session that is its own jump host"));
-            }
-
-            let PreparedSession {
-                session: hop_session,
-                config,
-            } = self.prepare_session(&self.session(hop_id)?)?;
-            let credential = self.credential(&hop_session, config.as_ref())?;
+        for hop in plan {
+            let credential = self.hop_credential(prepared, &hop, secret)?;
             let target = Target {
-                host: hop_session.host.clone(),
-                port: hop_session.port,
-                user: hop_session.user.clone(),
+                host: hop.host.clone(),
+                port: hop.port,
+                user: hop.user.clone(),
             };
 
             let presented = match &current {
@@ -872,7 +896,7 @@ impl Core {
                 // A hop carries a connection; it is not a terminal, and asking it for a shell
                 // would leave a process running on the jump host for no reason.
                 terminal_type: String::new(),
-                keepalive_seconds: hop_session.terminal.keepalive_seconds,
+                keepalive_seconds: hop.keepalive_seconds,
                 forward_agent: false,
                 timeout: self.timeout,
                 expected_host_key: presented,
@@ -888,6 +912,127 @@ impl Core {
         }
 
         Ok(RouteOutcome::Ready(current))
+    }
+
+    /// Every hop from this machine outward, in the order they are connected.
+    ///
+    /// Saved hops keep their own routes: a hop may name jumps of its own, and that chain is walked
+    /// before the hop itself. A config hop has no saved route, so its `ProxyJump` was already
+    /// walked when the prepared session was built. `visiting` is the sessions on the current path,
+    /// which is what turns two sessions naming each other into an error instead of a loop.
+    fn route_plan(&self, prepared: &PreparedSession) -> Result<Vec<HopPlan>, ShellError> {
+        let mut plan = Vec::new();
+        let mut visiting = std::collections::HashSet::new();
+        self.collect_hops(prepared, &mut visiting, &mut plan)?;
+        Ok(plan)
+    }
+
+    fn collect_hops(
+        &self,
+        prepared: &PreparedSession,
+        visiting: &mut std::collections::HashSet<String>,
+        plan: &mut Vec<HopPlan>,
+    ) -> Result<(), ShellError> {
+        let session = &prepared.session;
+
+        if !session.jump.is_empty() {
+            if !visiting.insert(session.id.clone()) {
+                let id = &session.id;
+                return Err(ShellError::app_unsupported(&format!(
+                    "a route that loops back through session {id}"
+                )));
+            }
+            for hop_id in &session.jump {
+                if hop_id == &session.id {
+                    return Err(ShellError::app_unsupported("a session that is its own jump host"));
+                }
+                let hop = Box::new(self.prepare_session(&self.session(hop_id)?)?);
+                self.collect_hops(&hop, visiting, plan)?;
+                plan.push(HopPlan {
+                    host: hop.session.host.clone(),
+                    port: hop.session.port,
+                    user: hop.session.user.clone(),
+                    keepalive_seconds: hop.session.terminal.keepalive_seconds,
+                    source: HopSource::Saved(hop),
+                });
+            }
+            visiting.remove(&session.id);
+            return Ok(());
+        }
+
+        for hop in &prepared.proxy {
+            plan.push(HopPlan {
+                host: hop.host.clone(),
+                port: hop.port,
+                user: hop.user.clone(),
+                keepalive_seconds: session.terminal.keepalive_seconds,
+                source: HopSource::Config(Box::new(hop.clone())),
+            });
+        }
+        Ok(())
+    }
+
+    /// The credential one hop offers.
+    ///
+    /// A saved hop answers with what its own session stores. A hop named by the configuration has
+    /// no session of its own, so it uses that hop's `IdentityFile` when it names one; otherwise it
+    /// inherits the target's credential, the way one would expect a route written into the same
+    /// file to share an identity.
+    fn hop_credential(
+        &self,
+        prepared: &PreparedSession,
+        hop: &HopPlan,
+        secret: Option<&SecretInput>,
+    ) -> Result<Credential, ShellError> {
+        match &hop.source {
+            HopSource::Saved(hop) => self.credential(&hop.session, hop.config.as_ref()),
+            HopSource::Config(hop) => self.proxy_hop_credential(prepared, hop, secret),
+        }
+    }
+
+    fn proxy_hop_credential(
+        &self,
+        prepared: &PreparedSession,
+        hop: &crate::openssh::ProxyHop,
+        secret: Option<&SecretInput>,
+    ) -> Result<Credential, ShellError> {
+        let session = &prepared.session;
+        let method = session.auth.method;
+
+        match method {
+            AuthMethod::Password | AuthMethod::KeyboardInteractive => {
+                if let Some(input) = secret {
+                    return Ok(Credential::Password(input.value.clone()));
+                }
+                match self.vault.secret_for_session(&session.id)? {
+                    Some(stored) => Ok(Credential::Password(stored.into_value())),
+                    None => Err(ShellError::ssh_auth_failed(&hop.host, hop.port, "password")
+                        .with_detail("the jump host inherits this session's password, and none is stored for it")),
+                }
+            }
+            AuthMethod::PublicKey => {
+                let hop_names_identity = hop
+                    .config
+                    .as_ref()
+                    .is_some_and(|config| !config.identity_files.is_empty());
+                // A key attached to the session is the person's explicit choice, and is offered to
+                // the hops unless the hop's own block names the identities it wants.
+                if !hop_names_identity
+                    && let Some(key_ref) = session.auth.key.as_ref().and_then(|key| key.key_ref.as_deref())
+                {
+                    let material = self
+                        .vault
+                        .key_material(key_ref)?
+                        .ok_or_else(|| ShellError::ssh_key_invalid("the key this session used is no longer stored"))?;
+                    let (contents, passphrase) = material.into_parts();
+                    return Ok(Credential::Key { contents, passphrase });
+                }
+                let hop_config = hop.config.clone().unwrap_or_default();
+                self.key_from_config(&hop.name, &hop_config)
+            }
+            AuthMethod::Agent => Ok(Credential::Agent),
+            AuthMethod::Pageant => Ok(Credential::Pageant),
+        }
     }
 
     /// Starts the forwards a session saves, and reports what happened to each.
@@ -996,19 +1141,16 @@ impl Core {
     /// Used when the terminal's connection is the wrong place for a new channel: one SSH
     /// connection carries only so many, and the terminal still needs room for its monitor.
     pub(crate) async fn open_fresh_carrier(&self, session: &Session) -> Result<ConnectionOutcome, ShellError> {
-        let PreparedSession {
-            session: resolved_session,
-            config,
-        } = self.prepare_session(session)?;
-        let session = &resolved_session;
-        let credential = self.credential(session, config.as_ref())?;
+        let prepared = self.prepare_session(session)?;
+        let session = &prepared.session;
+        let credential = self.credential(session, prepared.config.as_ref())?;
         let target = Target {
             host: session.host.clone(),
             port: session.port,
             user: session.user.clone(),
         };
 
-        let hop = match self.open_route(session).await? {
+        let hop = match self.open_route(&prepared, None).await? {
             RouteOutcome::Ready(hop) => hop,
             RouteOutcome::Decision(decision) => return Ok(ConnectionOutcome::Decision(decision)),
         };
@@ -1122,11 +1264,15 @@ impl Core {
     /// resolved again on every connection, so editing `~/.ssh/config` changes the next connection
     /// without editing the session. Every directive that would change where the connection goes and
     /// that this build cannot honour refuses here, before a socket.
+    ///
+    /// A `ProxyJump` becomes the route unless the session already names saved jumps: those are the
+    /// person's explicit route, and a file must not silently replace them.
     pub(crate) fn prepare_session(&self, session: &Session) -> Result<PreparedSession, ShellError> {
         if !session.auth.ssh_config || session.protocol != Protocol::Ssh {
             return Ok(PreparedSession {
                 session: session.clone(),
                 config: None,
+                proxy: Vec::new(),
             });
         }
 
@@ -1139,9 +1285,6 @@ impl Core {
         }
 
         let mut unsupported = resolved.unsupported.clone();
-        if resolved.proxy_jump.is_some() && !unsupported.iter().any(|name| name == "ProxyJump") {
-            unsupported.push("ProxyJump".to_owned());
-        }
         if resolved.proxy_command.is_some() && !unsupported.iter().any(|name| name == "ProxyCommand") {
             unsupported.push("ProxyCommand".to_owned());
         }
@@ -1158,9 +1301,16 @@ impl Core {
             prepared.port = port;
         }
 
+        let proxy = if prepared.jump.is_empty() {
+            crate::openssh::proxy_hops(&config, &resolved, &prepared.user).map_err(proxy_chain_error)?
+        } else {
+            Vec::new()
+        };
+
         Ok(PreparedSession {
             session: prepared,
             config: Some(resolved),
+            proxy,
         })
     }
 
@@ -1209,7 +1359,7 @@ impl Core {
                 // A session that takes its identity from OpenSSH's configuration names files, not
                 // vault handles. They are read here and never leave the process.
                 if let Some(config) = config {
-                    return self.key_from_config(session, config);
+                    return self.key_from_config(&session.host, config);
                 }
 
                 Err(ShellError::ssh_key_invalid("this session has no key attached"))
@@ -1230,11 +1380,11 @@ impl Core {
     /// agent, or importing the key into the vault.
     fn key_from_config(
         &self,
-        session: &Session,
+        alias: &str,
         config: &sevenshell_ssh::openssh::ResolvedHost,
     ) -> Result<Credential, ShellError> {
         let Some(home) = sevenshell_platform::home_dir() else {
-            return Err(ShellError::ssh_config_no_key(&session.host));
+            return Err(ShellError::ssh_config_no_key(alias));
         };
         let ssh_dir = sevenshell_platform::ssh_dir().unwrap_or_else(|| home.join(".ssh"));
 
@@ -1276,7 +1426,7 @@ impl Core {
 
         match locked {
             Some(name) => Err(ShellError::ssh_config_key_passphrase(&name)),
-            None => Err(ShellError::ssh_config_no_key(&session.host)),
+            None => Err(ShellError::ssh_config_no_key(alias)),
         }
     }
 }
@@ -1324,6 +1474,17 @@ fn test_decision(decision: HostKeyDecision) -> ConnectionTestOutcome {
 /// A stopwatch reading as whole milliseconds, which is the precision the interface prints.
 fn elapsed_millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+/// A `ProxyJump` chain that cannot be followed, in the vocabulary of the error envelope.
+fn proxy_chain_error(error: crate::openssh::ProxyChainError) -> ShellError {
+    use crate::openssh::ProxyChainError;
+
+    match error {
+        ProxyChainError::Directive(directive) => ShellError::ssh_config_unsupported(&directive),
+        ProxyChainError::Invalid(hop) => ShellError::ssh_config_proxy_chain(&hop),
+        ProxyChainError::Loop(chain) => ShellError::ssh_config_proxy_chain(&chain),
+    }
 }
 
 pub(crate) fn now_seconds() -> u64 {
@@ -1737,6 +1898,67 @@ mod tests {
         assert_eq!(prepared.session.host, "10.0.0.5");
         assert_eq!(prepared.session.user, "deploy");
         assert_eq!(prepared.session.port, 2222);
+    }
+
+    #[test]
+    fn a_proxy_jump_becomes_the_route_the_connection_will_take() {
+        let _guard = SSH_ENV.lock().expect("the environment lock");
+        let (_directory, _env) = ssh_config(
+            "Host web\n  HostName 10.0.0.5\n  ProxyJump bastion\n\
+             Host bastion\n  HostName 10.0.0.9\n  Port 2200\n  User ops\n",
+        );
+        let (_vault_dir, core) = core_with(aliased(AuthMethod::Agent));
+
+        let prepared = core
+            .prepare_session(&core.session("web-1").expect("session"))
+            .expect("the alias resolves");
+
+        assert_eq!(prepared.session.host, "10.0.0.5");
+        assert_eq!(prepared.proxy.len(), 1);
+        assert_eq!(prepared.proxy[0].host, "10.0.0.9");
+        assert_eq!(prepared.proxy[0].port, 2200);
+        assert_eq!(prepared.proxy[0].user, "ops");
+    }
+
+    #[test]
+    fn saved_jumps_win_over_a_route_in_the_file() {
+        let _guard = SSH_ENV.lock().expect("the environment lock");
+        let (_directory, _env) =
+            ssh_config("Host web\n  HostName 10.0.0.5\n  ProxyJump bastion\nHost bastion\n  HostName 10.0.0.9\n");
+
+        let mut leaf = aliased(AuthMethod::Agent);
+        leaf.jump = vec!["hop".to_owned()];
+        let mut hop = sample("hop", "bastion");
+        hop.host = "10.0.0.9".to_owned();
+
+        let directory = tempdir().expect("temp dir");
+        let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
+        vault.create("correct horse battery staple").expect("create");
+        vault.save_session(leaf, None).expect("save the leaf");
+        vault.save_session(hop, None).expect("save the hop");
+        let core = Core::new(vault).0;
+
+        let prepared = core
+            .prepare_session(&core.session("web-1").expect("session"))
+            .expect("the alias resolves");
+
+        assert!(
+            prepared.proxy.is_empty(),
+            "the saved jumps are the person's own route, not the file's"
+        );
+    }
+
+    #[test]
+    fn a_proxy_cycle_refuses_with_the_chain_it_walked() {
+        let _guard = SSH_ENV.lock().expect("the environment lock");
+        let (_directory, _env) = ssh_config("Host web\n  ProxyJump gateway\nHost gateway\n  ProxyJump web\n");
+        let (_vault_dir, core) = core_with(aliased(AuthMethod::Agent));
+
+        let error = core
+            .prepare_session(&core.session("web-1").expect("session"))
+            .expect_err("a cycle is not a route");
+
+        assert_eq!(error.code(), sevenshell_error::ErrorCode::SshConfigProxyChain);
     }
 
     #[test]

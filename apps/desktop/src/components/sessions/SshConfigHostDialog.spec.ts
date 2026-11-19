@@ -16,7 +16,7 @@ import { i18n } from "@/i18n";
 import type { SshConfigHost } from "@/types/session";
 
 const hosts: SshConfigHost[] = [
-  { alias: "web", host: "10.0.0.5", user: "deploy", port: 22, unsupported: [] },
+  { alias: "web", host: "10.0.0.5", user: "deploy", port: 22, unsupported: [], proxyJump: "bastion" },
   { alias: "db-1", host: "10.0.0.9", user: "postgres", port: 5432, unsupported: [] },
   { alias: "bastion", host: "edge.example.com", user: "ops", port: 22, unsupported: [] },
 ];
@@ -108,6 +108,11 @@ describe("the OpenSSH host filter", () => {
     await type("postgres");
     expect(rows()).toHaveLength(1);
     expect(rows()[0]?.textContent).toContain("db-1");
+  });
+
+  it("shows the route a host from the file goes through", async () => {
+    await type("web");
+    expect(rows()[0]?.textContent).toContain("via bastion");
   });
 
   it("says that nothing matches rather than drawing an empty box", async () => {

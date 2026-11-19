@@ -178,6 +178,9 @@ function endpoint(host: SshConfigHost): string {
                   <span v-if="host.user" class="block truncate font-mono text-[11px] text-muted-foreground">
                     {{ host.user }}
                   </span>
+                  <span v-if="host.proxyJump" class="block truncate font-mono text-[11px] text-muted-foreground">
+                    {{ t("sessions.editor.openssh.viaProxy", { route: host.proxyJump }) }}
+                  </span>
                   <span v-if="host.unsupported.length > 0" class="mt-1 block text-[11px] text-warning">
                     {{ t("sessions.editor.openssh.unsupported", { directives: host.unsupported.join(", ") }) }}
                   </span>

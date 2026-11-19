@@ -927,6 +927,10 @@ pub struct SshConfigHost {
     /// is selectable, and an omitted field is an `undefined` in the interface, not an empty list.
     #[serde(default)]
     pub unsupported: Vec<String>,
+    /// The `ProxyJump` value as written, when the configuration routes this alias through a jump
+    /// host. Absent for an alias that connects directly; `none` is reported as absent too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_jump: Option<String>,
 }
 
 /// Whether the system's own store can open the vault on this machine.

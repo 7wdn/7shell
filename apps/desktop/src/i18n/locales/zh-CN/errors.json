@@ -22,7 +22,8 @@
       "configUnsupported": "本机 OpenSSH 配置使用了 {directive}，当前版本无法按它连接。未发送任何内容。",
       "configUnknownAlias": "~/.ssh/config 中没有与 {alias} 匹配的 Host 块。",
       "configKeyPassphrase": "~/.ssh/config 指定的密钥 {key} 带口令。请把它加入 ssh-agent，或导入保险库。",
-      "configNoKey": "~/.ssh/config 与默认身份文件中没有 {alias} 可用的私钥。"
+      "configNoKey": "~/.ssh/config 与默认身份文件中没有 {alias} 可用的私钥。",
+      "configProxyChain": "无法按 ~/.ssh/config 中的 ProxyJump 链连接：{chain}。未发送任何内容。"
     },
     "rdp": {
       "launchFailed": "无法启动 Windows 远程桌面客户端。"

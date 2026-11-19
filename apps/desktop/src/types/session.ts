@@ -23,6 +23,8 @@ export interface SshConfigHost {
   readonly port?: number;
   /** Directives this build cannot honour; selecting one would make a session that refuses. */
   readonly unsupported: readonly string[];
+  /** The `ProxyJump` value as written, when this alias connects through a jump host. */
+  readonly proxyJump?: string;
 }
 
 /** What the interface may know about an imported key. */

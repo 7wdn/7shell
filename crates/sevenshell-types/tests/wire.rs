@@ -925,6 +925,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             user: Some("deploy".to_owned()),
             port: Some(2222),
             unsupported: Vec::new(),
+            proxy_jump: Some("bastion".to_owned()),
         },
         "SshConfigHost",
     );
