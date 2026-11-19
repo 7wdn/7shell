@@ -97,20 +97,18 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 /**
  * The fields a row can write.
  *
- * Ten settings have no row of their own. Five are dividers somebody drags — the file panel's
+ * Nine settings have no row of their own. Five are dividers somebody drags — the file panel's
  * height, its width when docked to a side, the sidebar's width, the file panel's tree, and the
- * command panel's library; the panel's remembered position is chosen from the terminal's own
- * strip; whether the sidebar is open is a button in the sidebar's own header; the two hand-picked colour sets are five
- * pickers that appear inside the colour-theme row once it says `custom` — a row of their own would
- * be a row that means nothing until another row is set; and the startup update check is a switch
- * drawn inside the update block, where what it is a switch *about* — the answer the channel gave —
- * is on screen beside it. They are reset with the category they belong to —
- * `SettingsPage.fieldsOf` is where that is said — rather than listed here.
+ * command panel's library; whether the sidebar is open is a button in the sidebar's own header;
+ * the two hand-picked colour sets are five pickers that appear inside the colour-theme row once it
+ * says `custom` — a row of their own would be a row that means nothing until another row is set;
+ * and the startup update check is a switch drawn inside the update block, where what it is a switch
+ * *about* — the answer the channel gave — is on screen beside it. They are reset with the category
+ * they belong to — `SettingsPage.fieldsOf` is where that is said — rather than listed here.
  */
 export type SettingsRowField = Exclude<
   PreferenceField,
   | "terminalPanelHeight"
-  | "terminalPanelPlacement"
   | "terminalPanelWidth"
   | "sidebarWidth"
   | "filesTreeWidth"
@@ -786,6 +784,7 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
         { value: "bottom", labelKey: "settings.tabPlacement.bottom" },
         { value: "left", labelKey: "settings.tabPlacement.left" },
         { value: "right", labelKey: "settings.tabPlacement.right" },
+        { value: "titleBar", labelKey: "settings.tabPlacement.titleBar" },
       ],
     },
   },
@@ -856,6 +855,25 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
       options: [
         { value: "split", labelKey: "settings.session.split" },
         { value: "terminal", labelKey: "settings.session.terminal" },
+      ],
+    },
+  },
+  {
+    // The default a terminal is opened with; each tab's own strip menu can move that tab without
+    // touching this, and changing this moves the terminals that are open.
+    id: "file-panel-position",
+    category: "workspace",
+    field: "terminalPanelPlacement",
+    titleKey: "settings.rows.panelPlacement.title",
+    summaryKey: "settings.rows.panelPlacement.summary",
+    helpKey: "settings.rows.panelPlacement.help",
+    control: {
+      kind: "select",
+      options: [
+        { value: "bottom", labelKey: "settings.panelPlacement.bottom" },
+        { value: "left", labelKey: "settings.panelPlacement.left" },
+        { value: "right", labelKey: "settings.panelPlacement.right" },
+        { value: "tab", labelKey: "settings.panelPlacement.tab" },
       ],
     },
   },

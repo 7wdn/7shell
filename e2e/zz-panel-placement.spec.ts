@@ -29,6 +29,22 @@ async function choosePlacement(page: Page, label: string): Promise<void> {
   await page.getByRole("menuitemcheckbox", { name: label, exact: true }).click();
 }
 
+/** The pane of the terminal tab on screen; the others are rendered but hidden. */
+function activePane(page: Page): Locator {
+  return page.locator('[data-tab-pane][data-active="true"]');
+}
+
+function tabs(page: Page): Locator {
+  return page.locator("[data-workspace-tabs] [data-tab]");
+}
+
+/** Puts a terminal tab on screen by its position in the strip. */
+async function activateTab(page: Page, index: number): Promise<void> {
+  const id = await tabs(page).nth(index).getAttribute("data-tab");
+  await tabs(page).nth(index).locator("button").first().click();
+  await expect(page.locator('[data-tab-pane][data-active="true"]')).toHaveAttribute("data-tab-id", id ?? "");
+}
+
 test("the file panel moves between the two sides, the bottom and its own tab", async () => {
   test.skip(
     !LAB_HOST || !LAB_USER || !LAB_PASSWORD,
@@ -107,6 +123,51 @@ test("the file panel moves between the two sides, the bottom and its own tab", a
     );
     // Moving back to a dock is a move: the tab the position opened goes with it.
     await expect(page.locator("[data-workspace-tabs] [data-tab]")).toHaveCount(1, { timeout: 20_000 });
+
+    // Two terminals on the same host have two positions. The first one moving to the file tab is
+    // not a reason for the second one's strip to change or for its panel to go anywhere.
+    await page.locator("[data-new-terminal]").filter({ visible: true }).click();
+    await expect(tabs(page)).toHaveCount(2, { timeout: 20_000 });
+    await expect(activePane(page).locator("[data-terminal-panel]")).toBeVisible({ timeout: 20_000 });
+
+    await activateTab(page, 0);
+    await expect(activePane(page).locator("[data-terminal-panel]")).toBeVisible({ timeout: 10_000 });
+    await choosePlacement(page, "New file manager tab");
+    await expect(tabs(page)).toHaveCount(3, { timeout: 20_000 });
+    await expect(activePane(page).locator("[data-terminal-panel]")).toHaveCount(0);
+
+    await activateTab(page, 0);
+    await expect(activePane(page).locator("[data-panel-placement]")).toHaveAttribute("data-placement", "tab");
+    await expect(activePane(page).locator("[data-terminal-panel]")).toHaveCount(0);
+
+    await activateTab(page, 1);
+    await expect(activePane(page).locator("[data-panel-placement]")).toHaveAttribute("data-placement", "bottom");
+    await expect(activePane(page).locator("[data-terminal-panel]")).toHaveAttribute("data-side", "bottom");
+    // The standalone browser is still exactly one tab, and it is the first terminal's answer, not
+    // something the second terminal was dragged into.
+    await expect(tabs(page)).toHaveCount(3);
+
+    // The second terminal joining the position reuses the browser that is already open.
+    await choosePlacement(page, "New file manager tab");
+    await expect(tabs(page)).toHaveCount(3, { timeout: 20_000 });
+    await activateTab(page, 1);
+    await expect(activePane(page).locator("[data-panel-placement]")).toHaveAttribute("data-placement", "tab");
+
+    // One of the two moving back leaves the browser for the other one.
+    await activateTab(page, 0);
+    await choosePlacement(page, "Bottom");
+    await expect(tabs(page)).toHaveCount(3, { timeout: 20_000 });
+    await expect(activePane(page).locator("[data-terminal-panel]")).toHaveAttribute("data-side", "bottom", {
+      timeout: 20_000,
+    });
+
+    // The last one moving back puts the shared browser down; the terminal gets its own panel.
+    await activateTab(page, 1);
+    await choosePlacement(page, "Bottom");
+    await expect(tabs(page)).toHaveCount(2, { timeout: 20_000 });
+    await expect(activePane(page).locator("[data-terminal-panel]")).toHaveAttribute("data-side", "bottom", {
+      timeout: 20_000,
+    });
   } finally {
     try {
       const tabs = page.locator("[data-workspace-tabs] [data-tab]");

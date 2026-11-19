@@ -81,6 +81,7 @@ import { useUpdatesStore } from "@/stores/updates";
 import {
   CUSTOM_COLOR_KEYS,
   DEFAULT_TERMINAL_FONT,
+  DEFAULT_TERMINAL_PANEL_PLACEMENT,
   DEFAULT_UI_FONT,
   type AppLayout,
   type BackgroundDisplayMode,
@@ -97,6 +98,7 @@ import {
   type SessionReopen,
   type TerminalCursorInactiveStyle,
   type TerminalCursorStyle,
+  type TerminalPanelPlacement,
   type TerminalSchemeSource,
   type ThemeMode,
   type ThemePalette,
@@ -339,25 +341,17 @@ function selectCategory(id: SettingsCategoryId): void {
 /**
  * The fields a category is made of.
  *
- * Seven of them have no row — the file panel's height and side width, its remembered position, the
- * sidebar's width, the file panel's tree width, the command panel's library width, and whether the
- * sidebar is on screen — because nobody chooses them in a row: they are dividers somebody drags,
- * the terminal strip's own menu, and a button in the sidebar's header.
- * "Restore the defaults" still has to put the frame back the way it came, so the category that owns
- * them names them here.
+ * Six of them have no row — the file panel's height and side width, the sidebar's width, the file
+ * panel's tree width, the command panel's library width, and whether the sidebar is on screen —
+ * because nobody chooses them in a row: they are dividers somebody drags and a button in the
+ * sidebar's header. "Restore the defaults" still has to put the frame back the way it came, so the
+ * category that owns them names them here.
  */
 function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
   // Rows that write nothing — the terminal's preview — are not among the fields a category restores.
   const fields: PreferenceField[] = rowsOfCategory(id).flatMap((row) => (row.field ? [row.field] : []));
   if (id === "workspace") {
-    fields.push(
-      "terminalPanelPlacement",
-      "terminalPanelWidth",
-      "terminalPanelHeight",
-      "sidebarWidth",
-      "filesTreeWidth",
-      "sidebarOpen",
-    );
+    fields.push("terminalPanelWidth", "terminalPanelHeight", "sidebarWidth", "filesTreeWidth", "sidebarOpen");
   }
   if (id === "terminal") {
     // The scheme slots and the background choice have no rows of their own: they are drawn inside
@@ -477,6 +471,8 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.locale;
     case "sessionLayout":
       return preferences.sessionLayout;
+    case "terminalPanelPlacement":
+      return preferences.terminalPanelPlacement;
     case "sessionReopen":
       return preferences.sessionReopen;
     case "monitorEnabled":
@@ -633,6 +629,12 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
     case "sessionLayout":
       void preferences.setSessionLayout(value as SessionLayout);
       return;
+    case "terminalPanelPlacement":
+      // The default is for terminals not opened yet; the terminals already open move with it, and
+      // the store keeps any panel with unsaved edits where it is.
+      preferences.setPanelPlacementDefault(value as TerminalPanelPlacement);
+      void terminals.applyPanelPlacementToAll(value as TerminalPanelPlacement);
+      return;
     case "sessionReopen":
       void preferences.setSessionReopen(value as SessionReopen);
       return;
@@ -785,6 +787,11 @@ const canRestore = computed(() => {
 /** Puts the choices on screen back the way a fresh install has them. */
 function restoreDefaults(): void {
   void preferences.reset(fieldsOf(category.value));
+  // The default alone would leave open terminals where they were; restoring the workspace puts
+  // them back too, under the same unsaved-editor guard as any other move.
+  if (category.value === "workspace") {
+    void terminals.applyPanelPlacementToAll(DEFAULT_TERMINAL_PANEL_PLACEMENT);
+  }
 }
 
 /** The button: the rows go straight back, and a list asks first. */

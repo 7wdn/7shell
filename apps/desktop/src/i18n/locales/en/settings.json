@@ -93,6 +93,12 @@
       "split": "Terminal and files",
       "terminal": "Terminal only"
     },
+    "panelPlacement": {
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right",
+      "tab": "File manager tab"
+    },
     "sessionReopen": {
       "ask": "Ask every time",
       "newTab": "Open in a new tab",
@@ -276,7 +282,8 @@
       "top": "Top",
       "bottom": "Bottom",
       "left": "Left side",
-      "right": "Right side"
+      "right": "Right side",
+      "titleBar": "In the title bar"
     },
     "tabGroupMode": {
       "none": "No grouping",
@@ -373,8 +380,8 @@
       },
       "tabPlacement": {
         "title": "Tab bar position",
-        "summary": "Where the tab bar sits: top, bottom, left or right.",
-        "help": "Where the tab bar sits. Horizontal uses vertical space; vertical uses width and shows more names."
+        "summary": "Where the tab bar sits: top, bottom, left, right, or merged into the title bar.",
+        "help": "Where the tab bar sits. Horizontal uses vertical space; vertical uses width and shows more names. In the title bar the tabs share the window's own row, many tabs scroll, and wrapping is off there."
       },
       "tabGroupMode": {
         "title": "Group by",
@@ -505,6 +512,11 @@
         "title": "Opening a session",
         "summary": "A terminal on its own, or with the files under it.",
         "help": "Shows the file browser under the terminal and follows directory changes. Can be toggled per tab."
+      },
+      "panelPlacement": {
+        "title": "File panel position",
+        "summary": "Where a terminal's files open: under it, beside it, or in the file manager tab.",
+        "help": "The default for terminals opened from now on. Each terminal's own strip menu can move that terminal without changing this; changing this moves the terminals that are already open."
       },
       "sessionReopen": {
         "title": "A session that is already open",

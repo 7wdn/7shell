@@ -657,7 +657,7 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             home_layout: HomeLayout::Intro,
             app_layout: AppLayout::Classic,
             tab_layout: TabLayout::Scroll,
-            tab_placement: TabPlacement::Left,
+            tab_placement: TabPlacement::TitleBar,
             tab_group_mode: TabGroupMode::Session,
             tab_sort_mode: TabSortMode::TitleAsc,
             tab_max_width: TabMaxWidth::Compact,
@@ -783,6 +783,11 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         "the panel position travels as the word the menu matches"
     );
     assert_eq!(settings["terminalPanelWidth"], serde_json::json!(420));
+    assert_eq!(
+        settings["tabPlacement"],
+        serde_json::json!("titleBar"),
+        "the title-bar position travels as the camelCase word the settings page matches"
+    );
     assert_eq!(
         settings["fileBookmarks"][0]["label"],
         serde_json::json!("nginx logs"),

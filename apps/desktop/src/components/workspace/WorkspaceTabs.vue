@@ -29,25 +29,15 @@
  * someone typed is still there when they come back to it.
  */
 import {
-  Boxes,
   CircleAlert,
-  Cpu,
   ExternalLink,
   Folder,
-  List,
   ListChecks,
   LoaderCircle,
-  MonitorCog,
-  Network,
   PanelBottom,
   PanelLeft,
   PanelRight,
-  Plus,
   RotateCw,
-  Settings,
-  ShipWheel,
-  Terminal,
-  X,
 } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
@@ -60,9 +50,8 @@ import VmwarePane from "@/components/vmware/VmwarePane.vue";
 import CommandInputBar from "@/components/commands/CommandInputBar.vue";
 import CommandsPanel from "@/components/commands/CommandsPanel.vue";
 import FileBrowser from "@/components/files/FileBrowser.vue";
-import SystemIcon from "@/components/ui/SystemIcon.vue";
+import TabStrip from "@/components/workspace/TabStrip.vue";
 import TerminalSchemeMenu from "@/components/workspace/TerminalSchemeMenu.vue";
-import { connectionMark } from "@/lib/sessions/marks";
 import { protocolSupports } from "@/types/generated/protocols";
 import HostPage from "@/components/inspect/HostPage.vue";
 import NetworkReport from "@/components/inspect/NetworkReport.vue";
@@ -74,25 +63,16 @@ import SplitDivider from "@/components/workspace/SplitDivider.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { MENU_TITLES } from "@/lib/menu/titles";
-import { panelPlacementMenu, tabMenu } from "@/lib/menu/workspace";
-import { sessionTabTitle } from "@/lib/sessions/reopen";
+import { panelPlacementMenu } from "@/lib/menu/workspace";
 import { MIN_PANE_PX, SIDE_DIVIDER_PX, SIDE_PANE_KEEP_PX } from "@/lib/workspace/split";
-import { TAB_MAX_WIDTH_PX, type TerminalPanelPlacement } from "@/types/app";
+import { type TerminalPanelPlacement } from "@/types/app";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
-import {
-  type TerminalTab,
-  type WorkspaceTab,
-  type InspectView,
-  sessionOf,
-  useTerminalsStore,
-} from "@/stores/terminals";
+import { type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores/terminals";
 
 const { t } = useI18n();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
-const app = useAppStore();
 const { openMenu } = useContextMenu();
 
 /**
@@ -157,10 +137,10 @@ function showFiles(tab: TerminalTab): void {
   if (!protocolSupports(tab.session.protocol, "sftp")) {
     return;
   }
-  // The remembered position may be the standalone tab, which is the browser this build already
-  // has: "Files" means the same thing in all four positions.
-  if (preferences.terminalPanelPlacement === "tab") {
-    void terminals.openFiles(tab.session);
+  // A terminal whose position is the standalone tab shows its files there; "Files" means the same
+  // thing in all four positions, and the browser stays the position's while this tab is using it.
+  if (terminals.effectivePlacement(tab) === "tab") {
+    void terminals.openFiles(tab.session, { origin: "placement" });
     return;
   }
   if (panelShowing(tab) && panelTab.value[tab.id] !== "commands") {
@@ -178,15 +158,16 @@ function showFiles(tab: TerminalTab): void {
 /**
  * Where the panel is drawn right now.
  *
- * The command panel has no standalone tab to move to, so it keeps the bottom when the remembered
- * answer is that tab; every other position applies to whichever half is showing, which is what
+ * The command panel has no standalone tab to move to, so it keeps the bottom when this tab's
+ * position is that tab; every other position applies to whichever half is showing, which is what
  * "move the panel" means while the commands are the half on screen.
  */
 function panelPlacement(tab: TerminalTab): TerminalPanelPlacement {
-  if (preferences.terminalPanelPlacement === "tab" && panelTab.value[tab.id] === "commands") {
+  const placement = terminals.effectivePlacement(tab);
+  if (placement === "tab" && panelTab.value[tab.id] === "commands") {
     return "bottom";
   }
-  return preferences.terminalPanelPlacement;
+  return placement;
 }
 
 /** The side the panel is docked to, or nothing when it is under the terminal. */
@@ -214,17 +195,17 @@ function panelStyle(tab: TerminalTab): Record<string, string> | undefined {
   };
 }
 
-/** What the Files button says it will do, which depends on where the remembered position puts it. */
+/** What the Files button says it will do, which depends on where this tab's position puts it. */
 function filesButtonTitle(tab: TerminalTab): string {
-  if (preferences.terminalPanelPlacement === "tab") {
+  if (terminals.effectivePlacement(tab) === "tab") {
     return t("terminal.panel.openTab");
   }
   return filesShowing(tab) ? t("terminal.panel.close") : t("terminal.panel.open");
 }
 
-/** The mark the placement button wears: the remembered position, which is about files alone. */
-function panelIcon() {
-  const placement = preferences.terminalPanelPlacement;
+/** The mark the placement button wears: this tab's position, which is about files alone. */
+function panelIcon(tab: TerminalTab) {
+  const placement = terminals.effectivePlacement(tab);
   if (placement === "tab") return ExternalLink;
   if (placement === "left") return PanelLeft;
   if (placement === "right") return PanelRight;
@@ -232,107 +213,31 @@ function panelIcon() {
 }
 
 /**
- * Takes the panel to one of its four positions.
+ * Takes this tab's files to one of their four positions.
  *
- * A tab means the standalone browser this build already opens; the docked panel is closed first,
- * because two live browsers on one directory would disagree the moment either one moved. The other
- * three keep the panel open and simply let the workspace draw it somewhere else.
+ * A tab means the standalone browser the session shares; the docked panel is closed first, because
+ * two live browsers on one directory would disagree the moment either one moved. The other three
+ * keep the panel open and simply let the workspace draw it somewhere else. The store owns the
+ * move and the shared browser's lifespan; this only decides what the panel's own half does.
  */
 async function choosePlacement(tab: TerminalTab, placement: TerminalPanelPlacement): Promise<void> {
-  await preferences.setTerminalPanelPlacement(placement);
-  if (placement === "tab") {
-    if (tab.panel || panelTab.value[tab.id] === "commands") {
-      if (tab.panel) {
-        await terminals.togglePanel(tab);
-      }
-      delete panelTab.value[tab.id];
-    }
-    await terminals.openFiles(tab.session, { origin: "placement" });
-    return;
-  }
-  // The tab the position opened goes with the position; a tab the person opened, or one holding
-  // unsaved text, is left where it is (the store decides, and says why when it keeps one).
-  await terminals.releasePlacementFiles(tab.session.id);
-  // A side chosen while the panel is away opens the files in it; one chosen while a half is
-  // already showing moves that half rather than replacing what somebody was looking at.
-  if (!panelShowing(tab)) {
-    panelTab.value[tab.id] = "files";
-    if (tab.status === "open") {
-      await terminals.openPanel(tab);
-    }
+  // A half already on screen moves rather than being replaced: only a panel that is away needs the
+  // files opened for it, and choosing a tab closes the panel instead.
+  const openDock = placement !== "tab" && !panelShowing(tab);
+  const moved = await terminals.changeTabPanelPlacement(tab, placement, { remember: true, openDock });
+  if (moved && placement === "tab") {
+    delete panelTab.value[tab.id];
   }
 }
 
-/** The small menu beside Files: the four positions, with the remembered one ticked. */
+/** The small menu beside Files: the four positions, with this tab's own ticked. */
 function openPlacementMenu(event: MouseEvent, tab: TerminalTab): void {
   openMenu(
     event,
     { key: MENU_TITLES.panelPlacement },
-    panelPlacementMenu(preferences.terminalPanelPlacement, {
+    panelPlacementMenu(terminals.effectivePlacement(tab), {
       choose: (placement) => void choosePlacement(tab, placement),
     }),
-  );
-}
-
-/** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
-function hasHandle(tab: WorkspaceTab): boolean {
-  if (
-    tab.kind === "inspect" ||
-    tab.kind === "settings" ||
-    tab.kind === "batch" ||
-    tab.kind === "container" ||
-    tab.kind === "kubernetes" ||
-    tab.kind === "vmware"
-  ) {
-    return false;
-  }
-  return tab.handle !== null;
-}
-
-/**
- * The strip's menu, which is about the tab under the pointer.
- *
- * Closing the others and the ones to the right go through the store rather than through this
- * component, because a tab being closed can take a browser and a channel with it and only the store
- * knows how that conversation is had — and how a refusal leaves things.
- */
-function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void {
-  openMenu(
-    event,
-    { key: MENU_TITLES.tab },
-    tabMenu(
-      {
-        kind: tab.kind,
-        // The settings page has no stream of its own either: it writes a file rather than holding
-        // a connection, so there is nothing for the menu to offer a retry for.
-        status:
-          tab.kind === "inspect" ||
-          tab.kind === "settings" ||
-          tab.kind === "batch" ||
-          tab.kind === "container" ||
-          tab.kind === "kubernetes" ||
-          tab.kind === "vmware"
-            ? null
-            : tab.status,
-        hasHandle: hasHandle(tab),
-        index,
-        total: drawnIds.value.length,
-        reconnectable: reconnectable.value,
-      },
-      {
-        duplicate: () => void terminals.duplicate(tab.id),
-        close: () => void terminals.closeTab(tab.id),
-        closeOthers: () => void terminals.closeOthers(tab.id),
-        // The drawn order, because that is what "to the right" and "to the left" mean to somebody
-        // looking at the bar: under a sort or a grouping the array order is not the drawn one.
-        closeToTheLeft: () => void terminals.closeToTheLeft(tab.id, drawnIds.value),
-        closeToTheRight: () => void terminals.closeToTheRight(tab.id, drawnIds.value),
-        closeAll: () => void terminals.closeAll(),
-        reconnect: () => void terminals.reconnect(tab.id),
-        reconnectAll: () => void terminals.reconnectAll(),
-        disconnect: () => void terminals.disconnect(tab.id),
-      },
-    ),
   );
 }
 
@@ -348,117 +253,11 @@ function translateStatus(tab: TerminalTab): string | null {
   return tab.reason ? t("terminal.tab.endedReason", { reason: tab.reason }) : t("terminal.tab.endedNoReason");
 }
 
-/** The connection kind's own mark, for the tabs whose row is about a kind rather than a host. */
-function tabMark(tab: WorkspaceTab) {
-  const session = sessionOf(tab);
-  return session ? connectionMark(session, app.info?.os) : null;
-}
-
-/** The host's own mark, once a terminal has asked what the machine is. */
-function tabSystem(tab: WorkspaceTab) {
-  const session = sessionOf(tab);
-  return session ? terminals.systemOf(session) : null;
-}
-
-/** What a tab says in the strip: which session, or which page. */
-function tabLabel(tab: WorkspaceTab): string {
-  switch (tab.kind) {
-    case "inspect":
-      // A page names the machine it is about rather than only its kind: two hosts' system pages
-      // look identical in a tab strip otherwise, and which machine a tab is showing is exactly
-      // what somebody reads a strip for.
-      return `${t(inspectTitleKey(tab.view))} · ${tab.session.host}`;
-    case "settings":
-      return t("settings.title");
-    case "batch":
-      return t("batch.title");
-    default:
-      // A session opened twice is drawn twice, and a strip of two identical names is a strip
-      // somebody clicks wrong: the second one says which copy it is (see `lib/sessions/reopen`).
-      return sessionTabTitle(tab.session.name, terminals.copyOf(tab.id));
-  }
-}
-
-function inspectTitleKey(view: InspectView): string {
-  switch (view) {
-    case "system":
-      return "inspect.system.title";
-    case "processes":
-      return "inspect.processes.title";
-    default:
-      return "inspect.network.title";
-  }
-}
-
-/** What the close button says. Each kind of tab closes something of its own. */
-function closeLabel(tab: WorkspaceTab): string {
-  switch (tab.kind) {
-    case "files":
-      return t("files.tab.close");
-    case "inspect":
-      return t("inspect.tab.close");
-    case "settings":
-      return t("settings.tab.close");
-    case "batch":
-      return t("batch.tab.close");
-    case "container":
-      return t("container.tab.close");
-    case "kubernetes":
-      return t("k8s.tab.close");
-    default:
-      return t("terminal.tab.close");
-  }
-}
-
-/** A file browser has no stream to end, so among those only a failed one has a dot to show. */
-function dotClass(tab: WorkspaceTab): string | null {
-  if (tab.kind === "files") {
-    return tab.status === "failed" ? "bg-destructive" : null;
-  }
-  // Neither page has a status of its own: an inspect page's connection belongs to a terminal
-  // somewhere else, and the settings page has none to report.
-  if (
-    tab.kind === "inspect" ||
-    tab.kind === "settings" ||
-    tab.kind === "batch" ||
-    tab.kind === "container" ||
-    tab.kind === "kubernetes" ||
-    tab.kind === "vmware"
-  ) {
-    return null;
-  }
-  switch (tab.status) {
-    case "failed":
-      return "bg-destructive";
-    case "ended":
-      return "bg-warning";
-    default:
-      return "bg-success";
-  }
-}
-
-/**
- * Whether the chrome is drawn in the classic layout: one tab bar, tighter headers.
- *
- * Asked here rather than expressed in the stylesheet because the tab's other classes are already a
- * function of its state — an active tab is a different shape, not a different colour — and two
- * systems deciding the same element's classes is how one of them ends up winning by accident. The
- * rest of the choice is a number, and that one is a token (see `globals.css`).
- */
-const classic = computed(() => preferences.appLayout === "classic");
-
-/**
- * Whether the bar wraps instead of scrolling.
- *
- * Read here rather than left to the stylesheet, because wrapping is not only a look: the bar stops
- * being one row tall, and the panel underneath gives up the difference — which is the whole trade the
- * setting makes, and it has to be decided where the bar is drawn. A bar down one side never wraps:
- * its rows are all the width it has, and the tabs scroll down it by definition.
- */
-const wrapping = computed(() => preferences.tabLayout === "wrap" && !vertical.value);
-
 /** Whether the bar is a column rather than a row, which follows from the edge it is drawn against. */
 const vertical = computed(() => preferences.tabPlacement === "left" || preferences.tabPlacement === "right");
+
+/** Whether the strip is drawn by the workspace at all: in the title bar it belongs to the window. */
+const stripInWorkspace = computed(() => preferences.tabPlacement !== "titleBar");
 
 /**
  * Whether the bar is drawn after the panes rather than before them.
@@ -468,335 +267,19 @@ const vertical = computed(() => preferences.tabPlacement === "left" || preferenc
  * order rather than by being written twice.
  */
 const atEnd = computed(() => preferences.tabPlacement === "bottom" || preferences.tabPlacement === "right");
-
-/**
- * The tabs in the order the bar draws them.
- *
- * The store's array is the manual order — what the tabs were opened in, until somebody drags one —
- * and the two other orders are read off it rather than written into it: a sorted copy each time, so
- * that going back to the manual order is the list that was always there. Names are compared in the
- * interface's own language, because that is the language they are written in.
- */
-const ordered = computed(() => {
-  const tabs = terminals.tabs;
-  if (preferences.tabSortMode === "created-asc") {
-    const opened = terminals.openedOrder;
-    return [...tabs].sort((left, right) => opened.indexOf(left.id) - opened.indexOf(right.id));
-  }
-  if (preferences.tabSortMode === "title-asc") {
-    return [...tabs].sort((left, right) => tabLabel(left).localeCompare(tabLabel(right), preferences.locale));
-  }
-  return tabs;
-});
-
-/** One line of the bar: a run's name, or a tab. */
-type StripEntry =
-  | { readonly kind: "group"; readonly id: string; readonly label: string }
-  | {
-      readonly kind: "tab";
-      readonly id: string;
-      readonly tab: WorkspaceTab;
-    };
-
-/**
- * The bar as it is drawn: the tabs in their order, cut into runs by session when the grouping says so.
- *
- * The group a tab belongs to is the session it is about. The tabs that are about no host at all — the
- * settings page and the batch panel — are drawn after every run rather than under a heading of their
- * own: they belong to nobody's session, and a heading for them would be a heading for nothing.
- */
-const strip = computed<StripEntry[]>(() => {
-  if (preferences.tabGroupMode !== "session") {
-    return ordered.value.map((tab) => ({ kind: "tab" as const, id: tab.id, tab }));
-  }
-  const entries: StripEntry[] = [];
-  const seen = new Set<string>();
-  for (const tab of ordered.value) {
-    const session = sessionOf(tab);
-    if (!session) {
-      continue;
-    }
-    if (!seen.has(session.id)) {
-      seen.add(session.id);
-      entries.push({ kind: "group", id: `group:${session.id}`, label: session.name });
-    }
-    entries.push({ kind: "tab", id: tab.id, tab });
-  }
-  for (const tab of ordered.value) {
-    if (!sessionOf(tab)) {
-      entries.push({ kind: "tab", id: tab.id, tab });
-    }
-  }
-  return entries;
-});
-
-/** The ids in the order they are drawn, which is what the bar's own menu counts to the right. */
-const drawnIds = computed(() => strip.value.flatMap((entry) => (entry.kind === "tab" ? [entry.id] : [])));
-
-/** How many terminal tabs are not open, which is what "connect all" would reconnect. */
-const reconnectable = computed(
-  () =>
-    terminals.tabs.filter((entry): entry is TerminalTab => entry.kind === "terminal" && entry.status !== "open").length,
-);
-
-/**
- * How wide a horizontal tab may be drawn, or nothing where the name sets the width.
- *
- * The step is the setting and the pixels are what drawing it means, so the number is looked up here
- * rather than stored in the settings file: somebody choosing "medium" is choosing a look, and a build
- * that decided medium is a different number of pixels would be changing the drawing, not the choice.
- */
-const maxTabWidth = computed(() => TAB_MAX_WIDTH_PX[preferences.tabMaxWidth]);
-
-/**
- * Whether a tab can be dragged, which is only while the bar draws the manual order.
- *
- * Dragging under a sort would be a move into a list that is not the one on screen: the tab would land
- * somewhere in the array and the bar would redraw it wherever the sort says, which is a gesture that
- * appears to do nothing. So the handle is there only in the manual order — which is also the order a
- * drag writes to.
- */
-const draggable = computed(() => preferences.tabSortMode === "manual");
-
-/** The tab being dragged, and the one it is over, while a drag is in flight. */
-const dragging = ref<string | null>(null);
-const dragOver = ref<string | null>(null);
-
-function onDragStart(event: DragEvent, tab: WorkspaceTab): void {
-  if (!draggable.value) {
-    return;
-  }
-  dragging.value = tab.id;
-  event.dataTransfer?.setData("text/plain", tab.id);
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = "move";
-  }
-}
-
-function onDragOver(event: DragEvent, tab: WorkspaceTab): void {
-  if (!dragging.value || dragging.value === tab.id) {
-    return;
-  }
-  // A drop is only allowed where the drag over it said it would be, which is the whole of what the
-  // browser wants to know before it will let one happen.
-  event.preventDefault();
-  dragOver.value = tab.id;
-}
-
-function onDrop(event: DragEvent, tab: WorkspaceTab): void {
-  const moved = dragging.value;
-  dragging.value = null;
-  dragOver.value = null;
-  if (!moved || moved === tab.id) {
-    return;
-  }
-  event.preventDefault();
-  terminals.moveTab(moved, tab.id);
-}
-
-function onDragEnd(): void {
-  dragging.value = null;
-  dragOver.value = null;
-}
-
-/**
- * What a tab wears: the layout's shape and the tab's own state together.
- *
- * One function rather than nested conditions in the template, because the two layouts disagree about
- * the shape of a tab and agree about what its state means — in both, the tab on screen is painted in
- * the panel's own surface and the ones beside it are not. The separated bar is a row of boxes with
- * air around each one, so the tab on screen is a box with a brighter edge; the classic bar is one run
- * of tabs joined to the top edge, so there the tab on screen is marked by a line along its bottom,
- * which is the edge the panel starts at.
- */
-function tabClass(tab: WorkspaceTab): string {
-  const active = tab.id === terminals.activeTabId;
-  if (vertical.value) {
-    // A column of names, in both chrome layouts: a box with a border inside a bar that is itself one
-    // row wide would be a box drawn twice, and what tells the tab on screen apart is the rail down its
-    // side and the surface under it.
-    return cn(
-      "flex w-full shrink-0 items-center gap-2 border-l-[3px] px-2 py-1.5",
-      active
-        ? "border-l-primary bg-accent text-foreground"
-        : "border-l-transparent text-muted-foreground hover:bg-accent/60",
-    );
-  }
-  const state = active
-    ? classic.value
-      ? "border-b-foreground/60 bg-background text-foreground"
-      : "border-foreground/25 bg-background text-foreground"
-    : classic.value
-      ? "border-b-transparent text-muted-foreground hover:bg-accent/60"
-      : "border-border/60 text-muted-foreground hover:bg-accent/60";
-  const shape = classic.value
-    ? "h-8 border-r border-b-2 border-border px-3"
-    : "rounded-md border border-border/60 px-2 py-1";
-  return cn("flex shrink-0 items-center gap-1", shape, state, dragging.value === tab.id && "opacity-50");
-}
-
-/** What the run a group of tabs belongs to is called, which is a name rather than a control. */
-function groupClass(): string {
-  return cn(
-    "flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground",
-    vertical.value ? "w-full px-2 pt-2 pb-0.5" : "px-1.5",
-  );
-}
-
-/** The size a tab is drawn at: the step's pixels across, or whatever the name asks for. */
-function tabStyle(): Record<string, string> | undefined {
-  if (vertical.value || maxTabWidth.value === null) {
-    return undefined;
-  }
-  return { maxWidth: `${maxTabWidth.value}px` };
-}
-
-/**
- * The session the "+" in the strip would open another terminal for: the one the tab on screen is
- * about, when that session opens a shell.
- *
- * The button is absent rather than disabled for a settings page, a file browser of a folder
- * service or a container workspace — there is no second shell to give, and a disabled control
- * would advertise one that does not exist. The session's name is in the tooltip because two
- * terminals of two machines look identical in a strip otherwise.
- */
-const newTerminalSession = computed(() => {
-  const tab = terminals.activeTab;
-  const session = tab ? sessionOf(tab) : undefined;
-  return session && protocolSupports(session.protocol, "shell") ? session : undefined;
-});
-
-function openNewTerminal(): void {
-  const session = newTerminalSession.value;
-  if (session) {
-    void terminals.open(session);
-  }
-}
 </script>
 
 <template>
   <section :class="cn('flex min-h-0 flex-1', vertical ? 'flex-row' : 'flex-col')">
-    <!--
-      The strip of tabs is chrome, and so is the terminal's own strip below: a name on a tab is
-      something to press rather than to copy, and a drag along it is somebody trying to scroll or
-      re-order. `docs/ui-conventions.md` says which surfaces are text and which are not.
-    -->
-    <div
-      data-workspace-tabs
-      :data-tab-placement="preferences.tabPlacement"
-      :class="
-        cn(
-          // The bar itself. Across the window it is one row that scrolls sideways, or as many rows as
-          // the tabs need — and a bar that wraps has no fixed height and nothing to clip, because the
-          // rows it grew are the point, and the panel below is what gets shorter. Down one side it is
-          // a column, which scrolls the other way and never wraps.
-          'flex shrink-0 bg-card/30 cursor-default select-none',
-          vertical
-            ? 'h-full w-60 flex-col overflow-y-auto py-1'
-            : 'items-stretch ' + (wrapping ? 'flex-wrap content-start overflow-visible' : 'overflow-x-auto'),
-          // The edge it is drawn against. A bar at the far end is drawn after the panes rather than
-          // before them, which is the same markup read in the other order.
-          vertical
-            ? preferences.tabPlacement === 'left'
-              ? 'order-1 border-r border-border'
-              : 'order-2 border-l border-border'
-            : preferences.tabPlacement === 'top'
-              ? 'order-1 border-b border-border'
-              : 'order-2 border-t border-border',
-          // The tabs themselves: boxes with air around them, or one run joined to the edge. The
-          // heights are close on purpose — the room this layout saves is in the headers, not here.
-          vertical ? 'gap-0.5 px-1.5' : classic ? 'gap-0 px-0' : 'gap-1.5 px-2 py-1.5',
-        )
-      "
-    >
-      <template v-for="entry in strip" :key="entry.id">
-        <!--
-          A run of tabs that belong to one session, named once: the grouping is a heading rather than
-          an indent, because the tabs inside it are the same tabs and every one of them still has to
-          be readable and pressable.
-        -->
-        <div v-if="entry.kind === 'group'" data-tab-group :class="groupClass()">
-          <span class="truncate">{{ entry.label }}</span>
-        </div>
-
-        <div
-          v-else
-          :class="tabClass(entry.tab)"
-          :style="tabStyle()"
-          :draggable="draggable"
-          :data-tab="entry.tab.id"
-          :data-drag-over="dragOver === entry.tab.id ? 'true' : undefined"
-          @contextmenu="openTabMenu($event, entry.tab, drawnIds.indexOf(entry.tab.id))"
-          @dragstart="onDragStart($event, entry.tab)"
-          @dragover="onDragOver($event, entry.tab)"
-          @drop="onDrop($event, entry.tab)"
-          @dragend="onDragEnd"
-        >
-          <button
-            type="button"
-            :class="cn('flex min-w-0 items-center gap-2 text-xs', vertical ? 'flex-1 py-1' : 'py-1.5')"
-            @click="terminals.activate(entry.tab.id)"
-          >
-            <span v-if="dotClass(entry.tab)" class="size-1.5 shrink-0 rounded-full" :class="dotClass(entry.tab)"></span>
-            <SystemIcon v-if="tabMark(entry.tab)" :system="null" :mark="tabMark(entry.tab)" :size="14" />
-            <SystemIcon
-              v-else-if="entry.tab.kind === 'terminal' && tabSystem(entry.tab)"
-              :system="tabSystem(entry.tab)"
-              :size="14"
-            />
-            <Terminal v-else-if="entry.tab.kind === 'terminal'" :size="12" class="shrink-0" />
-            <Folder v-else-if="entry.tab.kind === 'files'" :size="12" class="shrink-0" />
-            <Settings v-else-if="entry.tab.kind === 'settings'" :size="12" class="shrink-0" />
-            <ListChecks v-else-if="entry.tab.kind === 'batch'" :size="12" class="shrink-0" />
-            <Boxes v-else-if="entry.tab.kind === 'container'" :size="12" class="shrink-0" />
-            <ShipWheel v-else-if="entry.tab.kind === 'kubernetes'" :size="12" class="shrink-0" />
-            <MonitorCog v-else-if="entry.tab.kind === 'vmware'" :size="12" class="shrink-0" />
-            <Cpu v-else-if="entry.tab.view === 'system'" :size="12" class="shrink-0" />
-            <List v-else-if="entry.tab.view === 'processes'" :size="12" class="shrink-0" />
-            <Network v-else :size="12" class="shrink-0" />
-            <!-- The whole name on hover, which is what makes a width step a choice rather than a
-                 loss: a truncated tab is read by its first word and its title. -->
-            <span class="truncate" :title="tabLabel(entry.tab)">{{ tabLabel(entry.tab) }}</span>
-          </button>
-          <button
-            type="button"
-            class="grid size-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            :title="closeLabel(entry.tab)"
-            :aria-label="closeLabel(entry.tab)"
-            @click="terminals.closeTab(entry.tab.id)"
-          >
-            <X :size="11" />
-          </button>
-        </div>
-      </template>
-
-      <!--
-        One more terminal on the machine the tab on screen is about. It is the strip's own
-        "duplicate", reachable without knowing that a tab's menu has one — and it disappears when
-        the tab is about something a shell would not be: a cluster, a container engine, a folder.
-      -->
-      <button
-        v-if="newTerminalSession"
-        type="button"
-        data-new-terminal
-        :class="
-          cn(
-            'grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-            vertical ? 'mx-1.5 my-1' : 'my-1.5',
-          )
-        "
-        :title="t('terminal.tab.newTerminal', { name: newTerminalSession.name })"
-        :aria-label="t('terminal.tab.newTerminal', { name: newTerminalSession.name })"
-        @click.stop="openNewTerminal()"
-      >
-        <Plus :size="13" />
-      </button>
-    </div>
+    <TabStrip v-if="stripInWorkspace" />
 
     <div
       v-for="tab in terminals.tabs"
       v-show="tab.id === terminals.activeTabId"
       :key="tab.id"
+      data-tab-pane
+      :data-tab-id="tab.id"
+      :data-active="tab.id === terminals.activeTabId"
       :class="cn('flex min-h-0 flex-1 flex-col', atEnd ? 'order-1' : 'order-2')"
     >
       <template v-if="tab.kind === 'terminal'">
@@ -879,13 +362,14 @@ function openNewTerminal(): void {
                 v-if="protocolSupports(tab.session.protocol, 'sftp')"
                 type="button"
                 data-panel-placement
+                :data-placement="terminals.effectivePlacement(tab)"
                 class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                 :title="t('terminal.panel.position')"
                 :aria-label="t('terminal.panel.position')"
                 aria-haspopup="true"
                 @click.stop="openPlacementMenu($event, tab)"
               >
-                <component :is="panelIcon()" :size="11" />
+                <component :is="panelIcon(tab)" :size="11" />
               </button>
               <button
                 type="button"

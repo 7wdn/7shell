@@ -31,7 +31,8 @@
       "placeLeft": "Left",
       "placeRight": "Right",
       "placeTab": "New file manager tab",
-      "tabKeptUnsaved": "The file tab stays open because it has unsaved changes."
+      "tabKeptUnsaved": "The file tab stays open because it has unsaved changes.",
+      "panelKeptUnsaved": "The file panel stays open because it has unsaved changes. Close the editor, then move it."
     },
     "scheme": {
       "title": "Terminal colour scheme",

@@ -54,7 +54,13 @@ let app: App | undefined;
 
 /** Mounts the workspace over the tabs a case needs, with the first of them on screen. */
 async function renderTabs(
-  tabs: { kind: "terminal"; id: string; session: Session; panel?: TerminalPanel | null }[],
+  tabs: {
+    kind: "terminal";
+    id: string;
+    session: Session;
+    panel?: TerminalPanel | null;
+    panelPlacement?: "bottom" | "left" | "right" | "tab";
+  }[],
 ): Promise<void> {
   const terminals = useTerminalsStore();
   terminals.tabs = tabs.map((tab) => ({
@@ -65,6 +71,7 @@ async function renderTabs(
     status: "open" as const,
     failure: null,
     panel: tab.panel ?? null,
+    panelPlacement: tab.panelPlacement,
   }));
   // The order these tabs were opened in, which the store keeps beside the tabs themselves: it is
   // what says which copy of a session a tab is, so a case here writes the pair the way the store
@@ -72,6 +79,8 @@ async function renderTabs(
   terminals.openedOrder = tabs.map((tab) => tab.id);
   terminals.activeTabId = tabs[0]?.id ?? null;
 
+  app?.unmount();
+  host.innerHTML = "";
   app = createApp({ render: () => h(WorkspaceTabs) }).use(i18n);
   app.mount(host);
   await nextTick();
@@ -253,6 +262,13 @@ describe("the bar's own choices", () => {
     await render(openPanel);
     expect(strip().classList.contains("order-2"), "at the bottom it is drawn after the pane").toBe(true);
     expect(strip().classList.contains("border-t"), "and the line between them is its own top edge").toBe(true);
+  });
+
+  it("leaves the strip to the title bar when that is the chosen position", async () => {
+    usePreferencesStore().setTabPlacement("titleBar");
+    await render(openPanel);
+
+    expect(host.querySelector("[data-workspace-tabs]")).toBeNull();
   });
 
   it("names each session once when the tabs are grouped by one", async () => {
@@ -442,5 +458,23 @@ describe("where the file panel sits", () => {
 
     await vi.waitFor(() => expect(useTerminalsStore().tabs.some((tab) => tab.kind === "files")).toBe(true));
     expect(host.querySelector("[data-terminal-panel]")).toBeNull();
+  });
+
+  it("draws and marks each terminal by its own position, not the remembered default", async () => {
+    usePreferencesStore().terminalPanelPlacement = "bottom";
+    await renderTabs([
+      { kind: "terminal", id: "tab-1", session, panelPlacement: "tab" },
+      { kind: "terminal", id: "tab-2", session, panel: openPanel, panelPlacement: "bottom" },
+    ]);
+
+    const activePane = (): HTMLElement | null => host.querySelector('[data-tab-pane][data-active="true"]');
+    expect(activePane()?.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("tab");
+    expect(activePane()?.querySelector("[data-terminal-panel]")).toBeNull();
+
+    useTerminalsStore().activeTabId = "tab-2";
+    await nextTick();
+
+    expect(activePane()?.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("bottom");
+    expect(activePane()?.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("bottom");
   });
 });

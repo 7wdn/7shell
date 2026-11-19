@@ -802,6 +802,136 @@ describe("terminals store", () => {
     expect(filesTab(store)?.origin).toBe("manual");
   });
 
+  it("moves one terminal's files without moving its neighbour's", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    sessionOpenMock
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-a" })
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-b" });
+    filesOpenMock
+      .mockResolvedValueOnce(filesOpened())
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f-b" })
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f-shared" });
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.open(session);
+    const [a, b] = store.tabs as [TerminalTab, TerminalTab];
+    expect(a.panel?.handle).toBe("f1");
+    expect(b.panel?.handle).toBe("f-b");
+
+    await store.changeTabPanelPlacement(a, "tab", { remember: true });
+    expect(store.effectivePlacement(a)).toBe("tab");
+    expect(store.effectivePlacement(b)).toBe("bottom");
+    expect(a.panel).toBeNull();
+    expect(b.panel?.handle).toBe("f-b");
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(1);
+    expect(filesTab(store)?.handle).toBe("f-shared");
+    // The choice is what the next terminal is opened with, not only this one's answer.
+    expect(usePreferencesStore().terminalPanelPlacement).toBe("tab");
+
+    // The second terminal joins the same browser rather than opening a second copy of it.
+    await store.changeTabPanelPlacement(b, "tab", { remember: true });
+    expect(store.effectivePlacement(b)).toBe("tab");
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(1);
+    expect(filesOpenMock).toHaveBeenCalledTimes(3);
+
+    // One terminal leaving the position leaves the browser for the other one.
+    await store.changeTabPanelPlacement(a, "bottom", { remember: true });
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(1);
+    // The last one leaving puts it down.
+    await store.changeTabPanelPlacement(b, "bottom", { remember: true });
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(0);
+    expect(filesCloseMock).toHaveBeenCalledWith("f-shared");
+  });
+
+  it("puts the shared file tab down when the last terminal using it closes", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    sessionOpenMock
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-a" })
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-b" });
+    filesOpenMock
+      .mockResolvedValueOnce(filesOpened())
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f-b" })
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f-shared" });
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.open(session);
+    const [a, b] = store.tabs as [TerminalTab, TerminalTab];
+    await store.changeTabPanelPlacement(a, "tab");
+    await store.changeTabPanelPlacement(b, "tab");
+
+    await store.closeTab(a.id);
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(1);
+    expect(filesCloseMock).not.toHaveBeenCalledWith("f-shared");
+
+    await store.closeTab(b.id);
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(0);
+    expect(filesCloseMock).toHaveBeenCalledWith("f-shared");
+  });
+
+  it("moves every open terminal for a new default but keeps a panel with unsaved text", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    sessionOpenMock
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-a" })
+      .mockResolvedValueOnce({ ...opened(), handle: "handle-b" });
+    filesOpenMock
+      .mockResolvedValueOnce(filesOpened())
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f-b" })
+      .mockResolvedValueOnce({ ...filesOpened(), handle: "f-shared" });
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+    await store.open(session);
+    const [a, b] = store.tabs as [TerminalTab, TerminalTab];
+    useFilesStore().setUnsaved("f1:/home/user/notes.txt", true);
+
+    await store.applyPanelPlacementToAll("tab");
+
+    // The terminal with work in its panel stays where the work is; the other one moves.
+    expect(store.effectivePlacement(a)).toBe("bottom");
+    expect(a.panel?.handle).toBe("f1");
+    expect(store.effectivePlacement(b)).toBe("tab");
+    expect(b.panel).toBeNull();
+    expect(filesTab(store)?.handle).toBe("f-shared");
+    expect(useToast().message.value).toContain("unsaved changes");
+
+    await store.applyPanelPlacementToAll("bottom");
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(0);
+  });
+
+  it("lets go of a panel that finishes opening after the tab moved to the file tab", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    sessionOpenMock.mockResolvedValue({ ...opened(), handle: "handle-a" });
+    type FilesOutcome = Awaited<ReturnType<typeof filesOpen>>;
+    let finish!: (outcome: FilesOutcome) => void;
+    const pending = new Promise<FilesOutcome>((resolve) => {
+      finish = resolve;
+    });
+    filesOpenMock.mockReturnValueOnce(pending);
+
+    const store = useTerminalsStore();
+    open();
+    const opening = store.open(session);
+    await vi.waitFor(() => expect(terminalTab(store)).toBeDefined());
+    const tab = terminalTabOrFail(store);
+    expect(tab.panel?.status).toBe("opening");
+
+    filesOpenMock.mockResolvedValueOnce({ ...filesOpened(), handle: "f-shared" });
+    await store.changeTabPanelPlacement(tab, "tab");
+
+    finish({ ...filesOpened(), handle: "f-late" });
+    await opening;
+
+    // The browser that arrived too late is closed rather than left with no panel to draw it.
+    expect(tab.panel).toBeNull();
+    expect(filesCloseMock).toHaveBeenCalledWith("f-late");
+    expect(filesTab(store)?.handle).toBe("f-shared");
+  });
+
   it("closes the browser before the terminal whose connection carries it", async () => {
     sessionOpenMock.mockResolvedValue(opened());
     filesOpenMock.mockResolvedValue(filesOpened());

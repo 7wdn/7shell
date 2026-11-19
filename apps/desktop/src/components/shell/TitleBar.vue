@@ -31,6 +31,7 @@ import { useI18n } from "vue-i18n";
 import AppMark from "@/components/brand/AppMark.vue";
 import UpdateEntry from "@/components/shell/UpdateEntry.vue";
 import WindowControls from "@/components/shell/WindowControls.vue";
+import TabStrip from "@/components/workspace/TabStrip.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import { useAppStore } from "@/stores/app";
 import { useAssistantStore } from "@/stores/assistant";
@@ -101,6 +102,18 @@ async function lockVault(): Promise<void> {
  */
 const settingsShowing = computed(() => terminals.activeTab?.kind === "settings");
 
+/**
+ * Whether the tabs live in this bar rather than on their own row below it.
+ *
+ * Only while there is something to draw and a vault to draw it from: a locked window is a password
+ * field, and an empty strip in the title bar would be a row of chrome with nothing in it. The
+ * wordmark gives up its room when the tabs arrive — the mark still identifies the application, and
+ * the tabs are what the row is for.
+ */
+const titleBarTabs = computed(
+  () => vault.unlocked && terminals.tabs.length > 0 && preferences.tabPlacement === "titleBar",
+);
+
 /** The same "is it already the one on screen" answer, for the batch panel's button. */
 const batchShowing = computed(() => terminals.activeTab?.kind === "batch");
 
@@ -125,7 +138,7 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
     :class="isMac ? 'pl-20' : 'pl-3'"
   >
     <AppMark :size="17" />
-    <span class="text-sm font-medium tracking-tight">7Shell</span>
+    <span v-if="!titleBarTabs" class="text-sm font-medium tracking-tight">7Shell</span>
 
     <!--
       The bar is the window's, and the buttons on it are the vault's.
@@ -156,7 +169,8 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
       </button>
     </template>
 
-    <div data-tauri-drag-region class="h-full min-w-4 flex-1"></div>
+    <TabStrip v-if="titleBarTabs" mode="titlebar" />
+    <div v-else data-tauri-drag-region class="h-full min-w-4 flex-1"></div>
 
     <template v-if="vault.unlocked">
       <!--
@@ -301,6 +315,7 @@ const failedTransfers = computed(() => files.transfers.some((entry) => entry.sta
 
       <button
         type="button"
+        data-settings-toggle
         class="grid size-8 place-items-center rounded-md transition-colors"
         :class="
           settingsShowing ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'

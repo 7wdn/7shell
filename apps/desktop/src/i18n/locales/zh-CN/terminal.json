@@ -31,7 +31,8 @@
       "placeLeft": "左侧",
       "placeRight": "右侧",
       "placeTab": "独立文件管理器页签",
-      "tabKeptUnsaved": "文件页签有未保存的编辑，已保留。"
+      "tabKeptUnsaved": "文件页签有未保存的编辑，已保留。",
+      "panelKeptUnsaved": "文件面板有未保存的编辑，保持在原位。请先关闭编辑器再移动。"
     },
     "scheme": {
       "title": "终端配色方案",

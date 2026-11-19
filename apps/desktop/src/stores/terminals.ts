@@ -75,7 +75,7 @@ import type {
   TunnelFailure,
 } from "@/types/session";
 import type { HostSystem } from "@/types/system";
-import type { SettingsCategoryId } from "@/types/app";
+import type { SettingsCategoryId, TerminalPanelPlacement } from "@/types/app";
 import { protocolSupports } from "@/types/generated/protocols";
 
 /** What the backend answers when an attempt was called off, which is not a failure. */
@@ -161,6 +161,11 @@ export interface TerminalTab {
   failure: ShellError | null;
   /** The file panel below this terminal, or null when it is not shown. */
   panel: TerminalPanel | null;
+  /**
+   * Where this tab's files are shown. Chosen from the tab's own strip menu, so two terminals on
+   * the same host can look different; a tab that has not chosen follows the remembered default.
+   */
+  panelPlacement?: TerminalPanelPlacement;
 }
 
 /** A file browser, drawn as a tab. The session names it; the handle says which browser it is. */
@@ -468,8 +473,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // reached for rather than about which control they reached through.
     recents.record(session.id);
     connectingSessionIds.value.push(session.id);
+    let opened: TerminalTab | null = null;
     try {
-      acceptTerminal(session, await backend.terminal.open(session.id));
+      opened = acceptTerminal(session, await backend.terminal.open(session.id));
       forgetFailure(session.id);
     } catch (error) {
       recordFailure(session, asShellError(error, "session_open"));
@@ -477,26 +483,21 @@ export const useTerminalsStore = defineStore("terminals", () => {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
 
-    if (preferences.sessionLayout !== "split") {
+    if (preferences.sessionLayout !== "split" || !opened || opened.status !== "open") {
       return;
     }
-    // The remembered position says where the files belong. A tab is the standalone browser that
-    // already exists; every other position opens the panel under the terminal and the workspace
-    // draws it where the setting says.
-    if (preferences.terminalPanelPlacement === "tab") {
-      await openFiles(session, { origin: "placement" });
+    // The shape follows the tab that was just opened, not the default it inherited: the two are
+    // the same until somebody changes a tab's own position, and this is the value that stays
+    // right when they do.
+    if (effectivePlacement(opened) === "tab") {
+      // The browser belongs to the session and is opened on the way in, but the person asked for
+      // a terminal: it stays the tab on screen, and the file tab is one click away when wanted.
+      await openFiles(session, { origin: "placement", focus: false });
+      activeTabId.value = opened.id;
       return;
     }
-    // The tab that was just asked for, in case this session already had one: the newest is the one
-    // the person is looking at.
-    const tab = [...tabs.value]
-      .reverse()
-      .find(
-        (entry): entry is TerminalTab =>
-          entry.kind === "terminal" && entry.session.id === session.id && entry.status === "open",
-      );
-    if (tab && protocolSupports(tab.session.protocol, "sftp")) {
-      await openPanel(tab);
+    if (protocolSupports(opened.session.protocol, "sftp")) {
+      await openPanel(opened);
     }
   }
 
@@ -510,7 +511,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * exists is gone back to instead of duplicated: it is the same kind of thing, and a second copy of
    * it would drift.
    */
-  async function openFiles(session: Session, options: { origin?: "manual" | "placement" } = {}): Promise<void> {
+  async function openFiles(
+    session: Session,
+    options: { origin?: "manual" | "placement"; focus?: boolean } = {},
+  ): Promise<void> {
     // A remote desktop has no SFTP side; the menu does not offer this, and a caller that reaches it
     // some other way gets nothing rather than an SSH attempt against an RDP port. A WebDAV folder
     // is the opposite: the file browser is the whole session.
@@ -524,7 +528,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
       (entry): entry is FilesTab => entry.kind === "files" && entry.session.id === session.id && entry.handle !== null,
     );
     if (showing) {
-      activeTabId.value = showing.id;
+      // A browser opened on the way into a terminal is not what was asked for: it is made ready,
+      // and the terminal stays the tab on screen.
+      if (options.focus !== false) {
+        activeTabId.value = showing.id;
+      }
       // Asking for the browser from somewhere other than the position makes it the person's tab;
       // the position no longer owns something they opened for themselves.
       if (options.origin !== "placement") {
@@ -538,7 +546,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
     connectingSessionIds.value.push(session.id);
     try {
-      acceptFiles(session, await files.open(session.id), options.origin);
+      acceptFiles(session, await files.open(session.id), options.origin, options.focus);
       forgetFailure(session.id);
     } catch (error) {
       recordFailure(session, asShellError(error, "files_open"));
@@ -548,12 +556,129 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   /**
-   * Puts down the file tab the remembered tab position opened, if there is one.
+   * Where a terminal tab draws its files.
+   *
+   * The tab's own answer wins; a tab that never chose follows the remembered default. Keeping the
+   * fallback rather than filling every tab in means loading settings, or changing the default,
+   * reaches tabs that have not made a choice without rewriting each one.
+   */
+  function effectivePlacement(tab: TerminalTab): TerminalPanelPlacement {
+    return tab.panelPlacement ?? preferences.terminalPanelPlacement;
+  }
+
+  /** How many of a session's terminals currently use the standalone browser. */
+  function terminalsInPanelTab(sessionId: string): number {
+    return tabs.value.filter(
+      (entry): entry is TerminalTab =>
+        entry.kind === "terminal" && entry.session.id === sessionId && effectivePlacement(entry) === "tab",
+    ).length;
+  }
+
+  /** Puts down the placement-owned browser once no terminal of the session is using it. */
+  async function releasePlacementFilesIfLast(sessionId: string): Promise<void> {
+    if (terminalsInPanelTab(sessionId) === 0) {
+      await releasePlacementFiles(sessionId);
+    }
+  }
+
+  /**
+   * Moves one terminal's files.
+   *
+   * The menu on the tab answers for that tab, not for every terminal on the host: another terminal
+   * may be showing a directory of its own, and where this one looks is not a reason to move it. The
+   * choice is also remembered as the default for terminals not opened yet — a position somebody
+   * just chose is the answer for the next one too.
+   *
+   * Moving the files into the standalone browser closes this tab's own panel first. It is kept when
+   * it has unsaved editor text: the position can wait, the work cannot.
+   */
+  async function changeTabPanelPlacement(
+    tab: TerminalTab,
+    placement: TerminalPanelPlacement,
+    options: { remember?: boolean; openDock?: boolean } = {},
+  ): Promise<boolean> {
+    if (placement === "tab" && tab.panel?.handle && files.hasUnsavedFor(tab.panel.handle)) {
+      toast(translate("terminal.panel.panelKeptUnsaved"), "result");
+      return false;
+    }
+    if (placement === "tab" && tab.panel) {
+      if (!(await closePanel(tab))) {
+        return false;
+      }
+    }
+
+    tab.panelPlacement = placement;
+    if (options.remember && preferences.terminalPanelPlacement !== placement) {
+      await preferences.setTerminalPanelPlacement(placement);
+    }
+
+    if (placement === "tab") {
+      await openFiles(tab.session, { origin: "placement" });
+      return true;
+    }
+
+    await releasePlacementFilesIfLast(tab.session.id);
+    if (options.openDock && tab.panel === null && tab.status === "open") {
+      await openPanel(tab);
+    }
+    return true;
+  }
+
+  /**
+   * Applies a new default to every terminal that is open.
+   *
+   * This is the settings page's version of the tab's menu, and it follows the same rule: a tab is
+   * moved, not duplicated. Tabs whose panel holds unsaved editor text keep that panel and their old
+   * position — the default applies to the rest, and one notice says why some stayed. Docked panels
+   * are not opened on tabs that did not have one; their strip's Files button is still one click
+   * away.
+   */
+  async function applyPanelPlacementToAll(placement: TerminalPanelPlacement): Promise<void> {
+    const terminalTabs = tabs.value.filter((entry): entry is TerminalTab => entry.kind === "terminal");
+    let kept = false;
+    for (const tab of terminalTabs) {
+      if (placement === "tab" && tab.panel?.handle && files.hasUnsavedFor(tab.panel.handle)) {
+        kept = true;
+        continue;
+      }
+      if (placement === "tab" && tab.panel && !(await closePanel(tab))) {
+        kept = true;
+        continue;
+      }
+      tab.panelPlacement = placement;
+    }
+    if (kept) {
+      toast(translate("terminal.panel.panelKeptUnsaved"), "result");
+    }
+
+    const sessions = new Map(terminalTabs.map((tab) => [tab.session.id, tab.session]));
+    if (placement === "tab") {
+      // A settings change should not take the page out from under the person making it.
+      const active = activeTabId.value;
+      for (const [id, session] of sessions) {
+        if (terminalsInPanelTab(id) > 0) {
+          await openFiles(session, { origin: "placement" });
+        }
+      }
+      if (active !== null && tabs.value.some((entry) => entry.id === active)) {
+        activeTabId.value = active;
+      }
+      return;
+    }
+    for (const id of sessions.keys()) {
+      await releasePlacementFilesIfLast(id);
+    }
+  }
+
+  /**
+   * Puts down the file tab the tab position opened, if there is one.
    *
    * Moving the position back to a dock is a move, not a copy: the tab the position created goes
    * with it. A tab the person opened is never touched, and an automatically created one that has
    * unsaved editor text is kept — it becomes the person's tab and a notice says why, because a
-   * position change must not discard work nobody was asked about.
+   * position change must not discard work nobody was asked about. One browser serves every
+   * terminal of a session that chose the tab position, so this is called only once the last of
+   * them has left it.
    */
   async function releasePlacementFiles(sessionId: string): Promise<void> {
     const auto = tabs.value.find(
@@ -889,13 +1014,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
-  function acceptTerminal(session: Session, outcome: OpenOutcome): void {
+  function acceptTerminal(session: Session, outcome: OpenOutcome): TerminalTab | null {
     if (outcome.kind === "opened") {
       rememberTunnels(outcome.tunnels);
       rememberTunnelFailures(outcome.tunnelFailures);
       // A terminal that died before its tab existed is shown as ended, with the reason it gave.
       const ended = endedTerminal(outcome.handle);
-      addTab({
+      const tab: TerminalTab = {
         kind: "terminal",
         id: crypto.randomUUID(),
         session,
@@ -904,28 +1029,36 @@ export const useTerminalsStore = defineStore("terminals", () => {
         reason: ended?.reason,
         failure: null,
         panel: null,
-      });
+        panelPlacement: preferences.terminalPanelPlacement,
+      };
+      addTab(tab);
       // Asked once the terminal is up rather than as part of opening it: which mark a row draws is
       // not worth a moment of the connection somebody is waiting for.
       void describeHost(session, outcome.handle);
-      return;
+      // The tab from the array, not the plain object that was put there: only the array's proxy is
+      // reactive, and this tab is about to have its panel assigned from an awaited call.
+      return terminalTab(tab.id) ?? null;
     }
 
     raiseDecision(session, { to: "terminal" }, outcome);
+    return null;
   }
 
-  function acceptFiles(session: Session, outcome: SftpOutcome, origin?: "manual" | "placement"): void {
+  function acceptFiles(session: Session, outcome: SftpOutcome, origin?: "manual" | "placement", focus = true): void {
     if (outcome.kind === "opened") {
-      addTab({
-        kind: "files",
-        id: crypto.randomUUID(),
-        session,
-        handle: outcome.handle,
-        status: "open",
-        failure: null,
-        packed: outcome.packed,
-        origin,
-      });
+      addTab(
+        {
+          kind: "files",
+          id: crypto.randomUUID(),
+          session,
+          handle: outcome.handle,
+          status: "open",
+          failure: null,
+          packed: outcome.packed,
+          origin,
+        },
+        focus,
+      );
       return;
     }
 
@@ -1177,17 +1310,26 @@ export const useTerminalsStore = defineStore("terminals", () => {
         : { kind: "hostKeyUnknown", session, target, key: outcome.key };
   }
 
-  function addTab(tab: WorkspaceTab): void {
+  function addTab(tab: WorkspaceTab, focus = true): void {
     tabs.value.push(tab);
     openedOrder.value.push(tab.id);
-    activeTabId.value = tab.id;
+    if (focus) {
+      activeTabId.value = tab.id;
+    }
   }
 
   function addTerminal(
     session: Session,
     fields: { handle: string | null; status: TerminalTabStatus; reason?: string; failure: ShellError | null },
   ): void {
-    addTab({ kind: "terminal", id: crypto.randomUUID(), session, panel: null, ...fields });
+    addTab({
+      kind: "terminal",
+      id: crypto.randomUUID(),
+      session,
+      panel: null,
+      panelPlacement: preferences.terminalPanelPlacement,
+      ...fields,
+    });
   }
 
   function addFiles(
@@ -1362,12 +1504,20 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
 
+    // Remembered before the tab goes: whether closing it leaves the session with no terminal using
+    // the standalone browser, which is the only moment that browser is the position's to put down.
+    const sessionId = tab.session.id;
+    const wasPanelTab = effectivePlacement(tab) === "tab";
+
     // A tab whose terminal already ended, or whose close already failed, has nothing left to
     // close: removing it locally is the whole operation.
     if (!tab.handle || tab.status !== "open") {
       releasePanel(tab);
       forget(id);
       await refreshTunnels();
+      if (wasPanelTab) {
+        await releasePlacementFilesIfLast(sessionId);
+      }
       return;
     }
 
@@ -1382,6 +1532,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
       forget(id);
       // Closing a terminal closes the forwards that were carrying its traffic.
       await refreshTunnels();
+      if (wasPanelTab) {
+        await releasePlacementFilesIfLast(sessionId);
+      }
     } catch (error) {
       tab.status = "failed";
       tab.failure = asShellError(error, "terminal_close");
@@ -1428,7 +1581,17 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tab.panel = { handle: null, status: "opening", failure: null };
 
     try {
-      acceptPanel(tab, await files.open(tab.session.id));
+      const outcome = await files.open(tab.session.id);
+      // The tab may have moved while the browser was opening: the panel was closed, or the tab
+      // switched to the standalone browser. The browser that just came up belongs to nobody then,
+      // and is let go rather than left with no panel to draw it.
+      if (tab.panel?.status !== "opening" || effectivePlacement(tab) === "tab") {
+        if (outcome.kind === "opened") {
+          await files.close(outcome.handle);
+        }
+        return;
+      }
+      acceptPanel(tab, outcome);
     } catch (error) {
       tab.panel = { handle: null, status: "failed", failure: asShellError(error, "files_open") };
     }
@@ -1696,10 +1859,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
         tab.failure = null;
         tab.disconnected = false;
         void describeHost(session, outcome.handle);
-        // The shape is the settings' answer, as it was for the first open: split means the panel is
-        // part of what this session looks like.
+        // The shape follows this tab's own position. A terminal using the standalone browser does
+        // not take the screen away from it by reconnecting; its Files button brings the browser
+        // back when it is gone.
         if (
           tab.status === "open" &&
+          effectivePlacement(tab) !== "tab" &&
           preferences.sessionLayout === "split" &&
           protocolSupports(session.protocol, "sftp")
         ) {
@@ -1936,6 +2101,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
     open,
     openFiles,
     releasePlacementFiles,
+    effectivePlacement,
+    changeTabPanelPlacement,
+    applyPanelPlacementToAll,
     openContainerFiles,
     openPodFiles,
     openDesktop,

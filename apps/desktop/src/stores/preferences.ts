@@ -2064,12 +2064,19 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * Chooses where the file panel sits.
    *
    * Written immediately rather than left for a page's Apply, for the reason the reopen answer is:
-   * the choice is made from the panel's own menu, and the next session opened has to see it.
+   * it is the terminal strip's own menu, and the next terminal opened has to see it. The open
+   * terminals have already been moved by the caller.
    */
   async function setTerminalPanelPlacement(placement: TerminalPanelPlacement): Promise<void> {
     terminalPanelPlacement.value = placement;
     dirty.value = true;
     await commit();
+  }
+
+  /** The same choice from the settings page, waiting for its Apply like the rows around it. */
+  function setPanelPlacementDefault(placement: TerminalPanelPlacement): void {
+    terminalPanelPlacement.value = placement;
+    dirty.value = true;
   }
 
   /** Moves the divider beside the terminal, applied at once and written down when the drag ends. */
@@ -2573,6 +2580,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setSessionLayout,
     setSessionReopen,
     setTerminalPanelPlacement,
+    setPanelPlacementDefault,
     setPanelWidth,
     rememberPanelWidth,
     resetPanelWidth,

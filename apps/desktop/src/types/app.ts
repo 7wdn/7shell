@@ -180,7 +180,7 @@ export type TabLayout = "scroll" | "wrap";
 export const DEFAULT_TAB_LAYOUT: TabLayout = "scroll";
 
 /** Which edge of the window the tab bar is drawn against, from `sevenshell_types::TabPlacement`. */
-export type TabPlacement = "top" | "bottom" | "left" | "right";
+export type TabPlacement = "top" | "bottom" | "left" | "right" | "titleBar";
 
 /** Across the top, which is where this build has always drawn it. */
 export const DEFAULT_TAB_PLACEMENT: TabPlacement = "top";

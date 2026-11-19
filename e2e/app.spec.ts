@@ -826,6 +826,68 @@ test("a local shell is saved and opens a terminal on this machine", async () => 
  * The preview and the pane are two different consumers; this walks the real one — settings, then
  * the computed background of the terminal that was open while the choice was made.
  */
+/**
+ * Puts the tab bar somewhere, through the settings page a person would use.
+ *
+ * The position takes effect as it is chosen; Apply is still pressed because the file is what the
+ * next start reads, and because a case that leaves a dirty settings page behind would make the
+ * next case's Apply enabled when it expects to find nothing to write.
+ */
+async function setTabBarPlacement(page: Page, option: "Top" | "In the title bar"): Promise<void> {
+  await page.locator("[data-settings-toggle]").click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settings.getByRole("button", { name: "Appearance", exact: true }).click();
+  await settings.getByRole("combobox", { name: "Tab bar position" }).click();
+  await page.getByRole("listbox").getByRole("option", { name: option, exact: true }).click();
+  await applySettings(page);
+  await page.getByRole("button", { name: "Close settings" }).click();
+}
+
+/**
+ * The tab row, moved into the window's own bar.
+ *
+ * With a tab open the title bar stops carrying a wordmark and starts carrying the tabs, and the
+ * workspace gives up its separate row. The setting is put back before the case ends: it is written
+ * to disk, so leaving it would leak into every case after this one.
+ */
+test("the tabs move into the title bar, and back out of it", async () => {
+  const { page, close } = await openApp();
+  try {
+    const name = `titlebar-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.locator("#session-protocol").click();
+    await page.getByRole("listbox").getByRole("option", { name: "Local terminal" }).click();
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    await sessionRow(page, name).click();
+    await expect(page.locator(".xterm-rows").filter({ visible: true }).first()).toBeAttached({ timeout: 30_000 });
+
+    await setTabBarPlacement(page, "In the title bar");
+    const banner = page.getByRole("banner");
+    const strip = banner.locator("[data-workspace-tabs]");
+    await expect(strip).toHaveAttribute("data-tab-placement", "titleBar", { timeout: 10_000 });
+    await expect(strip.locator("[data-tab]").filter({ visible: true })).not.toHaveCount(0);
+    await expect(page.getByRole("main").locator("[data-workspace-tabs]")).toHaveCount(0);
+    await expect(banner.getByText("7Shell", { exact: true })).toHaveCount(0);
+
+    await setTabBarPlacement(page, "Top");
+    await expect(page.getByRole("banner").locator("[data-workspace-tabs]")).toHaveCount(0);
+    await expect(page.getByRole("main").locator("[data-workspace-tabs]").filter({ visible: true })).toHaveCount(1);
+  } finally {
+    try {
+      if (await page.getByRole("banner").locator("[data-workspace-tabs][data-tab-placement='titleBar']").count()) {
+        await setTabBarPlacement(page, "Top");
+      }
+    } catch (error) {
+      console.warn(`e2e: the tab bar position was not put back: ${String(error)}`);
+    }
+    await close();
+  }
+});
+
 test("a colour scheme reaches a terminal that is already open", async () => {
   const { page, close } = await openApp();
   try {

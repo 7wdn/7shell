@@ -473,7 +473,7 @@ impl TabLayout {
 /// the right is drawn as a column, which is also why wrapping is a choice only the horizontal ones
 /// have.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum TabPlacement {
     /// Across the top of the panel. What this build has always drawn, so a fresh install gets it.
     #[default]
@@ -484,6 +484,11 @@ pub enum TabPlacement {
     Left,
     /// Down the right, which is the same column on the other side.
     Right,
+    /// In the window's own title bar, replacing the separate strip with the same row.
+    ///
+    /// The opt-in layout: the title bar also carries the window's actions, so this trades the full
+    /// width of a separate row for the empty room the bar usually has.
+    TitleBar,
 }
 
 impl TabPlacement {
@@ -492,6 +497,7 @@ impl TabPlacement {
         TabPlacement::Bottom,
         TabPlacement::Left,
         TabPlacement::Right,
+        TabPlacement::TitleBar,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -500,6 +506,7 @@ impl TabPlacement {
             Self::Bottom => "bottom",
             Self::Left => "left",
             Self::Right => "right",
+            Self::TitleBar => "titleBar",
         }
     }
 
@@ -2293,8 +2300,10 @@ mod tests {
             "a bar down one side is drawn as a column"
         );
         assert!(
-            !TabPlacement::Top.is_vertical() && !TabPlacement::Bottom.is_vertical(),
-            "and a bar across the window is drawn as a row"
+            !TabPlacement::Top.is_vertical()
+                && !TabPlacement::Bottom.is_vertical()
+                && !TabPlacement::TitleBar.is_vertical(),
+            "and a bar across the window, or inside its title bar, is drawn as a row"
         );
     }
 
