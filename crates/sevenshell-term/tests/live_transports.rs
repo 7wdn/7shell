@@ -6,9 +6,9 @@
 
 use std::time::Duration;
 
-use sevenshell_term::{
-    SerialSpec, Size, TcpSpec, TelnetSpec, TerminalEvent, open_local, open_raw_tcp, open_telnet, open_wsl,
-};
+#[cfg(windows)]
+use sevenshell_term::open_wsl;
+use sevenshell_term::{SerialSpec, Size, TcpSpec, TelnetSpec, TerminalEvent, open_local, open_raw_tcp, open_telnet};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
