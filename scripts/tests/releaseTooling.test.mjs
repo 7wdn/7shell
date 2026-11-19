@@ -68,7 +68,7 @@ test("each one runs in a directory that has never been installed", async () => {
   }
   await writeFile(
     path.join(room, "CHANGELOG.md"),
-    "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- something\n",
+    "# Changelog\n\n## [1.0.0] - 2026-01-01\n\n### English\n\n#### Added\n\n- something\n\n### 中文\n\n#### 新增\n\n- 某物\n",
     "utf8",
   );
   await mkdir(path.join(room, "files"), { recursive: true });
@@ -101,6 +101,9 @@ test("each one runs in a directory that has never been installed", async () => {
   const cases = [
     ["release-notes.mjs", ["1.0.0", "--check"]],
     ["release-notes.mjs", ["1.0.0"]],
+    ["release-notes.mjs", ["1.0.0", "--lang", "both"]],
+    ["release-notes.mjs", ["1.0.0", "--lang", "zh"]],
+    ["release-notes.mjs", ["1.0.0", "--lang", "en"]],
     [
       "packaging-manifests.mjs",
       ["assets", "--dir", "files", "--tag", "v1.0.0", "--repository", "o/r", "--out", "assets.json"],

@@ -28,6 +28,65 @@ export type NoteBlock =
 /** The address a link may point at: the web, and nothing else. */
 const LINKABLE = /^https?:\/\/[^\s]+$/;
 
+/** The two languages a release note may carry. Older notes carry neither heading. */
+export type NotesLanguage = "en" | "zh";
+
+const LANGUAGE_HEADINGS = {
+  en: /^###\s+English\s*$/i,
+  zh: /^###\s+中文\s*$/,
+} as const;
+
+/** Which language part of a bilingual note the interface should read. */
+export function notesLanguageFor(locale: string): NotesLanguage {
+  return locale.trim().toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+/** The content under one language heading, or null when that heading is not there. */
+function languagePart(markdown: string, language: NotesLanguage): string | null {
+  const pattern = LANGUAGE_HEADINGS[language];
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n");
+  const start = lines.findIndex((line) => pattern.test(line));
+  if (start === -1) {
+    return null;
+  }
+
+  const part: string[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === undefined) {
+      break;
+    }
+    // The next language part, or anything above it, ends this one. The `#### Added` headings
+    // inside the part stay with it.
+    if (/^#{2,3}\s+/.test(line)) {
+      break;
+    }
+    part.push(line);
+  }
+  return part.join("\n").trim();
+}
+
+/**
+ * A release note in the language the window is speaking.
+ *
+ * Notes written before the bilingual convention have no language headings and are returned as
+ * they are. A note that names one language only is returned as it is too: reading the other
+ * language is better than showing both or nothing. The text comes from the release manifest, so
+ * this only chooses a section; it never turns any of it into markup.
+ */
+export function selectNotesForLocale(markdown: string, locale: string): string {
+  const wanted = notesLanguageFor(locale);
+  const selected = languagePart(markdown, wanted);
+  if (selected !== null && selected !== "") {
+    return selected;
+  }
+  const other = languagePart(markdown, wanted === "en" ? "zh" : "en");
+  if (other !== null && other !== "") {
+    return other;
+  }
+  return markdown;
+}
+
 /**
  * Reads the notes into blocks.
  *

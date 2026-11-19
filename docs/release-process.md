@@ -35,7 +35,10 @@ update channel follows the promotion — installed builds are never offered a ca
 1. `pnpm check` green, on all three platforms in CI.
 2. `CHANGELOG.md` has a section for the version being released. `pnpm release:notes <version> --check`
    is the gate: a release whose notes were never written fails before anything is built, because a
-   release with an empty body is a release nobody can decide about.
+   release with an empty body is a release nobody can decide about. From `0.4.0` the section carries
+   both `### English` and `### 中文` parts, and the check requires both. The GitHub release body is
+   generated from the Chinese part alone (`--lang zh`); the update manifest's notes carry both, and
+   the application reads the part its interface is speaking. Older sections stay single-language.
 3. The version bumped with `pnpm sync:versions`, and `version.json` committed.
 
 ## Cutting the release

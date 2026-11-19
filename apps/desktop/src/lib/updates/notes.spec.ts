@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parseNotes } from "@/lib/updates/notes";
+import { notesLanguageFor, parseNotes, selectNotesForLocale } from "@/lib/updates/notes";
 
 describe("a release body, read", () => {
   it("separates headings, bullets and paragraphs", () => {
@@ -73,5 +73,41 @@ describe("a release body, read", () => {
   it("says nothing at all about an empty body", () => {
     expect(parseNotes("")).toEqual([]);
     expect(parseNotes("\n \n")).toEqual([]);
+  });
+});
+
+describe("a release body in two languages", () => {
+  const BILINGUAL = [
+    "### English",
+    "",
+    "#### Added",
+    "",
+    "- the English item",
+    "",
+    "### 中文",
+    "",
+    "#### 新增",
+    "",
+    "- 中文条目",
+  ].join("\n");
+
+  it("reads the part the interface is speaking", () => {
+    expect(selectNotesForLocale(BILINGUAL, "en")).toBe("#### Added\n\n- the English item");
+    expect(selectNotesForLocale(BILINGUAL, "zh-CN")).toBe("#### 新增\n\n- 中文条目");
+    expect(notesLanguageFor("zh-CN")).toBe("zh");
+    expect(notesLanguageFor("ja")).toBe("en");
+  });
+
+  it("falls back to the part the note has when the wanted one is missing", () => {
+    const englishOnly = "### English\n\n#### Added\n\n- the English item";
+
+    expect(selectNotesForLocale(englishOnly, "zh-CN")).toBe("#### Added\n\n- the English item");
+  });
+
+  it("leaves a note written before the bilingual convention alone", () => {
+    const legacy = "### Added\n\n- the only item";
+
+    expect(selectNotesForLocale(legacy, "en")).toBe(legacy);
+    expect(selectNotesForLocale(legacy, "zh-CN")).toBe(legacy);
   });
 });

@@ -4,6 +4,94 @@ All notable changes to 7Shell are documented in this file. The format is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+From 0.4.0 each release is written in both languages under one version heading. The GitHub release
+body uses the Chinese part; the update manifest keeps both and the application shows the one its
+interface is speaking. Older releases stay as they were published.
+
+从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
+
+## [0.4.0] - 2026-11-19
+
+### English
+
+The connection and workspace release. A working OpenSSH setup can be reused as it is, the vault can
+open with the system keychain, and the workspace gains connection tests, several terminals per host,
+a file panel that can move to either side or stand alone, tabs in the title bar, and one chooser for
+every new tab.
+
+#### Added
+
+- **OpenSSH configuration:** a session may name an alias from `~/.ssh/config`; its host, account,
+  port and identity are resolved on every connection. The system `known_hosts` is read-only: a
+  recorded key skips the trust question, and a changed one remains a hard stop.
+- **Unlock with the system store:** on Windows and macOS the key derived from the vault password can
+  be sealed in the system keychain. A password unlock or change refreshes it, and a failure falls
+  back to the password form.
+- **Portable self-update:** a portable copy downloads, verifies and replaces itself in place, keeping
+  its `data` folder.
+- **Connection tests:** SSH sessions can run the complete login without opening a shell, including
+  jump hosts and the final host-key decision. Telnet and raw TCP test reachability. Results arrive as
+  a transient notice.
+- **Several terminals per host:** the tab's duplicate entry and the session menu can open another
+  independent terminal for the same host.
+- **File panel placement:** each terminal can put its files at the bottom, on either side, or in a
+  standalone file-manager tab. The choice is remembered for new terminals; a standalone browser is
+  shared by the session and closes only when the last terminal leaves it.
+- **Tabs in the title bar:** a fifth tab placement draws the tab strip inside the window's title bar,
+  with a shared strip and one scrolling row.
+- **New-tab chooser:** the plus opens a searchable session tree for a new tab. Groups fold locally,
+  matches always stay visible, and selecting a session that is already open uses the existing
+  "open in a new tab / go to it" question.
+- **Appearance:** terminal text can carry its own colour per theme, and the wallpaper can show
+  through the workspace panels.
+
+#### Fixed
+
+- A vault document written by a newer build now names the newer document instead of reporting a
+  wrong password.
+- Choosing a background display mode now applies the chosen mode.
+- The clear button is available on every list filter.
+
+#### Notes
+
+- The vault schema is 14. A 0.3.0 build refuses a vault written by 0.4.0; back it up before
+  downgrading.
+- OpenSSH directives this build cannot honour (`ProxyJump`, `ProxyCommand`, `Match`) refuse before a
+  socket opens instead of taking a different route.
+- A portable copy from 0.3.0 or older must be replaced by hand once; later portable copies update
+  themselves.
+- The installers are not code-signed and the macOS build is not notarized. Nothing in this project
+  has had a security review.
+
+### 中文
+
+连接与工作区版本。已有的 OpenSSH 配置可以直接复用，保险库可以通过系统钥匙串打开；工作区新增连接测试、同一设备的多个终端、可停靠到侧边或独立成页签的文件面板、标题栏标签，以及统一的新建标签页选择器。
+
+#### 新增
+
+- **复用 OpenSSH 配置：** 会话可以直接指定 `~/.ssh/config` 里的别名，主机、账号、端口和身份在每次连接时解析。系统 `known_hosts` 只读生效：已记录的键不再询问，变更的键仍然是硬停。
+- **系统钥匙串解锁：** Windows 和 macOS 上，由保险库口令派生的密钥可以封存在系统钥匙串中；口令解锁或修改会刷新它，失败时回退到口令输入。
+- **便携版自更新：** 便携副本可以下载、校验并原地替换自己，`data` 目录保持不变。
+- **连接测试：** SSH 会话可以在不打开 Shell 的情况下跑完整登录，包含跳板主机和最终主机键确认；Telnet 和原始 TCP 测试可达性。结果用会消失的提示显示。
+- **单设备多终端：** 标签页右键的复制入口和会话菜单都可以为同一台主机再开一个独立终端。
+- **文件面板位置：** 每个终端可以把文件放在底部、左侧、右侧，或独立的文件管理器页签。位置会记为新终端的默认值；独立浏览器由会话共享，最后一个使用它的终端离开时才收起。
+- **标签栏并入标题栏：** 新增第五种标签位置，把标签条画进窗口标题栏，共用同一套标签组件并且只占一行、横向滚动。
+- **新建标签页选择器：** 加号打开可搜索的会话树。分组只在本次打开内折叠，搜索结果始终可见；选择已打开的会话时沿用现有的“新标签页打开 / 切到已有标签”询问。
+- **外观：** 终端文字可以按主题单独设置颜色，背景壁纸可以透到工作区面板上。
+
+#### 修复
+
+- 更高版本写出的保险库文档现在会明确指出文档版本更新，而不是报告密码错误。
+- 选择背景图片的显示方式后会真正应用所选方式。
+- 所有列表筛选都提供清除按钮。
+
+#### 说明
+
+- 保险库 schema 为 14。0.3.0 的版本会拒绝 0.4.0 写出的保险库；降级前请先备份。
+- 本版本无法支持的 OpenSSH 指令（`ProxyJump`、`ProxyCommand`、`Match`）会在建立套接字前拒绝，而不是悄悄换一条路线。
+- 0.3.0 及更早的便携副本需要手动替换一次；之后的便携副本可以自更新。
+- 安装包未做代码签名，macOS 构建未公证。本项目尚未经过安全审计。
+
 ## [0.3.0] - 2026-11-18
 
 The virtual-machine release. VMware Workstation machines on this computer are part of the library

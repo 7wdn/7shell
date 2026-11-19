@@ -12,7 +12,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { REPO_ROOT } from "../lib/descriptors.mjs";
-import { releaseNotesFor } from "../release-notes.mjs";
+import { releaseNotesFor, releaseNotesInLanguage } from "../release-notes.mjs";
 
 const SCRIPT = path.join(REPO_ROOT, "scripts", "release-notes.mjs");
 const CHANGELOG = path.join(REPO_ROOT, "CHANGELOG.md");
@@ -83,6 +83,47 @@ test("a leading v belongs to the tag and is accepted", () => {
   assert.ok(tagged.includes("the older change"), "the v was not taken off the version");
 });
 
+const BILINGUAL = `# Changelog
+
+## [1.0.0] - 2026-02-01
+
+### English
+
+#### Added
+
+- the newer English change
+
+### 中文
+
+#### 新增
+
+- 新的中文改动
+
+## [0.9.0] - 2026-01-01
+
+### Added
+
+- the older change
+`;
+
+test("a bilingual section keeps its two language parts apart", () => {
+  const notes = releaseNotesFor(BILINGUAL, "1.0.0");
+
+  assert.ok(notes.includes("the newer English change"));
+  assert.ok(notes.includes("新的中文改动"));
+  assert.equal(releaseNotesInLanguage(notes, "en"), "#### Added\n\n- the newer English change");
+  assert.equal(releaseNotesInLanguage(notes, "zh"), "#### 新增\n\n- 新的中文改动");
+  assert.ok(!releaseNotesInLanguage(notes, "zh").includes("the newer English change"));
+  assert.ok(!releaseNotesInLanguage(notes, "en").includes("新的中文改动"));
+});
+
+test("a single-language section before the bilingual convention is returned for either language", () => {
+  const notes = releaseNotesFor(FIXTURE, "1.0.0");
+
+  assert.equal(releaseNotesInLanguage(notes, "en"), notes.trim());
+  assert.equal(releaseNotesInLanguage(notes, "zh"), notes.trim());
+});
+
 test("the command prints the section without its version heading", () => {
   const plain = run(RELEASED);
   const tagged = run(`v${RELEASED}`);
@@ -110,6 +151,24 @@ test("--check succeeds for the section this release is cut from", () => {
 
   assert.equal(result.status, 0, `the released version has no notes: ${result.stderr}`);
   assert.ok(readFileSync(CHANGELOG, "utf8").length > 0, "the changelog itself must be readable");
+});
+
+test("the newest section carries both languages, and the GitHub body is only the Chinese part", () => {
+  const latest = /^##[ \t]+\[?v?(\d[^\s\]]*)\]?/m.exec(readFileSync(CHANGELOG, "utf8"))?.[1];
+  assert.ok(latest, "the changelog has no version heading");
+
+  const check = run(latest, "--check");
+  assert.equal(check.status, 0, `the newest version is not bilingual: ${check.stderr}`);
+
+  const zh = run(latest, "--lang", "zh");
+  assert.equal(zh.status, 0, `the Chinese GitHub body could not be printed: ${zh.stderr}`);
+  assert.ok(zh.stdout.length > 0, "the Chinese GitHub body is empty");
+  assert.ok(!zh.stdout.includes("### English"), "the Chinese GitHub body carries the English part");
+
+  const both = run(latest, "--lang", "both");
+  assert.equal(both.status, 0, `the bilingual update notes could not be printed: ${both.stderr}`);
+  assert.ok(both.stdout.includes("### English"), "the update notes lost the English part");
+  assert.ok(both.stdout.includes("### 中文"), "the update notes lost the Chinese part");
 });
 
 test("no version at all is a usage error, not a silent empty body", () => {

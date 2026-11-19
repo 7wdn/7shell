@@ -8,12 +8,14 @@
  * that could disagree about what a line means.
  */
 import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 
-import { parseNotes } from "@/lib/updates/notes";
+import { parseNotes, selectNotesForLocale } from "@/lib/updates/notes";
 
 const props = defineProps<{ markdown: string }>();
+const { locale } = useI18n();
 
-const blocks = computed(() => parseNotes(props.markdown));
+const blocks = computed(() => parseNotes(selectNotesForLocale(props.markdown, locale.value)));
 </script>
 
 <template>
