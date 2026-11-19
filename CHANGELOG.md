@@ -10,6 +10,88 @@ interface is speaking. Older releases stay as they were published.
 
 从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
 
+## [0.5.0] - 2026-11-20
+
+### English
+
+The compatibility and file-management release. A terminal can speak UTF-8, GBK or GB18030 per
+session, an OpenSSH `ProxyJump` chain is followed with every hop's key verified, and the file
+manager is rebuilt around the reference's compact listing: type drawings, three columns by default,
+a remembered tree and column choice, and a position switch inside each half of the panel.
+
+#### Added
+
+- **Session encoding:** an SSH or Telnet session chooses UTF-8, GBK or GB18030 on its own. Output is
+  decoded as a stream, so a character split across two reads is completed instead of drawn as two
+  replacement marks; input in another encoding is converted on the host side.
+- **Backspace per session:** an SSH session can send Ctrl+H instead of DEL for Backspace.
+- **ProxyJump:** a session that names an OpenSSH alias follows the file's `ProxyJump` chain —
+  comma-separated hops, `user@host:port`, bracketed IPv6, `none` — recursively, outermost hop
+  first. Every hop is probed and compared against the known keys before it authenticates. Saved
+  jump hosts still take precedence, and a hop uses its own `IdentityFile` when its Host block names
+  one.
+- **OpenSSH host filter:** a field above the alias list narrows it by alias, host or account.
+- **File manager:** the listing leads with a drawing chosen by extension and, where it matters, by
+  the whole name; directories get a solid folder. The header splits into a path row and an action
+  row so a narrow panel keeps the whole path, and a parent row above the entries replaces the
+  toolbar arrow. The list opens with name, size and modified; the other three columns sit behind
+  the column chooser, and the tree, folded columns and sidebar fold are remembered.
+- **Positions per half:** files and commands keep separate positions on each terminal tab. The
+  position switch lives in the half it moves now, and the terminal strip only toggles the halves.
+- **MCP client snippets:** the access tab offers fifteen clients, Qoder first and marked
+  Recommended, each with the shape it actually reads — VS Code's `servers`, Codex's TOML,
+  DeepSeek Harness's YAML patch, OpenCode's `mcp.local`, Cherry Studio's settings page.
+
+#### Fixed
+
+- **A recorded host key answers beside an older line:** a `known_hosts` file holding several
+  records for one host no longer reports a changed key when one record matches the server exactly.
+  The vault comparison looks at the algorithm too, so a record of another type reads as unseen
+  rather than changed. The mismatch message names the presented fingerprint and the matching
+  `ssh-keygen -R` command.
+- **macOS update signature:** both macOS builds produced an update archive with the same name, so a
+  merged release could pair one architecture's archive with the other's signature — the reason an
+  Apple Silicon update from 0.3.0 to 0.4.0 always failed verification. Each macOS archive now
+  carries its architecture in its name, matching its manifest entry.
+- Trusting a host key from the connection-test notice no longer closes the session editor and
+  drops its draft.
+
+#### Notes
+
+- The vault schema is 15. A 0.4.0 build refuses a vault written by 0.5.0; back it up before
+  downgrading.
+- `ProxyCommand` and `Match` are still refused before a socket opens.
+- The browser edition is attached to the same release for amd64 and arm64.
+- The installers are not code-signed and the macOS build is not notarized. Nothing in this project
+  has had a security review.
+
+### 中文
+
+兼容与文件管理版本。终端可以按会话选择 UTF-8、GBK 或 GB18030，OpenSSH 的 `ProxyJump` 链会被逐跳验键地跟随；文件管理器围绕参考实现的紧凑列表重做：按类型绘制的图标、默认三列、会记住的树与列，以及放在每一半面板里的位置开关。
+
+#### 新增
+
+- **会话编码：** SSH 与 Telnet 会话可以各自选择 UTF-8、GBK 或 GB18030。输出用流式解码，拆在两次读取之间的字符会拼完整，而不是画成两个替换符；其他编码的输入在宿主侧转码。
+- **按会话的退格：** SSH 会话可以选择发送 Ctrl+H 而不是 DEL。
+- **ProxyJump：** 会话指定 OpenSSH 别名后，会按文件里的 `ProxyJump` 递归跟随——逗号分隔的多跳、`user@host:port`、带方括号的 IPv6、`none`——最外层跳板先连。每一跳都先探测、与已记录的键比对，然后才认证。保存的跳板仍然优先；跳板的 Host 块写了 `IdentityFile` 就用它。
+- **OpenSSH 主机筛选：** 别名列表上方的筛选框按别名、主机或账号缩小范围。
+- **文件管理器：** 列表按扩展名并视情况按完整文件名取图标，目录使用实心文件夹。头部拆成路径行和动作行，窄面板也能看到完整路径；条目上方的返回上级行取代了工具栏箭头。列表默认显示名称、大小、修改时间，另外三列收在列选择器里；目录树、折叠的列和侧栏折叠都会被记住。
+- **两半面板各自定位：** 每个终端标签的文件和命令保持各自的位置。位置开关移入它所移动的那一半，终端条只负责切换两半。
+- **MCP 客户端片段：** 接入页提供 15 个客户端，Qoder 排第一并标记推荐；每个客户端用它真正读取的形状——VS Code 的 `servers`、Codex 的 TOML、DeepSeek Harness 的 YAML 补丁、OpenCode 的 `mcp.local`、Cherry Studio 的设置页。
+
+#### 修复
+
+- **已记录的主机键可以与旧记录并存：** `known_hosts` 里同一主机有多条记录时，只要其中一条与服务器完全匹配，就不再报告键已变更。保险库的比对同时看算法，另一种类型的记录按“没见过”处理而不是“已变更”。不一致的提示会给出当前指纹和对应的 `ssh-keygen -R` 命令。
+- **macOS 更新签名：** 两条 macOS 构建产出同名的更新归档，合并后的 release 可能把一种架构的归档配上另一种架构的签名——0.3.0 升 0.4.0 在 Apple Silicon 上校验失败就是这个原因。现在每个 macOS 归档在文件名里带上架构，与清单条目一致。
+- 从连接测试提示里信任主机键，不再关闭会话编辑器、丢失草稿。
+
+#### 说明
+
+- 保险库 schema 为 15。0.4.0 的版本会拒绝 0.5.0 写出的保险库；降级前请先备份。
+- `ProxyCommand` 与 `Match` 仍会在建立套接字前拒绝。
+- 浏览器版随同一 release 提供 amd64 与 arm64 归档。
+- 安装包未做代码签名，macOS 构建未公证。本项目尚未经过安全审计。
+
 ## [0.4.0] - 2026-11-19
 
 ### English
