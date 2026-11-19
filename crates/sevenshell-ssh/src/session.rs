@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use russh::client::{self, Config, DisconnectReason, Handle, KeyboardInteractiveAuthResponse, Msg};
 use russh::keys::{PrivateKeyWithHashAlg, PublicKeyOrCertificate};
-use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect, SshId};
+use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf, Disconnect, Preferred, SshId, kex};
 use sevenshell_error::ShellError;
 
 use crate::Purpose;
@@ -364,6 +364,33 @@ fn bridge_to_agent(channel: Channel<Msg>) {
     });
 }
 
+/// The algorithm preferences one connection runs under.
+///
+/// russh's default is the modern set. It implements the NIST ECDH exchanges but leaves them out of
+/// that set, which leaves a switch whose only key exchange is `ecdh-sha2-nistp*` with no common
+/// algorithm. Appending the three curves after the modern ones gives that hardware a fallback
+/// without moving a modern server off Curve25519 or the ML-KEM hybrid. The `ext-info` and strict-KEX
+/// names are not algorithms: they stay after every real one, as russh's default has them.
+pub(crate) fn preferred_algorithms() -> Preferred {
+    let mut algorithms = Preferred::DEFAULT.kex.to_vec();
+    let extensions = algorithms
+        .iter()
+        .position(|name| *name == kex::EXTENSION_SUPPORT_AS_CLIENT)
+        .unwrap_or(algorithms.len());
+    algorithms.splice(
+        extensions..extensions,
+        [
+            kex::ECDH_SHA2_NISTP256,
+            kex::ECDH_SHA2_NISTP384,
+            kex::ECDH_SHA2_NISTP521,
+        ],
+    );
+    Preferred {
+        kex: Cow::Owned(algorithms),
+        ..Preferred::DEFAULT
+    }
+}
+
 /// The configuration one connection runs under.
 ///
 /// Keep-alives are what stop a firewall in the path from quietly dropping an idle session, so
@@ -381,6 +408,7 @@ pub(crate) fn client_config(keepalive_seconds: u16) -> Arc<Config> {
         nodelay: true,
         inactivity_timeout: None,
         keepalive_interval: (keepalive_seconds > 0).then(|| Duration::from_secs(u64::from(keepalive_seconds))),
+        preferred: preferred_algorithms(),
         ..Config::default()
     })
 }
@@ -1007,6 +1035,52 @@ mod tests {
     fn a_keepalive_interval_of_zero_turns_keepalives_off() {
         assert!(client_config(0).keepalive_interval.is_none());
         assert_eq!(client_config(45).keepalive_interval, Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn the_client_offers_nist_ecdh_after_its_modern_key_exchanges() {
+        let config = client_config(0);
+        let algorithms = config.preferred.kex.as_ref();
+        let index = |wanted: russh::kex::Name| {
+            algorithms
+                .iter()
+                .position(|name| *name == wanted)
+                .unwrap_or_else(|| panic!("the preferred KEX list is missing {}", wanted.as_ref()))
+        };
+
+        let curve25519 = index(russh::kex::CURVE25519);
+        let group14 = index(russh::kex::DH_G14_SHA256);
+        for ecdh in [
+            russh::kex::ECDH_SHA2_NISTP256,
+            russh::kex::ECDH_SHA2_NISTP384,
+            russh::kex::ECDH_SHA2_NISTP521,
+        ] {
+            let at = index(ecdh);
+            assert!(
+                at > curve25519,
+                "{} is preferred over Curve25519, so a modern server could be moved onto it",
+                ecdh.as_ref()
+            );
+            assert!(
+                at > group14,
+                "{} is preferred over group14-sha256, so a modern server could be moved onto it",
+                ecdh.as_ref()
+            );
+        }
+
+        // The pseudo-algorithms that carry extensions are not key exchanges and have to stay after
+        // every real one; a client that puts them first is not offering them last.
+        let extensions = [
+            russh::kex::EXTENSION_SUPPORT_AS_CLIENT,
+            russh::kex::EXTENSION_SUPPORT_AS_SERVER,
+            russh::kex::EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT,
+            russh::kex::EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
+        ];
+        assert_eq!(
+            &algorithms[algorithms.len() - extensions.len()..],
+            &extensions[..],
+            "the extension names must stay at the end of the KEX list"
+        );
     }
 
     #[test]
