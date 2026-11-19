@@ -111,4 +111,37 @@ describe("the toast viewport", () => {
     expect(politeLine(root)?.textContent).toContain("Copied");
     expect(root.querySelector("button")).toBeNull();
   });
+
+  it("keeps pointer and focus events inside the toast", async () => {
+    const root = mount();
+    const onClick = vi.fn();
+    toast("Unknown host key", "refusal", { label: "Trust and test again", onClick });
+    await nextTick();
+    const button = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+      (candidate) => candidate.textContent?.trim() === "Trust and test again",
+    );
+    if (!button) {
+      throw new Error("the toast action is not drawn");
+    }
+
+    // A dialog dismisses itself on a pointer press or a focus outside its layer. These are the
+    // listeners it installs; the toast has to keep both events from reaching them.
+    const pointerDown = vi.fn();
+    const focusIn = vi.fn();
+    document.addEventListener("pointerdown", pointerDown);
+    document.addEventListener("focusin", focusIn);
+    try {
+      button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+      button.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      button.click();
+      await nextTick();
+    } finally {
+      document.removeEventListener("pointerdown", pointerDown);
+      document.removeEventListener("focusin", focusIn);
+    }
+
+    expect(pointerDown).not.toHaveBeenCalled();
+    expect(focusIn).not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
 });

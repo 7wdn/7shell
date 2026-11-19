@@ -47,7 +47,18 @@ const actionClass = computed(() =>
 </script>
 
 <template>
-  <div class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center px-4">
+  <!--
+    A dialog dismisses itself on a pointer press or a focus landing outside its layer. A toast is
+    drawn outside every dialog, so the action that says "trust this key and try again" would close
+    the session editor that is waiting for the answer. The two events stay inside the viewport:
+    the action is part of the dialog's interaction without making the toast modal, and a message
+    that merely happens to cover a control still lets that control's click through.
+  -->
+  <div
+    class="pointer-events-none fixed inset-x-0 bottom-6 z-[60] flex flex-col items-center px-4"
+    @pointerdown.stop
+    @focusin.stop
+  >
     <div aria-live="polite" aria-atomic="true" class="flex max-w-full justify-center">
       <p v-if="visible && !interrupting" :class="lineClass">
         <span>{{ message }}</span>
