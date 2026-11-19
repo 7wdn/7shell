@@ -12,7 +12,7 @@
     "ssh": {
       "hostKeyUnknown": "{host}:{port} 提供的主机键此前从未见过。",
       "hostKeyMismatch": "{host}:{port} 提供的主机键与已信任的主机键不一致。未向该服务器发送任何内容。",
-      "hostKeySystemMismatch": "{host}:{port} 提供的主机键与本机 ~/.ssh/known_hosts 中记录的不一致。未发送任何内容。",
+      "hostKeySystemMismatch": "{host}:{port} 提供的主机键（{keyType}，{fingerprint}）与本机 ~/.ssh/known_hosts 中记录的不一致。未发送任何内容。如果这台主机确实更换过密钥，请先删除本机记录（{command}），再重新连接。",
       "authFailed": "{host}:{port} 拒绝了这个凭据。",
       "unreachable": "无法连接到 {host}:{port}。",
       "timeout": "{host}:{port} 在 {seconds} 秒内没有响应。",

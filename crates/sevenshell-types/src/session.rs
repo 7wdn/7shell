@@ -595,6 +595,17 @@ pub struct PresentedHostKey {
     pub fingerprint: String,
 }
 
+impl KnownHostEntry {
+    /// Whether this record is a statement about the key the server just presented.
+    ///
+    /// The algorithm is part of the comparison: a record of a different algorithm says nothing
+    /// about this key, and OpenSSH treats that as unseen rather than changed. Comparing only the
+    /// public key would turn a server that added or switched a key type into a false alarm.
+    pub fn accepts(&self, presented: &PresentedHostKey) -> bool {
+        self.key_type == presented.key_type && self.public_key == presented.public_key
+    }
+}
+
 /// What the interface is told when opening a session needs a decision, or has succeeded.
 ///
 /// A decision carries no handle: the interface either trusts the key (and asks to open again) or

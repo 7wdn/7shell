@@ -21,6 +21,8 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use russh::keys::PublicKey;
+
 /// The identities OpenSSH tries, in its own order, when a host names none.
 pub const DEFAULT_IDENTITY_FILES: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
 
@@ -42,21 +44,42 @@ pub enum SystemHostKey {
 /// be read is `Unknown`, which asks the person through this application's own prompt — never a
 /// silent trust.
 pub fn check_system_known_host(path: &Path, host: &str, port: u16, key_type: &str, public_key: &str) -> SystemHostKey {
-    let Ok(key) = russh::keys::parse_public_key_base64(public_key) else {
+    let Ok(presented) = russh::keys::parse_public_key_base64(public_key) else {
         return SystemHostKey::Unknown;
     };
-    if key.algorithm().as_str() != key_type {
+    if presented.algorithm().as_str() != key_type {
         return SystemHostKey::Unknown;
     }
-    classify(russh::keys::known_hosts::check_known_hosts_path(host, port, &key, path))
+    let Ok(recorded) = russh::keys::known_hosts::known_host_keys_path(host, port, path) else {
+        return SystemHostKey::Unknown;
+    };
+    verdict(&presented, &recorded)
 }
 
-fn classify(result: Result<bool, russh::keys::Error>) -> SystemHostKey {
-    match result {
-        Ok(true) => SystemHostKey::Trusted,
-        Ok(false) => SystemHostKey::Unknown,
-        Err(russh::keys::Error::KeyChanged { .. }) => SystemHostKey::Changed,
-        Err(_) => SystemHostKey::Unknown,
+/// What the records for one endpoint say about the key just presented.
+///
+/// A record that matches is an answer even when the file also holds an older record of the same
+/// algorithm: the file is asserting the person trusted this key, and which line came first is an
+/// accident of history. `ssh` itself stops at the first same-algorithm line it reads, so a stale
+/// line ahead of the current one makes it refuse where the record it needs is right there
+/// (issue #13, where other clients connected while this one refused). Only records that speak for
+/// this key's algorithm count; a different algorithm says nothing about this key and is treated
+/// as unseen.
+fn verdict(presented: &PublicKey, recorded: &[(usize, PublicKey)]) -> SystemHostKey {
+    let mut same_algorithm_differs = false;
+    for (_, key) in recorded {
+        if key.algorithm() != presented.algorithm() {
+            continue;
+        }
+        if key.key_data() == presented.key_data() {
+            return SystemHostKey::Trusted;
+        }
+        same_algorithm_differs = true;
+    }
+    if same_algorithm_differs {
+        SystemHostKey::Changed
+    } else {
+        SystemHostKey::Unknown
     }
 }
 
@@ -711,6 +734,71 @@ mod tests {
                 &presented.public_key_base64()
             ),
             SystemHostKey::Changed
+        );
+    }
+
+    #[test]
+    fn a_matching_record_is_trusted_whatever_other_records_of_the_same_algorithm_say() {
+        use russh::keys::PublicKeyBase64 as _;
+
+        let directory = tempdir().expect("a temporary directory");
+        let path = directory.path().join("known_hosts");
+        let current_key = a_key();
+        let stale_key = a_key();
+        let current = current_key.public_key();
+        let stale = stale_key.public_key();
+        let current_line = format!("web.example {}", current.to_openssh().expect("a public line"));
+        let stale_line = format!("web.example {}", stale.to_openssh().expect("a public line"));
+
+        // The stale record first is the order in which `ssh` itself stops, and the one that made
+        // 0.4.0 refuse a host the person had already accepted.
+        fs::write(&path, format!("{stale_line}\n{current_line}\n")).expect("the known_hosts file");
+        assert_eq!(
+            check_system_known_host(&path, "web.example", 22, "ssh-ed25519", &current.public_key_base64()),
+            SystemHostKey::Trusted
+        );
+
+        // The order the other way round is what `ssh` already accepts; both are the same answer.
+        fs::write(&path, format!("{current_line}\n{stale_line}\n")).expect("the known_hosts file");
+        assert_eq!(
+            check_system_known_host(&path, "web.example", 22, "ssh-ed25519", &current.public_key_base64()),
+            SystemHostKey::Trusted
+        );
+    }
+
+    #[test]
+    fn a_record_of_another_algorithm_is_not_a_change() {
+        use russh::keys::PublicKeyBase64 as _;
+
+        let directory = tempdir().expect("a temporary directory");
+        let path = directory.path().join("known_hosts");
+        let mut rng = russh::keys::key::safe_rng();
+        let recorded_key = russh::keys::PrivateKey::random(
+            &mut rng,
+            russh::keys::Algorithm::Ecdsa {
+                curve: russh::keys::EcdsaCurve::NistP256,
+            },
+        )
+        .expect("a generated key");
+        let recorded = recorded_key.public_key();
+        fs::write(
+            &path,
+            format!("web.example {}\n", recorded.to_openssh().expect("a public line")),
+        )
+        .expect("the known_hosts file");
+
+        let presented_key = a_key();
+        let presented = presented_key.public_key();
+        assert_eq!(
+            check_system_known_host(
+                &path,
+                "web.example",
+                22,
+                presented.algorithm().as_str(),
+                &presented.public_key_base64()
+            ),
+            SystemHostKey::Unknown,
+            "a record of another algorithm says nothing about this key, so the person is asked"
         );
     }
 

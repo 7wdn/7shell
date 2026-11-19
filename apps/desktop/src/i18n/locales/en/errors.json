@@ -12,7 +12,7 @@
     "ssh": {
       "hostKeyUnknown": "The server at {host}:{port} presented a host key that has not been seen before.",
       "hostKeyMismatch": "The host key from {host}:{port} does not match the trusted one. Nothing was sent to that server.",
-      "hostKeySystemMismatch": "The host key from {host}:{port} differs from the one recorded in this machine's ~/.ssh/known_hosts. Nothing was sent.",
+      "hostKeySystemMismatch": "The {keyType} host key from {host}:{port} ({fingerprint}) differs from the one recorded in this machine's ~/.ssh/known_hosts. Nothing was sent. If the server's key really was replaced, remove the local record ({command}) and connect again.",
       "authFailed": "The server at {host}:{port} rejected these credentials.",
       "unreachable": "Could not reach {host}:{port}.",
       "timeout": "{host}:{port} did not respond within {seconds} seconds.",

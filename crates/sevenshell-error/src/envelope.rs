@@ -307,11 +307,22 @@ impl ShellError {
     }
 
     /// The system's own record has a different key. Unlike the vault's record, there is no replace
-    /// action: this build never writes the person's `~/.ssh/known_hosts`.
-    pub fn ssh_host_key_system_mismatch(host: &str, port: u16, key_type: &str) -> Self {
+    /// action: this build never writes the person's `~/.ssh/known_hosts`. The message therefore
+    /// carries the presented fingerprint and the exact `ssh-keygen -R` line, so a person whose
+    /// server was legitimately rebuilt can clear the stale record and go through the normal
+    /// unknown-key trust flow instead of being stuck at a refusal with no next step.
+    pub fn ssh_host_key_system_mismatch(host: &str, port: u16, key_type: &str, fingerprint: &str) -> Self {
+        let target = if port == 22 {
+            host.to_owned()
+        } else {
+            format!("[{host}]:{port}")
+        };
         Self::new(ErrorCode::SshHostKeySystemMismatch, ssh_origin(host, port))
             .with_param("host", host)
             .with_param("port", port.to_string())
+            .with_param("keyType", key_type)
+            .with_param("fingerprint", fingerprint)
+            .with_param("command", format!("ssh-keygen -R \"{target}\""))
             .with_diagnostic("keyType", key_type)
             .with_outcome(OperationOutcome::NotSent)
     }

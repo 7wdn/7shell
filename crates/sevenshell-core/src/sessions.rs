@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sevenshell_error::ShellError;
 use sevenshell_session::{OpenTerminal, RecordingSpec, SessionRegistry};
+use sevenshell_ssh::openssh::SystemHostKey;
 use sevenshell_ssh::{
     ChannelEvent, Credential, LocalForward as HopForward, OpenRequest, Purpose, Route, SshSession, Target,
     TerminalSize, TunnelHandle,
@@ -54,11 +55,36 @@ pub(crate) struct PreparedSession {
 const MAX_IDENTITY_BYTES: u64 = 1024 * 1024;
 
 /// What this machine's own `known_hosts` says about the key a server presented.
-fn system_known_host(host: &str, port: u16, presented: &PresentedHostKey) -> sevenshell_ssh::openssh::SystemHostKey {
+fn system_known_host(host: &str, port: u16, presented: &PresentedHostKey) -> SystemHostKey {
     let Some(path) = sevenshell_platform::ssh_dir().map(|directory| directory.join("known_hosts")) else {
-        return sevenshell_ssh::openssh::SystemHostKey::Unknown;
+        return SystemHostKey::Unknown;
     };
     sevenshell_ssh::openssh::check_system_known_host(&path, host, port, &presented.key_type, &presented.public_key)
+}
+
+/// What the two record keepers together say about the key a server presented.
+enum KeyStanding {
+    Accepted,
+    Unknown,
+    /// The record that stops the connection, for the prompt that shows both fingerprints.
+    Changed(KnownHostEntry),
+}
+
+/// Reads the vault's record and this machine's `known_hosts` as one answer.
+///
+/// Either keeper accepting the key is enough: both are records of keys a person has trusted, and
+/// asking again because only one of them knows the key would be the same question answered twice.
+/// A record of a *different algorithm* is not a record of this key — OpenSSH treats that as unseen
+/// and asks, and stopping there is how a server that added or switched a key type looked like a
+/// changed host key. Only a record of the same algorithm with different material is the real stop.
+/// Callers have already refused on `SystemHostKey::Changed`.
+fn standing(trusted: Option<KnownHostEntry>, system: SystemHostKey, presented: &PresentedHostKey) -> KeyStanding {
+    match trusted {
+        Some(entry) if entry.accepts(presented) => KeyStanding::Accepted,
+        Some(entry) if entry.key_type == presented.key_type => KeyStanding::Changed(entry),
+        _ if system == SystemHostKey::Trusted => KeyStanding::Accepted,
+        _ => KeyStanding::Unknown,
+    }
 }
 
 /// Where an `IdentityFile` value points on this machine.
@@ -331,23 +357,27 @@ impl Core {
         };
 
         let system = system_known_host(&target.host, target.port, &presented);
-        if system == sevenshell_ssh::openssh::SystemHostKey::Changed {
+        if system == SystemHostKey::Changed {
             return Err(ShellError::ssh_host_key_system_mismatch(
                 &target.host,
                 target.port,
                 &presented.key_type,
+                &presented.fingerprint,
             ));
         }
-        match self.vault.find_known_host(&target.host, target.port)? {
-            None if system == sevenshell_ssh::openssh::SystemHostKey::Trusted => {}
-            None => return Ok(OpenOutcome::HostKeyUnknown { key: presented }),
-            Some(trusted) if trusted.public_key != presented.public_key => {
+        match standing(
+            self.vault.find_known_host(&target.host, target.port)?,
+            system,
+            &presented,
+        ) {
+            KeyStanding::Accepted => {}
+            KeyStanding::Unknown => return Ok(OpenOutcome::HostKeyUnknown { key: presented }),
+            KeyStanding::Changed(trusted) => {
                 return Ok(OpenOutcome::HostKeyMismatch {
                     key: presented,
                     trusted,
                 });
             }
-            Some(_) => {}
         }
 
         let route = match hop {
@@ -497,23 +527,27 @@ impl Core {
         };
 
         let system = system_known_host(&target.host, target.port, &presented);
-        if system == sevenshell_ssh::openssh::SystemHostKey::Changed {
+        if system == SystemHostKey::Changed {
             return Err(ShellError::ssh_host_key_system_mismatch(
                 &target.host,
                 target.port,
                 &presented.key_type,
+                &presented.fingerprint,
             ));
         }
-        match self.vault.find_known_host(&target.host, target.port)? {
-            None if system == sevenshell_ssh::openssh::SystemHostKey::Trusted => {}
-            None => return Ok(ConnectionTestOutcome::HostKeyUnknown { key: presented }),
-            Some(trusted) if trusted.public_key != presented.public_key => {
+        match standing(
+            self.vault.find_known_host(&target.host, target.port)?,
+            system,
+            &presented,
+        ) {
+            KeyStanding::Accepted => {}
+            KeyStanding::Unknown => return Ok(ConnectionTestOutcome::HostKeyUnknown { key: presented }),
+            KeyStanding::Changed(trusted) => {
                 return Ok(ConnectionTestOutcome::HostKeyMismatch {
                     key: presented,
                     trusted,
                 });
             }
-            Some(_) => {}
         }
 
         let route = match hop {
@@ -798,23 +832,29 @@ impl Core {
             };
 
             let system = system_known_host(&target.host, target.port, &presented);
-            if system == sevenshell_ssh::openssh::SystemHostKey::Changed {
+            if system == SystemHostKey::Changed {
                 return Err(ShellError::ssh_host_key_system_mismatch(
                     &target.host,
                     target.port,
                     &presented.key_type,
+                    &presented.fingerprint,
                 ));
             }
-            match self.vault.find_known_host(&target.host, target.port)? {
-                None if system == sevenshell_ssh::openssh::SystemHostKey::Trusted => {}
-                None => return Ok(RouteOutcome::Decision(Box::new(HostKeyDecision::Unknown(presented)))),
-                Some(trusted) if trusted.public_key != presented.public_key => {
+            match standing(
+                self.vault.find_known_host(&target.host, target.port)?,
+                system,
+                &presented,
+            ) {
+                KeyStanding::Accepted => {}
+                KeyStanding::Unknown => {
+                    return Ok(RouteOutcome::Decision(Box::new(HostKeyDecision::Unknown(presented))));
+                }
+                KeyStanding::Changed(trusted) => {
                     return Ok(RouteOutcome::Decision(Box::new(HostKeyDecision::Mismatch {
                         key: presented,
                         trusted,
                     })));
                 }
-                Some(_) => {}
             }
 
             let route = match current {
@@ -979,27 +1019,31 @@ impl Core {
         };
 
         let system = system_known_host(&target.host, target.port, &presented);
-        if system == sevenshell_ssh::openssh::SystemHostKey::Changed {
+        if system == SystemHostKey::Changed {
             return Err(ShellError::ssh_host_key_system_mismatch(
                 &target.host,
                 target.port,
                 &presented.key_type,
+                &presented.fingerprint,
             ));
         }
-        match self.vault.find_known_host(&target.host, target.port)? {
-            None if system == sevenshell_ssh::openssh::SystemHostKey::Trusted => {}
-            None => {
+        match standing(
+            self.vault.find_known_host(&target.host, target.port)?,
+            system,
+            &presented,
+        ) {
+            KeyStanding::Accepted => {}
+            KeyStanding::Unknown => {
                 return Ok(ConnectionOutcome::Decision(Box::new(HostKeyDecision::Unknown(
                     presented,
                 ))));
             }
-            Some(trusted) if trusted.public_key != presented.public_key => {
+            KeyStanding::Changed(trusted) => {
                 return Ok(ConnectionOutcome::Decision(Box::new(HostKeyDecision::Mismatch {
                     key: presented,
                     trusted,
                 })));
             }
-            Some(_) => {}
         }
 
         let route = match hop {
@@ -1797,9 +1841,65 @@ mod tests {
             fingerprint: String::new(),
         };
 
-        assert_eq!(
-            system_known_host("web.example", 22, &presented),
-            sevenshell_ssh::openssh::SystemHostKey::Trusted
+        assert_eq!(system_known_host("web.example", 22, &presented), SystemHostKey::Trusted);
+    }
+
+    fn as_presented(key_type: &str, public_key: &str) -> PresentedHostKey {
+        PresentedHostKey {
+            host: "web.example".to_owned(),
+            port: 22,
+            key_type: key_type.to_owned(),
+            public_key: public_key.to_owned(),
+            fingerprint: String::new(),
+        }
+    }
+
+    fn as_recorded(key_type: &str, public_key: &str) -> KnownHostEntry {
+        KnownHostEntry {
+            host: "web.example".to_owned(),
+            port: 22,
+            key_type: key_type.to_owned(),
+            public_key: public_key.to_owned(),
+            fingerprint: String::new(),
+            added_at: 0,
+        }
+    }
+
+    #[test]
+    fn a_record_of_another_algorithm_asks_instead_of_stopping() {
+        let presented = as_presented("ssh-ed25519", "AAAA");
+        let answer = standing(Some(as_recorded("ssh-rsa", "BBBB")), SystemHostKey::Unknown, &presented);
+        assert!(
+            matches!(answer, KeyStanding::Unknown),
+            "a record of another algorithm says nothing about this key"
         );
+
+        let answer = standing(Some(as_recorded("ssh-rsa", "BBBB")), SystemHostKey::Trusted, &presented);
+        assert!(
+            matches!(answer, KeyStanding::Accepted),
+            "the system file knows this very key, so there is nothing to ask"
+        );
+    }
+
+    #[test]
+    fn a_record_of_the_same_algorithm_with_other_material_is_a_stop() {
+        let presented = as_presented("ssh-ed25519", "AAAA");
+        let answer = standing(
+            Some(as_recorded("ssh-ed25519", "BBBB")),
+            SystemHostKey::Unknown,
+            &presented,
+        );
+        assert!(matches!(answer, KeyStanding::Changed(_)));
+    }
+
+    #[test]
+    fn a_matching_vault_record_is_accepted() {
+        let presented = as_presented("ssh-ed25519", "AAAA");
+        let answer = standing(
+            Some(as_recorded("ssh-ed25519", "AAAA")),
+            SystemHostKey::Unknown,
+            &presented,
+        );
+        assert!(matches!(answer, KeyStanding::Accepted));
     }
 }

@@ -191,6 +191,59 @@ async fn a_changed_key_in_the_system_known_hosts_is_a_hard_stop() {
 
 #[tokio::test]
 #[ignore = "needs the SSH lab: see the module comment"]
+async fn a_matching_system_record_is_trusted_beside_a_stale_one() {
+    let Some((directory, _vault, core, session_id)) = lab_with_alias() else {
+        return;
+    };
+
+    let presented = match core.open_terminal(&session_id).await.expect("the first open answers") {
+        OpenOutcome::HostKeyUnknown { key } => key,
+        other => panic!("expected a host key question, got {other:?}"),
+    };
+    if presented.key_type != "ssh-ed25519" {
+        eprintln!(
+            "the lab presents {}, so this test cannot build a stale key of the same algorithm; skipping",
+            presented.key_type
+        );
+        return;
+    }
+
+    let generated =
+        sevenshell_ssh::generate(sevenshell_types::KeyAlgorithm::Ed25519, "test", None).expect("a generated key");
+    let mut parts = generated.public_line().split_whitespace();
+    let _key_type = parts.next().expect("a key type");
+    let stale = parts.next().expect("a public key");
+
+    // The stale record comes first, which is where `ssh` itself would stop; the current key is
+    // right below it, and a record that matches is what the file actually asserts (issue #13).
+    let ssh = directory.path().join("ssh");
+    let name = if presented.port == 22 {
+        presented.host.clone()
+    } else {
+        format!("[{}]:{}", presented.host, presented.port)
+    };
+    std::fs::write(
+        ssh.join("known_hosts"),
+        format!(
+            "{name} ssh-ed25519 {stale}\n{name} ssh-ed25519 {}\n",
+            presented.public_key
+        ),
+    )
+    .expect("known_hosts");
+
+    match core.open_terminal(&session_id).await.expect("the second open answers") {
+        OpenOutcome::Opened { handle, .. } => {
+            core.close_terminal(&handle).await.expect("the shell closes");
+        }
+        OpenOutcome::HostKeyUnknown { .. } => {
+            panic!("a key already in the system known_hosts was asked about again");
+        }
+        other => panic!("expected the session to open, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see the module comment"]
 async fn an_identity_file_in_the_config_authenticates_the_session() {
     let Some((host, port, user, password)) = lab_credentials() else {
         return;
