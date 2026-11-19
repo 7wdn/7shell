@@ -18,6 +18,7 @@ use sevenshell_session::OpenTerminal;
 use sevenshell_term::zmodem::{Detector, DetectorEvent, Direction, EndReason, FileInfo, ReceiveEvent};
 use sevenshell_types::{
     ConnectionTestOutcome, HostSystem, LocalShell, OpenOutcome, OpenTunnel, SecretInput, SerialPortInfo, Session,
+    TerminalEncoding,
 };
 use tauri::{AppHandle, Emitter as _, State};
 use tauri_plugin_dialog::DialogExt;
@@ -94,6 +95,17 @@ pub async fn terminal_write(state: State<'_, ShellState>, handle: String, base64
         .map_err(|error| ShellError::app_internal(format!("the terminal input was not valid base64: {error}")))?;
 
     state.core().write(&handle, &data).await
+}
+
+/// Sends text in a session's encoding; the interface uses this when UTF-8 is not the session's.
+#[tauri::command]
+pub async fn terminal_write_text(
+    state: State<'_, ShellState>,
+    handle: String,
+    text: String,
+    encoding: TerminalEncoding,
+) -> Result<(), ShellError> {
+    state.core().write_text(&handle, &text, encoding).await
 }
 
 #[tauri::command]

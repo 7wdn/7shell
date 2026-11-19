@@ -29,8 +29,8 @@ use sevenshell_types::{
     ContainerStreamLine, CreatedKey, DownloadFolderView, EntryKind, K8sExecRequest, K8sLogRequest, K8sRequest,
     K8sStreamEnd, K8sStreamLine, K8sWatchEvent, KeyAlgorithm, KeyInfo, PresentedHostKey, Protocol, SecretInput,
     SendTarget, Session, SessionExportSummary, SessionGroup, SessionImportOutcome, Snippet, SnippetGroup,
-    SyncSelection, TransferState, UpdateCheck, UploadAnswer, UploadOutcome, VaultKeychainStatus, VaultState,
-    VmPowerAction,
+    SyncSelection, TerminalEncoding, TransferState, UpdateCheck, UploadAnswer, UploadOutcome, VaultKeychainStatus,
+    VaultState, VmPowerAction,
 };
 use sevenshell_vault::{ExportProtection, OpenedBundle, SessionSecret, Vault, VaultStatus};
 use std::collections::HashMap;
@@ -537,6 +537,13 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
             let columns: u32 = from_args(&args, "columns")?;
             let rows: u32 = from_args(&args, "rows")?;
             state.core.resize(&handle, columns, rows).await?;
+            Ok(Value::Null)
+        }
+        "terminal_write_text" => {
+            let handle: String = from_args(&args, "handle")?;
+            let text: String = from_args(&args, "text")?;
+            let encoding: TerminalEncoding = from_args(&args, "encoding")?;
+            state.core.write_text(&handle, &text, encoding).await?;
             Ok(Value::Null)
         }
         "terminal_close" => {

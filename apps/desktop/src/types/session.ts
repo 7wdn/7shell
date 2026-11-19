@@ -69,6 +69,10 @@ export interface SessionAuth {
 export interface TerminalSettings {
   readonly terminalType: string;
   readonly keepaliveSeconds: number;
+  /** The encoding the far side prints and expects. */
+  readonly encoding: TerminalEncoding;
+  /** What the Backspace key sends to this host. */
+  readonly backspace: BackspaceMode;
   /**
    * Whether the far side may use the key agent on this machine while the session lasts.
    *
@@ -168,6 +172,9 @@ export type EnterMode = "crlf" | "cr" | "lf";
 /** What the Backspace key puts on the wire: what an xterm sends, or the older Ctrl+H. */
 export type BackspaceMode = "del" | "ctrlH";
 
+/** The encoding a terminal session speaks. */
+export type TerminalEncoding = "utf-8" | "gbk" | "gb18030";
+
 /** How a serial frame checks itself. */
 export type SerialParity = "none" | "even" | "odd";
 
@@ -181,6 +188,7 @@ export type SerialFlowControl = "none" | "rtsCts" | "xonXoff";
 export interface TelnetSettings {
   readonly enter: EnterMode;
   readonly backspace: BackspaceMode;
+  readonly encoding: TerminalEncoding;
 }
 
 /** A serial port and the line parameters it was chosen with. */

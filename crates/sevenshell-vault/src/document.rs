@@ -49,9 +49,10 @@ use crate::credential::{KeyEntry, SecretEntry, SecretKind, ServicePassword};
 /// Workstation REST service's credentials, with the same failure if an older build wrote the
 /// document back. Version 14 added whether a session's host comes from this machine's OpenSSH
 /// configuration: an older build would drop the flag and dial the alias as a host name, which is a
-/// different machine's problem only until DNS answers. The bump makes that build refuse the file
-/// instead.
-pub const VAULT_SCHEMA_VERSION: u32 = 14;
+/// different machine's problem only until DNS answers. Version 15 added the encoding and backspace
+/// byte a terminal session speaks, which an older build would drop on its next write and leave the
+/// switch printing replacement marks. The bump makes that build refuse the file instead.
+pub const VAULT_SCHEMA_VERSION: u32 = 15;
 
 /// How many sent commands are remembered. Enough to cover a working session's worth of "what was
 /// that line", and bounded so the vault does not grow with every command ever typed.

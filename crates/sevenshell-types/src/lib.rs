@@ -83,8 +83,8 @@ pub use session::{
     OpenOutcome, OpenTunnel, PresentedHostKey, SecretInput, SerialFlowControl, SerialParity, SerialPortInfo,
     SerialSettings, SerialStopBits, Session, SessionAuth, SessionExportSummary, SessionGroup, SessionImportOutcome,
     SessionImportSummary, SftpEntry, SftpListing, SftpOutcome, SftpPasteItem, SftpPasteOutcome, SshConfigHost,
-    TelnetSettings, TerminalSettings, TransferDirection, TransferInfo, TransferState, TunnelFailure, UploadAnswer,
-    UploadOutcome, VaultArchive, VaultKeychainStatus, VaultState, WebDavSettings, WslSettings,
+    TelnetSettings, TerminalEncoding, TerminalSettings, TransferDirection, TransferInfo, TransferState, TunnelFailure,
+    UploadAnswer, UploadOutcome, VaultArchive, VaultKeychainStatus, VaultState, WebDavSettings, WslSettings,
 };
 pub use settings::{
     AI_SESSION_RETENTION_DAYS_DEFAULT, AI_SESSION_RETENTION_DAYS_MAX, AI_SESSION_RETENTION_DAYS_MIN, AppLayout,

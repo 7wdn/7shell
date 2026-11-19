@@ -31,7 +31,7 @@ use sevenshell_types::{
     SocketRow, SshConfigHost, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome,
     SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth,
     TabPlacement, TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme,
-    TerminalHighlightMode, TerminalHighlightRule, TerminalPanelPlacement, TerminalSchemeBackground,
+    TerminalEncoding, TerminalHighlightMode, TerminalHighlightRule, TerminalPanelPlacement, TerminalSchemeBackground,
     TerminalSchemeProfile, TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
     UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultKeychainStatus, VaultState,
 };
@@ -1561,11 +1561,13 @@ fn telnet_and_local_settings_serialize_as_short_stable_words() {
         &sevenshell_types::TelnetSettings {
             enter: sevenshell_types::EnterMode::Lf,
             backspace: sevenshell_types::BackspaceMode::CtrlH,
+            encoding: TerminalEncoding::Gbk,
         },
         "TelnetSettings",
     );
     assert_eq!(telnet["enter"], serde_json::json!("lf"));
     assert_eq!(telnet["backspace"], serde_json::json!("ctrlH"));
+    assert_eq!(telnet["encoding"], serde_json::json!("gbk"));
 
     let local = check(
         &sevenshell_types::LocalSettings {
@@ -1585,6 +1587,26 @@ fn telnet_and_local_settings_serialize_as_short_stable_words() {
         "WslSettings",
     );
     assert_eq!(wsl["distro"], serde_json::json!("Ubuntu"));
+}
+
+/// The two per-session terminal choices the interface reads back: a misspelled value here would
+/// silently fall back to the default and leave a switch printing replacement marks.
+#[test]
+fn a_terminal_session_names_its_encoding_and_backspace_on_the_wire() {
+    let settings = check(
+        &TerminalSettings {
+            encoding: TerminalEncoding::Gb18030,
+            backspace: sevenshell_types::BackspaceMode::CtrlH,
+            ..TerminalSettings::default()
+        },
+        "TerminalSettings",
+    );
+    assert_eq!(settings["encoding"], serde_json::json!("gb18030"));
+    assert_eq!(settings["backspace"], serde_json::json!("ctrlH"));
+    assert_eq!(
+        serde_json::to_value(TerminalEncoding::Utf8).expect("encoding"),
+        serde_json::json!("utf-8")
+    );
 }
 
 #[test]
@@ -1672,6 +1694,9 @@ fn a_session_saved_before_local_terminals_existed_still_reads() {
     assert_eq!(session.telnet.enter, sevenshell_types::EnterMode::Crlf);
     assert!(session.local.shell.is_empty());
     assert!(session.wsl.distro.is_empty());
+    assert_eq!(session.terminal.encoding, TerminalEncoding::Utf8);
+    assert_eq!(session.terminal.backspace, sevenshell_types::BackspaceMode::Del);
+    assert_eq!(session.telnet.encoding, TerminalEncoding::Utf8);
 }
 
 #[test]

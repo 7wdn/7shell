@@ -102,6 +102,7 @@ import type {
   SftpPasteOutcome,
   TerminalClosed,
   TerminalData,
+  TerminalEncoding,
   TransferInfo,
   UploadAnswer,
   UploadOutcome,
@@ -919,6 +920,10 @@ export function sessionSystem(handle: string): Promise<HostSystem> {
 
 export function terminalWrite(handle: string, base64: string): Promise<void> {
   return invoke<void>("terminal_write", { handle, base64 });
+}
+
+export function terminalWriteText(handle: string, text: string, encoding: TerminalEncoding): Promise<void> {
+  return invoke<void>("terminal_write_text", { handle, text, encoding });
 }
 
 export function terminalResize(handle: string, columns: number, rows: number): Promise<void> {

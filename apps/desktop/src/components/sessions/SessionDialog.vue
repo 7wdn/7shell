@@ -59,6 +59,7 @@ import type {
   Session,
   SshConfigHost,
   ForwardMode,
+  TerminalEncoding,
 } from "@/types/session";
 import type { ContainerRuntime } from "@/types/container";
 import { AUTH_METHODS, PROTOCOLS, type AuthMethodId, type Protocol } from "@/types/generated/protocols";
@@ -280,6 +281,12 @@ const enterOptions = computed<SelectOption[]>(() => [
 const backspaceOptions = computed<SelectOption[]>(() => [
   { value: "del", label: t("sessions.editor.telnet.backspaceDel") },
   { value: "ctrlH", label: t("sessions.editor.telnet.backspaceCtrlH") },
+]);
+
+const encodingOptions = computed<SelectOption[]>(() => [
+  { value: "utf-8", label: t("sessions.editor.encoding.utf8") },
+  { value: "gbk", label: t("sessions.editor.encoding.gbk") },
+  { value: "gb18030", label: t("sessions.editor.encoding.gb18030") },
 ]);
 
 const dataBitsOptions = computed<SelectOption[]>(() =>
@@ -799,6 +806,33 @@ async function forgetKey(): Promise<void> {
             <section v-if="!isDesktop">
               <h3 class="text-xs font-medium">{{ t("sessions.editor.terminal.title") }}</h3>
 
+              <div v-if="editor.isSsh" class="mt-2 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="block text-xs font-medium" for="session-terminal-encoding">{{
+                    t("sessions.editor.terminal.encoding")
+                  }}</label>
+                  <Select
+                    id="session-terminal-encoding"
+                    :model-value="editor.terminal.encoding"
+                    class="mt-1"
+                    :options="encodingOptions"
+                    @update:model-value="editor.chooseTerminalEncoding($event as TerminalEncoding)"
+                  />
+                </div>
+                <div>
+                  <label class="block text-xs font-medium" for="session-terminal-backspace">{{
+                    t("sessions.editor.terminal.backspace")
+                  }}</label>
+                  <Select
+                    id="session-terminal-backspace"
+                    :model-value="editor.terminal.backspace"
+                    class="mt-1"
+                    :options="backspaceOptions"
+                    @update:model-value="editor.chooseTerminalBackspace($event as BackspaceMode)"
+                  />
+                </div>
+              </div>
+
               <label v-if="editor.isSsh" class="mt-2 flex items-start gap-2 text-xs">
                 <input v-model="editor.terminal.forwardAgent" type="checkbox" class="mt-0.5 size-3.5 accent-primary" />
                 <span>
@@ -1036,6 +1070,18 @@ async function forgetKey(): Promise<void> {
                     class="mt-1"
                     :options="backspaceOptions"
                     @update:model-value="editor.telnetBackspace = $event as BackspaceMode"
+                  />
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="block text-xs font-medium" for="session-telnet-encoding">{{
+                    t("sessions.editor.encoding.label")
+                  }}</label>
+                  <Select
+                    id="session-telnet-encoding"
+                    :model-value="editor.telnetEncoding"
+                    class="mt-1"
+                    :options="encodingOptions"
+                    @update:model-value="editor.telnetEncoding = $event as TerminalEncoding"
                   />
                 </div>
               </div>

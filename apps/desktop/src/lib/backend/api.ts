@@ -101,6 +101,7 @@ import type {
   SshConfigHost,
   TerminalClosed,
   TerminalData,
+  TerminalEncoding,
   UploadAnswer,
   UploadOutcome,
   VaultArchive,
@@ -976,6 +977,9 @@ export const backend = {
     system: (handle: string): Promise<HostSystem> => forward("session_system", () => desktop.sessionSystem(handle)),
     write: (handle: string, base64: string): Promise<void> =>
       forward("terminal_write", () => desktop.terminalWrite(handle, base64)),
+    /** Types text in the session's own encoding; the bytes are made where the setting is read. */
+    writeText: (handle: string, text: string, encoding: TerminalEncoding): Promise<void> =>
+      forward("terminal_write_text", () => desktop.terminalWriteText(handle, text, encoding)),
     resize: (handle: string, columns: number, rows: number): Promise<void> =>
       forward("terminal_resize", () => desktop.terminalResize(handle, columns, rows)),
     close: (handle: string): Promise<void> => forward("terminal_close", () => desktop.terminalClose(handle)),

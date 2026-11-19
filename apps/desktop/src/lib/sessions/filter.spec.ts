@@ -28,7 +28,14 @@ function session(id: string, name: string, overrides: Partial<Session> = {}): Se
     port: 22,
     user: "root",
     auth: { method: "password", hasSecret: false },
-    terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false, record: false },
+    terminal: {
+      terminalType: "xterm-256color",
+      keepaliveSeconds: 30,
+      encoding: "utf-8",
+      backspace: "del",
+      forwardAgent: false,
+      record: false,
+    },
     updatedAt: 1_700_000_000,
     ...overrides,
   };

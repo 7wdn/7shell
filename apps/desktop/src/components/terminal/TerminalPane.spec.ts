@@ -44,6 +44,8 @@ let scrolled: (() => void) | undefined;
 let droppedSelections = 0;
 /** Every search the pane ran, with the options it ran it with. */
 let searched: { needle: string; options?: { decorations?: unknown } }[] = [];
+/** What the pane handed its screen, so a decoder's work can be read back. */
+const writtenOutput: (string | Uint8Array)[] = [];
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -84,7 +86,9 @@ vi.mock("@xterm/xterm", () => ({
     }
     search(): void {}
     open(): void {}
-    write(): void {}
+    write(data: string | Uint8Array): void {
+      writtenOutput.push(data);
+    }
     focus(): void {}
     dispose(): void {}
     onData(handler: (data: string) => void): { dispose: () => void } {
@@ -162,6 +166,7 @@ vi.mock("@/lib/backend/tauri", () => ({
   sessionOpen: vi.fn(),
   terminalClose: vi.fn(),
   terminalWrite: vi.fn(),
+  terminalWriteText: vi.fn(),
   terminalResize: vi.fn(),
   knownHostTrust: vi.fn(),
   knownHostForget: vi.fn(),
@@ -184,6 +189,8 @@ import {
   filesList,
   filesOpen,
   sessionOpen,
+  terminalWrite,
+  terminalWriteText,
   transfersOpen,
   tunnelsOpen,
 } from "@/lib/backend/tauri";
@@ -194,9 +201,11 @@ import { useAppStore } from "@/stores/app";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
-import type { Session } from "@/types/session";
+import type { BackspaceMode, Session, TerminalEncoding } from "@/types/session";
 
 const sessionOpenMock = vi.mocked(sessionOpen);
+const terminalWriteMock = vi.mocked(terminalWrite);
+const terminalWriteTextMock = vi.mocked(terminalWriteText);
 const filesOpenMock = vi.mocked(filesOpen);
 /** The history write, watched rather than mocked away: what was run is the claim. */
 const commandRememberMock = vi.mocked(commandRemember);
@@ -218,7 +227,14 @@ const session: Session = {
   port: 22,
   user: "root",
   auth: { method: "password", hasSecret: true },
-  terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false, record: false },
+  terminal: {
+    terminalType: "xterm-256color",
+    keepaliveSeconds: 30,
+    encoding: "utf-8",
+    backspace: "del",
+    forwardAgent: false,
+    record: false,
+  },
   updatedAt: 1_700_000_000,
 };
 
@@ -254,9 +270,13 @@ let unmount: (() => void) | undefined;
 let pane: HTMLElement | undefined;
 
 /** Mounts one pane for the open terminal, which is what registers the handlers under test. */
-async function mountPane(interactive = true): Promise<void> {
+async function mountPane(
+  interactive = true,
+  encoding: TerminalEncoding = "utf-8",
+  backspace: BackspaceMode = "del",
+): Promise<void> {
   const host = defineComponent({
-    setup: () => () => h(TerminalPane, { handle: handleRef.value, active: true, interactive }),
+    setup: () => () => h(TerminalPane, { handle: handleRef.value, active: true, interactive, encoding, backspace }),
   });
   // The real translations rather than stubs: the pane now draws a find bar whose labels are keys,
   // and a pane mounted without them throws before any of these tests get to look at it.
@@ -295,6 +315,7 @@ beforeEach(async () => {
   scrolled = undefined;
   droppedSelections = 0;
   searched = [];
+  writtenOutput.length = 0;
   copyTextMock.mockClear();
   vi.stubGlobal(
     "ResizeObserver",
@@ -315,6 +336,8 @@ beforeEach(async () => {
   transfersOpenMock.mockReset().mockResolvedValue([]);
   clipboardTextMock.mockReset().mockResolvedValue("");
   commandRememberMock.mockReset().mockResolvedValue(undefined);
+  terminalWriteMock.mockReset();
+  terminalWriteTextMock.mockReset();
   registerSinkMock.mockClear();
   handleRef.value = "handle-1";
   SCREEN_ROWS.length = 0;
@@ -328,6 +351,47 @@ afterEach(() => {
   unmount = undefined;
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+});
+
+/** The output hook the pane just registered, so a test can make bytes arrive. */
+function outputSink(): (bytes: Uint8Array) => void {
+  const registered = registerSinkMock.mock.calls.at(-1);
+  if (!registered) {
+    throw new Error("the pane registered no output hook");
+  }
+  return registered[1];
+}
+
+describe("the session's encoding and its backspace", () => {
+  it("joins a character split across two events before drawing it", async () => {
+    await mountPane(true, "gbk");
+
+    outputSink()(Uint8Array.from([0xd6]));
+    outputSink()(Uint8Array.from([0xd0, 0xce, 0xc4]));
+    await nextTick();
+
+    const drawn = writtenOutput.filter((entry): entry is string => typeof entry === "string").join("");
+    expect(drawn, "the two halves are one character, not replacement marks").toContain("中文");
+  });
+
+  it("sends a line in the session's encoding and turns its backspace into Ctrl+H", async () => {
+    await mountPane(true, "gbk", "ctrlH");
+
+    onData?.("abc\x7f中");
+
+    await vi.waitFor(() => expect(terminalWriteTextMock).toHaveBeenCalledWith("handle-1", "abc\x08中", "gbk"));
+    expect(terminalWriteMock, "the bytes are made where the encoding is known").not.toHaveBeenCalled();
+  });
+
+  it("keeps UTF-8 keystrokes on the byte path and leaves DEL alone by default", async () => {
+    await mountPane();
+
+    onData?.("abc\x7f");
+
+    await vi.waitFor(() => expect(terminalWriteMock).toHaveBeenCalled());
+    expect(atob(terminalWriteMock.mock.calls[0]?.[1] ?? "")).toBe("abc\x7f");
+    expect(terminalWriteTextMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("a terminal carrying a file panel", () => {

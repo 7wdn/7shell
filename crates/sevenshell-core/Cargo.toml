@@ -25,6 +25,7 @@ sevenshell-vmware = { workspace = true }
 sevenshell-sync = { workspace = true }
 tar = { workspace = true }
 flate2 = { workspace = true }
+encoding_rs = { workspace = true }
 tokio = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }

@@ -152,7 +152,7 @@
       },
       "telnet": {
         "note": "Telnet 是明文协议：终端里输入的内容（包括密码）不加密传输，只适合可信网络中的老设备。",
-        "title": "键盘",
+        "title": "键盘与编码",
         "enter": "回车键",
         "enterCrlf": "CRLF（回车+换行）",
         "enterCr": "CR（仅回车）",
@@ -160,6 +160,12 @@
         "backspace": "退格键",
         "backspaceDel": "DEL (0x7F)",
         "backspaceCtrlH": "Ctrl+H (0x08)"
+      },
+      "encoding": {
+        "label": "编码",
+        "utf8": "UTF-8",
+        "gbk": "GBK（简体中文旧设备）",
+        "gb18030": "GB18030（简体中文全量）"
       },
       "rawTcp": {
         "note": "原始 TCP 不做任何协商：发什么就发什么，收到的字节原样显示。连接是明文的，适合设备自己的行协议。"
@@ -372,6 +378,8 @@
       "cancel": "取消",
       "terminal": {
         "title": "终端",
+        "encoding": "编码",
+        "backspace": "退格键",
         "forwardAgent": "允许这台服务器使用本机的密钥代理",
         "forwardAgentNote": "会话打开期间，那台服务器上运行的任何程序都可以请求签名。除非服务器确实需要，否则不要打开。",
         "record": "记录这次会话",

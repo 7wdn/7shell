@@ -240,6 +240,7 @@ pub fn run() {
             commands::terminal::session_test,
             commands::terminal::session_system,
             commands::terminal::terminal_write,
+            commands::terminal::terminal_write_text,
             commands::terminal::terminal_resize,
             commands::terminal::terminal_close,
             commands::terminal::terminals_open,

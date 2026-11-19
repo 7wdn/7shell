@@ -152,7 +152,7 @@
       },
       "telnet": {
         "note": "Telnet is cleartext: what is typed here, passwords included, crosses the network unencrypted. It is for old devices on networks you trust.",
-        "title": "Keyboard",
+        "title": "Keyboard and encoding",
         "enter": "Enter key",
         "enterCrlf": "CRLF (carriage return + line feed)",
         "enterCr": "CR (carriage return only)",
@@ -160,6 +160,12 @@
         "backspace": "Backspace key",
         "backspaceDel": "DEL (0x7F)",
         "backspaceCtrlH": "Ctrl+H (0x08)"
+      },
+      "encoding": {
+        "label": "Encoding",
+        "utf8": "UTF-8",
+        "gbk": "GBK (legacy Simplified Chinese)",
+        "gb18030": "GB18030 (full Simplified Chinese)"
       },
       "rawTcp": {
         "note": "Raw TCP negotiates nothing: bytes are sent and shown exactly as they are. The connection is cleartext, which suits a device's own line protocol."
@@ -372,6 +378,8 @@
       "cancel": "Cancel",
       "terminal": {
         "title": "Terminal",
+        "encoding": "Encoding",
+        "backspace": "Backspace",
         "forwardAgent": "Let this server use the key agent on this machine",
         "forwardAgentNote": "While the session is open, anything running on that server can ask for signatures. Leave it off unless the server needs it.",
         "record": "Write this session down",

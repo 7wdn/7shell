@@ -37,6 +37,7 @@ import type {
   Session,
   SshConfigHost,
   TelnetSettings,
+  TerminalEncoding,
   TerminalSettings,
   WslSettings,
 } from "@/types/session";
@@ -45,6 +46,8 @@ import type {
 const DEFAULT_TERMINAL: TerminalSettings = {
   terminalType: "xterm-256color",
   keepaliveSeconds: 30,
+  encoding: "utf-8",
+  backspace: "del",
   forwardAgent: false,
   record: false,
 };
@@ -58,7 +61,7 @@ const DEFAULT_DESKTOP: DesktopSettings = {
 };
 
 /** What the Rust defaults use for the transports that are not SSH. */
-const DEFAULT_TELNET: TelnetSettings = { enter: "crlf", backspace: "del" };
+const DEFAULT_TELNET: TelnetSettings = { enter: "crlf", backspace: "del", encoding: "utf-8" };
 const DEFAULT_SERIAL: SerialSettings = {
   port: "",
   baudRate: 115200,
@@ -245,6 +248,15 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
    */
   const terminal = ref<TerminalSettings>({ ...DEFAULT_TERMINAL });
 
+  /** The wire type is read-only; a chosen value replaces the settings rather than writing into them. */
+  function chooseTerminalEncoding(encoding: TerminalEncoding): void {
+    terminal.value = { ...terminal.value, encoding };
+  }
+
+  function chooseTerminalBackspace(backspace: BackspaceMode): void {
+    terminal.value = { ...terminal.value, backspace };
+  }
+
   /**
    * The remote desktop's display and mapping settings.
    *
@@ -259,6 +271,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
   /** The Telnet keyboard translation, which is the whole of what a console can be configured with. */
   const telnetEnter = ref<EnterMode>(DEFAULT_TELNET.enter);
   const telnetBackspace = ref<BackspaceMode>(DEFAULT_TELNET.backspace);
+  const telnetEncoding = ref<TerminalEncoding>(DEFAULT_TELNET.encoding);
 
   /**
    * The serial line. The baud rate is text while it is typed, like a port: an empty field is not
@@ -510,6 +523,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     const telnet = session?.telnet ?? DEFAULT_TELNET;
     telnetEnter.value = telnet.enter;
     telnetBackspace.value = telnet.backspace;
+    telnetEncoding.value = telnet.encoding;
     const serial = session?.serial ?? DEFAULT_SERIAL;
     serialPort.value = serial.port;
     serialBaud.value = String(serial.baudRate);
@@ -637,7 +651,7 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
         fullscreen: desktopFullscreen.value,
         redirectDrives: desktopDrives.value,
       },
-      telnet: { enter: telnetEnter.value, backspace: telnetBackspace.value },
+      telnet: { enter: telnetEnter.value, backspace: telnetBackspace.value, encoding: telnetEncoding.value },
       serial: {
         port: serialPort.value.trim(),
         baudRate: Number.isInteger(Number(serialBaud.value)) ? Number(serialBaud.value) : DEFAULT_SERIAL.baudRate,
@@ -771,12 +785,15 @@ export const useSessionEditorStore = defineStore("sessionEditor", () => {
     jumps,
     forwards,
     terminal,
+    chooseTerminalEncoding,
+    chooseTerminalBackspace,
     desktopWidth,
     desktopHeight,
     desktopFullscreen,
     desktopDrives,
     telnetEnter,
     telnetBackspace,
+    telnetEncoding,
     serialPort,
     serialBaud,
     serialDataBits,

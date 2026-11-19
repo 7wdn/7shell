@@ -66,6 +66,7 @@ import { MENU_TITLES } from "@/lib/menu/titles";
 import { panelPlacementMenu } from "@/lib/menu/workspace";
 import { MIN_PANE_PX, SIDE_DIVIDER_PX, SIDE_PANE_KEEP_PX } from "@/lib/workspace/split";
 import { type TerminalPanelPlacement } from "@/types/app";
+import type { BackspaceMode, TerminalEncoding } from "@/types/session";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
 import { type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores/terminals";
@@ -174,6 +175,25 @@ function panelPlacement(tab: TerminalTab): TerminalPanelPlacement {
 function panelSide(tab: TerminalTab): "left" | "right" | null {
   const placement = panelPlacement(tab);
   return placement === "left" || placement === "right" ? placement : null;
+}
+
+/** What the screen reads and the input is written in, from the session's own setting. */
+function encodingOf(tab: TerminalTab): TerminalEncoding {
+  if (tab.session.protocol === "telnet") {
+    return tab.session.telnet?.encoding ?? "utf-8";
+  }
+  if (tab.session.protocol === "ssh") {
+    return tab.session.terminal.encoding;
+  }
+  return "utf-8";
+}
+
+/**
+ * Which byte a backspace leaves as. Telnet's key is decided in the core, after the line and its
+ * editing; translating it here as well would send an edit the far side never asked for.
+ */
+function backspaceOf(tab: TerminalTab): BackspaceMode {
+  return tab.session.protocol === "ssh" ? tab.session.terminal.backspace : "del";
 }
 
 function panelIsSide(tab: TerminalTab): boolean {
@@ -304,6 +324,8 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
               :handle="tab.handle"
               :active="tab.id === terminals.activeTabId"
               :interactive="tab.status === 'open'"
+              :encoding="encodingOf(tab)"
+              :backspace="backspaceOf(tab)"
               class="min-h-0 min-w-0 flex-1"
               :style="tab.panel && !panelIsSide(tab) ? { minHeight: `${MIN_PANE_PX}px` } : undefined"
             />

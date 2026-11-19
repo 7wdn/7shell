@@ -72,6 +72,7 @@ import type {
   PresentedHostKey,
   Session,
   SftpOutcome,
+  TerminalEncoding,
   TunnelFailure,
 } from "@/types/session";
 import type { HostSystem } from "@/types/system";
@@ -2138,6 +2139,19 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
+  /** Text typed into a session whose encoding is not UTF-8; the bytes are made on the host side. */
+  async function sendText(handle: string, text: string, encoding: TerminalEncoding): Promise<void> {
+    const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
+    if (!tab || tab.status !== "open") {
+      return;
+    }
+    try {
+      await backend.terminal.writeText(handle, text, encoding);
+    } catch (error) {
+      tab.failure = asShellError(error, "terminal_write_text");
+    }
+  }
+
   async function resize(handle: string, columns: number, rows: number): Promise<void> {
     const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
     if (!tab || tab.status !== "open") {
@@ -2225,6 +2239,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     closeAll,
     activate,
     send,
+    sendText,
     resize,
     refreshTunnels,
     stopTunnel,

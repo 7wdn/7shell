@@ -96,7 +96,14 @@ const session: Session = {
   port: 22,
   user: "root",
   auth: { method: "password", hasSecret: true },
-  terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false, record: false },
+  terminal: {
+    terminalType: "xterm-256color",
+    keepaliveSeconds: 30,
+    encoding: "utf-8",
+    backspace: "del",
+    forwardAgent: false,
+    record: false,
+  },
   updatedAt: 1_700_000_000,
 };
 
@@ -1210,7 +1217,14 @@ describe("terminals store", () => {
       port: 0,
       user: "",
       auth: { method: "password", hasSecret: false },
-      terminal: { terminalType: "xterm-256color", keepaliveSeconds: 0, forwardAgent: false, record: false },
+      terminal: {
+        terminalType: "xterm-256color",
+        keepaliveSeconds: 0,
+        encoding: "utf-8",
+        backspace: "del",
+        forwardAgent: false,
+        record: false,
+      },
       updatedAt: 0,
     };
 
@@ -1335,7 +1349,14 @@ describe("terminals store", () => {
       port: 0,
       user: "",
       auth: { method: "password", hasSecret: false },
-      terminal: { terminalType: "xterm-256color", keepaliveSeconds: 0, forwardAgent: false, record: false },
+      terminal: {
+        terminalType: "xterm-256color",
+        keepaliveSeconds: 0,
+        encoding: "utf-8",
+        backspace: "del",
+        forwardAgent: false,
+        record: false,
+      },
       updatedAt: 0,
     };
 

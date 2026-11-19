@@ -13,7 +13,7 @@ use sevenshell_ssh::{
 use sevenshell_term::{LocalSpec, SerialSpec, TcpSpec, TelnetSpec, WslSpec};
 use sevenshell_types::{
     AuthMethod, ConnectionTestOutcome, ForwardMode, KnownHostEntry, LocalForward, LocalShell, OpenOutcome, OpenTunnel,
-    PresentedHostKey, Protocol, SecretInput, SerialPortInfo, Session, TransferInfo, TunnelFailure,
+    PresentedHostKey, Protocol, SecretInput, SerialPortInfo, Session, TerminalEncoding, TransferInfo, TunnelFailure,
 };
 use sevenshell_vault::Vault;
 use tokio::sync::{Mutex, Notify, mpsc};
@@ -665,6 +665,16 @@ impl Core {
         self.registry.write(handle, data).await
     }
 
+    /// Sends text in the encoding the terminal session asked for.
+    ///
+    /// The terminal on this side always speaks UTF-8; a switch or an old Unix host may not. Encoding
+    /// here rather than in the interface keeps the browser edition and the desktop edition on the
+    /// same rule, and keeps the conversion next to the only code that writes to the pty.
+    pub async fn write_text(&self, handle: &str, text: &str, encoding: TerminalEncoding) -> Result<(), ShellError> {
+        let bytes = encoded_text(text, encoding);
+        self.write(handle, &bytes).await
+    }
+
     /// Tells the remote side the terminal changed size.
     pub async fn resize(&self, handle: &str, columns: u32, rows: u32) -> Result<(), ShellError> {
         self.registry.resize(handle, columns, rows).await
@@ -1294,6 +1304,15 @@ async fn until_cancelled<T>(
     }
 }
 
+/// A terminal's text in the bytes its far side prints and expects.
+fn encoded_text(text: &str, encoding: TerminalEncoding) -> Vec<u8> {
+    match encoding {
+        TerminalEncoding::Utf8 => text.as_bytes().to_vec(),
+        TerminalEncoding::Gbk => encoding_rs::GBK.encode(text).0.into_owned(),
+        TerminalEncoding::Gb18030 => encoding_rs::GB18030.encode(text).0.into_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sevenshell_types::{AuthMethod, SessionAuth, TerminalSettings};
@@ -1338,6 +1357,21 @@ mod tests {
             forwards: Vec::new(),
             updated_at: 0,
         }
+    }
+
+    /// A Chinese switch expects two bytes for a character an xterm would send as three.
+    #[test]
+    fn typed_text_becomes_the_bytes_the_session_s_encoding_names() {
+        assert_eq!(encoded_text("中文", TerminalEncoding::Utf8), "中文".as_bytes());
+        assert_eq!(
+            encoded_text("中文", TerminalEncoding::Gbk),
+            vec![0xD6, 0xD0, 0xCE, 0xC4]
+        );
+        assert_eq!(
+            encoded_text("😀", TerminalEncoding::Gb18030).len(),
+            4,
+            "GB18030 reaches every scalar as four bytes at most; GBK would have replaced this one"
+        );
     }
 
     #[tokio::test]

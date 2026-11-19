@@ -32,7 +32,14 @@ function sample(id: string, name: string): Session {
     port: 22,
     user: "root",
     auth: { method: "password", hasSecret: false },
-    terminal: { terminalType: "xterm-256color", keepaliveSeconds: 30, forwardAgent: false, record: false },
+    terminal: {
+      terminalType: "xterm-256color",
+      keepaliveSeconds: 30,
+      encoding: "utf-8",
+      backspace: "del",
+      forwardAgent: false,
+      record: false,
+    },
     updatedAt: 1_700_000_000,
   };
 }
@@ -222,6 +229,24 @@ describe("session editor store", () => {
       }),
       undefined,
     );
+  });
+
+  /** A Chinese switch: the terminal has its own encoding, and Telnet carries the one on the wire. */
+  it("keeps the encoding and backspace chosen for each kind of terminal", () => {
+    const editor = useSessionEditorStore();
+    editor.fill(sample("app", "app"));
+    editor.chooseTerminalEncoding("gbk");
+    editor.chooseTerminalBackspace("ctrlH");
+
+    expect(editor.draft().terminal).toMatchObject({ encoding: "gbk", backspace: "ctrlH" });
+
+    editor.fill({
+      ...sample("switch", "switch"),
+      protocol: "telnet",
+      telnet: { enter: "lf", backspace: "del", encoding: "gb18030" },
+    });
+    expect(editor.telnetEncoding).toBe("gb18030");
+    expect(editor.draft().telnet).toMatchObject({ enter: "lf", encoding: "gb18030" });
   });
 
   it("saves no route or forwards at all when there are none", async () => {

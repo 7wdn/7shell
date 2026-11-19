@@ -5,8 +5,10 @@
  * Output arrives as bytes and is written as bytes. Decoding base64 into a string on the way in is
  * the one thing that must not happen here: a UTF-8 character split across two events would decode
  * to replacement characters on both sides, and the terminal would show them instead of the
- * character the server sent. Input travels the other way as UTF-8 bytes, which is what `onData`
- * hands over.
+ * character the server sent. A session whose encoding is not UTF-8 is decoded by a streaming
+ * `TextDecoder` for the same reason — it carries a half-finished character to the next event.
+ * Input travels the other way in the session's own encoding: UTF-8 goes out as bytes from here,
+ * while every other encoding is handed to the host, which is where `encoding_rs` lives.
  *
  * The size follows the container. A terminal whose size disagrees with the channel's wraps in the
  * wrong place, so the first fit after mounting is sent unconditionally; later ones are debounced,
@@ -55,6 +57,7 @@ import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
 import { backgroundIsSet } from "@/types/app";
+import type { BackspaceMode, TerminalEncoding } from "@/types/session";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -237,13 +240,20 @@ const searchInput = ref<HTMLInputElement | null>(null);
 
 let searchAddon: SearchAddon | null = null;
 
-const props = defineProps<{
-  handle: string;
-  /** True for the tab on screen: the only one that fits itself and takes focus. */
-  active: boolean;
-  /** False once the terminal has ended, when keystrokes have nowhere left to go. */
-  interactive: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    handle: string;
+    /** True for the tab on screen: the only one that fits itself and takes focus. */
+    active: boolean;
+    /** False once the terminal has ended, when keystrokes have nowhere left to go. */
+    interactive: boolean;
+    /** How the bytes on this screen are read; UTF-8 is handed to xterm untouched. */
+    encoding?: TerminalEncoding;
+    /** Which byte an SSH backspace key sends; other protocols decide this behind the session. */
+    backspace?: BackspaceMode;
+  }>(),
+  { encoding: "utf-8", backspace: "del" },
+);
 
 const terminals = useTerminalsStore();
 const commands = useCommandsStore();
@@ -271,6 +281,31 @@ function answerPromptOnScreen(): boolean {
 }
 
 const encoder = new TextEncoder();
+/**
+ * The session's decoder, kept across events so a character split between two of them is completed
+ * rather than drawn as two replacement marks.
+ */
+let decoder: TextDecoder | undefined;
+
+/** Output for this screen: UTF-8 reaches xterm as bytes; every other encoding is decoded here. */
+function decodeOutput(bytes: Uint8Array): string | Uint8Array {
+  if (props.encoding === "utf-8") {
+    return bytes;
+  }
+  decoder ??= new TextDecoder(props.encoding);
+  return decoder.decode(bytes, { stream: true });
+}
+
+/** Input in the session's encoding, with a backspace that may have to leave as Ctrl+H. */
+function sendInput(data: string): void {
+  const text = props.backspace === "ctrlH" ? data.replaceAll("\x7f", "\x08") : data;
+  if (props.encoding === "utf-8") {
+    void terminals.send(props.handle, encoder.encode(text));
+    return;
+  }
+  void terminals.sendText(props.handle, text, props.encoding);
+}
+
 const FIT_DEBOUNCE_MS = 60;
 
 let terminal: Terminal | undefined;
@@ -321,7 +356,7 @@ const {
     // line the `cd` reader keeps is fed the same bytes: accepting a completed `cd /data/test`
     // otherwise runs the line and leaves the file panel where it was.
     typed.feed(data);
-    void terminals.send(props.handle, encoder.encode(data));
+    sendInput(data);
   },
 });
 
@@ -824,7 +859,7 @@ onMounted(() => {
     // Once xterm has parsed the chunk, the lines it produced are in the buffer. The cursor says
     // where they landed; the callback is what makes that a range rather than a guess.
     const startLine = instance.buffer.active.baseY + instance.buffer.active.cursorY;
-    instance.write(bytes, () => {
+    instance.write(decodeOutput(bytes), () => {
       const buffer = instance.buffer.active;
       applyHighlights(startLine, buffer.baseY + buffer.cursorY);
     });
@@ -850,11 +885,19 @@ onMounted(() => {
   // registrations moved to the new handle. Rebuilding the pane instead would throw the scrollback
   // away with the connection, which is the one thing the person who just reconnected still wants.
   watch(
+    () => props.encoding,
+    () => {
+      // Half a character from the old stream would be the first thing the new one decodes.
+      decoder = undefined;
+    },
+  );
+  watch(
     () => props.handle,
     (next) => {
       // The new shell starts printing where the old one stopped; a break keeps the two apart so
       // the greeting of one is not drawn over the prompt of the other.
       instance.write("\r\n");
+      decoder = undefined;
       unregister?.();
       unregister = registerTerminalSink(next, sink);
       unregisterInputReset?.();
@@ -886,7 +929,7 @@ onMounted(() => {
       }
     }
     feedCompletion(data);
-    void terminals.send(props.handle, encoder.encode(data));
+    sendInput(data);
   });
   // And the exact report, where the far side is configured to give one. It says nothing about the
   // terminal, so it is passed on either way.

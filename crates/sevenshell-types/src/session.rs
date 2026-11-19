@@ -262,6 +262,12 @@ pub struct CreatedKey {
 pub struct TerminalSettings {
     pub terminal_type: String,
     pub keepalive_seconds: u16,
+    /// The encoding the far side prints and expects.
+    #[serde(default)]
+    pub encoding: TerminalEncoding,
+    /// What the Backspace key sends to this host.
+    #[serde(default)]
+    pub backspace: BackspaceMode,
     /// Whether the far side may use the key agent on this machine while the session lasts.
     ///
     /// Off by default, and off is the safe answer: while it is on, anything running on that server
@@ -282,6 +288,8 @@ impl Default for TerminalSettings {
         Self {
             terminal_type: "xterm-256color".to_owned(),
             keepalive_seconds: 30,
+            encoding: TerminalEncoding::Utf8,
+            backspace: BackspaceMode::Del,
             forward_agent: false,
             record: false,
         }
@@ -310,6 +318,22 @@ pub enum BackspaceMode {
     #[default]
     Del,
     CtrlH,
+}
+
+/// The character encoding a terminal session speaks.
+///
+/// Most hosts are UTF-8. Network hardware often is not: a Chinese switch may print and expect GBK
+/// while the terminal beside it still speaks UTF-8, which is why this is a per-session choice
+/// rather than a build-wide assumption.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum TerminalEncoding {
+    #[default]
+    #[serde(rename = "utf-8")]
+    Utf8,
+    #[serde(rename = "gbk")]
+    Gbk,
+    #[serde(rename = "gb18030")]
+    Gb18030,
 }
 
 /// How a serial frame checks itself.
@@ -350,6 +374,8 @@ pub struct TelnetSettings {
     pub enter: EnterMode,
     #[serde(default)]
     pub backspace: BackspaceMode,
+    #[serde(default)]
+    pub encoding: TerminalEncoding,
 }
 
 /// A serial port and the line parameters it was chosen with.

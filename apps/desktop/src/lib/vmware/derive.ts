@@ -19,6 +19,8 @@ import type { VmInfo } from "@/types/vmware";
 const TERMINAL: TerminalSettings = {
   terminalType: "xterm-256color",
   keepaliveSeconds: 30,
+  encoding: "utf-8",
+  backspace: "del",
   forwardAgent: false,
   record: false,
 };
