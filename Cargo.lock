@@ -5180,7 +5180,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-agent"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -5199,7 +5199,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-ai"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5217,7 +5217,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-api"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "log",
@@ -5236,7 +5236,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-container"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "log",
@@ -5253,7 +5253,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flate2",
  "log",
@@ -5281,7 +5281,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-desktop"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -5326,7 +5326,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-error"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5334,7 +5334,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-ftp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "sevenshell-error",
  "sevenshell-vault",
@@ -5344,7 +5344,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-k8s"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -5367,7 +5367,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-mcp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "reqwest",
@@ -5383,7 +5383,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-mcp-client"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5403,7 +5403,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-platform"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "font-kit",
  "security-framework",
@@ -5418,7 +5418,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-policy"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5428,7 +5428,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-session"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "serde",
@@ -5445,7 +5445,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-sftp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "russh-sftp",
  "sevenshell-error",
@@ -5457,7 +5457,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-ssh"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.23.1",
  "russh",
@@ -5471,7 +5471,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-sync"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -5492,7 +5492,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-term"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "portable-pty",
  "serialport",
@@ -5503,7 +5503,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-types"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5511,7 +5511,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-vault"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -5529,7 +5529,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-vmware"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "encoding_rs",
  "reqwest",
@@ -5542,7 +5542,7 @@ dependencies = [
 
 [[package]]
 name = "sevenshell-web"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "axum",
