@@ -28,7 +28,7 @@
  * connected to. It is drawn like the other panes — kept mounted behind its tab — so that a search
  * someone typed is still there when they come back to it.
  */
-import { ChevronDown, CircleAlert, Folder, ListChecks, LoaderCircle, RotateCw } from "@lucide/vue";
+import { CircleAlert, Folder, ListChecks, LoaderCircle, RotateCw } from "@lucide/vue";
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -50,12 +50,9 @@ import SystemReport from "@/components/inspect/SystemReport.vue";
 import SettingsPage from "@/components/settings/SettingsPage.vue";
 import TerminalPane from "@/components/terminal/TerminalPane.vue";
 import SplitDivider from "@/components/workspace/SplitDivider.vue";
-import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
-import { MENU_TITLES } from "@/lib/menu/titles";
-import { panelPlacementMenu, commandPanelPlacementMenu } from "@/lib/menu/workspace";
-import { MIN_PANE_PX, SIDE_DIVIDER_PX, SIDE_PANE_KEEP_PX } from "@/lib/workspace/split";
-import { type TerminalPanelPlacement } from "@/types/app";
+import { MIN_FILE_PANEL_PX, MIN_PANE_PX, SIDE_DIVIDER_PX, SIDE_PANE_KEEP_PX } from "@/lib/workspace/split";
+import { type DockedPanelPlacement, type TerminalPanelPlacement } from "@/types/app";
 import type { BackspaceMode, TerminalEncoding } from "@/types/session";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -64,7 +61,6 @@ import { type TerminalTab, type WorkspaceTab, useTerminalsStore } from "@/stores
 const { t } = useI18n();
 const preferences = usePreferencesStore();
 const terminals = useTerminalsStore();
-const { openMenu } = useContextMenu();
 
 /**
  * Which half of the panel under a terminal is showing: the files, or the commands.
@@ -201,7 +197,7 @@ function panelStyle(tab: TerminalTab): Record<string, string> | undefined {
   }
   return {
     width: `${preferences.resolvedPanelWidth}px`,
-    minWidth: `${MIN_PANE_PX}px`,
+    minWidth: `${MIN_FILE_PANEL_PX}px`,
     maxWidth: `calc(100% - ${SIDE_PANE_KEEP_PX + SIDE_DIVIDER_PX}px)`,
   };
 }
@@ -232,26 +228,37 @@ async function choosePlacement(tab: TerminalTab, placement: TerminalPanelPlaceme
   }
 }
 
-/** The small menu beside Files: the four positions, with this tab's own ticked. */
-function openPlacementMenu(event: MouseEvent, tab: TerminalTab): void {
-  openMenu(
-    event,
-    { key: MENU_TITLES.panelPlacement },
-    panelPlacementMenu(terminals.effectivePlacement(tab), {
-      choose: (placement) => void choosePlacement(tab, placement),
-    }),
+/** Takes this tab's commands to one of their three sides, leaving the files where they are. */
+function chooseCommandPlacement(tab: TerminalTab, placement: DockedPanelPlacement): void {
+  void terminals.changeTabCommandPlacement(tab, placement, { remember: true });
+}
+
+/**
+ * The terminal whose files the standalone browser is showing.
+ *
+ * The file tab is shared by the session, so the control inside it moves the first terminal that
+ * chose the tab position; the store then decides whether the tab stays for the others.
+ */
+function filesTabOwner(tab: TerminalTab): TerminalTab | null {
+  return (
+    terminals.tabs.find(
+      (candidate) =>
+        candidate.kind === "terminal" &&
+        candidate.session.id === tab.session.id &&
+        terminals.effectivePlacement(candidate) === "tab",
+    ) ?? null
   );
 }
 
-/** Takes this tab's commands to one of their three sides, leaving the files where they are. */
-function openCommandPlacementMenu(event: MouseEvent, tab: TerminalTab): void {
-  openMenu(
-    event,
-    { key: MENU_TITLES.commandPanelPlacement },
-    commandPanelPlacementMenu(terminals.effectiveCommandPlacement(tab), {
-      choose: (placement) => void terminals.changeTabCommandPlacement(tab, placement, { remember: true }),
-    }),
-  );
+function filesTabPlacement(tab: TerminalTab): TerminalPanelPlacement | undefined {
+  return filesTabOwner(tab) === null ? undefined : "tab";
+}
+
+function chooseFilesTabPlacement(tab: TerminalTab, placement: TerminalPanelPlacement): void {
+  const owner = filesTabOwner(tab);
+  if (owner !== null) {
+    void choosePlacement(owner, placement);
+  }
 }
 
 function translate(key: string, params?: Record<string, string>): string {
@@ -353,73 +360,42 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
                 {{ sessionEndpoint(tab.session, t) }}
               </span>
               <TerminalSchemeMenu />
-              <div
+              <button
                 v-if="protocolSupports(tab.session.protocol, 'sftp')"
+                type="button"
                 :class="
                   cn(
-                    'flex shrink-0 items-center overflow-hidden rounded-md transition-colors',
+                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
                     filesShowing(tab)
                       ? 'bg-accent text-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
                   )
                 "
+                :disabled="tab.panel === null && tab.status !== 'open'"
+                :aria-pressed="filesShowing(tab)"
+                :title="filesButtonTitle(tab)"
+                @click="showFiles(tab)"
               >
-                <button
-                  type="button"
-                  class="flex items-center gap-1 px-2 py-0.5 text-[10px] disabled:cursor-not-allowed disabled:opacity-40"
-                  :disabled="tab.panel === null && tab.status !== 'open'"
-                  :aria-pressed="filesShowing(tab)"
-                  :title="filesButtonTitle(tab)"
-                  @click="showFiles(tab)"
-                >
-                  <Folder :size="11" />
-                  {{ t("terminal.panel.label") }}
-                </button>
-                <button
-                  type="button"
-                  data-panel-placement
-                  :data-placement="terminals.effectivePlacement(tab)"
-                  class="grid w-4 shrink-0 place-items-center self-stretch border-l border-border/60 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('terminal.panel.position')"
-                  :aria-label="t('terminal.panel.position')"
-                  aria-haspopup="true"
-                  @click.stop="openPlacementMenu($event, tab)"
-                >
-                  <ChevronDown :size="10" />
-                </button>
-              </div>
-              <div
+                <Folder :size="11" />
+                {{ t("terminal.panel.label") }}
+              </button>
+              <button
+                type="button"
                 :class="
                   cn(
-                    'flex shrink-0 items-center overflow-hidden rounded-md transition-colors',
+                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
                     panelTab[tab.id] === 'commands'
                       ? 'bg-accent text-foreground'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                   )
                 "
+                :aria-pressed="panelTab[tab.id] === 'commands'"
+                @click="showCommands(tab)"
               >
-                <button
-                  type="button"
-                  class="flex items-center gap-1 px-2 py-0.5 text-[10px]"
-                  :aria-pressed="panelTab[tab.id] === 'commands'"
-                  @click="showCommands(tab)"
-                >
-                  <ListChecks :size="11" />
-                  {{ t("commands.panel") }}
-                </button>
-                <button
-                  type="button"
-                  data-command-placement
-                  :data-placement="terminals.effectiveCommandPlacement(tab)"
-                  class="grid w-4 shrink-0 place-items-center self-stretch border-l border-border/60 text-[10px] transition-colors hover:bg-accent hover:text-foreground"
-                  :title="t('terminal.panel.commandPosition')"
-                  :aria-label="t('terminal.panel.commandPosition')"
-                  aria-haspopup="true"
-                  @click.stop="openCommandPlacementMenu($event, tab)"
-                >
-                  <ChevronDown :size="10" />
-                </button>
-              </div>
+                <ListChecks :size="11" />
+                {{ t("commands.panel") }}
+              </button>
             </footer>
 
             <footer
@@ -462,6 +438,7 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
               :size="panelIsSide(tab) ? preferences.resolvedPanelWidth : preferences.resolvedPanelHeight"
               :orientation="panelIsSide(tab) ? 'vertical' : 'horizontal'"
               :pane="panelSide(tab) === 'left' ? 'start' : 'end'"
+              :min-size="panelIsSide(tab) ? MIN_FILE_PANEL_PX : MIN_PANE_PX"
               class="order-2"
               @move="panelIsSide(tab) ? preferences.setPanelWidth($event) : preferences.setPanelHeight($event)"
               @settle="panelIsSide(tab) ? preferences.rememberPanelWidth() : preferences.rememberPanelHeight()"
@@ -479,13 +456,21 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
               :class="cn('flex flex-col overflow-hidden', panelIsSide(tab) ? 'order-1 shrink-0' : 'order-3 shrink')"
               :style="panelStyle(tab)"
             >
-              <CommandsPanel v-if="panelTab[tab.id] === 'commands'" class="min-h-0 flex-1" />
+              <CommandsPanel
+                v-if="panelTab[tab.id] === 'commands'"
+                :panel-placement="terminals.effectiveCommandPlacement(tab)"
+                class="min-h-0 flex-1"
+                @choose-panel-placement="chooseCommandPlacement(tab, $event)"
+              />
 
               <FileBrowser
                 v-else-if="tab.panel?.handle"
                 :handle="tab.panel?.handle"
                 :protocol="tab.session.protocol"
+                :compact="panelIsSide(tab)"
+                :panel-placement="terminals.effectivePlacement(tab)"
                 class="min-h-0 flex-1"
+                @choose-panel-placement="choosePlacement(tab, $event)"
               />
 
               <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
@@ -533,7 +518,9 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
           :handle="tab.handle"
           :protocol="tab.session.protocol"
           :packed-transfers="tab.packed"
+          :panel-placement="filesTabPlacement(tab)"
           class="min-h-0 flex-1"
+          @choose-panel-placement="chooseFilesTabPlacement(tab, $event)"
         />
 
         <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">

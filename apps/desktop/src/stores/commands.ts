@@ -411,7 +411,20 @@ export const useCommandsStore = defineStore("commands", () => {
   async function sendLiteral(line: string): Promise<void> {
     const terminals = useTerminalsStore();
     const handle = terminals.activeTerminalHandle();
-    if (handle === null || line.trim() === "" || sending.value) {
+    if (handle === null) {
+      return;
+    }
+    await sendLineTo(handle, line);
+  }
+
+  /**
+   * Sends one line to a named terminal.
+   *
+   * The file browser uses this to take its shell to the directory on screen; the terminal is the
+   * one belonging to the session, which is not necessarily the tab on screen.
+   */
+  async function sendLineTo(handle: string, line: string): Promise<void> {
+    if (line.trim() === "" || sending.value) {
       return;
     }
 
@@ -539,6 +552,7 @@ export const useCommandsStore = defineStore("commands", () => {
     needsRestore,
     send,
     sendLiteral,
+    sendLineTo,
     rememberTyped,
   };
 });

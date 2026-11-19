@@ -14,7 +14,7 @@
  * Nothing here writes anything down. Where a width ends up is `stores/columns.ts`, which forgets it
  * when the application closes.
  */
-import { type Ref, computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { type MaybeRefOrGetter, type Ref, computed, nextTick, onBeforeUnmount, onMounted, ref, toValue } from "vue";
 import { useI18n } from "vue-i18n";
 
 import {
@@ -32,7 +32,8 @@ import { useColumnsStore } from "@/stores/columns";
 export interface ColumnWidthsRequest {
   /** The table these columns belong to, which is what keeps its widths its own. */
   readonly table: string;
-  readonly columns: readonly ColumnWidth[];
+  /** The columns the table is currently drawing; hiding one takes it out of the line's arithmetic. */
+  readonly columns: MaybeRefOrGetter<readonly ColumnWidth[]>;
   /** What the line spends on something other than its columns. */
   readonly line: ColumnLine;
   /** The element the columns are laid out in: their line, and the thing its width is read from. */
@@ -47,7 +48,7 @@ export function useColumnWidths({ table, columns, line, element }: ColumnWidthsR
   const lineWidth = ref(0);
   let observer: ResizeObserver | null = null;
 
-  const layout = computed(() => layoutOf(columns, store.movedIn(table), line));
+  const layout = computed(() => layoutOf(toValue(columns), store.movedIn(table), line));
   /** What each column is drawn at, with the panel's spare room already divided. */
   const drawn = computed(() => drawnWidths(layout.value, lineWidth.value));
   /** The widths, as the custom properties a heading and the rows under it both read. */
@@ -108,5 +109,5 @@ export function useColumnWidths({ table, columns, line, element }: ColumnWidthsR
     store.resetWidth(table, key);
   }
 
-  return { vars, minWidth, edge, move, reset };
+  return { vars, minWidth, drawn, edge, move, reset };
 }

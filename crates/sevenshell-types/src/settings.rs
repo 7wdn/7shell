@@ -1448,6 +1448,20 @@ pub struct AppSettings {
     /// How the file browser is laid out.
     #[serde(default)]
     pub files_layout: FilesLayout,
+    /// Whether the directory tree is drawn beside a file listing.
+    ///
+    /// The tree is the default; folding it away is a workspace choice, not a change to the layout
+    /// itself, so it is remembered separately and follows every file browser.
+    #[serde(default = "files_tree_on")]
+    pub files_tree_visible: bool,
+    /// File-browser columns somebody folded away.
+    ///
+    /// Names rather than an enum because a newer build may know a column this one does not: an
+    /// unknown name is ignored by the interface instead of refusing the whole settings file. The
+    /// three extra columns start folded away, as the reference file list draws name, size and
+    /// modified; showing them is a remembered choice.
+    #[serde(default = "files_columns_hidden_by_default")]
+    pub files_hidden_columns: Vec<String>,
     /// How a session opens: the terminal on its own, or the terminal with its file panel under it.
     #[serde(default)]
     pub session_layout: SessionLayout,
@@ -1908,6 +1922,23 @@ pub fn sidebar_on() -> bool {
     true
 }
 
+/// The directory tree's default, which is "shown beside the listing".
+///
+/// A named function for the same reason as the two above: the type's own default and the settings
+/// file's default are two readers of one decision.
+pub fn files_tree_on() -> bool {
+    true
+}
+
+/// The columns the file browser starts with folded away.
+///
+/// The reference list is name, size and modified; kind, permissions and owner are there when
+/// somebody asks for them. A named function for the same reason as `files_tree_on`: the type's own
+/// default and the settings file's default are two readers of one decision.
+pub fn files_columns_hidden_by_default() -> Vec<String> {
+    vec!["kind".to_owned(), "mode".to_owned(), "owner".to_owned()]
+}
+
 /// Whether the shell keeps an icon in the system tray.
 ///
 /// A named function for the same reason as the two above: it is a default two readers have to agree
@@ -1933,6 +1964,8 @@ impl Default for AppSettings {
             theme_palette: ThemePalette::default(),
             terminal_theme: ThemeMode::default(),
             files_layout: FilesLayout::default(),
+            files_tree_visible: files_tree_on(),
+            files_hidden_columns: files_columns_hidden_by_default(),
             session_layout: SessionLayout::default(),
             session_reopen: SessionReopen::default(),
             terminal_panel_placement: TerminalPanelPlacement::default(),

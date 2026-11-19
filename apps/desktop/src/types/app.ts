@@ -640,6 +640,10 @@ export interface AppSettings {
   /** `system` means "follow the interface theme" for the terminal, not the operating system. */
   readonly terminalTheme: ThemeMode;
   readonly filesLayout: FilesLayout;
+  /** Whether the directory tree is drawn beside a file listing. */
+  readonly filesTreeVisible: boolean;
+  /** File-browser columns folded away, by their stable keys. */
+  readonly filesHiddenColumns: readonly string[];
   /** Whether opening a session opens a terminal on its own, or one with its file panel. */
   readonly sessionLayout: SessionLayout;
   /** What the session list's menu does when the session it opens is already open. */

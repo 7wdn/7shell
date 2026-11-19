@@ -27,6 +27,28 @@ export function formatModified(seconds: number): string {
 }
 
 /**
+ * A modification time as a listing column writes it: one line, zero-padded, to the minute.
+ *
+ * A file manager's listing is a grid of single lines, and a locale string may carry seconds and a
+ * narrower separator than the column has room for — which wraps it onto a second line, makes that
+ * row taller than every other, and gives the virtual window a row height it never measured. The
+ * minute is as much as a listing answers; the properties dialog still shows the locale's full form.
+ *
+ * A column too narrow for the year says the part that is still worth reading — month, day and time
+ * — which is what the reference list does with the same width. `columnWidth` is the width the cell
+ * is actually drawn at, or nought before it has been laid out.
+ */
+export function formatListModified(seconds: number, columnWidth = 0): string {
+  const at = new Date(seconds * 1000);
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  const day = `${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  if (columnWidth > 0 && columnWidth < 110) {
+    return day;
+  }
+  return `${at.getFullYear()}/${day}`;
+}
+
+/**
  * The permission bits the way `ls -l` writes them, for example `rwxr-xr-x`.
  *
  * The setuid, setgid and sticky bits are written where `ls` writes them — `rws` rather than `rwx`

@@ -8,9 +8,13 @@
     },
     "up": "返回上一级目录",
     "parentHint": "双击返回上一级目录",
+    "locateTerminal": "在终端中定位当前目录",
+    "moreActions": "更多文件操作",
+    "columns": {
+      "title": "自定义表头"
+    },
     "path": "路径",
     "refresh": "刷新当前目录",
-    "go": "前往",
     "newFolder": "新建文件夹",
     "newFolderName": "文件夹名称",
     "newFile": "新建文件",
@@ -175,6 +179,8 @@
       "root": "/",
       "expand": "展开",
       "collapse": "折叠",
+      "hide": "隐藏目录树",
+      "show": "显示目录树",
       "divider": "调整目录树宽度"
     },
     "drop": {

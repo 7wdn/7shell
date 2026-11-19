@@ -624,6 +624,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             theme_mode: ThemeMode::Dark,
             terminal_theme: ThemeMode::System,
             files_layout: FilesLayout::List,
+            files_tree_visible: false,
+            files_hidden_columns: vec!["owner".to_owned(), "mode".to_owned()],
             session_layout: SessionLayout::Terminal,
             session_reopen: SessionReopen::NewTab,
             terminal_panel_placement: TerminalPanelPlacement::Right,
@@ -788,6 +790,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         serde_json::json!("left"),
         "the commands half keeps a position of its own"
     );
+    assert_eq!(settings["filesTreeVisible"], serde_json::json!(false));
+    assert_eq!(settings["filesHiddenColumns"], serde_json::json!(["owner", "mode"]));
     assert_eq!(settings["terminalPanelWidth"], serde_json::json!(420));
     assert_eq!(
         settings["tabPlacement"],

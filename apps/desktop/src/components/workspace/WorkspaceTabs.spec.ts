@@ -431,7 +431,7 @@ describe("where the file panel sits", () => {
     const panel = host.querySelector<HTMLElement>("[data-terminal-panel]");
     expect(panel?.getAttribute("data-side")).toBe("right");
     expect(host.querySelector('[role="separator"]')?.getAttribute("aria-orientation")).toBe("vertical");
-    expect(panel?.style.width).toBe("380px");
+    expect(panel?.style.width).toBe("340px");
   });
 
   it("draws on the left, with the terminal taking the free side", async () => {
@@ -469,13 +469,11 @@ describe("where the file panel sits", () => {
     ]);
 
     const activePane = (): HTMLElement | null => host.querySelector('[data-tab-pane][data-active="true"]');
-    expect(activePane()?.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("tab");
     expect(activePane()?.querySelector("[data-terminal-panel]")).toBeNull();
 
     useTerminalsStore().activeTabId = "tab-2";
     await nextTick();
 
-    expect(activePane()?.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("bottom");
     expect(activePane()?.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("bottom");
   });
 
@@ -490,7 +488,7 @@ describe("where the file panel sits", () => {
 
     await click(stripButton("Commands"));
     expect(side(), "the commands are not dragged to the files' side").toBe("bottom");
-    expect(host.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("left");
+    expect(host.querySelector("[data-panel-placement]"), "the files' control is in the files' half").toBeNull();
     expect(host.querySelector<HTMLElement>("[data-command-placement]")?.dataset.placement).toBe("bottom");
 
     await click(stripButton("Files"));
@@ -504,7 +502,6 @@ describe("where the file panel sits", () => {
     await click(stripButton("Commands"));
 
     expect(host.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("left");
-    expect(host.querySelector<HTMLElement>("[data-panel-placement]")?.dataset.placement).toBe("right");
-    expect(host.querySelector<HTMLElement>("[data-command-placement]")?.dataset.placement).toBe("left");
+    expect(host.querySelector("[data-command-placement]")?.dataset.placement).toBe("left");
   });
 });

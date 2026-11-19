@@ -207,6 +207,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
   filesLayout: "tree",
+  filesTreeVisible: true,
+  filesHiddenColumns: ["kind", "mode", "owner"],
   sessionLayout: "split",
   sessionReopen: DEFAULT_SESSION_REOPEN,
   terminalPanelPlacement: DEFAULT_TERMINAL_PANEL_PLACEMENT,
@@ -272,7 +274,15 @@ export const DEFAULT_TERMINAL_PANEL_HEIGHT = 280;
  * Wide enough for the listing's columns without taking the terminal's room: about a dozen characters
  * of a name, the date, and the actions that appear on hover, with the shell keeping the rest.
  */
-export const DEFAULT_TERMINAL_PANEL_WIDTH = 380;
+export const DEFAULT_TERMINAL_PANEL_WIDTH = 340;
+
+/**
+ * The file browser's columns before anybody chooses: the three the reference list draws.
+ *
+ * `kind`, `mode` and `owner` stay offered by the column chooser rather than being unavailable;
+ * showing one writes the choice, and showing all of them writes an empty list that is kept.
+ */
+export const DEFAULT_FILES_HIDDEN_COLUMNS = ["kind", "mode", "owner"] as const;
 
 /**
  * How wide the file panel's tree starts out, until somebody moves the divider beside it.
@@ -353,6 +363,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const terminalTheme = ref<ThemeMode>("system");
   /** Two panes or one, in the file browser. */
   const filesLayout = ref<FilesLayout>("tree");
+  /** Whether the tree half is drawn; global so every browser folds it together. */
+  const filesTreeVisible = ref(true);
+  /** Columns the file browser has folded away; names rather than a closed enum, as the wire type says. */
+  const filesHiddenColumns = ref<readonly string[]>([...DEFAULT_FILES_HIDDEN_COLUMNS]);
   /**
    * How a session opens: a terminal on its own, or a terminal with its file panel under it.
    *
@@ -956,6 +970,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
       filesLayout.value = settings.filesLayout;
+      filesTreeVisible.value = settings.filesTreeVisible;
+      filesHiddenColumns.value = settings.filesHiddenColumns ?? [...DEFAULT_FILES_HIDDEN_COLUMNS];
       sessionLayout.value = settings.sessionLayout;
       sessionReopen.value = settings.sessionReopen;
       terminalPanelPlacement.value = settings.terminalPanelPlacement;
@@ -1114,6 +1130,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
         filesLayout: filesLayout.value,
+        filesTreeVisible: filesTreeVisible.value,
+        filesHiddenColumns: filesHiddenColumns.value,
         sessionLayout: sessionLayout.value,
         sessionReopen: sessionReopen.value,
         terminalPanelPlacement: terminalPanelPlacement.value,
@@ -1650,6 +1668,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setFilesLayout(layout: FilesLayout): Promise<void> {
     filesLayout.value = layout;
     dirty.value = true;
+  }
+
+  /** The file tree's fold, written at once because it is a workspace switch rather than a draft. */
+  async function setFilesTreeVisible(visible: boolean): Promise<void> {
+    filesTreeVisible.value = visible;
+    dirty.value = true;
+    await commit();
+  }
+
+  /** The file browser's hidden columns, written at once for the same reason. */
+  async function setFilesHiddenColumns(columns: readonly string[]): Promise<void> {
+    filesHiddenColumns.value = [...columns];
+    dirty.value = true;
+    await commit();
   }
 
   async function setSessionLayout(layout: SessionLayout): Promise<void> {
@@ -2209,6 +2241,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   async function setSidebarOpen(open: boolean): Promise<void> {
     sidebarOpen.value = open;
     dirty.value = true;
+    await commit();
   }
 
   async function setLocale(next: SupportedLocale): Promise<void> {
@@ -2359,6 +2392,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "filesLayout":
           filesLayout.value = FRESH.filesLayout;
           break;
+        case "filesTreeVisible":
+          filesTreeVisible.value = FRESH.filesTreeVisible;
+          break;
+        case "filesHiddenColumns":
+          filesHiddenColumns.value = FRESH.filesHiddenColumns;
+          break;
         case "sessionLayout":
           sessionLayout.value = FRESH.sessionLayout;
           break;
@@ -2489,6 +2528,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     customColorsDark,
     terminalTheme,
     filesLayout,
+    filesTreeVisible,
+    filesHiddenColumns,
     sessionLayout,
     sessionReopen,
     terminalPanelPlacement,
@@ -2600,6 +2641,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     resetCustomColors,
     setTerminalTheme,
     setFilesLayout,
+    setFilesTreeVisible,
+    setFilesHiddenColumns,
     setSessionLayout,
     setSessionReopen,
     setTerminalPanelPlacement,

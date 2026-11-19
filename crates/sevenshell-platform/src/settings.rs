@@ -27,17 +27,19 @@ use sevenshell_types::{
     TerminalHighlightRule, TerminalPanelPlacement, TerminalSchemeBackground, TerminalSchemeProfile,
     TerminalSchemeSource, ThemeMode, ThemePalette, ai_context_enabled_default, ai_context_lines_default,
     ai_max_output_tokens_default, ai_session_retention_days_default, background_blur_default,
-    background_transparency_default, command_completion_on, default_terminal_highlight_rules, is_valid_mcp_server_id,
-    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default,
-    mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
-    normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
-    normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_bold_font_weight,
-    normalize_terminal_font_size, normalize_terminal_font_weight, normalize_terminal_letter_spacing,
-    normalize_terminal_line_height, normalize_terminal_min_contrast, normalize_terminal_padding, normalize_ui_scale,
-    sidebar_on, sync_auto_upload_minutes_default, terminal_bold_bright_on, terminal_bold_font_weight_default,
-    terminal_cursor_blink_on, terminal_font_size_default, terminal_font_weight_default,
-    terminal_letter_spacing_default, terminal_line_height_default, terminal_min_contrast_default,
-    terminal_padding_x_default, terminal_padding_y_default, tray_icon_on, ui_scale_default, update_check_on,
+    background_transparency_default, command_completion_on, default_terminal_highlight_rules,
+    files_columns_hidden_by_default, files_tree_on,
+    is_valid_mcp_server_id, mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default,
+    mcp_max_result_bytes_default, mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on,
+    normalize_ai_context_lines, normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds,
+    normalize_mcp_audit_retention_days, normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes,
+    normalize_terminal_bold_font_weight, normalize_terminal_font_size, normalize_terminal_font_weight,
+    normalize_terminal_letter_spacing, normalize_terminal_line_height, normalize_terminal_min_contrast,
+    normalize_terminal_padding, normalize_ui_scale, sidebar_on, sync_auto_upload_minutes_default,
+    terminal_bold_bright_on, terminal_bold_font_weight_default, terminal_cursor_blink_on, terminal_font_size_default,
+    terminal_font_weight_default, terminal_letter_spacing_default, terminal_line_height_default,
+    terminal_min_contrast_default, terminal_padding_x_default, terminal_padding_y_default, tray_icon_on,
+    ui_scale_default, update_check_on,
 };
 
 /// The picture behind the window, as the file holds it.
@@ -320,6 +322,13 @@ struct StoredSettings {
     terminal_theme: String,
     #[serde(default)]
     files_layout: String,
+    /// Absent in a file written before the tree could be folded away, which reads as shown.
+    #[serde(default = "files_tree_on")]
+    files_tree_visible: bool,
+    /// Absent in a file written before columns could be folded away, which reads as the three
+    /// columns the reference list draws.
+    #[serde(default = "files_columns_hidden_by_default")]
+    files_hidden_columns: Vec<String>,
     /// Absent in a file written before a session could open as two halves, which reads as the
     /// default — the split — rather than as the terminal alone.
     #[serde(default)]
@@ -597,6 +606,8 @@ impl StoredSettings {
             theme_palette: settings.theme_palette.as_str().to_owned(),
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
             files_layout: settings.files_layout.as_str().to_owned(),
+            files_tree_visible: settings.files_tree_visible,
+            files_hidden_columns: settings.files_hidden_columns.clone(),
             session_layout: settings.session_layout.as_str().to_owned(),
             session_reopen: settings.session_reopen.as_str().to_owned(),
             terminal_panel_placement: settings.terminal_panel_placement.as_str().to_owned(),
@@ -763,14 +774,14 @@ impl StoredSettings {
             theme_palette: ThemePalette::from_id(&self.theme_palette).unwrap_or_default(),
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
+            files_tree_visible: self.files_tree_visible,
+            files_hidden_columns: self.files_hidden_columns.clone(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             session_reopen: SessionReopen::from_id(&self.session_reopen).unwrap_or_default(),
             terminal_panel_placement: TerminalPanelPlacement::from_id(&self.terminal_panel_placement)
                 .unwrap_or_default(),
-            terminal_command_panel_placement: TerminalPanelPlacement::from_id(
-                &self.terminal_command_panel_placement,
-            )
-            .unwrap_or_default(),
+            terminal_command_panel_placement: TerminalPanelPlacement::from_id(&self.terminal_command_panel_placement)
+                .unwrap_or_default(),
             terminal_panel_width: self.terminal_panel_width,
             terminal_panel_height: self.terminal_panel_height,
             sidebar_width: self.sidebar_width,
@@ -1004,6 +1015,8 @@ mod tests {
             theme_mode,
             terminal_theme,
             files_layout: FilesLayout::default(),
+            files_tree_visible: files_tree_on(),
+            files_hidden_columns: files_columns_hidden_by_default(),
             session_layout: SessionLayout::default(),
             session_reopen: SessionReopen::default(),
             terminal_panel_placement: TerminalPanelPlacement::default(),

@@ -8,9 +8,13 @@
     },
     "up": "Go up one directory",
     "parentHint": "Double-click to go up one directory",
+    "locateTerminal": "Locate the terminal here",
+    "moreActions": "More file actions",
+    "columns": {
+      "title": "Columns"
+    },
     "path": "Path",
     "refresh": "Refresh this directory",
-    "go": "Go",
     "newFolder": "New folder",
     "newFolderName": "Folder name",
     "newFile": "New file",
@@ -175,6 +179,8 @@
       "root": "/",
       "expand": "Expand",
       "collapse": "Collapse",
+      "hide": "Hide the directory tree",
+      "show": "Show the directory tree",
       "divider": "Resize the directory tree"
     },
     "drop": {

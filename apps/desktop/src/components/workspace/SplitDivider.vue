@@ -37,8 +37,10 @@ const props = withDefaults(
     orientation?: "horizontal" | "vertical";
     /** Which side of the line the sized pane is on. */
     pane?: "start" | "end";
+    /** The least the sized pane may be drawn at. */
+    minSize?: number;
   }>(),
-  { orientation: "horizontal", pane: "end" },
+  { orientation: "horizontal", pane: "end", minSize: MIN_PANE_PX },
 );
 
 const emit = defineEmits<{
@@ -71,15 +73,17 @@ const STEP_PX = 16;
 
 /** Where the line may be put, given the room there is now. */
 function bounded(size: number): number {
-  return vertical.value ? clampPaneWidth(size, available.value, MIN_PANE_PX) : clampPaneHeight(size, available.value);
+  return vertical.value
+    ? clampPaneWidth(size, available.value, props.minSize)
+    : clampPaneHeight(size, available.value, props.minSize);
 }
 
 /** The topmost the line may be dragged to; the other pane and this line keep what they need. */
 const ceiling = computed(() => {
   if (vertical.value) {
-    return Math.max(MIN_PANE_PX, available.value - SIDE_PANE_KEEP_PX - SIDE_DIVIDER_PX);
+    return Math.max(props.minSize, available.value - SIDE_PANE_KEEP_PX - SIDE_DIVIDER_PX);
   }
-  return Math.max(MIN_PANE_PX, available.value - MIN_PANE_PX - SPLIT_DIVIDER_PX);
+  return Math.max(props.minSize, available.value - MIN_PANE_PX - SPLIT_DIVIDER_PX);
 });
 
 function moveTo(size: number): void {
@@ -144,7 +148,7 @@ function onKeydown(event: KeyboardEvent): void {
       moveTo(props.size + (start ? STEP_PX : -STEP_PX));
       break;
     case "Home":
-      moveTo(MIN_PANE_PX);
+      moveTo(props.minSize);
       break;
     case "End":
       moveTo(Number.POSITIVE_INFINITY);
@@ -187,7 +191,7 @@ onBeforeUnmount(() => observer?.disconnect());
     :aria-orientation="vertical ? 'vertical' : 'horizontal'"
     tabindex="0"
     :aria-label="t('terminal.panel.divider')"
-    :aria-valuemin="MIN_PANE_PX"
+    :aria-valuemin="props.minSize"
     :aria-valuemax="Math.round(ceiling)"
     :aria-valuenow="Math.round(size)"
     @pointerdown="onPointerDown"

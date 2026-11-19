@@ -19,13 +19,20 @@ import { useI18n } from "vue-i18n";
 import Select, { type SelectOption } from "@/components/ui/Select.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SideDivider from "@/components/ui/SideDivider.vue";
+import PanelPlacementButton from "@/components/workspace/PanelPlacementButton.vue";
 import { describeErrorFields, describeShellError } from "@/i18n/errors";
 import { atLeast, needsApproval } from "@/lib/batch/risk";
 import { DEFAULT_GROUP_ID } from "@/lib/commands/defaults";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore } from "@/stores/terminals";
+import type { DockedPanelPlacement } from "@/types/app";
 import type { SnippetGroup } from "@/types/snippet";
+
+const props = defineProps<{ panelPlacement?: DockedPanelPlacement }>();
+const emit = defineEmits<{
+  choosePanelPlacement: [placement: DockedPanelPlacement];
+}>();
 
 const { t } = useI18n();
 const commands = useCommandsStore();
@@ -207,16 +214,25 @@ async function submitGroupRename(group: SnippetGroup): Promise<void> {
         <span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("commands.groups") }}
         </span>
-        <button
-          type="button"
-          class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
-          :title="t('commands.group.new')"
-          :aria-label="t('commands.group.new')"
-          :disabled="groupBusy"
-          @click="startGroupCreate()"
-        >
-          <FolderPlus :size="12" />
-        </button>
+        <div class="flex items-center gap-0.5">
+          <button
+            type="button"
+            class="grid size-5 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
+            :title="t('commands.group.new')"
+            :aria-label="t('commands.group.new')"
+            :disabled="groupBusy"
+            @click="startGroupCreate()"
+          >
+            <FolderPlus :size="12" />
+          </button>
+          <PanelPlacementButton
+            v-if="props.panelPlacement"
+            kind="commands"
+            :placement="props.panelPlacement"
+            class="size-5"
+            @choose-commands="emit('choosePanelPlacement', $event)"
+          />
+        </div>
       </header>
 
       <ul class="shrink-0 overflow-auto border-b border-border py-1">

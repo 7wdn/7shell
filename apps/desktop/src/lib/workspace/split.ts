@@ -23,6 +23,15 @@
 export const MIN_PANE_PX = 160;
 
 /**
+ * The terminal's file/commands panel when it sits beside the shell.
+ *
+ * Wider than the stacked floor: a side panel carries a path row, a toolbar and a table of columns,
+ * and below this the table stops being readable before the panel stops being useful. The reference
+ * docked files panel bottoms out at 280, which is the same judgement.
+ */
+export const MIN_FILE_PANEL_PX = 280;
+
+/**
  * The line's own thickness: `h-2` on the divider element.
  *
  * It is here so the arithmetic accounts for it — the two panes plus the line have to add up to the
