@@ -16,16 +16,11 @@
  * screen is the server's answer rather than this component's guess at what a change did.
  */
 import {
-  ArrowUp,
   ChevronRight,
   Download,
-  File,
   FilePlus,
-  FileSymlink,
-  Folder,
   ClipboardPaste,
   FolderPlus,
-  HardDrive,
   LoaderCircle,
   RefreshCw,
   Search,
@@ -49,6 +44,7 @@ import FileBookmarksMenu from "@/components/files/FileBookmarksMenu.vue";
 import FileEditor from "@/components/files/FileEditor.vue";
 import FilePermissionsDialog from "@/components/files/FilePermissionsDialog.vue";
 import FilePropertiesDialog from "@/components/files/FilePropertiesDialog.vue";
+import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import ColumnResizeHandle from "@/components/ui/ColumnResizeHandle.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import SideDivider from "@/components/ui/SideDivider.vue";
@@ -625,19 +621,6 @@ function crumbsOf(path: string): { name: string; path: string }[] {
     built.push({ name: segment, path: current });
   }
   return built;
-}
-
-function entryIcon(entry: SftpEntry) {
-  switch (entry.kind) {
-    case "directory":
-      return Folder;
-    case "file":
-      return File;
-    case "symlink":
-      return FileSymlink;
-    case "other":
-      return HardDrive;
-  }
 }
 
 /** A directory's size is the server's business, not something a listing can say. */
@@ -1470,19 +1453,6 @@ function openAreaMenu(event: MouseEvent): void {
 
         <LoaderCircle v-if="browser.loading" :size="12" class="shrink-0 animate-spin text-muted-foreground" />
 
-        <FileBookmarksMenu :path="browser.path" @jump="go" />
-
-        <button
-          type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="browser.loading"
-          :title="t('files.refresh')"
-          :aria-label="t('files.refresh')"
-          @click="refreshListing()"
-        >
-          <RefreshCw :size="12" />
-        </button>
-
         <button
           type="button"
           data-files-filter
@@ -1498,17 +1468,23 @@ function openAreaMenu(event: MouseEvent): void {
         >
           <Search :size="12" />
         </button>
+      </div>
 
+      <div class="mt-1 flex items-center gap-1">
         <button
           type="button"
           class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
-          :disabled="parent === null"
-          :title="t('files.up')"
-          :aria-label="t('files.up')"
-          @click="parent && go(parent)"
+          :disabled="browser.loading"
+          :title="t('files.refresh')"
+          :aria-label="t('files.refresh')"
+          @click="refreshListing()"
         >
-          <ArrowUp :size="13" />
+          <RefreshCw :size="12" />
         </button>
+
+        <FileBookmarksMenu :path="browser.path" @jump="go" />
+
+        <span class="mx-0.5 h-3.5 w-px shrink-0 bg-border" aria-hidden="true"></span>
 
         <button
           type="button"
@@ -1737,19 +1713,6 @@ function openAreaMenu(event: MouseEvent): void {
             </span>
           </div>
 
-          <p
-            v-if="!browser.loading && browser.entries.length === 0"
-            class="px-3 py-6 text-center text-xs text-muted-foreground"
-          >
-            {{ t("files.empty") }}
-          </p>
-          <p
-            v-else-if="!browser.loading && ordered.length === 0"
-            class="px-3 py-6 text-center text-xs text-muted-foreground"
-          >
-            {{ t("files.filter.empty", { query: filterQuery }) }}
-          </p>
-
           <!--
             The rows that are drawn, and two spacers standing in for the ones that are not: the
             listing is as tall as its whole contents, and only a screenful of it exists.
@@ -1758,6 +1721,42 @@ function openAreaMenu(event: MouseEvent): void {
             narrow for the columns scrolls them rather than squeezing the name column to nothing.
           -->
           <ul class="p-1.5" :style="{ minWidth: `${columnsMinWidth}px` }">
+            <!--
+              The parent directory, where file managers that show one put it: above the entries,
+              below the headings, scrolling with the list. It is navigation rather than an entry —
+              it has no path of its own in this directory and takes no part in selection, sorting
+              or the virtual window — so it is drawn here by hand and not through `drawn`.
+            -->
+            <li v-if="parent !== null" class="list-none">
+              <button
+                type="button"
+                data-files-parent
+                class="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-accent/50"
+                :title="t('files.parentHint')"
+                :aria-label="t('files.up')"
+                @pointerdown.stop
+                @dblclick="go(parent)"
+                @keydown.enter.prevent.stop="go(parent)"
+                @keydown.space.prevent.stop="go(parent)"
+              >
+                <span class="flex w-[var(--col-name)] shrink-0 items-center gap-2 py-0.5 text-left">
+                  <FileTypeIcon name=".." kind="directory" />
+                  <span class="truncate text-xs">..</span>
+                </span>
+              </button>
+            </li>
+            <li
+              v-if="!browser.loading && browser.entries.length === 0"
+              class="list-none px-3 py-6 text-center text-xs text-muted-foreground"
+            >
+              {{ t("files.empty") }}
+            </li>
+            <li
+              v-else-if="!browser.loading && ordered.length === 0"
+              class="list-none px-3 py-6 text-center text-xs text-muted-foreground"
+            >
+              {{ t("files.filter.empty", { query: filterQuery }) }}
+            </li>
             <li v-if="drawnWindow.before > 0" aria-hidden="true" :style="{ height: `${drawnWindow.before}px` }"></li>
             <li v-for="entry in drawn" :key="entry.path" :data-path="entry.path">
               <div
@@ -1782,7 +1781,7 @@ function openAreaMenu(event: MouseEvent): void {
                   class="flex w-[var(--col-name)] shrink-0 items-center gap-2 py-0.5 text-left"
                   :title="entry.name"
                 >
-                  <component :is="entryIcon(entry)" :size="13" class="shrink-0 text-muted-foreground" />
+                  <FileTypeIcon :name="entry.name" :kind="entry.kind" />
                   <input
                     v-if="renaming === entry.path"
                     :ref="takeRenameField"

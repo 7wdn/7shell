@@ -41,8 +41,34 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 This file is the inclusion the license asks for: the copyright notice above and this permission
 notice travel with every copy of the derived files, and both derived files name it in their header.
 
+## File-type icons
+
+The SVG drawings under `apps/desktop/src/assets/file-icons/material` are copied from
+[Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme), MIT
+licensed, through Iconify. The browser inlines them and sizes them by the row; the mapping from a
+file name or extension to a drawing lives in `apps/desktop/src/lib/files/icons.ts`.
+
+Copyright (c) 2025 Material Extensions
+
+### MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 ## Everything else
 
-No other third-party source has been copied into this repository: everything else the build depends
-on is pulled in as a package and is listed in `Cargo.lock` and `pnpm-lock.yaml`, where each package
-names its own license.
+Other than the files named above, no third-party source has been copied into this repository:
+everything else the build depends on is pulled in as a package and is listed in `Cargo.lock` and
+`pnpm-lock.yaml`, where each package names its own license.

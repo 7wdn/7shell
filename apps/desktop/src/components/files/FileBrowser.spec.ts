@@ -1318,3 +1318,47 @@ describe("filtering the listing by name", () => {
     expect(host.querySelector("[data-files-filter-field]")).toBe(field);
   });
 });
+
+describe("the parent-directory row", () => {
+  it("sits above the entries and walks up on a double click", async () => {
+    await render(unsorted);
+
+    const parentRow = host.querySelector<HTMLElement>("[data-files-parent]");
+    expect(parentRow, "the listing drew no way up").not.toBeNull();
+
+    parentRow?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+
+    await vi.waitFor(() => expect(vi.mocked(filesList)).toHaveBeenCalledWith(HANDLE, "/home"));
+  });
+
+  it("is left out when the directory is the root", async () => {
+    await render(unsorted);
+    const browser = useFilesStore().browsers[HANDLE];
+    if (!browser) {
+      throw new Error("the browser was not opened");
+    }
+    browser.path = "/";
+    await nextTick();
+
+    expect(host.querySelector("[data-files-parent]")).toBeNull();
+  });
+
+  it("stays while the listing is filtered", async () => {
+    await render(unsorted);
+    const field = await startFiltering();
+
+    await typeInto(field, "txt");
+
+    expect(host.querySelector("[data-files-parent]")).not.toBeNull();
+  });
+
+  it("is followed by the empty message rather than covered by it", async () => {
+    await render([]);
+
+    const parentRow = host.querySelector("[data-files-parent]")?.closest("li");
+    expect(parentRow, "the listing drew no way up").not.toBeNull();
+    expect(parentRow?.nextElementSibling?.textContent, "the message belongs under the way up").toContain(
+      "This directory is empty",
+    );
+  });
+});

@@ -10,10 +10,11 @@
  * a folder elsewhere holds — so the whole cache is dropped and the open branches re-read. That is
  * one round trip per open branch, which is a price worth paying for never showing a stale tree.
  */
-import { ChevronRight, Folder, FolderOpen, LoaderCircle } from "@lucide/vue";
+import { ChevronRight, LoaderCircle } from "@lucide/vue";
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import FileTypeIcon from "@/components/files/FileTypeIcon.vue";
 import { ancestorsOf } from "@/lib/files/format";
 import { useFilesStore } from "@/stores/files";
 
@@ -136,11 +137,6 @@ function depthPadding(depth: number): string {
 function label(row: Row): string {
   return row.path === "/" ? t("files.tree.root") : row.name;
 }
-
-/** True when a row is the directory being listed, or a parent of it. */
-function onTheWay(path: string): boolean {
-  return props.currentPath === path || props.currentPath.startsWith(`${path}/`);
-}
 </script>
 
 <template>
@@ -182,13 +178,7 @@ function onTheWay(path: string): boolean {
             :title="row.path"
             @click="emit('navigate', row.path)"
           >
-            <FolderOpen v-if="row.expanded" :size="13" class="shrink-0 text-primary" />
-            <Folder
-              v-else
-              :size="13"
-              class="shrink-0"
-              :class="onTheWay(row.path) ? 'text-primary' : 'text-muted-foreground'"
-            />
+            <FileTypeIcon :name="row.name" kind="directory" :open="row.expanded" :size="14" />
             <span class="truncate">{{ label(row) }}</span>
           </button>
         </div>
