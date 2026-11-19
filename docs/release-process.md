@@ -32,7 +32,9 @@ update channel follows the promotion — installed builds are never offered a ca
 
 ## Before a release
 
-1. `pnpm check` green, on all three platforms in CI.
+1. `node scripts/run-check.mjs` green on the machine preparing the release. The **tag build is the
+   release gate**: it builds every platform and checks the tag, the version and the notes. Main CI
+   and Documentation are repository checks; a release does not wait for them.
 2. `CHANGELOG.md` has a section for the version being released. `pnpm release:notes <version> --check`
    is the gate: a release whose notes were never written fails before anything is built, because a
    release with an empty body is a release nobody can decide about. From `0.4.0` the section carries
