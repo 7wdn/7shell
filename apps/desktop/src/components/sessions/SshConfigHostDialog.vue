@@ -7,7 +7,7 @@
  * the connection cannot honour is listed with the reason and cannot be chosen — a session that
  * refuses on its first connection is worse than a row that says why now.
  */
-import { LoaderCircle, Terminal } from "@lucide/vue";
+import { LoaderCircle, Search, Terminal } from "@lucide/vue";
 import {
   DialogClose,
   DialogContent,
@@ -17,7 +17,7 @@ import {
   DialogRoot,
   DialogTitle,
 } from "reka-ui";
-import { ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { describeShellError } from "@/i18n/errors";
@@ -36,6 +36,19 @@ const { t } = useI18n();
 const hosts = ref<SshConfigHost[]>([]);
 const busy = ref(false);
 const failure = ref<ShellError | null>(null);
+/** Folded into the alias, the address and the account, because a person recognises any of them. */
+const filter = ref("");
+const field = ref<HTMLInputElement | null>(null);
+
+const visibleHosts = computed(() => {
+  const needle = filter.value.trim().toLowerCase();
+  if (needle === "") {
+    return hosts.value;
+  }
+  return hosts.value.filter((host) =>
+    [host.alias, host.host, host.user ?? ""].some((value) => value.toLowerCase().includes(needle)),
+  );
+});
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -57,10 +70,15 @@ async function load(): Promise<void> {
 
 watch(
   () => props.open,
-  (open) => {
-    if (open) {
-      void load();
+  async (open) => {
+    if (!open) {
+      return;
     }
+    filter.value = "";
+    await load();
+    // The filter appears with the hosts it narrows, so focus is taken once the list is drawn.
+    await nextTick();
+    field.value?.focus();
   },
 );
 
@@ -98,6 +116,25 @@ function endpoint(host: SshConfigHost): string {
           </div>
         </div>
 
+        <div v-if="!busy && !failure && hosts.length > 0" class="relative mx-4 mt-3">
+          <Search
+            :size="14"
+            class="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
+          />
+          <input
+            ref="field"
+            v-model="filter"
+            data-ssh-config-filter
+            type="text"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
+            class="h-8 w-full rounded-md border border-border bg-background pr-3 pl-8 text-xs select-text focus:ring-1 focus:ring-ring focus:outline-none"
+            :placeholder="t('sessions.editor.openssh.filterPlaceholder')"
+            :aria-label="t('sessions.editor.openssh.filterPlaceholder')"
+          />
+        </div>
+
         <div class="mt-3 min-h-0 flex-1 overflow-auto px-4">
           <p v-if="busy" class="flex items-center gap-2 py-4 text-xs text-muted-foreground">
             <LoaderCircle :size="13" class="animate-spin" />
@@ -117,8 +154,12 @@ function endpoint(host: SshConfigHost): string {
             {{ t("sessions.editor.openssh.empty") }}
           </p>
 
+          <p v-else-if="visibleHosts.length === 0" class="py-4 text-xs text-muted-foreground">
+            {{ t("sessions.editor.openssh.noMatch") }}
+          </p>
+
           <ul v-else class="space-y-1 pb-2">
-            <li v-for="host in hosts" :key="host.alias">
+            <li v-for="host in visibleHosts" :key="host.alias">
               <button
                 type="button"
                 data-ssh-config-host

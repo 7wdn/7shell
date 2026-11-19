@@ -55,6 +55,17 @@ test("a host picked from ~/.ssh/config connects through its alias", async () => 
     await editor.locator("[data-ssh-config-picker]").click();
     const host = page.locator("[data-ssh-config-host]").filter({ hasText: "e2e-lab" });
     await expect(host).toBeVisible({ timeout: 60_000 });
+
+    // The launcher seeds a second alias so the filter has a row to leave out.
+    const filter = page.locator("[data-ssh-config-filter]");
+    await filter.fill("shadow");
+    await expect(page.locator("[data-ssh-config-host]")).toHaveCount(1);
+    await expect(page.locator("[data-ssh-config-host]").filter({ hasText: "e2e-shadow" })).toBeVisible();
+    await filter.fill("no-such-host");
+    await expect(page.getByText("No hosts match this filter.")).toBeVisible();
+    await filter.fill("");
+    await expect(host).toBeVisible();
+
     await host.click();
 
     // The alias is what the session stores; the resolved values are shown beside it.

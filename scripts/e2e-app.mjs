@@ -211,11 +211,13 @@ async function main() {
   await rm(SSH_DIR, { recursive: true, force: true });
   await mkdir(SSH_DIR, { recursive: true });
   if (process.env.SEVENSHELL_TEST_HOST && process.env.SEVENSHELL_TEST_USER) {
+    // The second alias exists so the picker's filter has something to leave out: it is never
+    // dialled, and its address is one nothing listens on.
     await writeFile(
       path.join(SSH_DIR, "config"),
       `Host e2e-lab\n  HostName ${process.env.SEVENSHELL_TEST_HOST}\n  Port ${
         process.env.SEVENSHELL_TEST_PORT ?? "22"
-      }\n  User ${process.env.SEVENSHELL_TEST_USER}\n`,
+      }\n  User ${process.env.SEVENSHELL_TEST_USER}\nHost e2e-shadow\n  HostName 127.0.0.9\n  Port 1\n  User e2e-shadow\n`,
       "utf8",
     );
   }

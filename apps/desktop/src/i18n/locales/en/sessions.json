@@ -320,7 +320,9 @@
         "dialogTitle": "Hosts in ~/.ssh/config",
         "dialogDescription": "Choose an alias. The address and account are shown as this machine resolves them; nothing is copied until you save.",
         "loading": "Reading ~/.ssh/config…",
+        "filterPlaceholder": "Filter by alias, address, or account…",
         "empty": "No hosts yet. Add a Host block to ~/.ssh/config and open this again.",
+        "noMatch": "No hosts match this filter.",
         "unsupported": "Not supported yet: {directives}",
         "close": "Close",
         "keyNote": "The identity is read from ~/.ssh/config or the default ~/.ssh/id_* files when connecting; no key needs to be imported here."
