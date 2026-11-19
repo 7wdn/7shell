@@ -1,5 +1,11 @@
 {
   "sessions": {
+    "newTab": {
+      "title": "New tab",
+      "search": "Search sessions…",
+      "empty": "No sessions match.",
+      "newSession": "New session…"
+    },
     "list": {
       "empty": "No sessions yet. Add one to keep its address, user and credentials together.",
       "add": "New session",
@@ -475,7 +481,7 @@
       "message": "“{name}” is already open in the workspace. Open a new tab?",
       "confirm": "Open in a new tab",
       "remember": "Remember my choice",
-      "rememberNote": "It applies to the menu's own “Open terminal” only, and can be changed later in “Settings - Workspace”."
+      "rememberNote": "It applies to “Open terminal” in the session menu and the new-tab picker, and can be changed later in “Settings - Workspace”."
     },
     "hostKey": {
       "opening": "Opening {name}",

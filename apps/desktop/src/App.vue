@@ -30,6 +30,8 @@ import AssistantPanel from "@/components/assistant/AssistantPanel.vue";
 import ApprovalDialog from "@/components/mcp/ApprovalDialog.vue";
 import HostKeyPrompt from "@/components/sessions/HostKeyPrompt.vue";
 import ImportPassphraseDialog from "@/components/sessions/ImportPassphraseDialog.vue";
+import NewTabPicker from "@/components/sessions/NewTabPicker.vue";
+import ReopenDialog from "@/components/sessions/ReopenDialog.vue";
 import SessionDialog from "@/components/sessions/SessionDialog.vue";
 import AppSidebar from "@/components/shell/AppSidebar.vue";
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
@@ -543,7 +545,11 @@ onMounted(async () => {
   // Registered at the top as well as through the store, for the same reason the close question is:
   // it arrives from a menu the operating system draws, at a moment when no page was involved, and
   // the window has to put the gate back up whether or not anybody is looking at the vault.
-  stopVaultLocked = await backend.events.onVaultLocked(() => vault.markLocked());
+  stopVaultLocked = await backend.events.onVaultLocked(() => {
+    vault.markLocked();
+    terminals.closeNewTabPicker();
+    terminals.dropReopenQuestion();
+  });
   stopZmodem = await backend.events.onZmodemEvent(reportZmodem);
   // The agent interface's question is asked by another process, at a moment no page chose: it has
   // to be drawable whatever tab is on screen, which is why the subscription belongs to the frame.
@@ -663,6 +669,19 @@ onBeforeUnmount(() => {
       @replace="terminals.confirmReplace()"
       @cancel="terminals.dismiss()"
     />
+
+    <!--
+      The tab strip's plus: where a new tab connects. It is drawn by the frame rather than by the
+      strip because the title bar and the workspace share the strip, and the picker has to open
+      over either one. Nothing is opened until a row is chosen.
+    -->
+    <NewTabPicker v-if="vault.unlocked && terminals.newTabPickerOpen" />
+
+    <!--
+      The question a session that is already open asks. One prompt for both ways in — the session
+      menu's open and the picker's choice — so the answer does not depend on where the click was.
+    -->
+    <ReopenDialog v-if="vault.unlocked" />
 
     <!--
       The question an agent's call is holding on: drawn by the frame rather than by the page that

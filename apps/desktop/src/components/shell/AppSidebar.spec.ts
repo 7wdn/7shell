@@ -11,7 +11,7 @@
  * geometry is the test's.
  */
 import { createPinia, setActivePinia } from "pinia";
-import { type App, createApp, h, nextTick } from "vue";
+import { type App, Fragment, createApp, h, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
@@ -37,6 +37,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 }));
 
 import AppSidebar from "@/components/shell/AppSidebar.vue";
+import ReopenDialog from "@/components/sessions/ReopenDialog.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
@@ -96,7 +97,9 @@ async function render(groups: readonly SessionGroup[], sessions: readonly Sessio
   library.groups = [...groups];
   library.sessions = [...sessions];
 
-  app = createApp({ render: () => h(AppSidebar, { onCollapse: collapseRequested }) }).use(i18n);
+  app = createApp({
+    render: () => h(Fragment, [h(AppSidebar, { onCollapse: collapseRequested }), h(ReopenDialog)]),
+  }).use(i18n);
   app.mount(host);
   await nextTick();
 }

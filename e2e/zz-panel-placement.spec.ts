@@ -125,8 +125,17 @@ test("the file panel moves between the two sides, the bottom and its own tab", a
     await expect(page.locator("[data-workspace-tabs] [data-tab]")).toHaveCount(1, { timeout: 20_000 });
 
     // Two terminals on the same host have two positions. The first one moving to the file tab is
-    // not a reason for the second one's strip to change or for its panel to go anywhere.
-    await page.locator("[data-new-terminal]").filter({ visible: true }).click();
+    // not a reason for the second one's strip to change or for its panel to go anywhere. The plus
+    // now asks where a new tab connects; the saved session is chosen from it, and because that
+    // session is already open the shared question appears before a second connection is made.
+    await page.locator("[data-new-tab]").filter({ visible: true }).click();
+    const picker = page.locator("[data-new-tab-picker]");
+    await expect(picker).toBeVisible({ timeout: 10_000 });
+    await picker.locator("[data-new-tab-row]").filter({ hasText: name }).click();
+    await expect(picker).toHaveCount(0, { timeout: 10_000 });
+    const reopen = page.getByRole("dialog").filter({ hasText: "already open" });
+    await expect(reopen).toBeVisible({ timeout: 10_000 });
+    await reopen.getByRole("button", { name: "Open in a new tab" }).click();
     await expect(tabs(page)).toHaveCount(2, { timeout: 20_000 });
     await expect(activePane(page).locator("[data-terminal-panel]")).toBeVisible({ timeout: 20_000 });
 

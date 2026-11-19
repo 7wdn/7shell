@@ -37,7 +37,6 @@ import { connectionMark } from "@/lib/sessions/marks";
 import { sessionTabTitle } from "@/lib/sessions/reopen";
 import { cn } from "@/lib/utils";
 import { TAB_MAX_WIDTH_PX } from "@/types/app";
-import { protocolSupports } from "@/types/generated/protocols";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import {
@@ -414,20 +413,12 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
 }
 
 /**
- * The session the `+` in the strip would open another terminal for: the one the tab on screen is
- * about, when that session opens a shell.
+ * The plus: choose where the new tab connects. It used to duplicate the tab on screen, which made
+ * the same control mean different things depending on what was selected; the tab's own menu still
+ * offers that duplicate for anybody who wants one more shell on the same host.
  */
-const newTerminalSession = computed(() => {
-  const tab = terminals.activeTab;
-  const session = tab ? sessionOf(tab) : undefined;
-  return session && protocolSupports(session.protocol, "shell") ? session : undefined;
-});
-
-function openNewTerminal(): void {
-  const session = newTerminalSession.value;
-  if (session) {
-    void terminals.open(session);
-  }
+function openNewTab(): void {
+  terminals.openNewTabPicker();
 }
 </script>
 
@@ -488,18 +479,17 @@ function openNewTerminal(): void {
     </template>
 
     <button
-      v-if="newTerminalSession"
       type="button"
-      data-new-terminal
+      data-new-tab
       :class="
         cn(
           'grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
           vertical ? 'mx-1.5 my-1' : chrome ? 'my-1 self-center' : 'my-1.5',
         )
       "
-      :title="t('terminal.tab.newTerminal', { name: newTerminalSession.name })"
-      :aria-label="t('terminal.tab.newTerminal', { name: newTerminalSession.name })"
-      @click.stop="openNewTerminal()"
+      :title="t('terminal.tab.newTab')"
+      :aria-label="t('terminal.tab.newTab')"
+      @click.stop="openNewTab()"
     >
       <Plus :size="13" />
     </button>

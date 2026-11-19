@@ -10,7 +10,7 @@
  * already has the files under its terminal — that panel is the shell's companion, following its
  * `cd` — while the file manager entry is a tab of its own, which is a place to browse rather than a
  * place to type. The terminal entry is the menu's own open, not the row's click: a session that is
- * already open is something this menu has an answer for (see `terminals.reopen`), and the row's
+ * already open is something this menu has an answer for (see `terminals.requestReopen`), and the row's
  * click never asks.
  *
  * The address is the one thing worth copying, and it is copied the way the sidebar prints it — with
@@ -54,7 +54,7 @@ export interface SessionMenuActions {
    *
    * It is not the row's click, even though both ask for the same session: the menu is where somebody
    * chooses *how* to open a session that is already open, and the entry that decides that is this
-   * one — see `terminals.reopen`.
+   * one — see `terminals.requestReopen`.
    */
   readonly open: (session: Session) => void;
   /**

@@ -18,7 +18,6 @@ vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   filesClose: vi.fn(async () => null),
   filesOpen: vi.fn(),
-  sessionOpen: vi.fn(),
   snippetsOpen: vi.fn(async () => []),
   commandHistory: vi.fn(async () => []),
   onDesktopResized: vi.fn(async () => () => {}),
@@ -28,7 +27,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import { i18n } from "@/i18n";
-import { filesOpen, sessionOpen } from "@/lib/backend/tauri";
+import { filesOpen } from "@/lib/backend/tauri";
 import { usePreferencesStore } from "@/stores/preferences";
 import { type TerminalPanel, useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
@@ -119,24 +118,17 @@ function strip(): HTMLElement {
   return found;
 }
 
-describe("another terminal on the same machine", () => {
-  it("offers the strip's plus for the session on screen and opens a second tab", async () => {
-    usePreferencesStore().sessionLayout = "terminal";
-    vi.mocked(sessionOpen).mockResolvedValue({
-      kind: "opened",
-      handle: "handle-2",
-      sessionId: session.id,
-      tunnels: [],
-      tunnelFailures: [],
-    });
+describe("the strip's plus", () => {
+  it("opens the connection picker without opening or copying a terminal", async () => {
     await render(null);
+    const store = useTerminalsStore();
 
-    const button = host.querySelector<HTMLElement>("[data-new-terminal]");
-    expect(button?.getAttribute("title")).toContain("web");
+    const button = host.querySelector<HTMLElement>("[data-new-tab]");
+    expect(button).not.toBeNull();
     button?.click();
 
-    await vi.waitFor(() => expect(sessionOpen).toHaveBeenCalledWith("session-1"));
-    await vi.waitFor(() => expect(useTerminalsStore().tabs.filter((tab) => tab.kind === "terminal")).toHaveLength(2));
+    expect(store.newTabPickerOpen).toBe(true);
+    expect(store.tabs.filter((tab) => tab.kind === "terminal")).toHaveLength(1);
   });
 });
 

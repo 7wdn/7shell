@@ -520,8 +520,8 @@
       },
       "sessionReopen": {
         "title": "A session that is already open",
-        "summary": "What Open terminal in the session list does when the session is already open: ask, open another tab, or go to it.",
-        "help": "Applies to Open terminal in the menu only. Remember my choice saves the answer here; clicking a session row is unchanged."
+        "summary": "What “Open terminal” and the new-tab picker do when the session is already open: ask, open another tab, or go to it.",
+        "help": "Applies to the menu's “Open terminal” and the new-tab picker. Remember my choice saves the answer here; clicking a session row is unchanged."
       },
       "monitor": {
         "title": "Host monitor",

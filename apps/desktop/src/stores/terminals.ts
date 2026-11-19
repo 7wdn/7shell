@@ -353,6 +353,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * watches it and empties it through `takeSettingsCategory`.
    */
   const settingsRequest = ref<SettingsCategoryId | null>(null);
+  /** Whether the tab strip's plus is showing the connection picker. */
+  const newTabPickerOpen = ref(false);
   /** Session ids with an open request in flight, so a row can say so and a double-click cannot. */
   const connectingSessionIds = ref<string[]>([]);
   /**
@@ -375,6 +377,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
     return params ? i18n.global.t(key, params) : i18n.global.t(key);
   }
   const decision = ref<HostKeyDecision | null>(null);
+  /**
+   * The question about a session that is already open, and whether the answer should be remembered.
+   *
+   * One value for both the session menu's open and the tab strip's connection picker: they are the
+   * same question, and two prompts would be two answers to it. The frame draws the dialog.
+   */
+  const reopenQuestion = ref<{ session: Session; remember: boolean } | null>(null);
   /** The forwards that are up, as the backend last described them. */
   const tunnels = ref<OpenTunnel[]>([]);
   /**
@@ -877,9 +886,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
    *
    * A session with nothing open takes the ordinary open, in the shape the settings give a session.
    * One that is already open follows the remembered answer: another tab, the tab that is already
-   * there, or the question — which is left to the caller, because a dialog belongs to the place the
-   * menu was opened from. The row's own click is not this function: that one goes to the session
-   * rather than asking about it — see [`goTo`].
+   * there, or the question. The question is recorded here and drawn by the frame, so the menu and
+   * the tab strip's picker ask the same one.
    */
   async function reopen(session: Session): Promise<ReopenAction> {
     const action = reopenAction(openTabsOf(session.id).length, preferences.sessionReopen);
@@ -891,6 +899,65 @@ export const useTerminalsStore = defineStore("terminals", () => {
       focusSession(session.id);
     }
     return action;
+  }
+
+  /** The menu's open and the picker's choice: the ordinary path, with its question kept for the frame. */
+  async function requestReopen(session: Session): Promise<void> {
+    const action = await reopen(session);
+    if (action === "ask") {
+      reopenQuestion.value = { session, remember: false };
+    }
+  }
+
+  /**
+   * The answer was yes: another tab, and the choice remembered when it was asked to be.
+   *
+   * Remembering is written immediately rather than with a page's Apply, because the dialog can be
+   * answered at any moment and the next open is where the answer matters.
+   */
+  async function confirmReopen(): Promise<void> {
+    const asked = reopenQuestion.value;
+    reopenQuestion.value = null;
+    if (!asked) {
+      return;
+    }
+    if (asked.remember) {
+      await preferences.setSessionReopen("new-tab");
+    }
+    await open(asked.session);
+  }
+
+  /**
+   * The answer was no, or the dialog was left some other way — Escape, a click outside, the cancel
+   * button. All of them are the same answer: not a second tab.
+   *
+   * Somebody who asked to open a session ends up at the tab that is already open for it, which is
+   * what makes "no" an answer rather than a dead end. The checkbox still remembers it if it was
+   * ticked.
+   */
+  async function declineReopen(): Promise<void> {
+    const asked = reopenQuestion.value;
+    reopenQuestion.value = null;
+    if (!asked) {
+      return;
+    }
+    focusSession(asked.session.id);
+    if (asked.remember) {
+      await preferences.setSessionReopen("focus");
+    }
+  }
+
+  /** A lock or a restart takes the question with it; there is no session to go back to. */
+  function dropReopenQuestion(): void {
+    reopenQuestion.value = null;
+  }
+
+  function openNewTabPicker(): void {
+    newTabPickerOpen.value = true;
+  }
+
+  function closeNewTabPicker(): void {
+    newTabPickerOpen.value = false;
   }
 
   /**
@@ -2104,6 +2171,14 @@ export const useTerminalsStore = defineStore("terminals", () => {
     effectivePlacement,
     changeTabPanelPlacement,
     applyPanelPlacementToAll,
+    newTabPickerOpen,
+    openNewTabPicker,
+    closeNewTabPicker,
+    reopenQuestion,
+    requestReopen,
+    confirmReopen,
+    declineReopen,
+    dropReopenQuestion,
     openContainerFiles,
     openPodFiles,
     openDesktop,
