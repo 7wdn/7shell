@@ -398,3 +398,49 @@ describe("the workspace's own strips", () => {
     }
   });
 });
+
+describe("where the file panel sits", () => {
+  it("draws under the terminal by default", async () => {
+    await render(openPanel);
+
+    expect(host.querySelector("[data-terminal-panel]")?.getAttribute("data-side")).toBe("bottom");
+    expect(host.querySelector('[role="separator"]')?.getAttribute("aria-orientation")).toBe("horizontal");
+  });
+
+  it("draws on the right, with a vertical line and the remembered width", async () => {
+    usePreferencesStore().terminalPanelPlacement = "right";
+    await render(openPanel);
+
+    const panel = host.querySelector<HTMLElement>("[data-terminal-panel]");
+    expect(panel?.getAttribute("data-side")).toBe("right");
+    expect(host.querySelector('[role="separator"]')?.getAttribute("aria-orientation")).toBe("vertical");
+    expect(panel?.style.width).toBe("380px");
+  });
+
+  it("draws on the left, with the terminal taking the free side", async () => {
+    usePreferencesStore().terminalPanelPlacement = "left";
+    await render(openPanel);
+
+    const panel = host.querySelector<HTMLElement>("[data-terminal-panel]");
+    expect(panel?.getAttribute("data-side")).toBe("left");
+    expect(panel?.classList.contains("order-1")).toBe(true);
+    expect(host.querySelector('[role="separator"]')?.getAttribute("aria-orientation")).toBe("vertical");
+  });
+
+  it("opens the standalone file tab when that is the remembered position", async () => {
+    usePreferencesStore().terminalPanelPlacement = "tab";
+    vi.mocked(filesOpen).mockResolvedValue({
+      kind: "opened",
+      handle: "f1",
+      sessionId: session.id,
+      listing: { path: "/home/user", entries: [] },
+      packed: true,
+    });
+    await render(null);
+
+    stripButton("Files").click();
+
+    await vi.waitFor(() => expect(useTerminalsStore().tabs.some((tab) => tab.kind === "files")).toBe(true));
+    expect(host.querySelector("[data-terminal-panel]")).toBeNull();
+  });
+});

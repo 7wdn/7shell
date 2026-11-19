@@ -133,6 +133,17 @@ export const useFilesStore = defineStore("files", () => {
       ? [...new Set([...unsavedEditors.value, key])]
       : unsavedEditors.value.filter((entry) => entry !== key);
   }
+
+  /**
+   * Whether any editor open through this browser has text that has not been written back.
+   *
+   * Editor keys are `handle:path`, and the handle is what identifies the browser: a tab can be
+   * closed without asking, but not when one of its files is holding an unsaved buffer.
+   */
+  function hasUnsavedFor(handle: string): boolean {
+    const prefix = `${handle}:`;
+    return unsavedEditors.value.some((key) => key.startsWith(prefix));
+  }
   /**
    * Transfers that failed and that nobody has been told about yet.
    *
@@ -982,6 +993,7 @@ export const useFilesStore = defineStore("files", () => {
     uploadConflict,
     unsavedEditors,
     setUnsaved,
+    hasUnsavedFor,
     unattendedFailures,
     attendFailures,
     open,

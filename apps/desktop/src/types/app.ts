@@ -475,6 +475,19 @@ export type SessionReopen = "ask" | "new-tab" | "focus";
 export const DEFAULT_SESSION_REOPEN: SessionReopen = "ask";
 
 /**
+ * Where the file panel sits while a terminal is open, from
+ * `sevenshell_types::TerminalPanelPlacement`.
+ *
+ * `tab` is the standalone file manager a session's menu already opens; it is a position here so
+ * that bottom, left, right and tab are one remembered answer rather than a panel plus a separate
+ * command.
+ */
+export type TerminalPanelPlacement = "bottom" | "left" | "right" | "tab";
+
+/** The panel starts where the split layout has always drawn it. */
+export const DEFAULT_TERMINAL_PANEL_PLACEMENT: TerminalPanelPlacement = "bottom";
+
+/**
  * What an agent connected over MCP may do, from `sevenshell_types::McpScope`.
  *
  * `readOnly` is the fresh install: an agent may look at a machine until a person says it may change
@@ -628,6 +641,10 @@ export interface AppSettings {
   readonly sessionLayout: SessionLayout;
   /** What the session list's menu does when the session it opens is already open. */
   readonly sessionReopen: SessionReopen;
+  /** Where the file panel sits while a terminal is open. */
+  readonly terminalPanelPlacement: TerminalPanelPlacement;
+  /** How wide the file panel is on the left or right, in pixels. Absent means nobody has moved it. */
+  readonly terminalPanelWidth?: number;
   /** How tall the file panel under a terminal is, in pixels. Absent means nobody has moved it. */
   readonly terminalPanelHeight?: number;
   /** How wide the session sidebar is, in pixels. Absent means nobody has moved the divider. */

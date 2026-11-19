@@ -339,9 +339,10 @@ function selectCategory(id: SettingsCategoryId): void {
 /**
  * The fields a category is made of.
  *
- * Five of them have no row — the file panel's height, the sidebar's width, the file panel's tree
- * width, the command panel's library width, and whether the sidebar is on screen — because nobody
- * chooses them in a row: they are dividers somebody drags and a button in the sidebar's own header.
+ * Seven of them have no row — the file panel's height and side width, its remembered position, the
+ * sidebar's width, the file panel's tree width, the command panel's library width, and whether the
+ * sidebar is on screen — because nobody chooses them in a row: they are dividers somebody drags,
+ * the terminal strip's own menu, and a button in the sidebar's header.
  * "Restore the defaults" still has to put the frame back the way it came, so the category that owns
  * them names them here.
  */
@@ -349,7 +350,14 @@ function fieldsOf(id: SettingsCategoryId): readonly PreferenceField[] {
   // Rows that write nothing — the terminal's preview — are not among the fields a category restores.
   const fields: PreferenceField[] = rowsOfCategory(id).flatMap((row) => (row.field ? [row.field] : []));
   if (id === "workspace") {
-    fields.push("terminalPanelHeight", "sidebarWidth", "filesTreeWidth", "sidebarOpen");
+    fields.push(
+      "terminalPanelPlacement",
+      "terminalPanelWidth",
+      "terminalPanelHeight",
+      "sidebarWidth",
+      "filesTreeWidth",
+      "sidebarOpen",
+    );
   }
   if (id === "terminal") {
     // The scheme slots and the background choice have no rows of their own: they are drawn inside

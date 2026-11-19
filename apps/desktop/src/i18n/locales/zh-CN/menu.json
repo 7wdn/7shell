@@ -12,6 +12,7 @@
     "library": "会话库操作",
     "moveToGroup": "移动到分组",
     "tunnel": "转发操作",
+    "panelPlacement": "文件面板位置",
     "process": "进程操作",
     "disk": "文件系统操作",
     "socket": "监听端口操作",

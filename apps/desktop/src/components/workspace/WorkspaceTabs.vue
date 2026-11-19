@@ -32,6 +32,7 @@ import {
   Boxes,
   CircleAlert,
   Cpu,
+  ExternalLink,
   Folder,
   List,
   ListChecks,
@@ -39,6 +40,8 @@ import {
   MonitorCog,
   Network,
   PanelBottom,
+  PanelLeft,
+  PanelRight,
   Plus,
   RotateCw,
   Settings,
@@ -71,10 +74,10 @@ import SplitDivider from "@/components/workspace/SplitDivider.vue";
 import { useContextMenu } from "@/composables/useContextMenu";
 import { describeShellError } from "@/i18n/errors";
 import { MENU_TITLES } from "@/lib/menu/titles";
-import { tabMenu } from "@/lib/menu/workspace";
+import { panelPlacementMenu, tabMenu } from "@/lib/menu/workspace";
 import { sessionTabTitle } from "@/lib/sessions/reopen";
-import { MIN_PANE_PX } from "@/lib/workspace/split";
-import { TAB_MAX_WIDTH_PX } from "@/types/app";
+import { MIN_PANE_PX, SIDE_DIVIDER_PX, SIDE_PANE_KEEP_PX } from "@/lib/workspace/split";
+import { TAB_MAX_WIDTH_PX, type TerminalPanelPlacement } from "@/types/app";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -154,6 +157,12 @@ function showFiles(tab: TerminalTab): void {
   if (!protocolSupports(tab.session.protocol, "sftp")) {
     return;
   }
+  // The remembered position may be the standalone tab, which is the browser this build already
+  // has: "Files" means the same thing in all four positions.
+  if (preferences.terminalPanelPlacement === "tab") {
+    void terminals.openFiles(tab.session);
+    return;
+  }
   if (panelShowing(tab) && panelTab.value[tab.id] !== "commands") {
     // Closing is the store's: it owns the browser and the channel it has to let go of.
     void terminals.togglePanel(tab);
@@ -164,6 +173,105 @@ function showFiles(tab: TerminalTab): void {
   if (tab.panel === null && tab.status === "open") {
     void terminals.openPanel(tab);
   }
+}
+
+/**
+ * Where the panel is drawn right now.
+ *
+ * The command panel has no standalone tab to move to, so it keeps the bottom when the remembered
+ * answer is that tab; every other position applies to whichever half is showing, which is what
+ * "move the panel" means while the commands are the half on screen.
+ */
+function panelPlacement(tab: TerminalTab): TerminalPanelPlacement {
+  if (preferences.terminalPanelPlacement === "tab" && panelTab.value[tab.id] === "commands") {
+    return "bottom";
+  }
+  return preferences.terminalPanelPlacement;
+}
+
+/** The side the panel is docked to, or nothing when it is under the terminal. */
+function panelSide(tab: TerminalTab): "left" | "right" | null {
+  const placement = panelPlacement(tab);
+  return placement === "left" || placement === "right" ? placement : null;
+}
+
+function panelIsSide(tab: TerminalTab): boolean {
+  return panelSide(tab) !== null;
+}
+
+/** How wide or tall the panel is drawn, with the terminal keeping its side's floor. */
+function panelStyle(tab: TerminalTab): Record<string, string> | undefined {
+  if (!panelIsSide(tab)) {
+    return {
+      height: `${preferences.resolvedPanelHeight}px`,
+      minHeight: `${MIN_PANE_PX}px`,
+    };
+  }
+  return {
+    width: `${preferences.resolvedPanelWidth}px`,
+    minWidth: `${MIN_PANE_PX}px`,
+    maxWidth: `calc(100% - ${SIDE_PANE_KEEP_PX + SIDE_DIVIDER_PX}px)`,
+  };
+}
+
+/** What the Files button says it will do, which depends on where the remembered position puts it. */
+function filesButtonTitle(tab: TerminalTab): string {
+  if (preferences.terminalPanelPlacement === "tab") {
+    return t("terminal.panel.openTab");
+  }
+  return filesShowing(tab) ? t("terminal.panel.close") : t("terminal.panel.open");
+}
+
+/** The mark the placement button wears: the remembered position, which is about files alone. */
+function panelIcon() {
+  const placement = preferences.terminalPanelPlacement;
+  if (placement === "tab") return ExternalLink;
+  if (placement === "left") return PanelLeft;
+  if (placement === "right") return PanelRight;
+  return PanelBottom;
+}
+
+/**
+ * Takes the panel to one of its four positions.
+ *
+ * A tab means the standalone browser this build already opens; the docked panel is closed first,
+ * because two live browsers on one directory would disagree the moment either one moved. The other
+ * three keep the panel open and simply let the workspace draw it somewhere else.
+ */
+async function choosePlacement(tab: TerminalTab, placement: TerminalPanelPlacement): Promise<void> {
+  await preferences.setTerminalPanelPlacement(placement);
+  if (placement === "tab") {
+    if (tab.panel || panelTab.value[tab.id] === "commands") {
+      if (tab.panel) {
+        await terminals.togglePanel(tab);
+      }
+      delete panelTab.value[tab.id];
+    }
+    await terminals.openFiles(tab.session, { origin: "placement" });
+    return;
+  }
+  // The tab the position opened goes with the position; a tab the person opened, or one holding
+  // unsaved text, is left where it is (the store decides, and says why when it keeps one).
+  await terminals.releasePlacementFiles(tab.session.id);
+  // A side chosen while the panel is away opens the files in it; one chosen while a half is
+  // already showing moves that half rather than replacing what somebody was looking at.
+  if (!panelShowing(tab)) {
+    panelTab.value[tab.id] = "files";
+    if (tab.status === "open") {
+      await terminals.openPanel(tab);
+    }
+  }
+}
+
+/** The small menu beside Files: the four positions, with the remembered one ticked. */
+function openPlacementMenu(event: MouseEvent, tab: TerminalTab): void {
+  openMenu(
+    event,
+    { key: MENU_TITLES.panelPlacement },
+    panelPlacementMenu(preferences.terminalPanelPlacement, {
+      choose: (placement) => void choosePlacement(tab, placement),
+    }),
+  );
 }
 
 /** Whether this tab is already drawing a browser: one with a handle must not be opened a second time. */
@@ -693,184 +801,213 @@ function openNewTerminal(): void {
     >
       <template v-if="tab.kind === 'terminal'">
         <!--
+          The terminal and its panel are one region whose direction follows the remembered position:
+          a row when the files sit beside the shell, a column when they sit under it. The terminal's
+          own strip belongs to the terminal column, so where the panel goes never takes the way out
+          of the panel with it.
+        -->
+        <div class="flex min-h-0 flex-1" :class="panelIsSide(tab) ? 'flex-row' : 'flex-col'">
+          <div :class="cn('flex min-h-0 min-w-0 flex-1 flex-col', panelSide(tab) === 'left' ? 'order-3' : 'order-1')">
+            <!--
           The terminal carries the same floor as the panel while a panel is under it. Without it,
           the height somebody chose in a large window would eat the whole terminal in a small one:
           the panel shrinks first, and it shrinks past the point where the terminal is still there.
           With no panel open the floor is left off, because then the terminal is the only thing
           asking for room and squeezing it is exactly what the window shrinking means.
         -->
-        <TerminalPane
-          v-if="tab.handle"
-          :key="tab.id"
-          :handle="tab.handle"
-          :active="tab.id === terminals.activeTabId"
-          :interactive="tab.status === 'open'"
-          class="min-h-0 flex-1"
-          :style="tab.panel ? { minHeight: `${MIN_PANE_PX}px` } : undefined"
-        />
+            <TerminalPane
+              v-if="tab.handle"
+              :key="tab.id"
+              :handle="tab.handle"
+              :active="tab.id === terminals.activeTabId"
+              :interactive="tab.status === 'open'"
+              class="min-h-0 min-w-0 flex-1"
+              :style="tab.panel && !panelIsSide(tab) ? { minHeight: `${MIN_PANE_PX}px` } : undefined"
+            />
 
-        <!--
+            <!--
           A tab that never got a handle has no screen to draw: the open itself failed, and this is
           its place to say so. It is the exception, not the state of a terminal that ended — one
           that ended keeps its handle and keeps drawing what it last showed.
         -->
-        <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-          <CircleAlert :size="18" class="text-destructive" />
-          <p class="text-xs text-muted-foreground">{{ t("terminal.tab.failedTitle") }}</p>
-        </div>
+            <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+              <CircleAlert :size="18" class="text-destructive" />
+              <p class="text-xs text-muted-foreground">{{ t("terminal.tab.failedTitle") }}</p>
+            </div>
 
-        <!--
+            <!--
           The command bar, directly under the terminal and above its strip: a line typed here goes
           into the shell above it, which is what having it next to the prompt is about. It is drawn
           only while the terminal is open — a bar that could not deliver would be a lie.
         -->
-        <CommandInputBar v-if="tab.status === 'open'" />
+            <CommandInputBar v-if="tab.status === 'open'" />
 
-        <!--
+            <!--
           The terminal's own strip: where it is, and the way into the file panel. It stays when the
           panel is open — it is where the toggle that closes it lives — and it sits above the
           divider rather than below it, because what is under the line is the panel and nothing else.
         -->
-        <footer
-          data-terminal-strip
-          class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1 cursor-default select-none"
-        >
-          <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
-            {{ sessionEndpoint(tab.session, t) }}
-          </span>
-          <TerminalSchemeMenu />
-          <button
-            v-if="protocolSupports(tab.session.protocol, 'sftp')"
-            type="button"
-            :class="
-              cn(
-                'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
-                filesShowing(tab)
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
-              )
-            "
-            :disabled="tab.panel === null && tab.status !== 'open'"
-            :aria-pressed="filesShowing(tab)"
-            :title="filesShowing(tab) ? t('terminal.panel.close') : t('terminal.panel.open')"
-            @click="showFiles(tab)"
-          >
-            <PanelBottom :size="11" />
-            {{ t("terminal.panel.label") }}
-          </button>
-          <button
-            type="button"
-            :class="
-              cn(
-                'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
-                panelTab[tab.id] === 'commands'
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-              )
-            "
-            :aria-pressed="panelTab[tab.id] === 'commands'"
-            @click="showCommands(tab)"
-          >
-            <ListChecks :size="11" />
-            {{ t("commands.panel") }}
-          </button>
-        </footer>
-
-        <footer
-          v-if="tab.status === 'ended' || tab.failure"
-          :class="
-            cn(
-              'shrink-0 border-t px-4 py-2',
-              tab.failure ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-muted/40',
-            )
-          "
-        >
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="min-w-0">
-              <p v-if="tab.status === 'ended'" class="text-xs">
-                {{ tab.disconnected ? t("terminal.tab.disconnected") : t("terminal.tab.ended") }}
-              </p>
-              <p v-if="translateStatus(tab)" class="text-[11px] text-muted-foreground">{{ translateStatus(tab) }}</p>
-              <p v-if="tab.failure" class="text-xs">{{ describeShellError(translate, tab.failure).message }}</p>
-              <p v-if="tab.failure" class="font-mono text-[10px] text-muted-foreground">
-                {{ describeShellError(translate, tab.failure).code }}
-              </p>
-            </div>
-            <button
-              v-if="tab.status !== 'open'"
-              type="button"
-              class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
-              @click="terminals.reconnect(tab.id)"
+            <footer
+              data-terminal-strip
+              class="flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1 cursor-default select-none"
             >
-              <RotateCw :size="12" />
-              {{ t("terminal.tab.reconnect") }}
-            </button>
+              <span class="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
+                {{ sessionEndpoint(tab.session, t) }}
+              </span>
+              <TerminalSchemeMenu />
+              <button
+                v-if="protocolSupports(tab.session.protocol, 'sftp')"
+                type="button"
+                :class="
+                  cn(
+                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
+                    filesShowing(tab)
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
+                  )
+                "
+                :disabled="tab.panel === null && tab.status !== 'open'"
+                :aria-pressed="filesShowing(tab)"
+                :title="filesButtonTitle(tab)"
+                @click="showFiles(tab)"
+              >
+                <Folder :size="11" />
+                {{ t("terminal.panel.label") }}
+              </button>
+              <button
+                v-if="protocolSupports(tab.session.protocol, 'sftp')"
+                type="button"
+                data-panel-placement
+                class="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                :title="t('terminal.panel.position')"
+                :aria-label="t('terminal.panel.position')"
+                aria-haspopup="true"
+                @click.stop="openPlacementMenu($event, tab)"
+              >
+                <component :is="panelIcon()" :size="11" />
+              </button>
+              <button
+                type="button"
+                :class="
+                  cn(
+                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] transition-colors',
+                    panelTab[tab.id] === 'commands'
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                  )
+                "
+                :aria-pressed="panelTab[tab.id] === 'commands'"
+                @click="showCommands(tab)"
+              >
+                <ListChecks :size="11" />
+                {{ t("commands.panel") }}
+              </button>
+            </footer>
+
+            <footer
+              v-if="tab.status === 'ended' || tab.failure"
+              :class="
+                cn(
+                  'shrink-0 border-t px-4 py-2',
+                  tab.failure ? 'border-destructive/40 bg-destructive/10' : 'border-border bg-muted/40',
+                )
+              "
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <p v-if="tab.status === 'ended'" class="text-xs">
+                    {{ tab.disconnected ? t("terminal.tab.disconnected") : t("terminal.tab.ended") }}
+                  </p>
+                  <p v-if="translateStatus(tab)" class="text-[11px] text-muted-foreground">
+                    {{ translateStatus(tab) }}
+                  </p>
+                  <p v-if="tab.failure" class="text-xs">{{ describeShellError(translate, tab.failure).message }}</p>
+                  <p v-if="tab.failure" class="font-mono text-[10px] text-muted-foreground">
+                    {{ describeShellError(translate, tab.failure).code }}
+                  </p>
+                </div>
+                <button
+                  v-if="tab.status !== 'open'"
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
+                  @click="terminals.reconnect(tab.id)"
+                >
+                  <RotateCw :size="12" />
+                  {{ t("terminal.tab.reconnect") }}
+                </button>
+              </div>
+            </footer>
           </div>
-        </footer>
 
-        <template v-if="panelShowing(tab)">
-          <SplitDivider
-            :height="preferences.resolvedPanelHeight"
-            @move="preferences.setPanelHeight($event)"
-            @settle="preferences.rememberPanelHeight()"
-            @reset="preferences.resetPanelHeight()"
-          />
-
-          <!--
-            The panel is the only thing below the line, and the floor is a minimum height rather
-            than a clamp computed here: a window too short for the height somebody chose shrinks
-            the panel, because the half that has to stay usable is the terminal.
-          -->
-          <div
-            class="flex shrink flex-col overflow-hidden"
-            :style="{ height: `${preferences.resolvedPanelHeight}px`, minHeight: `${MIN_PANE_PX}px` }"
-          >
-            <CommandsPanel v-if="panelTab[tab.id] === 'commands'" class="min-h-0 flex-1" />
-
-            <FileBrowser
-              v-else-if="tab.panel?.handle"
-              :handle="tab.panel?.handle"
-              :protocol="tab.session.protocol"
-              class="min-h-0 flex-1"
+          <template v-if="panelShowing(tab)">
+            <SplitDivider
+              :size="panelIsSide(tab) ? preferences.resolvedPanelWidth : preferences.resolvedPanelHeight"
+              :orientation="panelIsSide(tab) ? 'vertical' : 'horizontal'"
+              :pane="panelSide(tab) === 'left' ? 'start' : 'end'"
+              class="order-2"
+              @move="panelIsSide(tab) ? preferences.setPanelWidth($event) : preferences.setPanelHeight($event)"
+              @settle="panelIsSide(tab) ? preferences.rememberPanelWidth() : preferences.rememberPanelHeight()"
+              @reset="panelIsSide(tab) ? preferences.resetPanelWidth() : preferences.resetPanelHeight()"
             />
 
-            <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
-              <CircleAlert v-if="tab.panel?.status === 'failed'" :size="18" class="text-destructive" />
-              <LoaderCircle v-else :size="18" class="animate-spin text-muted-foreground" />
-              <p v-if="tab.panel?.failure" class="text-xs">
-                {{ describeShellError(translate, tab.panel?.failure).message }}
-              </p>
-              <p v-if="tab.panel?.failure" class="font-mono text-[10px] text-muted-foreground">
-                {{ describeShellError(translate, tab.panel?.failure).code }}
-              </p>
-              <p v-else class="text-xs text-muted-foreground">{{ t("terminal.panel.opening") }}</p>
-              <button
-                v-if="tab.panel?.status === 'failed'"
-                type="button"
-                class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
-                @click="terminals.openPanel(tab)"
-              >
-                <RotateCw :size="12" />
-                {{ t("terminal.panel.retry") }}
-              </button>
-            </div>
-
             <!--
+            The panel is the only thing on its side of the line, and the floor is a minimum size
+            rather than a clamp computed here: a window too small for the size somebody chose
+            shrinks the panel, because the half that has to stay usable is the terminal.
+          -->
+            <div
+              data-terminal-panel
+              :data-side="panelSide(tab) ?? 'bottom'"
+              :class="cn('flex flex-col overflow-hidden', panelIsSide(tab) ? 'order-1 shrink-0' : 'order-3 shrink')"
+              :style="panelStyle(tab)"
+            >
+              <CommandsPanel v-if="panelTab[tab.id] === 'commands'" class="min-h-0 flex-1" />
+
+              <FileBrowser
+                v-else-if="tab.panel?.handle"
+                :handle="tab.panel?.handle"
+                :protocol="tab.session.protocol"
+                class="min-h-0 flex-1"
+              />
+
+              <div v-else class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-center">
+                <CircleAlert v-if="tab.panel?.status === 'failed'" :size="18" class="text-destructive" />
+                <LoaderCircle v-else :size="18" class="animate-spin text-muted-foreground" />
+                <p v-if="tab.panel?.failure" class="text-xs">
+                  {{ describeShellError(translate, tab.panel?.failure).message }}
+                </p>
+                <p v-if="tab.panel?.failure" class="font-mono text-[10px] text-muted-foreground">
+                  {{ describeShellError(translate, tab.panel?.failure).code }}
+                </p>
+                <p v-else class="text-xs text-muted-foreground">{{ t("terminal.panel.opening") }}</p>
+                <button
+                  v-if="tab.panel?.status === 'failed'"
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"
+                  @click="terminals.openPanel(tab)"
+                >
+                  <RotateCw :size="12" />
+                  {{ t("terminal.panel.retry") }}
+                </button>
+              </div>
+
+              <!--
               A browser that refused to close is still open, so it is still drawn — with the reason
               underneath it, because this is the one failure that leaves the panel working.
             -->
-            <footer
-              v-if="tab.panel?.handle && tab.panel?.failure"
-              class="shrink-0 border-t border-destructive/40 bg-destructive/10 px-3 py-1.5"
-            >
-              <p class="text-[11px]">{{ describeShellError(translate, tab.panel?.failure).message }}</p>
-              <p class="font-mono text-[10px] text-muted-foreground">
-                {{ describeShellError(translate, tab.panel?.failure).code }}
-              </p>
-            </footer>
-          </div>
-        </template>
+              <footer
+                v-if="tab.panel?.handle && tab.panel?.failure"
+                class="shrink-0 border-t border-destructive/40 bg-destructive/10 px-3 py-1.5"
+              >
+                <p class="text-[11px]">{{ describeShellError(translate, tab.panel?.failure).message }}</p>
+                <p class="font-mono text-[10px] text-muted-foreground">
+                  {{ describeShellError(translate, tab.panel?.failure).code }}
+                </p>
+              </footer>
+            </div>
+          </template>
+        </div>
       </template>
 
       <template v-else-if="tab.kind === 'files'">

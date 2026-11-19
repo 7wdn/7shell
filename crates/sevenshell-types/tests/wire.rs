@@ -31,9 +31,9 @@ use sevenshell_types::{
     SocketRow, SshConfigHost, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome,
     SyncReceipt, SyncSelection, SyncServiceStatus, SyncUploadReceipt, TabGroupMode, TabLayout, TabMaxWidth,
     TabPlacement, TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme,
-    TerminalHighlightMode, TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile,
-    TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck, UpdateProgress,
-    UploadAnswer, UploadOutcome, VaultArchive, VaultKeychainStatus, VaultState,
+    TerminalHighlightMode, TerminalHighlightRule, TerminalPanelPlacement, TerminalSchemeBackground,
+    TerminalSchemeProfile, TerminalSchemeSource, TerminalSettings, ThemeMode, ThemePalette, TunnelFailure, UpdateCheck,
+    UpdateProgress, UploadAnswer, UploadOutcome, VaultArchive, VaultKeychainStatus, VaultState,
 };
 
 /// Fails on any key that is not camelCase, however deep it sits.
@@ -626,6 +626,8 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
             files_layout: FilesLayout::List,
             session_layout: SessionLayout::Terminal,
             session_reopen: SessionReopen::NewTab,
+            terminal_panel_placement: TerminalPanelPlacement::Right,
+            terminal_panel_width: Some(420),
             terminal_panel_height: Some(320),
             sidebar_width: Some(300),
             files_tree_width: Some(224),
@@ -775,6 +777,12 @@ fn the_remaining_wire_types_serialize_with_camel_case_fields() {
         serde_json::json!(45),
         "the retention is a page field like the two above it, and the window reads this name"
     );
+    assert_eq!(
+        settings["terminalPanelPlacement"],
+        serde_json::json!("right"),
+        "the panel position travels as the word the menu matches"
+    );
+    assert_eq!(settings["terminalPanelWidth"], serde_json::json!(420));
     assert_eq!(
         settings["fileBookmarks"][0]["label"],
         serde_json::json!("nginx logs"),

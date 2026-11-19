@@ -24,12 +24,12 @@ use sevenshell_types::{
     SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT, TERMINAL_HIGHLIGHT_RULE_LIMIT,
     TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
     TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
-    TerminalHighlightRule, TerminalSchemeBackground, TerminalSchemeProfile, TerminalSchemeSource, ThemeMode,
-    ThemePalette, ai_context_enabled_default, ai_context_lines_default, ai_max_output_tokens_default,
-    ai_session_retention_days_default, background_blur_default, background_transparency_default, command_completion_on,
-    default_terminal_highlight_rules, is_valid_mcp_server_id, mcp_approval_timeout_seconds_default,
-    mcp_audit_retention_days_default, mcp_max_result_bytes_default, mcp_server_enabled_default,
-    mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
+    TerminalHighlightRule, TerminalPanelPlacement, TerminalSchemeBackground, TerminalSchemeProfile,
+    TerminalSchemeSource, ThemeMode, ThemePalette, ai_context_enabled_default, ai_context_lines_default,
+    ai_max_output_tokens_default, ai_session_retention_days_default, background_blur_default,
+    background_transparency_default, command_completion_on, default_terminal_highlight_rules, is_valid_mcp_server_id,
+    mcp_approval_timeout_seconds_default, mcp_audit_retention_days_default, mcp_max_result_bytes_default,
+    mcp_server_enabled_default, mcp_server_tool_timeout_seconds_default, monitor_on, normalize_ai_context_lines,
     normalize_ai_session_retention_days, normalize_mcp_approval_timeout_seconds, normalize_mcp_audit_retention_days,
     normalize_mcp_max_result_bytes, normalize_sync_auto_upload_minutes, normalize_terminal_bold_font_weight,
     normalize_terminal_font_size, normalize_terminal_font_weight, normalize_terminal_letter_spacing,
@@ -328,6 +328,12 @@ struct StoredSettings {
     /// that is already open, which reads as the default — asking.
     #[serde(default)]
     session_reopen: String,
+    /// Absent in a file written before the file panel could move, which reads as the bottom.
+    #[serde(default)]
+    terminal_panel_placement: String,
+    /// Absent in a file written before the panel could sit beside the terminal.
+    #[serde(default)]
+    terminal_panel_width: Option<u32>,
     /// Absent in a file written before the terminal had a file panel, which reads as "the divider
     /// has never been moved".
     #[serde(default)]
@@ -590,6 +596,8 @@ impl StoredSettings {
             files_layout: settings.files_layout.as_str().to_owned(),
             session_layout: settings.session_layout.as_str().to_owned(),
             session_reopen: settings.session_reopen.as_str().to_owned(),
+            terminal_panel_placement: settings.terminal_panel_placement.as_str().to_owned(),
+            terminal_panel_width: settings.terminal_panel_width,
             terminal_panel_height: settings.terminal_panel_height,
             sidebar_width: settings.sidebar_width,
             files_tree_width: settings.files_tree_width,
@@ -753,6 +761,9 @@ impl StoredSettings {
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
             session_reopen: SessionReopen::from_id(&self.session_reopen).unwrap_or_default(),
+            terminal_panel_placement: TerminalPanelPlacement::from_id(&self.terminal_panel_placement)
+                .unwrap_or_default(),
+            terminal_panel_width: self.terminal_panel_width,
             terminal_panel_height: self.terminal_panel_height,
             sidebar_width: self.sidebar_width,
             files_tree_width: self.files_tree_width,
@@ -987,6 +998,8 @@ mod tests {
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
             session_reopen: SessionReopen::default(),
+            terminal_panel_placement: TerminalPanelPlacement::default(),
+            terminal_panel_width: None,
             terminal_panel_height: None,
             sidebar_width: None,
             files_tree_width: None,

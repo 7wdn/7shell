@@ -49,7 +49,7 @@ const Host = defineComponent({
     return () =>
       h("div", { class: "region" }, [
         h(SplitDivider, {
-          height: height.value,
+          size: height.value,
           onMove: (value: number) => moves.push(value),
           onSettle: () => {
             settled += 1;

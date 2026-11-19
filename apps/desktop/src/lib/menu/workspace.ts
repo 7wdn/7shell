@@ -10,7 +10,23 @@
  * modifier keys: this strip has no place to print a shortcut, and a menu that is only reachable with
  * the mouse should not need one.
  */
-import { CircleX, Copy, PanelLeftClose, PanelRightClose, Plug, Power, RotateCw, SquareX, X } from "@lucide/vue";
+import {
+  CircleX,
+  Copy,
+  ExternalLink,
+  PanelBottom,
+  PanelLeft,
+  PanelLeftClose,
+  PanelRight,
+  PanelRightClose,
+  Plug,
+  Power,
+  RotateCw,
+  SquareX,
+  X,
+} from "@lucide/vue";
+
+import type { TerminalPanelPlacement } from "@/types/app";
 
 import type { MenuEntry } from "./types";
 
@@ -52,6 +68,48 @@ export function canReconnect(state: TabMenuState): boolean {
     return false;
   }
   return state.status !== "open";
+}
+
+/** Where the file panel may sit, as one menu with a tick on the remembered answer. */
+export interface PanelPlacementActions {
+  readonly choose: (placement: TerminalPanelPlacement) => void;
+}
+
+export function panelPlacementMenu(current: TerminalPanelPlacement, actions: PanelPlacementActions): MenuEntry[] {
+  return [
+    {
+      kind: "action",
+      id: "panel-bottom",
+      labelKey: "terminal.panel.placeBottom",
+      icon: PanelBottom,
+      checked: current === "bottom",
+      run: () => actions.choose("bottom"),
+    },
+    {
+      kind: "action",
+      id: "panel-left",
+      labelKey: "terminal.panel.placeLeft",
+      icon: PanelLeft,
+      checked: current === "left",
+      run: () => actions.choose("left"),
+    },
+    {
+      kind: "action",
+      id: "panel-right",
+      labelKey: "terminal.panel.placeRight",
+      icon: PanelRight,
+      checked: current === "right",
+      run: () => actions.choose("right"),
+    },
+    {
+      kind: "action",
+      id: "panel-tab",
+      labelKey: "terminal.panel.placeTab",
+      icon: ExternalLink,
+      checked: current === "tab",
+      run: () => actions.choose("tab"),
+    },
+  ];
 }
 
 export function tabMenu(state: TabMenuState, actions: TabMenuActions): MenuEntry[] {

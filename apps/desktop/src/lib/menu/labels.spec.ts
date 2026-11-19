@@ -21,7 +21,7 @@ import { sessionMenu, groupMenu, tunnelMenu } from "./sessions";
 import { terminalMenu, terminalSelectionTools } from "./terminal";
 import { transferMenu } from "./transfers";
 import type { MenuEntry } from "./types";
-import { tabMenu } from "./workspace";
+import { panelPlacementMenu, tabMenu } from "./workspace";
 import type { DiskUsage, EnvironmentEntry, ProcessDetail, ProcessSample, SocketRow } from "@/types/monitor";
 import type { DownloadFolderView, OpenTunnel, Session, SessionGroup, SftpEntry, TransferInfo } from "@/types/session";
 
@@ -192,6 +192,10 @@ function menus(): readonly { readonly title: string; readonly entries: readonly 
         setPaused: nothing,
         retry: nothing,
       }),
+    },
+    {
+      title: MENU_TITLES.panelPlacement,
+      entries: panelPlacementMenu("bottom", { choose: nothing }),
     },
     {
       title: MENU_TITLES.tab,

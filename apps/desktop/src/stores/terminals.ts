@@ -119,7 +119,7 @@ export type FilesTabStatus = "open" | "failed";
 export type OpenTarget =
   // A terminal open with a tab id is that tab being revived rather than a new tab being added.
   | { readonly to: "terminal"; readonly tabId?: string }
-  | { readonly to: "files" }
+  | { readonly to: "files"; readonly origin?: "placement" }
   | { readonly to: "panel"; readonly tabId: string }
   // A batch is not about the session that raised the decision: it is about the request, which the
   // batch store kept for exactly this — so the answer asks it to repeat that request.
@@ -173,6 +173,15 @@ export interface FilesTab {
   failure: ShellError | null;
   /** Whether this browser's backend offers packed transfers. */
   readonly packed: boolean;
+  /**
+   * Which gesture opened this browser: the person's own, or the file panel's remembered tab
+   * position.
+   *
+   * A tab the position opened is put down when the position moves back to a dock; a tab the
+   * person opened is theirs and is never closed by a position change. Opening an automatically
+   * created tab from the menu adopts it, so it stops being the position's to close.
+   */
+  origin?: "manual" | "placement";
   /**
    * The container or cluster tab whose connection this browser rides on.
    *
@@ -471,6 +480,13 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (preferences.sessionLayout !== "split") {
       return;
     }
+    // The remembered position says where the files belong. A tab is the standalone browser that
+    // already exists; every other position opens the panel under the terminal and the workspace
+    // draws it where the setting says.
+    if (preferences.terminalPanelPlacement === "tab") {
+      await openFiles(session, { origin: "placement" });
+      return;
+    }
     // The tab that was just asked for, in case this session already had one: the newest is the one
     // the person is looking at.
     const tab = [...tabs.value]
@@ -494,7 +510,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * exists is gone back to instead of duplicated: it is the same kind of thing, and a second copy of
    * it would drift.
    */
-  async function openFiles(session: Session): Promise<void> {
+  async function openFiles(session: Session, options: { origin?: "manual" | "placement" } = {}): Promise<void> {
     // A remote desktop has no SFTP side; the menu does not offer this, and a caller that reaches it
     // some other way gets nothing rather than an SSH attempt against an RDP port. A WebDAV folder
     // is the opposite: the file browser is the whole session.
@@ -509,6 +525,11 @@ export const useTerminalsStore = defineStore("terminals", () => {
     );
     if (showing) {
       activeTabId.value = showing.id;
+      // Asking for the browser from somewhere other than the position makes it the person's tab;
+      // the position no longer owns something they opened for themselves.
+      if (options.origin !== "placement") {
+        showing.origin = "manual";
+      }
       return;
     }
     if (connectingSessionIds.value.includes(session.id)) {
@@ -517,13 +538,37 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
     connectingSessionIds.value.push(session.id);
     try {
-      acceptFiles(session, await files.open(session.id));
+      acceptFiles(session, await files.open(session.id), options.origin);
       forgetFailure(session.id);
     } catch (error) {
       recordFailure(session, asShellError(error, "files_open"));
     } finally {
       connectingSessionIds.value = connectingSessionIds.value.filter((id) => id !== session.id);
     }
+  }
+
+  /**
+   * Puts down the file tab the remembered tab position opened, if there is one.
+   *
+   * Moving the position back to a dock is a move, not a copy: the tab the position created goes
+   * with it. A tab the person opened is never touched, and an automatically created one that has
+   * unsaved editor text is kept — it becomes the person's tab and a notice says why, because a
+   * position change must not discard work nobody was asked about.
+   */
+  async function releasePlacementFiles(sessionId: string): Promise<void> {
+    const auto = tabs.value.find(
+      (entry): entry is FilesTab =>
+        entry.kind === "files" && entry.session.id === sessionId && entry.origin === "placement",
+    );
+    if (!auto) {
+      return;
+    }
+    if (auto.handle && files.hasUnsavedFor(auto.handle)) {
+      auto.origin = "manual";
+      toast(translate("terminal.panel.tabKeptUnsaved"), "result");
+      return;
+    }
+    await closeTab(auto.id);
   }
 
   /**
@@ -869,7 +914,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     raiseDecision(session, { to: "terminal" }, outcome);
   }
 
-  function acceptFiles(session: Session, outcome: SftpOutcome): void {
+  function acceptFiles(session: Session, outcome: SftpOutcome, origin?: "manual" | "placement"): void {
     if (outcome.kind === "opened") {
       addTab({
         kind: "files",
@@ -879,11 +924,12 @@ export const useTerminalsStore = defineStore("terminals", () => {
         status: "open",
         failure: null,
         packed: outcome.packed,
+        origin,
       });
       return;
     }
 
-    raiseDecision(session, { to: "files" }, outcome);
+    raiseDecision(session, { to: "files", origin: origin === "placement" ? "placement" : undefined }, outcome);
   }
 
   /**
@@ -1200,7 +1246,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return;
     }
     if (target.to === "files") {
-      await openFiles(session);
+      await openFiles(session, { origin: target.origin });
       return;
     }
     if (target.to === "panel") {
@@ -1889,6 +1935,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     initialize,
     open,
     openFiles,
+    releasePlacementFiles,
     openContainerFiles,
     openPodFiles,
     openDesktop,

@@ -21,10 +21,17 @@
     "panel": {
       "label": "Files",
       "open": "Open the file panel under this terminal",
+      "openTab": "Open the file manager in a tab",
       "close": "Close the file panel",
       "divider": "Resize the file panel",
       "opening": "Opening the file panel…",
-      "retry": "Try again"
+      "retry": "Try again",
+      "position": "Move the file panel",
+      "placeBottom": "Bottom",
+      "placeLeft": "Left",
+      "placeRight": "Right",
+      "placeTab": "New file manager tab",
+      "tabKeptUnsaved": "The file tab stays open because it has unsaved changes."
     },
     "scheme": {
       "title": "Terminal colour scheme",

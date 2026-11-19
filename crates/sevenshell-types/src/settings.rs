@@ -70,6 +70,46 @@ impl SessionLayout {
     }
 }
 
+/// Where the file panel sits while a terminal is open.
+///
+/// A remembered answer rather than a per-tab control: somebody who wants the files beside the shell
+/// wants them there for every host, and a choice that had to be made again on each tab would be one
+/// people stop making. `tab` is the existing standalone file manager — the same browser in a tab of
+/// its own — offered here so the four positions are one answer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalPanelPlacement {
+    /// Under the terminal, the shape the split layout has always drawn.
+    #[default]
+    Bottom,
+    Left,
+    Right,
+    /// A file manager tag of its own, with no panel under this terminal.
+    Tab,
+}
+
+impl TerminalPanelPlacement {
+    pub const ALL: &'static [TerminalPanelPlacement] = &[
+        TerminalPanelPlacement::Bottom,
+        TerminalPanelPlacement::Left,
+        TerminalPanelPlacement::Right,
+        TerminalPanelPlacement::Tab,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bottom => "bottom",
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Tab => "tab",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|placement| placement.as_str() == id)
+    }
+}
+
 /// What opening a session that is already open does, from the session list's own menu.
 ///
 /// The answer only ever applies to that menu. Clicking a session row is not a decision about the
@@ -1411,6 +1451,19 @@ pub struct AppSettings {
     /// somebody to dismiss a dialog they have already answered.
     #[serde(default)]
     pub session_reopen: SessionReopen,
+    /// Where the file panel sits while a terminal is open.
+    ///
+    /// Absent in a file written before the panel could move, which reads as the bottom — the only
+    /// position that build knew.
+    #[serde(default)]
+    pub terminal_panel_placement: TerminalPanelPlacement,
+    /// How wide the file panel is when it sits on the left or right, in pixels.
+    ///
+    /// Its own size rather than a share of the height's: a panel beside the terminal is measured
+    /// across, and a width chosen on one side is the same width on the other. Absent means nobody
+    /// has moved the line yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_panel_width: Option<u32>,
     /// How tall the file panel under a terminal is, in pixels.
     ///
     /// A wish rather than a measurement: the interface clamps it against the window it has, so a
@@ -1869,6 +1922,8 @@ impl Default for AppSettings {
             files_layout: FilesLayout::default(),
             session_layout: SessionLayout::default(),
             session_reopen: SessionReopen::default(),
+            terminal_panel_placement: TerminalPanelPlacement::default(),
+            terminal_panel_width: None,
             terminal_panel_height: None,
             sidebar_width: None,
             files_tree_width: None,

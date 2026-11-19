@@ -750,6 +750,58 @@ describe("terminals store", () => {
     expect(filesOpenMock).toHaveBeenCalledTimes(3);
   });
 
+  it("opens the file manager as a standalone tab when that is the remembered position", async () => {
+    usePreferencesStore().sessionLayout = "split";
+    usePreferencesStore().terminalPanelPlacement = "tab";
+    sessionOpenMock.mockResolvedValue(opened());
+    filesOpenMock.mockResolvedValue(filesOpened());
+
+    const store = useTerminalsStore();
+    open();
+    await store.open(session);
+
+    expect(store.tabs.map((entry) => entry.kind)).toEqual(["terminal", "files"]);
+    expect(terminalTabOrFail(store).panel).toBeNull();
+    expect(filesTab(store)?.handle).toBe("f1");
+  });
+
+  it("puts down the tab the position opened when the panel moves back to a dock", async () => {
+    filesOpenMock.mockResolvedValue(filesOpened());
+    const store = useTerminalsStore();
+    await store.openFiles(session, { origin: "placement" });
+    expect(filesTab(store)?.origin).toBe("placement");
+
+    await store.releasePlacementFiles(session.id);
+
+    expect(filesTab(store)).toBeUndefined();
+    expect(filesCloseMock).toHaveBeenCalledWith("f1");
+  });
+
+  it("keeps an automatically opened tab that has unsaved text, and hands it to the person", async () => {
+    filesOpenMock.mockResolvedValue(filesOpened());
+    const store = useTerminalsStore();
+    await store.openFiles(session, { origin: "placement" });
+    useFilesStore().setUnsaved("f1:/home/user/notes.txt", true);
+
+    await store.releasePlacementFiles(session.id);
+
+    expect(filesTab(store)?.origin).toBe("manual");
+    expect(filesTab(store)?.handle).toBe("f1");
+    expect(useToast().message.value).toContain("unsaved changes");
+    expect(filesCloseMock).not.toHaveBeenCalled();
+  });
+
+  it("adopts an automatically opened tab when the menu opens it by hand", async () => {
+    filesOpenMock.mockResolvedValue(filesOpened());
+    const store = useTerminalsStore();
+    await store.openFiles(session, { origin: "placement" });
+
+    await store.openFiles(session);
+
+    expect(store.tabs.filter((entry) => entry.kind === "files")).toHaveLength(1);
+    expect(filesTab(store)?.origin).toBe("manual");
+  });
+
   it("closes the browser before the terminal whose connection carries it", async () => {
     sessionOpenMock.mockResolvedValue(opened());
     filesOpenMock.mockResolvedValue(filesOpened());

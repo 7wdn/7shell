@@ -9,7 +9,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { MenuAction, MenuEntry } from "./types";
-import { type TabMenuState, canReconnect, tabMenu } from "./workspace";
+import { type TabMenuState, canReconnect, panelPlacementMenu, tabMenu } from "./workspace";
 
 function state(overrides: Partial<TabMenuState> = {}): TabMenuState {
   return { kind: "terminal", status: "open", hasHandle: true, index: 1, total: 3, reconnectable: 0, ...overrides };
@@ -151,5 +151,28 @@ describe("the tabs with no connection of their own", () => {
       "close-right",
       "close-all",
     ]);
+  });
+});
+
+describe("the file panel's placement menu", () => {
+  it("offers the four positions with the remembered one ticked", () => {
+    const entries = panelPlacementMenu("right", { choose: vi.fn() });
+
+    expect(ids(entries)).toEqual(["panel-bottom", "panel-left", "panel-right", "panel-tab"]);
+    expect(entries.map((entry) => (entry.kind === "action" ? entry.checked : undefined))).toEqual([
+      false,
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("hands the chosen position back", () => {
+    const choose = vi.fn();
+    const entries = panelPlacementMenu("bottom", { choose });
+
+    pick(entries, "panel-left").run();
+
+    expect(choose).toHaveBeenCalledWith("left");
   });
 });

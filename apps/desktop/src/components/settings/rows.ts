@@ -97,9 +97,10 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 /**
  * The fields a row can write.
  *
- * Nine settings have no row of their own. Four are dividers somebody drags — the file panel's
- * height, the sidebar's width, the file panel's tree, and the command panel's library; whether the
- * sidebar is open is a button in the sidebar's own header; the two hand-picked colour sets are five
+ * Ten settings have no row of their own. Five are dividers somebody drags — the file panel's
+ * height, its width when docked to a side, the sidebar's width, the file panel's tree, and the
+ * command panel's library; the panel's remembered position is chosen from the terminal's own
+ * strip; whether the sidebar is open is a button in the sidebar's own header; the two hand-picked colour sets are five
  * pickers that appear inside the colour-theme row once it says `custom` — a row of their own would
  * be a row that means nothing until another row is set; and the startup update check is a switch
  * drawn inside the update block, where what it is a switch *about* — the answer the channel gave —
@@ -109,6 +110,8 @@ export const SETTINGS_CATEGORY_LABEL_KEYS: Record<SettingsCategoryId, string> = 
 export type SettingsRowField = Exclude<
   PreferenceField,
   | "terminalPanelHeight"
+  | "terminalPanelPlacement"
+  | "terminalPanelWidth"
   | "sidebarWidth"
   | "filesTreeWidth"
   | "commandsLibraryWidth"

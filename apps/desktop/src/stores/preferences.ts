@@ -48,6 +48,7 @@ import {
   DEFAULT_QUIT_ON_CLOSE,
   DEFAULT_SHOW_TRAY_ICON,
   DEFAULT_SESSION_REOPEN,
+  DEFAULT_TERMINAL_PANEL_PLACEMENT,
   DEFAULT_TAB_GROUP_MODE,
   DEFAULT_TAB_LAYOUT,
   DEFAULT_TAB_MAX_WIDTH,
@@ -115,6 +116,7 @@ import {
   type SessionLayout,
   type SessionReopen,
   type TerminalCursorInactiveStyle,
+  type TerminalPanelPlacement,
   type TerminalCursorStyle,
   type TerminalCustomScheme,
   type TerminalHighlightMode,
@@ -206,6 +208,8 @@ const FRESH: Omit<AppSettings, "locale"> = {
   filesLayout: "tree",
   sessionLayout: "split",
   sessionReopen: DEFAULT_SESSION_REOPEN,
+  terminalPanelPlacement: DEFAULT_TERMINAL_PANEL_PLACEMENT,
+  terminalPanelWidth: undefined,
   terminalPanelHeight: undefined,
   sidebarWidth: undefined,
   filesTreeWidth: undefined,
@@ -259,6 +263,14 @@ export const DEFAULT_SIDEBAR_WIDTH = 300;
  * small enough that the terminal above it is still the larger half.
  */
 export const DEFAULT_TERMINAL_PANEL_HEIGHT = 280;
+
+/**
+ * How wide the file panel starts when it sits beside the terminal.
+ *
+ * Wide enough for the listing's columns without taking the terminal's room: about a dozen characters
+ * of a name, the date, and the actions that appear on hover, with the shell keeping the rest.
+ */
+export const DEFAULT_TERMINAL_PANEL_WIDTH = 380;
 
 /**
  * How wide the file panel's tree starts out, until somebody moves the divider beside it.
@@ -364,6 +376,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
    * that can absorb whatever the window does.
    */
   const terminalPanelHeight = ref<number | null>(null);
+  /**
+   * Where the file panel sits while a terminal is open.
+   *
+   * A remembered choice rather than a per-tab control: the files are wanted in the same place for
+   * every host, and the panel's own menu writes this the moment a position is chosen.
+   */
+  const terminalPanelPlacement = ref<TerminalPanelPlacement>(DEFAULT_TERMINAL_PANEL_PLACEMENT);
+  /**
+   * How wide the file panel is when it sits on the left or right, in pixels; null until moved.
+   *
+   * Its own number rather than a share of the height: the two orientations measure different sides
+   * of the panel, and a width chosen once is honoured on either side.
+   */
+  const terminalPanelWidth = ref<number | null>(null);
   /**
    * How wide the session sidebar is, in pixels; null until somebody moves the divider beside it.
    *
@@ -701,6 +727,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
   /** What the divider is drawn at: the height somebody chose, or the starting one. */
   const resolvedPanelHeight = computed(() => terminalPanelHeight.value ?? DEFAULT_TERMINAL_PANEL_HEIGHT);
 
+  /** The same answer for the panel beside the terminal. */
+  const resolvedPanelWidth = computed(() => terminalPanelWidth.value ?? DEFAULT_TERMINAL_PANEL_WIDTH);
+
   /** The same answer for the sidebar's width. */
   const resolvedSidebarWidth = computed(() => sidebarWidth.value ?? DEFAULT_SIDEBAR_WIDTH);
 
@@ -925,6 +954,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
       filesLayout.value = settings.filesLayout;
       sessionLayout.value = settings.sessionLayout;
       sessionReopen.value = settings.sessionReopen;
+      terminalPanelPlacement.value = settings.terminalPanelPlacement;
+      terminalPanelWidth.value = settings.terminalPanelWidth ?? null;
       terminalPanelHeight.value = settings.terminalPanelHeight ?? null;
       sidebarWidth.value = settings.sidebarWidth ?? null;
       filesTreeWidth.value = settings.filesTreeWidth ?? null;
@@ -1080,6 +1111,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         filesLayout: filesLayout.value,
         sessionLayout: sessionLayout.value,
         sessionReopen: sessionReopen.value,
+        terminalPanelPlacement: terminalPanelPlacement.value,
+        terminalPanelWidth: terminalPanelWidth.value ?? undefined,
         terminalPanelHeight: terminalPanelHeight.value ?? undefined,
         sidebarWidth: sidebarWidth.value ?? undefined,
         filesTreeWidth: filesTreeWidth.value ?? undefined,
@@ -2027,6 +2060,34 @@ export const usePreferencesStore = defineStore("preferences", () => {
     await commit();
   }
 
+  /**
+   * Chooses where the file panel sits.
+   *
+   * Written immediately rather than left for a page's Apply, for the reason the reopen answer is:
+   * the choice is made from the panel's own menu, and the next session opened has to see it.
+   */
+  async function setTerminalPanelPlacement(placement: TerminalPanelPlacement): Promise<void> {
+    terminalPanelPlacement.value = placement;
+    dirty.value = true;
+    await commit();
+  }
+
+  /** Moves the divider beside the terminal, applied at once and written down when the drag ends. */
+  function setPanelWidth(width: number): void {
+    terminalPanelWidth.value = Math.round(width);
+  }
+
+  /** Writes down the width the divider was left at. */
+  async function rememberPanelWidth(): Promise<void> {
+    await commit();
+  }
+
+  /** Puts the side divider back where it started, and forgets the width. */
+  async function resetPanelWidth(): Promise<void> {
+    terminalPanelWidth.value = null;
+    await commit();
+  }
+
   /** Moves the sidebar's divider, applied at once and written down when the drag ends. */
   function setSidebarWidth(width: number): void {
     sidebarWidth.value = Math.round(width);
@@ -2281,6 +2342,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "terminalPanelHeight":
           terminalPanelHeight.value = null;
           break;
+        case "terminalPanelPlacement":
+          terminalPanelPlacement.value = FRESH.terminalPanelPlacement;
+          break;
+        case "terminalPanelWidth":
+          terminalPanelWidth.value = null;
+          break;
         case "sidebarWidth":
           sidebarWidth.value = null;
           break;
@@ -2395,6 +2462,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     filesLayout,
     sessionLayout,
     sessionReopen,
+    terminalPanelPlacement,
+    terminalPanelWidth,
     terminalPanelHeight,
     sidebarWidth,
     filesTreeWidth,
@@ -2414,6 +2483,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     resolvedTheme,
     resolvedTerminalTheme,
     resolvedPanelHeight,
+    resolvedPanelWidth,
     resolvedSidebarWidth,
     resolvedFilesTreeWidth,
     resolvedCommandsLibraryWidth,
@@ -2502,6 +2572,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     setFilesLayout,
     setSessionLayout,
     setSessionReopen,
+    setTerminalPanelPlacement,
+    setPanelWidth,
+    rememberPanelWidth,
+    resetPanelWidth,
     setMonitorEnabled,
     setUpdateCheckOnStartup,
     setPackedTransfer,
