@@ -15,23 +15,64 @@
  */
 
 /** The clients the access tab offers a snippet for. */
-export type McpClientId = "claudeCode" | "cursor" | "vscode" | "windsurf" | "qoder" | "codex";
+export type McpClientId =
+  | "qoder"
+  | "claudeCode"
+  | "cursor"
+  | "codebuddy"
+  | "zcode"
+  | "trae"
+  | "vscode"
+  | "windsurf"
+  | "codex"
+  | "deepseekHarness"
+  | "opencode"
+  | "pi"
+  | "cherryStudio"
+  | "workbuddy"
+  | "antigravity";
 
-/** The order the tab strip lists them in: the ones most people reach for first. */
-export const MCP_CLIENTS: readonly McpClientId[] = ["claudeCode", "cursor", "vscode", "windsurf", "qoder", "codex"];
+/** The order the tab strip lists them in: Qoder first, then the rest of the clients people reach for. */
+export const MCP_CLIENTS: readonly McpClientId[] = [
+  "qoder",
+  "claudeCode",
+  "cursor",
+  "codebuddy",
+  "zcode",
+  "trae",
+  "vscode",
+  "windsurf",
+  "codex",
+  "deepseekHarness",
+  "opencode",
+  "pi",
+  "cherryStudio",
+  "workbuddy",
+  "antigravity",
+];
 
 /**
  * Where each client reads its MCP servers from, as the line under the snippet says.
  *
- * A path, not a sentence: it is the same on every language and is pasted as it is.
+ * Some clients have no file of their own and are configured through a settings page; those entries
+ * name the page rather than inventing a path.
  */
 export const MCP_CLIENT_LOCATIONS: Record<McpClientId, string> = {
+  qoder: "~/.qoder/mcp.json",
   claudeCode: ".mcp.json",
   cursor: ".cursor/mcp.json",
+  codebuddy: "~/.codebuddy/.mcp.json",
+  zcode: "Settings → MCP Servers",
+  trae: "Settings → MCP",
   vscode: ".vscode/mcp.json",
   windsurf: "~/.codeium/windsurf/mcp_config.json",
-  qoder: "~/.qoder/mcp.json",
   codex: "~/.codex/config.toml",
+  deepseekHarness: "$DSH_HOME/profiles/web/cordis.patch.yml",
+  opencode: "~/.config/opencode/opencode.json",
+  pi: "~/.pi/agent/mcp.json",
+  cherryStudio: "Settings → MCP Servers",
+  workbuddy: "~/.workbuddy/mcp.json",
+  antigravity: "~/.gemini/config/mcp_config.json",
 };
 
 /** The one environment variable a client needs: where the endpoint file is. */
@@ -97,12 +138,87 @@ export function clientConfigSnippet(client: McpClientId, bridge: BridgeConfig | 
   if (!bridge) {
     return raw;
   }
-  if (client === "vscode") {
-    return JSON.stringify(
-      { servers: { "7shell": { type: "stdio", command: bridge.command, args: [], env: bridge.env } } },
-      null,
-      2,
-    );
+  switch (client) {
+    case "vscode":
+      return JSON.stringify(
+        { servers: { "7shell": { type: "stdio", command: bridge.command, args: [], env: bridge.env } } },
+        null,
+        2,
+      );
+    case "cherryStudio":
+      return JSON.stringify(
+        {
+          mcpServers: {
+            "7shell": {
+              name: "7shell",
+              description: "",
+              baseUrl: "",
+              command: bridge.command,
+              args: [],
+              env: bridge.env,
+              isActive: true,
+              type: "stdio",
+            },
+          },
+        },
+        null,
+        2,
+      );
+    case "codex":
+      return codexSnippet(bridge);
+    case "deepseekHarness":
+      return deepSeekHarnessSnippet(bridge);
+    case "opencode":
+      return JSON.stringify(
+        {
+          mcp: {
+            "7shell": {
+              type: "local",
+              command: [bridge.command],
+              ...(Object.keys(bridge.env).length > 0 ? { environment: bridge.env } : {}),
+            },
+          },
+        },
+        null,
+        2,
+      );
+    default:
+      return JSON.stringify(
+        { mcpServers: { "7shell": { command: bridge.command, args: [], env: bridge.env } } },
+        null,
+        2,
+      );
   }
-  return JSON.stringify({ mcpServers: { "7shell": { command: bridge.command, args: [], env: bridge.env } } }, null, 2);
+}
+
+/** Codex keeps its configuration in TOML rather than JSON. */
+function codexSnippet(bridge: BridgeConfig): string {
+  const lines = ["[mcp_servers.7shell]", `command = ${JSON.stringify(bridge.command)}`];
+  if (Object.keys(bridge.env).length > 0) {
+    lines.push("", "[mcp_servers.7shell.env]");
+    for (const [key, value] of Object.entries(bridge.env)) {
+      lines.push(`${key} = ${JSON.stringify(value)}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** DeepSeek Harness takes an insert entry in the profile's YAML patch. */
+function deepSeekHarnessSnippet(bridge: BridgeConfig): string {
+  const lines = [
+    "- insert:",
+    "    - id: mcp-7shell",
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    "      config:",
+    "        serverName: 7shell",
+    "        transport: stdio",
+    `        command: ${JSON.stringify(bridge.command)}`,
+  ];
+  if (Object.keys(bridge.env).length > 0) {
+    lines.push("        env:");
+    for (const [key, value] of Object.entries(bridge.env)) {
+      lines.push(`          ${JSON.stringify(key)}: ${JSON.stringify(value)}`);
+    }
+  }
+  return lines.join("\n");
 }

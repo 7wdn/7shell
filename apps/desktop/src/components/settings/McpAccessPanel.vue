@@ -162,7 +162,7 @@ async function save(): Promise<void> {
 // nothing but the endpoint variable travels — see `lib/mcp/clients.ts` for the rule.
 
 /** Which client's template is on screen. One at a time, like the configuration itself. */
-const client = ref<McpClientId>("claudeCode");
+const client = ref<McpClientId>("qoder");
 /** Whether a copy is in flight, so the button does not send the same text twice. */
 const copyBusy = ref(false);
 
@@ -631,7 +631,16 @@ onMounted(() => {
           "
           @click="chooseClient(entry)"
         >
-          {{ clientName(entry) }}
+          <span class="inline-flex items-center gap-1">
+            {{ clientName(entry) }}
+            <span
+              v-if="entry === 'qoder'"
+              data-mcp-client-recommended
+              class="rounded bg-primary/15 px-1 py-0.5 text-[9px] leading-none text-primary"
+            >
+              {{ t("mcp.clients.recommended") }}
+            </span>
+          </span>
         </button>
       </div>
 

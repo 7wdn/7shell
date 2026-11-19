@@ -86,10 +86,19 @@ export const MCP_TOOL_RISK_LABEL_KEYS: Record<McpToolRisk, string> = {
 
 /** The client names on the access tab's configuration strip. */
 export const MCP_CLIENT_LABEL_KEYS: Record<McpClientId, string> = {
+  qoder: "mcp.clients.name.qoder",
   claudeCode: "mcp.clients.name.claudeCode",
   cursor: "mcp.clients.name.cursor",
+  codebuddy: "mcp.clients.name.codebuddy",
+  zcode: "mcp.clients.name.zcode",
+  trae: "mcp.clients.name.trae",
   vscode: "mcp.clients.name.vscode",
   windsurf: "mcp.clients.name.windsurf",
-  qoder: "mcp.clients.name.qoder",
   codex: "mcp.clients.name.codex",
+  deepseekHarness: "mcp.clients.name.deepseekHarness",
+  opencode: "mcp.clients.name.opencode",
+  pi: "mcp.clients.name.pi",
+  cherryStudio: "mcp.clients.name.cherryStudio",
+  workbuddy: "mcp.clients.name.workbuddy",
+  antigravity: "mcp.clients.name.antigravity",
 };

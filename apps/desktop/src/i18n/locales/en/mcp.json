@@ -33,13 +33,23 @@
       "copied": "Copied to the clipboard.",
       "copyFailed": "The clipboard refused the text.",
       "unavailable": "The bridge's location cannot be read right now. Turn the listener on, or install the packaged build, and the snippets will appear.",
+      "recommended": "Recommended",
       "name": {
+        "qoder": "Qoder",
         "claudeCode": "Claude Code",
         "cursor": "Cursor",
+        "codebuddy": "CodeBuddy Code CLI",
+        "zcode": "ZCode",
+        "trae": "TRAE",
         "vscode": "VS Code",
         "windsurf": "Windsurf",
-        "qoder": "Qoder",
-        "codex": "Codex"
+        "codex": "Codex",
+        "deepseekHarness": "DeepSeek Harness",
+        "opencode": "OpenCode",
+        "pi": "Pi",
+        "cherryStudio": "Cherry Studio",
+        "workbuddy": "WorkBuddy",
+        "antigravity": "Antigravity"
       }
     },
     "capabilities": {

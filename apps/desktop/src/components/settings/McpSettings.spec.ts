@@ -458,7 +458,9 @@ describe("the client templates", () => {
     statusWithToken();
     await mount();
 
-    expect(host.querySelectorAll("[data-mcp-client-tab]").length).toBe(6);
+    expect(host.querySelectorAll("[data-mcp-client-tab]").length).toBe(15);
+    expect(host.querySelector("[data-mcp-client-tab]")?.getAttribute("data-mcp-client-tab")).toBe("qoder");
+    expect(host.querySelector("[data-mcp-client-recommended]")?.textContent).toContain("Recommended");
     const snippet = host.querySelector("[data-mcp-client-snippet]");
     expect(snippet?.textContent).toContain("sshell-mcp.exe");
     expect(snippet?.textContent).not.toContain("a-token-that-must-not-be-shown");

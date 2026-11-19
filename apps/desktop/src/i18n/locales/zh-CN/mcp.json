@@ -33,13 +33,23 @@
       "copied": "已复制到剪贴板。",
       "copyFailed": "剪贴板拒绝了这段文本。",
       "unavailable": "现在读不到桥的位置。打开监听器，或者安装打包版本，配置片段就会出现。",
+      "recommended": "荐",
       "name": {
+        "qoder": "Qoder",
         "claudeCode": "Claude Code",
         "cursor": "Cursor",
+        "codebuddy": "CodeBuddy Code CLI",
+        "zcode": "ZCode",
+        "trae": "TRAE",
         "vscode": "VS Code",
         "windsurf": "Windsurf",
-        "qoder": "Qoder",
-        "codex": "Codex"
+        "codex": "Codex",
+        "deepseekHarness": "DeepSeek Harness",
+        "opencode": "OpenCode",
+        "pi": "Pi",
+        "cherryStudio": "Cherry Studio",
+        "workbuddy": "WorkBuddy",
+        "antigravity": "Antigravity"
       }
     },
     "capabilities": {
