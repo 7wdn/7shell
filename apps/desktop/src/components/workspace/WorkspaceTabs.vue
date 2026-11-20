@@ -467,7 +467,6 @@ const atEnd = computed(() => preferences.tabPlacement === "bottom" || preference
                 v-else-if="tab.panel?.handle"
                 :handle="tab.panel?.handle"
                 :protocol="tab.session.protocol"
-                :compact="panelIsSide(tab)"
                 :panel-placement="terminals.effectivePlacement(tab)"
                 class="min-h-0 flex-1"
                 @choose-panel-placement="choosePlacement(tab, $event)"

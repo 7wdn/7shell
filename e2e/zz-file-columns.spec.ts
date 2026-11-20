@@ -75,9 +75,11 @@ test("the name column does not cover the columns beside it", async () => {
   const panel = page.locator("[data-terminal-panel]").filter({ visible: true });
   await expect(panel).toHaveAttribute("data-side", "right", { timeout: 10_000 });
 
-  // A side dock draws the listing without the directory tree: the docked widths leave no room for
-  // both, and the reference docked panel is a single list for the same reason.
-  await expect(page.locator("[data-files-tree]").filter({ visible: true })).toHaveCount(0);
+  // A side dock keeps the tree control so it can give the narrow listing its room back.
+  const treeToggle = page.locator("[data-files-tree]").filter({ visible: true });
+  await expect(treeToggle).toBeVisible();
+  await expect(page.locator('nav[aria-label="Directories"]').filter({ visible: true })).toBeVisible();
+  await treeToggle.click();
   await expect(page.locator('nav[aria-label="Directories"]').filter({ visible: true })).toHaveCount(0);
 
   const listing = page.getByRole("listbox", { name: "Files", exact: true }).filter({ visible: true });
@@ -145,4 +147,7 @@ test("the name column does not cover the columns beside it", async () => {
   ).toBeLessThanOrEqual(2);
   expect(measured.nameWidth).toBeGreaterThan(0);
   expect(measured.overlaps, "two visible columns are drawn over each other").toBe(false);
+
+  await treeToggle.click();
+  await expect(page.locator('nav[aria-label="Directories"]').filter({ visible: true })).toBeVisible();
 });

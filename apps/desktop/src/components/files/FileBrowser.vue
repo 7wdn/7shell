@@ -112,13 +112,11 @@ const props = withDefaults(
     handle: string;
     protocol?: Protocol;
     packedTransfers?: boolean;
-    compact?: boolean;
     panelPlacement?: TerminalPanelPlacement;
   }>(),
   {
     protocol: "ssh",
     packedTransfers: true,
-    compact: false,
   },
 );
 
@@ -223,13 +221,11 @@ const terminals = useTerminalsStore();
  * see where you are; the single list is there for a narrow window. The choice is a global
  * preference, written by the toolbar's tree button and applied to every browser that is open.
  *
- * A panel docked beside the terminal is the narrow case regardless of that preference: at the
- * docked panel's own widths a 204px tree leaves less than one column of listing. The reference
- * docked panel draws the single list for the same reason, so the tree is offered in the bottom
- * panel and the standalone browser and not there.
+ * A narrow panel can leave the listing scrolling horizontally; the tree stays optional so the
+ * person can give that room back when they need it.
  */
 const twoPanes = computed(() => preferences.filesLayout === "tree");
-const treeAvailable = computed(() => twoPanes.value && !props.compact);
+const treeAvailable = computed(() => twoPanes.value);
 const showTree = computed(() => treeAvailable.value && preferences.filesTreeVisible);
 
 /** The terminal of this browser's session, preferring the one on screen when several are open. */

@@ -1039,12 +1039,84 @@ describe("the buttons above the listing", () => {
     expect(tree()).not.toBeNull();
   });
 
-  it("draws the single list in a panel docked beside the terminal, whatever the tree preference says", async () => {
-    await render(unsorted, { compact: true });
+  it("lets a side-docked browser show and hide the directory tree", async () => {
+    await render(unsorted, { panelPlacement: "right" });
 
-    expect(host.querySelector('nav[aria-label="Directories"]'), "the side dock has no tree").toBeNull();
-    expect(host.querySelector("[data-files-tree]"), "the side dock cannot turn a tree on").toBeNull();
-    expect(usePreferencesStore().filesTreeVisible, "the tree preference is left as it was").toBe(true);
+    const tree = (): Element | null => host.querySelector('nav[aria-label="Directories"]');
+    const toggleTree = (): HTMLButtonElement | null => host.querySelector<HTMLButtonElement>("[data-files-tree]");
+    expect(tree(), "the side dock follows the tree preference").not.toBeNull();
+    expect(toggleTree(), "the side dock keeps its tree control").not.toBeNull();
+
+    toggleTree()?.click();
+    await nextTick();
+    expect(tree(), "the side dock can give the listing its width back").toBeNull();
+    expect(usePreferencesStore().filesTreeVisible).toBe(false);
+
+    toggleTree()?.click();
+    await nextTick();
+    expect(tree(), "the side dock can show the tree again").not.toBeNull();
+    expect(usePreferencesStore().filesTreeVisible).toBe(true);
+  });
+});
+
+describe("the action row at a narrow width", () => {
+  let watching: (() => void)[] = [];
+
+  beforeEach(() => {
+    watching = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(notify: () => void) {
+          watching.push(notify);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("folds the directory tree control into More and keeps it usable there", async () => {
+    await render(unsorted, { panelPlacement: "right" });
+
+    const treeToggle = host.querySelector<HTMLButtonElement>("[data-files-tree]");
+    const actionRow = treeToggle?.parentElement;
+    if (!(actionRow instanceof HTMLElement)) {
+      throw new Error("the panel drew no action row");
+    }
+
+    Object.defineProperty(actionRow, "clientWidth", { configurable: true, value: 150 });
+    for (const notify of watching) {
+      notify();
+    }
+    await nextTick();
+
+    const more = actionRow.querySelector<HTMLButtonElement>("[data-files-more]");
+    expect(more, "the actions that do not fit are collected under More").not.toBeNull();
+    expect(actionRow.querySelector("[data-files-tree]"), "the tree control does not overflow the row").toBeNull();
+
+    const findTreeAction = (key: "hide" | "show"): HTMLButtonElement | undefined =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === i18n.global.t(`files.tree.${key}`),
+      );
+
+    more?.click();
+    await nextTick();
+    expect(findTreeAction("hide"), "the overflow menu offers to hide the visible tree").toBeDefined();
+    findTreeAction("hide")?.click();
+    await nextTick();
+    expect(host.querySelector('nav[aria-label="Directories"]')).toBeNull();
+
+    more?.click();
+    await nextTick();
+    expect(findTreeAction("show"), "the overflow menu can show the tree again").toBeDefined();
+    findTreeAction("show")?.click();
+    await nextTick();
+    expect(host.querySelector('nav[aria-label="Directories"]')).not.toBeNull();
   });
 });
 
