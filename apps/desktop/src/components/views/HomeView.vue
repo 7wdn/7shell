@@ -188,7 +188,7 @@ function translate(key: string, params?: Record<string, string>): string {
           v-for="tile in tiles"
           :key="tile.key"
           :data-tile="tile.key"
-          class="min-w-0 overflow-hidden rounded-lg border border-border bg-card px-4 py-3"
+          class="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/20 px-4 py-3"
         >
           <div class="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <component :is="tile.icon" :size="14" class="shrink-0" />
@@ -203,7 +203,7 @@ function translate(key: string, params?: Record<string, string>): string {
         sharing a row with another is a card that has to be measured against it.
       -->
       <div class="grid min-w-0 grid-cols-1 gap-4">
-        <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+        <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/20">
           <div class="border-b border-border px-4 py-3">
             <h2 class="text-sm font-medium">{{ t("home.actions.title") }}</h2>
           </div>
@@ -226,7 +226,7 @@ function translate(key: string, params?: Record<string, string>): string {
           the same store action, so a host key still to be decided, a cancelled attempt and a failed
           one all behave the same way wherever the click was made.
         -->
-        <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+        <section class="min-w-0 overflow-hidden rounded-lg border border-border bg-muted/20">
           <div class="flex items-center justify-between border-b border-border px-4 py-3">
             <h2 class="text-sm font-medium">{{ t("home.quick.title") }}</h2>
           </div>
@@ -294,7 +294,7 @@ function translate(key: string, params?: Record<string, string>): string {
       names a host or counts one.
     -->
     <template v-else>
-      <section class="min-w-0 rounded-lg border border-border bg-card px-8 py-9">
+      <section class="min-w-0 rounded-lg border border-border bg-muted/20 px-8 py-9">
         <span
           class="inline-flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground"
         >
@@ -325,7 +325,11 @@ function translate(key: string, params?: Record<string, string>): string {
       </section>
 
       <section class="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div v-for="feature in features" :key="feature.key" class="min-w-0 rounded-lg border border-border bg-card p-4">
+        <div
+          v-for="feature in features"
+          :key="feature.key"
+          class="min-w-0 rounded-lg border border-border bg-muted/20 p-4"
+        >
           <component :is="feature.icon" :size="16" class="text-muted-foreground" />
           <h2 class="mt-3 text-sm font-medium">{{ feature.title }}</h2>
           <p class="mt-1 text-xs leading-5 text-muted-foreground">{{ feature.body }}</p>
@@ -337,7 +341,7 @@ function translate(key: string, params?: Record<string, string>): string {
         moved into a manual: the second step is the one nobody expects, and it is the one this
         application will stop a connection over.
       -->
-      <section class="min-w-0 rounded-lg border border-border bg-card p-5">
+      <section class="min-w-0 rounded-lg border border-border bg-muted/20 p-5">
         <h2 class="flex items-center gap-2 text-sm font-medium">
           <Terminal :size="15" class="text-muted-foreground" />
           {{ t("home.start.title") }}
@@ -367,7 +371,7 @@ function translate(key: string, params?: Record<string, string>): string {
         </p>
       </section>
 
-      <section class="min-w-0 rounded-lg border border-border bg-card p-4">
+      <section class="min-w-0 rounded-lg border border-border bg-muted/20 p-4">
         <h2 class="flex items-center gap-2 text-sm font-medium">
           <Sparkles :size="15" class="text-muted-foreground" />
           {{ t("home.status.title") }}

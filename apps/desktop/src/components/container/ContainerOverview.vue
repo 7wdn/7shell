@@ -94,7 +94,7 @@ function stateDotClass(state: string): string {
 <template>
   <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
     <div class="grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] items-start gap-3">
-      <section class="rounded-md border border-border bg-card px-3 py-2.5">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2.5">
         <h3 class="mb-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("container.overview.runtime") }}
         </h3>
@@ -106,7 +106,7 @@ function stateDotClass(state: string): string {
         </dl>
       </section>
 
-      <section class="rounded-md border border-border bg-card px-3 py-2.5">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2.5">
         <h3 class="mb-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("container.overview.host") }}
         </h3>
@@ -120,7 +120,7 @@ function stateDotClass(state: string): string {
     </div>
 
     <div class="mt-3 grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] items-start gap-3">
-      <section class="rounded-md border border-border bg-card px-3 py-2.5">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2.5">
         <h3 class="mb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("container.overview.containers") }}
         </h3>
@@ -148,7 +148,7 @@ function stateDotClass(state: string): string {
         <p v-if="stateCounts.length === 0" class="px-1.5 py-1 text-[11px] text-muted-foreground">—</p>
       </section>
 
-      <section class="rounded-md border border-border bg-card px-3 py-2.5">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2.5">
         <h3 class="mb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
           {{ t("container.overview.images") }}
         </h3>

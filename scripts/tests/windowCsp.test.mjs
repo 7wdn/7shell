@@ -67,3 +67,24 @@ test("Tauri is told to leave style-src alone, because it would put a nonce there
     "without this, Tauri adds a nonce to style-src and the terminal quietly ignores its own settings — in installed builds only",
   );
 });
+
+// The same class of failure as the stylesheet above, one directive over. The background picture is
+// read as bytes and handed to the webview as a `blob:` URL; a policy whose `img-src` lists only
+// `'self' data:` blocks it without an error anybody sees — the layer is in the document, its style
+// names the URL, and nothing is painted. It appears only in an installed build, because the page in
+// `tauri dev` comes from the Vite server, which sends no policy at all (the same reason 0.1.0's
+// terminal settings were dead while every test was green).
+test("the shipped policy lets the background picture's blob URL be drawn", () => {
+  const security = config().app?.security;
+  for (const [name, policy] of [
+    ["csp", security?.csp],
+    ["devCsp", security?.devCsp],
+  ]) {
+    const img = directives(policy ?? "").get("img-src");
+    assert.ok(img, `${name} has no img-src at all`);
+    assert.ok(
+      img.includes("blob:"),
+      `${name}'s img-src must allow blob:, because the wallpaper is one: the settings' own picture is copied in, read back as base64 and turned into an object URL`,
+    );
+  }
+});

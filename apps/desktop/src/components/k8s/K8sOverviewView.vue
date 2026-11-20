@@ -110,14 +110,14 @@ const storage = computed(() => countsOfGroup("storage"));
     </div>
 
     <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
-      <button type="button" class="rounded-md border border-border bg-card px-3 py-2 text-left">
+      <button type="button" class="rounded-md border border-border bg-muted/20 px-3 py-2 text-left">
         <span class="block text-xs text-muted-foreground">{{ t("k8s.overview.version") }}</span>
         <span class="mt-0.5 block font-mono text-xs">{{ props.overview?.version || "—" }}</span>
       </button>
 
       <button
         type="button"
-        class="rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50"
+        class="rounded-md border border-border bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-accent/50"
         @click="emit('navigate', 'nodes')"
       >
         <span class="block text-xs text-muted-foreground">{{ t("k8s.overview.nodes") }}</span>
@@ -133,7 +133,7 @@ const storage = computed(() => countsOfGroup("storage"));
 
       <button
         type="button"
-        class="rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50"
+        class="rounded-md border border-border bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-accent/50"
         @click="emit('navigate', 'pods')"
       >
         <span class="block text-xs text-muted-foreground">{{ t("k8s.resources.pods") }}</span>
@@ -149,7 +149,7 @@ const storage = computed(() => countsOfGroup("storage"));
 
       <button
         type="button"
-        class="rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50"
+        class="rounded-md border border-border bg-muted/20 px-3 py-2 text-left transition-colors hover:bg-accent/50"
         @click="emit('navigate', 'namespaces')"
       >
         <span class="block text-xs text-muted-foreground">{{ t("k8s.overview.namespaces") }}</span>
@@ -165,7 +165,7 @@ const storage = computed(() => countsOfGroup("storage"));
     </p>
 
     <div class="mt-3 grid gap-2 lg:grid-cols-2">
-      <section class="rounded-md border border-border bg-card px-3 py-2">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2">
         <h3 class="text-xs font-medium">{{ t("k8s.overview.cpu") }}</h3>
         <div class="mt-2 space-y-2">
           <div>
@@ -211,7 +211,7 @@ const storage = computed(() => countsOfGroup("storage"));
         </div>
       </section>
 
-      <section class="rounded-md border border-border bg-card px-3 py-2">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2">
         <h3 class="text-xs font-medium">{{ t("k8s.overview.memory") }}</h3>
         <div class="mt-2 space-y-2">
           <div>
@@ -259,7 +259,7 @@ const storage = computed(() => countsOfGroup("storage"));
     </div>
 
     <div class="mt-3 grid gap-2 lg:grid-cols-4">
-      <section class="rounded-md border border-border bg-card px-3 py-2">
+      <section class="rounded-md border border-border bg-muted/20 px-3 py-2">
         <h3 class="text-xs font-medium">{{ t("k8s.overview.podPhases") }}</h3>
         <button
           v-for="phase in phases"
@@ -280,7 +280,7 @@ const storage = computed(() => countsOfGroup("storage"));
           { key: 'storage', label: t('k8s.groups.storage'), rows: storage },
         ]"
         :key="card.key"
-        class="rounded-md border border-border bg-card px-3 py-2"
+        class="rounded-md border border-border bg-muted/20 px-3 py-2"
       >
         <h3 class="text-xs font-medium">{{ card.label }}</h3>
         <button

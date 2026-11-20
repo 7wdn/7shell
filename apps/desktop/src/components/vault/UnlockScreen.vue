@@ -173,7 +173,7 @@ watch(password, () => {
 
 <template>
   <div class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6">
-    <div class="w-full max-w-md rounded-lg border border-border bg-card p-6">
+    <div class="w-full max-w-md rounded-lg border border-border bg-muted/20 p-6">
       <div class="flex items-center gap-3">
         <span class="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-background">
           <ShieldAlert v-if="problem" :size="16" class="text-destructive" />
