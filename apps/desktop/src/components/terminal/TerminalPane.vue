@@ -52,6 +52,7 @@ import { compileHighlightRules, HIGHLIGHT_DECORATION_LIMIT, highlightMatches } f
 import { interactivePromptNearCursor } from "@/lib/terminal/promptGuard";
 import { findTerminalScheme, schemeAnsi, withAlpha } from "@/lib/terminal/schemes";
 import { TOOLS_ANCHOR_INSET_PX, TOOLS_GAP_PX, placeSelectionTools, selectionShape } from "@/lib/terminal/selection";
+import { guardSelectionRelease } from "@/lib/terminal/selectionRelease";
 import { useAppStore } from "@/stores/app";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -657,6 +658,7 @@ const toolsBox = ref<HTMLDivElement | null>(null);
 const toolsSelection = ref("");
 /** Whether a press began in the terminal and has not been released yet — see `onWindowPointerUp`. */
 let pressed = false;
+let selectionRelease: ReturnType<typeof guardSelectionRelease> | undefined;
 
 /** The toolbar's entries, rebuilt as the selection under it, or the terminal's liveness, changes. */
 const toolEntries = computed(() =>
@@ -852,6 +854,14 @@ onMounted(() => {
 
   terminal = instance;
   fitAddon = fit;
+  selectionRelease = guardSelectionRelease(element, instance, {
+    isMac: ["Macintosh", "MacIntel", "MacPPC", "Mac68K"].includes(navigator.platform),
+    released: onWindowPointerUp,
+    cancelled: () => {
+      pressed = false;
+      hideTools();
+    },
+  });
 
   /** Bytes for this screen, whichever connection is behind it: the screen outlives one shell. */
   const sink = (bytes: Uint8Array): void => {
@@ -1104,6 +1114,7 @@ watch(
   () => props.active,
   (active) => {
     if (!active) {
+      selectionRelease?.cancel();
       hideCompletion();
     }
   },
@@ -1124,6 +1135,7 @@ onBeforeUnmount(() => {
   }
   document.removeEventListener("pointerdown", onDocumentPointerDown, true);
   window.removeEventListener("pointerup", onWindowPointerUp);
+  selectionRelease?.dispose();
   container.value?.removeEventListener("focusout", onPaneFocusOut);
   observer?.disconnect();
   unregister?.();
