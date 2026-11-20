@@ -22,6 +22,7 @@ import {
   FolderTree,
   ListChecks,
   LoaderCircle,
+  MonitorCog,
   Plus,
   Server,
   Settings,
@@ -35,12 +36,16 @@ import { computed, markRaw } from "vue";
 import { useI18n } from "vue-i18n";
 
 import SessionFailure from "@/components/sessions/SessionFailure.vue";
+import SystemIcon from "@/components/ui/SystemIcon.vue";
 import { useToast } from "@/composables/useToast";
 import { describeShellError } from "@/i18n/errors";
 import type { ShellError } from "@/lib/backend/errors";
 import { claimedCapabilities, unclaimedCapabilities } from "@/lib/descriptors/claims";
 import { sessionEndpoint } from "@/lib/menu/sessions";
+import { connectionMark } from "@/lib/sessions/marks";
 import { importReceipt } from "@/lib/sessions/receipt";
+import { systemLabel, systemMark } from "@/lib/system/icons";
+import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
@@ -49,6 +54,7 @@ import { useTerminalsStore } from "@/stores/terminals";
 import type { Session } from "@/types/session";
 
 const { t } = useI18n();
+const app = useAppStore();
 const editor = useSessionEditorStore();
 const library = useSessionsStore();
 const preferences = usePreferencesStore();
@@ -164,6 +170,22 @@ function failureOf(session: Session): ShellError | undefined {
   return terminals.failures[session.id];
 }
 
+/**
+ * Whether this session's host said something this build has a mark for.
+ *
+ * The same test the session list's rows make, because these rows are the same rows: a host with no
+ * mark keeps the plain terminal rather than borrowing another system's.
+ */
+function hasMark(session: Session): boolean {
+  return systemMark(terminals.systemOf(session)) !== null;
+}
+
+/** What to call that mark out loud, for the row a reader meets with a screen reader. */
+function markTitle(session: Session): string | null {
+  const name = systemLabel(terminals.systemOf(session));
+  return name ? t("sessions.list.system", { name }) : null;
+}
+
 const working = computed(() => preferences.homeLayout === "workspace");
 
 function translate(key: string, params?: Record<string, string>): string {
@@ -243,14 +265,28 @@ function translate(key: string, params?: Record<string, string>): string {
                 :title="t('sessions.list.openHint', { name: session.name })"
                 @click="terminals.goTo(session)"
               >
-                <Server :size="14" class="shrink-0 text-muted-foreground" />
+                <SystemIcon
+                  v-if="connectionMark(session, app.info?.os)"
+                  :system="null"
+                  :mark="connectionMark(session, app.info?.os)"
+                />
+                <SystemIcon
+                  v-else-if="hasMark(session)"
+                  :system="terminals.systemOf(session)"
+                  :label="markTitle(session)"
+                />
+                <MonitorCog
+                  v-else-if="session.protocol === 'vmware'"
+                  :size="13"
+                  class="shrink-0 text-muted-foreground"
+                />
+                <Terminal v-else :size="13" class="shrink-0 text-muted-foreground" />
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-sm">{{ session.name }}</span>
                   <span class="block truncate font-mono text-[11px] text-muted-foreground">{{
                     sessionEndpoint(session, t)
                   }}</span>
                 </span>
-                <SquareTerminal :size="15" class="shrink-0 text-muted-foreground" />
               </button>
 
               <!-- What did not connect leaves its mark here too: nothing came up, so there is no tab
