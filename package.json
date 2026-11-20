@@ -1,6 +1,6 @@
 {
   "name": "sevenshell",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "7Shell - an open-source SSH and operations console.",
   "license": "Apache-2.0",

@@ -10,6 +10,52 @@ interface is speaking. Older releases stay as they were published.
 
 从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
 
+## [0.5.1] - 2026-11-20
+
+### English
+
+The background picture release. An installed 0.5.0 made the window's surfaces translucent and then
+painted nothing behind them: the shipped content-security policy did not allow the `blob:` URL the
+picture is drawn from, and `tauri dev` never saw the policy because its page comes from the Vite
+server. The cards that stayed opaque on a wallpaper page now follow it, the screen somebody unlocks
+on included.
+
+#### Fixed
+
+- **The installed build draws the background picture:** `img-src` in both the shipped and the dev
+  policy allows `blob:`, and a guard test holds the directive against the wallpaper's own URL. The
+  failure was invisible outside an installed build, the same way the terminal's stylesheet policy
+  was in 0.1.0.
+- **Page-level cards follow the picture:** the home page, the container and Kubernetes overviews
+  and the unlock card now use the quieter surface the settings rows use, so the picture shows
+  through them. Dialogs, drawers and popovers stay opaque, as they carry text over whatever is
+  behind them.
+- **The workspace rows wear the session list's marks:** the quick start rows draw the connection's
+  own mark, the host's system mark, a monitor for a VMware session, or a terminal otherwise. The
+  trailing terminal glyph is gone: it was drawn on every row, including rows that never open a
+  terminal, and read as a second button inside the row's own.
+
+#### Notes
+
+- The vault schema is unchanged (15). 0.5.1 installs over 0.5.0 without touching the vault.
+- The installers are not code-signed and the macOS build is not notarized. Nothing in this project
+  has had a security review.
+
+### 中文
+
+背景图片修复版本。安装版 0.5.0 会让窗口表面变透明，却什么都画不出来：发布用的内容安全策略不允许绘制背景图所用的 `blob:` 地址，而 `tauri dev` 看不到这条策略——它的页面来自 Vite 服务器。在壁纸页面上仍保持不透明的卡片现在会跟随壁纸，包括解锁界面的卡片。
+
+#### 修复
+
+- **安装版能画出背景图：** 发布策略与开发策略的 `img-src` 都允许 `blob:`，守卫测试会拿壁纸自身的地址校验这条指令。这个故障在安装版之外是看不见的，和 0.1.0 里终端样式表策略的问题同一个道理。
+- **页面级卡片跟随壁纸：** 首页、容器概览、集群概览和解锁卡片改用设置页的行所用的更安静的表面，背景图可以透出。对话框、抽屉和浮层保持不透明，它们要在任何背景上承载文字。
+- **工作区的行与会话列表使用同一套标记：** 快速开始行显示连接自身的标记、主机系统标记、VMware 的显示器，其余为终端。右侧的终端图标已删除：它画在每一行上，包括根本不会打开终端的行，而且看起来像行内的第二个按钮。
+
+#### 说明
+
+- 保险库 schema 不变（15）。0.5.1 可以直接覆盖安装 0.5.0，不碰保险库。
+- 安装包未做代码签名，macOS 构建未公证。本项目尚未经过安全审计。
+
 ## [0.5.0] - 2026-11-20
 
 ### English
