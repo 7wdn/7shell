@@ -5566,6 +5566,103 @@ test("a panel split down the middle can be resized, and the width is written dow
   }
 });
 
+test("double-clicking a directory name or icon toggles its branch, while the arrow only toggles", async () => {
+  const host = process.env.SEVENSHELL_TEST_HOST;
+  const port = process.env.SEVENSHELL_TEST_PORT ?? "22";
+  const user = process.env.SEVENSHELL_TEST_USER;
+  const password = process.env.SEVENSHELL_TEST_PASSWORD;
+  test.skip(!host || !user || !password, "the SSH lab is not configured; set SEVENSHELL_TEST_HOST/PORT/USER/PASSWORD");
+
+  const { page, close } = await openApp();
+  try {
+    const name = `tree-double-click-${Date.now() % 100000}`;
+    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    const editor = page.getByRole("dialog");
+    await editor.getByPlaceholder("Production web server").fill(name);
+    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-port").fill(port);
+    await editor.getByPlaceholder("root").fill(user as string);
+    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toHaveCount(0);
+
+    // The standalone manager keeps a terminal's panel placement and directory following out of
+    // this case. Both directories are shipped by the SSH lab, so the test only reads remote files.
+    await sessionRow(page, name).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "File manager", exact: true }).click();
+    const question = page.getByRole("button", { name: "Trust this key and connect" });
+    const crumbs = breadcrumbs(page);
+    await expect
+      .poll(async () => (await question.isVisible()) || (await crumbs.isVisible()), { timeout: 30_000 })
+      .toBe(true);
+    if (await question.isVisible()) {
+      await question.click();
+    }
+    await expect(crumbs).toBeVisible({ timeout: 30_000 });
+
+    const tree = page.getByRole("navigation", { name: "Directories", exact: true }).filter({ visible: true });
+    await expect(tree).toBeVisible();
+    const directory = tree.locator('button[title="/etc/ssh"]');
+    const arrow = directory.locator("xpath=..").locator("button[aria-expanded]");
+    const child = tree.locator('button[title="/etc/ssh/sshd_config.d"]');
+    const label = directory.locator("span.truncate");
+    const icon = directory.locator(".file-type-icon");
+
+    // Navigating through the bar reveals the ancestors, but leaves the destination folded.
+    await typePath(page, "/etc/ssh");
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/etc/ssh");
+    await expect(directory).toBeVisible();
+    await expect(arrow).toHaveAttribute("aria-expanded", "false");
+    await expect(child).toHaveCount(0);
+    await typePath(page, "/etc");
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/etc");
+
+    await label.click();
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/etc/ssh");
+    await expect(arrow, "a single click navigates without expanding the directory").toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    // Playwright sends the real click-click-dblclick sequence, including its bubbling from the
+    // nested name and icon. Dispatching only dblclick would miss an extra toggle from a click.
+    await label.dblclick();
+    await expect(arrow).toHaveAttribute("aria-expanded", "true");
+    await expect(child).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => shownPath(page)).toBe("/etc/ssh");
+
+    await icon.dblclick();
+    await expect(arrow).toHaveAttribute("aria-expanded", "false");
+    await expect(child).toHaveCount(0);
+
+    await icon.dblclick();
+    await expect(arrow).toHaveAttribute("aria-expanded", "true");
+    await expect(child).toBeVisible();
+    await label.dblclick();
+    await expect(arrow).toHaveAttribute("aria-expanded", "false");
+    await expect(child).toHaveCount(0);
+
+    await typePath(page, "/etc");
+    await expect.poll(() => shownPath(page), { timeout: 20_000 }).toBe("/etc");
+    await arrow.click();
+    await expect(arrow).toHaveAttribute("aria-expanded", "true");
+    await expect(child).toBeVisible();
+    await expect.poll(() => shownPath(page)).toBe("/etc");
+    await arrow.click();
+    await expect(arrow).toHaveAttribute("aria-expanded", "false");
+    await expect(child).toHaveCount(0);
+
+    // This branch is cached: the arrow's two clicks cancel each other, and its dblclick must not
+    // bubble into the name's handler and toggle it a third time.
+    await arrow.dblclick();
+    await expect(arrow).toHaveAttribute("aria-expanded", "false");
+    await expect(child).toHaveCount(0);
+    await expect.poll(() => shownPath(page)).toBe("/etc");
+  } finally {
+    await close();
+  }
+});
+
 /**
  * Opening a session that is already open, on a host that really answers.
  *

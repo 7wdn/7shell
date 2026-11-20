@@ -99,8 +99,11 @@ async function read(path: string): Promise<void> {
 }
 
 function toggle(row: Row): void {
+  if (loading.value.has(row.path)) {
+    return;
+  }
   const next = new Set(expanded.value);
-  if (row.expanded) {
+  if (next.has(row.path)) {
     next.delete(row.path);
   } else {
     next.add(row.path);
@@ -109,12 +112,21 @@ function toggle(row: Row): void {
   void readMissing();
 }
 
+function navigate(event: MouseEvent, row: Row): void {
+  // The first click already navigated; the second belongs to the branch's double-click.
+  if (event.detail <= 1) {
+    emit("navigate", row.path);
+  }
+}
+
 // The listing moved: open exactly the ancestors that make the new place visible, and check that
 // every open branch has been read at least once.
 watch(
   () => props.currentPath,
   (path) => {
-    expanded.value = new Set([...expanded.value, ...ancestorsOf(path)]);
+    // The root row is always visible. A late navigation there must not undo a double-click collapse.
+    const ancestors = path === "/" ? [] : ancestorsOf(path);
+    expanded.value = new Set([...expanded.value, ...ancestors]);
     void readMissing();
   },
   { immediate: true },
@@ -176,7 +188,8 @@ function label(row: Row): string {
             type="button"
             class="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left"
             :title="row.path"
-            @click="emit('navigate', row.path)"
+            @click="navigate($event, row)"
+            @dblclick="toggle(row)"
           >
             <FileTypeIcon :name="row.name" kind="directory" :open="row.expanded" :size="14" />
             <span class="truncate">{{ label(row) }}</span>

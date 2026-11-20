@@ -956,6 +956,55 @@ describe("the address bar", () => {
   });
 });
 
+describe("navigating and expanding a directory in the tree", () => {
+  it("opens the branch after the first click's listing has already updated its current path", async () => {
+    const srv: SftpEntry = { name: "srv", path: "/srv", kind: "directory", size: 0 };
+    const archive: SftpEntry = { name: "archive", path: "/srv/archive", kind: "directory", size: 0 };
+    const files = useFilesStore();
+    const navigate = vi.spyOn(files, "navigate");
+    const directories = vi.spyOn(files, "directories").mockImplementation(async (_handle, path) => {
+      if (path === "/") {
+        return [srv];
+      }
+      return path === "/srv" ? [archive] : [];
+    });
+    vi.mocked(filesList)
+      .mockClear()
+      .mockResolvedValueOnce({ path: "/srv", entries: [archive] });
+    await render([folder]);
+
+    const tree = host.querySelector('nav[aria-label="Directories"]');
+    const name = (): HTMLElement => {
+      const element = tree?.querySelector<HTMLElement>('button[title="/srv"] span.truncate');
+      if (!element) {
+        throw new Error("the directory tree has no srv name");
+      }
+      return element;
+    };
+    await vi.waitFor(() => expect(name()).toBeDefined());
+
+    name().dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    await vi.waitFor(() => expect(files.browser(HANDLE)?.path).toBe("/srv"));
+    await nextTick();
+    name().dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+    await nextTick();
+    name().dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+
+    await vi.waitFor(() => expect(tree?.querySelector('button[title="/srv/archive"]')).not.toBeNull());
+
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(HANDLE, "/srv");
+    expect(vi.mocked(filesList)).toHaveBeenCalledExactlyOnceWith(HANDLE, "/srv");
+    expect(directories.mock.calls.filter(([, path]) => path === "/srv")).toHaveLength(1);
+    expect(
+      tree
+        ?.querySelector('button[title="/srv"]')
+        ?.parentElement?.querySelector("[aria-expanded]")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(drawn()).toEqual(["archive"]);
+  });
+});
+
 /** The strip above the listing: what each button offers, and what it needs first. */
 describe("the buttons above the listing", () => {
   beforeEach(async () => {
