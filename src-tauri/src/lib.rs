@@ -169,6 +169,7 @@ pub fn run() {
             commands::fonts::system_fonts_list,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            commands::settings::scheme_import_pick,
             commands::settings::window_theme_apply,
             commands::settings::system_theme,
             commands::vault::vault_state,

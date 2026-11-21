@@ -46,6 +46,9 @@
       "notText": "{path} 不是文本文件，编辑器无法显示。",
       "tooLarge": "{path} 超过文本编辑器可打开的大小上限（{limit} MB），请下载后用本地工具查看。"
     },
+    "scheme": {
+      "importUnreadable": "无法读取所选的配色方案文件：请确认它是文本格式的配色文件。"
+    },
     "fs": {
       "grantUnknown": "该文件不是通过文件对话框选择的，因此无法读取。",
       "grantExpired": "保险库锁定后，该文件的访问权限已失效。",

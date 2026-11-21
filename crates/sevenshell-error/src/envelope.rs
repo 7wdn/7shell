@@ -546,6 +546,18 @@ impl ShellError {
             .with_detail(detail)
     }
 
+    /// A colour-scheme file that could not be brought in.
+    ///
+    /// The detail says which reading refused — not text, too large, or unreadable — and no path is
+    /// in it, for the same reason [`Self::fs_open_failed`] carries none: the interface is told a
+    /// file's name, never where it was picked from. One code covers all three readings because the
+    /// actionable answer is the same either way: try a different, text-format scheme file.
+    pub fn scheme_import_unreadable(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::SchemeImportUnreadable, Origin::new(Subsystem::Fs))
+            .with_outcome(OperationOutcome::Rejected)
+            .with_detail(detail)
+    }
+
     // -- Persistence -------------------------------------------------------
 
     pub fn session_not_found(id: &str) -> Self {

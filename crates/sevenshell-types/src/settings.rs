@@ -1148,6 +1148,19 @@ pub struct TerminalSchemeProfile {
 /// How many of somebody's own scheme choices this build keeps.
 pub const TERMINAL_SCHEME_PROFILE_LIMIT: usize = 30;
 
+/// A colour-scheme file somebody asked to bring in: what the picker answered.
+///
+/// The picker is the system's own and opens in Rust — as every native dialog here does — and the
+/// only things that cross the boundary are the file's name without its extension (what a scheme
+/// that carries no name of its own is called) and its text. Never the path: the interface cannot
+/// name one, so it cannot name one wrongly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemeImportFile {
+    pub name: String,
+    pub contents: String,
+}
+
 /// One word or pattern the terminal marks wherever it appears.
 ///
 /// The pattern is kept as written rather than compiled here: it is a JavaScript regular expression

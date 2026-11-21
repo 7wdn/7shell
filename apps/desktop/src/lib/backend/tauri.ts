@@ -10,7 +10,7 @@
 
 import { getCurrentWebview, getCurrentWindow, invoke, listen } from "./ipc";
 
-import type { AppInfo, AppSettings, PolicyAuditEvent } from "@/types/app";
+import type { AppInfo, AppSettings, PolicyAuditEvent, SchemeImportFile } from "@/types/app";
 import type {
   AiChatRequest,
   AiChatStarted,
@@ -206,6 +206,16 @@ export function settingsGet(): Promise<AppSettings> {
 
 export function settingsSet(settings: AppSettings): Promise<void> {
   return invoke<void>("settings_set", { settings });
+}
+
+/**
+ * Asks which colour-scheme file to read, in Rust, and returns its name and text.
+ *
+ * The picker is the system's own; what crosses back is a name the interface may show and edit —
+ * never a path. `undefined` is a dismissed dialog.
+ */
+export function schemeImportPick(title: string): Promise<SchemeImportFile | undefined> {
+  return invoke<SchemeImportFile | null>("scheme_import_pick", { title }).then((file) => file ?? undefined);
 }
 
 /**

@@ -46,6 +46,8 @@ export const ERROR_CATALOG = {
   // The text editor's own refusals
   "FILE-NOT-TEXT": "errors.file.notText",
   "FILE-TOO-LARGE": "errors.file.tooLarge",
+  // Bringing a colour scheme in
+  "SCHEME-IMPORT-UNREADABLE": "errors.scheme.importUnreadable",
   // Local file grants
   "FS-GRANT-UNKNOWN": "errors.fs.grantUnknown",
   "FS-GRANT-EXPIRED": "errors.fs.grantExpired",

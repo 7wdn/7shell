@@ -347,6 +347,17 @@ export interface TerminalSchemeProfile {
 /** How many saved scheme choices this build keeps. */
 export const TERMINAL_SCHEME_PROFILE_LIMIT = 30;
 
+/**
+ * What the native file picker answered, from `sevenshell_types::SchemeImportFile`.
+ *
+ * The picker ran in Rust, so what arrives is the file's name — without its extension, ready to
+ * be the scheme's name where the file carries none — and its text. Never a path.
+ */
+export interface SchemeImportFile {
+  readonly name: string;
+  readonly contents: string;
+}
+
 /** One word or pattern the terminal marks, from `sevenshell_types::TerminalHighlightRule`. */
 export interface TerminalHighlightRule {
   readonly id: string;

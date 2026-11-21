@@ -25,7 +25,7 @@ use sevenshell_types::{
     McpResourceRead, McpResourceTemplate, McpScope, McpServerConfig, McpServerContent, McpServerState, McpServerStatus,
     McpServerTransport, McpToolPolicy, MemoryUsage, NetworkCounters, OpenOutcome, OpenTunnel, PolicyAction,
     PolicyMatrix, PolicyRule, PresentedHostKey, ProcessDetail, ProcessPage, ProcessSample, Protocol, RiskAssessment,
-    RiskLevel, RiskReason, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
+    RiskLevel, RiskReason, SchemeImportFile, SendFailure, SendOutcome, SendReport, SendTarget, Session, SessionAuth,
     SessionExportSummary, SessionGroup, SessionImportOutcome, SessionImportSummary, SessionLayout, SessionReopen,
     SftpPasteItem, SftpPasteOutcome, Snippet, SnippetGroup, SnippetProvider, SnippetStatus, SnippetUploadReceipt,
     SocketRow, SshConfigHost, SyncApplySummary, SyncCatalog, SyncContents, SyncDownloadOutcome, SyncInspectOutcome,
@@ -238,6 +238,21 @@ fn an_import_that_stopped_to_ask_serializes_with_camel_case_fields() {
     assert_eq!(imported["kind"], serde_json::json!("imported"));
     assert_eq!(imported["summary"]["missingKeys"], serde_json::json!(4));
     assert_eq!(imported["summary"]["droppedHops"], serde_json::json!(5));
+}
+
+#[test]
+fn a_scheme_import_file_serializes_with_camel_case_fields() {
+    // What the native picker answers: the file's name without its extension and its text — never
+    // a path, so there is no path key to leak.
+    let file = check(
+        &SchemeImportFile {
+            name: "3024 Night".to_owned(),
+            contents: "background = #090300\n".to_owned(),
+        },
+        "SchemeImportFile",
+    );
+    assert_eq!(file["name"], serde_json::json!("3024 Night"));
+    assert_eq!(file["contents"], serde_json::json!("background = #090300\n"));
 }
 
 #[test]

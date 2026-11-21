@@ -8,7 +8,7 @@
  */
 
 import { isDesktopRuntime } from "@/lib/runtime";
-import type { AppInfo, AppSettings, PolicyAuditEvent } from "@/types/app";
+import type { AppInfo, AppSettings, PolicyAuditEvent, SchemeImportFile } from "@/types/app";
 import type { BatchOutcome, BatchProgress, BatchRequest, RiskAssessment } from "@/types/batch";
 import type { CompletionExecuteRequest, CompletionExecuteResult } from "@/types/completion";
 import type {
@@ -194,6 +194,24 @@ export const backend = {
   settings: {
     get: (): Promise<AppSettings> => forward("settings_get", () => desktop.settingsGet()),
     set: (settings: AppSettings): Promise<void> => forward("settings_set", () => desktop.settingsSet(settings)),
+    /**
+     * Asks which colour-scheme file to bring in and reads it. The desktop's picker runs in Rust,
+     * so the answer is a name and a text; the browser reads the file it is handed the same way
+     * and strips the extension itself. `undefined` is a dismissed picker.
+     */
+    pickSchemeImport: (title: string): Promise<SchemeImportFile | undefined> =>
+      forward("scheme_import_pick", () => {
+        if (isDesktopRuntime()) {
+          return desktop.schemeImportPick(title);
+        }
+        return (async () => {
+          const [file] = await pickBrowserFiles(false);
+          if (!file) {
+            return undefined;
+          }
+          return { name: file.name.replace(/\.[^.]+$/, ""), contents: await file.text() };
+        })();
+      }),
   },
 
   /**

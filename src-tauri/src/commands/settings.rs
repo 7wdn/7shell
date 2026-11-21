@@ -1,9 +1,15 @@
 use sevenshell_error::ShellError;
-use sevenshell_types::AppSettings;
+use sevenshell_types::{AppSettings, SchemeImportFile};
 use tauri::{Manager as _, State, WebviewWindow};
+use tauri_plugin_dialog::DialogExt as _;
 
 use crate::state::ShellState;
 use crate::window_chrome::{apply_menus_theme, effective_theme, theme_name, window_theme_for};
+
+/// How large a file may be and still be a colour scheme. A scheme is a few lines; a megabyte
+/// already covers a machine-generated catalogue of them, and beyond that the pick is a mistake
+/// the read refuses rather than a memory question.
+const SCHEME_IMPORT_MAX_BYTES: usize = 1024 * 1024;
 
 /// The non-secret preferences of this installation.
 ///
@@ -94,4 +100,74 @@ pub fn window_theme_apply(window: WebviewWindow, theme_mode: String) {
 #[tauri::command]
 pub fn system_theme() -> Option<&'static str> {
     theme_name(crate::window_chrome::system_theme())
+}
+
+/// Asks which colour-scheme file to bring in, and reads it.
+///
+/// The picker is the system's own and opens here, in Rust, as every native dialog in this build
+/// does. What crosses the boundary is the file's name — without its extension, because that is
+/// what a scheme that carries no name of its own is called — and its text. Never the path: the
+/// interface is told a name it may display and edit, and no location it could depend on.
+///
+/// `Ok(None)` is somebody closing the picker without choosing: not a failure, and not a change.
+/// The parsing itself lives in the interface, which already reads every dialect in circulation;
+/// this side only fetches the bytes.
+#[tauri::command]
+pub async fn scheme_import_pick(window: WebviewWindow, title: String) -> Result<Option<SchemeImportFile>, ShellError> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        window
+            .dialog()
+            .file()
+            .set_title(title)
+            .add_filter(
+                "Colour schemes",
+                &[
+                    "itermcolors",
+                    "json",
+                    "conf",
+                    "toml",
+                    "yaml",
+                    "yml",
+                    "colorscheme",
+                    "xresources",
+                    "xrdb",
+                ],
+            )
+            .add_filter("All files", &["*"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|error| ShellError::store_io(format!("the file picker could not be opened: {error}")))?;
+
+    let Some(chosen) = picked else {
+        return Ok(None);
+    };
+    let path = chosen
+        .into_path()
+        .map_err(|error| ShellError::scheme_import_unreadable(format!("the chosen file cannot be read: {error}")))?;
+
+    // The stem, not the whole file name: the extension says which format the file is, and the
+    // scheme it holds is not called "3024 Night.toml" any more than it is called "dracula.json".
+    let name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_owned();
+
+    let bytes = tauri::async_runtime::spawn_blocking(move || std::fs::read(&path))
+        .await
+        .map_err(|error| ShellError::scheme_import_unreadable(format!("the chosen file cannot be read: {error}")))?
+        .map_err(|error| ShellError::scheme_import_unreadable(format!("the chosen file cannot be read: {error}")))?;
+
+    if bytes.len() > SCHEME_IMPORT_MAX_BYTES {
+        return Err(ShellError::scheme_import_unreadable(format!(
+            "the file is {} bytes, past the {} a colour scheme needs",
+            bytes.len(),
+            SCHEME_IMPORT_MAX_BYTES
+        )));
+    }
+    let contents = String::from_utf8(bytes)
+        .map_err(|_| ShellError::scheme_import_unreadable("the file is not text this build can read"))?;
+
+    Ok(Some(SchemeImportFile { name, contents }))
 }

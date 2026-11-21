@@ -105,6 +105,10 @@ error_catalog! {
     #[doc = "The file is larger than the editor will open."]
     FileTooLarge => "FILE-TOO-LARGE", "errors.file.tooLarge";
 
+    // -- Bringing a colour scheme in ---------------------------------------
+    #[doc = "The colour-scheme file somebody chose could not be read in."]
+    SchemeImportUnreadable => "SCHEME-IMPORT-UNREADABLE", "errors.scheme.importUnreadable";
+
     // -- Local file grants -------------------------------------------------
     #[doc = "The file token is not known to this process."]
     FsGrantUnknown => "FS-GRANT-UNKNOWN", "errors.fs.grantUnknown";
