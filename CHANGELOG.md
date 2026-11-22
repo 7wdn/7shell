@@ -10,6 +10,93 @@ interface is speaking. Older releases stay as they were published.
 
 从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
 
+## [0.6.0] - 2026-11-22
+
+### English
+
+The appearance and file-tree release. The terminal preview on the settings page now draws every
+appearance setting it sits beside, scheme imports understand seven more formats, and the file
+manager's tree answers a double click. The fixes carry on where 0.5.1 stopped: a folder dragged
+into the panel arrives as a whole tree, and a terminal selection stops even when the mouse-up never
+reaches the pane.
+
+#### Added
+
+- **The preview draws everything it sits beside:** cursor style, blinking and the unfocused cursor
+  (the last row draws a second cursor, because the unfocused style is a setting of its own), whether
+  bold uses bright colors, minimum contrast, and how a search match is shown. Minimum contrast
+  blends toward white or black in small steps by the WCAG luminance definition, and reads hex,
+  `rgb()` and the palette's `oklch()` tokens, so a scheme that follows the interface palette
+  previews in both of its modes. Match highlighting runs the same rule engine the terminal pane
+  uses, so the preview and the terminal never draw one rule differently. The preview is pinned to
+  the top of its page now and scrolls with it.
+- **Scheme imports speak seven more formats:** Kitty, Ghostty, Alacritty, Warp, WezTerm and
+  Konsole, plus VS Code's prefix keys and nested containers. Each parser reads only its own shape,
+  and the red line that refuses a scheme missing any of the sixteen colors is unchanged. Every
+  format was checked against the official exports of iTerm2-Color-Schemes (WezTerm now exports
+  TOML; the older Lua wrapper still parses).
+- **The import dialog is two steps:** recognition first shows a named preview, where a scheme can
+  be renamed or dropped one by one, and only confirmation writes anything. A name comes from the
+  scheme itself, then the file name without its extension, then a localized fallback — a pasted
+  scheme without a name is no longer anonymous.
+- **Picking a file is native:** the dialog opens on the Rust side, and only the file name and its
+  text cross the boundary — the path never leaves the process, the same rule as the other native
+  dialogs. Reading is capped at 1 MiB and must be valid UTF-8; a file that cannot be read reports
+  the new `SCHEME-IMPORT-UNREADABLE` with the reason and without the path. In the browser the same
+  command opens the page's own file picker.
+- **The tree answers a double click:** a directory's name and icon are the larger branch toggle,
+  while a single click still navigates. A double click no longer navigates twice, and a slow
+  response above the root no longer overrides the collapse.
+
+#### Fixed
+
+- **A dropped folder arrives whole:** the entry point used to treat a folder as "not a file" and
+  filter it, so subfolders had to be created remotely by hand first. Drop and paste now accept
+  files and folders together; a batch that contains folders is packed into one archive and unpacked
+  remotely by `tar xzf` — the per-file channel cannot express a tree — and the packing itself was
+  fixed to recurse: `append_path_with_name` writes a single directory header and stops.
+- **A drop error keeps its meaning:** the event's error payload is a plain JSON envelope, not a
+  `ShellError` instance, and the fallback wrapped it into `APP-INTERNAL`. Normalizing it first keeps
+  the real code and its message. A live test drops a folder with a subfolder and checks every file
+  lands on the real server.
+- **The tree toggle survives side docking:** docking the panel left or right used to take the
+  file-tree switch away. It is back in the action row, folds away with it on a narrow panel, and
+  stays reachable through the overflow menu.
+- **A selection stops when the release is lost:** xterm kept extending a drag when the mouse-up
+  never reached the pane — a button released outside the window left the selection growing under a
+  key that was already up. The drag now finishes on the pointer release or the first movement
+  without a pressed button, keeping the selection made so far. (#16)
+
+#### Notes
+
+- The vault schema is unchanged (15). 0.6.0 installs over 0.5.1 without touching the vault.
+- The installers are not code-signed and the macOS build is not notarized. Nothing in this project
+  has had a security review.
+
+### 中文
+
+外观与文件树的版本。设置页的终端实时预览把它旁边的每一项外观设置都画了出来，配色方案导入认识七种新格式，文件管理器的目录树会响应双击。修复接着 0.5.1 的方向：拖进面板的文件夹整棵树到达远端，鼠标释放丢失时终端选区照样停止。
+
+#### 新增
+
+- **预览画出它旁边的每一项：** 光标样式、闪烁与非聚焦样式（末行另画一个非聚焦光标，因为那是独立的一项）、加粗是否用亮色、最小对比度，以及命中显示方式。最小对比度按 WCAG 亮度定义朝白或黑小步混合，解析 hex、`rgb()` 与调色板 token 的 `oklch()` 三种来源，跟随界面色板的方案两种模式都能预览。命中高亮复用终端面板的同一套规则引擎，预览和终端不会对同一条规则各画各的。预览现在吸顶，随页面一起滚动。
+- **配色导入认识七种新格式：** Kitty、Ghostty、Alacritty、Warp、WezTerm 与 Konsole，外加 VS Code 的前缀键与嵌套容器。每个解析器只认自己的形状，十六色缺一整条拒绝的红线不变。各格式的形状都按 iTerm2-Color-Schemes 的官方导出核对过（WezTerm 现在导出 TOML，旧的 Lua 包装仍然能解析）。
+- **导入弹窗改为两段式：** 识别后先给命名预览，可以改名或逐条丢弃，确认才写入。名字依次取方案自带的名字、去扩展名的文件名、本地化兜底——粘贴进来的无名方案从此有名字。
+- **选文件走原生对话框：** 弹窗在 Rust 侧打开，只有文件名和文本越过边界——路径不出进程，和其他原生对话框同一条规则。读取限 1 MiB 且必须是合法 UTF-8；读不出来报新错误码 `SCHEME-IMPORT-UNREADABLE`，带原因、不带路径。浏览器里同一条命令打开页面自己的文件选择器。
+- **目录树响应双击：** 目录的名称和图标成为更大的分支开关，单击仍然导航。双击不再导航两次，根目录之上的慢响应也不会盖掉收起状态。
+
+#### 修复
+
+- **拖进来的文件夹整树到达：** 入口此前把文件夹当“不是文件”过滤掉，远端的子目录只能手工先建。drop 与粘贴现在同时收文件和文件夹；带文件夹的一批打进一个归档、远端 `tar xzf` 解开——逐文件通道表达不了目录树——打包本身也修好了递归：`append_path_with_name` 对目录只写一个目录头就停。
+- **drop 的错误保留真实含义：** 事件的错误负载是普通 JSON 信封而不是 `ShellError` 实例，兜底把它包成了 `APP-INTERNAL`。先归一化再报错，真实错误码与文案得以保留。live 新增一条：拖入带子文件夹的目录，逐个文件在真服务器上落地。
+- **侧停靠不再吞掉文件树开关：** 面板停靠到左右时此前拿走了文件树切换。现在回到操作行，窄面板随宽度折叠，更多菜单里始终可达。
+- **释放丢失时选区照样停止：** xterm 在鼠标释放没到达面板时会继续扩展拖拽——在窗口外松开的按键，会让选区在已经松开的按键下继续生长。拖拽现在在指针释放或第一次无按键移动时结束，保留已选中的部分。（#16）
+
+#### 说明
+
+- 保险库 schema 不变（15）。0.6.0 可以直接覆盖安装 0.5.1，不碰保险库。
+- 安装包未做代码签名，macOS 构建未公证。本项目尚未经过安全审计。
+
 ## [0.5.1] - 2026-11-20
 
 ### English
