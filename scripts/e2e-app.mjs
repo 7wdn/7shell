@@ -11,7 +11,8 @@
 // 2. The webview is asked to open its debugging port. WebView2 is Chromium, so that port is a
 //    normal DevTools endpoint and the tests attach to it.
 // 3. The interface is pinned to English first, so the selectors in the tests do not depend on the
-//    language of the machine running them.
+//    language of the machine running them. The screenshot capture is the exception: it is pinned
+//    to Simplified Chinese, the language the READMEs lead with, and its selectors read that.
 
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -189,10 +190,15 @@ async function main() {
   await rm(path.dirname(DATA_DIR), { recursive: true, force: true });
   await mkdir(DATA_DIR, { recursive: true });
   console.log(`e2e: data directory ${DATA_DIR}`);
+  // The capture run is the one that publishes pictures, and the READMEs lead with Simplified
+  // Chinese, so `pnpm screenshots` pins its interface to zh-CN here instead of inheriting whatever
+  // the machine running it prefers. The suite keeps English, the language its selectors read.
+  // SEVENSHELL_E2E_LOCALE overrides either.
+  const locale = process.env.SEVENSHELL_E2E_LOCALE ?? (CONFIG.endsWith("capture.config.ts") ? "zh-CN" : "en");
   await writeFile(
     path.join(DATA_DIR, "settings.json"),
     `${JSON.stringify(
-      { schemaVersion: 1, themeMode: "dark", terminalTheme: "system", filesLayout: "tree", locale: "en" },
+      { schemaVersion: 1, themeMode: "dark", terminalTheme: "system", filesLayout: "tree", locale },
       null,
       2,
     )}\n`,

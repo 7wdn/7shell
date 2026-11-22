@@ -7,6 +7,11 @@
  * moment the screen changes, and nothing would catch it — where a stale capture is at least the
  * application as it was.
  *
+ * The launcher pins this run to Simplified Chinese and the dark theme — the way the READMEs present
+ * the application — and the visible-name selectors below read that language. Fields that carry an
+ * element id are found by id instead of a translated placeholder, so a reworded string cannot
+ * quietly break the run.
+ *
  * Run it with `pnpm screenshots`, which starts the application pointed at a throwaway data
  * directory and needs the SSH lab (`make lab-up`) on the port `SEVENSHELL_TEST_*` names.
  */
@@ -51,7 +56,7 @@ function sidebar(page: Page): Locator {
 }
 
 async function hideMonitor(page: Page): Promise<void> {
-  const close = page.getByRole("button", { name: "Hide the monitor" });
+  const close = page.getByRole("button", { name: "隐藏监控面板" });
   if (await close.isVisible().catch(() => false)) {
     await close.click();
   }
@@ -59,12 +64,12 @@ async function hideMonitor(page: Page): Promise<void> {
 
 /** Saves a session without opening it, so the sidebar shows the kinds a real list contains. */
 async function saveSession(page: Page, name: string, kind: string): Promise<void> {
-  await sidebar(page).getByRole("button", { name: "New session" }).click();
+  await sidebar(page).getByRole("button", { name: "新建会话" }).click();
   const editor = page.getByRole("dialog");
-  await editor.getByPlaceholder("Production web server").fill(name);
+  await editor.locator("#session-name").fill(name);
   await editor.locator("#session-protocol").click();
   await page.getByRole("listbox").getByRole("option", { name: kind, exact: true }).click();
-  await editor.getByRole("button", { name: "Save" }).click();
+  await editor.getByRole("button", { name: "保存" }).click();
   await expect(editor).toHaveCount(0);
 }
 
@@ -81,14 +86,14 @@ test("the gate: the screen a first run opens on", async () => {
   try {
     // Nothing is filled in for this one on purpose: an empty form is what a person sees first, and
     // a picture of somebody's typed password is a picture this project would rather not publish.
-    await expect(page.getByRole("button", { name: "Create vault" })).toBeVisible();
-    await expect(page.getByPlaceholder("At least 8 characters")).toBeVisible();
+    await expect(page.getByRole("button", { name: "创建保险库" })).toBeVisible();
+    await expect(page.locator("#vault-password")).toBeVisible();
     await shot(page, "create-vault");
 
-    await page.getByPlaceholder("At least 8 characters").fill(VAULT_PASSWORD);
-    await page.getByPlaceholder("Type the password again").fill(VAULT_PASSWORD);
-    await page.getByRole("button", { name: "Create vault" }).click();
-    await expect(sidebar(page).getByRole("button", { name: "New session" })).toBeVisible();
+    await page.locator("#vault-password").fill(VAULT_PASSWORD);
+    await page.locator("#vault-confirmation").fill(VAULT_PASSWORD);
+    await page.getByRole("button", { name: "创建保险库" }).click();
+    await expect(sidebar(page).getByRole("button", { name: "新建会话" })).toBeVisible();
   } finally {
     await close();
   }
@@ -104,22 +109,26 @@ test("the first connection: the host key is a question, not a warning to dismiss
 
   const { page, close } = await openApp();
   try {
-    await sidebar(page).getByRole("button", { name: "New session" }).click();
+    await sidebar(page).getByRole("button", { name: "新建会话" }).click();
     const editor = page.getByRole("dialog");
-    await editor.getByPlaceholder("Production web server").fill("lab");
-    await editor.getByPlaceholder("example.com").fill(host as string);
+    await editor.locator("#session-name").fill("lab");
+    await editor.locator("#session-host").fill(host as string);
     await editor.locator("#session-port").fill(port);
-    await editor.getByPlaceholder("root").fill(user as string);
-    await editor.getByPlaceholder("Password", { exact: true }).fill(password as string);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.locator("#session-user").fill(user as string);
+    await editor.locator("#session-secret").fill(password as string);
+    await editor.getByRole("button", { name: "保存" }).click();
     await expect(editor).toHaveCount(0);
 
-    await sidebar(page).getByTitle("Open a terminal for lab").click();
+    await sidebar(page).getByTitle("为 lab 打开终端").click();
 
     // The prompt, with the fingerprint on it: this is the shot the security model is about, so it is
     // taken before anything is trusted.
-    const trust = page.getByRole("button", { name: "Trust this key and connect" });
+    const trust = page.getByRole("button", { name: "信任该键并连接" });
     await expect(trust).toBeVisible({ timeout: 60_000 });
+    // Park the pointer over the dialog: it still sits on the session row it clicked, and that row's
+    // hover card would drift into the background of a picture that is about the prompt.
+    await page.mouse.move(880, 520);
+    await page.waitForTimeout(400);
     await shot(page, "host-key-prompt");
 
     await trust.click();
@@ -134,11 +143,11 @@ test("the workspace: a terminal over a real host, with the files beside it", asy
   try {
     // A session list with more than one kind in it, and a second tab: the picture is of the
     // workspace somebody works in, not of the first terminal the capture happened to open.
-    await saveSession(page, "Local PowerShell", "Local terminal");
+    await saveSession(page, "Local PowerShell", "本地终端");
     await saveSession(page, "docker-local", "Docker");
     await saveSession(page, "k3s lab", "Kubernetes");
 
-    await sidebar(page).getByTitle("Open a terminal for Local PowerShell").click();
+    await sidebar(page).getByTitle("为 Local PowerShell 打开终端").click();
     const tabs = page.locator("[data-workspace-tabs]");
     await expect(tabs.getByRole("button", { name: "Local PowerShell", exact: true })).toBeVisible({
       timeout: 30_000,
@@ -157,16 +166,16 @@ test("the workspace: a terminal over a real host, with the files beside it", asy
     // And the file panel, pointed at a directory somebody would actually be looking at. A first
     // connection opens it at the far side's root, which on the container this runs against is a
     // scratch pad that the live tests have been writing into since the day it was created.
-    const crumbs = page.getByRole("navigation", { name: "Path" });
+    const crumbs = page.getByRole("navigation", { name: "路径" });
     if (
       await crumbs
         .first()
         .isVisible()
         .catch(() => false)
     ) {
-      await page.getByRole("listbox", { name: "Files", exact: true }).filter({ visible: true }).focus();
+      await page.getByRole("listbox", { name: "文件列表", exact: true }).filter({ visible: true }).focus();
       await page.keyboard.press("Control+L");
-      const pathBar = page.getByPlaceholder("Path");
+      const pathBar = page.getByPlaceholder("路径");
       await pathBar.fill("/etc");
       await pathBar.press("Enter");
       await expect(crumbs.getByRole("button", { name: "etc", exact: true })).toBeVisible();
@@ -192,14 +201,14 @@ test("the container workspace: a real engine and its containers", async () => {
   const { page, close } = await openApp();
   try {
     await hideMonitor(page);
-    await sidebar(page).getByTitle("Open a terminal for docker-local").click();
+    await sidebar(page).getByTitle("为 docker-local 打开终端").click();
 
-    const rail = page.getByRole("navigation", { name: "Container workspace" });
+    const rail = page.getByRole("navigation", { name: "容器工作区" });
     await expect(rail).toBeVisible({ timeout: 60_000 });
-    await rail.getByRole("button", { name: /^Containers/ }).click();
+    await rail.getByRole("button", { name: /^容器/ }).click();
     // The engine on this machine also runs whatever else its owner started; the picture is of the
     // lab this repository builds, not of the person's desktop.
-    await page.getByPlaceholder("Filter by name, image or ID").fill("sevenshell-lab");
+    await page.getByPlaceholder("按名称、镜像或 ID 过滤").fill("sevenshell-lab");
     await expect(page.getByText("sevenshell-lab-sshd").first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(1500);
 
@@ -214,15 +223,12 @@ test("the terminal schemes: the catalogue a terminal is dressed from", async () 
   const { page, close } = await openApp();
   try {
     await hideMonitor(page);
-    await page.getByRole("button", { name: "Settings" }).click();
-    await page
-      .getByRole("navigation", { name: "Settings categories" })
-      .getByRole("button", { name: "SSH terminal" })
-      .click();
+    await page.locator("[data-settings-toggle]").click();
+    await page.getByRole("navigation", { name: "设置分类" }).getByRole("button", { name: "SSH 终端" }).click();
 
-    await page.getByRole("radio", { name: /^Colour schemes/ }).click();
+    await page.getByRole("radio", { name: /^配色方案/ }).click();
     await expect(page.locator("[data-terminal-schemes]")).toBeVisible();
-    await page.getByRole("button", { name: "Scheme for dark terminals" }).click();
+    await page.getByRole("button", { name: "深色终端的方案" }).click();
     await expect(page.getByRole("listbox")).toBeVisible();
     // The settings page was scrolled sideways to bring the slot into view. Put the page behind the
     // dialog back where a person would see it, so the shot is of the catalogue rather than of a
