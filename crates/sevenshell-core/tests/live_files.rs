@@ -505,6 +505,49 @@ async fn a_folder_survives_the_whole_way_round() {
 
 #[tokio::test]
 #[ignore = "needs the SSH lab: see deploy/lab/README.md"]
+async fn a_dropped_folder_arrives_with_its_subfolders() {
+    let Some(lab) = lab() else {
+        return;
+    };
+    let handle = lab.open_trusting_everything().await;
+    let (workspace, _) = packed_workspace(&lab, &handle).await;
+
+    // The tree a person drags in from the desktop: a folder with a subfolder in it, which is what
+    // the far side has to end up with — nobody should have to build those subfolders by hand first.
+    let scratch = tempdir().expect("temp dir");
+    let site = scratch.path().join("site");
+    std::fs::create_dir_all(site.join("css")).expect("mkdir the folder and its subfolder");
+    std::fs::write(site.join("index.html"), "<html>\n").expect("write");
+    std::fs::write(site.join("css").join("main.css"), "body{}\n").expect("write");
+
+    let id = lab
+        .core
+        .start_packed_upload(&handle, vec![site.clone()], &workspace)
+        .await
+        .expect("start the packed upload of a folder");
+    assert_eq!(lab.settle(&id).await, TransferState::Done, "the folder arrived");
+
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{workspace}/site/index.html"))
+            .await
+            .expect("read the file in the folder back"),
+        "<html>\n"
+    );
+    assert_eq!(
+        lab.core
+            .read_text_file(&handle, &format!("{workspace}/site/css/main.css"))
+            .await
+            .expect("read the file in the subfolder back"),
+        "body{}\n",
+        "the subfolder the person never built by hand is there"
+    );
+
+    clear_workspace(&lab, &handle, &workspace).await;
+}
+
+#[tokio::test]
+#[ignore = "needs the SSH lab: see deploy/lab/README.md"]
 async fn several_chosen_entries_come_down_as_one_archive() {
     let Some(lab) = lab() else {
         return;

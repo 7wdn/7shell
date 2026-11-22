@@ -576,9 +576,10 @@ async fn start_uploads(
 /// the ones already started stay in the transfer list, and the error that stopped the rest is
 /// returned.
 ///
-/// With `packed` set they go as one archive instead, made here: a folder dragged in from the desktop
-/// is a batch like any other, and the switch means the same thing at every door. One transfer comes
-/// back rather than one per file — which is the whole reason a batch is packed.
+/// With `packed` set they go as one archive instead, made here: one transfer comes back rather than
+/// one per file — which is the whole reason a batch is packed. A folder in the drop forces this
+/// shape whatever the preference says, because a folder is a tree and the only way the far side
+/// sees that tree is as one archive unpacked there, subfolders and all.
 #[tauri::command]
 pub async fn dropped_upload(
     state: State<'_, ShellState>,
@@ -588,7 +589,17 @@ pub async fn dropped_upload(
     packed: bool,
 ) -> Result<UploadOutcome, ShellError> {
     let paths = state.pending_drops().take(&token).await?;
+    let packed = folders_travel_packed(&paths, packed);
     start_or_ask(&state, handle, directory, paths, packed).await
+}
+
+/// Whether a drop's upload has to travel as one archive.
+///
+/// A folder cannot ride the one-file-one-transfer path: that path opens the folder as if it were a
+/// file and fails. Packing is also what makes the tree arrive as a tree — the archive carries the
+/// subfolders, and the unpack on the far side makes them.
+fn folders_travel_packed(paths: &[PathBuf], packed: bool) -> bool {
+    packed || paths.iter().any(|path| path.is_dir())
 }
 
 /// The file list on the clipboard, as a token and the files' names.
@@ -679,5 +690,36 @@ mod tests {
             "kept",
             "a folder that is there is used as it is, with what is in it"
         );
+    }
+
+    #[test]
+    fn a_drop_carrying_a_folder_travels_packed_whatever_the_preference_says() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let folder = directory.path().join("site");
+        std::fs::create_dir(&folder).expect("mkdir");
+
+        assert!(
+            folders_travel_packed(&[folder], false),
+            "a folder cannot ride the file path"
+        );
+        assert!(
+            folders_travel_packed(&[PathBuf::from("notes.txt")], true),
+            "the preference still packs plain files"
+        );
+        assert!(
+            !folders_travel_packed(&[PathBuf::from("notes.txt"), PathBuf::from("other.txt")], false),
+            "plain files follow the preference"
+        );
+    }
+
+    #[test]
+    fn a_folder_mixed_with_files_travels_packed() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let folder = directory.path().join("site");
+        std::fs::create_dir(&folder).expect("mkdir");
+        let file = directory.path().join("notes.txt");
+        std::fs::write(&file, "hello").expect("write");
+
+        assert!(folders_travel_packed(&[file, folder], false));
     }
 }

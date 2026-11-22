@@ -113,7 +113,8 @@ pub fn local_staging_path(token: &str) -> PathBuf {
 ///
 /// The entries are stored under their own file names rather than their paths: the archive is unpacked
 /// into a directory somebody is looking at, and `Documents/report.pdf` appearing inside it would be a
-/// tree nobody asked for.
+/// tree nobody asked for. A folder is stored under its own name with everything inside it, which is
+/// how a dropped folder arrives on the far side with its subfolders made.
 ///
 /// Links are stored rather than followed, which is what the far side's `tar` does as well: a link to
 /// a directory is a link, not a second copy of everything behind it.
@@ -136,9 +137,18 @@ pub fn pack_local(archive: &Path, sources: &[PathBuf]) -> Result<u64, ShellError
     builder.follow_symlinks(false);
 
     for (source, name) in sources.iter().zip(seen.iter()) {
-        builder
-            .append_path_with_name(source, name)
-            .map_err(|error| local_failure(archive, "a file could not be added to the archive", error))?;
+        if source.is_dir() {
+            // A folder goes in whole: `append_path_with_name` writes a directory header and stops,
+            // so the tree inside would never reach the archive. `append_dir_all` walks it, and the
+            // crate stores the entry names with forward slashes whatever platform packs.
+            builder
+                .append_dir_all(name, source)
+                .map_err(|error| local_failure(archive, "a folder could not be added to the archive", error))?;
+        } else {
+            builder
+                .append_path_with_name(source, name)
+                .map_err(|error| local_failure(archive, "a file could not be added to the archive", error))?;
+        }
     }
 
     let encoder = builder
@@ -392,6 +402,35 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(unpacked.path().join("it's a report.txt")).expect("read"),
             "the second file\n"
+        );
+        std::fs::remove_file(&archive).ok();
+    }
+
+    #[test]
+    fn a_packed_folder_arrives_with_its_tree() {
+        // What a dropped folder upload relies on: the archive carries the folder's subfolders, and
+        // the unpack makes them on the far side — so nobody has to build them by hand first.
+        let source = tempfile::tempdir().expect("temp dir");
+        let folder = source.path().join("site");
+        std::fs::create_dir(&folder).expect("mkdir");
+        std::fs::create_dir(folder.join("css")).expect("mkdir");
+        std::fs::write(folder.join("index.html"), "<html>\n").expect("write");
+        std::fs::write(folder.join("css").join("main.css"), "body{}\n").expect("write");
+
+        let unpacked = tempfile::tempdir().expect("temp dir");
+        let archive = local_staging_path("test-folder-tree");
+
+        pack_local(&archive, &[folder]).expect("pack");
+        unpack_local(&archive, unpacked.path()).expect("unpack");
+
+        assert_eq!(
+            std::fs::read_to_string(unpacked.path().join("site").join("index.html")).expect("read"),
+            "<html>\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(unpacked.path().join("site").join("css").join("main.css")).expect("read"),
+            "body{}\n",
+            "the subfolder the person never built by hand is there"
         );
         std::fs::remove_file(&archive).ok();
     }

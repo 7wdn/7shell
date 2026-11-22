@@ -26,7 +26,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 
 import { backend } from "@/lib/backend/api";
-import { type ShellError, asShellError } from "@/lib/backend/errors";
+import { type ShellError, asShellError, normalizeShellError } from "@/lib/backend/errors";
 import { parentPath } from "@/lib/files/format";
 import { isDesktopRuntime } from "@/lib/runtime";
 import { resolveDirectory } from "@/lib/terminal/follow";
@@ -384,7 +384,10 @@ export const useFilesStore = defineStore("files", () => {
   function reportFailure(handle: string, error: unknown): void {
     const open = browsers.value[handle];
     if (open) {
-      open.failure = asShellError(error, "dropped_upload");
+      // A drop's failure arrives through an event, so it is the envelope's JSON rather than a
+      // ShellError instance; normalizing keeps its code — and its message — instead of turning
+      // every refused drop into APP-INTERNAL.
+      open.failure = normalizeShellError(error, "dropped_upload");
     }
   }
 

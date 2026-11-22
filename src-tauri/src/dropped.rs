@@ -21,7 +21,8 @@ use tokio::sync::Mutex;
 #[serde(rename_all = "camelCase")]
 pub struct PendingFiles {
     pub token: String,
-    /// The files' own names, which is what a person recognises in a message.
+    /// The entries' own names — files and folders alike — which is what a person recognises in a
+    /// message.
     pub names: Vec<String>,
 }
 
@@ -41,20 +42,27 @@ pub struct PendingDrops {
 impl PendingDrops {
     /// Remembers a set of local paths and returns the token that stands for them.
     ///
-    /// Files only, and only ones that exist: a dropped shortcut, a folder or a path that has since
-    /// been deleted is not something an upload can do anything with.
+    /// Files and folders both, and only ones that exist: a dropped shortcut to nowhere or a path
+    /// that has since been deleted is not something an upload can do anything with. A folder stays
+    /// whole here rather than being walked into file lists — the upload that takes it travels as
+    /// one archive, tree and all, which is how the far side ends up with the subfolders made.
     pub fn remember(&self, paths: Vec<PathBuf>) -> Result<PendingFiles, ShellError> {
-        let files: Vec<PathBuf> = paths.into_iter().filter(|path| path.is_file()).collect();
+        let entries: Vec<PathBuf> = paths
+            .into_iter()
+            .filter(|path| path.is_file() || path.is_dir())
+            .collect();
 
-        if files.is_empty() {
-            return Err(ShellError::app_unsupported("dropping something that is not a file"));
+        if entries.is_empty() {
+            return Err(ShellError::app_unsupported(
+                "dropping something that is not a file or a folder",
+            ));
         }
-        if files.len() > MAX_FILES {
+        if entries.len() > MAX_FILES {
             return Err(ShellError::app_unsupported("dropping that many files at once")
                 .with_detail(format!("the limit is {MAX_FILES} files")));
         }
 
-        let names = files
+        let names = entries
             .iter()
             .map(|path| {
                 path.file_name()
@@ -67,8 +75,8 @@ impl PendingDrops {
 
         // Blocking on a mutex in an event handler is fine: the critical section is one insert, and
         // there is no await that could hold it across a task switch.
-        if let Ok(mut entries) = self.entries.try_lock() {
-            entries.insert(token.clone(), files);
+        if let Ok(mut waiting) = self.entries.try_lock() {
+            waiting.insert(token.clone(), entries);
         } else {
             log::warn!("a drop arrived while the pending list was busy and was refused");
             return Err(ShellError::app_internal("the pending files were busy; drop them again"));
@@ -152,12 +160,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dropping_a_directory_is_refused_rather_than_uploaded_as_a_file() {
+    async fn dropping_a_folder_is_remembered_as_one_entry() {
         let directory = tempdir().expect("temp dir");
+        let folder = directory.path().join("site");
+        std::fs::create_dir(&folder).expect("mkdir");
+
+        let pending = PendingDrops::default();
+        let dropped = pending.remember(vec![folder.clone()]).expect("remember");
+
+        assert_eq!(dropped.names, vec!["site".to_owned()]);
+        assert_eq!(pending.take(&dropped.token).await.expect("take"), vec![folder]);
+    }
+
+    #[tokio::test]
+    async fn a_drop_of_files_and_folders_keeps_them_in_the_order_they_came() {
+        let directory = tempdir().expect("temp dir");
+        let folder = directory.path().join("site");
+        std::fs::create_dir(&folder).expect("mkdir");
+        let file = directory.path().join("notes.txt");
+        std::fs::write(&file, "hello").expect("write");
+
+        let pending = PendingDrops::default();
+        let dropped = pending.remember(vec![folder.clone(), file.clone()]).expect("remember");
+
+        assert_eq!(dropped.names, vec!["site".to_owned(), "notes.txt".to_owned()]);
+        assert_eq!(pending.take(&dropped.token).await.expect("take"), vec![folder, file]);
+    }
+
+    #[tokio::test]
+    async fn paths_that_do_not_exist_are_filtered_out() {
+        let directory = tempdir().expect("temp dir");
+        let ghost = directory.path().join("gone.txt");
 
         let error = PendingDrops::default()
-            .remember(vec![directory.path().to_path_buf()])
-            .expect_err("a directory is not a file");
+            .remember(vec![ghost])
+            .expect_err("nothing that exists was dropped");
 
         assert_eq!(error.code(), sevenshell_error::ErrorCode::AppUnsupported);
     }

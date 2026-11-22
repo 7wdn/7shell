@@ -891,6 +891,30 @@ describe("files the operating system handed us", () => {
   });
 
   /**
+   * The host reports a refused drop through the `files:dropped` event, so what reaches the store is
+   * the envelope's JSON — not a ShellError instance, which is why this cannot go through the
+   * invoke-rejection path above. The code it carries must survive, or every refused drop renders as
+   * an internal error and hides what actually happened.
+   */
+  it("keeps the code of a failure the drop event carried as plain JSON", async () => {
+    const store = useFilesStore();
+    await store.open("s1");
+    store.reportFailure("f1", {
+      version: 1,
+      code: "APP-UNSUPPORTED",
+      messageKey: "errors.app.unsupported",
+      messageParams: { what: "dropping something that is not a file or a folder" },
+      origin: { subsystem: "app" },
+      outcome: "notSent",
+    });
+
+    expect(store.browser("f1")?.failure?.code).toBe("APP-UNSUPPORTED");
+    expect(store.browser("f1")?.failure?.messageParams["what"]).toBe(
+      "dropping something that is not a file or a folder",
+    );
+  });
+
+  /**
    * An upload that would replace something stops and asks. What is asserted here is that the
    * stopping is real: nothing was started, and the names the question is about are the ones the
    * backend named.
