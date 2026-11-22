@@ -114,6 +114,7 @@
     "update": {
       "checkFailed": "无法读取更新通道，可能有新版本但没有被发现。",
       "notAvailable": "没有已检查、待安装的更新。",
+      "downloadFailed": "无法下载这次更新：到发布服务器的连接中断了。通常是网络问题，稍后再试一次。",
       "installFailed": "无法安装这次更新。",
       "releasePageFailed": "无法打开这次版本的发布页面。",
       "portableUnavailable": "这次发布没有附带便携版压缩包，便携版因此无法自动替换。请到发布页面下载新的便携版压缩包，解压覆盖当前目录（data 目录不要动）。"

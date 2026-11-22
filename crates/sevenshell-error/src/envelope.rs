@@ -873,7 +873,16 @@ impl ShellError {
         Self::new(ErrorCode::UpdateNotPending, Origin::new(Subsystem::App)).with_outcome(OperationOutcome::NotSent)
     }
 
-    /// The download or the installer failed. The detail carries what the plugin said.
+    /// The release archive could not be fetched. Its own code rather than folding into the install
+    /// failure: a connection that broke mid-download is told apart from an installer that refused
+    /// the bytes, and the fix for one (try again) is not the fix for the other. The detail carries
+    /// what the HTTP client said.
+    pub fn update_download_failed(detail: impl AsRef<str>) -> Self {
+        Self::new(ErrorCode::UpdateDownloadFailed, Origin::new(Subsystem::App)).with_detail(detail)
+    }
+
+    /// The installer failed on bytes the channel had already verified. The detail carries what the
+    /// plugin said.
     pub fn update_install_failed(detail: impl AsRef<str>) -> Self {
         Self::new(ErrorCode::UpdateInstallFailed, Origin::new(Subsystem::App)).with_detail(detail)
     }

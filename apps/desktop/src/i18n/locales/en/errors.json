@@ -114,6 +114,7 @@
     "update": {
       "checkFailed": "The update channel could not be read, so a newer release may exist without being found.",
       "notAvailable": "There is no checked update waiting to be installed.",
+      "downloadFailed": "The update could not be downloaded: the connection to the release server dropped. This is usually the network; trying again in a moment usually works.",
       "installFailed": "The update could not be installed.",
       "releasePageFailed": "The page this release is published on could not be opened.",
       "portableUnavailable": "This release carries no portable archive, so this copy cannot replace itself. Download the new portable archive from the release page and unpack it over this folder (leave the data folder alone)."

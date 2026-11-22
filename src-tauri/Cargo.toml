@@ -52,6 +52,9 @@ zip = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# The retry decision looks at the error the updater wrapped; constructing a real one needs the
+# client that produced it.
+reqwest = { workspace = true }
 # The HTTP tests drive the real router through `Service::oneshot`, which is how axum itself is
 # tested: a request that never touches a socket still passes every layer the socket would.
 tower = { version = "0.5", features = ["util"] }

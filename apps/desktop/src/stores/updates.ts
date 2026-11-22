@@ -127,6 +127,10 @@ export const useUpdatesStore = defineStore("updates", () => {
     } finally {
       stop();
       installing.value = false;
+      // The count goes with the attempt. A download that failed at 99% has not got anything: a
+      // button left reading "100%" next to a failure would claim a completion that never happened,
+      // and a retry starting from that number would be counting someone else's bytes.
+      progress.value = null;
     }
   }
 
@@ -175,6 +179,8 @@ export const useUpdatesStore = defineStore("updates", () => {
     } finally {
       stop();
       installing.value = false;
+      // Same as the download: an install that failed leaves nothing half-done behind to measure.
+      progress.value = null;
     }
   }
 

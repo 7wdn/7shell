@@ -4,15 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
 vi.mock("@/lib/backend/tauri", () => ({
   updateCheck: vi.fn(),
+  updateDownload: vi.fn(),
   updateInstall: vi.fn(),
   onUpdateProgress: vi.fn(),
 }));
 
-import { onUpdateProgress, updateCheck, updateInstall } from "@/lib/backend/tauri";
+import { onUpdateProgress, updateCheck, updateDownload, updateInstall } from "@/lib/backend/tauri";
 import { RETRY_DELAYS_MS, STARTUP_CHECK_DELAY_MS, useUpdatesStore } from "@/stores/updates";
 import type { UpdateProgress } from "@/types/update";
 
 const checkMock = vi.mocked(updateCheck);
+const downloadMock = vi.mocked(updateDownload);
 const installMock = vi.mocked(updateInstall);
 const progressMock = vi.mocked(onUpdateProgress);
 
@@ -119,6 +121,36 @@ describe("the update channel as the interface reads it", () => {
 
     listener?.({ kind: "installing" });
     expect(updates.progress).toEqual({ kind: "installing" });
+  });
+
+  it("a download that fails leaves no percentage behind", async () => {
+    checkMock.mockResolvedValue(published);
+    let listener: ((payload: UpdateProgress) => void) | undefined;
+    progressMock.mockImplementation(async (register) => {
+      listener = register;
+      return () => {
+        listener = undefined;
+      };
+    });
+    downloadMock.mockRejectedValue({
+      version: 1,
+      code: "UPDATE-DOWNLOAD-FAILED",
+      messageKey: "errors.update.downloadFailed",
+      origin: { subsystem: "app" },
+    });
+    const updates = useUpdatesStore();
+    await updates.check();
+
+    const running = updates.download();
+    listener?.({ kind: "downloading", downloaded: 8_000_000, total: 8_295_815 });
+    expect(updates.progress).toEqual({ kind: "downloading", downloaded: 8_000_000, total: 8_295_815 });
+    await running;
+
+    // The connection dropped at 96% of this attempt. The button reads its label from this number:
+    // leaving the count standing would dress a failed download up as a finished one.
+    expect(updates.failure?.code).toBe("UPDATE-DOWNLOAD-FAILED");
+    expect(updates.installing).toBe(false);
+    expect(updates.progress).toBeNull();
   });
 
   it("reports an install that failed", async () => {

@@ -7,6 +7,7 @@
 //! release than the one on screen.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use sevenshell_error::ShellError;
 use sevenshell_types::{AvailableRelease, UpdateCheck, UpdateProgress};
@@ -17,6 +18,16 @@ use crate::state::ShellState;
 
 /// The event a look at the channel produces while it runs.
 pub const PROGRESS_EVENT: &str = "update:progress";
+
+/// How many times a download that lost its connection tries again, and how long it waits between
+/// tries. Two retries because the release link is the one request whose failure is almost always
+/// somebody's flaky route rather than anything this build could do differently — a second or third
+/// try over the same route usually lands — and not more because each retry is the whole archive
+/// again.
+const DOWNLOAD_RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(5)];
+// A download runs once per entry plus once per delay: the range below pins the bound at compile
+// time, so a constant tuned into "retry all day" fails the build instead of a machine.
+const _: () = assert!(!DOWNLOAD_RETRY_DELAYS.is_empty() && DOWNLOAD_RETRY_DELAYS.len() <= 4);
 
 /// The release a check found, waiting for somebody to say install it.
 ///
@@ -198,9 +209,9 @@ pub async fn update_download(app: AppHandle, state: State<'_, ShellState>) -> Re
             return Err(ShellError::update_portable_unavailable());
         };
         let archive = crate::update_portable::archive_for(&update, &source);
-        (download(&app, &archive).await?, true)
+        (download_with_retries(&app, &archive).await?, true)
     } else {
-        (download(&app, &update).await?, false)
+        (download_with_retries(&app, &update).await?, false)
     };
 
     log::info!(
@@ -212,13 +223,40 @@ pub async fn update_download(app: AppHandle, state: State<'_, ShellState>) -> Re
     Ok(())
 }
 
-/// Downloads whatever `update` points at, announcing progress while it runs.
+/// Downloads whatever `update` points at, announcing progress while it runs, and tries again when
+/// the connection gives out under it.
 ///
-/// The address and the signature are the only things a portable copy changes: the release is the
-/// same, and so is the key its bytes are checked against.
-async fn download(app: &AppHandle, update: &Update) -> Result<Vec<u8>, ShellError> {
-    let progress_app = app.clone();
+/// One attempt plus one per [`DOWNLOAD_RETRY_DELAYS`] entry. The address and the signature are the
+/// only things a portable copy changes: the release is the same, and so is the key its bytes are
+/// checked against. A retry restarts the archive from nothing — the plugin has no resume — so the
+/// progress line visibly climbs again; that is the honest drawing of a fresh attempt, not a glitch.
+async fn download_with_retries(app: &AppHandle, update: &Update) -> Result<Vec<u8>, ShellError> {
+    let mut failure = match download_once(app, update).await {
+        Ok(bytes) => return Ok(bytes),
+        Err(error) => error,
+    };
+    for delay in DOWNLOAD_RETRY_DELAYS {
+        if !is_transient(&failure) {
+            break;
+        }
+        log::warn!("the update download lost its connection ({failure}); retrying in {delay:?}");
+        tokio::time::sleep(delay).await;
+        match download_once(app, update).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) => failure = error,
+        }
+    }
+    log::warn!("the update could not be downloaded: {failure}");
+    Err(ShellError::update_download_failed(failure.to_string()))
+}
+
+/// One attempt at the archive, announced as it arrives.
+///
+/// A running total per attempt rather than across them: a retry that inherited the last attempt's
+/// count would report bytes it never received.
+async fn download_once(app: &AppHandle, update: &Update) -> Result<Vec<u8>, tauri_plugin_updater::Error> {
     let mut downloaded: u64 = 0;
+    let progress_app = app.clone();
     update
         .download(
             move |chunk, total| {
@@ -228,10 +266,17 @@ async fn download(app: &AppHandle, update: &Update) -> Result<Vec<u8>, ShellErro
             || {},
         )
         .await
-        .map_err(|error| {
-            log::warn!("the update could not be downloaded: {error}");
-            ShellError::update_install_failed(error.to_string())
-        })
+}
+
+/// Whether a failed download is worth another attempt.
+///
+/// What reqwest reports while fetching is a connection that refused, reset or dropped mid-body —
+/// the flaky-route case, where the next try is a new connection and usually a better one. What it
+/// does not cover is a server answer (a status the plugin turns into its own error) or a signature
+/// that will not verify: those say something about the release, and downloading it two more times
+/// would not change the answer.
+fn is_transient(error: &tauri_plugin_updater::Error) -> bool {
+    matches!(error, tauri_plugin_updater::Error::Reqwest(_))
 }
 
 /// Installs the release a check found, downloading it first when nobody has.
@@ -270,37 +315,22 @@ pub async fn update_install(app: AppHandle, state: State<'_, ShellState>) -> Res
     }
 
     // Nobody downloaded first. A portable copy fetches its own archive here and unpacks it; an
-    // installed build hands the download straight to the installer as before.
+    // installed build fetches the installer the same way the download step would have — the same
+    // helper, so the retry and the failure naming do not fork between the two entries.
     if crate::update_portable::this_copy_is_portable() {
         let Some(source) = state.pending_update().peek_portable() else {
             return Err(ShellError::update_portable_unavailable());
         };
         let archive = crate::update_portable::archive_for(&update, &source);
-        let bytes = download(&app, &archive).await?;
+        let bytes = download_with_retries(&app, &archive).await?;
         let _ = app.emit(PROGRESS_EVENT, UpdateProgress::Installing);
         return install_portable(&app, &bytes, &update.version);
     }
 
-    // The chunk length rather than a running total: the plugin reports each piece as it arrives, and
-    // a progress line that counted the same bytes twice would move backwards.
-    let mut downloaded: u64 = 0;
-    let progress_app = app.clone();
-    let result = update
-        .download_and_install(
-            move |chunk, total| {
-                downloaded += chunk as u64;
-                let _ = progress_app.emit(PROGRESS_EVENT, UpdateProgress::Downloading { downloaded, total });
-            },
-            {
-                let progress_app = app.clone();
-                move || {
-                    let _ = progress_app.emit(PROGRESS_EVENT, UpdateProgress::Installing);
-                }
-            },
-        )
-        .await;
-
-    match result {
+    let bytes = download_with_retries(&app, &update).await?;
+    let _ = app.emit(PROGRESS_EVENT, UpdateProgress::Installing);
+    log::info!("the downloaded update {} is being installed", update.version);
+    match update.install(bytes) {
         Ok(()) => {
             log::info!("the update is installed; restarting into it");
             app.restart()
@@ -355,7 +385,7 @@ pub fn release_page_for(version: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::release_page_for;
+    use super::{is_transient, release_page_for};
 
     #[test]
     fn a_version_becomes_the_page_it_is_published_on() {
@@ -389,5 +419,23 @@ mod tests {
         ] {
             assert_eq!(release_page_for(attempt), None, "`{attempt}` was turned into a page");
         }
+    }
+
+    #[tokio::test]
+    async fn a_connection_failure_is_worth_retrying_but_a_server_answer_is_not() {
+        // A real reqwest error rather than a made-up one: the retry decision hangs on what the
+        // HTTP client actually wraps, and this is the same shape a GitHub fetch produces when the
+        // route refuses it. Port 1 is refused without any listener to start.
+        let refused = reqwest::get("http://127.0.0.1:1/").await.unwrap_err();
+        assert!(
+            is_transient(&tauri_plugin_updater::Error::Reqwest(refused)),
+            "a connection failure should be retried"
+        );
+        assert!(
+            !is_transient(&tauri_plugin_updater::Error::Network(
+                "Download request failed with status: 403 Forbidden".into()
+            )),
+            "a server answer will not change by downloading the archive again"
+        );
     }
 }

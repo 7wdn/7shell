@@ -228,7 +228,9 @@ error_catalog! {
     UpdateCheckFailed => "UPDATE-CHECK-FAILED", "errors.update.checkFailed";
     #[doc = "An installation was asked for while no checked release was waiting."]
     UpdateNotPending => "UPDATE-NOT-AVAILABLE", "errors.update.notAvailable";
-    #[doc = "A checked release could not be downloaded or installed."]
+    #[doc = "A checked release could not be fetched from the release server."]
+    UpdateDownloadFailed => "UPDATE-DOWNLOAD-FAILED", "errors.update.downloadFailed";
+    #[doc = "The fetched release could not be installed."]
     UpdateInstallFailed => "UPDATE-INSTALL-FAILED", "errors.update.installFailed";
     #[doc = "The page a release is published on could not be opened."]
     UpdateReleasePageFailed => "UPDATE-RELEASE-PAGE-FAILED", "errors.update.releasePageFailed";

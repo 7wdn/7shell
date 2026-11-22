@@ -121,6 +121,7 @@ export const ERROR_CATALOG = {
   // Updates
   "UPDATE-CHECK-FAILED": "errors.update.checkFailed",
   "UPDATE-NOT-AVAILABLE": "errors.update.notAvailable",
+  "UPDATE-DOWNLOAD-FAILED": "errors.update.downloadFailed",
   "UPDATE-INSTALL-FAILED": "errors.update.installFailed",
   "UPDATE-RELEASE-PAGE-FAILED": "errors.update.releasePageFailed",
   "UPDATE-PORTABLE-UNAVAILABLE": "errors.update.portableUnavailable",
