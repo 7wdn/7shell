@@ -10,6 +10,38 @@ interface is speaking. Older releases stay as they were published.
 
 从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
 
+## [0.6.1] - 2026-11-22
+
+### English
+
+The update-path release. A download that loses its connection now tries again on its own, a failed
+download is reported as one instead of an install failure, and a failed attempt no longer leaves a
+percentage behind that never arrived.
+
+#### Fixed
+
+- **A dropped connection no longer ends the update:** the archive download retries twice on its own
+  (two seconds, then five) when the connection refuses, resets or breaks mid-body — the flaky-route
+  case, where the next try is a new connection and usually lands. A server answer (a 403, say) or a
+  signature mismatch is not retried: downloading the archive again would not change the answer.
+- **A failed download says so:** the download and the install used to share one error, so a
+  connection broken at 99% was reported as "the update could not be installed." Downloads now carry
+  their own `UPDATE-DOWNLOAD-FAILED` with a message that names the network.
+- **A failed download leaves no percentage behind:** the button used to keep the last count on
+  screen, so a download broken at 96% — or rounded up to 100% — sat there looking finished next to
+  a failure. The count goes with the attempt now, and a retry starts from zero rather than
+  inheriting bytes it never received.
+
+### 中文
+
+更新链路的修复。下载断了连接会自己再试，下载失败按下载失败来说而不是安装失败，失败之后按钮上也不留着没有真正到达的百分比。
+
+#### 修复
+
+- **连接断了不再结束更新：** 安装包下载遇到连接被拒、被重置或中途断开时自动重试两次（隔两秒、再隔五秒）——这类失败几乎都是线路抖动，下一次连接通常就通。服务器明确拒绝（比如 403）或签名验证不过不重试：再下载两次也不会改变答案。
+- **下载失败按下载失败说：** 下载和安装以前共用一个错误，下载到 99% 断线会被报成“无法安装这次更新”。下载现在有自己的 `UPDATE-DOWNLOAD-FAILED`，文案直接说明是网络中断。
+- **失败之后不留百分比：** 按钮以前停在最后一次的计数上——96% 断线（或四舍五入成 100%）的失败看上去像下载完成。计数跟着尝试走，重试从零开始，不继承没收到过的字节。
+
 ## [0.6.0] - 2026-11-22
 
 ### English
