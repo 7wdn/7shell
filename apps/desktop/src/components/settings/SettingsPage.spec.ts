@@ -213,6 +213,17 @@ describe("the settings page", () => {
     expect(row?.textContent, "with the line under the control").toContain("Where the tab bar sits");
   });
 
+  it("pins the terminal preview, so a change below it can be read without scrolling back", async () => {
+    await mount();
+    await openCategory("SSH terminal");
+
+    // The block that holds the preview is the one thing on the page that pins: a preview only at
+    // the top would mean a scroll upwards for every slider moved below it.
+    const pinned = host.querySelector(".sticky");
+    expect(pinned, "the terminal page has no pinned block").toBeDefined();
+    expect(pinned!.querySelector("[data-terminal-preview]")).toBeDefined();
+  });
+
   it("keeps the keys and hosts this device holds selectable, inside a page that is not", async () => {
     await mount();
     await openCategory("Security");

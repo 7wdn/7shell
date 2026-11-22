@@ -1197,9 +1197,18 @@ function translate(key: string, params?: Record<string, string>): string {
                 <template v-else>
                   <!--
                   The block the page is drawn around, before the fields: what sits under it is about what
-                  it looks like.
+                  it looks like. It pins to the top of the column while the rest scrolls, because a page
+                  this long is read downwards and edited downwards at once — a preview only at the top
+                  would have somebody scroll up to learn what a slider just did. Its surface is the
+                  panel's own token rather than a colour of its own, so the pinned block reads as part
+                  of the page and not as a card laid on it; the negative margins stretch that surface
+                  across the column's padding, so the rows that pass beneath are covered rather than
+                  showing through the gaps.
                 -->
-                  <div v-if="topFields.length > 0" class="grid gap-y-4 pb-1">
+                  <div
+                    v-if="topFields.length > 0"
+                    class="sticky top-0 z-10 -mx-5 -mt-3 -mb-2 grid gap-y-4 bg-(--panel) px-5 pt-3 pb-3"
+                  >
                     <SettingsField
                       v-for="row in topFields"
                       :key="row.id"
