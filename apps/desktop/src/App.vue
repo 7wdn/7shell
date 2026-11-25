@@ -547,6 +547,7 @@ onMounted(async () => {
   // the window has to put the gate back up whether or not anybody is looking at the vault.
   stopVaultLocked = await backend.events.onVaultLocked(() => {
     vault.markLocked();
+    terminals.stopBroadcast();
     terminals.closeNewTabPicker();
     terminals.closeSplitPicker();
     terminals.dropReopenQuestion();

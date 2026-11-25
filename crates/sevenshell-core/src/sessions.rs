@@ -1510,7 +1510,7 @@ async fn until_cancelled<T>(
 }
 
 /// A terminal's text in the bytes its far side prints and expects.
-fn encoded_text(text: &str, encoding: TerminalEncoding) -> Vec<u8> {
+pub(crate) fn encoded_text(text: &str, encoding: TerminalEncoding) -> Vec<u8> {
     match encoding {
         TerminalEncoding::Utf8 => text.as_bytes().to_vec(),
         TerminalEncoding::Gbk => encoding_rs::GBK.encode(text).0.into_owned(),

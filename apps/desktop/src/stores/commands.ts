@@ -24,7 +24,7 @@ import { resetTerminalInput } from "@/lib/terminal/bus";
 import { directoryInCommand } from "@/lib/terminal/follow";
 import { useTerminalsStore } from "@/stores/terminals";
 import type { RiskAssessment } from "@/types/batch";
-import type { CommandHistoryEntry, SendFailure, Snippet, SnippetGroup } from "@/types/snippet";
+import type { CommandHistoryEntry, SendFailure, SendOutcome, Snippet, SnippetGroup } from "@/types/snippet";
 
 // What a slot is lives in `lib/commands/slots.ts`, because the completion menu fills the same lines
 // the panel sends; these names stay here so a caller that has the store in hand needs one import.
@@ -372,7 +372,7 @@ export const useCommandsStore = defineStore("commands", () => {
     sending.value = true;
     sendFailure.value = null;
     try {
-      const outcome = await backend.commands.send({ kind: "terminals", handles }, line, appendCr, agree);
+      const outcome = await sendInOrder(handles, line, appendCr, agree);
       if (outcome.kind === "approvalRequired") {
         approval.value = outcome.risk;
         acknowledged.value = false;
@@ -383,7 +383,6 @@ export const useCommandsStore = defineStore("commands", () => {
       // Per terminal: "it reached three of them" is the useful answer when one tab has ended.
       sendFailures.value = [...outcome.report.failures];
       lastSent.value += 1;
-      await followSentLine(line, appendCr, outcome.report.sent);
       // The values that were used are the ones worth offering next time.
       const current = draft.value;
       if (current?.id && slots.value.length > 0) {
@@ -394,11 +393,6 @@ export const useCommandsStore = defineStore("commands", () => {
       sendFailure.value = asShellError(error, "command_send");
     } finally {
       sending.value = false;
-      // The shells' input lines were rewritten by a sent line, not by their own keyboards: the
-      // completion trackers can no longer say what is on them.
-      for (const handle of handles) {
-        resetTerminalInput(handle);
-      }
     }
   }
 
@@ -431,7 +425,7 @@ export const useCommandsStore = defineStore("commands", () => {
     sending.value = true;
     sendFailure.value = null;
     try {
-      const outcome = await backend.commands.send({ kind: "terminals", handles: [handle] }, line, true, false);
+      const outcome = await sendInOrder([handle], line, true, false);
       if (outcome.kind === "approvalRequired") {
         // The core does not gate a single terminal, so this cannot arrive today. Reported rather
         // than ignored: a silent no-op here would be a line that never ran and never said why.
@@ -441,13 +435,69 @@ export const useCommandsStore = defineStore("commands", () => {
 
       sendFailures.value = [...outcome.report.failures];
       lastSent.value += 1;
-      await followSentLine(line, true, outcome.report.sent);
       await load();
     } catch (error) {
       sendFailure.value = asShellError(error, "command_send");
     } finally {
       sending.value = false;
-      resetTerminalInput(handle);
+    }
+  }
+
+  /** Resetting readers after the queue is released would erase the next keys while history loads. */
+  async function sendInOrder(
+    handles: string[],
+    line: string,
+    appendCr: boolean,
+    acknowledged: boolean,
+  ): Promise<SendOutcome> {
+    return useTerminalsStore().withInputOrder(handles, async () => {
+      let outcome: SendOutcome;
+      try {
+        outcome = await backend.commands.send({ kind: "terminals", handles }, line, appendCr, acknowledged);
+      } catch (error) {
+        for (const handle of handles) resetTerminalInput(handle);
+        throw error;
+      }
+      if (outcome.kind === "sent") {
+        for (const handle of handles) resetTerminalInput(handle);
+        await followSentLine(line, appendCr, outcome.report.sent);
+      }
+      return outcome;
+    });
+  }
+
+  /** The command bar follows input broadcasting; explicit file and library targets keep their scope. */
+  async function sendInputLine(
+    handle: string,
+    line: string,
+    approvedHandles?: readonly string[],
+  ): Promise<SendOutcome | { kind: "failed"; error: ShellError } | undefined> {
+    if (line.trim() === "" || sending.value) return undefined;
+    const terminals = useTerminalsStore();
+    const handles = terminals.inputHandles(handle);
+    if (handles.length === 0) return undefined;
+    if (
+      approvedHandles &&
+      (handles.length !== approvedHandles.length || handles.some((target, index) => target !== approvedHandles[index]))
+    ) {
+      return undefined;
+    }
+    sending.value = true;
+    sendFailure.value = null;
+    try {
+      const outcome = await sendInOrder(handles, line, true, approvedHandles !== undefined);
+      if (outcome.kind === "approvalRequired") return outcome;
+      sendFailures.value = [...outcome.report.failures];
+      if (outcome.report.failures.length > 0) terminals.stopBroadcast();
+      lastSent.value += 1;
+      await load();
+      return outcome;
+    } catch (error) {
+      sendFailure.value = asShellError(error, "command_send");
+      terminals.stopBroadcast();
+      return { kind: "failed", error: sendFailure.value };
+    } finally {
+      sending.value = false;
     }
   }
 
@@ -553,6 +603,7 @@ export const useCommandsStore = defineStore("commands", () => {
     send,
     sendLiteral,
     sendLineTo,
+    sendInputLine,
     rememberTyped,
   };
 });

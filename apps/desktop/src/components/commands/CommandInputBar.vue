@@ -21,6 +21,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } fro
 import { useI18n } from "vue-i18n";
 
 import CompletionMenu from "@/components/commands/CompletionMenu.vue";
+import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
 import { useCommandCompletion } from "@/components/commands/useCommandCompletion";
 import { useRemotePaths } from "@/components/commands/useRemotePaths";
 import { describeErrorFields } from "@/i18n/errors";
@@ -39,6 +40,8 @@ import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore, type TerminalTab } from "@/stores/terminals";
 import { useWordsStore } from "@/stores/words";
+import type { RiskAssessment } from "@/types/batch";
+import type { ShellError } from "@/lib/backend/errors";
 
 const props = defineProps<{ handle?: string }>();
 const { t, te } = useI18n();
@@ -51,6 +54,8 @@ const terminals = useTerminalsStore();
 const words = useWordsStore();
 
 const line = ref("");
+const broadcastApproval = ref<{ line: string; handles: string[]; risk: RiskAssessment } | null>(null);
+const broadcastFailure = ref<ShellError | null>(null);
 const showHistory = ref(false);
 const field = ref<HTMLInputElement | null>(null);
 /** The folded-out history and the button that opens it, so a click anywhere else can close it. */
@@ -69,6 +74,14 @@ const listId = `command-completion-${useId()}`;
 function currentHandle(): string | null {
   return props.handle ?? terminals.activeTerminalHandle();
 }
+
+watch(
+  () => [line.value, ...terminals.inputHandles(currentHandle() ?? "")],
+  () => {
+    broadcastApproval.value = null;
+  },
+  { flush: "sync" },
+);
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -162,6 +175,7 @@ const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move,
 
 /** Why the last line did not reach the shell, when it reached nothing. */
 const problem = computed(() => {
+  if (broadcastFailure.value) return describeErrorFields(translate, broadcastFailure.value);
   const failed =
     props.handle === undefined
       ? commands.sendFailures.at(-1)
@@ -413,8 +427,35 @@ function sendTyped(): void {
   void sendLine(line.value);
 }
 
-async function sendLine(text: string): Promise<void> {
+async function sendLine(text: string, approvedHandles?: readonly string[]): Promise<void> {
   if (text.trim() === "" || commands.sending) {
+    return;
+  }
+  broadcastFailure.value = null;
+
+  const handle = currentHandle();
+  const targets = handle === null ? [] : terminals.inputHandles(handle);
+  if (handle !== null && (targets.length > 1 || approvedHandles !== undefined)) {
+    const outcome = await commands.sendInputLine(handle, text, approvedHandles);
+    if (outcome?.kind === "approvalRequired") {
+      const currentTargets = terminals.inputHandles(handle);
+      if (
+        line.value === text &&
+        targets.length === currentTargets.length &&
+        targets.every((target, index) => target === currentTargets[index])
+      ) {
+        broadcastApproval.value = { line: text, handles: targets, risk: outcome.risk };
+      }
+      return;
+    }
+    if (outcome?.kind === "failed") {
+      broadcastFailure.value = outcome.error;
+      return;
+    }
+    if (outcome?.kind !== "sent") return;
+    if (line.value === text) line.value = "";
+    showHistory.value = false;
+    dismiss(0);
     return;
   }
 
@@ -430,6 +471,12 @@ async function sendLine(text: string): Promise<void> {
   }
 }
 
+function confirmBroadcastLine(): void {
+  const pending = broadcastApproval.value;
+  broadcastApproval.value = null;
+  if (pending && line.value === pending.line) void sendLine(pending.line, pending.handles);
+}
+
 function reuse(entry: string): void {
   line.value = entry;
   showHistory.value = false;
@@ -438,6 +485,22 @@ function reuse(entry: string): void {
 </script>
 
 <template>
+  <ConfirmDialog
+    v-if="broadcastApproval"
+    :open="true"
+    :title="t('terminal.broadcast.approvalTitle')"
+    :message="t('terminal.broadcast.approvalMessage', { count: broadcastApproval.handles.length })"
+    :confirm-label="t('commands.sendAnyway')"
+    :danger="true"
+    :details="broadcastApproval.risk.reasons.map((reason) => t(reason.labelKey))"
+    @confirm="confirmBroadcastLine"
+    @update:open="broadcastApproval = null"
+  >
+    <pre
+      class="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-background p-2 font-mono text-[11px] select-text"
+      >{{ broadcastApproval.line }}</pre
+    >
+  </ConfirmDialog>
   <div class="relative flex shrink-0 items-center gap-2 border-t border-border bg-card/30 px-3 py-1">
     <input
       ref="field"

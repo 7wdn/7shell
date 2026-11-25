@@ -99,6 +99,43 @@ afterEach(() => {
 });
 
 describe("the command bar offering what it knows", () => {
+  it("keeps a broadcast command for review and binds its confirmation to the selected panes", async () => {
+    const terminals = useTerminalsStore();
+    vi.spyOn(terminals, "inputHandles").mockReturnValue(["h-own", "h-other"]);
+    const send = vi
+      .spyOn(useCommandsStore(), "sendInputLine")
+      .mockResolvedValueOnce({ kind: "approvalRequired", risk: { level: "destructive", reasons: [] } })
+      .mockResolvedValueOnce({ kind: "sent", report: { sent: ["h-own", "h-other"], failures: [] } });
+    await mount([], [], "h-own");
+    await type("rm -rf /tmp/test");
+    press("Enter");
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+    expect(field().value).toBe("rm -rf /tmp/test");
+    expect(send).toHaveBeenCalledExactlyOnceWith("h-own", "rm -rf /tmp/test", undefined);
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) =>
+      button.textContent?.includes("Send anyway"),
+    );
+    expect(confirm).toBeDefined();
+    confirm!.click();
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(send).toHaveBeenLastCalledWith("h-own", "rm -rf /tmp/test", ["h-own", "h-other"]);
+    await vi.waitFor(() => expect(field().value).toBe(""));
+  });
+
+  it("dismisses a pending broadcast approval when the command is edited", async () => {
+    vi.spyOn(useTerminalsStore(), "inputHandles").mockReturnValue(["h-own", "h-other"]);
+    const send = vi
+      .spyOn(useCommandsStore(), "sendInputLine")
+      .mockResolvedValue({ kind: "approvalRequired", risk: { level: "destructive", reasons: [] } });
+    await mount([], [], "h-own");
+    await type("rm -rf /tmp/test");
+    press("Enter");
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull());
+    await type("echo replacement");
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+    expect(send).toHaveBeenCalledOnce();
+  });
+
   it("keeps the typed line while another command is being sent", async () => {
     await mount();
     const commands = useCommandsStore();

@@ -24,6 +24,7 @@ const terminalsStub = vi.hoisted(() => ({
   activeTerminalHandle: () => "t1" as string | null,
   writableHandles: () => ["t1", "t2"],
   followDirectory: vi.fn(),
+  withInputOrder: <T>(_handles: readonly string[], run: () => Promise<T>) => run(),
 }));
 
 vi.mock("@/stores/terminals", () => ({ useTerminalsStore: () => terminalsStub }));

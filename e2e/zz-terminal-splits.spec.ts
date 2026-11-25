@@ -253,6 +253,19 @@ test("terminal panes mix local and SSH sessions with independent input and file 
     expect(stripBounds).not.toBeNull();
     expect(panelBounds).not.toBeNull();
     expect(stripBounds!.y + stripBounds!.height).toBeLessThanOrEqual(panelBounds!.y + 1);
+    await page.locator("[data-broadcast-open]").click();
+    await page.locator(`[data-broadcast-target][data-pane-id="${localId}"]`).uncheck();
+    await page.locator("[data-broadcast-start]").click();
+    await ssh.getByRole("textbox", { name: "Terminal input", exact: true }).focus();
+    await page.keyboard.type("cd /var");
+    await page.keyboard.press("Enter");
+    for (const target of [ssh, peer])
+      await expect(target.getByRole("navigation", { name: "Path" })).toContainText("var");
+    await send(ssh, `echo ssh-broadcast-${stamp}`);
+    for (const target of [ssh, peer])
+      await expect(target.locator(".xterm-rows")).toContainText(`ssh-broadcast-${stamp}`);
+    await expect(local.locator(".xterm-rows")).not.toContainText(`ssh-broadcast-${stamp}`);
+    await page.locator("[data-broadcast-stop]").click();
     await send(local, `echo local-only-${stamp}`);
     await expect(local.locator(".xterm-rows")).toContainText(`local-only-${stamp}`);
     await expect(ssh.locator(".xterm-rows")).not.toContainText(`local-only-${stamp}`);
@@ -283,6 +296,112 @@ test("terminal panes mix local and SSH sessions with independent input and file 
       contentType: "application/json",
     });
     throw error;
+  } finally {
+    await close();
+  }
+});
+
+test("terminal broadcast sends keys, paste and commands only to the chosen panes", async () => {
+  const { page, close } = await window();
+  const stamp = Date.now() % 100000;
+  try {
+    await saveLocal(page, `broadcast-${stamp}`);
+    const original = await openSaved(page, `broadcast-${stamp}`);
+    const idA = (await original.getAttribute("data-tab-id")) as string;
+    const a = pane(page, idA);
+    await a.locator("[data-split-right]").click();
+    await expect(panes(page)).toHaveCount(2);
+    const idB = (await page.locator('[data-terminal-pane][data-active="true"]').getAttribute("data-tab-id")) as string;
+    const b = pane(page, idB);
+    await expect(b.locator(".xterm-rows")).toContainText(/[>$#]/, { timeout: 30_000 });
+    await b.locator("[data-split-down]").click();
+    await expect(panes(page)).toHaveCount(3);
+    const idC = (await page.locator('[data-terminal-pane][data-active="true"]').getAttribute("data-tab-id")) as string;
+    const c = pane(page, idC);
+    await expect(c.locator(".xterm-rows")).toContainText(/[>$#]/, { timeout: 30_000 });
+    await expect(page.locator("[data-terminal-broadcast]")).toHaveAttribute("data-enabled", "false");
+
+    await send(a, `echo default-only-${stamp}`);
+    await expect(a.locator(".xterm-rows")).toContainText(`default-only-${stamp}`);
+    await expect(b.locator(".xterm-rows")).not.toContainText(`default-only-${stamp}`);
+
+    await page.locator("[data-broadcast-open]").click();
+    const picker = page.locator("[data-broadcast-picker]");
+    await expect(picker).toBeVisible();
+    await picker.locator(`[data-broadcast-target][data-pane-id="${idC}"]`).uncheck();
+    await picker.locator("[data-broadcast-start]").click();
+    await expect(picker).toHaveCount(0);
+    await expect(a).toHaveAttribute("data-broadcast", "true");
+    await expect(b).toHaveAttribute("data-broadcast", "true");
+    await expect(c).toHaveAttribute("data-broadcast", "false");
+
+    await a.getByRole("textbox", { name: "Terminal input", exact: true }).focus();
+    await page.keyboard.type(`echo key-shared-${stamp}`);
+    await page.keyboard.press("Enter");
+    for (const target of [a, b]) await expect(target.locator(".xterm-rows")).toContainText(`key-shared-${stamp}`);
+    await expect(c.locator(".xterm-rows")).not.toContainText(`key-shared-${stamp}`);
+
+    await a.getByRole("textbox", { name: "Terminal input", exact: true }).evaluate((element, marker) => {
+      const clipboard = new DataTransfer();
+      clipboard.setData("text/plain", `echo ${marker}`);
+      element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, clipboardData: clipboard }));
+    }, `paste-shared-${stamp}`);
+    await page.keyboard.press("Enter");
+    for (const target of [a, b]) await expect(target.locator(".xterm-rows")).toContainText(`paste-shared-${stamp}`);
+    await expect(c.locator(".xterm-rows")).not.toContainText(`paste-shared-${stamp}`);
+
+    await page.keyboard.insertText(`echo 中文-shared-${stamp}`);
+    await page.keyboard.press("Enter");
+    for (const target of [a, b]) await expect(target.locator(".xterm-rows")).toContainText(`中文-shared-${stamp}`);
+    await expect(c.locator(".xterm-rows")).not.toContainText(`中文-shared-${stamp}`);
+
+    await send(c, `echo excluded-origin-${stamp}`);
+    await expect(c.locator(".xterm-rows")).toContainText(`excluded-origin-${stamp}`);
+    await expect(a.locator(".xterm-rows")).not.toContainText(`excluded-origin-${stamp}`);
+    await send(a, `echo command-shared-${stamp}`);
+    for (const target of [a, b]) await expect(target.locator(".xterm-rows")).toContainText(`command-shared-${stamp}`);
+
+    const field = a.getByLabel("Command input", { exact: true });
+    await field.fill(`rm -rf /tmp/broadcast-review-${stamp}`);
+    await field.press("Enter");
+    const approval = page.getByRole("dialog");
+    await expect(approval.getByText("Send this command to the broadcast panes", { exact: true })).toBeVisible();
+    for (const target of [a, b])
+      await expect(target.locator(".xterm-rows")).not.toContainText(`broadcast-review-${stamp}`);
+    await approval.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(field).toHaveValue(`rm -rf /tmp/broadcast-review-${stamp}`);
+    await field.fill("");
+
+    await a.getByRole("textbox", { name: "Terminal input", exact: true }).focus();
+    const tick = `broadcast-tick-${stamp}`;
+    await page.keyboard.type(`node -e "let n=0;setInterval(()=>console.log('${tick}:'+ ++n),500)"`);
+    await page.keyboard.press("Enter");
+    for (const target of [a, b]) await expect.poll(() => counter(target, tick)).toBeGreaterThan(2);
+    await page.keyboard.press("Control+c");
+    await page.keyboard.type(`echo interrupted-both-${stamp}`);
+    await page.keyboard.press("Enter");
+    for (const target of [a, b]) await expect(target.locator(".xterm-rows")).toContainText(`interrupted-both-${stamp}`);
+    const stopped = await Promise.all([counter(a, tick), counter(b, tick)]);
+    // Echo alone can be terminal input echo even if the process is still running. Missed Ctrl+C
+    // would emit more ticks within this interval, proving the shared interrupt did not arrive.
+    await page.waitForTimeout(1_500);
+    expect(await Promise.all([counter(a, tick), counter(b, tick)])).toEqual(stopped);
+
+    await mkdir(ARTIFACTS, { recursive: true });
+    await page.screenshot({ path: path.join(ARTIFACTS, "terminal-broadcast.png") });
+    await page.locator("[data-broadcast-stop]").click();
+    await send(a, `echo stopped-only-${stamp}`);
+    await expect(a.locator(".xterm-rows")).toContainText(`stopped-only-${stamp}`);
+    await expect(b.locator(".xterm-rows")).not.toContainText(`stopped-only-${stamp}`);
+
+    await page.locator("[data-broadcast-open]").click();
+    await page.locator("[data-broadcast-start]").click();
+    await b.locator("[data-pane-close]").click();
+    await expect(panes(page)).toHaveCount(2);
+    await expect(page.locator("[data-terminal-broadcast]")).toHaveAttribute("data-enabled", "false");
+    await send(a, `echo after-close-${stamp}`);
+    await expect(a.locator(".xterm-rows")).toContainText(`after-close-${stamp}`);
+    await expect(c.locator(".xterm-rows")).not.toContainText(`after-close-${stamp}`);
   } finally {
     await close();
   }

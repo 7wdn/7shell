@@ -37,6 +37,7 @@ const ENDING_MEMORY = 32;
 const sinks = new Map<string, TerminalSink>();
 const endListeners = new Set<TerminalEndListener>();
 const inputResets = new Map<string, () => void>();
+const inputTrackers = new Map<string, { input: (data: string, remember: boolean) => void; answering: () => boolean }>();
 const pending = new Map<string, Uint8Array[]>();
 const pendingBytes = new Map<string, number>();
 const endings = new Map<string, string | undefined>();
@@ -63,6 +64,7 @@ export function stopTerminalBus(): void {
   sinks.clear();
   endListeners.clear();
   inputResets.clear();
+  inputTrackers.clear();
   pending.clear();
   pendingBytes.clear();
   endings.clear();
@@ -114,6 +116,25 @@ export function registerInputReset(handle: string, reset: () => void): () => voi
 /** Tells the pane drawing `handle` that its tracked line is no longer the shell's line. */
 export function resetTerminalInput(handle: string): void {
   inputResets.get(handle)?.();
+}
+
+/** Tracks input delivered by another pane without feeding it back into xterm's input emitter. */
+export function registerInputTracker(
+  handle: string,
+  tracker: { input: (data: string, remember: boolean) => void; answering: () => boolean },
+): () => void {
+  inputTrackers.set(handle, tracker);
+  return () => {
+    if (inputTrackers.get(handle) === tracker) inputTrackers.delete(handle);
+  };
+}
+
+export function observeTerminalInput(handle: string, data: string, remember: boolean): void {
+  inputTrackers.get(handle)?.input(data, remember);
+}
+
+export function terminalIsAnswering(handle: string): boolean {
+  return inputTrackers.get(handle)?.answering() ?? false;
 }
 
 /** Whether this handle has already ended, and what the server said, if anyone has asked. */

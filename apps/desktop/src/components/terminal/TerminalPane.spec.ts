@@ -23,6 +23,8 @@ import {
 
 /** What xterm handed the pane, so a test can type into it the way xterm would. */
 let onData: ((data: string) => void) | undefined;
+let rawData: ((data: string) => void) | undefined;
+let onKey: ((event: { key: string }) => void) | undefined;
 /** The pane's key handler, so a test can ask whether the terminal keeps Ctrl+F for itself. */
 let keyHandler: ((event: KeyboardEvent) => boolean) | undefined;
 let oscHandlers: Map<number, (data: string) => boolean>;
@@ -92,7 +94,16 @@ vi.mock("@xterm/xterm", () => ({
     focus(): void {}
     dispose(): void {}
     onData(handler: (data: string) => void): { dispose: () => void } {
-      onData = handler;
+      rawData = handler;
+      onData = (data) => {
+        onKey?.({ key: data });
+        handler(data);
+      };
+      return { dispose: () => {} };
+    }
+
+    onKey(handler: (event: { key: string }) => void): { dispose: () => void } {
+      onKey = handler;
       return { dispose: () => {} };
     }
 
@@ -306,6 +317,8 @@ beforeEach(async () => {
   // the pane and not the default.
   usePreferencesStore().sessionLayout = "terminal";
   onData = undefined;
+  rawData = undefined;
+  onKey = undefined;
   oscHandlers = new Map();
   selection = "";
   pasted = [];
@@ -363,6 +376,17 @@ function outputSink(): (bytes: Uint8Array) => void {
 }
 
 describe("the session's encoding and its backspace", () => {
+  it("keeps parser replies local while broadcasting actual keyboard input", async () => {
+    await withPanelUnderTerminal();
+    await mountPane();
+    const terminals = useTerminalsStore();
+    const interactive = vi.spyOn(terminals, "sendInteractive").mockResolvedValue();
+    rawData?.("\x1b[24;80R");
+    await vi.waitFor(() => expect(terminalWriteMock).toHaveBeenCalled());
+    expect(interactive).not.toHaveBeenCalled();
+    onData?.("\x1b[A");
+    expect(interactive).toHaveBeenCalledExactlyOnceWith("handle-1", "\x1b[A", { encoding: "utf-8", backspace: "del" });
+  });
   it("joins a character split across two events before drawing it", async () => {
     await mountPane(true, "gbk");
 
@@ -425,10 +449,8 @@ describe("a terminal carrying a file panel", () => {
     onData?.("cd /va");
     onData?.("r/log");
     onData?.("\r");
-    await nextTick();
-    await nextTick();
 
-    expect(useFilesStore().browser("f1")?.path).toBe("/var/log");
+    await vi.waitFor(() => expect(useFilesStore().browser("f1")?.path).toBe("/var/log"));
   });
 
   it("remembers a line that was run at the prompt", async () => {

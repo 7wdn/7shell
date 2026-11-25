@@ -127,6 +127,17 @@ The tab strip's **New tab** button still opens a separate tab. Layouts belong to
 application window. Reconnecting a terminal starts a new shell; keeping remote programs alive
 across disconnections or sharing one shell between people requires a remote persistent session.
 
+**Broadcast input** on a split tab lets you send the same keyboard input, paste and command input
+to selected panes. Choose at least two connected panes, then press **Start broadcasting**. The
+bar names the targets, and a broadcast icon marks each participating pane. Input in an unselected
+pane stays in that pane. Existing text at the remote prompts is not synchronized by enabling it.
+
+Press **Stop broadcasting** to return to independent input. Editing the selection, leaving the tab
+or losing a selected connection stops broadcasting; new and reconnected panes are not automatically
+enrolled. A maximized pane still broadcasts to the named targets. Output remains separate, and a
+command sent from the command input bar keeps the existing approval for risky multi-terminal sends.
+File-panel directory actions and the command library keep their explicit targets.
+
 ## 5. Open the files
 
 **Open the file panel under this terminal** on the strip beneath the terminal puts the file browser

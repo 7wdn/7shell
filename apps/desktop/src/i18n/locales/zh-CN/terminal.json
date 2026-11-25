@@ -10,6 +10,24 @@
       "endedNoReason": "连接已结束，服务器未给出原因。",
       "failedTitle": "该终端无法打开。"
     },
+    "broadcast": {
+      "title": "广播输入",
+      "configure": "选择广播窗格",
+      "off": "已关闭 · 输入只发送到当前窗格",
+      "active": "正在广播到 {count} 个窗格",
+      "hint": "按键、粘贴和命令栏输入会发送到此标签中选中的窗格。",
+      "targets": "已选择 {count} 个窗格",
+      "selectAll": "选择所有已连接窗格",
+      "target": "广播到 {name}",
+      "unavailable": "未连接",
+      "selectionHint": "至少选择两个窗格。未选中窗格的输入保持独立。修改目标后会停止广播，需要重新启动。",
+      "start": "启动广播",
+      "stop": "停止广播",
+      "participating": "正在接收广播输入",
+      "failed": "输入未能送达 {name}，已停止广播。",
+      "approvalTitle": "将此命令发送到广播窗格",
+      "approvalMessage": "此命令需要批准后才能发送到 {count} 个窗格。请确认命令内容与风险。"
+    },
     "split": {
       "right": "向右拆分",
       "down": "向下拆分",

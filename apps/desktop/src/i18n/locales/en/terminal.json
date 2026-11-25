@@ -10,6 +10,24 @@
       "endedNoReason": "The connection ended without a reason.",
       "failedTitle": "This terminal could not be opened."
     },
+    "broadcast": {
+      "title": "Broadcast input",
+      "configure": "Choose broadcast panes",
+      "off": "Off · Input stays in its own pane",
+      "active": "Broadcasting to {count} panes",
+      "hint": "Keyboard input, pasted text and command input are sent to the selected panes in this tab.",
+      "targets": "{count} panes selected",
+      "selectAll": "Select running panes",
+      "target": "Broadcast to {name}",
+      "unavailable": "Not connected",
+      "selectionHint": "Select at least two panes. Input in an unselected pane stays local. Changing targets stops broadcasting until you start it again.",
+      "start": "Start broadcasting",
+      "stop": "Stop broadcasting",
+      "participating": "Receiving broadcast input",
+      "failed": "Broadcasting stopped because input could not reach {name}.",
+      "approvalTitle": "Send this command to the broadcast panes",
+      "approvalMessage": "This command requires approval before it is sent to {count} panes. Review the command and its risks."
+    },
     "split": {
       "right": "Split right",
       "down": "Split down",

@@ -71,6 +71,7 @@ beforeEach(async () => {
         announceResize = callback;
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -107,6 +108,23 @@ function pane(id: string): HTMLElement {
 }
 
 describe("the terminal workspace", () => {
+  it("marks the broadcast targets while retaining the original terminal hosts", async () => {
+    const store = useTerminalsStore();
+    const screen = pane("a").querySelector("textarea");
+    store.movePaneIntoSplit("b", "a", "right");
+    await nextTick();
+    expect(host.querySelector('[data-terminal-broadcast][data-enabled="false"]')).not.toBeNull();
+    store.startBroadcast();
+    await nextTick();
+    expect(pane("a").dataset.broadcast).toBe("true");
+    expect(pane("b").dataset.broadcast).toBe("true");
+    expect(host.querySelector("[data-broadcast-stop]")?.textContent).toContain("Stop broadcasting");
+    host.querySelector<HTMLButtonElement>("[data-broadcast-stop]")!.click();
+    await nextTick();
+    expect(pane("a").dataset.broadcast).toBe("false");
+    expect(pane("a").querySelector("textarea")).toBe(screen);
+    expect(lifecycle.unmounted).toEqual([]);
+  });
   it("defers pointer focus until a pane control receives its click", async () => {
     const store = useTerminalsStore();
     store.movePaneIntoSplit("b", "a", "right");

@@ -45,7 +45,8 @@ import type { MenuAction } from "@/lib/menu/types";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
 import { formatShortcutDisplay } from "@/lib/shortcuts/display";
 import { bindingFor } from "@/lib/shortcuts/registry";
-import { registerInputReset, registerTerminalSink } from "@/lib/terminal/bus";
+import { registerInputReset, registerInputTracker, registerTerminalSink } from "@/lib/terminal/bus";
+import { TerminalInputOrigin } from "@/lib/terminal/input-origin";
 import { registerTerminalBuffer, tailOfBuffer } from "@/lib/terminal/buffers";
 import { TypedCommands, directoryFromOsc7 } from "@/lib/terminal/follow";
 import { compileHighlightRules, HIGHLIGHT_DECORATION_LIMIT, highlightMatches } from "@/lib/terminal/highlight";
@@ -265,6 +266,7 @@ const paneBox = ref<HTMLDivElement | null>(null);
 
 /** What has been typed since the last Enter, so a `cd` in it can be read for the file panel. */
 const typed = new TypedCommands();
+const inputOrigin = new TerminalInputOrigin();
 
 /**
  * Whether the screen at the cursor is a prompt asking for an answer rather than for a command.
@@ -298,7 +300,11 @@ function decodeOutput(bytes: Uint8Array): string | Uint8Array {
 }
 
 /** Input in the session's encoding, with a backspace that may have to leave as Ctrl+H. */
-function sendInput(data: string): void {
+function sendInput(data: string, interactive = true): void {
+  if (interactive) {
+    void terminals.sendInteractive(props.handle, data, { encoding: props.encoding, backspace: props.backspace });
+    return;
+  }
   const text = props.backspace === "ctrlH" ? data.replaceAll("\x7f", "\x08") : data;
   if (props.encoding === "utf-8") {
     void terminals.send(props.handle, encoder.encode(text));
@@ -313,6 +319,7 @@ let terminal: Terminal | undefined;
 let fitAddon: FitAddon | undefined;
 let unregister: (() => void) | undefined;
 let unregisterInputReset: (() => void) | undefined;
+let unregisterInputTracker: (() => void) | undefined;
 let unregisterBuffer: (() => void) | undefined;
 let osc7: { dispose: () => void } | undefined;
 let observer: ResizeObserver | undefined;
@@ -356,7 +363,6 @@ const {
     // Completion writes into the shell without passing through the keyboard handler below, so the
     // line the `cd` reader keeps is fed the same bytes: accepting a completed `cd /data/test`
     // otherwise runs the line and leaves the file panel where it was.
-    typed.feed(data);
     sendInput(data);
   },
 });
@@ -542,7 +548,10 @@ function terminalActions() {
   return {
     // Through the terminal rather than around it: `paste` is the same path a real paste takes,
     // which is what makes a bracketed paste and a multi-line paste behave the way they should.
-    paste: (text: string) => terminal?.paste(text),
+    paste: (text: string) => {
+      inputOrigin.paste(text);
+      terminal?.paste(text);
+    },
     selectAll: () => terminal?.selectAll(),
     clear: () => terminal?.clear(),
     dropSelection: () => terminal?.clearSelection(),
@@ -778,6 +787,28 @@ function onPaneFocusOut(): void {
   hideCompletion();
 }
 
+function onTextEntry(): void {
+  inputOrigin.text();
+}
+
+function onPasteEntry(event: ClipboardEvent): void {
+  if (event.clipboardData) inputOrigin.paste(event.clipboardData.getData("text/plain"));
+}
+
+function onComposingKey(event: KeyboardEvent): void {
+  if (event.isComposing || event.keyCode === 229) inputOrigin.text();
+}
+
+function trackInput(data: string, remember: boolean): void {
+  const directory = typed.feed(data);
+  if (directory !== null) void terminals.followDirectory(props.handle, directory);
+  const executed = typed.takeExecuted();
+  if (remember && !answerPromptOnScreen()) {
+    for (const line of executed) commands.rememberTyped(line);
+  }
+  feedCompletion(data);
+}
+
 /** What a button says when pointed at: its name, and the key of the one action that has a real one. */
 function toolsTooltip(entry: MenuAction): string {
   const name = t(entry.labelKey);
@@ -857,6 +888,12 @@ onMounted(() => {
   instance.open(element);
 
   terminal = instance;
+  instance.onKey(({ key }) => inputOrigin.key(key));
+  element.addEventListener("input", onTextEntry, true);
+  element.addEventListener("compositionstart", onTextEntry, true);
+  element.addEventListener("compositionend", onTextEntry, true);
+  element.addEventListener("keydown", onComposingKey, true);
+  element.addEventListener("paste", onPasteEntry, true);
   fitAddon = fit;
   selectionRelease = guardSelectionRelease(element, instance, {
     isMac: ["Macintosh", "MacIntel", "MacPPC", "Mac68K"].includes(navigator.platform),
@@ -890,6 +927,8 @@ onMounted(() => {
   const readBuffer = (lines: number): string => tailOfBuffer(instance.buffer.active, lines);
 
   unregisterInputReset = registerInputReset(props.handle, resetReaders);
+  const tracker = { input: trackInput, answering: answerPromptOnScreen };
+  unregisterInputTracker = registerInputTracker(props.handle, tracker);
   // The assistant panel reads the terminal on screen through this: what it previews is what it
   // sends, and only the pane can read the buffer it is drawing.
   unregisterBuffer = registerTerminalBuffer(props.handle, readBuffer);
@@ -916,6 +955,8 @@ onMounted(() => {
       unregister = registerTerminalSink(next, sink);
       unregisterInputReset?.();
       unregisterInputReset = registerInputReset(next, resetReaders);
+      unregisterInputTracker?.();
+      unregisterInputTracker = registerInputTracker(next, tracker);
       unregisterBuffer?.();
       unregisterBuffer = registerTerminalBuffer(next, readBuffer);
       // Nothing the old shell had on its line belongs to the new one.
@@ -927,23 +968,7 @@ onMounted(() => {
     if (!props.interactive) {
       return;
     }
-    // Read before it leaves: a `cd` typed here is the one thing that says where the shell is on a
-    // host that does not report it, and the file panel under this terminal follows it. The
-    // completion's own line is fed at the same moment, so both see the same bytes.
-    const directory = typed.feed(data);
-    if (directory !== null) {
-      void terminals.followDirectory(props.handle, directory);
-    }
-    // The line Enter ran is what the history offers back — unless the screen at the cursor is a
-    // prompt asking for an answer, which is how a password would otherwise be written down.
-    const executed = typed.takeExecuted();
-    if (executed.length > 0 && !answerPromptOnScreen()) {
-      for (const line of executed) {
-        commands.rememberTyped(line);
-      }
-    }
-    feedCompletion(data);
-    sendInput(data);
+    sendInput(data, inputOrigin.take(data));
   });
   // And the exact report, where the far side is configured to give one. It says nothing about the
   // terminal, so it is passed on either way.
@@ -1147,9 +1172,16 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointerup", onWindowPointerUp);
   selectionRelease?.dispose();
   container.value?.removeEventListener("focusout", onPaneFocusOut);
+  container.value?.removeEventListener("input", onTextEntry, true);
+  container.value?.removeEventListener("compositionstart", onTextEntry, true);
+  container.value?.removeEventListener("compositionend", onTextEntry, true);
+  container.value?.removeEventListener("keydown", onComposingKey, true);
+  container.value?.removeEventListener("paste", onPasteEntry, true);
+  inputOrigin.dispose();
   observer?.disconnect();
   unregister?.();
   unregisterInputReset?.();
+  unregisterInputTracker?.();
   unregisterBuffer?.();
   osc7?.dispose();
   clearHighlights();

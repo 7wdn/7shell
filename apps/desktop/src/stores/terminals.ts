@@ -60,7 +60,15 @@ import { joinPath } from "@/lib/files/format";
 import { sessionEndpoint } from "@/lib/menu/sessions";
 import { type ReopenAction, reopenAction, sessionCopyIndex } from "@/lib/sessions/reopen";
 import { readSystemCache, rememberSystem, writeSystemCache } from "@/lib/system/cache";
-import { encodeBase64, endedTerminal, onTerminalEnded, startTerminalBus } from "@/lib/terminal/bus";
+import {
+  encodeBase64,
+  endedTerminal,
+  observeTerminalInput,
+  onTerminalEnded,
+  resetTerminalInput,
+  startTerminalBus,
+  terminalIsAnswering,
+} from "@/lib/terminal/bus";
 import { useBatchStore } from "@/stores/batch";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -81,6 +89,7 @@ import type {
   Session,
   SftpOutcome,
   TerminalEncoding,
+  BackspaceMode,
   TunnelFailure,
 } from "@/types/session";
 import type { HostSystem } from "@/types/system";
@@ -121,6 +130,13 @@ export type FilesTabStatus = "open" | "failed";
 export interface TerminalSplitTarget {
   readonly paneId: string;
   readonly direction: TerminalSplitDirection;
+}
+
+export interface TerminalBroadcast {
+  readonly workspaceId: string;
+  paneIds: string[];
+  enabled: boolean;
+  handles: string[];
 }
 
 /**
@@ -350,6 +366,8 @@ export const useTerminalsStore = defineStore("terminals", () => {
   /** Strip order is independent of terminal ownership: moving a pane must not move its screen. */
   const workspaceOrder = ref<string[]>([]);
   const splitPicker = ref<TerminalSplitTarget | null>(null);
+  const broadcast = ref<TerminalBroadcast | null>(null);
+  const inputWrites = new Map<string, Promise<void>>();
   /**
    * The tabs in the order they were opened, by id.
    *
@@ -419,6 +437,98 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const activeWorkspaceId = computed(() =>
     activeTabId.value === null ? null : (workspaceForPane(activeTabId.value)?.id ?? activeTabId.value),
   );
+
+  const broadcastPanes = computed(() => {
+    const workspace = terminalWorkspaces.value.find((entry) => entry.id === activeWorkspaceId.value);
+    return workspace
+      ? terminalPaneIds(workspace.layout).flatMap((id) => {
+          const tab = terminalTab(id);
+          return tab ? [tab] : [];
+        })
+      : [];
+  });
+
+  watch(
+    () => [activeWorkspaceId.value, ...broadcastPanes.value.map((pane) => `${pane.id}:${pane.handle}:${pane.status}`)],
+    () => {
+      const current = broadcast.value;
+      if (!current) return;
+      if (current.workspaceId !== activeWorkspaceId.value) {
+        broadcast.value = null;
+        return;
+      }
+      const remaining = broadcastPanes.value.filter(
+        (pane) => current.paneIds.includes(pane.id) && pane.status === "open" && pane.handle !== null,
+      );
+      const handles = remaining.map((pane) => pane.handle as string);
+      if (
+        handles.length !== current.handles.length ||
+        handles.some((handle, index) => handle !== current.handles[index])
+      ) {
+        current.enabled = false;
+      }
+      current.paneIds = remaining.map((pane) => pane.id);
+      current.handles = handles;
+    },
+    { flush: "sync" },
+  );
+
+  function prepareBroadcast(): void {
+    if (activeWorkspaceId.value === null || broadcast.value?.workspaceId === activeWorkspaceId.value) return;
+    const panes = broadcastPanes.value.filter((pane) => pane.status === "open" && pane.handle !== null);
+    broadcast.value = {
+      workspaceId: activeWorkspaceId.value,
+      paneIds: panes.map((pane) => pane.id),
+      handles: panes.map((pane) => pane.handle as string),
+      enabled: false,
+    };
+  }
+
+  function setBroadcastPane(paneId: string, selected: boolean): void {
+    prepareBroadcast();
+    const current = broadcast.value;
+    if (!current) return;
+    current.enabled = false;
+    const chosen = new Set(current.paneIds);
+    if (selected) chosen.add(paneId);
+    else chosen.delete(paneId);
+    const panes = broadcastPanes.value.filter(
+      (pane) => chosen.has(pane.id) && pane.status === "open" && pane.handle !== null,
+    );
+    current.paneIds = panes.map((pane) => pane.id);
+    current.handles = panes.map((pane) => pane.handle as string);
+  }
+
+  function selectAllBroadcastPanes(): void {
+    broadcast.value = null;
+    prepareBroadcast();
+  }
+
+  function startBroadcast(): boolean {
+    prepareBroadcast();
+    const current = broadcast.value;
+    if (!current || current.handles.length < 2) return false;
+    current.enabled = true;
+    return true;
+  }
+
+  function stopBroadcast(): void {
+    if (broadcast.value) broadcast.value.enabled = false;
+  }
+
+  function paneBroadcasting(paneId: string): boolean {
+    return broadcast.value?.enabled === true && broadcast.value.paneIds.includes(paneId);
+  }
+
+  /** The source must participate too; input in an excluded pane remains that pane's own. */
+  function inputHandles(sourceHandle: string): string[] {
+    const source = terminalTabs.value.find((pane) => pane.handle === sourceHandle && pane.status === "open");
+    if (!source) return [];
+    const current = broadcast.value;
+    return current?.enabled && current.workspaceId === activeWorkspaceId.value && current.paneIds.includes(source.id)
+      ? [...current.handles]
+      : [sourceHandle];
+  }
 
   function ensureWorkspace(paneId: string): TerminalWorkspace | undefined {
     const current = workspaceForPane(paneId);
@@ -2498,17 +2608,57 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
-  /** Keystrokes and pastes, in the bytes the terminal produced. */
+  /** Serializing per handle keeps fast key presses and a following paste in their original order. */
+  async function queueInput(
+    tab: TerminalTab,
+    handle: string,
+    write: () => Promise<void>,
+    operation: string,
+  ): Promise<void> {
+    const previous = inputWrites.get(handle) ?? Promise.resolve();
+    const pending = previous.then(async () => {
+      if (tab.handle !== handle || tab.status !== "open" || !terminalTab(tab.id)) return;
+      try {
+        await write();
+      } catch (error) {
+        tab.failure = asShellError(error, operation);
+        resetTerminalInput(handle);
+        if (broadcast.value?.enabled && broadcast.value.handles.includes(handle)) {
+          stopBroadcast();
+          toast(translate("terminal.broadcast.failed", { name: tab.session.name }), "result");
+        }
+      }
+    });
+    inputWrites.set(handle, pending);
+    await pending;
+    if (inputWrites.get(handle) === pending) inputWrites.delete(handle);
+  }
+
+  /** A command line reserves the same queues as keys, so neither can overtake the other. */
+  async function withInputOrder<T>(handles: readonly string[], run: () => Promise<T>): Promise<T> {
+    const pending = Promise.all(handles.map((handle) => inputWrites.get(handle) ?? Promise.resolve())).then(run);
+    const barrier = pending.then(
+      () => {},
+      () => {},
+    );
+    for (const handle of handles) inputWrites.set(handle, barrier);
+    try {
+      return await pending;
+    } finally {
+      for (const handle of handles) {
+        if (inputWrites.get(handle) === barrier) inputWrites.delete(handle);
+      }
+    }
+  }
+
+  /** Replies from the terminal parser address one PTY even while user input is being broadcast. */
   async function send(handle: string, bytes: Uint8Array): Promise<void> {
     const tab = tabs.value.find((entry): entry is TerminalTab => entry.kind === "terminal" && entry.handle === handle);
     if (!tab || tab.status !== "open") {
       return;
     }
-    try {
-      await backend.terminal.write(handle, encodeBase64(bytes));
-    } catch (error) {
-      tab.failure = asShellError(error, "terminal_write");
-    }
+    const encoded = encodeBase64(bytes);
+    await queueInput(tab, handle, () => backend.terminal.write(handle, encoded), "terminal_write");
   }
 
   /** Text typed into a session whose encoding is not UTF-8; the bytes are made on the host side. */
@@ -2517,11 +2667,51 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (!tab || tab.status !== "open") {
       return;
     }
-    try {
-      await backend.terminal.writeText(handle, text, encoding);
-    } catch (error) {
-      tab.failure = asShellError(error, "terminal_write_text");
-    }
+    await queueInput(tab, handle, () => backend.terminal.writeText(handle, text, encoding), "terminal_write_text");
+  }
+
+  /** Snapshots the targets per input event; a later checkbox change cannot redirect queued bytes. */
+  async function sendInteractive(
+    handle: string,
+    data: string,
+    sourceOptions: { encoding: TerminalEncoding; backspace: BackspaceMode },
+  ): Promise<void> {
+    const handles = inputHandles(handle);
+    const remember = !handles.some(terminalIsAnswering);
+    const targets = handles.flatMap((target) => {
+      const pane = terminalTabs.value.find((tab) => tab.handle === target && tab.status === "open");
+      return pane ? [{ pane, handle: target }] : [];
+    });
+    await Promise.all(
+      targets.map(async ({ pane, handle: target }) => {
+        const settings =
+          target === handle
+            ? sourceOptions
+            : {
+                encoding:
+                  pane.session.protocol === "telnet"
+                    ? (pane.session.telnet?.encoding ?? "utf-8")
+                    : pane.session.protocol === "ssh"
+                      ? pane.session.terminal.encoding
+                      : "utf-8",
+                backspace: pane.session.protocol === "ssh" ? pane.session.terminal.backspace : "del",
+              };
+        const text = settings.backspace === "ctrlH" ? data.replaceAll("\x7f", "\x08") : data;
+        await queueInput(
+          pane,
+          target,
+          async () => {
+            observeTerminalInput(target, data, remember && !handles.some(terminalIsAnswering));
+            if (settings.encoding === "utf-8") {
+              await backend.terminal.write(target, encodeBase64(new TextEncoder().encode(text)));
+            } else {
+              await backend.terminal.writeText(target, text, settings.encoding);
+            }
+          },
+          settings.encoding === "utf-8" ? "terminal_write" : "terminal_write_text",
+        );
+      }),
+    );
   }
 
   async function resize(handle: string, columns: number, rows: number): Promise<void> {
@@ -2560,6 +2750,17 @@ export const useTerminalsStore = defineStore("terminals", () => {
     activatePane,
     reconnectPane,
     closePane,
+    broadcast,
+    broadcastPanes,
+    prepareBroadcast,
+    setBroadcastPane,
+    selectAllBroadcastPanes,
+    startBroadcast,
+    stopBroadcast,
+    paneBroadcasting,
+    inputHandles,
+    sendInteractive,
+    withInputOrder,
     activeTab,
     activeTabId,
     connectingSessionIds,

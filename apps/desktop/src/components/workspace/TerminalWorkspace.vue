@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Columns2, ExternalLink, Maximize2, Minimize2, Plus, Rows2, X } from "@lucide/vue";
+import { Columns2, ExternalLink, Maximize2, Minimize2, Plus, Radio, Rows2, X } from "@lucide/vue";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import TerminalSplitHandle from "@/components/workspace/TerminalSplitHandle.vue";
+import TerminalBroadcastControls from "@/components/workspace/TerminalBroadcastControls.vue";
 import TerminalWorkspacePane from "@/components/workspace/TerminalWorkspacePane.vue";
 import { sessionTabTitle } from "@/lib/sessions/reopen";
 import { matchesShortcut } from "@/lib/shortcuts/binding";
@@ -189,144 +190,157 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div
-    ref="stage"
-    data-terminal-workspace
-    :data-workspace-id="terminals.activeWorkspaceId"
-    class="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-    @keydown.capture="keydown"
-  >
-    <!-- A flat, keyed host per instance preserves xterm and editors even across workspace moves. -->
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <TerminalBroadcastControls
+      v-if="activeWorkspace && terminalPaneIds(activeWorkspace.layout).length > 1"
+      :key="activeWorkspace.id"
+    />
     <div
-      v-for="tab in terminals.terminalTabs"
-      v-show="visible(tab)"
-      :key="tab.id"
-      data-terminal-pane
-      data-tab-pane
-      :data-tab-id="tab.id"
-      :data-handle="tab.handle"
-      :data-status="tab.status"
-      :data-workspace-id="terminals.workspaceForPane(tab.id)?.id"
-      :data-active="tab.id === terminals.activeTabId"
-      :style="paneStyle(tab)"
-      class="absolute flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
-      role="group"
-      :aria-label="t('terminal.split.pane', { name: label(tab) })"
-      @pointerdown.capture="pointerDown(tab.id)"
-      @click.capture="clickPane(tab.id)"
-      @contextmenu.capture="clickPane(tab.id)"
-      @focusin="focusPane(tab.id)"
+      ref="stage"
+      data-terminal-workspace
+      :data-workspace-id="terminals.activeWorkspaceId"
+      class="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+      @keydown.capture="keydown"
     >
-      <header
-        v-if="split(tab)"
-        data-terminal-pane-header
-        :class="
-          cn(
-            'flex h-8 shrink-0 items-center gap-1 border-b px-2 cursor-default select-none',
-            tab.id === terminals.activeTabId ? 'border-primary/50 bg-accent' : 'border-border bg-card/50',
-          )
-        "
+      <!-- A flat, keyed host per instance preserves xterm and editors even across workspace moves. -->
+      <div
+        v-for="tab in terminals.terminalTabs"
+        v-show="visible(tab)"
+        :key="tab.id"
+        data-terminal-pane
+        data-tab-pane
+        :data-tab-id="tab.id"
+        :data-handle="tab.handle"
+        :data-status="tab.status"
+        :data-workspace-id="terminals.workspaceForPane(tab.id)?.id"
+        :data-active="tab.id === terminals.activeTabId"
+        :data-broadcast="terminals.paneBroadcasting(tab.id)"
+        :style="paneStyle(tab)"
+        class="absolute flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
+        role="group"
+        :aria-label="t('terminal.split.pane', { name: label(tab) })"
+        @pointerdown.capture="pointerDown(tab.id)"
+        @click.capture="clickPane(tab.id)"
+        @contextmenu.capture="clickPane(tab.id)"
+        @focusin="focusPane(tab.id)"
       >
-        <span
-          class="size-1.5 shrink-0 rounded-full"
-          :class="tab.status === 'open' ? 'bg-success' : tab.status === 'ended' ? 'bg-warning' : 'bg-destructive'"
-        />
-        <span class="min-w-0 flex-1 truncate text-[11px] font-medium" :title="label(tab)">{{ label(tab) }}</span>
-        <button
-          v-if="rect(tab).width >= 320"
-          type="button"
-          data-split-right
-          class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
-          :disabled="!canSplit(tab)"
-          :title="t('terminal.split.right')"
-          :aria-label="t('terminal.split.right')"
-          @click="terminals.splitNewTerminal(tab.id, 'right')"
-        >
-          <Columns2 :size="13" />
-        </button>
-        <button
-          v-if="rect(tab).width >= 320"
-          type="button"
-          data-split-down
-          class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
-          :disabled="!canSplit(tab)"
-          :title="t('terminal.split.down')"
-          :aria-label="t('terminal.split.down')"
-          @click="terminals.splitNewTerminal(tab.id, 'down')"
-        >
-          <Rows2 :size="13" />
-        </button>
-        <button
-          type="button"
-          data-split-picker-open
-          class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
-          :title="t('terminal.split.choose')"
-          :aria-label="t('terminal.split.choose')"
-          @click="terminals.openSplitPicker(tab.id)"
-        >
-          <Plus :size="13" />
-        </button>
-        <button
-          v-if="rect(tab).width >= 320"
-          type="button"
-          data-pane-detach
-          class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
-          :title="t('terminal.split.detach')"
-          :aria-label="t('terminal.split.detach')"
-          @click="detach(tab.id)"
-        >
-          <ExternalLink :size="13" />
-        </button>
-        <button
-          type="button"
-          data-pane-zoom
-          class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
-          :aria-pressed="terminals.workspaceForPane(tab.id)?.zoomedId === tab.id"
-          :title="
-            t(
-              terminals.workspaceForPane(tab.id)?.zoomedId === tab.id
-                ? 'terminal.split.restore'
-                : 'terminal.split.zoom',
+        <header
+          v-if="split(tab)"
+          data-terminal-pane-header
+          :class="
+            cn(
+              'flex h-8 shrink-0 items-center gap-1 border-b px-2 cursor-default select-none',
+              tab.id === terminals.activeTabId ? 'border-primary/50 bg-accent' : 'border-border bg-card/50',
             )
           "
-          :aria-label="
-            t(
-              terminals.workspaceForPane(tab.id)?.zoomedId === tab.id
-                ? 'terminal.split.restore'
-                : 'terminal.split.zoom',
-            )
-          "
-          @click="zoom(tab.id)"
         >
-          <Minimize2 v-if="terminals.workspaceForPane(tab.id)?.zoomedId === tab.id" :size="13" /><Maximize2
-            v-else
-            :size="13"
+          <span
+            class="size-1.5 shrink-0 rounded-full"
+            :class="tab.status === 'open' ? 'bg-success' : tab.status === 'ended' ? 'bg-warning' : 'bg-destructive'"
           />
-        </button>
-        <button
-          type="button"
-          data-pane-close
-          class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
-          :title="t('terminal.split.close')"
-          :aria-label="t('terminal.split.close')"
-          @click="close(tab.id)"
-        >
-          <X :size="13" />
-        </button>
-      </header>
-      <TerminalWorkspacePane
-        :tab="tab"
-        :active="tab.id === terminals.activeTabId"
-        :split="split(tab)"
-        :width="rect(tab).width"
-        :height="Math.max(0, rect(tab).height - (split(tab) ? 32 : 0))"
+          <span class="min-w-0 flex-1 truncate text-[11px] font-medium" :title="label(tab)">{{ label(tab) }}</span>
+          <Radio
+            v-if="terminals.paneBroadcasting(tab.id)"
+            :size="12"
+            class="shrink-0 text-warning"
+            :aria-label="t('terminal.broadcast.participating')"
+          />
+          <button
+            v-if="rect(tab).width >= 320"
+            type="button"
+            data-split-right
+            class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
+            :disabled="!canSplit(tab)"
+            :title="t('terminal.split.right')"
+            :aria-label="t('terminal.split.right')"
+            @click="terminals.splitNewTerminal(tab.id, 'right')"
+          >
+            <Columns2 :size="13" />
+          </button>
+          <button
+            v-if="rect(tab).width >= 320"
+            type="button"
+            data-split-down
+            class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-40"
+            :disabled="!canSplit(tab)"
+            :title="t('terminal.split.down')"
+            :aria-label="t('terminal.split.down')"
+            @click="terminals.splitNewTerminal(tab.id, 'down')"
+          >
+            <Rows2 :size="13" />
+          </button>
+          <button
+            type="button"
+            data-split-picker-open
+            class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
+            :title="t('terminal.split.choose')"
+            :aria-label="t('terminal.split.choose')"
+            @click="terminals.openSplitPicker(tab.id)"
+          >
+            <Plus :size="13" />
+          </button>
+          <button
+            v-if="rect(tab).width >= 320"
+            type="button"
+            data-pane-detach
+            class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
+            :title="t('terminal.split.detach')"
+            :aria-label="t('terminal.split.detach')"
+            @click="detach(tab.id)"
+          >
+            <ExternalLink :size="13" />
+          </button>
+          <button
+            type="button"
+            data-pane-zoom
+            class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
+            :aria-pressed="terminals.workspaceForPane(tab.id)?.zoomedId === tab.id"
+            :title="
+              t(
+                terminals.workspaceForPane(tab.id)?.zoomedId === tab.id
+                  ? 'terminal.split.restore'
+                  : 'terminal.split.zoom',
+              )
+            "
+            :aria-label="
+              t(
+                terminals.workspaceForPane(tab.id)?.zoomedId === tab.id
+                  ? 'terminal.split.restore'
+                  : 'terminal.split.zoom',
+              )
+            "
+            @click="zoom(tab.id)"
+          >
+            <Minimize2 v-if="terminals.workspaceForPane(tab.id)?.zoomedId === tab.id" :size="13" /><Maximize2
+              v-else
+              :size="13"
+            />
+          </button>
+          <button
+            type="button"
+            data-pane-close
+            class="grid size-6 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-background hover:text-foreground"
+            :title="t('terminal.split.close')"
+            :aria-label="t('terminal.split.close')"
+            @click="close(tab.id)"
+          >
+            <X :size="13" />
+          </button>
+        </header>
+        <TerminalWorkspacePane
+          :tab="tab"
+          :active="tab.id === terminals.activeTabId"
+          :split="split(tab)"
+          :width="rect(tab).width"
+          :height="Math.max(0, rect(tab).height - (split(tab) ? 32 : 0))"
+        />
+      </div>
+      <TerminalSplitHandle
+        v-for="divider in dividers"
+        :key="divider.id"
+        :divider="divider"
+        @move="activeWorkspace && terminals.resizeSplit(activeWorkspace.id, divider.id, $event)"
       />
     </div>
-    <TerminalSplitHandle
-      v-for="divider in dividers"
-      :key="divider.id"
-      :divider="divider"
-      @move="activeWorkspace && terminals.resizeSplit(activeWorkspace.id, divider.id, $event)"
-    />
   </div>
 </template>

@@ -16,8 +16,8 @@
 
 use sevenshell_error::ShellError;
 use sevenshell_types::{
-    CommandHistoryEntry, CompletionWord, RiskAssessment, SendFailure, SendOutcome, SendReport, SendTarget, Snippet,
-    SnippetGroup,
+    CommandHistoryEntry, CompletionWord, Protocol, RiskAssessment, SendFailure, SendOutcome, SendReport, SendTarget,
+    Snippet, SnippetGroup, TerminalEncoding,
 };
 
 use crate::Core;
@@ -112,8 +112,21 @@ impl Core {
 
         let mut sent = Vec::new();
         let mut failures = Vec::new();
+        let open = self.registry.open_sessions().await;
         for handle in &handles {
-            match self.registry.write(handle, line.as_bytes()).await {
+            // Each target can use a different encoding. A shared command must reach each shell
+            // in its own vocabulary, just as keyboard input does.
+            let encoding = open
+                .iter()
+                .find(|terminal| terminal.handle == *handle)
+                .and_then(|terminal| self.session(&terminal.session_id).ok())
+                .map_or(TerminalEncoding::Utf8, |session| match session.protocol {
+                    Protocol::Ssh => session.terminal.encoding,
+                    Protocol::Telnet => session.telnet.encoding,
+                    _ => TerminalEncoding::Utf8,
+                });
+            let bytes = crate::sessions::encoded_text(&line, encoding);
+            match self.registry.write(handle, &bytes).await {
                 Ok(()) => sent.push(handle.clone()),
                 Err(error) => failures.push(send_failure(handle, &error)),
             }
@@ -168,6 +181,57 @@ mod tests {
         let vault = Arc::new(Vault::open_at(directory.path().join("vault.json")));
         vault.create("master").expect("create");
         (directory, vault)
+    }
+
+    #[tokio::test]
+    async fn a_broadcast_command_uses_each_terminals_own_encoding() {
+        use sevenshell_session::{ForwardedControl, ForwardedSession};
+        use sevenshell_types::{Session, TerminalSettings};
+
+        let (_directory, vault) = vault();
+        let (core, _events) = Core::new(Arc::clone(&vault));
+        let mut handles = Vec::new();
+        let mut readers = Vec::new();
+        let mut outputs = Vec::new();
+        for (id, encoding) in [("utf8", TerminalEncoding::Utf8), ("gbk", TerminalEncoding::Gbk)] {
+            let mut session: Session = serde_json::from_value(serde_json::json!({
+                "id": id, "name": id, "protocol": "ssh", "host": "localhost", "port": 22,
+                "user": "test", "auth": { "method": "password", "hasSecret": false },
+                "terminal": TerminalSettings::default(), "updatedAt": 1,
+            }))
+            .expect("a saved session");
+            session.terminal.encoding = encoding;
+            vault.save_session(session, None).expect("save");
+            let (output, receiver) = tokio::sync::mpsc::channel(8);
+            let (control, reader) = tokio::sync::mpsc::channel(8);
+            handles.push(
+                core.registry
+                    .open_forwarded(id, ForwardedSession::new(receiver, control), None)
+                    .await
+                    .expect("register"),
+            );
+            readers.push(reader);
+            outputs.push(output);
+        }
+        let result = core
+            .send_command(SendTarget::Terminals { handles }, "echo 中文", true, false)
+            .await
+            .expect("send");
+        assert!(matches!(result, SendOutcome::Sent { report } if report.sent.len() == 2 && report.failures.is_empty()));
+        for (reader, expected) in readers.iter_mut().zip([
+            "echo 中文\r".as_bytes().to_vec(),
+            encoding_rs::GBK.encode("echo 中文\r").0.into_owned(),
+        ]) {
+            let Some(ForwardedControl::Write(bytes)) =
+                tokio::time::timeout(std::time::Duration::from_secs(2), reader.recv())
+                    .await
+                    .expect("the input arrives promptly")
+            else {
+                panic!("the target received no input")
+            };
+            assert_eq!(bytes, expected, "the same text is encoded separately for each terminal");
+        }
+        core.close_all().await;
     }
 
     #[tokio::test]
