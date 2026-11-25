@@ -136,7 +136,7 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 httpdate = "1"
 # The address an update archive is downloaded from. The updater already stores it as this type, and
 # a portable copy rewrites it to the archive it replaces itself with.
-url = "2"
+url = "2.5.9"
 # Unpacking the portable update archive: a handful of top-level files written by PowerShell's
 # Compress-Archive, which is Deflate. Nothing else is enabled — no AES, no other codecs in every
 # build — because the archive is this project's own.
