@@ -10,6 +10,67 @@ interface is speaking. Older releases stay as they were published.
 
 从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
 
+## [0.7.0] - 2026-11-25
+
+### English
+
+Terminal splits and input broadcasting. A tab can now hold several independent terminals, and
+selected panes can receive the same keyboard input, pasted text and command input.
+
+#### Added
+
+- **Split terminal tabs:** split left/right or above/below, nest splits, drag the dividers, move
+  an existing terminal into a split, or return a pane to its own tab. Maximizing, restoring and
+  closing one pane keep the other terminals running and preserve their scrollback. Local and SSH
+  terminals can share a tab. (#19)
+- **Broadcast input to selected panes:** choose at least two connected panes in the current tab,
+  then start broadcasting. Keys, Chinese text input, paste, accepted completions and command input
+  go to those panes; an unselected pane keeps independent input. The toolbar names the targets,
+  and each participating pane shows a broadcast icon. Broadcasting starts off and stops when the
+  targets change, a selected connection ends, the tab changes or the vault locks. Risky commands
+  sent from the command input bar retain the existing multi-terminal approval.
+- **Pane shortcuts:** `Mod+Shift+E/O` split right/down, `Mod+Shift+]/[` move focus between panes,
+  `Mod+Shift+Z` maximizes or restores a pane, and `Mod+Shift+X` closes the current pane.
+
+#### Fixed
+
+- **File panels stay with their terminal:** each pane's file browser uses its own terminal
+  connection, so closing a sibling does not break it. A broadcast `cd` updates the file panels
+  of every target that receives it; file-panel actions keep their own target.
+- **Input order and encoding stay consistent:** keyboard input and command sends use the same
+  per-terminal queues, including completion and directory tracking. Each target uses its own
+  encoding and backspace settings, and shared commands are encoded separately for each shell.
+- **Dependency security fixes:** update `cookie` to 0.18.3 and `url` to 2.5.9 to include their
+  published security fixes.
+
+#### Notes
+
+- Splits and broadcasting need no extra software on the remote host. Reconnecting starts a new
+  shell; remote session persistence and sharing one shell between people are not included.
+- The installers are not code-signed and the macOS build is not notarized. This project has not
+  had a security audit.
+
+### 中文
+
+终端分屏与输入广播。一个标签内可以放多个独立终端，也可以选择其中的窗格，同步发送按键、粘贴和命令栏输入。
+
+#### 新增
+
+- **终端标签支持分屏：** 左右或上下拆分、任意嵌套、拖动分隔线调整比例，也可以把已打开的终端移入分屏或移回独立标签页。单个窗格支持最大化、恢复和关闭，其他终端继续运行，滚屏保留；本地终端与 SSH 终端可以放在同一个标签内。（#19）
+- **向选中窗格广播输入：** 在当前标签选择至少两个已连接窗格，再启动广播。按键、中文输入、粘贴、接受的补全和命令栏输入同步发送；未选中窗格保持独立。工具条显示目标名称，参与窗格带广播图标。广播默认关闭，修改目标、目标断开、切换标签或锁库时停止。命令栏中的危险命令保留原有的多终端风险确认。
+- **窗格快捷键：** `Mod+Shift+E/O` 向右或向下拆分，`Mod+Shift+]/[` 切换窗格，`Mod+Shift+Z` 最大化或恢复，`Mod+Shift+X` 关闭当前窗格。
+
+#### 修复
+
+- **文件面板绑定自己的终端：** 每个窗格的文件浏览器使用所属终端连接，关闭兄弟窗格不会使它失效。广播 `cd` 后，收到输入的目标文件面板会同步跟随；文件面板自身的操作仍只作用于所属终端。
+- **输入顺序与编码保持一致：** 键盘输入和命令发送共用各终端的队列，补全与目录跟踪也按同一顺序处理。各目标使用自己的编码和退格设置，共享命令分别编码后发送。
+- **依赖安全修复：** `cookie` 升级到 0.18.3，`url` 升级到 2.5.9，纳入已发布的安全修复。
+
+#### 说明
+
+- 分屏和广播不需要远端安装额外软件。重连会启动新 shell，本版不包含远端会话持久化或多人共享同一个 shell。
+- 安装包未做代码签名，macOS 构建未公证。本项目尚未经过安全审计。
+
 ## [0.6.1] - 2026-11-22
 
 ### English
