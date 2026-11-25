@@ -18,6 +18,12 @@ export type ShortcutActionId =
   | "global.toggleTransfers"
   | "global.toggleAssistant"
   | "terminal.find"
+  | "terminal.splitRight"
+  | "terminal.splitDown"
+  | "terminal.focusNextPane"
+  | "terminal.focusPreviousPane"
+  | "terminal.zoomPane"
+  | "terminal.closePane"
   | "files.focusPath"
   | "files.filter"
   | "commands.completionAccept"
@@ -66,6 +72,42 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     scope: "terminal",
     labelKey: "settings.shortcuts.actions.terminalFind",
     defaultBinding: "Mod+F",
+  },
+  {
+    id: "terminal.splitRight",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.splitRight",
+    defaultBinding: "Mod+Shift+E",
+  },
+  {
+    id: "terminal.splitDown",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.splitDown",
+    defaultBinding: "Mod+Shift+O",
+  },
+  {
+    id: "terminal.focusNextPane",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.focusNextPane",
+    defaultBinding: "Mod+Shift+]",
+  },
+  {
+    id: "terminal.focusPreviousPane",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.focusPreviousPane",
+    defaultBinding: "Mod+Shift+[",
+  },
+  {
+    id: "terminal.zoomPane",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.zoomPane",
+    defaultBinding: "Mod+Shift+Z",
+  },
+  {
+    id: "terminal.closePane",
+    scope: "terminal",
+    labelKey: "settings.shortcuts.actions.closePane",
+    defaultBinding: "Mod+Shift+X",
   },
   // What a file manager and a browser both use for their address bar. It is scoped to the panel,
   // so the shell on the far side keeps Ctrl+L for clearing its screen.

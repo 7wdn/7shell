@@ -189,10 +189,13 @@ export const useMonitorStore = defineStore("monitor", () => {
       return null;
     }
 
-    const open = terminals.tabs.find(
-      (entry): entry is TerminalTab =>
-        entry.kind === "terminal" && entry.session.id === activeSession.id && entry.status === "open",
-    );
+    const focused = active?.kind === "terminal" && active.status === "open" ? active : null;
+    const open =
+      focused ??
+      terminals.tabs.find(
+        (entry): entry is TerminalTab =>
+          entry.kind === "terminal" && entry.session.id === activeSession.id && entry.status === "open",
+      );
     const handle = open?.handle;
     if (!open || handle === null || handle === undefined) {
       return null;

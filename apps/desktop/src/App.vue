@@ -548,6 +548,7 @@ onMounted(async () => {
   stopVaultLocked = await backend.events.onVaultLocked(() => {
     vault.markLocked();
     terminals.closeNewTabPicker();
+    terminals.closeSplitPicker();
     terminals.dropReopenQuestion();
   });
   stopZmodem = await backend.events.onZmodemEvent(reportZmodem);
@@ -676,6 +677,7 @@ onBeforeUnmount(() => {
       over either one. Nothing is opened until a row is chosen.
     -->
     <NewTabPicker v-if="vault.unlocked && terminals.newTabPickerOpen" />
+    <NewTabPicker v-if="vault.unlocked && terminals.splitPicker" mode="split" />
 
     <!--
       The question a session that is already open asks. One prompt for both ways in — the session

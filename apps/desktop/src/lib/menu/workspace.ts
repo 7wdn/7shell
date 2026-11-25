@@ -12,6 +12,7 @@
  */
 import {
   CircleX,
+  Columns2,
   Copy,
   ExternalLink,
   PanelBottom,
@@ -21,7 +22,9 @@ import {
   PanelRightClose,
   Plug,
   Power,
+  Plus,
   RotateCw,
+  Rows2,
   SquareX,
   X,
 } from "@lucide/vue";
@@ -42,6 +45,7 @@ export interface TabMenuState {
   readonly total: number;
   /** How many terminal tabs in the strip are not open, which is what "connect all" would reach. */
   readonly reconnectable: number;
+  readonly canSplit?: boolean;
 }
 
 export interface TabMenuActions {
@@ -54,6 +58,9 @@ export interface TabMenuActions {
   readonly reconnect: () => void;
   readonly reconnectAll: () => void;
   readonly disconnect: () => void;
+  readonly splitRight?: () => void;
+  readonly splitDown?: () => void;
+  readonly chooseSplit?: () => void;
 }
 
 /** Whether this tab is one the interface would offer a retry for. */
@@ -195,6 +202,34 @@ export function tabMenu(state: TabMenuState, actions: TabMenuActions): MenuEntry
         icon: Copy,
         run: () => actions.duplicate(),
       },
+      ...(actions.splitRight && actions.splitDown && actions.chooseSplit
+        ? ([
+            { kind: "separator", id: "sep-split" },
+            {
+              kind: "action",
+              id: "split-right",
+              labelKey: "terminal.split.right",
+              icon: Columns2,
+              disabled: state.canSplit === false,
+              run: actions.splitRight,
+            },
+            {
+              kind: "action",
+              id: "split-down",
+              labelKey: "terminal.split.down",
+              icon: Rows2,
+              disabled: state.canSplit === false,
+              run: actions.splitDown,
+            },
+            {
+              kind: "action",
+              id: "choose-split",
+              labelKey: "terminal.split.choose",
+              icon: Plus,
+              run: actions.chooseSplit,
+            },
+          ] satisfies MenuEntry[])
+        : []),
       { kind: "separator", id: "sep-connection" },
       {
         kind: "action",

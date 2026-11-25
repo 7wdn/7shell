@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_PANE_PX, SPLIT_DIVIDER_PX, clampPaneHeight } from "@/lib/workspace/split";
+import { MIN_PANE_PX, SPLIT_DIVIDER_PX, clampPaneHeight, clampPaneWidth } from "@/lib/workspace/split";
 
 describe("where the line between two stacked panes may be", () => {
+  it("keeps the terminal's controls when a split supplies a different floor", () => {
+    expect(clampPaneHeight(9000, 400, 80, 152)).toBe(240);
+    expect(clampPaneWidth(9000, 600, 280, 200)).toBe(392);
+  });
   it("keeps a height that already fits", () => {
     expect(clampPaneHeight(280, 900)).toBe(280);
   });

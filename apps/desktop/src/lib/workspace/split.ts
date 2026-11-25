@@ -40,13 +40,18 @@ export const MIN_FILE_PANEL_PX = 280;
 export const SPLIT_DIVIDER_PX = 8;
 
 /** The height to draw the lower pane at, given how much room there is. */
-export function clampPaneHeight(height: number, available: number, minPane: number = MIN_PANE_PX): number {
+export function clampPaneHeight(
+  height: number,
+  available: number,
+  minPane: number = MIN_PANE_PX,
+  keepPane: number = minPane,
+): number {
   if (available <= 0) {
     // Nothing has been measured yet. Only the floor applies: a guess at the ceiling would be a
     // guess about a window that is about to have a size.
     return Math.max(height, minPane);
   }
-  const ceiling = Math.max(minPane, available - minPane - SPLIT_DIVIDER_PX);
+  const ceiling = Math.max(minPane, available - keepPane - SPLIT_DIVIDER_PX);
   return Math.min(Math.max(height, minPane), ceiling);
 }
 
@@ -76,11 +81,16 @@ export const SIDE_PANE_KEEP_PX = 280;
 export const SIDE_DIVIDER_PX = 8;
 
 /** The width to draw the left pane at, given how much room there is. */
-export function clampPaneWidth(width: number, available: number, minPane: number = MIN_SIDE_PANE_PX): number {
+export function clampPaneWidth(
+  width: number,
+  available: number,
+  minPane: number = MIN_SIDE_PANE_PX,
+  keepPane: number = SIDE_PANE_KEEP_PX,
+): number {
   if (available <= 0) {
     // Nothing has been measured yet, exactly as above: only the floor is known.
     return Math.max(width, minPane);
   }
-  const ceiling = Math.max(minPane, available - SIDE_PANE_KEEP_PX - SIDE_DIVIDER_PX);
+  const ceiling = Math.max(minPane, available - keepPane - SIDE_DIVIDER_PX);
   return Math.min(Math.max(width, minPane), ceiling);
 }

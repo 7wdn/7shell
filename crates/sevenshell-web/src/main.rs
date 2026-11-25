@@ -582,7 +582,12 @@ async fn dispatch(state: &WebState, cmd: &str, args: Value) -> Result<Value, She
 
         "files_open" => {
             let session_id: String = from_args(&args, "sessionId")?;
-            to_value(state.core.open_files(&session_id).await?)
+            let terminal_handle: Option<String> = optional_args(&args, "terminalHandle")?;
+            let outcome = match terminal_handle {
+                Some(handle) => state.core.open_files_for_terminal(&session_id, &handle).await?,
+                None => state.core.open_files(&session_id).await?,
+            };
+            to_value(outcome)
         }
         "files_open_container" => {
             let connection_id: String = from_args(&args, "connectionId")?;

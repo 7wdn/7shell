@@ -9,6 +9,12 @@ rather than spelling it out, so a menu cannot advertise a key the application do
 | Upload the files on the clipboard | <kbd>Mod+V</kbd> | Anywhere |
 | Show the transfers | <kbd>Mod+Shift+D</kbd> | Anywhere |
 | Find in the terminal | <kbd>Mod+F</kbd> | In the terminal |
+| Split the terminal to the right | <kbd>Mod+Shift+E</kbd> | In the terminal workspace |
+| Split the terminal downwards | <kbd>Mod+Shift+O</kbd> | In the terminal workspace |
+| Focus the next terminal pane | <kbd>Mod+Shift+]</kbd> | In the terminal workspace |
+| Focus the previous terminal pane | <kbd>Mod+Shift+[</kbd> | In the terminal workspace |
+| Maximize or restore the terminal pane | <kbd>Mod+Shift+Z</kbd> | In the terminal workspace |
+| Close the terminal pane | <kbd>Mod+Shift+X</kbd> | In the terminal workspace |
 | Take the row the arrows are on | <kbd>Tab</kbd> | In the command line |
 | Open the completion list | <kbd>Alt+/</kbd> | In the command line |
 

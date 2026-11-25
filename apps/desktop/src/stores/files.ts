@@ -190,8 +190,8 @@ export const useFilesStore = defineStore("files", () => {
    * before anything else is asked of it. A host key decision is returned rather than handled here:
    * the one prompt for it belongs to the workspace store, which is where the tab will be.
    */
-  async function open(sessionId: string): Promise<SftpOutcome> {
-    const outcome = await backend.files.open(sessionId);
+  async function open(sessionId: string, terminalHandle?: string): Promise<SftpOutcome> {
+    const outcome = await backend.files.open(sessionId, terminalHandle);
     if (outcome.kind === "opened") {
       remember(sessionId, outcome);
     }

@@ -449,7 +449,10 @@ export const backend = {
 
   /** Remote files, and the transfers that move them. */
   files: {
-    open: (sessionId: string): Promise<SftpOutcome> => forward("files_open", () => desktop.filesOpen(sessionId)),
+    open: (sessionId: string, terminalHandle?: string): Promise<SftpOutcome> =>
+      forward("files_open", () =>
+        terminalHandle === undefined ? desktop.filesOpen(sessionId) : desktop.filesOpen(sessionId, terminalHandle),
+      ),
     /**
      * Opens a browser on a container's file system.
      *

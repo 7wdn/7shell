@@ -1012,8 +1012,8 @@ export function monitorSockets(handle: string): Promise<SocketRow[]> {
 // A download and an upload ask for a local path through a dialog that runs in Rust: the interface
 // names neither, and receives the id of the transfer that does the work.
 
-export function filesOpen(sessionId: string): Promise<SftpOutcome> {
-  return invoke<SftpOutcome>("files_open", { sessionId });
+export function filesOpen(sessionId: string, terminalHandle?: string): Promise<SftpOutcome> {
+  return invoke<SftpOutcome>("files_open", { sessionId, ...(terminalHandle === undefined ? {} : { terminalHandle }) });
 }
 
 /**

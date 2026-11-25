@@ -983,6 +983,7 @@ describe("terminals store", () => {
     open();
     await store.open(session);
     await store.togglePanel(terminalTabOrFail(store));
+    expect(filesOpenMock).toHaveBeenCalledExactlyOnceWith(session.id, "handle-1");
     await store.closeTab(store.tabs[0]?.id ?? "");
 
     expect(filesCloseMock).toHaveBeenCalledWith("f1");

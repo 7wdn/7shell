@@ -37,6 +37,7 @@ import { connectionMark } from "@/lib/sessions/marks";
 import { sessionTabTitle } from "@/lib/sessions/reopen";
 import { cn } from "@/lib/utils";
 import { TAB_MAX_WIDTH_PX } from "@/types/app";
+import { protocolSupports } from "@/types/generated/protocols";
 import { useAppStore } from "@/stores/app";
 import { usePreferencesStore } from "@/stores/preferences";
 import {
@@ -94,7 +95,7 @@ const classic = computed(() => !chrome.value && preferences.appLayout === "class
  * interface's own language, because that is the language they are written in.
  */
 const ordered = computed(() => {
-  const tabs = terminals.tabs;
+  const tabs = terminals.workspaceTabs;
   if (preferences.tabSortMode === "created-asc") {
     const opened = terminals.openedOrder;
     return [...tabs].sort((left, right) => opened.indexOf(left.id) - opened.indexOf(right.id));
@@ -210,7 +211,7 @@ function onDragEnd(): void {
  * with air around them, or one run joined to the edge.
  */
 function tabClass(tab: WorkspaceTab): string {
-  const active = tab.id === terminals.activeTabId;
+  const active = tab.id === terminals.activeWorkspaceId;
   if (chrome.value) {
     return cn(
       "my-1 flex shrink-0 items-center gap-1 rounded-md border px-3",
@@ -299,6 +300,13 @@ function tabLabel(tab: WorkspaceTab): string {
       return t("settings.title");
     case "batch":
       return t("batch.title");
+    case "terminal": {
+      const count = terminals.paneCount(tab.id);
+      const pane = terminals.focusedTerminal(tab.id) ?? tab;
+      return count > 1
+        ? t("terminal.split.tabTitle", { name: tab.session.name, count })
+        : sessionTabTitle(pane.session.name, terminals.copyOf(pane.id));
+    }
     default:
       return sessionTabTitle(tab.session.name, terminals.copyOf(tab.id));
   }
@@ -377,6 +385,7 @@ function hasHandle(tab: WorkspaceTab): boolean {
 
 /** The strip's menu, which is about the tab under the pointer. */
 function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void {
+  const pane = tab.kind === "terminal" ? terminals.focusedTerminal(tab.id) : undefined;
   openMenu(
     event,
     { key: MENU_TITLES.tab },
@@ -391,11 +400,15 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
           tab.kind === "kubernetes" ||
           tab.kind === "vmware"
             ? null
-            : tab.status,
-        hasHandle: hasHandle(tab),
+            : (pane?.status ?? tab.status),
+        hasHandle: hasHandle(pane ?? tab),
         index,
         total: drawnIds.value.length,
         reconnectable: reconnectable.value,
+        canSplit:
+          pane !== undefined &&
+          protocolSupports(pane.session.protocol, "shell") &&
+          !terminals.connectingSessionIds.includes(pane.session.id),
       },
       {
         duplicate: () => void terminals.duplicate(tab.id),
@@ -407,6 +420,15 @@ function openTabMenu(event: MouseEvent, tab: WorkspaceTab, index: number): void 
         reconnect: () => void terminals.reconnect(tab.id),
         reconnectAll: () => void terminals.reconnectAll(),
         disconnect: () => void terminals.disconnect(tab.id),
+        splitRight: () => {
+          if (pane) void terminals.splitNewTerminal(pane.id, "right");
+        },
+        splitDown: () => {
+          if (pane) void terminals.splitNewTerminal(pane.id, "down");
+        },
+        chooseSplit: () => {
+          if (pane) terminals.openSplitPicker(pane.id);
+        },
       },
     ),
   );

@@ -49,7 +49,7 @@
  */
 
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { useToast } from "@/composables/useToast";
 import { i18n } from "@/i18n";
@@ -65,6 +65,14 @@ import { useBatchStore } from "@/stores/batch";
 import { useFilesStore } from "@/stores/files";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useRecentSessionsStore } from "@/stores/recentSessions";
+import {
+  type TerminalSplitDirection,
+  type TerminalWorkspace,
+  removeTerminalPane,
+  resizeTerminalSplit,
+  splitTerminalPane,
+  terminalPaneIds,
+} from "@/lib/workspace/terminal-layout";
 import type {
   KnownHostEntry,
   OpenOutcome,
@@ -110,6 +118,11 @@ export type TerminalTabStatus = "open" | "ended" | "failed";
 /** A file browser has no stream that can end: it opened, or it did not. */
 export type FilesTabStatus = "open" | "failed";
 
+export interface TerminalSplitTarget {
+  readonly paneId: string;
+  readonly direction: TerminalSplitDirection;
+}
+
 /**
  * What is to be opened once a host key decision has been answered.
  *
@@ -119,7 +132,7 @@ export type FilesTabStatus = "open" | "failed";
  */
 export type OpenTarget =
   // A terminal open with a tab id is that tab being revived rather than a new tab being added.
-  | { readonly to: "terminal"; readonly tabId?: string }
+  | { readonly to: "terminal"; readonly tabId?: string; readonly split?: TerminalSplitTarget }
   | { readonly to: "files"; readonly origin?: "placement" }
   | { readonly to: "panel"; readonly tabId: string }
   // A batch is not about the session that raised the decision: it is about the request, which the
@@ -333,6 +346,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
   const recents = useRecentSessionsStore();
   const { toast } = useToast();
   const tabs = ref<WorkspaceTab[]>([]);
+  const layouts = ref<TerminalWorkspace[]>([]);
+  /** Strip order is independent of terminal ownership: moving a pane must not move its screen. */
+  const workspaceOrder = ref<string[]>([]);
+  const splitPicker = ref<TerminalSplitTarget | null>(null);
   /**
    * The tabs in the order they were opened, by id.
    *
@@ -343,6 +360,93 @@ export const useTerminalsStore = defineStore("terminals", () => {
    */
   const openedOrder = ref<string[]>([]);
   const activeTabId = ref<string | null>(null);
+  const terminalTabs = computed(() => tabs.value.filter((tab): tab is TerminalTab => tab.kind === "terminal"));
+  const terminalWorkspaces = computed<TerminalWorkspace[]>(() => {
+    const ids = new Set(terminalTabs.value.map((tab) => tab.id));
+    const saved = layouts.value.filter((workspace) => terminalPaneIds(workspace.layout).every((id) => ids.has(id)));
+    const placed = new Set(saved.flatMap((workspace) => terminalPaneIds(workspace.layout)));
+    return [
+      ...saved,
+      ...terminalTabs.value
+        .filter((tab) => !placed.has(tab.id))
+        .map(
+          (tab): TerminalWorkspace => ({
+            id: tab.id,
+            layout: { kind: "pane", paneId: tab.id },
+            focusedId: tab.id,
+            zoomedId: null,
+          }),
+        ),
+    ];
+  });
+
+  function workspaceForPane(paneId: string): TerminalWorkspace | undefined {
+    return terminalWorkspaces.value.find((workspace) => terminalPaneIds(workspace.layout).includes(paneId));
+  }
+
+  /** A strip entry is a workspace; `tabs` still owns every actual terminal and its resources. */
+  const workspaceTabs = computed<WorkspaceTab[]>(() => {
+    const entries = new Map<string, WorkspaceTab>(
+      tabs.value.filter((tab) => tab.kind !== "terminal").map((tab) => [tab.id, tab]),
+    );
+    for (const workspace of terminalWorkspaces.value) {
+      const panes = terminalPaneIds(workspace.layout).flatMap((id) => {
+        const tab = terminalTab(id);
+        return tab ? [tab] : [];
+      });
+      const first = panes[0];
+      if (first) {
+        entries.set(workspace.id, {
+          ...first,
+          id: workspace.id,
+          status: panes.some((pane) => pane.status === "failed")
+            ? "failed"
+            : panes.some((pane) => pane.status === "open")
+              ? "open"
+              : "ended",
+        });
+      }
+    }
+    const order = [
+      ...workspaceOrder.value,
+      ...tabs.value.map((tab) => (tab.kind === "terminal" ? (workspaceForPane(tab.id)?.id ?? tab.id) : tab.id)),
+    ];
+    return [...new Set(order)].flatMap((id) => {
+      const tab = entries.get(id);
+      return tab ? [tab] : [];
+    });
+  });
+  const activeWorkspaceId = computed(() =>
+    activeTabId.value === null ? null : (workspaceForPane(activeTabId.value)?.id ?? activeTabId.value),
+  );
+
+  function ensureWorkspace(paneId: string): TerminalWorkspace | undefined {
+    const current = workspaceForPane(paneId);
+    if (!current) {
+      return undefined;
+    }
+    const saved = layouts.value.find((workspace) => workspace.id === current.id);
+    if (saved) {
+      return saved;
+    }
+    workspaceOrder.value = workspaceTabs.value.map((tab) => tab.id);
+    layouts.value.push(current);
+    return layouts.value.find((workspace) => workspace.id === current.id);
+  }
+
+  watch(
+    activeTabId,
+    (paneId) => {
+      const workspace = paneId === null ? undefined : ensureWorkspace(paneId);
+      if (workspace && paneId !== null) {
+        workspace.focusedId = paneId;
+        if (workspace.zoomedId !== null) {
+          workspace.zoomedId = paneId;
+        }
+      }
+    },
+    { flush: "sync" },
+  );
   /**
    * Where each terminal's shell says it is, by handle.
    *
@@ -447,7 +551,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * the request: a refused connection, a host key decision still to be answered and a terminal that
    * died on arrival all end with a tab that is not open, and none of those is a place for a browser.
    */
-  async function open(session: Session): Promise<void> {
+  async function open(session: Session, split?: TerminalSplitTarget): Promise<void> {
+    if (split && (!terminalTab(split.paneId) || !protocolSupports(session.protocol, "shell"))) {
+      return;
+    }
     // One entry point for every way a session is opened. A remote desktop is handed to the system
     // client; it has no tab and no handle to keep.
     if (session.protocol === "rdp") {
@@ -491,7 +598,16 @@ export const useTerminalsStore = defineStore("terminals", () => {
     connectingSessionIds.value.push(session.id);
     let opened: TerminalTab | null = null;
     try {
-      opened = acceptTerminal(session, await backend.terminal.open(session.id));
+      const outcome = await backend.terminal.open(session.id);
+      // A split belongs to the pane that requested it. Closing that pane while authentication
+      // is in flight cancels the destination too, rather than leaving a new, unowned terminal.
+      if (split && !terminalTab(split.paneId)) {
+        if (outcome.kind === "opened") {
+          await backend.terminal.close(outcome.handle);
+        }
+        return;
+      }
+      opened = acceptTerminal(session, outcome, split);
       forgetFailure(session.id);
     } catch (error) {
       recordFailure(session, asShellError(error, "session_open"));
@@ -1127,7 +1243,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     }
   }
 
-  function acceptTerminal(session: Session, outcome: OpenOutcome): TerminalTab | null {
+  function acceptTerminal(session: Session, outcome: OpenOutcome, split?: TerminalSplitTarget): TerminalTab | null {
     if (outcome.kind === "opened") {
       rememberTunnels(outcome.tunnels);
       rememberTunnelFailures(outcome.tunnelFailures);
@@ -1146,6 +1262,9 @@ export const useTerminalsStore = defineStore("terminals", () => {
         commandPlacement: preferences.terminalCommandPanelPlacement,
       };
       addTab(tab);
+      if (split) {
+        movePaneIntoSplit(tab.id, split.paneId, split.direction);
+      }
       // Asked once the terminal is up rather than as part of opening it: which mark a row draws is
       // not worth a moment of the connection somebody is waiting for.
       void describeHost(session, outcome.handle);
@@ -1154,7 +1273,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return terminalTab(tab.id) ?? null;
     }
 
-    raiseDecision(session, { to: "terminal" }, outcome);
+    raiseDecision(session, { to: "terminal", split }, outcome);
     return null;
   }
 
@@ -1427,6 +1546,15 @@ export const useTerminalsStore = defineStore("terminals", () => {
   function addTab(tab: WorkspaceTab, focus = true): void {
     tabs.value.push(tab);
     openedOrder.value.push(tab.id);
+    workspaceOrder.value.push(tab.id);
+    if (tab.kind === "terminal") {
+      layouts.value.push({
+        id: tab.id,
+        layout: { kind: "pane", paneId: tab.id },
+        focusedId: tab.id,
+        zoomedId: null,
+      });
+    }
     if (focus) {
       activeTabId.value = tab.id;
     }
@@ -1524,7 +1652,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       }
       return;
     }
-    await open(session);
+    await open(session, target.split);
   }
 
   /**
@@ -1573,6 +1701,18 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   async function closeTab(id: string): Promise<void> {
+    const workspace = terminalWorkspaces.value.find((entry) => entry.id === id);
+    if (workspace) {
+      for (const paneId of terminalPaneIds(workspace.layout)) {
+        await closePane(paneId);
+      }
+      return;
+    }
+    await closePane(id);
+  }
+
+  /** Closes precisely one instance, even when its original id also names a split workspace. */
+  async function closePane(id: string): Promise<void> {
     const tab = tabs.value.find((entry) => entry.id === id);
     if (!tab) {
       return;
@@ -1623,6 +1763,10 @@ export const useTerminalsStore = defineStore("terminals", () => {
     // the standalone browser, which is the only moment that browser is the position's to put down.
     const sessionId = tab.session.id;
     const wasPanelTab = effectivePlacement(tab) === "tab";
+    if (tab.panel?.handle && files.hasUnsavedFor(tab.panel.handle)) {
+      toast(translate("terminal.split.closeUnsaved"), "result");
+      return;
+    }
 
     // A tab whose terminal already ended, or whose close already failed, has nothing left to
     // close: removing it locally is the whole operation.
@@ -1673,7 +1817,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       return session !== null && wanted.has(session.id);
     });
     for (const tab of doomed) {
-      await closeTab(tab.id);
+      await closePane(tab.id);
     }
   }
 
@@ -1696,7 +1840,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
     tab.panel = { handle: null, status: "opening", failure: null };
 
     try {
-      const outcome = await files.open(tab.session.id);
+      const outcome = await files.open(tab.session.id, tab.handle ?? undefined);
       // The tab may have moved while the browser was opening: the panel was closed, or the tab
       // switched to the standalone browser. The browser that just came up belongs to nobody then,
       // and is let go rather than left with no panel to draw it.
@@ -1912,7 +2056,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * not a better answer than the one they chose in the settings.
    */
   async function reconnect(id: string): Promise<void> {
-    const tab = tabs.value.find((entry) => entry.id === id);
+    const tab = focusedTerminal(id) ?? tabs.value.find((entry) => entry.id === id);
     if (!tab) {
       return;
     }
@@ -2007,7 +2151,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * number that tells the copies apart.
    */
   async function duplicate(id: string): Promise<void> {
-    const tab = terminalTab(id);
+    const tab = focusedTerminal(id);
     if (tab === undefined) {
       return;
     }
@@ -2026,7 +2170,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
       (entry): entry is TerminalTab => entry.kind === "terminal" && entry.status !== "open",
     );
     for (const tab of closed) {
-      await reconnect(tab.id);
+      await revive(tab);
     }
   }
 
@@ -2039,7 +2183,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * comes back is this side's own and cannot overwrite it with "the server closed the connection".
    */
   async function disconnect(id: string): Promise<void> {
-    const tab = terminalTab(id);
+    const tab = focusedTerminal(id);
     if (tab === undefined || tab.status !== "open" || tab.handle === null) {
       return;
     }
@@ -2069,7 +2213,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
    * tab assigns a new array rather than removing from this one.
    */
   async function closeAll(): Promise<void> {
-    for (const tab of tabs.value) {
+    for (const tab of workspaceTabs.value) {
       await closeTab(tab.id);
     }
   }
@@ -2087,7 +2231,7 @@ export const useTerminalsStore = defineStore("terminals", () => {
   async function closeOthers(id: string): Promise<void> {
     // Iterating the value the loop started with is safe: closing a tab assigns a new array rather
     // than removing from this one.
-    for (const tab of tabs.value) {
+    for (const tab of workspaceTabs.value) {
       if (tab.id !== id) {
         await closeTab(tab.id);
       }
@@ -2134,18 +2278,30 @@ export const useTerminalsStore = defineStore("terminals", () => {
     if (id === before) {
       return;
     }
-    const from = tabs.value.findIndex((entry) => entry.id === id);
-    const to = tabs.value.findIndex((entry) => entry.id === before);
+    const order = workspaceTabs.value.map((tab) => tab.id);
+    const from = order.indexOf(id);
+    const to = order.indexOf(before);
     if (from < 0 || to < 0) {
       return;
     }
-    const [moved] = tabs.value.splice(from, 1);
+    const [moved] = order.splice(from, 1);
     if (!moved) {
       return;
     }
     // Where the target ended up once the moved tab left the list: dropping a tab to the right of
     // where it was shifts everything between the two by one.
-    tabs.value.splice(from < to ? to - 1 : to, 0, moved);
+    order.splice(from < to ? to - 1 : to, 0, moved);
+    workspaceOrder.value = order;
+    // Retain the existing manual array order for readers outside the strip. Keys keep the flat
+    // terminal hosts mounted while their siblings are reordered.
+    tabs.value = order.flatMap((workspaceId) => {
+      const workspace = terminalWorkspaces.value.find((entry) => entry.id === workspaceId);
+      const ids = workspace ? terminalPaneIds(workspace.layout) : [workspaceId];
+      return ids.flatMap((tabId) => {
+        const tab = tabs.value.find((entry) => entry.id === tabId);
+        return tab ? [tab] : [];
+      });
+    });
   }
 
   /** Forgets what a shell said about where it was: the handle dies with the connection it belonged to. */
@@ -2158,19 +2314,188 @@ export const useTerminalsStore = defineStore("terminals", () => {
   }
 
   function forget(id: string): void {
+    const workspace = ensureWorkspace(id);
     const closing = tabs.value.find((entry) => entry.id === id);
     if (closing?.kind === "terminal" && closing.handle !== null) {
       dropShellPath(closing.handle);
     }
     tabs.value = tabs.value.filter((entry) => entry.id !== id);
-    openedOrder.value = openedOrder.value.filter((entry) => entry !== id);
+    if (workspace) {
+      const layout = removeTerminalPane(workspace.layout, id);
+      if (layout === null) {
+        layouts.value = layouts.value.filter((entry) => entry.id !== workspace.id);
+        workspaceOrder.value = workspaceOrder.value.filter((entry) => entry !== workspace.id);
+      } else {
+        workspace.layout = layout;
+        const remaining = terminalPaneIds(layout);
+        if (workspace.focusedId === id) {
+          workspace.focusedId = remaining[0] as string;
+        }
+        if (workspace.zoomedId === id) {
+          workspace.zoomedId = null;
+        }
+      }
+    } else {
+      workspaceOrder.value = workspaceOrder.value.filter((entry) => entry !== id);
+    }
+    const retained = new Set([...tabs.value.map((tab) => tab.id), ...layouts.value.map((entry) => entry.id)]);
+    openedOrder.value = openedOrder.value.filter((entry) => retained.has(entry));
     if (activeTabId.value === id) {
-      activeTabId.value = tabs.value[tabs.value.length - 1]?.id ?? null;
+      const surviving = workspace && layouts.value.find((entry) => entry.id === workspace.id);
+      if (surviving) {
+        activeTabId.value = surviving.focusedId;
+      } else {
+        const last = workspaceTabs.value.at(-1);
+        if (last) {
+          activate(last.id);
+        } else {
+          activeTabId.value = null;
+        }
+      }
+    }
+    if (splitPicker.value?.paneId === id) {
+      splitPicker.value = null;
+    }
+    if (decision.value?.target.to === "terminal" && decision.value.target.split?.paneId === id) {
+      decision.value = null;
     }
   }
 
   function activate(id: string): void {
-    activeTabId.value = id;
+    const workspace = terminalWorkspaces.value.find((entry) => entry.id === id);
+    activeTabId.value = workspace?.focusedId ?? id;
+  }
+
+  function activatePane(id: string): void {
+    if (terminalTab(id)) {
+      activeTabId.value = id;
+    }
+  }
+
+  function focusedTerminal(workspaceId: string): TerminalTab | undefined {
+    const workspace = terminalWorkspaces.value.find((entry) => entry.id === workspaceId);
+    return terminalTab(workspace?.focusedId ?? workspaceId);
+  }
+
+  function paneCount(workspaceId: string): number {
+    const workspace = terminalWorkspaces.value.find((entry) => entry.id === workspaceId);
+    return workspace ? terminalPaneIds(workspace.layout).length : 0;
+  }
+
+  function openSplitPicker(paneId: string, direction: TerminalSplitDirection = "right"): void {
+    if (terminalTab(paneId)) {
+      splitPicker.value = { paneId, direction };
+    }
+  }
+
+  function closeSplitPicker(): void {
+    splitPicker.value = null;
+  }
+
+  function setSplitDirection(direction: TerminalSplitDirection): void {
+    if (splitPicker.value) {
+      splitPicker.value = { ...splitPicker.value, direction };
+    }
+  }
+
+  async function splitNewTerminal(paneId: string, direction: TerminalSplitDirection, session?: Session): Promise<void> {
+    const pane = terminalTab(paneId);
+    if (pane) {
+      await open(session ?? pane.session, { paneId, direction });
+    }
+  }
+
+  /** Moves ownership and geometry only: the terminal's handle, panel and screen are unchanged. */
+  function movePaneIntoSplit(paneId: string, targetId: string, direction: TerminalSplitDirection): boolean {
+    if (paneId === targetId || !terminalTab(paneId) || !terminalTab(targetId)) {
+      return false;
+    }
+    const source = ensureWorkspace(paneId);
+    const destination = ensureWorkspace(targetId);
+    if (!source || !destination) {
+      return false;
+    }
+    const remaining = removeTerminalPane(source.layout, paneId);
+    if (source.id === destination.id) {
+      if (remaining === null) {
+        return false;
+      }
+      destination.layout = splitTerminalPane(remaining, targetId, paneId, direction, crypto.randomUUID());
+    } else {
+      if (remaining === null) {
+        layouts.value = layouts.value.filter((workspace) => workspace.id !== source.id);
+        workspaceOrder.value = workspaceOrder.value.filter((id) => id !== source.id);
+      } else {
+        source.layout = remaining;
+        if (source.focusedId === paneId) {
+          source.focusedId = terminalPaneIds(remaining)[0] as string;
+        }
+        if (source.zoomedId === paneId) {
+          source.zoomedId = null;
+        }
+      }
+      destination.layout = splitTerminalPane(destination.layout, targetId, paneId, direction, crypto.randomUUID());
+    }
+    destination.zoomedId = null;
+    destination.focusedId = paneId;
+    activatePane(paneId);
+    return true;
+  }
+
+  function detachPane(paneId: string): void {
+    const workspace = ensureWorkspace(paneId);
+    if (!workspace || terminalPaneIds(workspace.layout).length < 2) {
+      return;
+    }
+    const remaining = removeTerminalPane(workspace.layout, paneId);
+    if (remaining === null) {
+      return;
+    }
+    workspace.layout = remaining;
+    workspace.focusedId = terminalPaneIds(remaining)[0] as string;
+    workspace.zoomedId = null;
+    // The original pane id can still name its old workspace after that pane leaves it.
+    const id = layouts.value.some((entry) => entry.id === paneId) ? crypto.randomUUID() : paneId;
+    layouts.value.push({ id, layout: { kind: "pane", paneId }, focusedId: paneId, zoomedId: null });
+    workspaceOrder.value.push(id);
+    if (!openedOrder.value.includes(id)) {
+      openedOrder.value.push(id);
+    }
+    activatePane(paneId);
+  }
+
+  function togglePaneZoom(paneId: string): void {
+    const workspace = ensureWorkspace(paneId);
+    if (workspace && terminalPaneIds(workspace.layout).length > 1) {
+      activatePane(paneId);
+      workspace.zoomedId = workspace.zoomedId === paneId ? null : paneId;
+    }
+  }
+
+  function resizeSplit(workspaceId: string, splitId: string, ratio: number): void {
+    const workspace = layouts.value.find((entry) => entry.id === workspaceId);
+    if (workspace) {
+      workspace.layout = resizeTerminalSplit(workspace.layout, splitId, ratio);
+    }
+  }
+
+  function focusNextPane(step: number): void {
+    const workspace = activeTabId.value === null ? undefined : workspaceForPane(activeTabId.value);
+    if (workspace) {
+      const ids = terminalPaneIds(workspace.layout);
+      const index = ids.indexOf(activeTabId.value ?? "");
+      const next = ids[(index + step + ids.length) % ids.length];
+      if (next) {
+        activatePane(next);
+      }
+    }
+  }
+
+  async function reconnectPane(paneId: string): Promise<void> {
+    const tab = terminalTab(paneId);
+    if (tab) {
+      await revive(tab);
+    }
   }
 
   /** Keystrokes and pastes, in the bytes the terminal produced. */
@@ -2215,6 +2540,26 @@ export const useTerminalsStore = defineStore("terminals", () => {
 
   return {
     tabs,
+    terminalTabs,
+    terminalWorkspaces,
+    workspaceTabs,
+    activeWorkspaceId,
+    workspaceForPane,
+    focusedTerminal,
+    paneCount,
+    splitPicker,
+    openSplitPicker,
+    closeSplitPicker,
+    setSplitDirection,
+    splitNewTerminal,
+    movePaneIntoSplit,
+    detachPane,
+    togglePaneZoom,
+    resizeSplit,
+    focusNextPane,
+    activatePane,
+    reconnectPane,
+    closePane,
     activeTab,
     activeTabId,
     connectingSessionIds,

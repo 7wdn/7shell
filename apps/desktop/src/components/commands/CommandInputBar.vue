@@ -17,7 +17,7 @@
  * answers to "what did I just run".
  */
 import { History, Send } from "@lucide/vue";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import CompletionMenu from "@/components/commands/CompletionMenu.vue";
@@ -40,6 +40,7 @@ import { usePreferencesStore } from "@/stores/preferences";
 import { useTerminalsStore, type TerminalTab } from "@/stores/terminals";
 import { useWordsStore } from "@/stores/words";
 
+const props = defineProps<{ handle?: string }>();
 const { t, te } = useI18n();
 const app = useAppStore();
 const commands = useCommandsStore();
@@ -63,8 +64,11 @@ const focused = ref(false);
 const pointed = ref<number | null>(null);
 
 /** The id this instance's list carries, so the input can name the row it is on. */
-let opened = 0;
-const listId = `command-completion-${(opened += 1)}`;
+const listId = `command-completion-${useId()}`;
+
+function currentHandle(): string | null {
+  return props.handle ?? terminals.activeTerminalHandle();
+}
 
 function translate(key: string, params?: Record<string, string>): string {
   return params ? t(key, params) : t(key);
@@ -86,7 +90,7 @@ const recent = computed(() => commands.history.slice(0, 12));
  * answer that arrives after somebody has typed on belongs to a question that is no longer on screen.
  */
 const remote = useRemotePaths(() => {
-  const handle = terminals.activeTerminalHandle();
+  const handle = currentHandle();
   if (handle === null) {
     return null;
   }
@@ -101,7 +105,7 @@ const remote = useRemotePaths(() => {
 
 /** The terminal this bar is under: the connection a generated value is asked of. */
 function completionHandle(): string {
-  return terminals.activeTerminalHandle() ?? "";
+  return currentHandle() ?? "";
 }
 
 const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move, take } = useCommandCompletion(
@@ -158,7 +162,10 @@ const { candidates, active, chosen, visible, refresh, open, hide, dismiss, move,
 
 /** Why the last line did not reach the shell, when it reached nothing. */
 const problem = computed(() => {
-  const failed = commands.sendFailures.at(-1);
+  const failed =
+    props.handle === undefined
+      ? commands.sendFailures.at(-1)
+      : commands.sendFailures.filter((failure) => failure.handle === props.handle).at(-1);
   return failed ? describeErrorFields(translate, failed) : null;
 });
 
@@ -407,7 +414,7 @@ function sendTyped(): void {
 }
 
 async function sendLine(text: string): Promise<void> {
-  if (text.trim() === "") {
+  if (text.trim() === "" || commands.sending) {
     return;
   }
 
@@ -416,7 +423,11 @@ async function sendLine(text: string): Promise<void> {
   line.value = "";
   showHistory.value = false;
   dismiss(0);
-  await commands.sendLiteral(text);
+  if (props.handle !== undefined) {
+    await commands.sendLineTo(props.handle, text);
+  } else {
+    await commands.sendLiteral(text);
+  }
 }
 
 function reuse(entry: string): void {

@@ -17,6 +17,7 @@ import { i18n } from "@/i18n";
 import { acceptanceBoost, forgetAccepted } from "@/lib/commands/acceptance";
 import { useCommandsStore } from "@/stores/commands";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useTerminalsStore } from "@/stores/terminals";
 import type { CommandHistoryEntry, Snippet } from "@/types/snippet";
 
 let app: App | undefined;
@@ -69,14 +70,18 @@ function press(key: string): void {
 }
 
 /** Mounts the bar with a library and a history behind it, the way the workspace mounts it. */
-async function mount(library: readonly Snippet[] = [], history: readonly CommandHistoryEntry[] = []): Promise<void> {
+async function mount(
+  library: readonly Snippet[] = [],
+  history: readonly CommandHistoryEntry[] = [],
+  handle?: string,
+): Promise<void> {
   const commands = useCommandsStore();
   commands.history = [...history];
   commands.groups = library.length === 0 ? [] : [{ id: "default", name: "", order: 0, commands: [...library] }];
 
   host = document.createElement("div");
   document.body.append(host);
-  app = createApp({ render: () => h(CommandInputBar) }).use(i18n);
+  app = createApp({ render: () => h(CommandInputBar, { handle }) }).use(i18n);
   app.mount(host);
   await nextTick();
 }
@@ -94,6 +99,45 @@ afterEach(() => {
 });
 
 describe("the command bar offering what it knows", () => {
+  it("keeps the typed line while another command is being sent", async () => {
+    await mount();
+    const commands = useCommandsStore();
+    commands.sending = true;
+    const send = vi.spyOn(commands, "sendLiteral").mockResolvedValue();
+    await type("echo waiting-pane");
+    press("Enter");
+    await nextTick();
+    expect(field().value).toBe("echo waiting-pane");
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("shows a send failure only under the terminal it belongs to", async () => {
+    await mount([], [], "h-own");
+    const commands = useCommandsStore();
+    const failure = {
+      handle: "h-other",
+      code: "APP-UNSUPPORTED",
+      messageKey: "errors.app.unsupported",
+      messageParams: {},
+    };
+    commands.sendFailures = [failure];
+    await nextTick();
+    expect(host.querySelector("span.text-destructive")).toBeNull();
+    commands.sendFailures = [{ ...failure, handle: "h-own" }];
+    await nextTick();
+    expect(host.querySelector("span.text-destructive")).not.toBeNull();
+  });
+  it("sends to its own pane even when another terminal is globally active", async () => {
+    const commands = useCommandsStore();
+    const send = vi.spyOn(commands, "sendLineTo").mockResolvedValue();
+    const globalSend = vi.spyOn(commands, "sendLiteral").mockResolvedValue();
+    vi.spyOn(useTerminalsStore(), "activeTerminalHandle").mockReturnValue("h-other");
+    await mount([], [], "h-own");
+    await type("echo own-pane");
+    press("Enter");
+    expect(send).toHaveBeenCalledExactlyOnceWith("h-own", "echo own-pane");
+    expect(globalSend).not.toHaveBeenCalled();
+  });
   it("draws the list while a word is being typed, and says it is open", async () => {
     await mount([], ran("uptime"));
     await type("upt");

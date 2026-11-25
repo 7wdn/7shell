@@ -99,6 +99,34 @@ Trusting the key opens the terminal in a tab of its own. What is worth knowing:
 - The host monitor panel, when it is switched on, samples load, memory, network and file systems
   over this same connection, about every two seconds, and stops when it is hidden.
 
+### Terminal panes
+
+**Split right** and **Split down**, on a terminal's strip or its tab menu, open another terminal
+for the same session in the current tab. Split any pane again to combine rows and columns, and
+drag the dividers to change their proportions. Dividers also accept the arrow keys, Home, End and
+a double click to restore equal sizes.
+
+**Choose a split terminal…** offers two sources:
+
+- **New terminal** opens another terminal for the selected saved session. SSH still verifies the
+  host key and authenticates before a pane appears.
+- **Move an open terminal** moves an existing terminal into the split. Its running commands,
+  scrollback and file panel stay with it; moving does not reconnect it.
+
+Click a pane to make it active. The command input, command library, assistant context and host
+monitor use that pane's terminal. Typing in one pane does not broadcast to the others.
+
+The pane header offers **Maximize pane** / **Restore pane layout**, **Move pane to its own tab**
+and **Close pane**. A small pane temporarily hides a file or command panel that cannot fit;
+maximizing restores it without closing its browser or editor. Closing a pane leaves the others
+running; closing the workspace tab closes its panes, keeping any with unsaved files open until their
+editor is saved or closed. A terminal that ends keeps its output and
+its own reconnect action.
+
+The tab strip's **New tab** button still opens a separate tab. Layouts belong to the current
+application window. Reconnecting a terminal starts a new shell; keeping remote programs alive
+across disconnections or sharing one shell between people requires a remote persistent session.
+
 ## 5. Open the files
 
 **Open the file panel under this terminal** on the strip beneath the terminal puts the file browser

@@ -835,6 +835,10 @@ onMounted(() => {
   // read from the table rather than spelled out here, so whatever prints it and whatever listens for
   // it cannot end up naming different keys.
   instance.attachCustomKeyEventHandler((event) => {
+    // Workspace shortcuts are handled by the pane's ancestor before xterm sees them.
+    if (event.defaultPrevented) {
+      return false;
+    }
     // The completion gets the first look: while its menu is open it owns the arrows and Tab, and
     // its rule for Enter is "always the shell's". A key it does not take falls through to the
     // terminal as before.
@@ -1105,7 +1109,13 @@ watch(
     // Waited for the pane to be laid out: it had no size while it was hidden.
     void nextTick(() => {
       applySize();
-      terminal?.focus();
+      // Clicking a command field also activates its pane. Preserve that field's focus rather
+      // than taking the next keystroke away from it when the active-pane watcher runs.
+      const pane = container.value?.closest("[data-terminal-pane]");
+      const focused = document.activeElement;
+      if (!pane || !focused || !pane.contains(focused) || container.value?.contains(focused)) {
+        terminal?.focus();
+      }
     });
   },
 );

@@ -8,7 +8,7 @@
  * silently opening a second connection. The browser that is already open for a host is a duplicate
  * on the tab's own menu, not a second meaning for this control.
  */
-import { ChevronRight, Folder, FolderOpen, MonitorCog, Plus, Search, Terminal, X } from "@lucide/vue";
+import { ChevronRight, Columns2, Folder, FolderOpen, MonitorCog, Plus, Rows2, Search, Terminal, X } from "@lucide/vue";
 import { DialogContent, DialogDescription, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from "reka-ui";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -18,21 +18,27 @@ import { sessionEndpoint } from "@/lib/menu/sessions";
 import { NO_FILTER, filterLibrary } from "@/lib/sessions/filter";
 import { effectiveParentId } from "@/lib/sessions/groups";
 import { connectionMark } from "@/lib/sessions/marks";
+import { sessionTabTitle } from "@/lib/sessions/reopen";
 import { type TreeRow, visibleRows } from "@/lib/sessions/tree";
 import { systemLabel, systemMark } from "@/lib/system/icons";
 import { useAppStore } from "@/stores/app";
 import { useSessionEditorStore } from "@/stores/sessionEditor";
 import { useSessionsStore } from "@/stores/sessions";
-import { useTerminalsStore } from "@/stores/terminals";
+import { type TerminalTab, useTerminalsStore } from "@/stores/terminals";
+import { protocolSupports } from "@/types/generated/protocols";
 import type { Session } from "@/types/session";
 
 type SessionRow = Extract<TreeRow, { kind: "session" }>;
+type PickerChoice = { kind: "session"; session: Session } | { kind: "terminal"; tab: TerminalTab };
+
+const props = withDefaults(defineProps<{ mode?: "tab" | "split" }>(), { mode: "tab" });
 
 const { t } = useI18n();
 const app = useAppStore();
 const terminals = useTerminalsStore();
 const library = useSessionsStore();
 const editor = useSessionEditorStore();
+const splitting = computed(() => props.mode === "split");
 
 const query = ref("");
 const chosen = ref(0);
@@ -40,9 +46,31 @@ const field = ref<HTMLInputElement | null>(null);
 const list = ref<HTMLElement | null>(null);
 /** Folded groups in this opening of the picker; closed and reopened starts fully expanded. */
 const collapsed = ref<ReadonlySet<string>>(new Set());
+const source = ref<"new" | "existing">(
+  splitting.value && terminals.terminalTabs.some((tab) => tab.id !== terminals.splitPicker?.paneId)
+    ? "existing"
+    : "new",
+);
+const existing = computed(() => {
+  const search = query.value.trim().toLocaleLowerCase();
+  return terminals.terminalTabs.filter(
+    (tab) =>
+      tab.id !== terminals.splitPicker?.paneId &&
+      [tab.session.name, tab.session.host, tab.session.user].some((value) =>
+        value.toLocaleLowerCase().includes(search),
+      ),
+  );
+});
 
 const filtered = computed(() =>
-  filterLibrary(library.groups, library.sessions, { ...NO_FILTER, query: query.value }, library.openSessionIds),
+  filterLibrary(
+    library.groups,
+    splitting.value
+      ? library.sessions.filter((session) => protocolSupports(session.protocol, "shell"))
+      : library.sessions,
+    { ...NO_FILTER, query: query.value },
+    library.openSessionIds,
+  ),
 );
 const searching = computed(() => query.value.trim() !== "");
 const rows = computed(() =>
@@ -81,13 +109,21 @@ const displayRows = computed(() =>
   }),
 );
 const options = computed(() => displayRows.value.filter((row): row is SessionRow => row.kind === "session"));
-const chosenID = computed(() => options.value[chosen.value]?.session.id ?? null);
+const choices = computed<PickerChoice[]>(() =>
+  splitting.value && source.value === "existing"
+    ? existing.value.map((tab) => ({ kind: "terminal", tab }))
+    : options.value.map((row) => ({ kind: "session", session: row.session })),
+);
+const chosenID = computed(() => {
+  const choice = choices.value[chosen.value];
+  return choice?.kind === "session" ? choice.session.id : (choice?.tab.id ?? null);
+});
 
-watch(query, () => {
+watch([query, source], () => {
   chosen.value = 0;
 });
 
-watch(options, (entries) => {
+watch(choices, (entries) => {
   if (chosen.value >= entries.length) {
     chosen.value = Math.max(0, entries.length - 1);
   }
@@ -129,7 +165,7 @@ function sessionIndex(id: string): number {
 }
 
 function move(step: number): void {
-  const count = options.value.length;
+  const count = choices.value.length;
   if (count === 0) {
     return;
   }
@@ -153,6 +189,14 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 function choose(session: Session): void {
+  if (splitting.value) {
+    const target = terminals.splitPicker;
+    if (target) {
+      terminals.closeSplitPicker();
+      void terminals.splitNewTerminal(target.paneId, target.direction, session);
+    }
+    return;
+  }
   if (!terminals.newTabPickerOpen) {
     return;
   }
@@ -161,9 +205,19 @@ function choose(session: Session): void {
 }
 
 function chooseChosen(): void {
-  const row = options.value[chosen.value];
-  if (row) {
-    choose(row.session);
+  const choice = choices.value[chosen.value];
+  if (choice?.kind === "session") {
+    choose(choice.session);
+  } else if (choice) {
+    chooseExisting(choice.tab);
+  }
+}
+
+function chooseExisting(tab: TerminalTab): void {
+  const target = terminals.splitPicker;
+  if (target) {
+    terminals.closeSplitPicker();
+    terminals.movePaneIntoSplit(tab.id, target.paneId, target.direction);
   }
 }
 
@@ -173,7 +227,11 @@ function createSession(): void {
 }
 
 function close(): void {
-  terminals.closeNewTabPicker();
+  if (splitting.value) {
+    terminals.closeSplitPicker();
+  } else {
+    terminals.closeNewTabPicker();
+  }
 }
 
 function setOpen(open: boolean): void {
@@ -197,12 +255,15 @@ onMounted(async () => {
     <DialogPortal>
       <DialogOverlay class="fixed inset-0 z-50 bg-overlay" />
       <DialogContent
-        data-new-tab-picker
+        :data-new-tab-picker="splitting ? undefined : ''"
+        :data-split-picker="splitting ? '' : undefined"
         class="fixed top-1/2 left-1/2 z-50 flex h-[min(34rem,calc(100vh-4rem))] w-[min(42rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-card shadow-xl select-none focus:outline-none"
         @open-auto-focus.prevent="focusField"
       >
         <div class="flex items-start justify-between gap-2 px-4 pt-4">
-          <DialogTitle class="text-sm font-medium">{{ t("sessions.newTab.title") }}</DialogTitle>
+          <DialogTitle class="text-sm font-medium">{{
+            t(splitting ? "terminal.split.pickerTitle" : "sessions.newTab.title")
+          }}</DialogTitle>
           <button
             type="button"
             tabindex="-1"
@@ -213,7 +274,64 @@ onMounted(async () => {
             <X :size="14" />
           </button>
         </div>
-        <DialogDescription class="sr-only">{{ t("sessions.newTab.search") }}</DialogDescription>
+        <DialogDescription class="sr-only">{{
+          t(splitting ? "terminal.split.pickerDescription" : "sessions.newTab.search")
+        }}</DialogDescription>
+
+        <div v-if="splitting" class="mx-4 mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div
+            class="flex gap-1 rounded-md border border-border p-1"
+            role="group"
+            :aria-label="t('terminal.split.source')"
+          >
+            <button
+              type="button"
+              data-split-source="existing"
+              :aria-pressed="source === 'existing'"
+              class="rounded-sm px-2 py-1 text-xs"
+              :class="source === 'existing' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'"
+              @click="source = 'existing'"
+            >
+              {{ t("terminal.split.existing") }}
+            </button>
+            <button
+              type="button"
+              data-split-source="new"
+              :aria-pressed="source === 'new'"
+              class="rounded-sm px-2 py-1 text-xs"
+              :class="source === 'new' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'"
+              @click="source = 'new'"
+            >
+              {{ t("terminal.split.new") }}
+            </button>
+          </div>
+          <div class="flex gap-1">
+            <button
+              type="button"
+              data-split-direction="right"
+              :aria-pressed="terminals.splitPicker?.direction === 'right'"
+              class="grid size-7 place-items-center rounded-sm border border-border text-muted-foreground hover:bg-accent"
+              :class="terminals.splitPicker?.direction === 'right' && 'bg-accent text-foreground'"
+              :title="t('terminal.split.right')"
+              :aria-label="t('terminal.split.right')"
+              @click="terminals.setSplitDirection('right')"
+            >
+              <Columns2 :size="14" />
+            </button>
+            <button
+              type="button"
+              data-split-direction="down"
+              :aria-pressed="terminals.splitPicker?.direction === 'down'"
+              class="grid size-7 place-items-center rounded-sm border border-border text-muted-foreground hover:bg-accent"
+              :class="terminals.splitPicker?.direction === 'down' && 'bg-accent text-foreground'"
+              :title="t('terminal.split.down')"
+              :aria-label="t('terminal.split.down')"
+              @click="terminals.setSplitDirection('down')"
+            >
+              <Rows2 :size="14" />
+            </button>
+          </div>
+        </div>
 
         <div class="relative mx-4 mt-3">
           <Search
@@ -228,92 +346,133 @@ onMounted(async () => {
             autocorrect="off"
             spellcheck="false"
             class="h-8 w-full rounded-md border border-border bg-background pr-3 pl-8 text-xs select-text focus:ring-1 focus:ring-ring focus:outline-none"
-            :placeholder="t('sessions.newTab.search')"
-            :aria-label="t('sessions.newTab.search')"
+            :placeholder="t(splitting ? 'terminal.split.search' : 'sessions.newTab.search')"
+            :aria-label="t(splitting ? 'terminal.split.search' : 'sessions.newTab.search')"
             @keydown="onKeydown"
           />
         </div>
 
         <div ref="list" class="mt-2 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-          <p v-if="displayRows.length === 0" class="px-2 py-6 text-center text-xs text-muted-foreground">
-            {{ library.sessions.length === 0 ? t("sessions.list.empty") : t("sessions.newTab.empty") }}
-          </p>
-          <template v-for="row in displayRows" :key="row.key">
-            <div
-              v-if="row.kind === 'group' && searching"
-              class="flex items-center gap-1 px-2 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-muted-foreground"
-              :style="{ paddingLeft: `${10 + row.depth * 12}px` }"
-            >
-              <Folder :size="12" class="shrink-0" />
-              <span class="min-w-0 truncate">{{ row.group.name }}</span>
-            </div>
+          <template v-if="splitting && source === 'existing'">
+            <p v-if="existing.length === 0" class="px-2 py-6 text-center text-xs text-muted-foreground">
+              {{ t("terminal.split.emptyExisting") }}
+            </p>
             <button
-              v-else-if="row.kind === 'group'"
+              v-for="(tab, index) in existing"
+              :key="tab.id"
               type="button"
-              :data-group-id="row.id"
-              :aria-expanded="!isCollapsed(row.id)"
-              :title="
-                t(isCollapsed(row.id) ? 'sessions.list.groupExpand' : 'sessions.list.groupCollapse', {
-                  name: row.group.name,
-                })
-              "
-              class="flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-xs font-medium text-foreground transition-colors hover:bg-accent/40"
-              :style="{ paddingLeft: `${8 + row.depth * 12}px` }"
-              @mousedown.prevent
-              @click="toggleGroup(row.id)"
+              data-split-existing-row
+              :data-pane-id="tab.id"
+              :data-chosen="tab.id === chosenID ? 'true' : undefined"
+              class="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-accent/60"
+              :class="tab.id === chosenID ? 'bg-accent text-foreground' : 'text-muted-foreground'"
+              @mouseenter="chosen = index"
+              @click="chooseExisting(tab)"
             >
-              <ChevronRight
-                :size="12"
-                class="shrink-0 text-muted-foreground"
-                :class="isCollapsed(row.id) ? '' : 'rotate-90'"
-              />
-              <FolderOpen v-if="!isCollapsed(row.id)" :size="13" class="shrink-0 text-primary" />
-              <Folder v-else :size="13" class="shrink-0 text-primary" />
-              <span class="min-w-0 truncate">{{ row.group.name }}</span>
+              <Terminal :size="14" class="shrink-0" />
+              <span class="min-w-0 flex-1"
+                ><span class="block truncate text-xs font-medium text-foreground">{{
+                  sessionTabTitle(tab.session.name, terminals.copyOf(tab.id))
+                }}</span
+                ><span class="block truncate text-[11px] text-muted-foreground">{{ endpoint(tab.session) }}</span></span
+              >
+              <span class="shrink-0 text-[11px] text-muted-foreground">{{
+                t(
+                  tab.status === "open"
+                    ? "terminal.split.running"
+                    : tab.status === "ended"
+                      ? "terminal.split.ended"
+                      : "terminal.split.failed",
+                )
+              }}</span>
             </button>
-            <button
-              v-else
-              type="button"
-              data-new-tab-row
-              :data-session-id="row.session.id"
-              :data-chosen="row.session.id === chosenID ? 'true' : undefined"
-              :aria-current="row.session.id === chosenID ? 'true' : undefined"
-              class="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors"
-              :class="
-                row.session.id === chosenID
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-              "
-              :style="{ paddingLeft: `${8 + row.depth * 12}px` }"
-              @mouseenter="chosen = sessionIndex(row.session.id)"
-              @click="choose(row.session)"
-            >
-              <SystemIcon
-                v-if="connectionMark(row.session, app.info?.os)"
-                :system="null"
-                :mark="connectionMark(row.session, app.info?.os)"
-              />
-              <SystemIcon
-                v-else-if="hasMark(row.session)"
-                :system="terminals.systemOf(row.session)"
-                :label="markTitle(row.session)"
-              />
-              <MonitorCog
-                v-else-if="row.session.protocol === 'vmware'"
-                :size="13"
-                class="shrink-0 text-muted-foreground"
-              />
-              <Terminal v-else :size="13" class="shrink-0 text-muted-foreground" />
-              <span class="min-w-0 flex-1">
-                <span class="block truncate text-xs font-medium text-foreground">{{ row.session.name }}</span>
-                <span class="block truncate text-[10px] text-muted-foreground">{{ endpoint(row.session) }}</span>
-              </span>
-            </button>
+          </template>
+          <template v-else>
+            <p v-if="displayRows.length === 0" class="px-2 py-6 text-center text-xs text-muted-foreground">
+              {{ library.sessions.length === 0 ? t("sessions.list.empty") : t("sessions.newTab.empty") }}
+            </p>
+            <template v-for="row in displayRows" :key="row.key">
+              <div
+                v-if="row.kind === 'group' && searching"
+                class="flex items-center gap-1 px-2 pt-2 pb-1 text-[10px] font-semibold tracking-wide text-muted-foreground"
+                :style="{ paddingLeft: `${10 + row.depth * 12}px` }"
+              >
+                <Folder :size="12" class="shrink-0" />
+                <span class="min-w-0 truncate">{{ row.group.name }}</span>
+              </div>
+              <button
+                v-else-if="row.kind === 'group'"
+                type="button"
+                :data-group-id="row.id"
+                :aria-expanded="!isCollapsed(row.id)"
+                :title="
+                  t(isCollapsed(row.id) ? 'sessions.list.groupExpand' : 'sessions.list.groupCollapse', {
+                    name: row.group.name,
+                  })
+                "
+                class="flex w-full items-center gap-1 rounded-md py-1 pr-2 text-left text-xs font-medium text-foreground transition-colors hover:bg-accent/40"
+                :style="{ paddingLeft: `${8 + row.depth * 12}px` }"
+                @mousedown.prevent
+                @click="toggleGroup(row.id)"
+              >
+                <ChevronRight
+                  :size="12"
+                  class="shrink-0 text-muted-foreground"
+                  :class="isCollapsed(row.id) ? '' : 'rotate-90'"
+                />
+                <FolderOpen v-if="!isCollapsed(row.id)" :size="13" class="shrink-0 text-primary" />
+                <Folder v-else :size="13" class="shrink-0 text-primary" />
+                <span class="min-w-0 truncate">{{ row.group.name }}</span>
+              </button>
+              <button
+                v-else
+                type="button"
+                :data-new-tab-row="splitting ? undefined : ''"
+                :data-split-new-row="splitting ? '' : undefined"
+                :data-session-id="row.session.id"
+                :data-chosen="row.session.id === chosenID ? 'true' : undefined"
+                :aria-current="row.session.id === chosenID ? 'true' : undefined"
+                class="flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left transition-colors"
+                :class="
+                  row.session.id === chosenID
+                    ? 'bg-accent text-foreground'
+                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                "
+                :style="{ paddingLeft: `${8 + row.depth * 12}px` }"
+                @mouseenter="chosen = sessionIndex(row.session.id)"
+                @click="choose(row.session)"
+              >
+                <SystemIcon
+                  v-if="connectionMark(row.session, app.info?.os)"
+                  :system="null"
+                  :mark="connectionMark(row.session, app.info?.os)"
+                />
+                <SystemIcon
+                  v-else-if="hasMark(row.session)"
+                  :system="terminals.systemOf(row.session)"
+                  :label="markTitle(row.session)"
+                />
+                <MonitorCog
+                  v-else-if="row.session.protocol === 'vmware'"
+                  :size="13"
+                  class="shrink-0 text-muted-foreground"
+                />
+                <Terminal v-else :size="13" class="shrink-0 text-muted-foreground" />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-xs font-medium text-foreground">{{ row.session.name }}</span>
+                  <span class="block truncate text-[10px] text-muted-foreground">{{ endpoint(row.session) }}</span>
+                </span>
+              </button>
+            </template>
           </template>
         </div>
 
         <footer class="flex items-center justify-end border-t border-border px-4 py-2">
+          <p v-if="splitting" class="text-xs text-muted-foreground">
+            {{ t(source === "existing" ? "terminal.split.moveHint" : "terminal.split.newHint") }}
+          </p>
           <button
+            v-else
             type="button"
             data-new-tab-new-session
             class="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent"

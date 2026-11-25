@@ -26,8 +26,15 @@ use crate::uploads::PendingUpload;
 
 /// Opens a file browser for a saved session.
 #[tauri::command]
-pub async fn files_open(state: State<'_, ShellState>, session_id: String) -> Result<SftpOutcome, ShellError> {
-    state.core().open_files(&session_id).await
+pub async fn files_open(
+    state: State<'_, ShellState>,
+    session_id: String,
+    terminal_handle: Option<String>,
+) -> Result<SftpOutcome, ShellError> {
+    match terminal_handle {
+        Some(handle) => state.core().open_files_for_terminal(&session_id, &handle).await,
+        None => state.core().open_files(&session_id).await,
+    }
 }
 
 /// Opens a file browser inside a running container, through the runtime's own `exec`.

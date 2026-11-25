@@ -349,7 +349,30 @@ impl Core {
     /// does not carry an unlimited number of channels, and the terminal sharing it still needs its
     /// own. When no terminal connection has room, the browser gets a connection of its own.
     pub async fn open_files(&self, session_id: &str) -> Result<SftpOutcome, ShellError> {
+        self.open_files_with_terminal(session_id, None).await
+    }
+
+    /// Opens a terminal's file panel on that terminal's connection, or a fresh carrier of its own.
+    ///
+    /// Borrowing a sibling terminal's connection makes the panel die when that sibling closes.
+    /// The owner is checked against the saved session before any channel is opened.
+    pub async fn open_files_for_terminal(
+        &self,
+        session_id: &str,
+        terminal_handle: &str,
+    ) -> Result<SftpOutcome, ShellError> {
+        self.open_files_with_terminal(session_id, Some(terminal_handle)).await
+    }
+
+    async fn open_files_with_terminal(
+        &self,
+        session_id: &str,
+        terminal_handle: Option<&str>,
+    ) -> Result<SftpOutcome, ShellError> {
         let session = self.session(session_id)?;
+        if terminal_handle.is_some() && session.protocol != Protocol::Ssh {
+            return Err(ShellError::app_unsupported("a file panel requires an SSH terminal"));
+        }
         if session.protocol == Protocol::WebDav {
             return self.open_webdav_files(&session).await;
         }
@@ -357,7 +380,7 @@ impl Core {
             return self.open_ftp_files(&session).await;
         }
 
-        let carrier = match self.open_file_carrier(&session).await? {
+        let carrier = match self.open_file_carrier(&session, terminal_handle).await? {
             ConnectionOutcome::Ready(carrier) => carrier,
             ConnectionOutcome::Decision(decision) => return Ok(into_files_outcome(*decision)),
         };
@@ -440,7 +463,32 @@ impl Core {
     /// Picking the first one with room spreads the browsers across them rather than stacking every
     /// SFTP channel on the oldest connection, which is where the server's per-connection channel
     /// limit would be reached first.
-    async fn open_file_carrier(&self, session: &Session) -> Result<ConnectionOutcome, ShellError> {
+    async fn open_file_carrier(
+        &self,
+        session: &Session,
+        terminal_handle: Option<&str>,
+    ) -> Result<ConnectionOutcome, ShellError> {
+        if let Some(handle) = terminal_handle {
+            let owns_session = self
+                .registry
+                .open_sessions()
+                .await
+                .iter()
+                .any(|open| open.handle == handle && open.session_id == session.id);
+            if !owns_session {
+                return Err(ShellError::app_unsupported(
+                    "the terminal does not belong to this session",
+                ));
+            }
+            let connection = self.registry.session_of(handle).await?;
+            if self.file_channels_on(&connection).await < MAX_SHARED_FILE_SESSIONS {
+                return Ok(ConnectionOutcome::Ready(Carrier {
+                    connection,
+                    shared: true,
+                }));
+            }
+            return self.open_fresh_carrier(session).await;
+        }
         for open in self.registry.open_sessions().await {
             if open.session_id != session.id {
                 continue;

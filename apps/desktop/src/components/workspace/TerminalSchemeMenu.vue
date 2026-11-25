@@ -18,6 +18,7 @@ import { useI18n } from "vue-i18n";
 import { schemeTone, TERMINAL_COLOR_SCHEMES } from "@/lib/terminal/schemes";
 import { usePreferencesStore } from "@/stores/preferences";
 
+const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false });
 const { t } = useI18n();
 const preferences = usePreferencesStore();
 
@@ -74,13 +75,13 @@ async function take(id: string | null): Promise<void> {
     <PopoverTrigger as-child>
       <button
         type="button"
-        class="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        class="flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         :title="t('terminal.scheme.title')"
         :aria-label="t('terminal.scheme.title')"
         :aria-expanded="open"
       >
         <Palette :size="11" />
-        {{ t("terminal.scheme.label") }}
+        <span v-if="!props.compact">{{ t("terminal.scheme.label") }}</span>
       </button>
     </PopoverTrigger>
 

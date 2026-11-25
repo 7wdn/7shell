@@ -39,6 +39,8 @@ const props = withDefaults(
     pane?: "start" | "end";
     /** The least the sized pane may be drawn at. */
     minSize?: number;
+    /** The space the other pane keeps, including its controls. */
+    keepSize?: number;
   }>(),
   { orientation: "horizontal", pane: "end", minSize: MIN_PANE_PX },
 );
@@ -56,6 +58,7 @@ const { t } = useI18n();
 const divider = ref<HTMLDivElement | null>(null);
 const dragging = ref(false);
 const vertical = computed(() => props.orientation === "vertical");
+const kept = computed(() => props.keepSize ?? (vertical.value ? SIDE_PANE_KEEP_PX : MIN_PANE_PX));
 
 /**
  * How much room the two panes and this line have between them.
@@ -74,17 +77,18 @@ const STEP_PX = 16;
 /** Where the line may be put, given the room there is now. */
 function bounded(size: number): number {
   return vertical.value
-    ? clampPaneWidth(size, available.value, props.minSize)
-    : clampPaneHeight(size, available.value, props.minSize);
+    ? clampPaneWidth(size, available.value, props.minSize, kept.value)
+    : clampPaneHeight(size, available.value, props.minSize, kept.value);
 }
 
 /** The topmost the line may be dragged to; the other pane and this line keep what they need. */
 const ceiling = computed(() => {
   if (vertical.value) {
-    return Math.max(props.minSize, available.value - SIDE_PANE_KEEP_PX - SIDE_DIVIDER_PX);
+    return Math.max(props.minSize, available.value - kept.value - SIDE_DIVIDER_PX);
   }
-  return Math.max(props.minSize, available.value - MIN_PANE_PX - SPLIT_DIVIDER_PX);
+  return Math.max(props.minSize, available.value - kept.value - SPLIT_DIVIDER_PX);
 });
+const fixed = computed(() => Math.round(ceiling.value) <= Math.round(props.minSize));
 
 function moveTo(size: number): void {
   emit("move", bounded(size));
@@ -97,6 +101,9 @@ function onPointerDown(event: PointerEvent): void {
   // A drag across a terminal is a drag, not a selection: without this the terminal takes the
   // pointer and starts selecting the text underneath.
   event.preventDefault();
+  if (fixed.value) {
+    return;
+  }
   divider.value?.setPointerCapture(event.pointerId);
   dragging.value = true;
 }
@@ -129,6 +136,9 @@ function onPointerUp(event: PointerEvent): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
+  if (fixed.value) {
+    return;
+  }
   const start = props.pane === "start";
   switch (event.key) {
     case "ArrowUp":
@@ -194,6 +204,7 @@ onBeforeUnmount(() => observer?.disconnect());
     :aria-valuemin="props.minSize"
     :aria-valuemax="Math.round(ceiling)"
     :aria-valuenow="Math.round(size)"
+    :aria-disabled="fixed || undefined"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
