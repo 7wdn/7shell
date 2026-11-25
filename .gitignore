@@ -32,7 +32,6 @@ src-tauri/gen/
 # Local scratch (never published)
 # ---------------------------------------------------------------------------
 # Local planning notes and drafts. Kept out of version control on purpose.
-/.planning/
 /.scratch/
 
 # Local-only configuration and rules files. Never commit these.
