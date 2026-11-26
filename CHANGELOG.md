@@ -10,6 +10,59 @@ interface is speaking. Older releases stay as they were published.
 
 从 0.4.0 起，每个版本在同一个版本标题下同时写中英文。GitHub Release 正文使用中文章节；更新清单保留两种语言，应用按界面语言显示。更早的版本保持发布时的写法。
 
+## [0.7.1] - 2026-11-26
+
+### English
+
+Text editing fixes for files and Kubernetes YAML. Tab now indents text, selected lines can be
+indented together, and files can be saved from the keyboard without closing the editor. (#20)
+
+#### Added
+
+- **Editor preferences:** choose an indentation width from 1 to 8, spaces or tabs, and automatic
+  indentation for new lines. Defaults are four spaces with automatic indentation off. Kubernetes
+  YAML always uses spaces for new indentation. Changing a preference keeps the draft, selection
+  and undo history.
+- **Editor shortcuts:** `Mod+S` saves a file and keeps it open, `Mod+Enter` saves and closes it,
+  and `Esc` closes it with the existing unsaved-change confirmation. `Mod+Shift+M` or the editor's
+  footer button switches Tab to keyboard focus navigation. The shortcuts can be reassigned in
+  settings; `Mod` is Command on macOS and Ctrl on Windows and Linux.
+
+#### Fixed
+
+- **Tab edits text:** Tab inserts indentation at the cursor or indents selected lines;
+  Shift+Tab removes indentation. A selection ending at the start of the next line leaves that
+  line untouched. The file editor and both Kubernetes YAML editors support undo and redo.
+- **Saving protects the draft:** repeated save requests cannot overlap, a failed save keeps the
+  draft, and a delayed read or save from an earlier file cannot replace or close a newly opened
+  file. The original LF, CRLF or CR line endings are preserved when saving.
+- **Paste stays in the editor:** pasted text goes into the draft. Pasting while the editor is
+  read-only or saving does not start a file upload.
+
+#### Notes
+
+- The installers are not code-signed and the macOS build is not notarized. This project has not
+  had a security audit.
+
+### 中文
+
+修复文件与 Kubernetes YAML 的文本编辑体验。Tab 可以缩进文本，选中多行可以一起缩进，文件也可以通过快捷键保存并继续编辑。（#20）
+
+#### 新增
+
+- **编辑器设置：** 缩进宽度可选 1–8，支持空格或 Tab，并可开启换行自动缩进。默认使用 4 个空格、关闭自动缩进；Kubernetes YAML 的新缩进始终使用空格。修改设置会保留草稿、选区和撤销历史。
+- **编辑器快捷键：** `Mod+S` 保存文件并继续编辑，`Mod+Enter` 保存并关闭，`Esc` 关闭时保留原有的未保存确认。`Mod+Shift+M` 或编辑器底部按钮可切换 Tab 焦点导航。快捷键可以在设置中重绑；macOS 的 `Mod` 为 Command，Windows 和 Linux 为 Ctrl。
+
+#### 修复
+
+- **Tab 正确编辑文本：** 光标处插入缩进，选区按行缩进，Shift+Tab 反缩进；选区结束在下一行行首时，不会多处理该行。文件编辑器与两处 Kubernetes YAML 编辑器都支持撤销和重做。
+- **保存保护草稿：** 重复保存不会并发执行，保存失败保留草稿，旧文件的延迟读取或保存结果不会覆盖、关闭后来打开的文件。保存时保留原文件的 LF、CRLF 或 CR 换行风格。
+- **粘贴留在编辑器内：** 文本粘贴进入草稿；编辑器只读或正在保存时，粘贴不会误触发文件上传。
+
+#### 说明
+
+- 安装包未做代码签名，macOS 构建未公证。本项目尚未经过安全审计。
+
 ## [0.7.0] - 2026-11-25
 
 ### English
