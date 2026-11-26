@@ -543,6 +543,21 @@
         "summary": "A panel beside the workspace: load, memory, network and file systems.",
         "help": "Shows load, memory, network and disks for the host of the current terminal, sampled every two seconds over its connection. Hidden means no sampling."
       },
+      "editorIndentWidth": {
+        "title": "Text editor indentation width",
+        "summary": "The number of spaces in one indentation step; default 4.",
+        "help": "Applies to file and Kubernetes editors. Tab inserts one step, Shift+Tab removes one, and a selection is indented by line. In Tab-character mode this also controls the displayed width."
+      },
+      "editorIndentStyle": {
+        "title": "Text editor indentation characters",
+        "summary": "Insert spaces or a Tab character when indenting.",
+        "help": "Spaces are the default. Kubernetes YAML always uses spaces because YAML does not allow Tab characters for indentation. Existing text is kept until you edit it."
+      },
+      "editorAutoIndent": {
+        "title": "Keep indentation on Enter",
+        "summary": "Start a new line with the indentation of the current line.",
+        "help": "Applies to the built-in text editors. Copies leading spaces and Tabs without guessing the language's block structure. Off by default."
+      },
       "filesLayout": {
         "title": "File browser",
         "summary": "A tree beside the list, or the list alone.",
@@ -704,6 +719,11 @@
         "actions": "Actions"
       }
     },
+    "editor": {
+      "width": "{width} columns",
+      "spaces": "Spaces",
+      "tabs": "Tab character"
+    },
     "shortcuts": {
       "hint": "Click Change, then press the combination to use instead. Escape leaves the key as it is, and a key that is no longer wanted can be unbound.",
       "change": "Change",
@@ -717,23 +737,28 @@
         "global": "Anywhere",
         "terminal": "In the terminal",
         "files": "In the file panels",
-        "commands": "In the command line"
+        "commands": "In the command line",
+        "editor": "In the text editors"
       },
       "actions": {
         "uploadClipboard": "Upload the files on the clipboard",
         "toggleTransfers": "Show the transfers",
         "toggleAssistant": "Show the assistant",
         "terminalFind": "Find in the terminal",
-          "splitRight": "Split the terminal to the right",
-          "splitDown": "Split the terminal downwards",
-          "focusNextPane": "Focus the next terminal pane",
-          "focusPreviousPane": "Focus the previous terminal pane",
-          "zoomPane": "Maximize or restore the terminal pane",
-          "closePane": "Close the terminal pane",
+        "splitRight": "Split the terminal to the right",
+        "splitDown": "Split the terminal downwards",
+        "focusNextPane": "Focus the next terminal pane",
+        "focusPreviousPane": "Focus the previous terminal pane",
+        "zoomPane": "Maximize or restore the terminal pane",
+        "closePane": "Close the terminal pane",
         "focusPath": "Edit the file path",
         "filterFiles": "Filter files by name",
         "completionAccept": "Take the row the arrows are on",
-        "completionTrigger": "Open the completion list"
+        "completionTrigger": "Open the completion list",
+        "editorSave": "Save the text",
+        "editorSubmit": "Save and close, or submit the manifest",
+        "editorCancel": "Cancel editing",
+        "editorTabFocus": "Switch Tab between indentation and focus navigation"
       }
     }
   },

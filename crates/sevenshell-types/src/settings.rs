@@ -40,6 +40,42 @@ impl FilesLayout {
     }
 }
 
+/// What one indentation step writes in a plain-text editor.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorIndentStyle {
+    #[default]
+    Spaces,
+    Tabs,
+}
+
+impl EditorIndentStyle {
+    pub const ALL: &'static [Self] = &[Self::Spaces, Self::Tabs];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Spaces => "spaces",
+            Self::Tabs => "tabs",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|style| style.as_str() == id)
+    }
+}
+
+pub const EDITOR_INDENT_WIDTH_DEFAULT: u32 = 4;
+pub const EDITOR_INDENT_WIDTH_MIN: u32 = 1;
+pub const EDITOR_INDENT_WIDTH_MAX: u32 = 8;
+
+pub const fn editor_indent_width_default() -> u32 {
+    EDITOR_INDENT_WIDTH_DEFAULT
+}
+
+pub fn normalize_editor_indent_width(width: u32) -> u32 {
+    width.clamp(EDITOR_INDENT_WIDTH_MIN, EDITOR_INDENT_WIDTH_MAX)
+}
+
 /// How a session opens: a terminal on its own, or a terminal with its file panel under it.
 ///
 /// The two are one tab either way — the panel draws the same file browser a file tab would, so
@@ -1461,6 +1497,12 @@ pub struct AppSettings {
     /// How the file browser is laid out.
     #[serde(default)]
     pub files_layout: FilesLayout,
+    #[serde(default = "editor_indent_width_default")]
+    pub editor_indent_width: u32,
+    #[serde(default)]
+    pub editor_indent_style: EditorIndentStyle,
+    #[serde(default)]
+    pub editor_auto_indent: bool,
     /// Whether the directory tree is drawn beside a file listing.
     ///
     /// The tree is the default; folding it away is a workspace choice, not a change to the layout
@@ -1977,6 +2019,9 @@ impl Default for AppSettings {
             theme_palette: ThemePalette::default(),
             terminal_theme: ThemeMode::default(),
             files_layout: FilesLayout::default(),
+            editor_indent_width: editor_indent_width_default(),
+            editor_indent_style: EditorIndentStyle::default(),
+            editor_auto_indent: false,
             files_tree_visible: files_tree_on(),
             files_hidden_columns: files_columns_hidden_by_default(),
             session_layout: SessionLayout::default(),
@@ -2105,6 +2150,9 @@ impl AppSettings {
             && self.terminal_highlight_mode == TerminalHighlightMode::Background
             && self.terminal_theme == ThemeMode::System
             && self.files_layout == FilesLayout::Tree
+            && self.editor_indent_width == editor_indent_width_default()
+            && self.editor_indent_style == EditorIndentStyle::Spaces
+            && !self.editor_auto_indent
             && self.session_layout == SessionLayout::Split
             && self.session_reopen == SessionReopen::Ask
             && self.terminal_panel_height.is_none()
@@ -2474,6 +2522,28 @@ mod tests {
             "a fresh install has no external server to call tools on"
         );
         assert!(settings.is_untouched(), "none of that is a choice somebody made");
+    }
+
+    #[test]
+    fn the_text_editor_defaults_to_four_spaces_without_automatic_indentation() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.editor_indent_width, 4);
+        assert_eq!(settings.editor_indent_style, EditorIndentStyle::Spaces);
+        assert!(!settings.editor_auto_indent);
+        assert!(settings.is_untouched());
+        for style in EditorIndentStyle::ALL {
+            assert_eq!(EditorIndentStyle::from_id(style.as_str()), Some(*style));
+        }
+        assert_eq!(normalize_editor_indent_width(0), 1);
+        assert_eq!(normalize_editor_indent_width(20), 8);
+        assert_eq!(normalize_editor_indent_width(2), 2);
+        assert!(
+            !AppSettings {
+                editor_indent_width: 2,
+                ..settings
+            }
+            .is_untouched()
+        );
     }
 
     #[test]

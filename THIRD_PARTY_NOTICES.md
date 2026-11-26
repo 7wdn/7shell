@@ -14,10 +14,10 @@ rewritten in this project's TypeScript style, renamed, re-documented for the con
 has, and extended — but the redaction rules, their order, and the shape of the pipeline come from the
 original.
 
-| File here | What it derives from | How it was changed |
-|---|---|---|
-| `apps/desktop/src/lib/assistant/terminalContext.ts` | The original module's tail-truncation, redaction, snapshot and escape-stripping functions, and its redaction rule table | Renamed to the names this project uses; comments rewritten for this codebase; added `prepareTerminalContext` (the whole pipeline plus the request's character budget) and `countLines`; no product-, plan- or issue-specific text was carried over |
-| `apps/desktop/src/lib/assistant/terminalContext.spec.ts` | The original module's test suite | Test names rewritten as statements; added cases for the request budget, the line bound, the idempotence of redaction, and a short option that must not be redacted; the assertions on the original behaviour are kept |
+| File here                                                | What it derives from                                                                                                    | How it was changed                                                                                                                                                                                                                                 |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/desktop/src/lib/assistant/terminalContext.ts`      | The original module's tail-truncation, redaction, snapshot and escape-stripping functions, and its redaction rule table | Renamed to the names this project uses; comments rewritten for this codebase; added `prepareTerminalContext` (the whole pipeline plus the request's character budget) and `countLines`; no product-, plan- or issue-specific text was carried over |
+| `apps/desktop/src/lib/assistant/terminalContext.spec.ts` | The original module's test suite                                                                                        | Test names rewritten as statements; added cases for the request budget, the line bound, the idempotence of redaction, and a short option that must not be redacted; the assertions on the original behaviour are kept                              |
 
 Copyright (c) 2026 jinpy.he
 
@@ -49,6 +49,42 @@ licensed, through Iconify. The browser inlines them and sizes them by the row; t
 file name or extension to a drawing lives in `apps/desktop/src/lib/files/icons.ts`.
 
 Copyright (c) 2025 Material Extensions
+
+### MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Text editing
+
+The built-in text editors use CodeMirror 6 (`@codemirror/state`, `@codemirror/view`,
+`@codemirror/commands`, and `@codemirror/language`), distributed under the MIT License.
+The exact versions and their dependencies are recorded in `pnpm-lock.yaml`.
+
+Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
+
+The following MIT-licensed dependencies are included with the editor and are covered by the same
+permission notice below:
+
+| Package | Copyright notice |
+| --- | --- |
+| `@codemirror/streamparser` | Copyright (C) 2018-2021 by Marijn Haverbeke and others |
+| `@lezer/common`, `@lezer/highlight`, `@lezer/lr`, `style-mod` | Copyright (C) 2018 by Marijn Haverbeke and others |
+| `@marijn/find-cluster-break` | Copyright (C) 2024 by Marijn Haverbeke |
+| `crelt` | Copyright (C) 2020 by Marijn Haverbeke |
+| `w3c-keyname` | Copyright (C) 2016 by Marijn Haverbeke and others |
 
 ### MIT License
 

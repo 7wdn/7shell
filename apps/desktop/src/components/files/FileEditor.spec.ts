@@ -8,7 +8,7 @@
  * one that loses the work.
  */
 import { createPinia, setActivePinia } from "pinia";
-import { type App, createApp, h, nextTick } from "vue";
+import { type App, createApp, h, nextTick, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/runtime", () => ({ isDesktopRuntime: vi.fn(() => true) }));
@@ -20,6 +20,7 @@ vi.mock("@/lib/backend/tauri", () => ({
 import FileEditor from "@/components/files/FileEditor.vue";
 import { i18n } from "@/i18n";
 import { filesReadText, filesWriteText } from "@/lib/backend/tauri";
+import { pressEditorKey, replaceEditorText, textEditorView } from "@/lib/editor/testing";
 import { useFilesStore } from "@/stores/files";
 
 const readText = vi.mocked(filesReadText);
@@ -28,6 +29,7 @@ const writeText = vi.mocked(filesWriteText);
 let app: App | undefined;
 let host: HTMLDivElement;
 let closed: boolean[];
+const editedPath = ref("/etc/nginx/nginx.conf");
 
 async function render(): Promise<void> {
   app = createApp({
@@ -36,7 +38,7 @@ async function render(): Promise<void> {
       return h(FileEditor, {
         open: this.open,
         handle: "browser-1",
-        path: "/etc/nginx/nginx.conf",
+        path: editedPath.value,
         "onUpdate:open": (value: boolean) => {
           closed.push(value);
           this.open = value;
@@ -65,12 +67,8 @@ function question(): HTMLElement | null {
   return dialogs.length > 1 ? (dialogs[1] ?? null) : null;
 }
 
-function field(): HTMLTextAreaElement {
-  const element = editor().querySelector<HTMLTextAreaElement>("textarea");
-  if (!element) {
-    throw new Error("the editor has no field");
-  }
-  return element;
+function field() {
+  return textEditorView(editor());
 }
 
 function buttonNamed(scope: HTMLElement, text: string): HTMLButtonElement {
@@ -85,9 +83,7 @@ function buttonNamed(scope: HTMLElement, text: string): HTMLButtonElement {
 
 /** Typing, which is what makes the buffer dirty. */
 async function type(value: string): Promise<void> {
-  const textarea = field();
-  textarea.value = value;
-  textarea.dispatchEvent(new Event("input"));
+  replaceEditorText(editor(), value);
   await settle();
 }
 
@@ -100,6 +96,7 @@ async function settle(): Promise<void> {
 beforeEach(() => {
   setActivePinia(createPinia());
   closed = [];
+  editedPath.value = "/etc/nginx/nginx.conf";
   readText.mockClear().mockResolvedValue("one line");
   writeText.mockClear().mockResolvedValue(undefined);
 });
@@ -117,7 +114,7 @@ describe("opening and saving", () => {
   it("reads the file through the backend", async () => {
     await render();
     expect(readText).toHaveBeenCalledWith("browser-1", "/etc/nginx/nginx.conf");
-    expect(field().value).toBe("one line");
+    expect(field().state.sliceDoc()).toBe("one line");
   });
 
   it("writes what was typed and closes", async () => {
@@ -129,6 +126,107 @@ describe("opening and saving", () => {
 
     expect(writeText).toHaveBeenCalledWith("browser-1", "/etc/nginx/nginx.conf", "two lines");
     expect(closed).toEqual([false]);
+  });
+
+  it("saves with Ctrl+S and keeps the editor and its buffer open", async () => {
+    await render();
+    await type("saved without closing");
+    pressEditorKey(editor(), "s", { ctrlKey: true });
+    await settle();
+    expect(writeText).toHaveBeenCalledWith("browser-1", "/etc/nginx/nginx.conf", "saved without closing");
+    expect(closed).toEqual([]);
+    expect(field().state.sliceDoc()).toBe("saved without closing");
+    expect(useFilesStore().unsavedEditors).toEqual([]);
+  });
+
+  it("saves and closes with Ctrl+Enter", async () => {
+    await render();
+    await type("saved and closed");
+    pressEditorKey(editor(), "Enter", { ctrlKey: true });
+    await settle();
+    expect(writeText).toHaveBeenCalledWith("browser-1", "/etc/nginx/nginx.conf", "saved and closed");
+    expect(closed).toEqual([false]);
+  });
+
+  it("does not write again or close while the first save is pending", async () => {
+    let finish: (() => void) | undefined;
+    writeText.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    await type("one submission");
+    pressEditorKey(editor(), "s", { ctrlKey: true });
+    await settle();
+    expect(field().state.readOnly).toBe(true);
+    pressEditorKey(editor(), "s", { ctrlKey: true });
+    pressEditorKey(editor(), "Enter", { ctrlKey: true });
+    pressEditorKey(editor(), "Escape");
+    await settle();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(closed).toEqual([]);
+    expect(question()).toBeNull();
+    finish?.();
+    await settle();
+    expect(field().state.readOnly).toBe(false);
+    expect(useFilesStore().unsavedEditors).toEqual([]);
+  });
+
+  it("keeps a keyboard save failure dirty and asks before Escape discards it", async () => {
+    writeText.mockRejectedValueOnce(new Error("the disk is full"));
+    await render();
+    await type("unsaved text");
+    pressEditorKey(editor(), "s", { ctrlKey: true });
+    await settle();
+    expect(field().state.sliceDoc()).toBe("unsaved text");
+    expect(useFilesStore().unsavedEditors).toHaveLength(1);
+    pressEditorKey(editor(), "Escape");
+    await settle();
+    expect(question()).not.toBeNull();
+    expect(closed).toEqual([]);
+  });
+
+  it("does not let an old read replace the file opened after it", async () => {
+    let finish: ((text: string) => void) | undefined;
+    readText.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    readText.mockResolvedValueOnce("new file");
+    editedPath.value = "/etc/nginx/new.conf";
+    await settle();
+    expect(field().state.sliceDoc()).toBe("new file");
+    finish?.("old file");
+    await settle();
+    expect(field().state.sliceDoc()).toBe("new file");
+  });
+
+  it("does not close a different file when an earlier save and close finishes", async () => {
+    let finish: (() => void) | undefined;
+    writeText.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render();
+    await type("old draft");
+    pressEditorKey(editor(), "Enter", { ctrlKey: true });
+    await settle();
+    readText.mockResolvedValueOnce("new file");
+    editedPath.value = "/etc/nginx/new.conf";
+    await settle();
+    expect(useFilesStore().unsavedEditors).toEqual([]);
+    finish?.();
+    await settle();
+    expect(closed).toEqual([]);
+    expect(field().state.sliceDoc()).toBe("new file");
+    expect(writeText).toHaveBeenCalledWith("browser-1", "/etc/nginx/nginx.conf", "old draft");
   });
 });
 
@@ -143,8 +241,11 @@ describe("a file that could not be read", () => {
     await render();
 
     expect(editor().textContent).toContain("APP-INTERNAL");
-    expect(field().readOnly, "there is nothing to type into").toBe(true);
+    expect(field().state.readOnly, "there is nothing to type into").toBe(true);
     expect(buttonNamed(editor(), "Save").disabled, "an unread file must not be savable").toBe(true);
+
+    pressEditorKey(editor(), "s", { ctrlKey: true });
+    pressEditorKey(editor(), "Enter", { ctrlKey: true });
 
     buttonNamed(editor(), "Save").click();
     await settle();
@@ -191,7 +292,7 @@ describe("closing with unsaved changes", () => {
     await settle();
 
     expect(closed).toEqual([]);
-    expect(field().value).toBe("two lines");
+    expect(field().state.sliceDoc()).toBe("two lines");
   });
 
   it("loses it only when throwing it away is the answer", async () => {

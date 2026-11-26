@@ -456,6 +456,17 @@ export const DEFAULT_CORNER_STYLE: CornerStyle = "large";
 /** How the file browser is laid out, from `sevenshell_types::FilesLayout`. */
 export type FilesLayout = "tree" | "list";
 
+export type EditorIndentStyle = "spaces" | "tabs";
+export const DEFAULT_EDITOR_INDENT_WIDTH = 4;
+export const EDITOR_INDENT_WIDTH_MIN = 1;
+export const EDITOR_INDENT_WIDTH_MAX = 8;
+
+export function normalizeEditorIndentWidth(width: number): number {
+  return Number.isFinite(width)
+    ? Math.min(EDITOR_INDENT_WIDTH_MAX, Math.max(EDITOR_INDENT_WIDTH_MIN, Math.round(width)))
+    : DEFAULT_EDITOR_INDENT_WIDTH;
+}
+
 /**
  * A named remote directory the file browser offers as a quick jump, from
  * `sevenshell_types::FileBookmark`.
@@ -651,6 +662,9 @@ export interface AppSettings {
   /** `system` means "follow the interface theme" for the terminal, not the operating system. */
   readonly terminalTheme: ThemeMode;
   readonly filesLayout: FilesLayout;
+  readonly editorIndentWidth: number;
+  readonly editorIndentStyle: EditorIndentStyle;
+  readonly editorAutoIndent: boolean;
   /** Whether the directory tree is drawn beside a file listing. */
   readonly filesTreeVisible: boolean;
   /** File-browser columns folded away, by their stable keys. */

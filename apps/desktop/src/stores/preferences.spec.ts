@@ -119,6 +119,9 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
     terminalTheme: "system",
     filesLayout: "tree",
+    editorIndentWidth: 4,
+    editorIndentStyle: "spaces",
+    editorAutoIndent: false,
     filesTreeVisible: true,
     filesHiddenColumns: [...DEFAULT_FILES_HIDDEN_COLUMNS],
     sessionLayout: "split",
@@ -168,6 +171,67 @@ function defaults(overrides: Partial<AppSettings> = {}): AppSettings {
     ...overrides,
   };
 }
+
+describe("text editor preferences", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    settingsGetMock.mockReset().mockResolvedValue(defaults());
+    settingsSetMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("uses four spaces and no automatic indentation for settings written before the editor fields existed", async () => {
+    settingsGetMock.mockResolvedValue(
+      defaults({
+        editorIndentWidth: undefined,
+        editorIndentStyle: undefined,
+        editorAutoIndent: undefined,
+      }),
+    );
+    const store = usePreferencesStore();
+    await store.load();
+    expect(store.editorIndentWidth).toBe(4);
+    expect(store.editorIndentStyle).toBe("spaces");
+    expect(store.editorAutoIndent).toBe(false);
+  });
+
+  it("applies changes immediately and writes them only when Apply is used", async () => {
+    const store = usePreferencesStore();
+    await store.load();
+    store.setEditorIndentWidth(2);
+    store.setEditorIndentStyle("tabs");
+    store.setEditorAutoIndent(true);
+    expect(store.dirty).toBe(true);
+    expect(settingsSetMock).not.toHaveBeenCalled();
+    await store.commit();
+    expect(settingsSetMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        editorIndentWidth: 2,
+        editorIndentStyle: "tabs",
+        editorAutoIndent: true,
+      }),
+    );
+  });
+
+  it("bounds indentation widths and restores the editor fields without restoring the file layout", async () => {
+    const store = usePreferencesStore();
+    await store.load();
+    store.setEditorIndentWidth(100);
+    expect(store.editorIndentWidth).toBe(8);
+    store.setEditorIndentWidth(0);
+    expect(store.editorIndentWidth).toBe(1);
+    store.setEditorIndentWidth(Number.NaN);
+    expect(store.editorIndentWidth).toBe(4);
+    store.setEditorIndentWidth(2);
+    store.setEditorIndentStyle("tabs");
+    store.setEditorAutoIndent(true);
+    await store.setFilesLayout("list");
+    await store.reset(["editorIndentWidth", "editorIndentStyle", "editorAutoIndent"]);
+    expect(store.editorIndentWidth).toBe(4);
+    expect(store.editorIndentStyle).toBe("spaces");
+    expect(store.editorAutoIndent).toBe(false);
+    expect(store.filesLayout).toBe("list");
+  });
+});
 
 const NEWER_SCHEMA = {
   version: 1,
@@ -367,6 +431,9 @@ describe("preferences store", () => {
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
       filesLayout: "tree",
+      editorIndentWidth: 4,
+      editorIndentStyle: "spaces",
+      editorAutoIndent: false,
       filesTreeVisible: true,
       filesHiddenColumns: [...DEFAULT_FILES_HIDDEN_COLUMNS],
       sessionLayout: "split",
@@ -464,6 +531,9 @@ describe("preferences store", () => {
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
       filesLayout: "tree",
+      editorIndentWidth: 4,
+      editorIndentStyle: "spaces",
+      editorAutoIndent: false,
       filesTreeVisible: true,
       filesHiddenColumns: [...DEFAULT_FILES_HIDDEN_COLUMNS],
       sessionLayout: "split",
@@ -797,6 +867,9 @@ describe("the terminal palette", () => {
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "light",
       filesLayout: "tree",
+      editorIndentWidth: 4,
+      editorIndentStyle: "spaces",
+      editorAutoIndent: false,
       filesTreeVisible: true,
       filesHiddenColumns: [...DEFAULT_FILES_HIDDEN_COLUMNS],
       sessionLayout: "split",
@@ -2012,6 +2085,9 @@ describe("restoring the defaults", () => {
       customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
       terminalTheme: "system",
       filesLayout: "tree",
+      editorIndentWidth: 4,
+      editorIndentStyle: "spaces",
+      editorAutoIndent: false,
       filesTreeVisible: true,
       filesHiddenColumns: [...DEFAULT_FILES_HIDDEN_COLUMNS],
       sessionLayout: "split",

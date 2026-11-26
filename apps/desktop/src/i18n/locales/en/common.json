@@ -10,6 +10,20 @@
       "ready": "Backend ready",
       "failed": "Backend unavailable"
     },
-    "resizeColumn": "Resize the {column} column"
+    "resizeColumn": "Resize the {column} column",
+    "editor": {
+      "spaces": "{width} spaces",
+      "tabs": "Tab width: {width}",
+      "yamlSpaces": "YAML uses spaces",
+      "tabIndent": "Tab: indent",
+      "tabFocus": "Tab: move focus",
+      "toggle": "Switch between indentation and focus navigation",
+      "toggleKey": "Switch between indentation and focus navigation ({key})",
+      "indentKeys": "Tab indents; Shift+Tab removes indentation",
+      "saveKey": "{key} saves",
+      "submitKey": "{key} submits",
+      "cancelKey": "{key} cancels",
+      "focusKey": "{key} switches Tab mode"
+    }
   }
 }

@@ -45,6 +45,7 @@ import K8sDetailDrawer from "@/components/k8s/K8sDetailDrawer.vue";
 import { descriptorOf } from "@/components/k8s/resources";
 import { i18n } from "@/i18n";
 import { k8sConnect, k8sRequest, k8sStreamStop, k8sWatchStart, onK8sWatch } from "@/lib/backend/tauri";
+import { pressEditorKey, replaceEditorText, textEditorView } from "@/lib/editor/testing";
 import { useK8sStore } from "@/stores/k8s";
 import type { K8sRequest, K8sResponse, K8sWatchEvent } from "@/types/k8s";
 import type { Session } from "@/types/session";
@@ -113,11 +114,11 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-function editor(): HTMLTextAreaElement | null {
-  return host.querySelector("textarea");
+function editor() {
+  return host.querySelector(".cm-editor") ? textEditorView(host) : null;
 }
 
-async function openEditor(): Promise<HTMLTextAreaElement> {
+async function openEditor() {
   button(t("k8s.detail.tabs.yaml")).click();
   await nextTick();
   button(t("k8s.yaml.edit")).click();
@@ -134,8 +135,7 @@ async function type(value: string): Promise<void> {
   if (!found) {
     throw new Error("the editor closed while it was being typed in");
   }
-  found.value = value;
-  found.dispatchEvent(new Event("input"));
+  replaceEditorText(host, value);
   await nextTick();
 }
 
@@ -191,7 +191,7 @@ describe("saving an edited manifest", () => {
   it("sends the draft as a JSON body to the object's own path with the write acknowledged", async () => {
     await mountDrawer();
     const draft = await openEditor();
-    expect(draft.value).toContain("mode: old");
+    expect(draft.state.sliceDoc()).toContain("mode: old");
 
     await type(`apiVersion: v1
 kind: ConfigMap
@@ -229,7 +229,7 @@ data:
     button(t("k8s.yaml.save")).click();
 
     await vi.waitFor(() => expect(host.textContent).toContain("K8S-REQUEST-FAILED"));
-    expect(editor()?.value).toContain("kind: ConfigMap");
+    expect(editor()?.state.sliceDoc()).toContain("kind: ConfigMap");
   });
 
   it("never sends a document that does not parse, and keeps it on screen", async () => {
@@ -242,6 +242,30 @@ data:
 
     expect(requestMock.mock.calls.some(([, request]) => request.method === "put")).toBe(false);
     expect(host.textContent).toContain(t("k8s.yaml.invalid"));
-    expect(editor()?.value).toBe("kind: [unclosed");
+    expect(editor()?.state.sliceDoc()).toBe("kind: [unclosed");
+  });
+
+  it("saves from Ctrl+Enter through the acknowledged replacement request", async () => {
+    await mountDrawer();
+    await openEditor();
+    await type(
+      "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: settings\n  namespace: default\ndata:\n  mode: keyboard\n",
+    );
+    pressEditorKey(host, "Enter", { ctrlKey: true });
+    await vi.waitFor(() => expect(editor()).toBeNull());
+    const requests = requestMock.mock.calls.filter(([, request]) => request.method === "put");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.[1].acknowledged).toBe(true);
+    expect(JSON.parse(requests[0]?.[1].body ?? "{}").data.mode).toBe("keyboard");
+  });
+
+  it("cancels YAML editing with Escape without sending the draft", async () => {
+    await mountDrawer();
+    await openEditor();
+    await type("unsaved draft");
+    pressEditorKey(host, "Escape");
+    await nextTick();
+    expect(editor()).toBeNull();
+    expect(requestMock.mock.calls.some(([, request]) => request.method === "put")).toBe(false);
   });
 });

@@ -945,6 +945,46 @@ export const SETTINGS_ROWS: readonly SettingsRowDefinition[] = [
     control: { kind: "switch" },
   },
   {
+    id: "editor-indent-width",
+    category: "files",
+    field: "editorIndentWidth",
+    titleKey: "settings.rows.editorIndentWidth.title",
+    summaryKey: "settings.rows.editorIndentWidth.summary",
+    helpKey: "settings.rows.editorIndentWidth.help",
+    control: {
+      kind: "select",
+      options: [1, 2, 3, 4, 5, 6, 7, 8].map((width) => ({
+        value: String(width),
+        labelKey: "settings.editor.width",
+        params: { width },
+      })),
+    },
+  },
+  {
+    id: "editor-indent-style",
+    category: "files",
+    field: "editorIndentStyle",
+    titleKey: "settings.rows.editorIndentStyle.title",
+    summaryKey: "settings.rows.editorIndentStyle.summary",
+    helpKey: "settings.rows.editorIndentStyle.help",
+    control: {
+      kind: "select",
+      options: [
+        { value: "spaces", labelKey: "settings.editor.spaces" },
+        { value: "tabs", labelKey: "settings.editor.tabs" },
+      ],
+    },
+  },
+  {
+    id: "editor-auto-indent",
+    category: "files",
+    field: "editorAutoIndent",
+    titleKey: "settings.rows.editorAutoIndent.title",
+    summaryKey: "settings.rows.editorAutoIndent.summary",
+    helpKey: "settings.rows.editorAutoIndent.help",
+    control: { kind: "switch" },
+  },
+  {
     id: "background-image",
     category: "appearance",
     field: "backgroundImage",

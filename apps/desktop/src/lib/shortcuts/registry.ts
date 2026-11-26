@@ -27,7 +27,11 @@ export type ShortcutActionId =
   | "files.focusPath"
   | "files.filter"
   | "commands.completionAccept"
-  | "commands.completionTrigger";
+  | "commands.completionTrigger"
+  | "editor.save"
+  | "editor.submit"
+  | "editor.cancel"
+  | "editor.toggleTabFocus";
 
 export interface ShortcutDefinition {
   readonly id: ShortcutActionId;
@@ -39,10 +43,10 @@ export interface ShortcutDefinition {
 }
 
 /** The surfaces a binding can belong to. */
-export type ShortcutScope = "global" | "terminal" | "files" | "commands";
+export type ShortcutScope = "global" | "terminal" | "files" | "commands" | "editor";
 
 /** The surfaces in the order the settings page lists them. */
-export const SHORTCUT_SCOPE_ORDER: readonly ShortcutScope[] = ["global", "terminal", "files", "commands"];
+export const SHORTCUT_SCOPE_ORDER: readonly ShortcutScope[] = ["global", "terminal", "files", "commands", "editor"];
 
 export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   {
@@ -139,6 +143,30 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
     scope: "commands",
     labelKey: "settings.shortcuts.actions.completionTrigger",
     defaultBinding: "Alt+/",
+  },
+  {
+    id: "editor.save",
+    scope: "editor",
+    labelKey: "settings.shortcuts.actions.editorSave",
+    defaultBinding: "Mod+S",
+  },
+  {
+    id: "editor.submit",
+    scope: "editor",
+    labelKey: "settings.shortcuts.actions.editorSubmit",
+    defaultBinding: "Mod+Enter",
+  },
+  {
+    id: "editor.cancel",
+    scope: "editor",
+    labelKey: "settings.shortcuts.actions.editorCancel",
+    defaultBinding: "Escape",
+  },
+  {
+    id: "editor.toggleTabFocus",
+    scope: "editor",
+    labelKey: "settings.shortcuts.actions.editorTabFocus",
+    defaultBinding: "Mod+Shift+M",
   },
 ];
 

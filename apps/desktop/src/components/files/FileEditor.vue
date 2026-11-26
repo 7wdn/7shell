@@ -8,7 +8,7 @@
  * two places and let the two disagree.
  *
  * A plain editor on purpose: no syntax highlighting yet, and the dialog says so rather than letting
- * a monospace textarea suggest more than it does.
+ * a monospace editing surface suggest more than it does.
  *
  * Closing asks when something was typed and not saved. Every way out goes through the same question
  * — the Cancel button, Escape, a click on the overlay — because the way out is not what loses the
@@ -25,6 +25,7 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import ConfirmDialog from "@/components/ui/ConfirmDialog.vue";
+import TextEditor from "@/components/ui/TextEditor.vue";
 import { describeShellError } from "@/i18n/errors";
 import { backend } from "@/lib/backend/api";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
@@ -64,7 +65,17 @@ const dirty = computed(() => !loading.value && text.value !== original.value);
  * its own close path can vouch for.
  */
 const unsavedKey = computed(() => `${props.handle}:${props.path}`);
-watch(dirty, (value) => files.setUnsaved(unsavedKey.value, value), { immediate: true });
+watch(
+  [unsavedKey, dirty],
+  ([key, value], previous) => {
+    const oldKey = previous?.[0];
+    if (oldKey && oldKey !== key) {
+      files.setUnsaved(oldKey, false);
+    }
+    files.setUnsaved(key, value);
+  },
+  { immediate: true },
+);
 onBeforeUnmount(() => files.setUnsaved(unsavedKey.value, false));
 
 function translate(key: string, params?: Record<string, string>): string {
@@ -73,7 +84,11 @@ function translate(key: string, params?: Record<string, string>): string {
 
 watch(
   () => [props.open, props.handle, props.path] as const,
-  async ([open]) => {
+  async ([open, handle, path], _previous, onCleanup) => {
+    let current = true;
+    onCleanup(() => {
+      current = false;
+    });
     if (!open) {
       return;
     }
@@ -84,13 +99,21 @@ watch(
     loading.value = true;
     loaded.value = false;
     try {
-      text.value = await backend.files.readText(props.handle, props.path);
-      original.value = text.value;
+      const read = await backend.files.readText(handle, path);
+      if (!current) {
+        return;
+      }
+      text.value = read;
+      original.value = read;
       loaded.value = true;
     } catch (error) {
-      failure.value = asShellError(error, "files_read_text");
+      if (current) {
+        failure.value = asShellError(error, "files_read_text");
+      }
     } finally {
-      loading.value = false;
+      if (current) {
+        loading.value = false;
+      }
     }
   },
   { immediate: true },
@@ -98,17 +121,24 @@ watch(
 
 /** True when the file was written, so a close that waited on it knows whether it may go. */
 async function save(): Promise<boolean> {
-  if (!loaded.value) {
+  if (!loaded.value || loading.value || saving.value) {
     return false;
   }
   saving.value = true;
   failure.value = null;
+  const { handle, path } = props;
+  const submitted = text.value;
   try {
-    await backend.files.writeText(props.handle, props.path, text.value);
-    original.value = text.value;
+    await backend.files.writeText(handle, path, submitted);
+    if (!props.open || props.handle !== handle || props.path !== path) {
+      return false;
+    }
+    original.value = submitted;
     return true;
   } catch (error) {
-    failure.value = asShellError(error, "files_write_text");
+    if (props.open && props.handle === handle && props.path === path) {
+      failure.value = asShellError(error, "files_write_text");
+    }
     return false;
   } finally {
     saving.value = false;
@@ -116,7 +146,10 @@ async function save(): Promise<boolean> {
 }
 
 /** The one way out: ask if there is something to lose, and leave if there is not. */
-function requestClose(): void {
+function requestClose(event?: KeyboardEvent): void {
+  if (saving.value || event?.isComposing) {
+    return;
+  }
   if (dirty.value) {
     asking.value = true;
     return;
@@ -143,13 +176,20 @@ async function saveAndClose(): Promise<void> {
 </script>
 
 <template>
-  <DialogRoot :open="props.open" @update:open="(value: boolean) => emit('update:open', value)">
+  <DialogRoot
+    :open="props.open"
+    @update:open="
+      (value: boolean) => {
+        if (!value) requestClose();
+      }
+    "
+  >
     <DialogPortal>
       <DialogOverlay class="fixed inset-0 z-50 bg-overlay" />
       <DialogContent
         class="fixed top-1/2 left-1/2 z-50 flex w-[min(52rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-card shadow-xl focus:outline-none"
         @escape-key-down.prevent="requestClose"
-        @interact-outside.prevent="requestClose"
+        @interact-outside.prevent="requestClose()"
       >
         <header class="border-b border-border px-4 py-3">
           <DialogTitle class="text-sm font-medium">{{ title }}</DialogTitle>
@@ -162,13 +202,17 @@ async function saveAndClose(): Promise<void> {
           <p class="shrink-0 font-mono text-[10px] break-all text-muted-foreground">{{ props.path }}</p>
 
           <div class="relative">
-            <textarea
+            <TextEditor
+              :key="`${props.handle}:${props.path}`"
               v-model="text"
-              spellcheck="false"
               :readonly="!loaded"
-              class="h-[50vh] w-full resize-none rounded-md border border-border bg-background px-3 py-2 font-mono text-xs focus:outline-none"
-              :aria-label="t('files.editor.description')"
-            ></textarea>
+              :busy="saving"
+              class="h-[50vh] w-full rounded-md border border-border bg-background font-mono text-xs leading-relaxed"
+              :label="t('files.editor.description')"
+              @save="!asking && save()"
+              @submit="!asking && saveAndClose()"
+              @cancel="requestClose()"
+            />
             <p
               v-if="loading"
               class="absolute inset-0 grid place-items-center bg-background/70 text-xs text-muted-foreground"
@@ -194,6 +238,7 @@ async function saveAndClose(): Promise<void> {
             <button
               type="button"
               class="rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+              :disabled="saving"
               @click="requestClose()"
             >
               {{ t("files.cancel") }}

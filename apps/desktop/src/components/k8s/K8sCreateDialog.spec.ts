@@ -6,12 +6,14 @@
  * list is showing every namespace, and saying that up front is better than the server's "namespace is
  * required" arriving after somebody wrote a manifest.
  */
+import { createPinia } from "pinia";
 import { type App, createApp, h, nextTick } from "vue";
 import { afterEach, describe, expect, it } from "vitest";
 
 import K8sCreateDialog from "@/components/k8s/K8sCreateDialog.vue";
 import { customResourceDescriptor, type ResourceDescriptor } from "@/components/k8s/resources";
 import { i18n } from "@/i18n";
+import { pressEditorKey, textEditorView } from "@/lib/editor/testing";
 
 const widgetCrd = {
   apiVersion: "apiextensions.k8s.io/v1",
@@ -56,7 +58,7 @@ function mount(namespace: string): void {
         "onUpdate:open": () => undefined,
       }),
   });
-  app.use(i18n);
+  app.use(createPinia()).use(i18n);
   app.mount(host);
 }
 
@@ -69,12 +71,8 @@ function dialog(): HTMLElement {
   return found;
 }
 
-function editor(): HTMLTextAreaElement {
-  const found = dialog().querySelector<HTMLTextAreaElement>("textarea");
-  if (!found) {
-    throw new Error("the dialog has no manifest editor");
-  }
-  return found;
+function editor() {
+  return textEditorView(dialog());
 }
 
 function button(label: string): HTMLButtonElement {
@@ -107,11 +105,11 @@ describe("the manifest it starts with", () => {
     mount("team-a");
     await settle();
 
-    expect(editor().value).toContain("apiVersion: example.com/v1");
-    expect(editor().value).toContain("kind: Widget");
-    expect(editor().value).toContain("namespace: team-a");
+    expect(editor().state.sliceDoc()).toContain("apiVersion: example.com/v1");
+    expect(editor().state.sliceDoc()).toContain("kind: Widget");
+    expect(editor().state.sliceDoc()).toContain("namespace: team-a");
 
-    const written = editor().value;
+    const written = editor().state.sliceDoc();
     button(t("k8s.create.submit", { kind: "Widget" })).click();
     await settle();
 
@@ -124,6 +122,25 @@ describe("the manifest it starts with", () => {
     expect(dialog().textContent).toContain(t("k8s.create.title", { kind: "Widget" }));
     expect(dialog().textContent).not.toContain(t("k8s.resources.custom"));
   });
+
+  it("submits the edited manifest from the keyboard without inserting a newline", async () => {
+    mount("team-a");
+    await settle();
+    const initial = editor().state.sliceDoc();
+    pressEditorKey(dialog(), "Enter", { ctrlKey: true });
+    await settle();
+    expect(confirmed).toEqual([initial]);
+    expect(editor().state.sliceDoc()).toBe(initial);
+  });
+
+  it("submits with Ctrl+S through the same creation action", async () => {
+    mount("team-a");
+    await settle();
+    const initial = editor().state.sliceDoc();
+    pressEditorKey(dialog(), "s", { ctrlKey: true });
+    await settle();
+    expect(confirmed).toEqual([initial]);
+  });
 });
 
 describe("a kind that belongs in a namespace", () => {
@@ -133,5 +150,7 @@ describe("a kind that belongs in a namespace", () => {
 
     expect(button(t("k8s.create.submit", { kind: "Widget" })).disabled).toBe(true);
     expect(dialog().textContent).toContain(t("k8s.create.namespace"));
+    pressEditorKey(dialog(), "Enter", { ctrlKey: true });
+    expect(confirmed).toEqual([]);
   });
 });

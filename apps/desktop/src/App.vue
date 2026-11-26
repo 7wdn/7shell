@@ -377,6 +377,9 @@ const shortcuts = computed(() => resolveBindings(preferences.keybindings));
 const platform = computed(() => app.info?.os ?? "");
 
 function onGlobalKey(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.isComposing) {
+    return;
+  }
   if (matchesShortcut(event, shortcuts.value["global.toggleTransfers"], platform.value)) {
     event.preventDefault();
     files.togglePanel();
@@ -411,7 +414,7 @@ function pasteInto(event: KeyboardEvent): void {
   }
 
   const focused = event.target as HTMLElement | null;
-  if (focused && (focused.tagName === "INPUT" || focused.tagName === "TEXTAREA")) {
+  if (focused && (focused.tagName === "INPUT" || focused.tagName === "TEXTAREA" || isTextEntry(focused))) {
     return;
   }
 

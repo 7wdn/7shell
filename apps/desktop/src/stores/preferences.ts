@@ -45,6 +45,7 @@ import {
   DEFAULT_APP_LAYOUT,
   DEFAULT_BACKGROUND_IMAGE,
   DEFAULT_CORNER_STYLE,
+  DEFAULT_EDITOR_INDENT_WIDTH,
   DEFAULT_QUIT_ON_CLOSE,
   DEFAULT_SHOW_TRAY_ICON,
   DEFAULT_SESSION_REOPEN,
@@ -107,8 +108,10 @@ import {
   type HomeLayout,
   type CustomColors,
   type DockedPanelPlacement,
+  type EditorIndentStyle,
   type FileBookmark,
   type FilesLayout,
+  normalizeEditorIndentWidth,
   type McpAccessPolicy,
   type McpScope,
   type McpToolPolicy,
@@ -207,6 +210,9 @@ const FRESH: Omit<AppSettings, "locale"> = {
   customColorsDark: DEFAULT_CUSTOM_COLORS_DARK,
   terminalTheme: "system",
   filesLayout: "tree",
+  editorIndentWidth: DEFAULT_EDITOR_INDENT_WIDTH,
+  editorIndentStyle: "spaces",
+  editorAutoIndent: false,
   filesTreeVisible: true,
   filesHiddenColumns: ["kind", "mode", "owner"],
   sessionLayout: "split",
@@ -363,6 +369,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const terminalTheme = ref<ThemeMode>("system");
   /** Two panes or one, in the file browser. */
   const filesLayout = ref<FilesLayout>("tree");
+  const editorIndentWidth = ref(DEFAULT_EDITOR_INDENT_WIDTH);
+  const editorIndentStyle = ref<EditorIndentStyle>("spaces");
+  const editorAutoIndent = ref(false);
   /** Whether the tree half is drawn; global so every browser folds it together. */
   const filesTreeVisible = ref(true);
   /** Columns the file browser has folded away; names rather than a closed enum, as the wire type says. */
@@ -970,6 +979,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
       customColorsDark.value = settings.customColorsDark ?? { ...DEFAULT_CUSTOM_COLORS_DARK };
       terminalTheme.value = settings.terminalTheme;
       filesLayout.value = settings.filesLayout;
+      editorIndentWidth.value = normalizeEditorIndentWidth(settings.editorIndentWidth ?? DEFAULT_EDITOR_INDENT_WIDTH);
+      editorIndentStyle.value = settings.editorIndentStyle === "tabs" ? "tabs" : "spaces";
+      editorAutoIndent.value = settings.editorAutoIndent ?? false;
       filesTreeVisible.value = settings.filesTreeVisible;
       filesHiddenColumns.value = settings.filesHiddenColumns ?? [...DEFAULT_FILES_HIDDEN_COLUMNS];
       sessionLayout.value = settings.sessionLayout;
@@ -1130,6 +1142,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
         customColorsDark: customColorsDark.value,
         terminalTheme: terminalTheme.value,
         filesLayout: filesLayout.value,
+        editorIndentWidth: editorIndentWidth.value,
+        editorIndentStyle: editorIndentStyle.value,
+        editorAutoIndent: editorAutoIndent.value,
         filesTreeVisible: filesTreeVisible.value,
         filesHiddenColumns: filesHiddenColumns.value,
         sessionLayout: sessionLayout.value,
@@ -1667,6 +1682,21 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   async function setFilesLayout(layout: FilesLayout): Promise<void> {
     filesLayout.value = layout;
+    dirty.value = true;
+  }
+
+  function setEditorIndentWidth(width: number): void {
+    editorIndentWidth.value = normalizeEditorIndentWidth(width);
+    dirty.value = true;
+  }
+
+  function setEditorIndentStyle(style: EditorIndentStyle): void {
+    editorIndentStyle.value = style === "tabs" ? "tabs" : "spaces";
+    dirty.value = true;
+  }
+
+  function setEditorAutoIndent(enabled: boolean): void {
+    editorAutoIndent.value = enabled;
     dirty.value = true;
   }
 
@@ -2392,6 +2422,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
         case "filesLayout":
           filesLayout.value = FRESH.filesLayout;
           break;
+        case "editorIndentWidth":
+          editorIndentWidth.value = FRESH.editorIndentWidth;
+          break;
+        case "editorIndentStyle":
+          editorIndentStyle.value = FRESH.editorIndentStyle;
+          break;
+        case "editorAutoIndent":
+          editorAutoIndent.value = FRESH.editorAutoIndent;
+          break;
         case "filesTreeVisible":
           filesTreeVisible.value = FRESH.filesTreeVisible;
           break;
@@ -2528,6 +2567,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     customColorsDark,
     terminalTheme,
     filesLayout,
+    editorIndentWidth,
+    editorIndentStyle,
+    editorAutoIndent,
     filesTreeVisible,
     filesHiddenColumns,
     sessionLayout,
@@ -2641,6 +2683,9 @@ export const usePreferencesStore = defineStore("preferences", () => {
     resetCustomColors,
     setTerminalTheme,
     setFilesLayout,
+    setEditorIndentWidth,
+    setEditorIndentStyle,
+    setEditorAutoIndent,
     setFilesTreeVisible,
     setFilesHiddenColumns,
     setSessionLayout,

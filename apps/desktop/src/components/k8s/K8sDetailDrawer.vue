@@ -21,6 +21,7 @@ import { parse } from "yaml";
 import { age, createdAtOf, idOf, nameOf, namespaceOf, textAt, type K8sObject } from "@/components/k8s/objects";
 import type { ResourceDescriptor } from "@/components/k8s/resources";
 import { redactedForDisplay, toYaml } from "@/components/k8s/yaml";
+import TextEditor from "@/components/ui/TextEditor.vue";
 import { describeShellError } from "@/i18n/errors";
 import { type ShellError, asShellError } from "@/lib/backend/errors";
 import { cn } from "@/lib/utils";
@@ -322,12 +323,16 @@ function eventWhen(obj: K8sObject): string {
     </div>
 
     <div v-else class="flex min-h-0 flex-1 flex-col">
-      <textarea
+      <TextEditor
         v-if="editing"
         v-model="draft"
-        spellcheck="false"
-        class="min-h-0 flex-1 resize-none bg-background px-3 py-2 font-mono text-[11px] leading-relaxed focus:outline-none"
-        :aria-label="t('k8s.yaml.editor')"
+        :busy="saving"
+        yaml
+        class="min-h-0 flex-1 bg-background font-mono text-[11px] leading-relaxed"
+        :label="t('k8s.yaml.editor')"
+        @save="save"
+        @submit="save"
+        @cancel="cancelEditing"
       />
       <pre
         v-else

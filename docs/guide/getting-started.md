@@ -25,20 +25,20 @@ quiet ways out for a password that is gone, and neither of them deletes anything
 
 ![The create-the-vault screen: a password field, a confirmation field and the Create vault button](/screenshots/create-vault.png)
 
-*The vault files it will write live in one configuration directory — the paths are in the [FAQ](faq.md).*
+_The vault files it will write live in one configuration directory — the paths are in the [FAQ](faq.md)._
 
 ## 2. Save a session
 
 The session library is the column on the left. **New session** opens the editor:
 
-| Field | Notes |
-|---|---|
-| Name | What the row and the tab will read |
-| Host | Name or address of the machine |
-| Port | 22 unless the server says otherwise |
-| User | The account to log in as |
-| Group | Optional; groups are folders in the library and can be pinned |
-| Authentication | Password, Public key, Keyboard interactive or SSH agent |
+| Field          | Notes                                                         |
+| -------------- | ------------------------------------------------------------- |
+| Name           | What the row and the tab will read                            |
+| Host           | Name or address of the machine                                |
+| Port           | 22 unless the server says otherwise                           |
+| User           | The account to log in as                                      |
+| Group          | Optional; groups are folders in the library and can be pinned |
+| Authentication | Password, Public key, Keyboard interactive or SSH agent       |
 
 Pageant is listed by the editor on Windows and is not selectable, because this build does not
 implement it yet.
@@ -75,7 +75,7 @@ given a new key on purpose. Otherwise cancel and find out first.
 
 ![The host key prompt: the key type, the fingerprint presented now, and the buttons to trust or cancel](/screenshots/host-key-prompt.png)
 
-*An unknown key is a decision for a person. A changed key is not a question.*
+_An unknown key is a decision for a person. A changed key is not a question._
 
 ## 4. Work in the terminal
 
@@ -158,6 +158,29 @@ terminal** whatever shape a session opens in (Settings → Workspace).
   download asks.
 - A whole folder goes over as one packed archive, made on the far side by the host's own `tar` and
   opened into the destination folder on arrival.
+
+### Editing text
+
+The file editor and the Kubernetes manifest editors support keyboard indentation and undo. While
+the editor has focus, **Tab** inserts one indentation step and **Shift+Tab** removes one. Selecting
+text applies the operation to the selected lines. **Ctrl+Z** undoes it; **Ctrl+Shift+Z** or **Ctrl+Y**
+redoes it on Windows and Linux. macOS uses Command for save and undo.
+
+Settings → Files offers the indentation width (1–8 columns, default 4), spaces or Tab characters,
+and an optional **Keep indentation on Enter** switch. Kubernetes YAML always uses spaces. Changing
+these settings preserves an open draft and its undo history; it does not reformat existing text.
+
+| Key          | File editor                                         | Kubernetes manifest editor  |
+| ------------ | --------------------------------------------------- | --------------------------- |
+| Ctrl+S       | Save and keep editing                               | Save or create the resource |
+| Ctrl+Enter   | Save and close                                      | Save or create the resource |
+| Esc          | Cancel; asks before discarding unsaved changes      | Cancel editing              |
+| Ctrl+Shift+M | Switch Tab between indentation and focus navigation | Same                        |
+
+Use Command instead of Ctrl for these actions on macOS. The **Tab: indent / Tab: move focus** button
+at the bottom of the editor offers the same navigation switch. Read-only or busy editors cannot
+write, and a failed save keeps the draft on screen. Text pasted into an editor stays text rather
+than triggering a file upload. File saves keep the original line-ending style.
 
 The **Transfers** panel is where every transfer reports itself: its direction, its state (Running,
 Finished, Failed, Cancelled, Paused), what it has moved, and — when something went wrong — the

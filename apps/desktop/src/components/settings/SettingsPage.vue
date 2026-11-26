@@ -94,6 +94,7 @@ import {
   type HomeLayout,
   type CustomColors,
   type FilesLayout,
+  type EditorIndentStyle,
   type DockedPanelPlacement,
   type SessionLayout,
   type SessionReopen,
@@ -482,6 +483,12 @@ function currentValue(row: SettingsRowDefinition): string | boolean | readonly s
       return preferences.monitorEnabled;
     case "filesLayout":
       return preferences.filesLayout;
+    case "editorIndentWidth":
+      return String(preferences.editorIndentWidth);
+    case "editorIndentStyle":
+      return preferences.editorIndentStyle;
+    case "editorAutoIndent":
+      return preferences.editorAutoIndent;
     case "packedTransfer":
       return preferences.packedTransfer;
     case "commandCompletion":
@@ -650,6 +657,15 @@ function choose(row: SettingsRowDefinition, value: string | boolean | readonly s
       return;
     case "filesLayout":
       void preferences.setFilesLayout(value as FilesLayout);
+      return;
+    case "editorIndentWidth":
+      preferences.setEditorIndentWidth(Number(value));
+      return;
+    case "editorIndentStyle":
+      preferences.setEditorIndentStyle(value as EditorIndentStyle);
+      return;
+    case "editorAutoIndent":
+      preferences.setEditorAutoIndent(value === true);
       return;
     case "packedTransfer":
       void preferences.setPackedTransfer(value === true);

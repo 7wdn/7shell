@@ -543,6 +543,21 @@
         "summary": "工作区右侧的面板：负载、内存、网络和文件系统。",
         "help": "显示当前终端主机的负载、内存、网络和磁盘，约每两秒通过现有连接采样；隐藏时停止采样。"
       },
+      "editorIndentWidth": {
+        "title": "文本编辑器缩进宽度",
+        "summary": "一级缩进占多少个空格，默认 4。",
+        "help": "适用于文件和 Kubernetes 编辑器。Tab 增加一级缩进，Shift+Tab 减少一级；有选区时按行处理。使用 Tab 字符时，这个值也决定显示宽度。"
+      },
+      "editorIndentStyle": {
+        "title": "文本编辑器缩进字符",
+        "summary": "缩进时插入空格，或一个 Tab 字符。",
+        "help": "默认使用空格。Kubernetes YAML 始终使用空格，因为 YAML 不允许用 Tab 字符缩进。已有文本会保留，直到你编辑它。"
+      },
+      "editorAutoIndent": {
+        "title": "回车继承缩进",
+        "summary": "新的一行沿用当前行的缩进。",
+        "help": "适用于内置文本编辑器。只复制前导空格和 Tab，不推测语言的代码块结构。默认关闭。"
+      },
       "filesLayout": {
         "title": "文件浏览器",
         "summary": "列表旁边带一棵目录树，或只有列表。",
@@ -704,6 +719,11 @@
         "actions": "操作"
       }
     },
+    "editor": {
+      "width": "{width} 列",
+      "spaces": "空格",
+      "tabs": "Tab 字符"
+    },
     "shortcuts": {
       "hint": "点「更改」，再按下要换成的那组键。按 Esc 保持原样；某个键不再需要时可以解绑。",
       "change": "更改",
@@ -717,23 +737,28 @@
         "global": "任何地方",
         "terminal": "在终端里",
         "files": "在文件面板里",
-        "commands": "在命令行里"
+        "commands": "在命令行里",
+        "editor": "在文本编辑器里"
       },
       "actions": {
         "uploadClipboard": "上传剪贴板中的文件",
         "toggleTransfers": "显示传输面板",
         "toggleAssistant": "显示 AI 助手",
-          "terminalFind": "在终端里查找",
-          "splitRight": "向右拆分终端",
-          "splitDown": "向下拆分终端",
-          "focusNextPane": "聚焦下一个终端窗格",
-          "focusPreviousPane": "聚焦上一个终端窗格",
-          "zoomPane": "最大化或恢复终端窗格",
-          "closePane": "关闭终端窗格",
+        "terminalFind": "在终端里查找",
+        "splitRight": "向右拆分终端",
+        "splitDown": "向下拆分终端",
+        "focusNextPane": "聚焦下一个终端窗格",
+        "focusPreviousPane": "聚焦上一个终端窗格",
+        "zoomPane": "最大化或恢复终端窗格",
+        "closePane": "关闭终端窗格",
         "focusPath": "编辑文件路径",
         "filterFiles": "按名称筛选文件",
         "completionAccept": "取用方向键指到的那一行",
-        "completionTrigger": "打开联想列表"
+        "completionTrigger": "打开联想列表",
+        "editorSave": "保存文本",
+        "editorSubmit": "保存并关闭，或提交清单",
+        "editorCancel": "取消编辑",
+        "editorTabFocus": "切换 Tab 的缩进与焦点导航模式"
       }
     }
   },

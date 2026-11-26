@@ -37,6 +37,12 @@ describe("deciding where the platform's menu stays", () => {
     expect(isTextEntry(field.querySelector("span"))).toBe(true);
   });
 
+  it("still treats a read-only editor as text rather than a clipboard upload target", () => {
+    const field = element('<div role="textbox" contenteditable="false" aria-readonly="true"><span>text</span></div>');
+    expect(isTextEntry(field)).toBe(true);
+    expect(isTextEntry(field.querySelector("span"))).toBe(true);
+  });
+
   it("takes it away everywhere that is not a field", () => {
     expect(isTextEntry(element("<div>plain</div>"))).toBe(false);
     expect(isTextEntry(document.body)).toBe(false);

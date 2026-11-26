@@ -10,6 +10,20 @@
       "ready": "后端就绪",
       "failed": "后端不可用"
     },
-    "resizeColumn": "调整「{column}」列宽"
+    "resizeColumn": "调整「{column}」列宽",
+    "editor": {
+      "spaces": "{width} 个空格",
+      "tabs": "Tab 宽度：{width}",
+      "yamlSpaces": "YAML 使用空格",
+      "tabIndent": "Tab：缩进",
+      "tabFocus": "Tab：移动焦点",
+      "toggle": "切换缩进与焦点导航",
+      "toggleKey": "切换缩进与焦点导航（{key}）",
+      "indentKeys": "Tab 增加缩进；Shift+Tab 减少缩进",
+      "saveKey": "{key} 保存",
+      "submitKey": "{key} 提交",
+      "cancelKey": "{key} 取消",
+      "focusKey": "{key} 切换 Tab 模式"
+    }
   }
 }

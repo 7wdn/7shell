@@ -19,11 +19,11 @@ use serde::{Deserialize, Serialize};
 use sevenshell_error::ShellError;
 use sevenshell_types::{
     AiProviderConfig, AiProviderKind, AppLayout, AppSettings, BACKGROUND_BLUR_MAX, BACKGROUND_TRANSPARENCY_MAX,
-    BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, FILE_BOOKMARK_LABEL_MAX, FILE_BOOKMARK_LIMIT,
-    FILE_BOOKMARK_PATH_MAX, FileBookmark, FilesLayout, HomeLayout, McpScope, McpServerConfig, McpServerTransport,
-    SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT, TERMINAL_HIGHLIGHT_RULE_LIMIT,
-    TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement, TabSortMode,
-    TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
+    BackgroundDisplayMode, BackgroundImage, CornerStyle, CustomColors, EditorIndentStyle, FILE_BOOKMARK_LABEL_MAX,
+    FILE_BOOKMARK_LIMIT, FILE_BOOKMARK_PATH_MAX, FileBookmark, FilesLayout, HomeLayout, McpScope, McpServerConfig,
+    McpServerTransport, SessionLayout, SessionReopen, SnippetProvider, TERMINAL_CUSTOM_SCHEME_LIMIT,
+    TERMINAL_HIGHLIGHT_RULE_LIMIT, TERMINAL_SCHEME_PROFILE_LIMIT, TabGroupMode, TabLayout, TabMaxWidth, TabPlacement,
+    TabSortMode, TerminalCursorInactiveStyle, TerminalCursorStyle, TerminalCustomScheme, TerminalHighlightMode,
     TerminalHighlightRule, TerminalPanelPlacement, TerminalSchemeBackground, TerminalSchemeProfile,
     TerminalSchemeSource, ThemeMode, ThemePalette, ai_context_enabled_default, ai_context_lines_default,
     ai_max_output_tokens_default, ai_session_retention_days_default, background_blur_default,
@@ -321,6 +321,12 @@ struct StoredSettings {
     terminal_theme: String,
     #[serde(default)]
     files_layout: String,
+    #[serde(default = "sevenshell_types::editor_indent_width_default")]
+    editor_indent_width: u32,
+    #[serde(default)]
+    editor_indent_style: String,
+    #[serde(default)]
+    editor_auto_indent: bool,
     /// Absent in a file written before the tree could be folded away, which reads as shown.
     #[serde(default = "files_tree_on")]
     files_tree_visible: bool,
@@ -605,6 +611,9 @@ impl StoredSettings {
             theme_palette: settings.theme_palette.as_str().to_owned(),
             terminal_theme: settings.terminal_theme.as_str().to_owned(),
             files_layout: settings.files_layout.as_str().to_owned(),
+            editor_indent_width: sevenshell_types::normalize_editor_indent_width(settings.editor_indent_width),
+            editor_indent_style: settings.editor_indent_style.as_str().to_owned(),
+            editor_auto_indent: settings.editor_auto_indent,
             files_tree_visible: settings.files_tree_visible,
             files_hidden_columns: settings.files_hidden_columns.clone(),
             session_layout: settings.session_layout.as_str().to_owned(),
@@ -773,6 +782,9 @@ impl StoredSettings {
             theme_palette: ThemePalette::from_id(&self.theme_palette).unwrap_or_default(),
             terminal_theme: ThemeMode::from_id(&self.terminal_theme).unwrap_or_default(),
             files_layout: FilesLayout::from_id(&self.files_layout).unwrap_or_default(),
+            editor_indent_width: sevenshell_types::normalize_editor_indent_width(self.editor_indent_width),
+            editor_indent_style: EditorIndentStyle::from_id(&self.editor_indent_style).unwrap_or_default(),
+            editor_auto_indent: self.editor_auto_indent,
             files_tree_visible: self.files_tree_visible,
             files_hidden_columns: self.files_hidden_columns.clone(),
             session_layout: SessionLayout::from_id(&self.session_layout).unwrap_or_default(),
@@ -1014,6 +1026,9 @@ mod tests {
             theme_mode,
             terminal_theme,
             files_layout: FilesLayout::default(),
+            editor_indent_width: sevenshell_types::editor_indent_width_default(),
+            editor_indent_style: EditorIndentStyle::default(),
+            editor_auto_indent: false,
             files_tree_visible: files_tree_on(),
             files_hidden_columns: files_columns_hidden_by_default(),
             session_layout: SessionLayout::default(),
@@ -1098,6 +1113,55 @@ mod tests {
             ai_session_retention_days: ai_session_retention_days_default(),
             mcp_client_servers: Vec::new(),
         }
+    }
+
+    #[test]
+    fn text_editor_preferences_survive_a_settings_file_round_trip() {
+        let directory = tempfile::tempdir().expect("a temporary settings directory");
+        let path = directory.path().join("settings.json");
+        let settings = AppSettings {
+            editor_indent_width: 2,
+            editor_indent_style: EditorIndentStyle::Tabs,
+            editor_auto_indent: true,
+            ..AppSettings::default()
+        };
+        save_to(&path, &settings).expect("write editor preferences");
+        assert_eq!(load_from(&path).expect("read editor preferences"), settings);
+    }
+
+    #[test]
+    fn an_older_settings_file_keeps_the_new_editor_defaults() {
+        let directory = tempfile::tempdir().expect("a temporary settings directory");
+        let path = directory.path().join("settings.json");
+        let mut document = serde_json::to_value(StoredSettings::from_settings(&AppSettings::default())).unwrap();
+        let object = document.as_object_mut().unwrap();
+        object.remove("editorIndentWidth");
+        object.remove("editorIndentStyle");
+        object.remove("editorAutoIndent");
+        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+        assert_eq!(load_from(&path).unwrap(), AppSettings::default());
+    }
+
+    #[test]
+    fn editor_width_is_bounded_when_saved_and_when_read() {
+        let directory = tempfile::tempdir().expect("a temporary settings directory");
+        let path = directory.path().join("settings.json");
+        save_to(
+            &path,
+            &AppSettings {
+                editor_indent_width: 100,
+                ..AppSettings::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(load_from(&path).unwrap().editor_indent_width, 8);
+        let mut document: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        document["editorIndentWidth"] = serde_json::json!(0);
+        document["editorIndentStyle"] = serde_json::json!("unrecognized");
+        std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+        let loaded = load_from(&path).unwrap();
+        assert_eq!(loaded.editor_indent_width, 1);
+        assert_eq!(loaded.editor_indent_style, EditorIndentStyle::Spaces);
     }
 
     #[test]

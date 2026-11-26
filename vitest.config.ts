@@ -11,6 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
+    setupFiles: ["apps/desktop/src/testing/browser.ts"],
     include: ["apps/desktop/src/**/*.spec.ts", "packages/app-tests/**/*.test.ts"],
     testTimeout: 10_000,
     restoreMocks: true,

@@ -9,7 +9,9 @@
  * The terminal's hidden textarea is excluded on purpose. It is off screen and never a real target,
  * but it is a textarea, and a terminal that suddenly offered to check its spelling would be absurd.
  */
-const TEXT_ENTRY = "input, textarea, [contenteditable]:not([contenteditable='false'])";
+// Read-only custom text boxes keep their text focus while a save is pending; a clipboard shortcut
+// there must not become a file upload simply because contenteditable temporarily became false.
+const TEXT_ENTRY = "input, textarea, [role='textbox'], [contenteditable]:not([contenteditable='false'])";
 
 export function isTextEntry(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) {

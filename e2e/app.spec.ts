@@ -6275,7 +6275,7 @@ test("a tarball is answered with a sentence and a download, not a text area", as
     const editorDialog = page.getByRole("dialog");
     await expect(editorDialog).toContainText("FILE-TOO-LARGE");
     await expect(editorDialog).toContainText("4 MB");
-    await expect(editorDialog.locator("textarea")).toHaveAttribute("readonly", "");
+    await expect(editorDialog.getByRole("textbox")).toHaveAttribute("aria-readonly", "true");
     await expect(editorDialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await editorDialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(editorDialog).toHaveCount(0);

@@ -13,6 +13,7 @@ import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import type { ResourceDescriptor } from "@/components/k8s/resources";
+import TextEditor from "@/components/ui/TextEditor.vue";
 import { describeShellError } from "@/i18n/errors";
 import type { ShellError } from "@/lib/backend/errors";
 
@@ -77,14 +78,28 @@ function submit(): void {
   }
   emit("confirm", manifest.value);
 }
+
+function cancel(event?: KeyboardEvent): void {
+  if (!props.busy && !event?.isComposing) {
+    emit("update:open", false);
+  }
+}
 </script>
 
 <template>
-  <DialogRoot :open="props.open" @update:open="(value: boolean) => emit('update:open', value)">
+  <DialogRoot
+    :open="props.open"
+    @update:open="
+      (value: boolean) => {
+        if (!value) cancel();
+      }
+    "
+  >
     <DialogPortal>
       <DialogOverlay class="fixed inset-0 z-50 bg-overlay" />
       <DialogContent
         class="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-4rem)] w-[min(44rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg border border-border bg-card shadow-xl focus:outline-none"
+        @escape-key-down.prevent="cancel"
       >
         <div class="shrink-0 px-4 pt-4">
           <DialogTitle class="text-sm font-medium">{{ title }}</DialogTitle>
@@ -97,12 +112,16 @@ function submit(): void {
           <label class="text-[11px] text-muted-foreground" for="k8s-create-manifest">
             {{ t("k8s.create.yaml") }}
           </label>
-          <textarea
+          <TextEditor
             id="k8s-create-manifest"
             v-model="manifest"
-            spellcheck="false"
-            class="min-h-64 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed focus:outline-none"
-            :aria-label="t('k8s.create.yaml')"
+            :busy="props.busy"
+            yaml
+            class="h-[45vh] min-h-64 flex-1 rounded-md border border-border bg-background font-mono text-[11px] leading-relaxed"
+            :label="t('k8s.create.yaml')"
+            @save="submit"
+            @submit="submit"
+            @cancel="cancel"
           />
         </div>
 
@@ -128,7 +147,7 @@ function submit(): void {
             type="button"
             class="rounded-md border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="props.busy"
-            @click="emit('update:open', false)"
+            @click="cancel()"
           >
             {{ t("common.action.cancel") }}
           </button>
